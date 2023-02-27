@@ -1,9 +1,8 @@
+use crate::config::chain::TransformChainConfig;
 use crate::error::ChainResponse;
 use crate::message::{Message, QueryType};
 use crate::transforms::chain::{BufferedChain, TransformChainBuilder};
-use crate::transforms::{
-    build_chain_from_config, Transform, TransformBuilder, Transforms, TransformsConfig, Wrapper,
-};
+use crate::transforms::{Transform, TransformBuilder, TransformConfig, Transforms, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
 use futures::stream::FuturesUnordered;
@@ -14,18 +13,20 @@ use tracing::{debug, error, trace, warn};
 
 #[derive(Deserialize, Debug)]
 pub struct TuneableConsistencyScatterConfig {
-    pub route_map: HashMap<String, Vec<TransformsConfig>>,
+    pub route_map: HashMap<String, TransformChainConfig>,
     pub write_consistency: i32,
     pub read_consistency: i32,
 }
 
-impl TuneableConsistencyScatterConfig {
-    pub async fn get_builder(&self) -> Result<Box<dyn TransformBuilder>> {
+#[typetag::deserialize(name = "ConsistentScatter")]
+#[async_trait(?Send)]
+impl TransformConfig for TuneableConsistencyScatterConfig {
+    async fn get_builder(&self, _chain_name: String) -> Result<Box<dyn TransformBuilder>> {
         let mut route_map = Vec::with_capacity(self.route_map.len());
         warn!("Using this transform is considered unstable - Does not work with REDIS pipelines");
 
         for (key, value) in &self.route_map {
-            route_map.push(build_chain_from_config(key.clone(), value).await?);
+            route_map.push(value.get_builder(key.clone()).await?);
         }
         route_map.sort_by_key(|x| x.name.clone());
 

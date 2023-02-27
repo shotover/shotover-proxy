@@ -1,6 +1,6 @@
+use crate::config::chain::TransformChainConfig;
 use crate::sources::{Sources, SourcesConfig};
 use crate::transforms::chain::TransformChainBuilder;
-use crate::transforms::{build_chain_from_config, TransformsConfig};
 use anyhow::{anyhow, Context, Result};
 use itertools::Itertools;
 use serde::Deserialize;
@@ -11,7 +11,7 @@ use tracing::info;
 #[derive(Deserialize, Debug)]
 pub struct Topology {
     pub sources: HashMap<String, SourcesConfig>,
-    pub chain_config: HashMap<String, Vec<TransformsConfig>>,
+    pub chain_config: HashMap<String, TransformChainConfig>,
     pub source_to_chain_mapping: HashMap<String, String>,
 }
 
@@ -28,10 +28,7 @@ impl Topology {
     async fn build_chains(&self) -> Result<HashMap<String, TransformChainBuilder>> {
         let mut result = HashMap::new();
         for (key, value) in &self.chain_config {
-            result.insert(
-                key.clone(),
-                build_chain_from_config(key.clone(), value).await?,
-            );
+            result.insert(key.clone(), value.get_builder(key.clone()).await?);
         }
         Ok(result)
     }
@@ -95,22 +92,27 @@ impl Topology {
 
 #[cfg(test)]
 mod topology_tests {
+    use crate::config::chain::TransformChainConfig;
     use crate::config::topology::Topology;
     use crate::transforms::coalesce::CoalesceConfig;
+    use crate::transforms::debug::printer::DebugPrinterConfig;
+    use crate::transforms::null::NullSinkConfig;
+    use crate::transforms::TransformConfig;
     use crate::{
         sources::{redis::RedisConfig, Sources, SourcesConfig},
         transforms::{
             distributed::tuneable_consistency_scatter::TuneableConsistencyScatterConfig,
             parallel_map::ParallelMapConfig, redis::cache::RedisConfig as RedisCacheConfig,
-            TransformsConfig,
         },
     };
     use std::collections::HashMap;
     use tokio::sync::watch;
 
-    async fn run_test_topology(chain: Vec<TransformsConfig>) -> anyhow::Result<Vec<Sources>> {
+    async fn run_test_topology(
+        chain: Vec<Box<dyn TransformConfig>>,
+    ) -> anyhow::Result<Vec<Sources>> {
         let mut chain_config = HashMap::new();
-        chain_config.insert("redis_chain".to_string(), chain);
+        chain_config.insert("redis_chain".to_string(), TransformChainConfig(chain));
 
         let redis_source = SourcesConfig::Redis(RedisConfig {
             listen_addr: "127.0.0.1".to_string(),
@@ -147,12 +149,9 @@ redis_chain:
 
     #[tokio::test]
     async fn test_validate_chain_valid_chain() {
-        run_test_topology(vec![
-            TransformsConfig::DebugPrinter,
-            TransformsConfig::NullSink,
-        ])
-        .await
-        .unwrap();
+        run_test_topology(vec![Box::new(DebugPrinterConfig), Box::new(NullSinkConfig)])
+            .await
+            .unwrap();
     }
 
     #[tokio::test]
@@ -169,11 +168,11 @@ redis_chain:
 "#;
 
         let error = run_test_topology(vec![
-            TransformsConfig::Coalesce(CoalesceConfig {
+            Box::new(CoalesceConfig {
                 flush_when_buffered_message_count: None,
                 flush_when_millis_since_last_flush: None,
             }),
-            TransformsConfig::NullSink,
+            Box::new(NullSinkConfig),
         ])
         .await
         .unwrap_err()
@@ -190,9 +189,9 @@ redis_chain:
 "#;
 
         let error = run_test_topology(vec![
-            TransformsConfig::DebugPrinter,
-            TransformsConfig::NullSink,
-            TransformsConfig::NullSink,
+            Box::new(DebugPrinterConfig),
+            Box::new(NullSinkConfig),
+            Box::new(NullSinkConfig),
         ])
         .await
         .unwrap_err()
@@ -209,9 +208,9 @@ redis_chain:
 "#;
 
         let error = run_test_topology(vec![
-            TransformsConfig::DebugPrinter,
-            TransformsConfig::DebugPrinter,
-            TransformsConfig::DebugPrinter,
+            Box::new(DebugPrinterConfig),
+            Box::new(DebugPrinterConfig),
+            Box::new(DebugPrinterConfig),
         ])
         .await
         .unwrap_err()
@@ -229,10 +228,10 @@ redis_chain:
 "#;
 
         let error = run_test_topology(vec![
-            TransformsConfig::DebugPrinter,
-            TransformsConfig::DebugPrinter,
-            TransformsConfig::NullSink,
-            TransformsConfig::DebugPrinter,
+            Box::new(DebugPrinterConfig),
+            Box::new(DebugPrinterConfig),
+            Box::new(NullSinkConfig),
+            Box::new(DebugPrinterConfig),
         ])
         .await
         .unwrap_err()
@@ -242,20 +241,20 @@ redis_chain:
     }
 
     #[tokio::test]
-    async fn test_validate_chain_valid_subchain_scatter() {
-        let subchain = vec![
-            TransformsConfig::DebugPrinter,
-            TransformsConfig::DebugPrinter,
-            TransformsConfig::NullSink,
-        ];
+    async fn test_validate_chain_valid_subchain_consistent_scatter() {
+        let subchain = TransformChainConfig(vec![
+            Box::new(DebugPrinterConfig) as Box<dyn TransformConfig>,
+            Box::new(DebugPrinterConfig),
+            Box::new(NullSinkConfig),
+        ]);
 
         let mut route_map = HashMap::new();
         route_map.insert("subchain-1".to_string(), subchain);
 
         run_test_topology(vec![
-            TransformsConfig::DebugPrinter,
-            TransformsConfig::DebugPrinter,
-            TransformsConfig::TuneableConsistencyScatter(TuneableConsistencyScatterConfig {
+            Box::new(DebugPrinterConfig),
+            Box::new(DebugPrinterConfig),
+            Box::new(TuneableConsistencyScatterConfig {
                 route_map,
                 write_consistency: 1,
                 read_consistency: 1,
@@ -274,20 +273,20 @@ redis_chain:
       Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
 "#;
 
-        let subchain = vec![
-            TransformsConfig::DebugPrinter,
-            TransformsConfig::NullSink,
-            TransformsConfig::DebugPrinter,
-            TransformsConfig::NullSink,
-        ];
+        let subchain = TransformChainConfig(vec![
+            Box::new(DebugPrinterConfig) as Box<dyn TransformConfig>,
+            Box::new(NullSinkConfig),
+            Box::new(DebugPrinterConfig),
+            Box::new(NullSinkConfig),
+        ]);
 
         let mut route_map = HashMap::new();
         route_map.insert("subchain-1".to_string(), subchain);
 
         let error = run_test_topology(vec![
-            TransformsConfig::DebugPrinter,
-            TransformsConfig::DebugPrinter,
-            TransformsConfig::TuneableConsistencyScatter(TuneableConsistencyScatterConfig {
+            Box::new(DebugPrinterConfig),
+            Box::new(DebugPrinterConfig),
+            Box::new(TuneableConsistencyScatterConfig {
                 route_map,
                 write_consistency: 1,
                 read_consistency: 1,
@@ -302,22 +301,20 @@ redis_chain:
 
     #[tokio::test]
     async fn test_validate_chain_valid_subchain_redis_cache() {
-        let chain = vec![
-            TransformsConfig::DebugPrinter,
-            TransformsConfig::DebugPrinter,
-            TransformsConfig::NullSink,
-        ];
-
         let caching_schema = HashMap::new();
 
         run_test_topology(vec![
-            TransformsConfig::DebugPrinter,
-            TransformsConfig::DebugPrinter,
-            TransformsConfig::RedisCache(RedisCacheConfig {
-                chain,
+            Box::new(DebugPrinterConfig),
+            Box::new(DebugPrinterConfig),
+            Box::new(RedisCacheConfig {
+                chain: TransformChainConfig(vec![
+                    Box::new(DebugPrinterConfig),
+                    Box::new(DebugPrinterConfig),
+                    Box::new(NullSinkConfig),
+                ]),
                 caching_schema,
             }),
-            TransformsConfig::NullSink,
+            Box::new(NullSinkConfig),
         ])
         .await
         .unwrap();
@@ -332,21 +329,19 @@ redis_chain:
       Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
 "#;
 
-        let chain = vec![
-            TransformsConfig::DebugPrinter,
-            TransformsConfig::NullSink,
-            TransformsConfig::DebugPrinter,
-            TransformsConfig::NullSink,
-        ];
-
         let error = run_test_topology(vec![
-            TransformsConfig::DebugPrinter,
-            TransformsConfig::DebugPrinter,
-            TransformsConfig::RedisCache(RedisCacheConfig {
-                chain,
+            Box::new(DebugPrinterConfig),
+            Box::new(DebugPrinterConfig),
+            Box::new(RedisCacheConfig {
+                chain: TransformChainConfig(vec![
+                    Box::new(DebugPrinterConfig),
+                    Box::new(NullSinkConfig),
+                    Box::new(DebugPrinterConfig),
+                    Box::new(NullSinkConfig),
+                ]),
                 caching_schema: HashMap::new(),
             }),
-            TransformsConfig::NullSink,
+            Box::new(NullSinkConfig),
         ])
         .await
         .unwrap_err()
@@ -357,18 +352,16 @@ redis_chain:
 
     #[tokio::test]
     async fn test_validate_chain_valid_subchain_parallel_map() {
-        let chain = vec![
-            TransformsConfig::DebugPrinter,
-            TransformsConfig::DebugPrinter,
-            TransformsConfig::NullSink,
-        ];
-
         run_test_topology(vec![
-            TransformsConfig::DebugPrinter,
-            TransformsConfig::DebugPrinter,
-            TransformsConfig::ParallelMap(ParallelMapConfig {
+            Box::new(DebugPrinterConfig),
+            Box::new(DebugPrinterConfig),
+            Box::new(ParallelMapConfig {
                 parallelism: 1,
-                chain,
+                chain: TransformChainConfig(vec![
+                    Box::new(DebugPrinterConfig),
+                    Box::new(DebugPrinterConfig),
+                    Box::new(NullSinkConfig),
+                ]),
                 ordered_results: false,
             }),
         ])
@@ -385,19 +378,17 @@ redis_chain:
       Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
 "#;
 
-        let chain = vec![
-            TransformsConfig::DebugPrinter,
-            TransformsConfig::NullSink,
-            TransformsConfig::DebugPrinter,
-            TransformsConfig::NullSink,
-        ];
-
         let error = run_test_topology(vec![
-            TransformsConfig::DebugPrinter,
-            TransformsConfig::DebugPrinter,
-            TransformsConfig::ParallelMap(ParallelMapConfig {
+            Box::new(DebugPrinterConfig),
+            Box::new(DebugPrinterConfig),
+            Box::new(ParallelMapConfig {
                 parallelism: 1,
-                chain,
+                chain: TransformChainConfig(vec![
+                    Box::new(DebugPrinterConfig),
+                    Box::new(NullSinkConfig),
+                    Box::new(DebugPrinterConfig),
+                    Box::new(NullSinkConfig),
+                ]),
                 ordered_results: false,
             }),
         ])
@@ -417,20 +408,20 @@ redis_chain:
       Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
 "#;
 
-        let subchain = vec![
-            TransformsConfig::DebugPrinter,
-            TransformsConfig::NullSink,
-            TransformsConfig::DebugPrinter,
-            TransformsConfig::NullSink,
-        ];
+        let subchain = TransformChainConfig(vec![
+            Box::new(DebugPrinterConfig),
+            Box::new(NullSinkConfig),
+            Box::new(DebugPrinterConfig),
+            Box::new(NullSinkConfig),
+        ]);
 
         let mut route_map = HashMap::new();
         route_map.insert("subchain-1".to_string(), subchain);
 
         let error = run_test_topology(vec![
-            TransformsConfig::DebugPrinter,
-            TransformsConfig::DebugPrinter,
-            TransformsConfig::TuneableConsistencyScatter(TuneableConsistencyScatterConfig {
+            Box::new(DebugPrinterConfig),
+            Box::new(DebugPrinterConfig),
+            Box::new(TuneableConsistencyScatterConfig {
                 route_map,
                 write_consistency: 1,
                 read_consistency: 1,
@@ -452,18 +443,18 @@ redis_chain:
       Non-terminating transform "DebugPrinter" is last in chain. Last transform must be terminating.
 "#;
 
-        let subchain = vec![
-            TransformsConfig::DebugPrinter,
-            TransformsConfig::DebugPrinter,
-        ];
+        let subchain = TransformChainConfig(vec![
+            Box::new(DebugPrinterConfig),
+            Box::new(DebugPrinterConfig),
+        ]);
 
         let mut route_map = HashMap::new();
         route_map.insert("subchain-1".to_string(), subchain);
 
         let error = run_test_topology(vec![
-            TransformsConfig::DebugPrinter,
-            TransformsConfig::DebugPrinter,
-            TransformsConfig::TuneableConsistencyScatter(TuneableConsistencyScatterConfig {
+            Box::new(DebugPrinterConfig),
+            Box::new(DebugPrinterConfig),
+            Box::new(TuneableConsistencyScatterConfig {
                 route_map,
                 write_consistency: 1,
                 read_consistency: 1,
@@ -486,19 +477,19 @@ redis_chain:
       Non-terminating transform "DebugPrinter" is last in chain. Last transform must be terminating.
 "#;
 
-        let subchain = vec![
-            TransformsConfig::DebugPrinter,
-            TransformsConfig::NullSink,
-            TransformsConfig::DebugPrinter,
-        ];
+        let subchain = TransformChainConfig(vec![
+            Box::new(DebugPrinterConfig),
+            Box::new(NullSinkConfig),
+            Box::new(DebugPrinterConfig),
+        ]);
 
         let mut route_map = HashMap::new();
         route_map.insert("subchain-1".to_string(), subchain);
 
         let error = run_test_topology(vec![
-            TransformsConfig::DebugPrinter,
-            TransformsConfig::DebugPrinter,
-            TransformsConfig::TuneableConsistencyScatter(TuneableConsistencyScatterConfig {
+            Box::new(DebugPrinterConfig),
+            Box::new(DebugPrinterConfig),
+            Box::new(TuneableConsistencyScatterConfig {
                 route_map,
                 write_consistency: 1,
                 read_consistency: 1,

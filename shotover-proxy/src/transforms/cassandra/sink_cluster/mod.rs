@@ -6,7 +6,7 @@ use crate::message::{Message, Messages, Metadata};
 use crate::message_value::{IntSize, MessageValue};
 use crate::tls::{TlsConnector, TlsConnectorConfig};
 use crate::transforms::cassandra::connection::{CassandraConnection, Response};
-use crate::transforms::{Transform, TransformBuilder, Transforms, Wrapper};
+use crate::transforms::{Transform, TransformBuilder, TransformConfig, Transforms, Wrapper};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use cassandra_protocol::events::ServerEvent;
@@ -79,8 +79,10 @@ pub struct CassandraSinkClusterConfig {
     pub read_timeout: Option<u64>,
 }
 
-impl CassandraSinkClusterConfig {
-    pub async fn get_builder(&self, chain_name: String) -> Result<Box<dyn TransformBuilder>> {
+#[typetag::deserialize(name = "CassandraSinkCluster")]
+#[async_trait(?Send)]
+impl TransformConfig for CassandraSinkClusterConfig {
+    async fn get_builder(&self, chain_name: String) -> Result<Box<dyn TransformBuilder>> {
         let tls = self.tls.clone().map(TlsConnector::new).transpose()?;
         let mut shotover_nodes = self.shotover_nodes.clone();
         let index = self

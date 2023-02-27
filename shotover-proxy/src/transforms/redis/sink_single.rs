@@ -6,8 +6,9 @@ use crate::frame::{Frame, RedisFrame};
 use crate::message::{Message, Messages};
 use crate::tcp;
 use crate::tls::{AsyncStream, TlsConnector, TlsConnectorConfig};
-use crate::transforms::ChainResponse;
-use crate::transforms::{Transform, TransformBuilder, Transforms, Wrapper};
+use crate::transforms::{
+    ChainResponse, Transform, TransformBuilder, TransformConfig, Transforms, Wrapper,
+};
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use futures::{FutureExt, SinkExt, StreamExt};
@@ -29,8 +30,10 @@ pub struct RedisSinkSingleConfig {
     pub connect_timeout_ms: u64,
 }
 
-impl RedisSinkSingleConfig {
-    pub async fn get_builder(&self, chain_name: String) -> Result<Box<dyn TransformBuilder>> {
+#[typetag::deserialize(name = "RedisSinkSingle")]
+#[async_trait(?Send)]
+impl TransformConfig for RedisSinkSingleConfig {
+    async fn get_builder(&self, chain_name: String) -> Result<Box<dyn TransformBuilder>> {
         let tls = self.tls.clone().map(TlsConnector::new).transpose()?;
         Ok(Box::new(RedisSinkSingleBuilder::new(
             self.address.clone(),

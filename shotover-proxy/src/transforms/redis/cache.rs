@@ -1,10 +1,9 @@
+use crate::config::chain::TransformChainConfig;
 use crate::error::ChainResponse;
 use crate::frame::{CassandraFrame, CassandraOperation, Frame, RedisFrame};
 use crate::message::{Message, Messages};
 use crate::transforms::chain::{TransformChain, TransformChainBuilder};
-use crate::transforms::{
-    build_chain_from_config, Transform, TransformBuilder, Transforms, TransformsConfig, Wrapper,
-};
+use crate::transforms::{Transform, TransformBuilder, TransformConfig, Transforms, Wrapper};
 use anyhow::{bail, Result};
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -78,11 +77,13 @@ impl From<&TableCacheSchemaConfig> for TableCacheSchema {
 #[derive(Deserialize, Debug)]
 pub struct RedisConfig {
     pub caching_schema: HashMap<String, TableCacheSchemaConfig>,
-    pub chain: Vec<TransformsConfig>,
+    pub chain: TransformChainConfig,
 }
 
-impl RedisConfig {
-    pub async fn get_builder(&self) -> Result<Box<dyn TransformBuilder>> {
+#[typetag::deserialize(name = "RedisCache")]
+#[async_trait(?Send)]
+impl TransformConfig for RedisConfig {
+    async fn get_builder(&self, _chain_name: String) -> Result<Box<dyn TransformBuilder>> {
         let missed_requests = register_counter!("cache_miss");
 
         let caching_schema: HashMap<FQName, TableCacheSchema> = self
@@ -92,7 +93,7 @@ impl RedisConfig {
             .collect();
 
         Ok(Box::new(SimpleRedisCacheBuilder {
-            cache_chain: build_chain_from_config("cache_chain".to_string(), &self.chain).await?,
+            cache_chain: self.chain.get_builder("cache_chain".to_string()).await?,
             caching_schema,
             missed_requests,
         }))
