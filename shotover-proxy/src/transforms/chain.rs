@@ -201,7 +201,7 @@ impl TransformChain {
 #[derivative(Debug, Clone)]
 pub struct TransformChainBuilder {
     pub name: String,
-    pub chain: Vec<TransformBuilder>,
+    pub chain: Vec<Box<dyn TransformBuilder>>,
 
     #[derivative(Debug = "ignore")]
     chain_total: Counter,
@@ -210,7 +210,7 @@ pub struct TransformChainBuilder {
 }
 
 impl TransformChainBuilder {
-    pub fn new(chain: Vec<TransformBuilder>, name: String) -> Self {
+    pub fn new(chain: Vec<Box<dyn TransformBuilder>>, name: String) -> Self {
         for transform in &chain {
             register_counter!("shotover_transform_total", "transform" => transform.get_name());
             register_counter!("shotover_transform_failures", "transform" => transform.get_name());
@@ -381,7 +381,6 @@ mod chain_tests {
     use crate::transforms::chain::TransformChainBuilder;
     use crate::transforms::debug::printer::DebugPrinter;
     use crate::transforms::null::NullSink;
-    use crate::transforms::TransformBuilder;
 
     #[tokio::test]
     async fn test_validate_invalid_chain() {
@@ -396,9 +395,9 @@ mod chain_tests {
     async fn test_validate_valid_chain() {
         let chain = TransformChainBuilder::new(
             vec![
-                TransformBuilder::DebugPrinter(DebugPrinter::new()),
-                TransformBuilder::DebugPrinter(DebugPrinter::new()),
-                TransformBuilder::NullSink(NullSink::default()),
+                Box::<DebugPrinter>::default(),
+                Box::<DebugPrinter>::default(),
+                Box::<NullSink>::default(),
             ],
             "test-chain".to_string(),
         );

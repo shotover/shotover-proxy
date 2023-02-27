@@ -2,7 +2,7 @@ use crate::error::ChainResponse;
 use crate::message::{Message, QueryType};
 use crate::transforms::chain::{BufferedChain, TransformChainBuilder};
 use crate::transforms::{
-    build_chain_from_config, Transform, TransformBuilder, TransformsConfig, Wrapper,
+    build_chain_from_config, Transform, TransformBuilder, Transforms, TransformsConfig, Wrapper,
 };
 use anyhow::Result;
 use async_trait::async_trait;
@@ -20,7 +20,7 @@ pub struct ConsistentScatterConfig {
 }
 
 impl ConsistentScatterConfig {
-    pub async fn get_builder(&self) -> Result<TransformBuilder> {
+    pub async fn get_builder(&self) -> Result<Box<dyn TransformBuilder>> {
         let mut route_map = Vec::with_capacity(self.route_map.len());
         warn!("Using this transform is considered unstable - Does not work with REDIS pipelines");
 
@@ -29,13 +29,11 @@ impl ConsistentScatterConfig {
         }
         route_map.sort_by_key(|x| x.name.clone());
 
-        Ok(TransformBuilder::ConsistentScatter(
-            ConsistentScatterBuilder {
-                route_map,
-                write_consistency: self.write_consistency,
-                read_consistency: self.read_consistency,
-            },
-        ))
+        Ok(Box::new(ConsistentScatterBuilder {
+            route_map,
+            write_consistency: self.write_consistency,
+            read_consistency: self.read_consistency,
+        }))
     }
 }
 
@@ -46,12 +44,28 @@ pub struct ConsistentScatterBuilder {
     read_consistency: i32,
 }
 
-impl ConsistentScatterBuilder {
-    pub fn is_terminating(&self) -> bool {
+impl TransformBuilder for ConsistentScatterBuilder {
+    fn build(&self) -> Transforms {
+        Transforms::ConsistentScatter(ConsistentScatter {
+            route_map: self
+                .route_map
+                .iter()
+                .map(|x| x.build_buffered(10))
+                .collect(),
+            write_consistency: self.write_consistency,
+            read_consistency: self.read_consistency,
+        })
+    }
+
+    fn get_name(&self) -> &'static str {
+        "ConsistentScatter"
+    }
+
+    fn is_terminating(&self) -> bool {
         true
     }
 
-    pub fn validate(&self) -> Vec<String> {
+    fn validate(&self) -> Vec<String> {
         let mut errors = self
             .route_map
             .iter()
@@ -67,22 +81,6 @@ impl ConsistentScatterBuilder {
             errors.insert(0, format!("{}:", self.get_name()));
         }
         errors
-    }
-
-    fn get_name(&self) -> &'static str {
-        "ConsistentScatter"
-    }
-
-    pub fn build(&self) -> ConsistentScatter {
-        ConsistentScatter {
-            route_map: self
-                .route_map
-                .iter()
-                .map(|x| x.build_buffered(10))
-                .collect(),
-            write_consistency: self.write_consistency,
-            read_consistency: self.read_consistency,
-        }
     }
 }
 
@@ -255,10 +253,8 @@ mod scatter_transform_tests {
             RedisFrame::BulkString(Bytes::from_static(b"foo")),
         ))]);
 
-        let ok_repeat = TransformBuilder::DebugReturner(DebugReturner::new(Response::Message(
-            response.clone(),
-        )));
-        let err_repeat = TransformBuilder::DebugReturner(DebugReturner::new(Response::Fail));
+        let ok_repeat = Box::new(DebugReturner::new(Response::Message(response.clone())));
+        let err_repeat = Box::new(DebugReturner::new(Response::Fail));
 
         let mut two_of_three = HashMap::new();
         two_of_three.insert(
@@ -319,9 +315,9 @@ mod scatter_transform_tests {
     async fn test_validate_invalid_chain() {
         let chain_1 = TransformChainBuilder::new(
             vec![
-                TransformBuilder::DebugPrinter(DebugPrinter::new()),
-                TransformBuilder::DebugPrinter(DebugPrinter::new()),
-                TransformBuilder::NullSink(NullSink::default()),
+                Box::<DebugPrinter>::default(),
+                Box::<DebugPrinter>::default(),
+                Box::<NullSink>::default(),
             ],
             "test-chain-1".to_string(),
         );
@@ -347,17 +343,17 @@ mod scatter_transform_tests {
     async fn test_validate_valid_chain() {
         let chain_1 = TransformChainBuilder::new(
             vec![
-                TransformBuilder::DebugPrinter(DebugPrinter::new()),
-                TransformBuilder::DebugPrinter(DebugPrinter::new()),
-                TransformBuilder::NullSink(NullSink::default()),
+                Box::<DebugPrinter>::default(),
+                Box::<DebugPrinter>::default(),
+                Box::<NullSink>::default(),
             ],
             "test-chain-1".to_string(),
         );
         let chain_2 = TransformChainBuilder::new(
             vec![
-                TransformBuilder::DebugPrinter(DebugPrinter::new()),
-                TransformBuilder::DebugPrinter(DebugPrinter::new()),
-                TransformBuilder::NullSink(NullSink::default()),
+                Box::<DebugPrinter>::default(),
+                Box::<DebugPrinter>::default(),
+                Box::<NullSink>::default(),
             ],
             "test-chain-2".to_string(),
         );

@@ -1,7 +1,7 @@
 use crate::error::ChainResponse;
 use crate::transforms::chain::{BufferedChain, TransformChainBuilder};
 use crate::transforms::{
-    build_chain_from_config, Transform, TransformBuilder, TransformsConfig, Wrapper,
+    build_chain_from_config, Transform, TransformBuilder, Transforms, TransformsConfig, Wrapper,
 };
 use anyhow::Result;
 use async_trait::async_trait;
@@ -38,12 +38,28 @@ impl TeeBuilder {
             dropped_messages,
         }
     }
+}
+
+impl TransformBuilder for TeeBuilder {
+    fn build(&self) -> Transforms {
+        Transforms::Tee(Tee {
+            tx: self.tx.build_buffered(self.buffer_size),
+            mismatch_chain: self
+                .mismatch_chain
+                .as_ref()
+                .map(|x| x.build_buffered(self.buffer_size)),
+            buffer_size: self.buffer_size,
+            behavior: self.behavior.clone(),
+            timeout_micros: self.timeout_micros,
+            dropped_messages: self.dropped_messages.clone(),
+        })
+    }
 
     fn get_name(&self) -> &'static str {
         "Tee"
     }
 
-    pub fn validate(&self) -> Vec<String> {
+    fn validate(&self) -> Vec<String> {
         if let Some(mismatch_chain) = &self.mismatch_chain {
             let mut errors = mismatch_chain
                 .validate()
@@ -58,24 +74,6 @@ impl TeeBuilder {
             errors
         } else {
             vec![]
-        }
-    }
-
-    pub fn is_terminating(&self) -> bool {
-        false
-    }
-
-    pub fn build(&self) -> Tee {
-        Tee {
-            tx: self.tx.build_buffered(self.buffer_size),
-            mismatch_chain: self
-                .mismatch_chain
-                .as_ref()
-                .map(|x| x.build_buffered(self.buffer_size)),
-            buffer_size: self.buffer_size,
-            behavior: self.behavior.clone(),
-            timeout_micros: self.timeout_micros,
-            dropped_messages: self.dropped_messages.clone(),
         }
     }
 }
@@ -105,7 +103,7 @@ pub struct TeeConfig {
 }
 
 impl TeeConfig {
-    pub async fn get_builder(&self) -> Result<TransformBuilder> {
+    pub async fn get_builder(&self) -> Result<Box<dyn TransformBuilder>> {
         let buffer_size = self.buffer_size.unwrap_or(5);
         let mismatch_chain =
             if let Some(ConsistencyBehavior::SubchainOnMismatch(mismatch_chain)) = &self.behavior {
@@ -115,7 +113,7 @@ impl TeeConfig {
             };
         let tee_chain = build_chain_from_config("tee_chain".to_string(), &self.chain).await?;
 
-        Ok(TransformBuilder::Tee(TeeBuilder::new(
+        Ok(Box::new(TeeBuilder::new(
             tee_chain,
             mismatch_chain,
             buffer_size,

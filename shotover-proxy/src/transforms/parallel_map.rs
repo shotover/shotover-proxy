@@ -2,7 +2,7 @@ use crate::error::ChainResponse;
 use crate::message::Messages;
 use crate::transforms::chain::{TransformChain, TransformChainBuilder};
 use crate::transforms::{
-    build_chain_from_config, Transform, TransformBuilder, TransformsConfig, Wrapper,
+    build_chain_from_config, Transform, TransformBuilder, Transforms, TransformsConfig, Wrapper,
 };
 use anyhow::Result;
 use async_trait::async_trait;
@@ -74,10 +74,10 @@ pub struct ParallelMapConfig {
 }
 
 impl ParallelMapConfig {
-    pub async fn get_builder(&self) -> Result<TransformBuilder> {
+    pub async fn get_builder(&self) -> Result<Box<dyn TransformBuilder>> {
         let chain = build_chain_from_config("parallel_map_chain".into(), &self.chain).await?;
 
-        Ok(TransformBuilder::ParallelMap(ParallelMapBuilder {
+        Ok(Box::new(ParallelMapBuilder {
             chains: std::iter::repeat(chain)
                 .take(self.parallelism as usize)
                 .collect_vec(),
@@ -121,19 +121,19 @@ impl Transform for ParallelMap {
     }
 }
 
-impl ParallelMapBuilder {
-    pub fn build(&self) -> ParallelMap {
-        ParallelMap {
+impl TransformBuilder for ParallelMapBuilder {
+    fn build(&self) -> Transforms {
+        Transforms::ParallelMap(ParallelMap {
             chains: self.chains.iter().map(|x| x.build()).collect(),
             ordered: self.ordered,
-        }
+        })
     }
 
     fn get_name(&self) -> &'static str {
         "ParallelMap"
     }
 
-    pub fn validate(&self) -> Vec<String> {
+    fn validate(&self) -> Vec<String> {
         let mut errors = self
             .chains
             .iter()
@@ -153,7 +153,7 @@ impl ParallelMapBuilder {
         errors
     }
 
-    pub fn is_terminating(&self) -> bool {
+    fn is_terminating(&self) -> bool {
         true
     }
 }
@@ -170,9 +170,9 @@ mod parallel_map_tests {
     async fn test_validate_invalid_chain() {
         let chain_1 = TransformChainBuilder::new(
             vec![
-                TransformBuilder::DebugPrinter(DebugPrinter::new()),
-                TransformBuilder::DebugPrinter(DebugPrinter::new()),
-                TransformBuilder::NullSink(NullSink::default()),
+                Box::<DebugPrinter>::default(),
+                Box::<DebugPrinter>::default(),
+                Box::<NullSink>::default(),
             ],
             "test-chain-1".to_string(),
         );
@@ -197,17 +197,17 @@ mod parallel_map_tests {
     async fn test_validate_valid_chain() {
         let chain_1 = TransformChainBuilder::new(
             vec![
-                TransformBuilder::DebugPrinter(DebugPrinter::new()),
-                TransformBuilder::DebugPrinter(DebugPrinter::new()),
-                TransformBuilder::NullSink(NullSink::default()),
+                Box::<DebugPrinter>::default(),
+                Box::<DebugPrinter>::default(),
+                Box::<NullSink>::default(),
             ],
             "test-chain-1".to_string(),
         );
         let chain_2 = TransformChainBuilder::new(
             vec![
-                TransformBuilder::DebugPrinter(DebugPrinter::new()),
-                TransformBuilder::DebugPrinter(DebugPrinter::new()),
-                TransformBuilder::NullSink(NullSink::default()),
+                Box::<DebugPrinter>::default(),
+                Box::<DebugPrinter>::default(),
+                Box::<NullSink>::default(),
             ],
             "test-chain-2".to_string(),
         );
