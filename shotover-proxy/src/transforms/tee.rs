@@ -98,7 +98,7 @@ pub enum ConsistencyBehavior {
     SubchainOnMismatch(BufferedChain),
 }
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Debug)]
 pub struct TeeConfig {
     pub behavior: Option<ConsistencyBehaviorConfig>,
     pub timeout_micros: Option<u64>,
@@ -106,7 +106,7 @@ pub struct TeeConfig {
     pub buffer_size: Option<usize>,
 }
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Debug)]
 pub enum ConsistencyBehaviorConfig {
     Ignore,
     FailOnMismatch,

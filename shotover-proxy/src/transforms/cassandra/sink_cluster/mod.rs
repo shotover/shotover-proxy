@@ -66,7 +66,7 @@ const PEERS_V2_TABLE: FQNameRef = FQNameRef {
     name: IdentifierRef::Quoted("peers_v2"),
 };
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Debug)]
 pub struct CassandraSinkClusterConfig {
     /// contact points must be within the specified data_center and rack.
     /// If this is not followed, shotover's invariants will still be upheld but shotover will communicate with a

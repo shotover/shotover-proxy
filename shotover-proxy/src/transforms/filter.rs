@@ -15,7 +15,7 @@ pub struct QueryTypeFilter {
     pub filter: QueryType,
 }
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Debug)]
 pub struct QueryTypeFilterConfig {
     pub filter: QueryType,
 }

@@ -66,7 +66,7 @@ where
     }
 }
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Debug)]
 pub struct ParallelMapConfig {
     pub parallelism: u32,
     pub chain: Vec<TransformsConfig>,

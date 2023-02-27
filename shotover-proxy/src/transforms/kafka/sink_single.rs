@@ -14,7 +14,7 @@ use std::time::Duration;
 use tokio::sync::{mpsc, oneshot};
 use tokio::time::timeout;
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Debug)]
 pub struct KafkaSinkSingleConfig {
     #[serde(rename = "remote_address")]
     pub address: String,
