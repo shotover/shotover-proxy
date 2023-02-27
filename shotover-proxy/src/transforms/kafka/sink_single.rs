@@ -1,5 +1,7 @@
 use crate::codec::kafka::{Direction, KafkaCodecBuilder};
 use crate::error::ChainResponse;
+use crate::frame::kafka::{KafkaFrame, ResponseBody};
+use crate::frame::Frame;
 use crate::message::Messages;
 use crate::tcp;
 use crate::transforms::util::cluster_connection_pool::{spawn_read_write_tasks, Connection};
@@ -111,11 +113,29 @@ impl Transform for KafkaSinkSingle {
         let responses = responses?;
 
         // TODO: since kafka will never send requests out of order I wonder if it would be faster to use an mpsc instead of a oneshot or maybe just directly run the sending/receiving here?
-        if let Some(read_timeout) = self.read_timeout {
+        let mut responses = if let Some(read_timeout) = self.read_timeout {
             timeout(read_timeout, read_responses(responses)).await?
         } else {
             read_responses(responses).await
+        }?;
+
+        // Rewrite FindCoordinator responses messages to use shotovers port instead of kafkas port
+        for response in &mut responses {
+            if let Some(Frame::Kafka(KafkaFrame::Response {
+                body: ResponseBody::FindCoordinator(find_coordinator),
+                ..
+            })) = response.frame()
+            {
+                let port = message_wrapper.local_addr.port() as i32;
+                find_coordinator.port = port;
+                for coordinator in &mut find_coordinator.coordinators {
+                    coordinator.port = port;
+                }
+                response.invalidate_cache();
+            }
         }
+
+        Ok(responses)
     }
 
     fn set_pushed_messages_tx(&mut self, pushed_messages_tx: mpsc::UnboundedSender<Messages>) {

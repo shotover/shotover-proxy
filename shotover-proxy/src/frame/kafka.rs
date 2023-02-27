@@ -2,13 +2,14 @@ use crate::codec::kafka::RequestHeader as CodecRequestHeader;
 use anyhow::{anyhow, Context, Result};
 use bytes::{BufMut, Bytes, BytesMut};
 use kafka_protocol::messages::{
-    ApiKey, ProduceRequest, ProduceResponse, RequestHeader, ResponseHeader,
+    ApiKey, FindCoordinatorRequest, FindCoordinatorResponse, ProduceRequest, ProduceResponse,
+    RequestHeader, ResponseHeader,
 };
 use kafka_protocol::protocol::{Decodable, Encodable};
 
 // No way to know which version to use, just have to guess
-const REQUEST_HEADER_VERSION: i16 = 2;
-const RESPONSE_HEADER_VERSION: i16 = 1;
+const REQUEST_HEADER_VERSION: i16 = 1;
+const RESPONSE_HEADER_VERSION: i16 = 0;
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum KafkaFrame {
@@ -26,12 +27,14 @@ pub enum KafkaFrame {
 #[derive(Debug, PartialEq, Clone)]
 pub enum RequestBody {
     Produce(ProduceRequest),
+    FindCoordinator(FindCoordinatorRequest),
     Unknown { api_key: ApiKey, message: Bytes },
 }
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum ResponseBody {
     Produce(ProduceResponse),
+    FindCoordinator(FindCoordinatorResponse),
     Unknown { api_key: ApiKey, message: Bytes },
 }
 
@@ -55,11 +58,12 @@ impl KafkaFrame {
 
         let api_key = ApiKey::try_from(header.request_api_key)
             .map_err(|_| anyhow!("unknown api key {}", header.request_api_key))?;
+        let version = header.request_api_version;
         let body = match api_key {
-            ApiKey::ProduceKey => RequestBody::Produce(
-                ProduceRequest::decode(&mut bytes, header.request_api_version)
-                    .context("Failed to decode request body")?,
-            ),
+            ApiKey::ProduceKey => RequestBody::Produce(decode(&mut bytes, version)?),
+            ApiKey::FindCoordinatorKey => {
+                RequestBody::FindCoordinator(decode(&mut bytes, version)?)
+            }
             api_key => RequestBody::Unknown {
                 api_key,
                 message: bytes,
@@ -73,11 +77,12 @@ impl KafkaFrame {
         let header = ResponseHeader::decode(&mut bytes, RESPONSE_HEADER_VERSION)
             .context("Failed to decode response header")?;
 
+        let version = request_header.version;
         let body = match request_header.api_key {
-            ApiKey::ProduceKey => ResponseBody::Produce(
-                ProduceResponse::decode(&mut bytes, request_header.version)
-                    .context("Failed to decode response body")?,
-            ),
+            ApiKey::ProduceKey => ResponseBody::Produce(decode(&mut bytes, version)?),
+            ApiKey::FindCoordinatorKey => {
+                ResponseBody::FindCoordinator(decode(&mut bytes, version)?)
+            }
             api_key => ResponseBody::Unknown {
                 api_key,
                 message: bytes,
@@ -85,7 +90,7 @@ impl KafkaFrame {
         };
 
         Ok(KafkaFrame::Response {
-            version: request_header.version,
+            version,
             header,
             body,
         })
@@ -104,6 +109,7 @@ impl KafkaFrame {
                 let version = header.request_api_version;
                 match body {
                     RequestBody::Produce(x) => x.encode(bytes, version)?,
+                    RequestBody::FindCoordinator(x) => x.encode(bytes, version)?,
                     RequestBody::Unknown { message, .. } => bytes.extend_from_slice(&message),
                 }
             }
@@ -115,6 +121,7 @@ impl KafkaFrame {
                 header.encode(bytes, RESPONSE_HEADER_VERSION)?;
                 match body {
                     ResponseBody::Produce(x) => x.encode(bytes, version)?,
+                    ResponseBody::FindCoordinator(x) => x.encode(bytes, version)?,
                     ResponseBody::Unknown { message, .. } => bytes.extend_from_slice(&message),
                 }
             }
@@ -126,4 +133,12 @@ impl KafkaFrame {
 
         Ok(())
     }
+}
+
+fn decode<T: Decodable>(bytes: &mut Bytes, version: i16) -> Result<T> {
+    T::decode(bytes, version).context(format!(
+        "Failed to decode {} v{} body",
+        std::any::type_name::<T>(),
+        version
+    ))
 }
