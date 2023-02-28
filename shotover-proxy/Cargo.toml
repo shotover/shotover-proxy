@@ -26,7 +26,7 @@ async-trait = "0.1.30"
 clap = { version = "4.0.4", features = ["cargo", "derive"] }
 derivative = "2.1.1"
 itertools.workspace = true
-rand = "0.8.4"
+rand = { version = "0.8.4", features = ["small_rng"] }
 rand_distr = "0.4.1"
 cached = "0.42"
 tokio-openssl.workspace = true
