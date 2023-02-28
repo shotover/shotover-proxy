@@ -5,6 +5,7 @@ use kafka::RequestHeader;
 use tokio_util::codec::{Decoder, Encoder};
 
 pub mod cassandra;
+mod cassandra_frames;
 pub mod kafka;
 pub mod redis;
 
