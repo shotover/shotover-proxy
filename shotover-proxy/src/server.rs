@@ -1,3 +1,4 @@
+use crate::codec::{CodecBuilder, CodecReadError};
 use crate::message::Messages;
 use crate::tls::{AcceptError, TlsAcceptor};
 use crate::transforms::chain::{TransformChain, TransformChainBuilder};
@@ -16,40 +17,11 @@ use tokio::task::JoinHandle;
 use tokio::time;
 use tokio::time::timeout;
 use tokio::time::Duration;
-use tokio_util::codec::{Decoder, Encoder};
 use tokio_util::codec::{FramedRead, FramedWrite};
 use tracing::Instrument;
 use tracing::{debug, error, info, warn};
 
-#[derive(Debug)]
-pub enum CodecReadError {
-    /// The codec failed to parse a received message
-    Parser(anyhow::Error),
-    /// The tcp connection returned an error
-    Io(std::io::Error),
-    /// Respond to the client with the provided messages and then close the connection
-    RespondAndThenCloseConnection(Messages),
-}
-
-impl From<std::io::Error> for CodecReadError {
-    fn from(err: std::io::Error) -> Self {
-        CodecReadError::Io(err)
-    }
-}
-
-// TODO: Replace with trait_alias (rust-lang/rust#41517).
-pub trait CodecReadHalf: Decoder<Item = Messages, Error = CodecReadError> + Clone + Send {}
-impl<T: Decoder<Item = Messages, Error = CodecReadError> + Clone + Send> CodecReadHalf for T {}
-
-// TODO: Replace with trait_alias (rust-lang/rust#41517).
-pub trait CodecWriteHalf: Encoder<Messages, Error = anyhow::Error> + Clone + Send {}
-impl<T: Encoder<Messages, Error = anyhow::Error> + Clone + Send> CodecWriteHalf for T {}
-
-// TODO: Replace with trait_alias (rust-lang/rust#41517).
-pub trait Codec: CodecReadHalf + CodecWriteHalf {}
-impl<T: CodecReadHalf + CodecWriteHalf> Codec for T {}
-
-pub struct TcpCodecListener<C: Codec> {
+pub struct TcpCodecListener<C: CodecBuilder> {
     chain: TransformChainBuilder,
     source_name: String,
 
@@ -93,7 +65,7 @@ pub struct TcpCodecListener<C: Codec> {
     connection_handles: Vec<JoinHandle<()>>,
 }
 
-impl<C: Codec + 'static> TcpCodecListener<C> {
+impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
     #![allow(clippy::too_many_arguments)]
     pub async fn new(
         chain: TransformChainBuilder,
@@ -304,7 +276,7 @@ async fn create_listener(listen_addr: &str) -> Result<TcpListener> {
         .map_err(|e| anyhow!("{} address={}", e, listen_addr))
 }
 
-pub struct Handler<C: Codec> {
+pub struct Handler<C: CodecBuilder> {
     chain: TransformChain,
     client_details: String,
     conn_details: String,
@@ -338,7 +310,7 @@ pub struct Handler<C: Codec> {
 }
 
 fn spawn_read_write_tasks<
-    C: Codec + 'static,
+    C: CodecBuilder + 'static,
     R: AsyncRead + Unpin + Send + 'static,
     W: AsyncWrite + Unpin + Send + 'static,
 >(
@@ -350,8 +322,9 @@ fn spawn_read_write_tasks<
     out_tx: UnboundedSender<Messages>,
     mut terminate_tasks_rx: watch::Receiver<()>,
 ) {
-    let mut reader = FramedRead::new(rx, codec.clone());
-    let mut writer = FramedWrite::new(tx, codec);
+    let (decoder, encoder) = codec.build();
+    let mut reader = FramedRead::new(rx, decoder);
+    let mut writer = FramedWrite::new(tx, encoder);
 
     // Shutdown flows
     //
@@ -435,7 +408,7 @@ fn spawn_read_write_tasks<
     );
 }
 
-impl<C: Codec + 'static> Handler<C> {
+impl<C: CodecBuilder + 'static> Handler<C> {
     /// Process a single connection.
     ///
     /// Request frames are read from the socket and processed. Responses are
@@ -592,7 +565,7 @@ impl<C: Codec + 'static> Handler<C> {
     }
 }
 
-impl<C: Codec> Drop for Handler<C> {
+impl<C: CodecBuilder> Drop for Handler<C> {
     fn drop(&mut self) {
         // Add a permit back to the semaphore.
         //

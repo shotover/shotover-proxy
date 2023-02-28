@@ -1,8 +1,8 @@
-use crate::codec::redis::redis_query_type;
 use crate::error::ChainResponse;
+use crate::frame::redis::redis_query_type;
 use crate::frame::{Frame, RedisFrame};
 use crate::message::{Message, QueryType};
-use crate::transforms::{Transform, Wrapper};
+use crate::transforms::{Transform, TransformBuilder, Transforms, Wrapper};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -17,6 +17,16 @@ pub struct RedisTimestampTagger {}
 impl RedisTimestampTagger {
     pub fn new() -> Self {
         RedisTimestampTagger {}
+    }
+}
+
+impl TransformBuilder for RedisTimestampTagger {
+    fn build(&self) -> Transforms {
+        Transforms::RedisTimestampTagger(self.clone())
+    }
+
+    fn get_name(&self) -> &'static str {
+        "RedisTimestampTagger"
     }
 }
 

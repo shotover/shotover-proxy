@@ -1,7 +1,7 @@
 use tracing::info;
 
 use crate::error::ChainResponse;
-use crate::transforms::{Transform, Wrapper};
+use crate::transforms::{Transform, TransformBuilder, Transforms, Wrapper};
 use async_trait::async_trait;
 
 #[derive(Debug, Clone)]
@@ -18,6 +18,16 @@ impl Default for DebugPrinter {
 impl DebugPrinter {
     pub fn new() -> DebugPrinter {
         DebugPrinter { counter: 0 }
+    }
+}
+
+impl TransformBuilder for DebugPrinter {
+    fn build(&self) -> Transforms {
+        Transforms::DebugPrinter(self.clone())
+    }
+
+    fn get_name(&self) -> &'static str {
+        "DebugPrinter"
     }
 }
 

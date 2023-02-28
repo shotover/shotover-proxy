@@ -6,7 +6,7 @@ use serde::Deserialize;
 
 use crate::error::ChainResponse;
 use crate::frame::Frame;
-use crate::transforms::{Transform, TransformBuilder, Wrapper};
+use crate::transforms::{Transform, TransformBuilder, Transforms, Wrapper};
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct RedisClusterPortsRewriteConfig {
@@ -14,12 +14,20 @@ pub struct RedisClusterPortsRewriteConfig {
 }
 
 impl RedisClusterPortsRewriteConfig {
-    pub async fn get_builder(&self) -> Result<TransformBuilder> {
-        Ok(TransformBuilder::RedisClusterPortsRewrite(
-            RedisClusterPortsRewrite {
-                new_port: self.new_port,
-            },
-        ))
+    pub async fn get_builder(&self) -> Result<Box<dyn TransformBuilder>> {
+        Ok(Box::new(RedisClusterPortsRewrite {
+            new_port: self.new_port,
+        }))
+    }
+}
+
+impl TransformBuilder for RedisClusterPortsRewrite {
+    fn build(&self) -> Transforms {
+        Transforms::RedisClusterPortsRewrite(self.clone())
+    }
+
+    fn get_name(&self) -> &'static str {
+        "RedisClusterPortsRewrite"
     }
 }
 
@@ -207,7 +215,7 @@ fn is_cluster_slots(frame: &Frame) -> bool {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::codec::redis::RedisCodec;
+    use crate::codec::redis::RedisDecoder;
     use crate::transforms::redis::sink_cluster::parse_slots;
     use tokio_util::codec::Decoder;
 
@@ -270,7 +278,7 @@ mod test {
     #[test]
     fn test_rewrite_port_slots() {
         let slots_pcap: &[u8] = b"*3\r\n*4\r\n:10923\r\n:16383\r\n*3\r\n$12\r\n192.168.80.6\r\n:6379\r\n$40\r\n3a7c357ed75d2aa01fca1e14ef3735a2b2b8ffac\r\n*3\r\n$12\r\n192.168.80.3\r\n:6379\r\n$40\r\n77c01b0ddd8668fff05e3f6a8aaf5f3ccd454a79\r\n*4\r\n:5461\r\n:10922\r\n*3\r\n$12\r\n192.168.80.5\r\n:6379\r\n$40\r\n969c6215d064e68593d384541ceeb57e9520dbed\r\n*3\r\n$12\r\n192.168.80.2\r\n:6379\r\n$40\r\n3929f69990a75be7b2d49594c57fe620862e6fd6\r\n*4\r\n:0\r\n:5460\r\n*3\r\n$12\r\n192.168.80.7\r\n:6379\r\n$40\r\n15d52a65d1fc7a53e34bf9193415aa39136882b2\r\n*3\r\n$12\r\n192.168.80.4\r\n:6379\r\n$40\r\ncd023916a3528fae7e606a10d8289a665d6c47b0\r\n";
-        let mut codec = RedisCodec::new();
+        let mut codec = RedisDecoder::new();
         let mut message = codec
             .decode(&mut slots_pcap.into())
             .unwrap()

@@ -1,6 +1,6 @@
 [package]
 name = "shotover-proxy"
-version = "0.1.8"
+version = "0.1.9"
 authors = ["Ben <ben@instaclustr.com>"]
 edition = "2021"
 rust-version = "1.56"
@@ -16,22 +16,22 @@ cassandra-cpp-driver-tests = ["test-helpers/cassandra-cpp-driver-tests"]
 [dependencies]
 pretty-hex = "0.3.0"
 hex = "0.4.3"
-tokio = { version = "1.25.0", features = ["full", "macros"] }
-tokio-util = { version = "0.7.0" }
+tokio.workspace = true
+tokio-util = { version = "0.7.7" }
 tokio-stream = "0.1.2"
-bytes = "1.0.0"
+bytes.workspace = true
 bytes-utils = "0.1.1"
 futures = "0.3"
 async-trait = "0.1.30"
 clap = { version = "4.0.4", features = ["cargo", "derive"] }
 derivative = "2.1.1"
-itertools = "0.10.1"
-rand = { version = "0.8.4" }
+itertools.workspace = true
+rand = "0.8.4"
 rand_distr = "0.4.1"
 cached = "0.42"
 pin-project-lite = "0.2"
-tokio-openssl = "0.6.2"
-openssl = { version = "0.10.36", features = ["vendored"] }
+tokio-openssl.workspace = true
+openssl.workspace = true
 async-recursion = "1.0"
 governor = { version = "0.5.0", default-features = false, features = ["std", "jitter", "quanta"] }
 nonzero_ext = "0.3.0"
@@ -40,59 +40,56 @@ split-iter = "0.1.0"
 
 # Error handling
 thiserror = "1.0"
-anyhow = "1.0.31"
+anyhow.workspace = true
 backtrace = "0.3.66"
 
 # Parsers
-#cql3-parser = "0.3.1"
-cql3-parser =  { version = "0.3.1", git = "https://github.com/rukai/rust-cql3-parser", branch = "identifier_ref" }
-serde = { version = "1.0.111", features = ["derive"] }
-serde_json = "1.0"
-serde_yaml = "0.9.17"
+cql3-parser = "0.3.2"
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml.workspace = true
 bincode = "1.3.1"
 num = { version = "0.4.0", features = ["serde"] }
-uuid = { version = "1.0.0", features = ["serde", "v4"] }
+uuid.workspace = true
 bigdecimal = {version ="0.3.0", features = ["serde"] }
 base64 = "0.21.0"
 
 #Observability
 metrics = "0.20.0"
 metrics-exporter-prometheus = "0.11.0"
-tracing = { version = "0.1.15", features = ["release_max_level_info"] }
-tracing-subscriber = { version = "0.3.1", features = ["env-filter", "json"] }
+tracing.workspace = true
+tracing-subscriber.workspace = true
 tracing-appender = "0.2.0"
 hyper = { version = "0.14.14", features = ["server"] }
 halfbrown = "0.1.11"
 
 # Transform dependencies
 redis-protocol = { version = "4.0.1", features = ["decode-mut"] }
-cassandra-protocol = { git = "https://github.com/krojew/cdrs-tokio", branch = "8.0-dev" }
+cassandra-protocol.workspace = true
 crc16 = "0.4.0"
 ordered-float = { version = "3.0.0", features = ["serde"] }
 
 #Crypto
 rusoto_kms = "0.48.0"
 rusoto_signature = "0.48.0"
-csv = "1.1.6"
+csv = "1.2.0"
 strum_macros = "0.24"
 chacha20poly1305 = { version = "0.10.0", features = ["std"] }
 generic-array = { version = "0.14", features = ["serde"] }
+kafka-protocol = "0.5.0"
+dyn-clone = "1.0.10"
 
 [dev-dependencies]
-rayon = "1.5.1"
 criterion = { git = "https://github.com/shotover/criterion.rs", branch = "0.4.0-bench_with_input_fn", features = ["async_tokio"] }
-redis = { version = "0.22.0", features = ["tokio-comp", "cluster"] }
-pcap = "1.0.0"
-pktparse = { version = "0.7.0", features = ["serde"] }
-tls-parser = "0.11.0"
+redis.workspace = true
 serial_test = "1.0.0"
 cassandra-cpp = { version = "1.2.0" }
 test-helpers = { path = "../test-helpers", features = ["cassandra-cpp-driver-tests"] }
 hex-literal = "0.3.3"
-nix = "0.26.0"
-reqwest = "0.11.6"
-cdrs-tokio = { git = "https://github.com/krojew/cdrs-tokio", branch = "8.0-dev" }
+nix.workspace = true
+cdrs-tokio.workspace = true
 rstest = "0.16.0"
+rand = { version = "0.8.4", features = ["small_rng"] }
 rdkafka = { version = "0.29", features = ["cmake-build"] }
 
 [[bench]]

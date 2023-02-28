@@ -1,4 +1,4 @@
-use crate::codec::cassandra::CassandraCodecBuilder;
+use crate::codec::kafka::{Direction, KafkaCodecBuilder};
 use crate::server::TcpCodecListener;
 use crate::sources::Sources;
 use crate::tls::{TlsAcceptor, TlsAcceptorConfig};
@@ -11,7 +11,7 @@ use tokio::task::JoinHandle;
 use tracing::{error, info};
 
 #[derive(Deserialize, Debug, Clone)]
-pub struct CassandraConfig {
+pub struct KafkaConfig {
     pub listen_addr: String,
     pub connection_limit: Option<usize>,
     pub hard_connection_limit: Option<bool>,
@@ -19,14 +19,14 @@ pub struct CassandraConfig {
     pub timeout: Option<u64>,
 }
 
-impl CassandraConfig {
+impl KafkaConfig {
     pub async fn get_source(
         &self,
         chain: &TransformChainBuilder,
         trigger_shutdown_rx: watch::Receiver<bool>,
     ) -> Result<Vec<Sources>> {
-        Ok(vec![Sources::Cassandra(
-            CassandraSource::new(
+        Ok(vec![Sources::Kafka(
+            KafkaSource::new(
                 chain,
                 self.listen_addr.clone(),
                 trigger_shutdown_rx,
@@ -41,13 +41,13 @@ impl CassandraConfig {
 }
 
 #[derive(Debug)]
-pub struct CassandraSource {
+pub struct KafkaSource {
     pub name: &'static str,
     pub join_handle: JoinHandle<()>,
     pub listen_addr: String,
 }
 
-impl CassandraSource {
+impl KafkaSource {
     #![allow(clippy::too_many_arguments)]
     pub async fn new(
         chain: &TransformChainBuilder,
@@ -57,17 +57,17 @@ impl CassandraSource {
         hard_connection_limit: Option<bool>,
         tls: Option<TlsAcceptorConfig>,
         timeout: Option<u64>,
-    ) -> Result<CassandraSource> {
-        let name = "CassandraSource";
+    ) -> Result<KafkaSource> {
+        let name = "KafkaSource";
 
-        info!("Starting Cassandra source on [{}]", listen_addr);
+        info!("Starting Kafka source on [{}]", listen_addr);
 
         let mut listener = TcpCodecListener::new(
             chain.clone(),
             name.to_string(),
             listen_addr.clone(),
             hard_connection_limit.unwrap_or(false),
-            CassandraCodecBuilder::new(),
+            KafkaCodecBuilder::new(Direction::Source),
             Arc::new(Semaphore::new(connection_limit.unwrap_or(512))),
             trigger_shutdown_rx.clone(),
             tls.map(TlsAcceptor::new).transpose()?,
@@ -91,7 +91,7 @@ impl CassandraSource {
             }
         });
 
-        Ok(CassandraSource {
+        Ok(KafkaSource {
             name,
             join_handle,
             listen_addr,

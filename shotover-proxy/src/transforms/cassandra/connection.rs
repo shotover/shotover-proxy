@@ -1,8 +1,8 @@
-use crate::codec::cassandra::CassandraCodec;
+use crate::codec::cassandra::{CassandraCodecBuilder, CassandraDecoder, CassandraEncoder};
+use crate::codec::{CodecBuilder, CodecReadError};
 use crate::frame::cassandra::CassandraMetadata;
 use crate::frame::{CassandraFrame, Frame};
 use crate::message::{Message, Metadata};
-use crate::server::CodecReadError;
 use crate::tcp;
 use crate::tls::{TlsConnector, ToHostname};
 use crate::transforms::Messages;
@@ -67,7 +67,7 @@ impl CassandraConnection {
     pub async fn new<A: ToSocketAddrs + ToHostname + std::fmt::Debug>(
         connect_timeout: Duration,
         host: A,
-        codec: CassandraCodec,
+        codec: CassandraCodecBuilder,
         mut tls: Option<TlsConnector>,
         pushed_messages_tx: Option<mpsc::UnboundedSender<Messages>>,
     ) -> Result<Self> {
@@ -77,6 +77,7 @@ impl CassandraConnection {
 
         let destination = tokio::net::lookup_host(&host).await?.next().unwrap();
 
+        let (decoder, encoder) = codec.build();
         if let Some(tls) = tls.as_mut() {
             let tls_stream = tls.connect(connect_timeout, host).await?;
             let (read, write) = split(tls_stream);
@@ -85,7 +86,7 @@ impl CassandraConnection {
                     write,
                     out_rx,
                     return_tx,
-                    codec.clone(),
+                    encoder,
                     rx_process_has_shutdown_rx,
                     destination,
                 )
@@ -95,7 +96,7 @@ impl CassandraConnection {
                 rx_process(
                     read,
                     return_rx,
-                    codec.clone(),
+                    decoder,
                     pushed_messages_tx,
                     rx_process_has_shutdown_tx,
                     destination,
@@ -110,7 +111,7 @@ impl CassandraConnection {
                     write,
                     out_rx,
                     return_tx,
-                    codec.clone(),
+                    encoder,
                     rx_process_has_shutdown_rx,
                     destination,
                 )
@@ -120,7 +121,7 @@ impl CassandraConnection {
                 rx_process(
                     read,
                     return_rx,
-                    codec.clone(),
+                    decoder,
                     pushed_messages_tx,
                     rx_process_has_shutdown_tx,
                     destination,
@@ -169,7 +170,7 @@ async fn tx_process<T: AsyncWrite>(
     write: WriteHalf<T>,
     mut out_rx: mpsc::UnboundedReceiver<Request>,
     return_tx: mpsc::UnboundedSender<ReturnChannel>,
-    codec: CassandraCodec,
+    codec: CassandraEncoder,
     mut rx_process_has_shutdown_rx: oneshot::Receiver<String>,
     // Only used for error reporting
     destination: SocketAddr,
@@ -245,7 +246,7 @@ fn send_error_to_request(
 async fn rx_process<T: AsyncRead>(
     read: ReadHalf<T>,
     mut return_rx: mpsc::UnboundedReceiver<ReturnChannel>,
-    codec: CassandraCodec,
+    codec: CassandraDecoder,
     pushed_messages_tx: Option<mpsc::UnboundedSender<Messages>>,
     rx_process_has_shutdown_tx: oneshot::Sender<String>,
     // Only used for error reporting

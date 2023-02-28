@@ -6,6 +6,8 @@ use async_trait::async_trait;
 use serde::Deserialize;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use super::Transforms;
+
 static SHOWN_ERROR: AtomicBool = AtomicBool::new(false);
 
 #[derive(Debug, Clone)]
@@ -19,10 +21,20 @@ pub struct QueryTypeFilterConfig {
 }
 
 impl QueryTypeFilterConfig {
-    pub async fn get_builder(&self) -> Result<TransformBuilder> {
-        Ok(TransformBuilder::QueryTypeFilter(QueryTypeFilter {
+    pub async fn get_builder(&self) -> Result<Box<dyn TransformBuilder>> {
+        Ok(Box::new(QueryTypeFilter {
             filter: self.filter.clone(),
         }))
+    }
+}
+
+impl TransformBuilder for QueryTypeFilter {
+    fn build(&self) -> Transforms {
+        Transforms::QueryTypeFilter(self.clone())
+    }
+
+    fn get_name(&self) -> &'static str {
+        "QueryTypeFilter"
     }
 }
 
@@ -40,7 +52,12 @@ impl Transform for QueryTypeFilter {
                     None
                 }
             })
-            .map(|(i, m)| (i, m.to_filtered_reply()))
+            .map(|(i, m)| {
+                (
+                    i,
+                    m.to_error_response("Message was filtered out by shotover".to_owned()),
+                )
+            })
             .collect();
 
         for (i, _) in removed_indexes.iter().rev() {

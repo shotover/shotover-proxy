@@ -1,4 +1,4 @@
-use crate::codec::redis::RedisCodec;
+use crate::codec::redis::RedisCodecBuilder;
 use crate::error::ChainResponse;
 use crate::frame::{Frame, RedisFrame};
 use crate::message::Message;
@@ -7,7 +7,9 @@ use crate::transforms::redis::RedisError;
 use crate::transforms::redis::TransformError;
 use crate::transforms::util::cluster_connection_pool::{Authenticator, ConnectionPool};
 use crate::transforms::util::{Request, Response};
-use crate::transforms::{ResponseFuture, Transform, TransformBuilder, Wrapper, CONTEXT_CHAIN_NAME};
+use crate::transforms::{
+    ResponseFuture, Transform, TransformBuilder, Transforms, Wrapper, CONTEXT_CHAIN_NAME,
+};
 use anyhow::{anyhow, bail, ensure, Context, Result};
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -43,7 +45,7 @@ pub struct RedisSinkClusterConfig {
 }
 
 impl RedisSinkClusterConfig {
-    pub async fn get_builder(&self, chain_name: String) -> Result<TransformBuilder> {
+    pub async fn get_builder(&self, chain_name: String) -> Result<Box<dyn TransformBuilder>> {
         let mut cluster = RedisSinkCluster::new(
             self.first_contact_points.clone(),
             self.direct_destination.clone(),
@@ -65,7 +67,7 @@ impl RedisSinkClusterConfig {
             }
         }
 
-        Ok(TransformBuilder::RedisSinkCluster(cluster))
+        Ok(Box::new(cluster))
     }
 }
 
@@ -77,7 +79,7 @@ pub struct RedisSinkCluster {
     load_scores: HashMap<(String, usize), usize>,
     rng: SmallRng,
     connection_count: usize,
-    connection_pool: ConnectionPool<RedisCodec, RedisAuthenticator, UsernamePasswordToken>,
+    connection_pool: ConnectionPool<RedisCodecBuilder, RedisAuthenticator, UsernamePasswordToken>,
     reason_for_no_nodes: Option<&'static str>,
     rebuild_connections: bool,
     first_contact_points: Vec<String>,
@@ -97,8 +99,12 @@ impl RedisSinkCluster {
         let authenticator = RedisAuthenticator {};
 
         let connect_timeout = Duration::from_millis(connect_timeout_ms);
-        let connection_pool =
-            ConnectionPool::new_with_auth(connect_timeout, RedisCodec::new(), authenticator, tls)?;
+        let connection_pool = ConnectionPool::new_with_auth(
+            connect_timeout,
+            RedisCodecBuilder::new(),
+            authenticator,
+            tls,
+        )?;
 
         let sink_cluster = RedisSinkCluster {
             first_contact_points,
@@ -915,7 +921,7 @@ fn short_circuit(frame: RedisFrame) -> Result<ResponseFuture> {
 
     one_tx
         .send(Response {
-            original: Message::from_frame(Frame::None),
+            original: Message::from_frame(Frame::Redis(RedisFrame::Null)),
             response: Ok(Message::from_frame(Frame::Redis(frame))),
         })
         .map_err(|_| anyhow!("Failed to send short circuited redis frame"))?;
@@ -927,12 +933,22 @@ fn short_circuit(frame: RedisFrame) -> Result<ResponseFuture> {
     }))
 }
 
-#[async_trait]
-impl Transform for RedisSinkCluster {
+impl TransformBuilder for RedisSinkCluster {
+    fn build(&self) -> Transforms {
+        Transforms::RedisSinkCluster(self.clone())
+    }
+
+    fn get_name(&self) -> &'static str {
+        "RedisSinkCluster"
+    }
+
     fn is_terminating(&self) -> bool {
         true
     }
+}
 
+#[async_trait]
+impl Transform for RedisSinkCluster {
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
         if self.rebuild_connections {
             self.build_connections(self.token.clone()).await.ok();
@@ -954,7 +970,7 @@ impl Transform for RedisSinkCluster {
             trace!("Got resp {:?}", s);
             let Response { original, response } = s.or_else(|e| -> Result<Response> {
                 Ok(Response {
-                    original: Message::from_frame(Frame::None),
+                    original: Message::from_frame(Frame::Redis(RedisFrame::Null)),
                     response: Ok(Message::from_frame(Frame::Redis(RedisFrame::Error(
                         format!("ERR Could not route request - {e}").into(),
                     )))),
@@ -1052,6 +1068,7 @@ impl Authenticator<UsernamePasswordToken> for RedisAuthenticator {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::codec::redis::RedisDecoder;
     use tokio_util::codec::Decoder;
 
     #[test]
@@ -1059,7 +1076,7 @@ mod test {
         // Wireshark capture from a Redis cluster with 3 masters and 3 replicas.
         let slots_pcap: &[u8] = b"*3\r\n*4\r\n:10923\r\n:16383\r\n*3\r\n$12\r\n192.168.80.6\r\n:6379\r\n$40\r\n3a7c357ed75d2aa01fca1e14ef3735a2b2b8ffac\r\n*3\r\n$12\r\n192.168.80.3\r\n:6379\r\n$40\r\n77c01b0ddd8668fff05e3f6a8aaf5f3ccd454a79\r\n*4\r\n:5461\r\n:10922\r\n*3\r\n$12\r\n192.168.80.5\r\n:6379\r\n$40\r\n969c6215d064e68593d384541ceeb57e9520dbed\r\n*3\r\n$12\r\n192.168.80.2\r\n:6379\r\n$40\r\n3929f69990a75be7b2d49594c57fe620862e6fd6\r\n*4\r\n:0\r\n:5460\r\n*3\r\n$12\r\n192.168.80.7\r\n:6379\r\n$40\r\n15d52a65d1fc7a53e34bf9193415aa39136882b2\r\n*3\r\n$12\r\n192.168.80.4\r\n:6379\r\n$40\r\ncd023916a3528fae7e606a10d8289a665d6c47b0\r\n";
 
-        let mut codec = RedisCodec::new();
+        let mut codec = RedisDecoder::new();
 
         let mut message = codec
             .decode(&mut slots_pcap.into())

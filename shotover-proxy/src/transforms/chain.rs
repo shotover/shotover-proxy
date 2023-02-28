@@ -4,7 +4,6 @@ use crate::transforms::{TransformBuilder, Transforms, Wrapper};
 use anyhow::{anyhow, Result};
 use derivative::Derivative;
 use futures::TryFutureExt;
-use itertools::Itertools;
 use metrics::{histogram, register_counter, register_histogram, Counter};
 use std::net::SocketAddr;
 use tokio::sync::{mpsc, oneshot};
@@ -68,18 +67,12 @@ pub struct TransformChain {
 
 #[derive(Debug, Clone)]
 pub struct BufferedChain {
-    pub original_chain: TransformChainBuilder,
     send_handle: mpsc::Sender<BufferedChainMessages>,
     #[cfg(test)]
     pub count: std::sync::Arc<std::sync::atomic::AtomicU64>,
 }
 
 impl BufferedChain {
-    #[must_use]
-    pub fn to_new_instance(&self, buffer_size: usize) -> Self {
-        self.original_chain.build_buffered(buffer_size)
-    }
-
     pub async fn process_request(
         &mut self,
         wrapper: Wrapper<'_>,
@@ -167,10 +160,6 @@ impl BufferedChain {
 }
 
 impl TransformChain {
-    pub fn get_inner_chain_refs(&mut self) -> Vec<&mut Transforms> {
-        self.chain.iter_mut().collect_vec()
-    }
-
     pub async fn process_request(
         &mut self,
         mut wrapper: Wrapper<'_>,
@@ -212,7 +201,7 @@ impl TransformChain {
 #[derivative(Debug, Clone)]
 pub struct TransformChainBuilder {
     pub name: String,
-    pub chain: Vec<TransformBuilder>,
+    pub chain: Vec<Box<dyn TransformBuilder>>,
 
     #[derivative(Debug = "ignore")]
     chain_total: Counter,
@@ -221,7 +210,7 @@ pub struct TransformChainBuilder {
 }
 
 impl TransformChainBuilder {
-    pub fn new(chain: Vec<TransformBuilder>, name: String) -> Self {
+    pub fn new(chain: Vec<Box<dyn TransformBuilder>>, name: String) -> Self {
         for transform in &chain {
             register_counter!("shotover_transform_total", "transform" => transform.get_name());
             register_counter!("shotover_transform_failures", "transform" => transform.get_name());
@@ -348,7 +337,6 @@ impl TransformChainBuilder {
             send_handle: tx,
             #[cfg(test)]
             count,
-            original_chain: self.clone(),
         }
     }
 
@@ -393,7 +381,6 @@ mod chain_tests {
     use crate::transforms::chain::TransformChainBuilder;
     use crate::transforms::debug::printer::DebugPrinter;
     use crate::transforms::null::NullSink;
-    use crate::transforms::TransformBuilder;
 
     #[tokio::test]
     async fn test_validate_invalid_chain() {
@@ -408,9 +395,9 @@ mod chain_tests {
     async fn test_validate_valid_chain() {
         let chain = TransformChainBuilder::new(
             vec![
-                TransformBuilder::DebugPrinter(DebugPrinter::new()),
-                TransformBuilder::DebugPrinter(DebugPrinter::new()),
-                TransformBuilder::NullSink(NullSink::default()),
+                Box::<DebugPrinter>::default(),
+                Box::<DebugPrinter>::default(),
+                Box::<NullSink>::default(),
             ],
             "test-chain".to_string(),
         );

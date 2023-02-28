@@ -1,54 +1,97 @@
+use crate::codec::{CodecBuilder, CodecReadError};
 use crate::frame::cassandra::{CassandraMetadata, CassandraOperation, Tracing};
 use crate::frame::{CassandraFrame, Frame, MessageType};
 use crate::message::{Encodable, Message, Messages, Metadata};
-use crate::server::CodecReadError;
 use anyhow::{anyhow, Result};
 use bytes::{Buf, BufMut, BytesMut};
 use cassandra_protocol::compression::Compression;
 use cassandra_protocol::frame::message_error::{ErrorBody, ErrorType};
-use cassandra_protocol::frame::message_supported::BodyResSupported;
+use cassandra_protocol::frame::message_startup::BodyReqStartup;
 use cassandra_protocol::frame::{
-    CheckEnvelopeSizeError, Envelope as RawCassandraFrame, Opcode, Version,
+    CheckEnvelopeSizeError, Envelope as RawCassandraFrame, Flags, Opcode, Version,
 };
 use cql3_parser::cassandra_statement::CassandraStatement;
 use cql3_parser::common::Identifier;
+use std::sync::Arc;
+use std::sync::RwLock;
 use tokio_util::codec::{Decoder, Encoder};
 use tracing::info;
 
-#[derive(Debug, Clone)]
-pub struct CassandraCodec {
-    compression: Compression,
+#[derive(Clone, Default)]
+pub struct CassandraCodecBuilder {}
+
+impl CassandraCodecBuilder {
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl CodecBuilder for CassandraCodecBuilder {
+    type Decoder = CassandraDecoder;
+    type Encoder = CassandraEncoder;
+    fn build(&self) -> (CassandraDecoder, CassandraEncoder) {
+        let compression = Arc::new(RwLock::new(Compression::None));
+        (
+            CassandraDecoder::new(compression.clone()),
+            CassandraEncoder::new(compression),
+        )
+    }
+}
+
+pub struct CassandraDecoder {
+    compression: Arc<RwLock<Compression>>,
     messages: Vec<Message>,
     current_use_keyspace: Option<Identifier>,
 }
 
-impl Default for CassandraCodec {
-    fn default() -> Self {
-        CassandraCodec::new()
-    }
-}
-
-impl CassandraCodec {
-    pub fn new() -> CassandraCodec {
-        CassandraCodec {
-            compression: Compression::None,
+impl CassandraDecoder {
+    pub fn new(compression: Arc<RwLock<Compression>>) -> CassandraDecoder {
+        CassandraDecoder {
+            compression,
             messages: vec![],
             current_use_keyspace: None,
         }
     }
 }
 
-impl CassandraCodec {
-    fn encode_raw(&mut self, item: CassandraFrame, dst: &mut BytesMut) {
-        let buffer = item.encode(self.compression);
-        if buffer.is_empty() {
-            info!("trying to send 0 length frame");
+impl CassandraDecoder {
+    fn check_compression(&mut self, bytes: &BytesMut) -> Result<bool> {
+        if bytes.len() < 9 {
+            return Err(anyhow!("Not enough bytes for cassandra frame"));
         }
-        dst.put(buffer.as_slice());
+        let opcode = Opcode::try_from(bytes[4])?;
+
+        let compressed = Flags::from_bits_truncate(bytes[1]).contains(Flags::COMPRESSION);
+
+        // check if startup message and set the codec's selected compression
+        if Opcode::Startup == opcode {
+            if let CassandraFrame {
+                operation: CassandraOperation::Startup(startup),
+                ..
+            } = CassandraFrame::from_bytes(bytes.clone().freeze(), Compression::None)?
+            {
+                set_compression(&mut self.compression, &startup);
+            };
+        }
+
+        Ok(compressed)
     }
 }
 
-impl Decoder for CassandraCodec {
+fn set_compression(compression_state: &mut Arc<RwLock<Compression>>, startup: &BodyReqStartup) {
+    if let Some(compression) = startup.map.get("COMPRESSION") {
+        let mut write = compression_state.write().unwrap();
+
+        *write = match compression.as_str() {
+            "snappy" | "SNAPPY" => Compression::Snappy,
+            "lz4" | "LZ4" => Compression::Lz4,
+            "" | "none" | "NONE" => Compression::None,
+            _ => panic!(),
+        };
+    }
+}
+
+impl Decoder for CassandraDecoder {
     type Item = Messages;
     type Error = CodecReadError;
 
@@ -72,26 +115,18 @@ impl Decoder for CassandraCodec {
                         return Err(reject_protocol_version(version.into()));
                     }
 
-                    let mut message = Message::from_bytes(bytes.freeze(), MessageType::Cassandra);
+                    let compressed = self.check_compression(&bytes).unwrap();
 
-                    // if is startup message, reject compression because shotover does not support
-                    if let Some(Frame::Cassandra(frame)) = message.frame() {
-                        if let CassandraOperation::Startup(startup) = &mut frame.operation {
-                            if let Some(compression) = startup.map.get("COMPRESSION") {
-                                return Err(reject_compression(frame.stream_id, compression));
-                            }
-                        }
-
-                        if let CassandraOperation::Supported(BodyResSupported { data }) =
-                            &mut frame.operation
-                        {
-                            if let Some(value) = data.get_mut("COMPRESSION") {
-                                *value = vec![];
-                            }
-
-                            message.invalidate_cache();
-                        }
-                    }
+                    let mut message = Message::from_bytes(
+                        bytes.freeze(),
+                        crate::message::ProtocolType::Cassandra {
+                            compression: if compressed {
+                                *self.compression.read().unwrap()
+                            } else {
+                                Compression::None
+                            },
+                        },
+                    );
 
                     if let Ok(Metadata::Cassandra(CassandraMetadata {
                         opcode: Opcode::Query | Opcode::Batch,
@@ -216,27 +251,17 @@ fn reject_protocol_version(version: u8) -> CodecReadError {
     ))])
 }
 
-fn reject_compression(stream_id: i16, compression: &String) -> CodecReadError {
-    info!(
-        "Rejecting compression option {} (configure the client to use no compression)",
-        compression
-    );
-
-    CodecReadError::RespondAndThenCloseConnection(vec![Message::from_frame(Frame::Cassandra(
-        CassandraFrame {
-            version: Version::V4,
-            stream_id,
-            operation: CassandraOperation::Error(ErrorBody {
-                message: format!("Unsupported compression type {}", compression),
-                ty: ErrorType::Protocol,
-            }),
-            tracing: Tracing::Response(None),
-            warnings: vec![],
-        },
-    ))])
+pub struct CassandraEncoder {
+    compression: Arc<RwLock<Compression>>,
 }
 
-impl Encoder<Messages> for CassandraCodec {
+impl CassandraEncoder {
+    pub fn new(compression: Arc<RwLock<Compression>>) -> CassandraEncoder {
+        CassandraEncoder { compression }
+    }
+}
+
+impl Encoder<Messages> for CassandraEncoder {
     type Error = anyhow::Error;
 
     fn encode(
@@ -246,10 +271,41 @@ impl Encoder<Messages> for CassandraCodec {
     ) -> std::result::Result<(), Self::Error> {
         for m in item {
             let start = dst.len();
+            let compression = m.codec_state.as_cassandra();
+
             // TODO: always check if cassandra message
             match m.into_encodable(MessageType::Cassandra)? {
-                Encodable::Bytes(bytes) => dst.extend_from_slice(&bytes),
-                Encodable::Frame(frame) => self.encode_raw(frame.into_cassandra().unwrap(), dst),
+                Encodable::Bytes(bytes) => {
+                    // check if the message is a startup message and set the codec's compression
+                    {
+                        let opcode = Opcode::try_from(bytes[4])?;
+                        if Opcode::Startup == opcode {
+                            if let CassandraFrame {
+                                operation: CassandraOperation::Startup(startup),
+                                ..
+                            } = CassandraFrame::from_bytes(bytes.clone(), Compression::None)?
+                            {
+                                set_compression(&mut self.compression, &startup);
+                            };
+                        }
+                    }
+
+                    dst.extend_from_slice(&bytes)
+                }
+                Encodable::Frame(frame) => {
+                    // check if the message is a startup message and set the codec's compression
+                    if let Frame::Cassandra(CassandraFrame {
+                        operation: CassandraOperation::Startup(startup),
+                        ..
+                    }) = &frame
+                    {
+                        set_compression(&mut self.compression, startup);
+                    };
+
+                    let buffer = frame.into_cassandra().unwrap().encode(compression);
+
+                    dst.put(buffer.as_slice());
+                }
             }
             tracing::debug!(
                 "outgoing cassandra message:\n{}",
@@ -262,7 +318,8 @@ impl Encoder<Messages> for CassandraCodec {
 
 #[cfg(test)]
 mod cassandra_protocol_tests {
-    use crate::codec::cassandra::CassandraCodec;
+    use crate::codec::cassandra::CassandraCodecBuilder;
+    use crate::codec::CodecBuilder;
     use crate::frame::cassandra::{
         parse_statement_single, CassandraFrame, CassandraOperation, CassandraResult, Tracing,
     };
@@ -282,12 +339,13 @@ mod cassandra_protocol_tests {
     use tokio_util::codec::{Decoder, Encoder};
 
     fn test_frame_codec_roundtrip(
-        codec: &mut CassandraCodec,
+        codec: &mut CassandraCodecBuilder,
         raw_frame: &[u8],
         expected_messages: Vec<Message>,
     ) {
+        let (mut decoder, mut encoder) = codec.build();
         // test decode
-        let decoded_messages = codec
+        let decoded_messages = decoder
             .decode(&mut BytesMut::from(raw_frame))
             .unwrap()
             .unwrap();
@@ -304,21 +362,21 @@ mod cassandra_protocol_tests {
         // test encode round trip - parsed messages
         {
             let mut dest = BytesMut::new();
-            codec.encode(parsed_messages, &mut dest).unwrap();
+            encoder.encode(parsed_messages, &mut dest).unwrap();
             assert_eq!(raw_frame, &dest.to_vec());
         }
 
         // test encode round trip - raw messages
         {
             let mut dest = BytesMut::new();
-            codec.encode(decoded_messages, &mut dest).unwrap();
+            encoder.encode(decoded_messages, &mut dest).unwrap();
             assert_eq!(raw_frame, &dest.to_vec());
         }
     }
 
     #[test]
     fn test_codec_startup() {
-        let mut codec = CassandraCodec::new();
+        let mut codec = CassandraCodecBuilder::new();
         let mut startup_body: HashMap<String, String> = HashMap::new();
         startup_body.insert("CQL_VERSION".into(), "3.0.0".into());
         let bytes = hex!("0400000001000000160001000b43514c5f56455253494f4e0005332e302e30");
@@ -334,7 +392,7 @@ mod cassandra_protocol_tests {
 
     #[test]
     fn test_codec_options() {
-        let mut codec = CassandraCodec::new();
+        let mut codec = CassandraCodecBuilder::new();
         let bytes = hex!("040000000500000000");
         let messages = vec![Message::from_frame(Frame::Cassandra(CassandraFrame {
             version: Version::V4,
@@ -348,7 +406,7 @@ mod cassandra_protocol_tests {
 
     #[test]
     fn test_codec_ready() {
-        let mut codec = CassandraCodec::new();
+        let mut codec = CassandraCodecBuilder::new();
         let bytes = hex!("840000000200000000");
         let messages = vec![Message::from_frame(Frame::Cassandra(CassandraFrame {
             version: Version::V4,
@@ -362,7 +420,7 @@ mod cassandra_protocol_tests {
 
     #[test]
     fn test_codec_register() {
-        let mut codec = CassandraCodec::new();
+        let mut codec = CassandraCodecBuilder::new();
         let bytes = hex!(
             "040000010b000000310003000f544f504f4c4f47595f4348414e4745
             000d5354415455535f4348414e4745000d534348454d415f4348414e4745"
@@ -385,7 +443,7 @@ mod cassandra_protocol_tests {
 
     #[test]
     fn test_codec_result() {
-        let mut codec = CassandraCodec::new();
+        let mut codec = CassandraCodecBuilder::new();
         let bytes = hex!(
             "840000020800000099000000020000000100000009000673797374656
             d000570656572730004706565720010000b646174615f63656e746572000d0007686f73745f6964000c000c70726566
@@ -493,7 +551,7 @@ mod cassandra_protocol_tests {
 
     #[test]
     fn test_codec_query_select() {
-        let mut codec = CassandraCodec::new();
+        let mut codec = CassandraCodecBuilder::new();
         let bytes = hex!(
             "0400000307000000350000002e53454c454354202a2046524f4d20737973
             74656d2e6c6f63616c205748455245206b6579203d20276c6f63616c27000100"
@@ -516,7 +574,7 @@ mod cassandra_protocol_tests {
 
     #[test]
     fn test_codec_query_insert() {
-        let mut codec = CassandraCodec::new();
+        let mut codec = CassandraCodecBuilder::new();
         let bytes = hex!(
             "0400000307000000330000002c494e5345525420494e544f207379737465
             6d2e666f6f2028626172292056414c554553202827626172322729000100"

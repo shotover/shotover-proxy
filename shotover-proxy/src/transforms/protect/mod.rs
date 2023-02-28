@@ -1,9 +1,9 @@
 use crate::error::ChainResponse;
 use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame};
-use crate::message::MessageValue;
+use crate::message_value::MessageValue;
 use crate::transforms::protect::key_management::KeyManager;
 pub use crate::transforms::protect::key_management::KeyManagerConfig;
-use crate::transforms::{Transform, TransformBuilder, Wrapper};
+use crate::transforms::{Transform, TransformBuilder, Transforms, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
 use cql3_parser::cassandra_statement::CassandraStatement;
@@ -26,8 +26,8 @@ pub struct ProtectConfig {
 }
 
 impl ProtectConfig {
-    pub async fn get_builder(&self) -> Result<TransformBuilder> {
-        Ok(TransformBuilder::Protect(Box::new(Protect {
+    pub async fn get_builder(&self) -> Result<Box<dyn TransformBuilder>> {
+        Ok(Box::new(Protect {
             keyspace_table_columns: self
                 .keyspace_table_columns
                 .iter()
@@ -47,7 +47,7 @@ impl ProtectConfig {
                 .collect(),
             key_source: self.key_manager.build()?,
             key_id: "XXXXXXX".to_string(),
-        })))
+        }))
     }
 }
 
@@ -59,6 +59,16 @@ pub struct Protect {
     // TODO this should be a function to create key_ids based on "something", e.g. primary key
     // for the moment this is just a string
     key_id: String,
+}
+
+impl TransformBuilder for Protect {
+    fn build(&self) -> Transforms {
+        Transforms::Protect(Box::new(self.clone()))
+    }
+
+    fn get_name(&self) -> &'static str {
+        "Protect"
+    }
 }
 
 impl Protect {

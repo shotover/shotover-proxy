@@ -4,11 +4,9 @@ use crate::transforms::cassandra::peers_rewrite::{
     CassandraPeersRewrite, CassandraPeersRewriteConfig,
 };
 use crate::transforms::cassandra::sink_cluster::{
-    CassandraSinkCluster, CassandraSinkClusterBuilder, CassandraSinkClusterConfig,
+    CassandraSinkCluster, CassandraSinkClusterConfig,
 };
-use crate::transforms::cassandra::sink_single::{
-    CassandraSinkSingle, CassandraSinkSingleBuilder, CassandraSinkSingleConfig,
-};
+use crate::transforms::cassandra::sink_single::{CassandraSinkSingle, CassandraSinkSingleConfig};
 use crate::transforms::chain::TransformChainBuilder;
 use crate::transforms::coalesce::{Coalesce, CoalesceConfig};
 use crate::transforms::debug::force_parse::DebugForceParse;
@@ -21,30 +19,31 @@ use crate::transforms::distributed::consistent_scatter::{
     ConsistentScatter, ConsistentScatterConfig,
 };
 use crate::transforms::filter::{QueryTypeFilter, QueryTypeFilterConfig};
-use crate::transforms::load_balance::{ConnectionBalanceAndPool, ConnectionBalanceAndPoolBuilder};
-#[cfg(test)]
+use crate::transforms::kafka::sink_single::KafkaSinkSingle;
+#[cfg(feature = "alpha-transforms")]
+use crate::transforms::kafka::sink_single::KafkaSinkSingleConfig;
+use crate::transforms::load_balance::ConnectionBalanceAndPool;
 use crate::transforms::loopback::Loopback;
 use crate::transforms::null::NullSink;
-use crate::transforms::parallel_map::{ParallelMap, ParallelMapBuilder, ParallelMapConfig};
+use crate::transforms::parallel_map::{ParallelMap, ParallelMapConfig};
 use crate::transforms::protect::Protect;
 #[cfg(feature = "alpha-transforms")]
 use crate::transforms::protect::ProtectConfig;
 use crate::transforms::query_counter::{QueryCounter, QueryCounterConfig};
-use crate::transforms::redis::cache::{RedisConfig, SimpleRedisCache, SimpleRedisCacheBuilder};
+use crate::transforms::redis::cache::{RedisConfig, SimpleRedisCache};
 use crate::transforms::redis::cluster_ports_rewrite::{
     RedisClusterPortsRewrite, RedisClusterPortsRewriteConfig,
 };
 use crate::transforms::redis::sink_cluster::{RedisSinkCluster, RedisSinkClusterConfig};
-use crate::transforms::redis::sink_single::{
-    RedisSinkSingle, RedisSinkSingleBuilder, RedisSinkSingleConfig,
-};
+use crate::transforms::redis::sink_single::{RedisSinkSingle, RedisSinkSingleConfig};
 use crate::transforms::redis::timestamp_tagging::RedisTimestampTagger;
-use crate::transforms::tee::{Tee, TeeBuilder, TeeConfig};
+use crate::transforms::tee::{Tee, TeeConfig};
 use crate::transforms::throttling::{RequestThrottling, RequestThrottlingConfig};
 use anyhow::{anyhow, Result};
 use async_recursion::async_recursion;
 use async_trait::async_trait;
 use core::fmt;
+use dyn_clone::DynClone;
 use futures::Future;
 use metrics::{counter, histogram};
 use serde::Deserialize;
@@ -63,6 +62,7 @@ pub mod coalesce;
 pub mod debug;
 pub mod distributed;
 pub mod filter;
+pub mod kafka;
 pub mod load_balance;
 pub mod loopback;
 pub mod noop;
@@ -79,136 +79,22 @@ pub mod util;
 // TODO: probably better, semantically, to have this not Clone.
 //       Fixing that is left to a followup PR though.
 //       It would also affect whether sources pointing into the same chain share state, which will require careful consideration
-#[derive(Clone, IntoStaticStr)]
-pub enum TransformBuilder {
-    CassandraSinkSingle(CassandraSinkSingleBuilder),
-    CassandraSinkCluster(Box<CassandraSinkClusterBuilder>),
-    RedisSinkSingle(RedisSinkSingleBuilder),
-    CassandraPeersRewrite(CassandraPeersRewrite),
-    RedisCache(SimpleRedisCacheBuilder),
-    Tee(TeeBuilder),
-    NullSink(NullSink),
-    #[cfg(test)]
-    Loopback(Loopback),
-    Protect(Box<Protect>),
-    ConsistentScatter(ConsistentScatter),
-    RedisTimestampTagger(RedisTimestampTagger),
-    RedisSinkCluster(RedisSinkCluster),
-    RedisClusterPortsRewrite(RedisClusterPortsRewrite),
-    DebugReturner(DebugReturner),
-    DebugRandomDelay(DebugRandomDelay),
-    DebugPrinter(DebugPrinter),
-    DebugForceParse(DebugForceParse),
-    ParallelMap(ParallelMapBuilder),
-    PoolConnections(ConnectionBalanceAndPoolBuilder),
-    Coalesce(Coalesce),
-    QueryTypeFilter(QueryTypeFilter),
-    QueryCounter(QueryCounter),
-    RequestThrottling(RequestThrottling),
-}
+pub trait TransformBuilder: DynClone + Send {
+    fn build(&self) -> Transforms;
 
-impl TransformBuilder {
-    pub fn build(&self) -> Transforms {
-        match self {
-            TransformBuilder::CassandraSinkSingle(t) => Transforms::CassandraSinkSingle(t.build()),
-            TransformBuilder::CassandraSinkCluster(t) => {
-                Transforms::CassandraSinkCluster(t.build())
-            }
-            TransformBuilder::CassandraPeersRewrite(t) => {
-                Transforms::CassandraPeersRewrite(t.clone())
-            }
-            TransformBuilder::RedisCache(t) => Transforms::RedisCache(t.build()),
-            TransformBuilder::Tee(t) => Transforms::Tee(t.build()),
-            TransformBuilder::RedisSinkSingle(t) => Transforms::RedisSinkSingle(t.build()),
-            TransformBuilder::ConsistentScatter(t) => Transforms::ConsistentScatter(t.clone()),
-            TransformBuilder::RedisTimestampTagger(t) => {
-                Transforms::RedisTimestampTagger(t.clone())
-            }
-            TransformBuilder::RedisClusterPortsRewrite(t) => {
-                Transforms::RedisClusterPortsRewrite(t.clone())
-            }
-            TransformBuilder::DebugPrinter(t) => Transforms::DebugPrinter(t.clone()),
-            TransformBuilder::DebugForceParse(t) => Transforms::DebugForceParse(t.clone()),
-            TransformBuilder::NullSink(t) => Transforms::NullSink(t.clone()),
-            TransformBuilder::RedisSinkCluster(t) => Transforms::RedisSinkCluster(t.clone()),
-            TransformBuilder::ParallelMap(t) => Transforms::ParallelMap(t.build()),
-            TransformBuilder::PoolConnections(t) => Transforms::PoolConnections(t.build()),
-            TransformBuilder::Coalesce(t) => Transforms::Coalesce(t.clone()),
-            TransformBuilder::QueryTypeFilter(t) => Transforms::QueryTypeFilter(t.clone()),
-            TransformBuilder::QueryCounter(t) => Transforms::QueryCounter(t.clone()),
-            #[cfg(test)]
-            TransformBuilder::Loopback(t) => Transforms::Loopback(t.clone()),
-            TransformBuilder::Protect(t) => Transforms::Protect(t.clone()),
-            TransformBuilder::DebugReturner(t) => Transforms::DebugReturner(t.clone()),
-            TransformBuilder::DebugRandomDelay(t) => Transforms::DebugRandomDelay(t.clone()),
-            TransformBuilder::RequestThrottling(t) => Transforms::RequestThrottling(t.clone()),
-        }
-    }
-
-    fn get_name(&self) -> &'static str {
-        self.into()
-    }
+    fn get_name(&self) -> &'static str;
 
     fn validate(&self) -> Vec<String> {
-        match self {
-            TransformBuilder::CassandraSinkSingle(c) => c.validate(),
-            TransformBuilder::CassandraSinkCluster(c) => c.validate(),
-            TransformBuilder::CassandraPeersRewrite(c) => c.validate(),
-            TransformBuilder::RedisCache(r) => r.validate(),
-            TransformBuilder::Tee(t) => t.validate(),
-            TransformBuilder::RedisSinkSingle(r) => r.validate(),
-            TransformBuilder::ConsistentScatter(c) => c.validate(),
-            TransformBuilder::RedisTimestampTagger(r) => r.validate(),
-            TransformBuilder::RedisClusterPortsRewrite(r) => r.validate(),
-            TransformBuilder::DebugPrinter(p) => p.validate(),
-            TransformBuilder::DebugForceParse(p) => p.validate(),
-            TransformBuilder::NullSink(n) => n.validate(),
-            TransformBuilder::RedisSinkCluster(r) => r.validate(),
-            TransformBuilder::ParallelMap(s) => s.validate(),
-            TransformBuilder::PoolConnections(s) => s.validate(),
-            TransformBuilder::Coalesce(s) => s.validate(),
-            TransformBuilder::QueryTypeFilter(s) => s.validate(),
-            TransformBuilder::QueryCounter(s) => s.validate(),
-            #[cfg(test)]
-            TransformBuilder::Loopback(l) => l.validate(),
-            TransformBuilder::Protect(p) => p.validate(),
-            TransformBuilder::DebugReturner(d) => d.validate(),
-            TransformBuilder::DebugRandomDelay(d) => d.validate(),
-            TransformBuilder::RequestThrottling(d) => d.validate(),
-        }
+        vec![]
     }
 
     fn is_terminating(&self) -> bool {
-        match self {
-            TransformBuilder::CassandraSinkSingle(c) => c.is_terminating(),
-            TransformBuilder::CassandraSinkCluster(c) => c.is_terminating(),
-            TransformBuilder::CassandraPeersRewrite(c) => c.is_terminating(),
-            TransformBuilder::RedisCache(r) => r.is_terminating(),
-            TransformBuilder::Tee(t) => t.is_terminating(),
-            TransformBuilder::RedisSinkSingle(r) => r.is_terminating(),
-            TransformBuilder::ConsistentScatter(c) => c.is_terminating(),
-            TransformBuilder::RedisTimestampTagger(r) => r.is_terminating(),
-            TransformBuilder::RedisClusterPortsRewrite(r) => r.is_terminating(),
-            TransformBuilder::DebugPrinter(p) => p.is_terminating(),
-            TransformBuilder::DebugForceParse(p) => p.is_terminating(),
-            TransformBuilder::NullSink(n) => n.is_terminating(),
-            TransformBuilder::RedisSinkCluster(r) => r.is_terminating(),
-            TransformBuilder::ParallelMap(s) => s.is_terminating(),
-            TransformBuilder::PoolConnections(s) => s.is_terminating(),
-            TransformBuilder::Coalesce(s) => s.is_terminating(),
-            TransformBuilder::QueryTypeFilter(s) => s.is_terminating(),
-            TransformBuilder::QueryCounter(s) => s.is_terminating(),
-            #[cfg(test)]
-            TransformBuilder::Loopback(l) => l.is_terminating(),
-            TransformBuilder::Protect(p) => p.is_terminating(),
-            TransformBuilder::DebugReturner(d) => d.is_terminating(),
-            TransformBuilder::DebugRandomDelay(d) => d.is_terminating(),
-            TransformBuilder::RequestThrottling(d) => d.is_terminating(),
-        }
+        false
     }
 }
+dyn_clone::clone_trait_object!(TransformBuilder);
 
-impl Debug for TransformBuilder {
+impl Debug for dyn TransformBuilder {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "Transform: {}", self.get_name())
     }
@@ -220,6 +106,7 @@ impl Debug for TransformBuilder {
 /// than using dynamic trait objects.
 #[derive(IntoStaticStr)]
 pub enum Transforms {
+    KafkaSinkSingle(KafkaSinkSingle),
     CassandraSinkSingle(CassandraSinkSingle),
     CassandraSinkCluster(Box<CassandraSinkCluster>),
     RedisSinkSingle(RedisSinkSingle),
@@ -227,7 +114,6 @@ pub enum Transforms {
     RedisCache(SimpleRedisCache),
     Tee(Tee),
     NullSink(NullSink),
-    #[cfg(test)]
     Loopback(Loopback),
     Protect(Box<Protect>),
     ConsistentScatter(ConsistentScatter),
@@ -255,6 +141,7 @@ impl Debug for Transforms {
 impl Transforms {
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
         match self {
+            Transforms::KafkaSinkSingle(c) => c.transform(message_wrapper).await,
             Transforms::CassandraSinkSingle(c) => c.transform(message_wrapper).await,
             Transforms::CassandraSinkCluster(c) => c.transform(message_wrapper).await,
             Transforms::CassandraPeersRewrite(c) => c.transform(message_wrapper).await,
@@ -263,7 +150,6 @@ impl Transforms {
             Transforms::DebugPrinter(p) => p.transform(message_wrapper).await,
             Transforms::DebugForceParse(p) => p.transform(message_wrapper).await,
             Transforms::NullSink(n) => n.transform(message_wrapper).await,
-            #[cfg(test)]
             Transforms::Loopback(n) => n.transform(message_wrapper).await,
             Transforms::Protect(p) => p.transform(message_wrapper).await,
             Transforms::DebugReturner(p) => p.transform(message_wrapper).await,
@@ -284,6 +170,7 @@ impl Transforms {
 
     async fn transform_pushed<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
         match self {
+            Transforms::KafkaSinkSingle(c) => c.transform_pushed(message_wrapper).await,
             Transforms::CassandraSinkSingle(c) => c.transform_pushed(message_wrapper).await,
             Transforms::CassandraSinkCluster(c) => c.transform_pushed(message_wrapper).await,
             Transforms::CassandraPeersRewrite(c) => c.transform_pushed(message_wrapper).await,
@@ -292,7 +179,6 @@ impl Transforms {
             Transforms::DebugPrinter(p) => p.transform_pushed(message_wrapper).await,
             Transforms::DebugForceParse(p) => p.transform_pushed(message_wrapper).await,
             Transforms::NullSink(n) => n.transform_pushed(message_wrapper).await,
-            #[cfg(test)]
             Transforms::Loopback(n) => n.transform_pushed(message_wrapper).await,
             Transforms::Protect(p) => p.transform_pushed(message_wrapper).await,
             Transforms::DebugReturner(p) => p.transform_pushed(message_wrapper).await,
@@ -317,6 +203,7 @@ impl Transforms {
 
     fn set_pushed_messages_tx(&mut self, pushed_messages_tx: mpsc::UnboundedSender<Messages>) {
         match self {
+            Transforms::KafkaSinkSingle(c) => c.set_pushed_messages_tx(pushed_messages_tx),
             Transforms::CassandraSinkSingle(c) => c.set_pushed_messages_tx(pushed_messages_tx),
             Transforms::CassandraSinkCluster(c) => c.set_pushed_messages_tx(pushed_messages_tx),
             Transforms::CassandraPeersRewrite(c) => c.set_pushed_messages_tx(pushed_messages_tx),
@@ -335,7 +222,6 @@ impl Transforms {
             Transforms::Coalesce(s) => s.set_pushed_messages_tx(pushed_messages_tx),
             Transforms::QueryTypeFilter(s) => s.set_pushed_messages_tx(pushed_messages_tx),
             Transforms::QueryCounter(s) => s.set_pushed_messages_tx(pushed_messages_tx),
-            #[cfg(test)]
             Transforms::Loopback(l) => l.set_pushed_messages_tx(pushed_messages_tx),
             Transforms::Protect(p) => p.set_pushed_messages_tx(pushed_messages_tx),
             Transforms::DebugReturner(d) => d.set_pushed_messages_tx(pushed_messages_tx),
@@ -349,6 +235,8 @@ impl Transforms {
 /// in the transform chain. Allows you to register your config struct for the config file.
 #[derive(Deserialize, Debug, Clone)]
 pub enum TransformsConfig {
+    #[cfg(feature = "alpha-transforms")]
+    KafkaSinkSingle(KafkaSinkSingleConfig),
     CassandraSinkSingle(CassandraSinkSingleConfig),
     CassandraSinkCluster(CassandraSinkClusterConfig),
     RedisSinkSingle(RedisSinkSingleConfig),
@@ -380,8 +268,10 @@ pub enum TransformsConfig {
 
 impl TransformsConfig {
     #[async_recursion]
-    pub async fn get_builder(&self, chain_name: String) -> Result<TransformBuilder> {
+    pub async fn get_builder(&self, chain_name: String) -> Result<Box<dyn TransformBuilder>> {
         match self {
+            #[cfg(feature = "alpha-transforms")]
+            TransformsConfig::KafkaSinkSingle(c) => c.get_builder(chain_name).await,
             TransformsConfig::CassandraSinkSingle(c) => c.get_builder(chain_name).await,
             TransformsConfig::CassandraSinkCluster(c) => c.get_builder(chain_name).await,
             TransformsConfig::CassandraPeersRewrite(c) => c.get_builder().await,
@@ -389,17 +279,21 @@ impl TransformsConfig {
             TransformsConfig::Tee(t) => t.get_builder().await,
             TransformsConfig::RedisSinkSingle(r) => r.get_builder(chain_name).await,
             TransformsConfig::ConsistentScatter(c) => c.get_builder().await,
-            TransformsConfig::RedisTimestampTagger => Ok(TransformBuilder::RedisTimestampTagger(
-                RedisTimestampTagger::new(),
-            )),
+            TransformsConfig::RedisTimestampTagger => {
+                Ok(Box::new(RedisTimestampTagger::new()) as Box<dyn TransformBuilder>)
+            }
             TransformsConfig::RedisClusterPortsRewrite(r) => r.get_builder().await,
             TransformsConfig::DebugPrinter => {
-                Ok(TransformBuilder::DebugPrinter(DebugPrinter::new()))
+                Ok(Box::new(DebugPrinter::new()) as Box<dyn TransformBuilder>)
             }
             TransformsConfig::DebugReturner(d) => d.get_builder().await,
-            TransformsConfig::NullSink => Ok(TransformBuilder::NullSink(NullSink::default())),
+            TransformsConfig::NullSink => {
+                Ok(Box::<NullSink>::default() as Box<dyn TransformBuilder>)
+            }
             #[cfg(test)]
-            TransformsConfig::Loopback => Ok(TransformBuilder::Loopback(Loopback::default())),
+            TransformsConfig::Loopback => {
+                Ok(Box::<Loopback>::default() as Box<dyn TransformBuilder>)
+            }
             #[cfg(feature = "alpha-transforms")]
             TransformsConfig::Protect(p) => p.get_builder().await,
             #[cfg(feature = "alpha-transforms")]
@@ -408,11 +302,11 @@ impl TransformsConfig {
             TransformsConfig::DebugForceEncode(d) => d.get_builder().await,
             TransformsConfig::RedisSinkCluster(r) => r.get_builder(chain_name).await,
             TransformsConfig::ParallelMap(s) => s.get_builder().await,
-            //TransformsConfig::PoolConnections(s) => s.get_builder().await,
+            // TransformsConfig::PoolConnections(s) => s.get_builder().await,
             TransformsConfig::Coalesce(s) => s.get_builder().await,
             TransformsConfig::QueryTypeFilter(s) => s.get_builder().await,
             TransformsConfig::QueryCounter(s) => s.get_builder().await,
-            TransformsConfig::RequestThrottling(s) => s.get_builder().await,
+            TransformsConfig::RequestThrottling(s) => s.get_builder(),
         }
     }
 }
@@ -421,7 +315,7 @@ pub async fn build_chain_from_config(
     name: String,
     transform_configs: &[TransformsConfig],
 ) -> Result<TransformChainBuilder> {
-    let mut transforms: Vec<TransformBuilder> = Vec::new();
+    let mut transforms: Vec<Box<dyn TransformBuilder>> = Vec::new();
     for tc in transform_configs {
         transforms.push(tc.get_builder(name.clone()).await?)
     }
@@ -682,14 +576,6 @@ pub trait Transform: Send {
     async fn transform_pushed<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
         let response = message_wrapper.call_next_transform_pushed().await?;
         Ok(response)
-    }
-
-    fn is_terminating(&self) -> bool {
-        false
-    }
-
-    fn validate(&self) -> Vec<String> {
-        vec![]
     }
 
     fn set_pushed_messages_tx(&mut self, _pushed_messages_tx: mpsc::UnboundedSender<Messages>) {}

@@ -4,7 +4,8 @@ use cassandra_protocol::frame::events::{StatusChange, StatusChangeType};
 use std::net::SocketAddr;
 use std::time::Duration;
 use test_helpers::connection::cassandra::{
-    assert_query_result, run_query, CassandraConnection, CassandraDriver, ResultValue,
+    assert_query_result, run_query, CassandraConnection, CassandraConnectionBuilder,
+    CassandraDriver, ResultValue,
 };
 use test_helpers::docker_compose::DockerCompose;
 use tokio::sync::broadcast;
@@ -276,7 +277,9 @@ pub async fn test_topology_task(ca_path: Option<&str>, cassandra_port: Option<u3
 }
 
 pub async fn test_node_going_down(compose: &DockerCompose, driver: CassandraDriver) {
-    let mut connection_shotover = CassandraConnection::new("127.0.0.1", 9042, driver).await;
+    let mut connection_shotover = CassandraConnectionBuilder::new("127.0.0.1", 9042, driver)
+        .build()
+        .await;
     connection_shotover
         .enable_schema_awaiter("172.16.1.2:9044", None)
         .await;
@@ -296,7 +299,9 @@ pub async fn test_node_going_down(compose: &DockerCompose, driver: CassandraDriv
         compose.stop_service("cassandra-two");
         assert_down_event(&mut event_connections).await;
 
-        let new_connection = CassandraConnection::new("127.0.0.1", 9042, driver).await;
+        let new_connection = CassandraConnectionBuilder::new("127.0.0.1", 9042, driver)
+            .build()
+            .await;
 
         // test that shotover handles connections created before and after node goes down
         test_connection_handles_node_down(&new_connection, driver).await;
@@ -306,7 +311,9 @@ pub async fn test_node_going_down(compose: &DockerCompose, driver: CassandraDriv
         assert_up_event(&mut event_connections).await;
 
         // test that shotover handles connections created before and after the nodes goes up
-        let new_new_connection = CassandraConnection::new("127.0.0.1", 9042, driver).await;
+        let new_new_connection = CassandraConnectionBuilder::new("127.0.0.1", 9042, driver)
+            .build()
+            .await;
         test_connection_handles_node_down(&new_new_connection, driver).await;
         test_connection_handles_node_down(&new_connection, driver).await;
         test_connection_handles_node_down(&connection_shotover, driver).await;
@@ -316,7 +323,9 @@ pub async fn test_node_going_down(compose: &DockerCompose, driver: CassandraDriv
         compose.kill_service("cassandra-two");
         assert_down_event(&mut event_connections).await;
 
-        let new_connection = CassandraConnection::new("127.0.0.1", 9042, driver).await;
+        let new_connection = CassandraConnectionBuilder::new("127.0.0.1", 9042, driver)
+            .build()
+            .await;
 
         test_connection_handles_node_down(&new_connection, driver).await;
         test_connection_handles_node_down(&connection_shotover, driver).await;
@@ -324,7 +333,9 @@ pub async fn test_node_going_down(compose: &DockerCompose, driver: CassandraDriv
         compose.start_service("cassandra-two");
         assert_up_event(&mut event_connections).await;
 
-        let new_new_connection = CassandraConnection::new("127.0.0.1", 9042, driver).await;
+        let new_new_connection = CassandraConnectionBuilder::new("127.0.0.1", 9042, driver)
+            .build()
+            .await;
         test_connection_handles_node_down(&new_new_connection, driver).await;
         test_connection_handles_node_down(&new_connection, driver).await;
         test_connection_handles_node_down(&connection_shotover, driver).await;
@@ -339,7 +350,9 @@ pub async fn test_node_going_down(compose: &DockerCompose, driver: CassandraDriv
         compose.start_service("cassandra-two");
         assert_up_event(&mut event_connections).await;
 
-        let new_connection = CassandraConnection::new("127.0.0.1", 9042, driver).await;
+        let new_connection = CassandraConnectionBuilder::new("127.0.0.1", 9042, driver)
+            .build()
+            .await;
         test_connection_handles_node_down_with_one_retry(&new_connection).await;
         if connection_shotover.is(&[CassandraDriver::CdrsTokio, CassandraDriver::Scylla]) {
             test_connection_handles_node_down_with_one_retry(&connection_shotover).await;
@@ -353,7 +366,9 @@ pub async fn test_node_going_down(compose: &DockerCompose, driver: CassandraDriv
         compose.start_service("cassandra-two");
         assert_up_event(&mut event_connections).await;
 
-        let new_connection = CassandraConnection::new("127.0.0.1", 9042, driver).await;
+        let new_connection = CassandraConnectionBuilder::new("127.0.0.1", 9042, driver)
+            .build()
+            .await;
         test_connection_handles_node_down_with_one_retry(&new_connection).await;
         if connection_shotover.is(&[CassandraDriver::CdrsTokio, CassandraDriver::Scylla]) {
             test_connection_handles_node_down_with_one_retry(&connection_shotover).await;
@@ -370,11 +385,16 @@ struct EventConnections {
 
 impl EventConnections {
     async fn new() -> Self {
-        let direct = CassandraConnection::new("172.16.1.2", 9044, CassandraDriver::CdrsTokio).await;
+        let direct =
+            CassandraConnectionBuilder::new("172.16.1.2", 9044, CassandraDriver::CdrsTokio)
+                .build()
+                .await;
         let recv_direct = direct.as_cdrs().create_event_receiver();
 
         let shotover =
-            CassandraConnection::new("127.0.0.1", 9042, CassandraDriver::CdrsTokio).await;
+            CassandraConnectionBuilder::new("127.0.0.1", 9042, CassandraDriver::CdrsTokio)
+                .build()
+                .await;
         let recv_shotover = shotover.as_cdrs().create_event_receiver();
 
         EventConnections {

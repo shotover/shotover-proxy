@@ -23,10 +23,6 @@ On Ubuntu you can install them via `sudo apt-get install cmake gcc g++ libssl-de
 
 While not required for building Shotover, installing `docker` and `docker-compose` will allow you to run Shotover's integration tests and also build the static libc version of Shotover.
 
-#### libpcap-dev
-
-Some tests will require `libpcap-dev` to be installed as well (reading pcap files for protocol tests).
-
 ## Building Shotover
 
 Now you can build Shotover by running `cargo build`. The executable will then be found in `target/debug/shotover-proxy`.
@@ -41,27 +37,10 @@ The Cassandra tests require the Cassandra CPP driver.
 
 ### Installing Cassandra CPP Driver
 
-Installation information and dependencies for the Cassandra CPP driver can be found [here](https://docs.datastax.com/en/developer/cpp-driver/2.4/).
+Upstream installation information and dependencies for the Cassandra CPP driver can be found [here](https://docs.datastax.com/en/developer/cpp-driver/2.16/).
 
-#### Ubuntu 18.04
-
-These instructions are for Ubuntu 18.04, other platform installations will be similar.
-
-1. Download the driver packages and the libuv dependency.
-
-```bash
-wget https://downloads.datastax.com/cpp-driver/ubuntu/18.04/cassandra/v2.16.0/cassandra-cpp-driver_2.16.0-1_amd64.deb &
-wget https://downloads.datastax.com/cpp-driver/ubuntu/18.04/cassandra/v2.16.0/cassandra-cpp-driver-dev_2.16.0-1_amd64.deb &
-wget https://downloads.datastax.com/cpp-driver/ubuntu/18.04/dependencies/libuv/v1.35.0/libuv1_1.35.0-1_amd64.deb &
-wget https://downloads.datastax.com/cpp-driver/ubuntu/18.04/dependencies/libuv/v1.35.0/libuv1-dev_1.35.0-1_amd64.deb &
-wait
-```
-
-2. Install them using the `apt` tool
-
-```bash
-sudo apt -y install ./cassandra-cpp-driver_2.16.0-1_amd64.deb ./cassandra-cpp-driver-dev_2.16.0-1_amd64.deb ./libuv1_1.35.0-1_amd64.deb ./libuv1-dev_1.35.0-1_amd64.deb
-```
+However that is unlikely unusable because datastax do not ship packages for modern ubuntu so we have our own script which will compile, package and install the driver on a modern ubuntu.
+So to install the driver on ubuntu just run the script at `shotover-proxy/build/install_ubuntu_packages.sh`.
 
 ### Functionally Testing Shotover
 

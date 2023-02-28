@@ -83,7 +83,7 @@ async fn test_fail_with_mismatch() {
         .unwrap_err()
         .to_string();
 
-    let expected = "An error was signalled by the server: The responses from the Tee subchain and down-chain did not match and behavior is set to fail on mismatch";
+    let expected = "An error was signalled by the server: ERR The responses from the Tee subchain and down-chain did not match and behavior is set to fail on mismatch";
     assert_eq!(expected, err);
     shotover.shutdown_and_then_consume_events(&[]).await;
 }

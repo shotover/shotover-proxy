@@ -1,7 +1,7 @@
 use crate::error::ChainResponse;
 use crate::frame::Frame;
 use crate::frame::RedisFrame;
-use crate::transforms::{Transform, TransformBuilder, Wrapper};
+use crate::transforms::{Transform, TransformBuilder, Transforms, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
 use metrics::{counter, register_counter};
@@ -25,6 +25,16 @@ impl QueryCounter {
     }
 }
 
+impl TransformBuilder for QueryCounter {
+    fn build(&self) -> Transforms {
+        Transforms::QueryCounter(self.clone())
+    }
+
+    fn get_name(&self) -> &'static str {
+        "QueryCounter"
+    }
+}
+
 #[async_trait]
 impl Transform for QueryCounter {
     async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> ChainResponse {
@@ -42,7 +52,10 @@ impl Transform for QueryCounter {
                         counter!("query_count", 1, "name" => self.counter_name.clone(), "query" => "unknown", "type" => "redis");
                     }
                 }
-                Some(Frame::None) | None => {
+                Some(Frame::Kafka(_)) => {
+                    counter!("query_count", 1, "name" => self.counter_name.clone(), "query" => "unknown", "type" => "kafka");
+                }
+                None => {
                     counter!("query_count", 1, "name" => self.counter_name.clone(), "query" => "unknown", "type" => "none")
                 }
             }
@@ -51,6 +64,7 @@ impl Transform for QueryCounter {
         message_wrapper.call_next_transform().await
     }
 }
+
 fn get_redis_query_type(frame: &RedisFrame) -> Option<String> {
     if let RedisFrame::Array(array) = frame {
         if let Some(RedisFrame::BulkString(v)) = array.get(0) {
@@ -72,9 +86,7 @@ fn get_redis_query_type(frame: &RedisFrame) -> Option<String> {
 }
 
 impl QueryCounterConfig {
-    pub async fn get_builder(&self) -> Result<TransformBuilder> {
-        Ok(TransformBuilder::QueryCounter(QueryCounter::new(
-            self.name.clone(),
-        )))
+    pub async fn get_builder(&self) -> Result<Box<dyn TransformBuilder>> {
+        Ok(Box::new(QueryCounter::new(self.name.clone())))
     }
 }

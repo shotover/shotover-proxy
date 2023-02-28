@@ -2,10 +2,11 @@ use self::node_pool::{NodePoolBuilder, PreparedMetadata};
 use crate::error::ChainResponse;
 use crate::frame::cassandra::{parse_statement_single, CassandraMetadata, Tracing};
 use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame};
-use crate::message::{IntSize, Message, MessageValue, Messages, Metadata};
+use crate::message::{Message, Messages, Metadata};
+use crate::message_value::{IntSize, MessageValue};
 use crate::tls::{TlsConnector, TlsConnectorConfig};
 use crate::transforms::cassandra::connection::{CassandraConnection, Response};
-use crate::transforms::{Transform, TransformBuilder, Wrapper};
+use crate::transforms::{Transform, TransformBuilder, Transforms, Wrapper};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use cassandra_protocol::events::ServerEvent;
@@ -79,7 +80,7 @@ pub struct CassandraSinkClusterConfig {
 }
 
 impl CassandraSinkClusterConfig {
-    pub async fn get_builder(&self, chain_name: String) -> Result<TransformBuilder> {
+    pub async fn get_builder(&self, chain_name: String) -> Result<Box<dyn TransformBuilder>> {
         let tls = self.tls.clone().map(TlsConnector::new).transpose()?;
         let mut shotover_nodes = self.shotover_nodes.clone();
         let index = self
@@ -94,16 +95,14 @@ impl CassandraSinkClusterConfig {
             })?;
         let local_node = shotover_nodes.remove(index);
 
-        Ok(TransformBuilder::CassandraSinkCluster(Box::new(
-            CassandraSinkClusterBuilder::new(
-                self.first_contact_points.clone(),
-                shotover_nodes,
-                chain_name,
-                local_node,
-                tls,
-                self.connect_timeout_ms,
-                self.read_timeout,
-            ),
+        Ok(Box::new(CassandraSinkClusterBuilder::new(
+            self.first_contact_points.clone(),
+            shotover_nodes,
+            chain_name,
+            local_node,
+            tls,
+            self.connect_timeout_ms,
+            self.read_timeout,
         )))
     }
 }
@@ -163,17 +162,11 @@ impl CassandraSinkClusterBuilder {
             pool: NodePoolBuilder::new(chain_name),
         }
     }
+}
 
-    pub fn validate(&self) -> Vec<String> {
-        vec![]
-    }
-
-    pub fn is_terminating(&self) -> bool {
-        true
-    }
-
-    pub fn build(&self) -> Box<CassandraSinkCluster> {
-        Box::new(CassandraSinkCluster {
+impl TransformBuilder for CassandraSinkClusterBuilder {
+    fn build(&self) -> crate::transforms::Transforms {
+        Transforms::CassandraSinkCluster(Box::new(CassandraSinkCluster {
             contact_points: self.contact_points.clone(),
             shotover_peers: self.shotover_peers.clone(),
             control_connection: None,
@@ -191,7 +184,15 @@ impl CassandraSinkClusterBuilder {
             keyspaces_rx: self.keyspaces_rx.clone(),
             rng: SmallRng::from_rng(rand::thread_rng()).unwrap(),
             task_handshake_tx: self.task_handshake_tx.clone(),
-        })
+        }))
+    }
+
+    fn get_name(&self) -> &'static str {
+        "CassandraSinkCluster"
+    }
+
+    fn is_terminating(&self) -> bool {
+        true
     }
 }
 

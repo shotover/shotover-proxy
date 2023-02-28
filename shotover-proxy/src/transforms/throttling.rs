@@ -16,14 +16,16 @@ use serde::Deserialize;
 use std::num::NonZeroU32;
 use std::sync::Arc;
 
+use super::Transforms;
+
 #[derive(Deserialize, Debug, Clone)]
 pub struct RequestThrottlingConfig {
     pub max_requests_per_second: NonZeroU32,
 }
 
 impl RequestThrottlingConfig {
-    pub async fn get_builder(&self) -> Result<TransformBuilder> {
-        Ok(TransformBuilder::RequestThrottling(RequestThrottling {
+    pub fn get_builder(&self) -> Result<Box<dyn TransformBuilder>> {
+        Ok(Box::new(RequestThrottling {
             limiter: Arc::new(RateLimiter::direct(Quota::per_second(
                 self.max_requests_per_second,
             ))),
@@ -36,6 +38,27 @@ impl RequestThrottlingConfig {
 pub struct RequestThrottling {
     limiter: Arc<RateLimiter<NotKeyed, InMemoryState, DefaultClock, NoOpMiddleware>>,
     max_requests_per_second: NonZeroU32,
+}
+
+impl TransformBuilder for RequestThrottling {
+    fn build(&self) -> Transforms {
+        Transforms::RequestThrottling(self.clone())
+    }
+
+    fn get_name(&self) -> &'static str {
+        "RequestThrottlingConfig"
+    }
+
+    fn validate(&self) -> Vec<String> {
+        if self.max_requests_per_second < nonzero!(50u32) {
+            vec![
+                "RequestThrottling:".into(),
+                "  max_requests_per_second has a minimum allowed value of 50".into(),
+            ]
+        } else {
+            vec![]
+        }
+    }
 }
 
 #[async_trait]
@@ -76,17 +99,6 @@ impl Transform for RequestThrottling {
 
         Ok(responses)
     }
-
-    fn validate(&self) -> Vec<String> {
-        if self.max_requests_per_second < nonzero!(50u32) {
-            vec![
-                "RequestThrottling:".into(),
-                "  max_requests_per_second has a minimum allowed value of 50".into(),
-            ]
-        } else {
-            vec![]
-        }
-    }
 }
 
 #[cfg(test)]
@@ -94,18 +106,17 @@ mod test {
     use super::*;
     use crate::transforms::chain::TransformChainBuilder;
     use crate::transforms::null::NullSink;
-    use crate::transforms::TransformBuilder;
 
     #[test]
     fn test_validate() {
         {
             let chain = TransformChainBuilder::new(
                 vec![
-                    TransformBuilder::RequestThrottling(RequestThrottling {
+                    Box::new(RequestThrottling {
                         limiter: Arc::new(RateLimiter::direct(Quota::per_second(nonzero!(20u32)))),
                         max_requests_per_second: nonzero!(20u32),
                     }),
-                    TransformBuilder::NullSink(NullSink::default()),
+                    Box::<NullSink>::default(),
                 ],
                 "test-chain".to_string(),
             );
@@ -123,11 +134,11 @@ mod test {
         {
             let chain = TransformChainBuilder::new(
                 vec![
-                    TransformBuilder::RequestThrottling(RequestThrottling {
+                    Box::new(RequestThrottling {
                         limiter: Arc::new(RateLimiter::direct(Quota::per_second(nonzero!(100u32)))),
                         max_requests_per_second: nonzero!(100u32),
                     }),
-                    TransformBuilder::NullSink(NullSink::default()),
+                    Box::<NullSink>::default(),
                 ],
                 "test-chain".to_string(),
             );

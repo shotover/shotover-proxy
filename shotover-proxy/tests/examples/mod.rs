@@ -1,7 +1,7 @@
 #![cfg(feature = "cassandra-cpp-driver-tests")]
 use serial_test::serial;
 use test_helpers::connection::cassandra::{
-    assert_query_result, CassandraConnection, CassandraDriver, ResultValue,
+    assert_query_result, CassandraConnectionBuilder, CassandraDriver, ResultValue,
 };
 use test_helpers::docker_compose::DockerCompose;
 
@@ -11,7 +11,9 @@ async fn test_cassandra_rewrite_peers_example() {
     let _docker_compose =
         DockerCompose::new("example-configs-docker/cassandra-peers-rewrite/docker-compose.yaml");
 
-    let connection = CassandraConnection::new("172.16.1.2", 9043, CassandraDriver::Datastax).await;
+    let connection = CassandraConnectionBuilder::new("172.16.1.2", 9043, CassandraDriver::Datastax)
+        .build()
+        .await;
 
     assert_query_result(
         &connection,

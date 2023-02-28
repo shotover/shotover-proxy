@@ -1,6 +1,6 @@
 use crate::frame::{Frame, RedisFrame};
 use crate::message::{Message, Messages};
-use crate::transforms::{ChainResponse, Transform, TransformBuilder, Wrapper};
+use crate::transforms::{ChainResponse, Transform, TransformBuilder, Transforms, Wrapper};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use serde::Deserialize;
@@ -12,10 +12,8 @@ pub struct DebugReturnerConfig {
 }
 
 impl DebugReturnerConfig {
-    pub async fn get_builder(&self) -> Result<TransformBuilder> {
-        Ok(TransformBuilder::DebugReturner(DebugReturner::new(
-            self.response.clone(),
-        )))
+    pub async fn get_builder(&self) -> Result<Box<dyn TransformBuilder>> {
+        Ok(Box::new(DebugReturner::new(self.response.clone())))
     }
 }
 
@@ -38,6 +36,20 @@ impl DebugReturner {
     }
 }
 
+impl TransformBuilder for DebugReturner {
+    fn build(&self) -> Transforms {
+        Transforms::DebugReturner(self.clone())
+    }
+
+    fn get_name(&self) -> &'static str {
+        "DebugReturner"
+    }
+
+    fn is_terminating(&self) -> bool {
+        true
+    }
+}
+
 #[async_trait]
 impl Transform for DebugReturner {
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
@@ -54,9 +66,5 @@ impl Transform for DebugReturner {
                 .collect()),
             Response::Fail => Err(anyhow!("Intentional Fail")),
         }
-    }
-
-    fn is_terminating(&self) -> bool {
-        true
     }
 }

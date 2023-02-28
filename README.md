@@ -7,12 +7,12 @@
 
 ## Documentation
 
-For full documentation please go to [https://docs.shotover.io/](https://docs.shotover.io/)
+For full documentation please go to [https://docs.shotover.io/](https://docs.shotover.io/shotover-blog/docs/user-guide/introduction.html)
 
 ## Building
 
 Shotover is supported on Linux and macOS.
-To build Shotover from source please refer to [the contributing documentation](https://docs.shotover.io/contributing)
+To build Shotover from source please refer to [the contributing documentation](https://shotover.io/shotover-blog/docs/contributing.html)
 
 ## What is Shotover?
 

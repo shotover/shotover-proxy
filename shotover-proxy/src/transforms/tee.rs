@@ -1,7 +1,7 @@
 use crate::error::ChainResponse;
-use crate::transforms::chain::BufferedChain;
+use crate::transforms::chain::{BufferedChain, TransformChainBuilder};
 use crate::transforms::{
-    build_chain_from_config, Transform, TransformBuilder, TransformsConfig, Wrapper,
+    build_chain_from_config, Transform, TransformBuilder, Transforms, TransformsConfig, Wrapper,
 };
 use anyhow::Result;
 use async_trait::async_trait;
@@ -11,8 +11,8 @@ use tracing::trace;
 
 #[derive(Clone)]
 pub struct TeeBuilder {
-    pub tx: BufferedChain,
-    pub mismatch_chain: Option<BufferedChain>,
+    pub tx: TransformChainBuilder,
+    pub mismatch_chain: Option<TransformChainBuilder>,
     pub buffer_size: usize,
     pub behavior: ConsistencyBehavior,
     pub timeout_micros: Option<u64>,
@@ -21,8 +21,8 @@ pub struct TeeBuilder {
 
 impl TeeBuilder {
     pub fn new(
-        tx: BufferedChain,
-        mismatch_chain: Option<BufferedChain>,
+        tx: TransformChainBuilder,
+        mismatch_chain: Option<TransformChainBuilder>,
         buffer_size: usize,
         behavior: ConsistencyBehavior,
         timeout_micros: Option<u64>,
@@ -38,15 +38,30 @@ impl TeeBuilder {
             dropped_messages,
         }
     }
+}
+
+impl TransformBuilder for TeeBuilder {
+    fn build(&self) -> Transforms {
+        Transforms::Tee(Tee {
+            tx: self.tx.build_buffered(self.buffer_size),
+            mismatch_chain: self
+                .mismatch_chain
+                .as_ref()
+                .map(|x| x.build_buffered(self.buffer_size)),
+            buffer_size: self.buffer_size,
+            behavior: self.behavior.clone(),
+            timeout_micros: self.timeout_micros,
+            dropped_messages: self.dropped_messages.clone(),
+        })
+    }
 
     fn get_name(&self) -> &'static str {
         "Tee"
     }
 
-    pub fn validate(&self) -> Vec<String> {
+    fn validate(&self) -> Vec<String> {
         if let Some(mismatch_chain) = &self.mismatch_chain {
             let mut errors = mismatch_chain
-                .original_chain
                 .validate()
                 .iter()
                 .map(|x| format!("  {x}"))
@@ -59,24 +74,6 @@ impl TeeBuilder {
             errors
         } else {
             vec![]
-        }
-    }
-
-    pub fn is_terminating(&self) -> bool {
-        false
-    }
-
-    pub fn build(&self) -> Tee {
-        Tee {
-            tx: self.tx.to_new_instance(self.buffer_size),
-            mismatch_chain: self
-                .mismatch_chain
-                .as_ref()
-                .map(|x| x.to_new_instance(self.buffer_size)),
-            buffer_size: self.buffer_size,
-            behavior: self.behavior.clone(),
-            timeout_micros: self.timeout_micros,
-            dropped_messages: self.dropped_messages.clone(),
         }
     }
 }
@@ -106,22 +103,18 @@ pub struct TeeConfig {
 }
 
 impl TeeConfig {
-    pub async fn get_builder(&self) -> Result<TransformBuilder> {
+    pub async fn get_builder(&self) -> Result<Box<dyn TransformBuilder>> {
         let buffer_size = self.buffer_size.unwrap_or(5);
         let mismatch_chain =
             if let Some(ConsistencyBehavior::SubchainOnMismatch(mismatch_chain)) = &self.behavior {
-                Some(
-                    build_chain_from_config("mismatch_chain".to_string(), mismatch_chain)
-                        .await?
-                        .build_buffered(buffer_size),
-                )
+                Some(build_chain_from_config("mismatch_chain".to_string(), mismatch_chain).await?)
             } else {
                 None
             };
         let tee_chain = build_chain_from_config("tee_chain".to_string(), &self.chain).await?;
 
-        Ok(TransformBuilder::Tee(TeeBuilder::new(
-            tee_chain.build_buffered(buffer_size),
+        Ok(Box::new(TeeBuilder::new(
+            tee_chain,
             mismatch_chain,
             buffer_size,
             self.behavior.clone().unwrap_or(ConsistencyBehavior::Ignore),
@@ -157,8 +150,8 @@ impl Transform for Tee {
 
                 if !chain_response.eq(&tee_response) {
                     for message in &mut chain_response {
-                        message.set_error(
-                            "ERR The responses from the Tee subchain and down-chain did not match and behavior is set to fail on mismatch".into())
+                        *message = message.to_error_response(
+                            "ERR The responses from the Tee subchain and down-chain did not match and behavior is set to fail on mismatch".into());
                     }
                 }
                 Ok(chain_response)

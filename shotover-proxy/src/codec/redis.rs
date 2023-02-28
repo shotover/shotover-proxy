@@ -1,48 +1,44 @@
-use crate::frame::RedisFrame;
+use crate::codec::{CodecBuilder, CodecReadError};
 use crate::frame::{Frame, MessageType};
-use crate::message::{Encodable, Message, Messages, QueryType};
-use crate::server::CodecReadError;
+use crate::message::{Encodable, Message, Messages};
 use anyhow::{anyhow, Result};
 use bytes::{Buf, BytesMut};
 use redis_protocol::resp2::prelude::decode_mut;
 use redis_protocol::resp2::prelude::encode_bytes;
 use tokio_util::codec::{Decoder, Encoder};
 
-#[derive(Debug, Clone)]
-pub struct RedisCodec {
+#[derive(Default, Clone)]
+pub struct RedisCodecBuilder {}
+
+impl CodecBuilder for RedisCodecBuilder {
+    type Decoder = RedisDecoder;
+    type Encoder = RedisEncoder;
+    fn build(&self) -> (RedisDecoder, RedisEncoder) {
+        (RedisDecoder::new(), RedisEncoder::new())
+    }
+}
+
+impl RedisCodecBuilder {
+    pub fn new() -> RedisCodecBuilder {
+        RedisCodecBuilder::default()
+    }
+}
+
+#[derive(Default)]
+pub struct RedisEncoder {}
+
+#[derive(Default)]
+pub struct RedisDecoder {
     messages: Messages,
 }
 
-#[inline]
-pub fn redis_query_type(frame: &RedisFrame) -> QueryType {
-    if let RedisFrame::Array(frames) = frame {
-        if let Some(RedisFrame::BulkString(bytes)) = frames.get(0) {
-            return match bytes.to_ascii_uppercase().as_slice() {
-                b"APPEND" | b"BITCOUNT" | b"STRLEN" | b"GET" | b"GETRANGE" | b"MGET"
-                | b"LRANGE" | b"LINDEX" | b"LLEN" | b"SCARD" | b"SISMEMBER" | b"SMEMBERS"
-                | b"SUNION" | b"SINTER" | b"ZCARD" | b"ZCOUNT" | b"ZRANGE" | b"ZRANK"
-                | b"ZSCORE" | b"ZRANGEBYSCORE" | b"HGET" | b"HGETALL" | b"HEXISTS" | b"HKEYS"
-                | b"HLEN" | b"HSTRLEN" | b"HVALS" | b"PFCOUNT" => QueryType::Read,
-                _ => QueryType::Write,
-            };
-        }
-    }
-    QueryType::Write
-}
-
-impl Default for RedisCodec {
-    fn default() -> Self {
-        Self::new()
+impl RedisDecoder {
+    pub fn new() -> Self {
+        Default::default()
     }
 }
 
-impl RedisCodec {
-    pub fn new() -> RedisCodec {
-        RedisCodec { messages: vec![] }
-    }
-}
-
-impl Decoder for RedisCodec {
+impl Decoder for RedisDecoder {
     type Item = Messages;
     type Error = CodecReadError;
 
@@ -71,7 +67,13 @@ impl Decoder for RedisCodec {
     }
 }
 
-impl Encoder<Messages> for RedisCodec {
+impl RedisEncoder {
+    pub fn new() -> Self {
+        Default::default()
+    }
+}
+
+impl Encoder<Messages> for RedisEncoder {
     type Error = anyhow::Error;
 
     fn encode(&mut self, item: Messages, dst: &mut BytesMut) -> Result<()> {
@@ -100,7 +102,7 @@ impl Encoder<Messages> for RedisCodec {
 
 #[cfg(test)]
 mod redis_tests {
-    use crate::codec::redis::RedisCodec;
+    use crate::codec::{redis::RedisCodecBuilder, CodecBuilder};
     use bytes::BytesMut;
     use hex_literal::hex;
     use tokio_util::codec::{Decoder, Encoder};
@@ -127,68 +129,60 @@ mod redis_tests {
 
     const HSET_MESSAGE: [u8; 75] = hex!("2a340d0a24340d0a485345540d0a2431380d0a6d797365743a5f5f72616e645f696e745f5f0d0a2432300d0a656c656d656e743a5f5f72616e645f696e745f5f0d0a24330d0a7878780d0a");
 
-    fn test_frame(codec: &mut RedisCodec, raw_frame: &[u8]) {
-        let message = codec
+    fn test_frame(raw_frame: &[u8]) {
+        let (mut decoder, mut encoder) = RedisCodecBuilder::new().build();
+        let message = decoder
             .decode(&mut BytesMut::from(raw_frame))
             .unwrap()
             .unwrap();
 
         let mut dest = BytesMut::new();
-        codec.encode(message, &mut dest).unwrap();
+        encoder.encode(message, &mut dest).unwrap();
         assert_eq!(raw_frame, &dest);
     }
 
     #[test]
     fn test_ok_codec() {
-        let mut codec = RedisCodec::new();
-        test_frame(&mut codec, &OK_MESSAGE);
+        test_frame(&OK_MESSAGE);
     }
 
     #[test]
     fn test_set_codec() {
-        let mut codec = RedisCodec::new();
-        test_frame(&mut codec, &SET_MESSAGE);
+        test_frame(&SET_MESSAGE);
     }
 
     #[test]
     fn test_get_codec() {
-        let mut codec = RedisCodec::new();
-        test_frame(&mut codec, &GET_MESSAGE);
+        test_frame(&GET_MESSAGE);
     }
 
     #[test]
     fn test_inc_codec() {
-        let mut codec = RedisCodec::new();
-        test_frame(&mut codec, &INC_MESSAGE);
+        test_frame(&INC_MESSAGE);
     }
 
     #[test]
     fn test_lpush_codec() {
-        let mut codec = RedisCodec::new();
-        test_frame(&mut codec, &LPUSH_MESSAGE);
+        test_frame(&LPUSH_MESSAGE);
     }
 
     #[test]
     fn test_rpush_codec() {
-        let mut codec = RedisCodec::new();
-        test_frame(&mut codec, &RPUSH_MESSAGE);
+        test_frame(&RPUSH_MESSAGE);
     }
 
     #[test]
     fn test_lpop_codec() {
-        let mut codec = RedisCodec::new();
-        test_frame(&mut codec, &LPOP_MESSAGE);
+        test_frame(&LPOP_MESSAGE);
     }
 
     #[test]
     fn test_sadd_codec() {
-        let mut codec = RedisCodec::new();
-        test_frame(&mut codec, &SADD_MESSAGE);
+        test_frame(&SADD_MESSAGE);
     }
 
     #[test]
     fn test_hset_codec() {
-        let mut codec = RedisCodec::new();
-        test_frame(&mut codec, &HSET_MESSAGE);
+        test_frame(&HSET_MESSAGE);
     }
 }
