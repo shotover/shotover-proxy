@@ -13,7 +13,7 @@ use test_helpers::shotover_process::ShotoverProcessBuilder;
 async fn main() {
     test_helpers::bench::init();
 
-    let latte = Latte::new(10000000);
+    let latte = Latte::new(10000000, 1);
     let config_dir = "example-configs/cassandra-cluster-v4";
     let bench = "read";
     {

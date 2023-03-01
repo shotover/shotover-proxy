@@ -22,7 +22,7 @@ async fn main() {
     test_helpers::bench::init();
     let args = Args::parse();
 
-    let latte = Latte::new(args.rate);
+    let latte = Latte::new(args.rate, 1);
     let bench = "read";
     {
         let _compose = DockerCompose::new(&format!("{}/docker-compose.yaml", args.config_dir));
@@ -37,11 +37,11 @@ async fn main() {
         println!("Benching Shotover ...");
         latte.init(bench, "localhost:9043");
         latte.bench(bench, "localhost:9042");
+        shotover.shutdown_and_then_consume_events(&[]).await;
+
         println!("Benching Direct Cassandra ...");
         latte.init(bench, "localhost:9043");
         latte.bench(bench, "localhost:9043");
-
-        shotover.shutdown_and_then_consume_events(&[]).await;
     }
 
     println!("Direct Cassandra (A) vs Shotover (B)");
