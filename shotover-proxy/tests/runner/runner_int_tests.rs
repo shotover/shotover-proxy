@@ -56,7 +56,15 @@ async fn test_shotover_shutdown_when_invalid_topology_non_terminating_last() {
     ShotoverProcessBuilder::new_with_topology(
         "tests/test-configs/invalid_non_terminating_last.yaml",
     )
-    .assert_fails_to_start(&[])
+    .assert_fails_to_start(&[EventMatcher::new()
+        .with_level(Level::Error)
+        .with_target("shotover_proxy::runner")
+        .with_message(
+            "Topology errors
+redis_chain:
+  Non-terminating transform \"DebugPrinter\" is last in chain. Last transform must be terminating.
+",
+        )])
     .await;
 }
 
@@ -66,7 +74,13 @@ async fn test_shotover_shutdown_when_invalid_topology_terminating_not_last() {
     ShotoverProcessBuilder::new_with_topology(
         "tests/test-configs/invalid_terminating_not_last.yaml",
     )
-    .assert_fails_to_start(&[])
+    .assert_fails_to_start(&[EventMatcher::new()
+        .with_level(Level::Error)
+        .with_target("shotover_proxy::runner")
+        .with_message("Topology errors
+redis_chain:
+  Terminating transform \"NullSink\" is not last in chain. Terminating transform must be last in chain.
+")])
     .await;
 }
 

@@ -142,7 +142,7 @@ impl Runner {
     }
 }
 
-struct TracingState {
+pub struct TracingState {
     /// Once this is dropped tracing logs are ignored
     _guard: WorkerGuard,
     handle: ReloadHandle,
@@ -170,7 +170,7 @@ fn try_parse_log_directives(directives: &[Option<&str>]) -> Result<EnvFilter> {
 }
 
 impl TracingState {
-    fn new(log_level: &str, format: LogFormat) -> Result<Self> {
+    pub fn new(log_level: &str, format: LogFormat) -> Result<Self> {
         let (non_blocking, guard) = tracing_appender::non_blocking(std::io::stdout());
 
         // Load log directives from shotover config and then from the RUST_LOG env var, with the latter taking priority.

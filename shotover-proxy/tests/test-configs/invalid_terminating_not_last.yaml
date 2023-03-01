@@ -6,7 +6,7 @@ sources:
 chain_config:
   redis_chain:
     - NullSink
-    - Printer
+    - DebugPrinter
     - NullSink
 source_to_chain_mapping:
   redis_prod: redis_chain
