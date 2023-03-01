@@ -7,6 +7,7 @@ pub use tokio_bin_process::BinProcess;
 pub struct ShotoverProcessBuilder {
     topology_path: String,
     log_name: Option<String>,
+    cores: Option<String>,
 }
 
 impl ShotoverProcessBuilder {
@@ -14,6 +15,7 @@ impl ShotoverProcessBuilder {
         Self {
             topology_path: topology_path.to_owned(),
             log_name: None,
+            cores: None,
         }
     }
 
@@ -22,10 +24,19 @@ impl ShotoverProcessBuilder {
         self
     }
 
+    pub fn with_cores(mut self, cores: u32) -> Self {
+        self.cores = Some(cores.to_string());
+        self
+    }
+
     pub async fn start(&self) -> BinProcess {
+        let mut args = vec!["-t", &self.topology_path, "--log-format", "json"];
+        if let Some(cores) = &self.cores {
+            args.extend(["--core-threads", cores]);
+        }
         let mut shotover = BinProcess::start_with_args(
             "shotover-proxy",
-            &["-t", &self.topology_path, "--log-format", "json"],
+            &args,
             self.log_name.as_deref().unwrap_or("shotover"),
         )
         .await;

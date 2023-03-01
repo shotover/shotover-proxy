@@ -1,7 +1,7 @@
 use crate::sources::{Sources, SourcesConfig};
 use crate::transforms::chain::TransformChainBuilder;
 use crate::transforms::{build_chain_from_config, TransformsConfig};
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use itertools::Itertools;
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -37,7 +37,7 @@ impl Topology {
         let deserializer = serde_yaml::Deserializer::from_reader(file);
         let config: TopologyConfig =
             serde_yaml::with::singleton_map_recursive::deserialize(deserializer)
-                .map_err(|e| anyhow!(e))?;
+                .context(format!("Failed to parse topology file {}", &filepath))?;
 
         Ok(Topology::topology_from_config(config))
     }
