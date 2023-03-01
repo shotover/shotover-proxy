@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use serde::Deserialize;
 
 pub mod topology;
@@ -14,6 +14,6 @@ impl Config {
         let file = std::fs::File::open(&filepath).map_err(|err| {
             anyhow!(err).context(format!("Couldn't open the config file {}", &filepath))
         })?;
-        Ok(serde_yaml::from_reader(file)?)
+        serde_yaml::from_reader(file).context(format!("Failed to parse config file {}", &filepath))
     }
 }

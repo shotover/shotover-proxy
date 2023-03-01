@@ -75,6 +75,7 @@ jobs:
         cargo run --release --example cassandra_bench -- --config-dir example-configs/cassandra-passthrough --rate 1000
         cargo run --release --example cassandra_cluster_bench
         cargo run --release --example cassandra_cluster_flamegraph
+        cargo run --release --example cassandra_bench_mocked
       if: ${{ matrix.name == 'Ubuntu 20.04 - Release' }}
     - name: Ensure that tests did not create or modify any files that arent .gitignore'd
       run: |
