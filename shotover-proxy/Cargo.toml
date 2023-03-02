@@ -76,8 +76,8 @@ csv = "1.2.0"
 strum_macros = "0.24"
 chacha20poly1305 = { version = "0.10.0", features = ["std"] }
 generic-array = { version = "0.14", features = ["serde"] }
-kafka-protocol = "0.5.0"
 dyn-clone = "1.0.10"
+kafka-protocol = "0.6.0"
 
 [dev-dependencies]
 criterion = { git = "https://github.com/shotover/criterion.rs", branch = "0.4.0-bench_with_input_fn", features = ["async_tokio"] }

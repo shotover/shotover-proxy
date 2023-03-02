@@ -5,11 +5,7 @@ use kafka_protocol::messages::{
     ApiKey, FindCoordinatorRequest, FindCoordinatorResponse, ProduceRequest, ProduceResponse,
     RequestHeader, ResponseHeader,
 };
-use kafka_protocol::protocol::{Decodable, Encodable};
-
-// No way to know which version to use, just have to guess
-const REQUEST_HEADER_VERSION: i16 = 1;
-const RESPONSE_HEADER_VERSION: i16 = 0;
+use kafka_protocol::protocol::{Decodable, Encodable, HeaderVersion};
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum KafkaFrame {
@@ -38,6 +34,16 @@ pub enum ResponseBody {
     Unknown { api_key: ApiKey, message: Bytes },
 }
 
+impl ResponseBody {
+    fn header_version(&self, version: i16) -> i16 {
+        match self {
+            ResponseBody::Produce(_) => ProduceResponse::header_version(version),
+            ResponseBody::FindCoordinator(_) => FindCoordinatorResponse::header_version(version),
+            ResponseBody::Unknown { api_key, .. } => api_key.response_header_version(version),
+        }
+    }
+}
+
 impl KafkaFrame {
     pub fn from_bytes(
         mut bytes: Bytes,
@@ -53,7 +59,12 @@ impl KafkaFrame {
     }
 
     fn parse_request(mut bytes: Bytes) -> Result<Self> {
-        let header = RequestHeader::decode(&mut bytes, REQUEST_HEADER_VERSION)
+        let api_key = i16::from_be_bytes(bytes[0..2].try_into().unwrap());
+        let api_version = i16::from_be_bytes(bytes[2..4].try_into().unwrap());
+        let header_version = ApiKey::try_from(api_key)
+            .unwrap()
+            .request_header_version(api_version);
+        let header = RequestHeader::decode(&mut bytes, header_version)
             .context("Failed to decode request header")?;
 
         let api_key = ApiKey::try_from(header.request_api_key)
@@ -74,8 +85,13 @@ impl KafkaFrame {
     }
 
     fn parse_response(mut bytes: Bytes, request_header: CodecRequestHeader) -> Result<Self> {
-        let header = ResponseHeader::decode(&mut bytes, RESPONSE_HEADER_VERSION)
-            .context("Failed to decode response header")?;
+        let header = ResponseHeader::decode(
+            &mut bytes,
+            request_header
+                .api_key
+                .response_header_version(request_header.version),
+        )
+        .context("Failed to decode response header")?;
 
         let version = request_header.version;
         let body = match request_header.api_key {
@@ -105,7 +121,11 @@ impl KafkaFrame {
         // write message
         match self {
             KafkaFrame::Request { header, body } => {
-                header.encode(bytes, REQUEST_HEADER_VERSION)?;
+                let header_version = ApiKey::try_from(header.request_api_key)
+                    .map_err(|_| anyhow!("unknown api key {}", header.request_api_key))?
+                    .request_header_version(header.request_api_version);
+                header.encode(bytes, header_version)?;
+
                 let version = header.request_api_version;
                 match body {
                     RequestBody::Produce(x) => x.encode(bytes, version)?,
@@ -118,7 +138,7 @@ impl KafkaFrame {
                 header,
                 body,
             } => {
-                header.encode(bytes, RESPONSE_HEADER_VERSION)?;
+                header.encode(bytes, body.header_version(version))?;
                 match body {
                     ResponseBody::Produce(x) => x.encode(bytes, version)?,
                     ResponseBody::FindCoordinator(x) => x.encode(bytes, version)?,
