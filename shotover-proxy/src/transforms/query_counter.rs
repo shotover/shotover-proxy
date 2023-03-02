@@ -12,7 +12,7 @@ pub struct QueryCounter {
     counter_name: String,
 }
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Debug)]
 pub struct QueryCounterConfig {
     pub name: String,
 }

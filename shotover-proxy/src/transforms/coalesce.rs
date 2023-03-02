@@ -15,7 +15,7 @@ pub struct Coalesce {
     last_write: Instant,
 }
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Debug)]
 pub struct CoalesceConfig {
     pub flush_when_buffered_message_count: Option<usize>,
     pub flush_when_millis_since_last_flush: Option<u128>,

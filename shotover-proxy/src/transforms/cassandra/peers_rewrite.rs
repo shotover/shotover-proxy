@@ -15,7 +15,7 @@ use cql3_parser::common::{FQName, Identifier};
 use cql3_parser::select::SelectElement;
 use serde::Deserialize;
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Debug)]
 pub struct CassandraPeersRewriteConfig {
     pub port: u16,
 }

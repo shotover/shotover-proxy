@@ -50,7 +50,7 @@ enum CacheableState {
     Skip,
 }
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Debug)]
 pub struct TableCacheSchemaConfig {
     partition_key: Vec<String>,
     range_key: Vec<String>,
@@ -75,7 +75,7 @@ impl From<&TableCacheSchemaConfig> for TableCacheSchema {
     }
 }
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Debug)]
 pub struct RedisConfig {
     pub caching_schema: HashMap<String, TableCacheSchemaConfig>,
     pub chain: Vec<TransformsConfig>,
