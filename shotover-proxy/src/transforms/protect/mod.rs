@@ -19,7 +19,7 @@ mod key_management;
 mod local_kek;
 mod pkcs_11;
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Debug)]
 pub struct ProtectConfig {
     pub keyspace_table_columns: HashMap<String, HashMap<String, Vec<String>>>,
     pub key_manager: KeyManagerConfig,

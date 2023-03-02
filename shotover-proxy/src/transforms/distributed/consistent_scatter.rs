@@ -12,7 +12,7 @@ use serde::Deserialize;
 use std::collections::HashMap;
 use tracing::{debug, error, trace, warn};
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Debug)]
 pub struct ConsistentScatterConfig {
     pub route_map: HashMap<String, Vec<TransformsConfig>>,
     pub write_consistency: i32,

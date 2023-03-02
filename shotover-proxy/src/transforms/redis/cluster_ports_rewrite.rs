@@ -8,7 +8,7 @@ use crate::error::ChainResponse;
 use crate::frame::Frame;
 use crate::transforms::{Transform, TransformBuilder, Transforms, Wrapper};
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Debug)]
 pub struct RedisClusterPortsRewriteConfig {
     pub new_port: u16,
 }

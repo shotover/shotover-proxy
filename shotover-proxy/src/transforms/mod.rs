@@ -233,7 +233,7 @@ impl Transforms {
 
 /// The TransformsConfig enum is responsible for TransformConfig registration and enum dispatch
 /// in the transform chain. Allows you to register your config struct for the config file.
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Debug)]
 pub enum TransformsConfig {
     #[cfg(feature = "alpha-transforms")]
     KafkaSinkSingle(KafkaSinkSingleConfig),

@@ -12,7 +12,7 @@ use serde::Deserialize;
 
 /// Messages that pass through this transform will be parsed.
 /// Must be individually enabled at the request or response level.
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Debug)]
 pub struct DebugForceParseConfig {
     parse_requests: bool,
     parse_responses: bool,
@@ -31,7 +31,7 @@ impl DebugForceParseConfig {
 
 /// Messages that pass through this transform will be parsed and then reencoded.
 /// Must be individually enabled at the request or response level.
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Debug)]
 pub struct DebugForceEncodeConfig {
     encode_requests: bool,
     encode_responses: bool,
