@@ -1,4 +1,4 @@
-use crate::codec::kafka::{Direction, KafkaCodecBuilder};
+use crate::codec::{kafka::KafkaCodecBuilder, CodecBuilder, Direction};
 use crate::server::TcpCodecListener;
 use crate::sources::Sources;
 use crate::tls::{TlsAcceptor, TlsAcceptorConfig};

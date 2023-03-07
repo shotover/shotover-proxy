@@ -5,7 +5,7 @@ use cassandra_protocol::frame::message_result::{
 use cassandra_protocol::frame::Version;
 use criterion::{black_box, criterion_group, BatchSize, Criterion};
 use shotover_proxy::codec::cassandra::CassandraCodecBuilder;
-use shotover_proxy::codec::CodecBuilder;
+use shotover_proxy::codec::{CodecBuilder, Direction};
 use shotover_proxy::frame::cassandra::{parse_statement_single, Tracing};
 use shotover_proxy::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame};
 use shotover_proxy::message::Message;
@@ -28,7 +28,7 @@ fn criterion_benchmark(c: &mut Criterion) {
             },
         }))];
 
-        let (_, mut encoder) = CassandraCodecBuilder::new().build();
+        let (_, mut encoder) = CassandraCodecBuilder::new(Direction::Sink).build();
 
         group.bench_function("encode_cassandra_system.local_query", |b| {
             b.iter_batched(
@@ -52,7 +52,7 @@ fn criterion_benchmark(c: &mut Criterion) {
             operation: CassandraOperation::Result(peers_v2_result()),
         }))];
 
-        let (_, mut encoder) = CassandraCodecBuilder::new().build();
+        let (_, mut encoder) = CassandraCodecBuilder::new(Direction::Sink).build();
 
         group.bench_function("encode_cassandra_system.local_result", |b| {
             b.iter_batched(

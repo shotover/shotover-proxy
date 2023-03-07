@@ -1,4 +1,4 @@
-use crate::codec::kafka::{Direction, KafkaCodecBuilder};
+use crate::codec::{kafka::KafkaCodecBuilder, CodecBuilder, Direction};
 use crate::error::ChainResponse;
 use crate::frame::kafka::{KafkaFrame, ResponseBody};
 use crate::frame::Frame;
