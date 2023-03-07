@@ -1,26 +1,25 @@
 use super::Direction;
+use super::cassandra_frames::{
+    CassandraFrameCodec, CheckFrameSizeError, LegacyFrameCodec, UncompressedFrameCodec,
+};
+use super::Direction;
 use crate::codec::{CodecBuilder, CodecReadError};
 use crate::frame::cassandra::{CassandraMetadata, CassandraOperation, Tracing};
 use crate::frame::{CassandraFrame, Frame, MessageType};
 use crate::message::{Encodable, Message, Messages, Metadata};
 use anyhow::{anyhow, Result};
-use bytes::{Buf, BufMut, Bytes, BytesMut};
+use bytes::{Buf, Bytes, BytesMut};
 use cassandra_protocol::compression::Compression;
-use cassandra_protocol::frame::frame_decoder::FrameDecoder;
-// use cassandra_protocol::frame::frame_decoder::{FrameDecoder, LegacyFrameDecoder};
 use cassandra_protocol::frame::message_error::{ErrorBody, ErrorType};
 use cassandra_protocol::frame::message_startup::BodyReqStartup;
-use cassandra_protocol::frame::{
-    CheckEnvelopeSizeError, Envelope as RawCassandraFrame, Flags, Opcode, Version,
-};
+use cassandra_protocol::frame::{Flags, Opcode, Version};
 use cql3_parser::cassandra_statement::CassandraStatement;
 use cql3_parser::common::Identifier;
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::sync::RwLock;
 use tokio_util::codec::{Decoder, Encoder};
 use tracing::info;
-
-use super::cassandra_frames::{CassandraFrameCodec, CheckFrameSizeError, LegacyFrameCodec};
 
 #[derive(Clone, Default)]
 pub struct CassandraCodecBuilder {}
@@ -41,16 +40,31 @@ impl CodecBuilder for CassandraCodecBuilder {
 
     fn build(&self) -> (CassandraDecoder, CassandraEncoder) {
         let envelope_compression = Arc::new(RwLock::new(Compression::None));
-        let frame_codec = Arc::new(RwLock::new(CassandraFrameCodec::new()));
+        let frame_codec = Arc::new(RwLock::new(CassandraFrameCodec::default()));
+
+        let handshake_complete = Arc::new(AtomicBool::from(false));
 
         (
-            CassandraDecoder::new(envelope_compression.clone(), frame_codec.clone()),
-            CassandraEncoder::new(envelope_compression, frame_codec),
+            CassandraDecoder::new(
+                envelope_compression.clone(),
+                frame_codec.clone(),
+                direction,
+                handshake_complete.clone(),
+            ),
+            CassandraEncoder::new(
+                envelope_compression,
+                frame_codec,
+                direction,
+                handshake_complete.clone(),
+            ),
         )
     }
 }
 
 pub struct CassandraDecoder {
+    direction: Direction,
+    handshake_complete: Arc<AtomicBool>,
+
     // compression in use for v4 protocol, this is ignored on the v5 protocol as the
     // envelope compression flag is deprecated
     envelope_compression: Arc<RwLock<Compression>>,
@@ -58,23 +72,24 @@ pub struct CassandraDecoder {
     current_use_keyspace: Option<Identifier>,
 
     frame_codec: Arc<RwLock<CassandraFrameCodec>>,
-
-    frame_buffer: Vec<u8>,
+    // frame_buffer: Vec<u8>,
 }
 
 impl CassandraDecoder {
     pub fn new(
         envelope_compression: Arc<RwLock<Compression>>,
         frame_codec: Arc<RwLock<CassandraFrameCodec>>,
+        direction: Direction,
+        handshake_complete: Arc<AtomicBool>,
     ) -> CassandraDecoder {
         CassandraDecoder {
+            direction,
             envelope_compression,
             messages: vec![],
             current_use_keyspace: None,
-
             frame_codec,
-
-            frame_buffer: Vec::new(),
+            handshake_complete,
+            // frame_buffer: Vec::new(),
         }
     }
 }
@@ -99,13 +114,22 @@ impl CassandraDecoder {
                 match version {
                     // If protocol version 3/4, set envelope compression and leave frame codec as `LegacyFrameDecoder`
                     Version::V3 | Version::V4 => {
+                        tracing::debug!("SETTING v4");
                         set_envelope_compression(&mut self.envelope_compression, &startup);
                     }
                     // If protocol version 5, leave envelope compression as `Compression::None` and set frame codec
-                    Version::V5 => {}
+                    Version::V5 => {
+                        tracing::debug!("SETTING v5");
+                        set_frame_codec(&mut self.frame_codec, &startup);
+                    }
                     _ => return Err(anyhow!("Invalid version: {version}")),
                 }
             };
+        }
+
+        if Opcode::Ready == opcode || Opcode::Authenticate == opcode {
+            self.handshake_complete
+                .store(true, std::sync::atomic::Ordering::Relaxed);
         }
 
         Ok(compressed)
@@ -123,8 +147,26 @@ fn set_envelope_compression(
             "snappy" | "SNAPPY" => Compression::Snappy,
             "lz4" | "LZ4" => Compression::Lz4,
             "" | "none" | "NONE" => Compression::None,
-            _ => panic!(),
+            _ => panic!(), // TODO FIX THIS PANIC
         };
+    }
+}
+
+fn set_frame_codec(
+    frame_codec_state: &mut Arc<RwLock<CassandraFrameCodec>>,
+    startup: &BodyReqStartup,
+) {
+    let mut write = frame_codec_state.write().unwrap();
+
+    if let Some(frame_compresssion) = startup.map.get("COMPRESSION") {
+        *write = match frame_compresssion.as_str() {
+            "snappy" | "SNAPPY" => unimplemented!(),
+            "lz4" | "LZ4" => unimplemented!(),
+            "" | "none" | "NONE" => CassandraFrameCodec::Uncompressed(UncompressedFrameCodec {}),
+            _ => panic!(), // TODO FIX THIS PANIC
+        }
+    } else {
+        *write = CassandraFrameCodec::Uncompressed(UncompressedFrameCodec {})
     }
 }
 
@@ -133,12 +175,25 @@ impl Decoder for CassandraDecoder {
     type Error = CodecReadError;
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, CodecReadError> {
-        let frame_codec = self.frame_codec.read().unwrap().clone();
+        let frame_codec = if self
+            .handshake_complete
+            .load(std::sync::atomic::Ordering::Relaxed)
+        {
+            *self.frame_codec.read().unwrap()
+        } else {
+            CassandraFrameCodec::Legacy(LegacyFrameCodec {})
+        };
 
         loop {
             match frame_codec.check_size(src) {
                 Ok(frame_len) => {
                     let bytes: BytesMut = src.split_to(frame_len);
+
+                    tracing::debug!(
+                        "{}: incoming cassandra message:\n{}",
+                        self.direction,
+                        pretty_hex::pretty_hex(&bytes)
+                    );
 
                     let envelopes = frame_codec
                         .decode_envelopes(bytes, Compression::None)
@@ -146,10 +201,11 @@ impl Decoder for CassandraDecoder {
 
                     for envelope_bytes in envelopes {
                         // Clear the read bytes from the FramedReader
-                        tracing::debug!(
-                            "incoming cassandra message:\n{}",
-                            pretty_hex::pretty_hex(&envelope_bytes)
-                        );
+                        // tracing::debug!(
+                        //     "{}: incoming cassandra message:\n{}",
+                        //     self.direction,
+                        //     pretty_hex::pretty_hex(&envelope_bytes)
+                        // );
 
                         let version = Version::try_from(envelope_bytes[0])
                         .expect("Gauranteed because check_envelope_size only returns Ok if the Version will parse");
@@ -300,16 +356,22 @@ fn reject_protocol_version(version: u8) -> CodecReadError {
 pub struct CassandraEncoder {
     compression: Arc<RwLock<Compression>>,
     frame_codec: Arc<RwLock<CassandraFrameCodec>>,
+    direction: Direction,
+    handshake_complete: Arc<AtomicBool>,
 }
 
 impl CassandraEncoder {
     pub fn new(
         compression: Arc<RwLock<Compression>>,
         frame_codec: Arc<RwLock<CassandraFrameCodec>>,
+        direction: Direction,
+        handshake_complete: Arc<AtomicBool>,
     ) -> CassandraEncoder {
         CassandraEncoder {
             compression,
             frame_codec,
+            direction,
+            handshake_complete,
         }
     }
 }
@@ -323,6 +385,7 @@ impl Encoder<Messages> for CassandraEncoder {
         dst: &mut BytesMut,
     ) -> std::result::Result<(), Self::Error> {
         let mut envelopes = Vec::<Bytes>::new();
+        let mut completed_handshake = false;
         for m in item {
             let start = dst.len();
             let compression = m.codec_state.as_cassandra();
@@ -342,40 +405,67 @@ impl Encoder<Messages> for CassandraEncoder {
                                 set_envelope_compression(&mut self.compression, &startup);
                             };
                         }
+
+                        if Opcode::Ready == opcode || Opcode::Authenticate == opcode {
+                            completed_handshake = true;
+                        }
                     }
 
                     bytes
-
-                    //dst.extend_from_slice(&bytes)
                 }
                 Encodable::Frame(frame) => {
-                    // check if the message is a startup message and set the codec's compression
-                    if let Frame::Cassandra(CassandraFrame {
-                        operation: CassandraOperation::Startup(startup),
-                        ..
-                    }) = &frame
                     {
-                        set_envelope_compression(&mut self.compression, startup);
-                    };
+                        // check if the message is a startup message and set the codec's compression
+                        if let Frame::Cassandra(CassandraFrame {
+                            operation: CassandraOperation::Startup(startup),
+                            ..
+                        }) = &frame
+                        {
+                            set_envelope_compression(&mut self.compression, startup);
+                        };
+
+                        if let Frame::Cassandra(CassandraFrame {
+                            operation:
+                                CassandraOperation::Ready(_) | CassandraOperation::Authenticate(_),
+                            ..
+                        }) = &frame
+                        {
+                            completed_handshake = true;
+                        };
+                    }
 
                     let buffer = frame.into_cassandra().unwrap().encode(compression);
 
                     Bytes::copy_from_slice(buffer.as_slice())
-
-                    //dst.extend_from_slice(buffer.as_slice())
                 }
             };
-            tracing::debug!(
-                "outgoing cassandra message:\n{}",
-                pretty_hex::pretty_hex(&&envelope_bytes[start..])
-            );
             envelopes.push(envelope_bytes);
         }
 
-        self.frame_codec
-            .read()
-            .unwrap()
-            .encode_envelopes(dst, envelopes);
+        let bytes = if self
+            .handshake_complete
+            .load(std::sync::atomic::Ordering::Relaxed)
+        {
+            self.frame_codec
+                .read()
+                .unwrap()
+                .encode_envelopes(dst, envelopes)
+        } else {
+            LegacyFrameCodec {}.encode_envelopes(dst, envelopes)
+        };
+
+        tracing::debug!(
+            "{}: outgoing cassandra message:\n{}",
+            self.direction,
+            pretty_hex::pretty_hex(&&bytes)
+        );
+
+        dst.extend_from_slice(&bytes);
+
+        if completed_handshake {
+            self.handshake_complete
+                .store(true, std::sync::atomic::Ordering::Relaxed);
+        }
 
         Ok(())
     }
@@ -408,7 +498,7 @@ mod cassandra_protocol_tests {
         raw_frame: &[u8],
         expected_messages: Vec<Message>,
     ) {
-        let (mut decoder, mut encoder) = codec.build();
+        let (mut decoder, mut encoder) = codec.build(Direction::Sink);
         // test decode
         let decoded_messages = decoder
             .decode(&mut BytesMut::from(raw_frame))

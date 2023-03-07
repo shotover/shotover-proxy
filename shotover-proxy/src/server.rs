@@ -1,3 +1,4 @@
+use crate::codec::Direction;
 use crate::codec::{CodecBuilder, CodecReadError};
 use crate::message::Messages;
 use crate::tls::{AcceptError, TlsAcceptor};
@@ -322,7 +323,7 @@ fn spawn_read_write_tasks<
     out_tx: UnboundedSender<Messages>,
     mut terminate_tasks_rx: watch::Receiver<()>,
 ) {
-    let (decoder, encoder) = codec.build();
+    let (decoder, encoder) = codec.build(Direction::Source);
     let mut reader = FramedRead::new(rx, decoder);
     let mut writer = FramedWrite::new(tx, encoder);
 

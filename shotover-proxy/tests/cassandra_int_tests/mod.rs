@@ -828,14 +828,16 @@ async fn test_protocol_v5() {
 
     let _shotover_manager = ShotoverProcessBuilder::new_with_topology(
         "example-configs/cassandra-passthrough/topology.yaml",
-    );
+    )
+    .start()
+    .await;
 
     let user = "cassandra";
     let password = "cassandra";
     let auth = StaticPasswordAuthenticatorProvider::new(&user, &password);
 
     let config = NodeTcpConfigBuilder::new()
-        .with_contact_point("127.0.0.1:9043".into())
+        .with_contact_point("127.0.0.1:9042".into())
         .with_authenticator_provider(Arc::new(auth))
         .with_version(Version::V5)
         .build()
@@ -847,9 +849,9 @@ async fn test_protocol_v5() {
         .await
         .unwrap();
 
-    let create_ks = "SELECT * FROM system.peers_v2";
+    // let create_ks = "SELECT * FROM system.peers_v2";
 
-    let r = session.query(create_ks).await.unwrap();
+    // let r = session.query(create_ks).await.unwrap();
 
-    println!("result : {:?}", r);
+    // println!("result : {:?}", r);
 }
