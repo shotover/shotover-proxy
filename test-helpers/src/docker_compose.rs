@@ -76,19 +76,19 @@ impl DockerCompose {
             panic!("Could not find docker-compose. Have you installed it?");
         }
 
-        DockerCompose::build_images();
+        let service_to_image = DockerCompose::get_service_to_image(file_path);
+
+        DockerCompose::build_images(&service_to_image);
 
         DockerCompose::clean_up(file_path).unwrap();
 
         run_command("docker-compose", &["-f", file_path, "up", "-d"]).unwrap();
 
-        let compose = DockerCompose {
+        DockerCompose::wait_for_containers_to_startup(service_to_image, file_path);
+
+        DockerCompose {
             file_path: file_path.to_string(),
-        };
-
-        compose.wait_for_containers_to_startup();
-
-        compose
+        }
     }
 
     /// Creates a new DockerCompose running an instance of moto the AWS mocking server
@@ -130,7 +130,7 @@ impl DockerCompose {
         // TODO: call wait_for_containers_to_startup
     }
 
-    fn wait_for_containers_to_startup(&self) {
+    fn wait_for_containers_to_startup(service_to_image: HashMap<String, String>, file_path: &str) {
         let images = [
             Image {
                 name: "shotover/shotover-proxy",
@@ -180,8 +180,8 @@ impl DockerCompose {
             },
         ];
 
-        let services: Vec<Service> = self
-            .get_service_to_image()
+        let services: Vec<Service> =
+            service_to_image
             .into_iter()
             .map(
                 |(service_name, image_name)| match images.iter().find(|image| image.name == image_name) {
@@ -194,14 +194,12 @@ impl DockerCompose {
             )
             .collect();
 
-        self.wait_for_logs(&services);
+        DockerCompose::wait_for_logs(file_path, &services);
     }
 
-    fn get_service_to_image(&self) -> HashMap<String, String> {
-        // If we got this far then docker-compose already succesfully parsed the docker-compose.yaml,
-        // so our error reporting only has to be good enough to debug issues in our implementation.
+    fn get_service_to_image(file_path: &str) -> HashMap<String, String> {
         let compose_yaml: Value =
-            serde_yaml::from_str(&std::fs::read_to_string(&self.file_path).unwrap()).unwrap();
+            serde_yaml::from_str(&std::fs::read_to_string(file_path).unwrap()).unwrap();
         let mut result = HashMap::new();
         match compose_yaml {
             Value::Mapping(root) => match root.get("services").unwrap() {
@@ -232,48 +230,48 @@ impl DockerCompose {
 
     /// Wait until the requirements in every Service is met.
     /// Will panic if a timeout occurs.
-    fn wait_for_logs(&self, services: &[Service]) {
+    fn wait_for_logs(file_path: &str, services: &[Service]) {
         let timeout = Duration::from_secs(120);
 
         // TODO: remove this check once CI docker-compose is updated (probably ubuntu 22.04)
-        let can_use_status_flag =
-            run_command("docker-compose", &["-f", &self.file_path, "ps", "--help"])
-                .unwrap()
-                .contains("--status");
+        let can_use_status_flag = run_command("docker-compose", &["-f", file_path, "ps", "--help"])
+            .unwrap()
+            .contains("--status");
 
         let instant = time::Instant::now();
         loop {
             // check if every service is completely ready
             if services.iter().all(|service| {
-                let log = run_command(
-                    "docker-compose",
-                    &["-f", &self.file_path, "logs", &service.name],
-                )
-                .unwrap();
+                let log = run_command("docker-compose", &["-f", file_path, "logs", &service.name])
+                    .unwrap();
                 service.log_to_wait_for.is_match(&log)
             }) {
                 return;
             }
 
-            let all_logs = run_command("docker-compose", &["-f", &self.file_path, "logs"]).unwrap();
+            let all_logs = run_command("docker-compose", &["-f", file_path, "logs"]).unwrap();
 
             // check if the service has failed in some way
             // this allows us to report the failure to the developer a lot sooner than just relying on the timeout
             if can_use_status_flag {
-                self.assert_no_containers_in_service_with_status("exited", &all_logs);
-                self.assert_no_containers_in_service_with_status("dead", &all_logs);
-                self.assert_no_containers_in_service_with_status("removing", &all_logs);
+                DockerCompose::assert_no_containers_in_service_with_status(
+                    file_path, "exited", &all_logs,
+                );
+                DockerCompose::assert_no_containers_in_service_with_status(
+                    file_path, "dead", &all_logs,
+                );
+                DockerCompose::assert_no_containers_in_service_with_status(
+                    file_path, "removing", &all_logs,
+                );
             }
 
             // if all else fails timeout the wait
             if instant.elapsed() > timeout {
                 let mut results = "".to_owned();
                 for service in services {
-                    let log = run_command(
-                        "docker-compose",
-                        &["-f", &self.file_path, "logs", &service.name],
-                    )
-                    .unwrap();
+                    let log =
+                        run_command("docker-compose", &["-f", file_path, "logs", &service.name])
+                            .unwrap();
                     let found = if service.log_to_wait_for.is_match(&log) {
                         "Found"
                     } else {
@@ -293,10 +291,10 @@ impl DockerCompose {
         }
     }
 
-    fn assert_no_containers_in_service_with_status(&self, status: &str, full_log: &str) {
+    fn assert_no_containers_in_service_with_status(file_path: &str, status: &str, full_log: &str) {
         let containers = run_command(
             "docker-compose",
-            &["-f", &self.file_path, "ps", "--status", status],
+            &["-f", file_path, "ps", "--status", status],
         )
         .unwrap();
         // One line for the table heading. If there are more lines then there is some data indicating that containers exist with this status
@@ -307,31 +305,42 @@ impl DockerCompose {
         }
     }
 
-    fn build_images() {
-        // On my machine this only takes 40ms when the image is unchanged.
-        // So recreating it for every test is fine, but if we start adding more images maybe we should introduce an atomic flag so we only run it once
-        run_command(
-            "docker",
-            &[
-                "build",
-                "example-configs/docker-images/cassandra-4.0.6",
-                "--tag",
-                "shotover-int-tests/cassandra:4.0.6",
-            ],
-        )
-        .unwrap();
-        run_command(
-            "docker",
-            &[
-                "build",
-                "example-configs/docker-images/cassandra-3.11.13",
-                "--tag",
-                "shotover-int-tests/cassandra:3.11.13",
-            ],
-        )
-        .unwrap();
-        if Path::new("example-configs/docker-images/cassandra-tls-4.0.6/certs/keystore.p12")
-            .exists()
+    fn build_images(service_to_image: &HashMap<String, String>) {
+        if service_to_image
+            .values()
+            .any(|x| x == "shotover-int-tests/cassandra:4.0.6")
+        {
+            run_command(
+                "docker",
+                &[
+                    "build",
+                    "example-configs/docker-images/cassandra-4.0.6",
+                    "--tag",
+                    "shotover-int-tests/cassandra:4.0.6",
+                ],
+            )
+            .unwrap();
+        }
+        if service_to_image
+            .values()
+            .any(|x| x == "shotover-int-tests/cassandra:3.11.13")
+        {
+            run_command(
+                "docker",
+                &[
+                    "build",
+                    "example-configs/docker-images/cassandra-3.11.13",
+                    "--tag",
+                    "shotover-int-tests/cassandra:3.11.13",
+                ],
+            )
+            .unwrap();
+        }
+        if service_to_image
+            .values()
+            .any(|x| x == "shotover-int-tests/cassandra-tls:4.0.6")
+            && Path::new("example-configs/docker-images/cassandra-tls-4.0.6/certs/keystore.p12")
+                .exists()
         {
             run_command(
                 "docker",
