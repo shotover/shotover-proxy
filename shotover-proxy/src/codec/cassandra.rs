@@ -1,3 +1,4 @@
+use super::Direction;
 use crate::codec::{CodecBuilder, CodecReadError};
 use crate::frame::cassandra::{CassandraMetadata, CassandraOperation, Tracing};
 use crate::frame::{CassandraFrame, Frame, MessageType};
@@ -17,23 +18,24 @@ use std::sync::RwLock;
 use tokio_util::codec::{Decoder, Encoder};
 use tracing::info;
 
-#[derive(Clone, Default)]
-pub struct CassandraCodecBuilder {}
-
-impl CassandraCodecBuilder {
-    pub fn new() -> Self {
-        Self::default()
-    }
+#[derive(Clone)]
+pub struct CassandraCodecBuilder {
+    direction: Direction,
 }
 
 impl CodecBuilder for CassandraCodecBuilder {
     type Decoder = CassandraDecoder;
     type Encoder = CassandraEncoder;
+
+    fn new(direction: Direction) -> Self {
+        Self { direction }
+    }
+
     fn build(&self) -> (CassandraDecoder, CassandraEncoder) {
         let compression = Arc::new(RwLock::new(Compression::None));
         (
-            CassandraDecoder::new(compression.clone()),
-            CassandraEncoder::new(compression),
+            CassandraDecoder::new(compression.clone(), self.direction),
+            CassandraEncoder::new(compression, self.direction),
         )
     }
 }
@@ -42,14 +44,16 @@ pub struct CassandraDecoder {
     compression: Arc<RwLock<Compression>>,
     messages: Vec<Message>,
     current_use_keyspace: Option<Identifier>,
+    direction: Direction,
 }
 
 impl CassandraDecoder {
-    pub fn new(compression: Arc<RwLock<Compression>>) -> CassandraDecoder {
+    pub fn new(compression: Arc<RwLock<Compression>>, direction: Direction) -> CassandraDecoder {
         CassandraDecoder {
             compression,
             messages: vec![],
             current_use_keyspace: None,
+            direction,
         }
     }
 }
@@ -102,7 +106,8 @@ impl Decoder for CassandraDecoder {
                     // Clear the read bytes from the FramedReader
                     let bytes = src.split_to(frame_len);
                     tracing::debug!(
-                        "incoming cassandra message:\n{}",
+                        "{}: incoming cassandra message:\n{}",
+                        self.direction,
                         pretty_hex::pretty_hex(&bytes)
                     );
 
@@ -253,11 +258,15 @@ fn reject_protocol_version(version: u8) -> CodecReadError {
 
 pub struct CassandraEncoder {
     compression: Arc<RwLock<Compression>>,
+    direction: Direction,
 }
 
 impl CassandraEncoder {
-    pub fn new(compression: Arc<RwLock<Compression>>) -> CassandraEncoder {
-        CassandraEncoder { compression }
+    pub fn new(compression: Arc<RwLock<Compression>>, direction: Direction) -> CassandraEncoder {
+        CassandraEncoder {
+            compression,
+            direction,
+        }
     }
 }
 
@@ -308,7 +317,8 @@ impl Encoder<Messages> for CassandraEncoder {
                 }
             }
             tracing::debug!(
-                "outgoing cassandra message:\n{}",
+                "{}: outgoing cassandra message:\n{}",
+                self.direction,
                 pretty_hex::pretty_hex(&&dst[start..])
             );
         }
@@ -319,7 +329,7 @@ impl Encoder<Messages> for CassandraEncoder {
 #[cfg(test)]
 mod cassandra_protocol_tests {
     use crate::codec::cassandra::CassandraCodecBuilder;
-    use crate::codec::CodecBuilder;
+    use crate::codec::{CodecBuilder, Direction};
     use crate::frame::cassandra::{
         parse_statement_single, CassandraFrame, CassandraOperation, CassandraResult, Tracing,
     };
@@ -376,7 +386,7 @@ mod cassandra_protocol_tests {
 
     #[test]
     fn test_codec_startup() {
-        let mut codec = CassandraCodecBuilder::new();
+        let mut codec = CassandraCodecBuilder::new(Direction::Sink);
         let mut startup_body: HashMap<String, String> = HashMap::new();
         startup_body.insert("CQL_VERSION".into(), "3.0.0".into());
         let bytes = hex!("0400000001000000160001000b43514c5f56455253494f4e0005332e302e30");
@@ -392,7 +402,7 @@ mod cassandra_protocol_tests {
 
     #[test]
     fn test_codec_options() {
-        let mut codec = CassandraCodecBuilder::new();
+        let mut codec = CassandraCodecBuilder::new(Direction::Sink);
         let bytes = hex!("040000000500000000");
         let messages = vec![Message::from_frame(Frame::Cassandra(CassandraFrame {
             version: Version::V4,
@@ -406,7 +416,7 @@ mod cassandra_protocol_tests {
 
     #[test]
     fn test_codec_ready() {
-        let mut codec = CassandraCodecBuilder::new();
+        let mut codec = CassandraCodecBuilder::new(Direction::Sink);
         let bytes = hex!("840000000200000000");
         let messages = vec![Message::from_frame(Frame::Cassandra(CassandraFrame {
             version: Version::V4,
@@ -420,7 +430,7 @@ mod cassandra_protocol_tests {
 
     #[test]
     fn test_codec_register() {
-        let mut codec = CassandraCodecBuilder::new();
+        let mut codec = CassandraCodecBuilder::new(Direction::Sink);
         let bytes = hex!(
             "040000010b000000310003000f544f504f4c4f47595f4348414e4745
             000d5354415455535f4348414e4745000d534348454d415f4348414e4745"
@@ -443,7 +453,7 @@ mod cassandra_protocol_tests {
 
     #[test]
     fn test_codec_result() {
-        let mut codec = CassandraCodecBuilder::new();
+        let mut codec = CassandraCodecBuilder::new(Direction::Sink);
         let bytes = hex!(
             "840000020800000099000000020000000100000009000673797374656
             d000570656572730004706565720010000b646174615f63656e746572000d0007686f73745f6964000c000c70726566
@@ -551,7 +561,7 @@ mod cassandra_protocol_tests {
 
     #[test]
     fn test_codec_query_select() {
-        let mut codec = CassandraCodecBuilder::new();
+        let mut codec = CassandraCodecBuilder::new(Direction::Sink);
         let bytes = hex!(
             "0400000307000000350000002e53454c454354202a2046524f4d20737973
             74656d2e6c6f63616c205748455245206b6579203d20276c6f63616c27000100"
@@ -574,7 +584,7 @@ mod cassandra_protocol_tests {
 
     #[test]
     fn test_codec_query_insert() {
-        let mut codec = CassandraCodecBuilder::new();
+        let mut codec = CassandraCodecBuilder::new(Direction::Sink);
         let bytes = hex!(
             "0400000307000000330000002c494e5345525420494e544f207379737465
             6d2e666f6f2028626172292056414c554553202827626172322729000100"

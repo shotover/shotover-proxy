@@ -1,3 +1,4 @@
+use super::Direction;
 use crate::codec::{CodecBuilder, CodecReadError};
 use crate::frame::{Frame, MessageType};
 use crate::message::{Encodable, Message, Messages};
@@ -7,34 +8,42 @@ use redis_protocol::resp2::prelude::decode_mut;
 use redis_protocol::resp2::prelude::encode_bytes;
 use tokio_util::codec::{Decoder, Encoder};
 
-#[derive(Default, Clone)]
-pub struct RedisCodecBuilder {}
+#[derive(Clone)]
+pub struct RedisCodecBuilder {
+    direction: Direction,
+}
 
 impl CodecBuilder for RedisCodecBuilder {
     type Decoder = RedisDecoder;
     type Encoder = RedisEncoder;
+
+    fn new(direction: Direction) -> Self {
+        Self { direction }
+    }
+
     fn build(&self) -> (RedisDecoder, RedisEncoder) {
-        (RedisDecoder::new(), RedisEncoder::new())
+        (
+            RedisDecoder::new(self.direction),
+            RedisEncoder::new(self.direction),
+        )
     }
 }
 
-impl RedisCodecBuilder {
-    pub fn new() -> RedisCodecBuilder {
-        RedisCodecBuilder::default()
-    }
+pub struct RedisEncoder {
+    direction: Direction,
 }
 
-#[derive(Default)]
-pub struct RedisEncoder {}
-
-#[derive(Default)]
 pub struct RedisDecoder {
     messages: Messages,
+    direction: Direction,
 }
 
 impl RedisDecoder {
-    pub fn new() -> Self {
-        Default::default()
+    pub fn new(direction: Direction) -> Self {
+        Self {
+            messages: Vec::new(),
+            direction,
+        }
     }
 }
 
@@ -49,7 +58,8 @@ impl Decoder for RedisDecoder {
             })? {
                 Some((frame, _size, bytes)) => {
                     tracing::debug!(
-                        "incoming redis message:\n{}",
+                        "{}: incoming redis message:\n{}",
+                        self.direction,
                         pretty_hex::pretty_hex(&bytes)
                     );
                     self.messages
@@ -68,8 +78,8 @@ impl Decoder for RedisDecoder {
 }
 
 impl RedisEncoder {
-    pub fn new() -> Self {
-        Default::default()
+    pub fn new(direction: Direction) -> Self {
+        Self { direction }
     }
 }
 
@@ -92,7 +102,8 @@ impl Encoder<Messages> for RedisEncoder {
                 }
             };
             tracing::debug!(
-                "outgoing redis message:\n{}",
+                "{}: outgoing redis message:\n{}",
+                self.direction,
                 pretty_hex::pretty_hex(&&dst[start..])
             );
             result
@@ -102,7 +113,7 @@ impl Encoder<Messages> for RedisEncoder {
 
 #[cfg(test)]
 mod redis_tests {
-    use crate::codec::{redis::RedisCodecBuilder, CodecBuilder};
+    use crate::codec::{redis::RedisCodecBuilder, CodecBuilder, Direction};
     use bytes::BytesMut;
     use hex_literal::hex;
     use tokio_util::codec::{Decoder, Encoder};
@@ -130,7 +141,7 @@ mod redis_tests {
     const HSET_MESSAGE: [u8; 75] = hex!("2a340d0a24340d0a485345540d0a2431380d0a6d797365743a5f5f72616e645f696e745f5f0d0a2432300d0a656c656d656e743a5f5f72616e645f696e745f5f0d0a24330d0a7878780d0a");
 
     fn test_frame(raw_frame: &[u8]) {
-        let (mut decoder, mut encoder) = RedisCodecBuilder::new().build();
+        let (mut decoder, mut encoder) = RedisCodecBuilder::new(Direction::Sink).build();
         let message = decoder
             .decode(&mut BytesMut::from(raw_frame))
             .unwrap()

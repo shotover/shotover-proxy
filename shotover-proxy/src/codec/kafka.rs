@@ -1,3 +1,4 @@
+use super::Direction;
 use crate::codec::{CodecBuilder, CodecReadError};
 use crate::frame::MessageType;
 use crate::message::{Encodable, Message, Messages, ProtocolType};
@@ -6,16 +7,6 @@ use bytes::{Buf, BytesMut};
 use kafka_protocol::messages::ApiKey;
 use std::sync::mpsc;
 use tokio_util::codec::{Decoder, Encoder};
-
-/// Depending on if the codec is used in a sink or a source requires different processing logic:
-/// * Sources parse requests which do not require any special handling
-/// * Sinks parse responses which requires first matching up the version and api_key with its corresponding request
-///     + To achieve this Sinks use an mpsc channel to send header data from the encoder to the decoder
-#[derive(Copy, Clone)]
-pub enum Direction {
-    Source,
-    Sink,
-}
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct RequestHeader {
@@ -28,15 +19,18 @@ pub struct KafkaCodecBuilder {
     direction: Direction,
 }
 
-impl KafkaCodecBuilder {
-    pub fn new(direction: Direction) -> Self {
-        KafkaCodecBuilder { direction }
-    }
-}
-
+// Depending on if the codec is used in a sink or a source requires different processing logic:
+// * Sources parse requests which do not require any special handling
+// * Sinks parse responses which requires first matching up the version and api_key with its corresponding request
+//     + To achieve this Sinks use an mpsc channel to send header data from the encoder to the decoder
 impl CodecBuilder for KafkaCodecBuilder {
     type Decoder = KafkaDecoder;
     type Encoder = KafkaEncoder;
+
+    fn new(direction: Direction) -> Self {
+        Self { direction }
+    }
+
     fn build(&self) -> (KafkaDecoder, KafkaEncoder) {
         let (tx, rx) = match self.direction {
             Direction::Source => (None, None),
@@ -45,20 +39,28 @@ impl CodecBuilder for KafkaCodecBuilder {
                 (Some(tx), Some(rx))
             }
         };
-        (KafkaDecoder::new(rx), KafkaEncoder::new(tx))
+        (
+            KafkaDecoder::new(rx, self.direction),
+            KafkaEncoder::new(tx, self.direction),
+        )
     }
 }
 
 pub struct KafkaDecoder {
     request_header_rx: Option<mpsc::Receiver<RequestHeader>>,
     messages: Messages,
+    direction: Direction,
 }
 
 impl KafkaDecoder {
-    pub fn new(request_header_rx: Option<mpsc::Receiver<RequestHeader>>) -> Self {
+    pub fn new(
+        request_header_rx: Option<mpsc::Receiver<RequestHeader>>,
+        direction: Direction,
+    ) -> Self {
         KafkaDecoder {
             request_header_rx,
             messages: vec![],
+            direction,
         }
     }
 }
@@ -85,7 +87,8 @@ impl Decoder for KafkaDecoder {
             if let Some(size) = get_length_of_full_message(src) {
                 let bytes = src.split_to(size);
                 tracing::debug!(
-                    "incoming kafka message:\n{}",
+                    "{}: incoming kafka message:\n{}",
+                    self.direction,
                     pretty_hex::pretty_hex(&bytes)
                 );
                 let request_header = if let Some(rx) = self.request_header_rx.as_ref() {
@@ -110,11 +113,18 @@ impl Decoder for KafkaDecoder {
 
 pub struct KafkaEncoder {
     request_header_tx: Option<mpsc::Sender<RequestHeader>>,
+    direction: Direction,
 }
 
 impl KafkaEncoder {
-    pub fn new(request_header_tx: Option<mpsc::Sender<RequestHeader>>) -> Self {
-        KafkaEncoder { request_header_tx }
+    pub fn new(
+        request_header_tx: Option<mpsc::Sender<RequestHeader>>,
+        direction: Direction,
+    ) -> Self {
+        KafkaEncoder {
+            request_header_tx,
+            direction,
+        }
     }
 }
 
@@ -140,7 +150,8 @@ impl Encoder<Messages> for KafkaEncoder {
                 tx.send(RequestHeader { api_key, version })?;
             }
             tracing::debug!(
-                "outgoing kafka message:\n{}",
+                "{}: outgoing kafka message:\n{}",
+                self.direction,
                 pretty_hex::pretty_hex(&&dst[start..])
             );
             result

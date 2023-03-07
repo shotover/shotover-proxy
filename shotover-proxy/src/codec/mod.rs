@@ -1,11 +1,27 @@
 use crate::message::Messages;
 use cassandra_protocol::compression::Compression;
+use core::fmt;
 use kafka::RequestHeader;
 use tokio_util::codec::{Decoder, Encoder};
 
 pub mod cassandra;
 pub mod kafka;
 pub mod redis;
+
+#[derive(Copy, Clone)]
+pub enum Direction {
+    Source,
+    Sink,
+}
+
+impl fmt::Display for Direction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Sink => write!(f, "Sink"),
+            Self::Source => write!(f, "Source"),
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Copy)]
 pub enum CodecState {
@@ -66,4 +82,6 @@ pub trait CodecBuilder: Clone + Send {
     type Decoder: DecoderHalf;
     type Encoder: EncoderHalf;
     fn build(&self) -> (Self::Decoder, Self::Encoder);
+
+    fn new(direction: Direction) -> Self;
 }
