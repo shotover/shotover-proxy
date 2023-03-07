@@ -98,7 +98,7 @@ mod topology_tests {
     use crate::config::topology::Topology;
     use crate::transforms::coalesce::CoalesceConfig;
     use crate::{
-        sources::{redis_source::RedisConfig, Sources, SourcesConfig},
+        sources::{redis::RedisConfig, Sources, SourcesConfig},
         transforms::{
             distributed::consistent_scatter::ConsistentScatterConfig,
             parallel_map::ParallelMapConfig, redis::cache::RedisConfig as RedisCacheConfig,

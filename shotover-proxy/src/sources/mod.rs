@@ -1,15 +1,15 @@
-use crate::sources::cassandra_source::{CassandraConfig, CassandraSource};
+use crate::sources::cassandra::{CassandraConfig, CassandraSource};
 use crate::sources::kafka::{KafkaConfig, KafkaSource};
-use crate::sources::redis_source::{RedisConfig, RedisSource};
+use crate::sources::redis::{RedisConfig, RedisSource};
 use crate::transforms::chain::TransformChainBuilder;
 use anyhow::Result;
 use serde::Deserialize;
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
-pub mod cassandra_source;
+pub mod cassandra;
 pub mod kafka;
-pub mod redis_source;
+pub mod redis;
 
 #[derive(Debug)]
 pub enum Sources {
