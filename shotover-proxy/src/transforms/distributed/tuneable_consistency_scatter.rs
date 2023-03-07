@@ -18,7 +18,7 @@ pub struct TuneableConsistencyScatterConfig {
     pub read_consistency: i32,
 }
 
-#[typetag::deserialize(name = "ConsistentScatter")]
+#[typetag::deserialize(name = "TuneableConsistencyScatter")]
 #[async_trait(?Send)]
 impl TransformConfig for TuneableConsistencyScatterConfig {
     async fn get_builder(&self, _chain_name: String) -> Result<Box<dyn TransformBuilder>> {

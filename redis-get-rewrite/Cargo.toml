@@ -1,5 +1,5 @@
 [package]
-name = "custom-transforms-example"
+name = "redis-get-rewrite"
 version = "0.0.1"
 authors = ["Ben <ben@instaclustr.com>"]
 edition = "2021"
@@ -11,9 +11,7 @@ license = "Apache-2.0"
 shotover-proxy = { path = "../shotover-proxy" }
 anyhow = "1.0"
 clap = "4.0.4"
-redis-get-rewrite = { path = "../redis-get-rewrite" }
-
-[dev-dependencies]
-tokio = "1.25.0"
-test-helpers = { path = "../test-helpers"}
-redis = "0.22.0"
+serde = "1.0"
+async-trait = "0.1.30"
+tracing = "0.1"
+typetag = "0.2.6"

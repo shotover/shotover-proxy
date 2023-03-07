@@ -4,6 +4,7 @@ members = [
     "test-helpers",
     "tokio-bin-process",
     "custom-transforms-example",
+    "redis-get-rewrite"
 ]
 
 # https://deterministic.space/high-performance-rust.html

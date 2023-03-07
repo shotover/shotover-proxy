@@ -774,15 +774,12 @@ name = "custom-transforms-example"
 version = "0.0.1"
 dependencies = [
  "anyhow",
- "async-trait",
  "clap 4.1.8",
  "redis",
- "serde",
+ "redis-get-rewrite",
  "shotover-proxy",
  "test-helpers",
  "tokio",
- "tracing",
- "typetag",
 ]
 
 [[package]]
@@ -2541,6 +2538,19 @@ dependencies = [
  "tokio",
  "tokio-util",
  "url",
+]
+
+[[package]]
+name = "redis-get-rewrite"
+version = "0.0.1"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "clap 4.1.8",
+ "serde",
+ "shotover-proxy",
+ "tracing",
+ "typetag",
 ]
 
 [[package]]
