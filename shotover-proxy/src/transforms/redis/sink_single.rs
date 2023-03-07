@@ -1,16 +1,13 @@
-use crate::codec::redis::RedisCodecBuilder;
-use crate::codec::redis::RedisDecoder;
-use crate::codec::redis::RedisEncoder;
-use crate::codec::CodecBuilder;
-use crate::codec::CodecReadError;
-use crate::error::ChainResponse;
-use crate::frame::Frame;
-use crate::frame::RedisFrame;
+use crate::codec::{
+    redis::{RedisCodecBuilder, RedisDecoder, RedisEncoder},
+    CodecBuilder, CodecReadError, Direction,
+};
+use crate::frame::{Frame, RedisFrame};
 use crate::message::{Message, Messages};
 use crate::tcp;
 use crate::tls::{AsyncStream, TlsConnector, TlsConnectorConfig};
-use crate::transforms::Transforms;
-use crate::transforms::{Transform, TransformBuilder, Wrapper};
+use crate::transforms::ChainResponse;
+use crate::transforms::{Transform, TransformBuilder, Transforms, Wrapper};
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use futures::{FutureExt, SinkExt, StreamExt};
@@ -19,11 +16,9 @@ use serde::Deserialize;
 use std::fmt::Debug;
 use std::pin::Pin;
 use std::time::Duration;
-use tokio::io::ReadHalf;
-use tokio::io::WriteHalf;
+use tokio::io::{ReadHalf, WriteHalf};
 use tokio::sync::mpsc;
-use tokio_util::codec::FramedRead;
-use tokio_util::codec::FramedWrite;
+use tokio_util::codec::{FramedRead, FramedWrite};
 use tracing::Instrument;
 
 #[derive(Deserialize, Debug)]
@@ -132,7 +127,7 @@ impl Transform for RedisSinkSingle {
                 Box::pin(tcp_stream) as Pin<Box<dyn AsyncStream + Send + Sync>>
             };
 
-            let (decoder, encoder) = RedisCodecBuilder::new().build();
+            let (decoder, encoder) = RedisCodecBuilder::new(Direction::Sink).build();
             let (stream_rx, stream_tx) = tokio::io::split(generic_stream);
             let outbound_tx = FramedWrite::new(stream_tx, encoder);
             let outbound_rx = FramedRead::new(stream_rx, decoder);

@@ -1,4 +1,4 @@
-use crate::codec::redis::RedisCodecBuilder;
+use crate::codec::{redis::RedisCodecBuilder, CodecBuilder, Direction};
 use crate::server::TcpCodecListener;
 use crate::sources::Sources;
 use crate::tls::{TlsAcceptor, TlsAcceptorConfig};
@@ -65,7 +65,7 @@ impl RedisSource {
             name.to_string(),
             listen_addr.clone(),
             hard_connection_limit.unwrap_or(false),
-            RedisCodecBuilder::new(),
+            RedisCodecBuilder::new(Direction::Source),
             Arc::new(Semaphore::new(connection_limit.unwrap_or(512))),
             trigger_shutdown_rx.clone(),
             tls.map(TlsAcceptor::new).transpose()?,

@@ -1,4 +1,5 @@
-use crate::codec::cassandra::CassandraCodecBuilder;
+use crate::codec::Direction;
+use crate::codec::{cassandra::CassandraCodecBuilder, CodecBuilder};
 use crate::server::TcpCodecListener;
 use crate::sources::Sources;
 use crate::tls::{TlsAcceptor, TlsAcceptorConfig};
@@ -67,7 +68,7 @@ impl CassandraSource {
             name.to_string(),
             listen_addr.clone(),
             hard_connection_limit.unwrap_or(false),
-            CassandraCodecBuilder::new(),
+            CassandraCodecBuilder::new(Direction::Source),
             Arc::new(Semaphore::new(connection_limit.unwrap_or(512))),
             trigger_shutdown_rx.clone(),
             tls.map(TlsAcceptor::new).transpose()?,
