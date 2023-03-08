@@ -15,39 +15,14 @@ pub struct Topology {
     pub source_to_chain_mapping: HashMap<String, String>,
 }
 
-#[derive(Deserialize, Debug)]
-pub struct TopologyConfig {
-    pub sources: HashMap<String, SourcesConfig>,
-    pub chain_config: HashMap<String, Vec<TransformsConfig>>,
-    pub source_to_chain_mapping: HashMap<String, String>,
-}
-
 impl Topology {
-    pub fn from_yaml(yaml_contents: String) -> Topology {
-        let deserializer = serde_yaml::Deserializer::from_str(&yaml_contents);
-        let config: TopologyConfig =
-            serde_yaml::with::singleton_map_recursive::deserialize(deserializer).unwrap();
-        Topology::topology_from_config(config)
-    }
-
-    pub fn from_file(filepath: String) -> Result<Topology> {
-        let file = std::fs::File::open(&filepath).map_err(|err| {
-            anyhow!(err).context(format!("Couldn't open the topology file {}", &filepath))
+    pub fn from_file(filepath: &str) -> Result<Topology> {
+        let file = std::fs::File::open(filepath).map_err(|err| {
+            anyhow!(err).context(format!("Couldn't open the topology file {}", filepath))
         })?;
         let deserializer = serde_yaml::Deserializer::from_reader(file);
-        let config: TopologyConfig =
-            serde_yaml::with::singleton_map_recursive::deserialize(deserializer)
-                .context(format!("Failed to parse topology file {}", &filepath))?;
-
-        Ok(Topology::topology_from_config(config))
-    }
-
-    fn topology_from_config(config: TopologyConfig) -> Topology {
-        Topology {
-            sources: config.sources,
-            chain_config: config.chain_config,
-            source_to_chain_mapping: config.source_to_chain_mapping,
-        }
+        serde_yaml::with::singleton_map_recursive::deserialize(deserializer)
+            .context(format!("Failed to parse topology file {}", filepath))
     }
 
     async fn build_chains(&self) -> Result<HashMap<String, TransformChainBuilder>> {
@@ -120,7 +95,7 @@ impl Topology {
 
 #[cfg(test)]
 mod topology_tests {
-    use crate::config::topology::{Topology, TopologyConfig};
+    use crate::config::topology::Topology;
     use crate::transforms::coalesce::CoalesceConfig;
     use crate::{
         sources::{redis_source::RedisConfig, Sources, SourcesConfig},
@@ -130,7 +105,7 @@ mod topology_tests {
             TransformsConfig,
         },
     };
-    use std::{collections::HashMap, fs};
+    use std::collections::HashMap;
     use tokio::sync::watch;
 
     async fn run_test_topology(chain: Vec<TransformsConfig>) -> anyhow::Result<Vec<Sources>> {
@@ -148,7 +123,7 @@ mod topology_tests {
         let mut sources = HashMap::new();
         sources.insert("redis_prod".to_string(), redis_source);
 
-        let config = TopologyConfig {
+        let topology = Topology {
             sources,
             chain_config,
             source_to_chain_mapping: HashMap::new(), // Leave source to chain mapping empty so it doesn't build and run the transform chains
@@ -156,7 +131,6 @@ mod topology_tests {
 
         let (_sender, trigger_shutdown_rx) = watch::channel::<bool>(false);
 
-        let topology = Topology::topology_from_config(config);
         topology.run_chains(trigger_shutdown_rx).await
     }
 
@@ -541,10 +515,7 @@ redis_chain:
     async fn test_validate_chain_multiple_subchains() {
         let (_sender, trigger_shutdown_rx) = watch::channel::<bool>(false);
 
-        let yaml_contents =
-            fs::read_to_string("tests/test-configs/invalid_subchains.yaml").unwrap();
-
-        let topology = Topology::from_yaml(yaml_contents);
+        let topology = Topology::from_file("tests/test-configs/invalid_subchains.yaml").unwrap();
         let error = topology
             .run_chains(trigger_shutdown_rx)
             .await
