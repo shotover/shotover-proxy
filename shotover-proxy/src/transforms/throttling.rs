@@ -67,7 +67,6 @@ impl Transform for RequestThrottling {
         // extract throttled messages from the message_wrapper
         #[allow(clippy::needless_collect)]
         let throttled_messages: Vec<(Message, usize)> = (0..message_wrapper.messages.len())
-            .into_iter()
             .rev()
             .filter_map(|i| {
                 if self

@@ -3047,7 +3047,6 @@ dependencies = [
  "num",
  "openssl",
  "ordered-float",
- "pin-project-lite",
  "pretty-hex",
  "rand",
  "rand_distr",
