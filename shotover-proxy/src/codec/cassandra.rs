@@ -2,7 +2,6 @@ use super::Direction;
 use super::cassandra_frames::{
     CassandraFrameCodec, CheckFrameSizeError, LegacyFrameCodec, UncompressedFrameCodec,
 };
-use super::Direction;
 use crate::codec::{CodecBuilder, CodecReadError};
 use crate::frame::cassandra::{CassandraMetadata, CassandraOperation, Tracing};
 use crate::frame::{CassandraFrame, Frame, MessageType};
@@ -48,13 +47,11 @@ impl CodecBuilder for CassandraCodecBuilder {
             CassandraDecoder::new(
                 envelope_compression.clone(),
                 frame_codec.clone(),
-                direction,
                 handshake_complete.clone(),
             ),
             CassandraEncoder::new(
                 envelope_compression,
                 frame_codec,
-                direction,
                 handshake_complete.clone(),
             ),
         )
@@ -62,7 +59,6 @@ impl CodecBuilder for CassandraCodecBuilder {
 }
 
 pub struct CassandraDecoder {
-    direction: Direction,
     handshake_complete: Arc<AtomicBool>,
 
     // compression in use for v4 protocol, this is ignored on the v5 protocol as the
@@ -79,11 +75,9 @@ impl CassandraDecoder {
     pub fn new(
         envelope_compression: Arc<RwLock<Compression>>,
         frame_codec: Arc<RwLock<CassandraFrameCodec>>,
-        direction: Direction,
         handshake_complete: Arc<AtomicBool>,
     ) -> CassandraDecoder {
         CassandraDecoder {
-            direction,
             envelope_compression,
             messages: vec![],
             current_use_keyspace: None,
@@ -190,8 +184,7 @@ impl Decoder for CassandraDecoder {
                     let bytes: BytesMut = src.split_to(frame_len);
 
                     tracing::debug!(
-                        "{}: incoming cassandra message:\n{}",
-                        self.direction,
+                        "incoming cassandra message:\n{}",
                         pretty_hex::pretty_hex(&bytes)
                     );
 
@@ -356,7 +349,6 @@ fn reject_protocol_version(version: u8) -> CodecReadError {
 pub struct CassandraEncoder {
     compression: Arc<RwLock<Compression>>,
     frame_codec: Arc<RwLock<CassandraFrameCodec>>,
-    direction: Direction,
     handshake_complete: Arc<AtomicBool>,
 }
 
@@ -364,13 +356,11 @@ impl CassandraEncoder {
     pub fn new(
         compression: Arc<RwLock<Compression>>,
         frame_codec: Arc<RwLock<CassandraFrameCodec>>,
-        direction: Direction,
         handshake_complete: Arc<AtomicBool>,
     ) -> CassandraEncoder {
         CassandraEncoder {
             compression,
             frame_codec,
-            direction,
             handshake_complete,
         }
     }
@@ -455,8 +445,7 @@ impl Encoder<Messages> for CassandraEncoder {
         };
 
         tracing::debug!(
-            "{}: outgoing cassandra message:\n{}",
-            self.direction,
+            "outgoing cassandra message:\n{}",
             pretty_hex::pretty_hex(&&bytes)
         );
 
@@ -498,7 +487,7 @@ mod cassandra_protocol_tests {
         raw_frame: &[u8],
         expected_messages: Vec<Message>,
     ) {
-        let (mut decoder, mut encoder) = codec.build(Direction::Sink);
+        let (mut decoder, mut encoder) = codec.build();
         // test decode
         let decoded_messages = decoder
             .decode(&mut BytesMut::from(raw_frame))

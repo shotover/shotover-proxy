@@ -1,5 +1,5 @@
 use crate::codec::cassandra::{CassandraCodecBuilder, CassandraDecoder, CassandraEncoder};
-use crate::codec::{CodecBuilder, CodecReadError, Direction};
+use crate::codec::{CodecBuilder, CodecReadError};
 use crate::frame::cassandra::CassandraMetadata;
 use crate::frame::{CassandraFrame, Frame};
 use crate::message::{Message, Metadata};
@@ -77,7 +77,7 @@ impl CassandraConnection {
 
         let destination = tokio::net::lookup_host(&host).await?.next().unwrap();
 
-        let (decoder, encoder) = codec.build(Direction::Sink);
+        let (decoder, encoder) = codec.build();
         if let Some(tls) = tls.as_mut() {
             let tls_stream = tls.connect(connect_timeout, host).await?;
             let (read, write) = split(tls_stream);

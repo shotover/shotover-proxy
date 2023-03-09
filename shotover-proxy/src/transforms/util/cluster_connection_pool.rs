@@ -1,5 +1,4 @@
 use super::Response;
-use crate::codec::Direction;
 use crate::codec::{CodecBuilder, DecoderHalf, EncoderHalf};
 use crate::tcp;
 use crate::tls::{TlsConnector, TlsConnectorConfig};
@@ -197,7 +196,7 @@ pub fn spawn_read_write_tasks<
     let (return_tx, return_rx) = tokio::sync::mpsc::unbounded_channel::<Request>();
     let (closed_tx, closed_rx) = tokio::sync::oneshot::channel();
 
-    let (decoder, encoder) = codec.build(Direction::Sink);
+    let (decoder, encoder) = codec.build();
 
     tokio::spawn(async move {
         tokio::select! {

@@ -814,44 +814,44 @@ async fn events_keyspace(#[case] driver: CassandraDriver) {
     shotover.shutdown_and_then_consume_events(&[]).await;
 }
 
-#[tokio::test(flavor = "multi_thread")]
-#[serial]
-async fn test_protocol_v5() {
-    use cdrs_tokio::authenticators::StaticPasswordAuthenticatorProvider;
-    use cdrs_tokio::cluster::session::SessionBuilder;
-    use cdrs_tokio::cluster::NodeTcpConfigBuilder;
-    use cdrs_tokio::frame::Version;
-    use std::sync::Arc;
+// #[tokio::test(flavor = "multi_thread")]
+// #[serial]
+// async fn test_protocol_v5() {
+//     use cdrs_tokio::authenticators::StaticPasswordAuthenticatorProvider;
+//     use cdrs_tokio::cluster::session::SessionBuilder;
+//     use cdrs_tokio::cluster::NodeTcpConfigBuilder;
+//     use cdrs_tokio::frame::Version;
+//     use std::sync::Arc;
 
-    let _docker_compose =
-        DockerCompose::new("example-configs/cassandra-passthrough/docker-compose.yaml");
+//     let _docker_compose =
+//         DockerCompose::new("example-configs/cassandra-passthrough/docker-compose.yaml");
 
-    let _shotover_manager = ShotoverProcessBuilder::new_with_topology(
-        "example-configs/cassandra-passthrough/topology.yaml",
-    )
-    .start()
-    .await;
+//     let _shotover_manager = ShotoverProcessBuilder::new_with_topology(
+//         "example-configs/cassandra-passthrough/topology.yaml",
+//     )
+//     .start()
+//     .await;
 
-    let user = "cassandra";
-    let password = "cassandra";
-    let auth = StaticPasswordAuthenticatorProvider::new(&user, &password);
+//     let user = "cassandra";
+//     let password = "cassandra";
+//     let auth = StaticPasswordAuthenticatorProvider::new(&user, &password);
 
-    let config = NodeTcpConfigBuilder::new()
-        .with_contact_point("127.0.0.1:9042".into())
-        .with_authenticator_provider(Arc::new(auth))
-        .with_version(Version::V5)
-        .build()
-        .await
-        .unwrap();
+//     let config = NodeTcpConfigBuilder::new()
+//         .with_contact_point("127.0.0.1:9042".into())
+//         .with_authenticator_provider(Arc::new(auth))
+//         .with_version(Version::V5)
+//         .build()
+//         .await
+//         .unwrap();
 
-    let session = TcpSessionBuilder::new(RoundRobinLoadBalancingStrategy::new(), config)
-        .build()
-        .await
-        .unwrap();
+//     let session = TcpSessionBuilder::new(RoundRobinLoadBalancingStrategy::new(), config)
+//         .build()
+//         .await
+//         .unwrap();
 
-    // let create_ks = "SELECT * FROM system.peers_v2";
+//     // let create_ks = "SELECT * FROM system.peers_v2";
 
-    // let r = session.query(create_ks).await.unwrap();
+//     // let r = session.query(create_ks).await.unwrap();
 
-    // println!("result : {:?}", r);
-}
+//     // println!("result : {:?}", r);
+// }

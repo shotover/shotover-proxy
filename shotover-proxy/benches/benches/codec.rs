@@ -5,7 +5,7 @@ use cassandra_protocol::frame::message_result::{
 use cassandra_protocol::frame::Version;
 use criterion::{black_box, criterion_group, BatchSize, Criterion};
 use shotover_proxy::codec::cassandra::CassandraCodecBuilder;
-use shotover_proxy::codec::{CodecBuilder, Direction};
+use shotover_proxy::codec::CodecBuilder;
 use shotover_proxy::frame::cassandra::{parse_statement_single, Tracing};
 use shotover_proxy::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame};
 use shotover_proxy::message::Message;
