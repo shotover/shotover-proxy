@@ -1,5 +1,6 @@
 use crate::message::Messages;
 use cassandra_protocol::compression::Compression;
+use core::fmt;
 use kafka::RequestHeader;
 use tokio_util::codec::{Decoder, Encoder};
 
