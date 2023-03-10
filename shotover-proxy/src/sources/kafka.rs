@@ -48,7 +48,6 @@ pub struct KafkaSource {
 }
 
 impl KafkaSource {
-    #![allow(clippy::too_many_arguments)]
     pub async fn new(
         chain: &TransformChainBuilder,
         listen_addr: String,

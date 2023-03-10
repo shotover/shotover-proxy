@@ -65,7 +65,6 @@ impl TransformBuilder for RequestThrottling {
 impl Transform for RequestThrottling {
     async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> ChainResponse {
         // extract throttled messages from the message_wrapper
-        #[allow(clippy::needless_collect)]
         let throttled_messages: Vec<(Message, usize)> = (0..message_wrapper.messages.len())
             .rev()
             .filter_map(|i| {
