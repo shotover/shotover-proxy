@@ -1,16 +1,15 @@
-use std::net::SocketAddr;
 use std::time::Duration;
+use uuid::Uuid;
 
 pub use tokio_bin_process::event::{Event, Level};
 pub use tokio_bin_process::event_matcher::{Count, EventMatcher, Events};
 pub use tokio_bin_process::BinProcess;
-use uuid::Uuid;
 
 pub struct ShotoverProcessBuilder {
     topology_path: String,
     log_name: Option<String>,
     cores: Option<String>,
-    observability_address: Option<SocketAddr>,
+    observability_port: Option<u16>,
 }
 
 impl ShotoverProcessBuilder {
@@ -19,7 +18,7 @@ impl ShotoverProcessBuilder {
             topology_path: topology_path.to_owned(),
             log_name: None,
             cores: None,
-            observability_address: None,
+            observability_port: None,
         }
     }
 
@@ -33,8 +32,8 @@ impl ShotoverProcessBuilder {
         self
     }
 
-    pub fn with_observability_address(mut self, address: SocketAddr) -> Self {
-        self.observability_address = Some(address);
+    pub fn with_observability_port(mut self, port: u16) -> Self {
+        self.observability_port = Some(port);
         self
     }
 
@@ -43,13 +42,13 @@ impl ShotoverProcessBuilder {
         if let Some(cores) = &self.cores {
             args.extend(["--core-threads", cores]);
         }
-        let config_path = if let Some(observability_address) = self.observability_address {
+        let config_path = if let Some(observability_port) = self.observability_port {
             let config_path = std::env::temp_dir().join(Uuid::new_v4().to_string());
             let config_contents = format!(
                 r#"
 ---
 main_log_level: "info,shotover_proxy=info"
-observability_interface: "{observability_address}"
+observability_interface: "127.0.0.1:{observability_port}"
 "#
             );
             std::fs::write(&config_path, config_contents).unwrap();
