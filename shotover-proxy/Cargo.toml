@@ -29,7 +29,6 @@ itertools.workspace = true
 rand = "0.8.4"
 rand_distr = "0.4.1"
 cached = "0.42"
-pin-project-lite = "0.2"
 tokio-openssl.workspace = true
 openssl.workspace = true
 async-recursion = "1.0"
