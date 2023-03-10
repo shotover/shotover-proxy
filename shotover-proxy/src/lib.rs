@@ -17,7 +17,6 @@
 //! * [`transforms::Transforms`], the enum to register with (add a variant) for enabling your own transform.
 //! * [`transforms::TransformsConfig`], the enum to register with (add a variant) for configuring your own transform.
 
-#![allow(clippy::derive_partial_eq_without_eq)]
 // Accidentally printing would break json log output
 #![deny(clippy::print_stdout)]
 #![deny(clippy::print_stderr)]

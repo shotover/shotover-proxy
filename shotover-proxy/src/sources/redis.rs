@@ -47,7 +47,6 @@ pub struct RedisSource {
 }
 
 impl RedisSource {
-    #![allow(clippy::too_many_arguments)]
     pub async fn new(
         chain: &TransformChainBuilder,
         listen_addr: String,

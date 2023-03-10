@@ -122,7 +122,6 @@ pub struct CassandraSinkClusterBuilder {
 }
 
 impl CassandraSinkClusterBuilder {
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         contact_points: Vec<String>,
         shotover_peers: Vec<ShotoverNode>,

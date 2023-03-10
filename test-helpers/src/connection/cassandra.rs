@@ -715,8 +715,6 @@ impl CassandraConnection {
         assert_eq!(result.len(), 0, "Batches should never return results");
     }
 
-    // allow reason: micro performance doesnt matter in a test and boxing ErrorBody makes matches unergonomic
-    #[allow(clippy::result_large_err)]
     #[cfg(feature = "cassandra-cpp-driver-tests")]
     fn process_datastax_response(
         response: Result<CassResult, cassandra_cpp::Error>,
@@ -739,8 +737,6 @@ impl CassandraConnection {
         }
     }
 
-    // allow reason: micro performance doesnt matter in a test and boxing ErrorBody makes matches unergonomic
-    #[allow(clippy::result_large_err)]
     fn process_scylla_response(
         response: Result<QueryResult, QueryError>,
     ) -> Result<Vec<Vec<ResultValue>>, ErrorBody> {
@@ -770,8 +766,6 @@ impl CassandraConnection {
         }
     }
 
-    // allow reason: micro performance doesnt matter in a test and boxing ErrorBody makes matches unergonomic
-    #[allow(clippy::result_large_err)]
     fn process_cdrs_response(
         response: Result<Envelope, cassandra_protocol::Error>,
     ) -> Result<Vec<Vec<ResultValue>>, ErrorBody> {
