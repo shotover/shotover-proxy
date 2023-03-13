@@ -13,13 +13,13 @@ use std::collections::HashMap;
 use tracing::{debug, error, trace, warn};
 
 #[derive(Deserialize, Debug)]
-pub struct ConsistentScatterConfig {
+pub struct TuneableConsistencyScatterConfig {
     pub route_map: HashMap<String, Vec<TransformsConfig>>,
     pub write_consistency: i32,
     pub read_consistency: i32,
 }
 
-impl ConsistentScatterConfig {
+impl TuneableConsistencyScatterConfig {
     pub async fn get_builder(&self) -> Result<Box<dyn TransformBuilder>> {
         let mut route_map = Vec::with_capacity(self.route_map.len());
         warn!("Using this transform is considered unstable - Does not work with REDIS pipelines");
@@ -29,7 +29,7 @@ impl ConsistentScatterConfig {
         }
         route_map.sort_by_key(|x| x.name.clone());
 
-        Ok(Box::new(ConsistentScatterBuilder {
+        Ok(Box::new(TuneableConsistencyScatterBuilder {
             route_map,
             write_consistency: self.write_consistency,
             read_consistency: self.read_consistency,
@@ -38,15 +38,15 @@ impl ConsistentScatterConfig {
 }
 
 #[derive(Clone)]
-pub struct ConsistentScatterBuilder {
+pub struct TuneableConsistencyScatterBuilder {
     route_map: Vec<TransformChainBuilder>,
     write_consistency: i32,
     read_consistency: i32,
 }
 
-impl TransformBuilder for ConsistentScatterBuilder {
+impl TransformBuilder for TuneableConsistencyScatterBuilder {
     fn build(&self) -> Transforms {
-        Transforms::ConsistentScatter(ConsistentScatter {
+        Transforms::TuneableConsistencyScatter(TuneableConsistentencyScatter {
             route_map: self
                 .route_map
                 .iter()
@@ -58,7 +58,7 @@ impl TransformBuilder for ConsistentScatterBuilder {
     }
 
     fn get_name(&self) -> &'static str {
-        "ConsistentScatter"
+        "TuneableConsistencyScatter"
     }
 
     fn is_terminating(&self) -> bool {
@@ -85,7 +85,7 @@ impl TransformBuilder for ConsistentScatterBuilder {
 }
 
 #[derive(Clone)]
-pub struct ConsistentScatter {
+pub struct TuneableConsistentencyScatter {
     route_map: Vec<BufferedChain>,
     write_consistency: i32,
     read_consistency: i32,
@@ -140,7 +140,7 @@ fn resolve_fragments(fragments: &mut Vec<Message>) -> Option<Message> {
 }
 
 #[async_trait]
-impl Transform for ConsistentScatter {
+impl Transform for TuneableConsistentencyScatter {
     async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> ChainResponse {
         let required_successes: Vec<_> = message_wrapper
             .messages
@@ -216,8 +216,8 @@ mod scatter_transform_tests {
     use crate::transforms::chain::{BufferedChain, TransformChainBuilder};
     use crate::transforms::debug::printer::DebugPrinter;
     use crate::transforms::debug::returner::{DebugReturner, Response};
-    use crate::transforms::distributed::consistent_scatter::{
-        ConsistentScatter, ConsistentScatterBuilder,
+    use crate::transforms::distributed::tuneable_consistency_scatter::{
+        TuneableConsistencyScatterBuilder, TuneableConsistentencyScatter,
     };
     use crate::transforms::null::NullSink;
     use crate::transforms::{TransformBuilder, Transforms, Wrapper};
@@ -270,11 +270,12 @@ mod scatter_transform_tests {
             TransformChainBuilder::new(vec![err_repeat.clone()], "three".to_string()),
         );
 
-        let mut tuneable_success_consistency = Transforms::ConsistentScatter(ConsistentScatter {
-            route_map: build_chains(two_of_three).await,
-            write_consistency: 2,
-            read_consistency: 2,
-        });
+        let mut tuneable_success_consistency =
+            Transforms::TuneableConsistencyScatter(TuneableConsistentencyScatter {
+                route_map: build_chains(two_of_three).await,
+                write_consistency: 2,
+                read_consistency: 2,
+            });
 
         let test = tuneable_success_consistency
             .transform(wrapper.clone())
@@ -297,11 +298,12 @@ mod scatter_transform_tests {
             TransformChainBuilder::new(vec![err_repeat.clone()], "three".to_string()),
         );
 
-        let mut tuneable_fail_consistency = Transforms::ConsistentScatter(ConsistentScatter {
-            route_map: build_chains(one_of_three).await,
-            write_consistency: 2,
-            read_consistency: 2,
-        });
+        let mut tuneable_fail_consistency =
+            Transforms::TuneableConsistencyScatter(TuneableConsistentencyScatter {
+                route_map: build_chains(one_of_three).await,
+                write_consistency: 2,
+                read_consistency: 2,
+            });
 
         let response_fail = tuneable_fail_consistency
             .transform(wrapper.clone())
@@ -323,7 +325,7 @@ mod scatter_transform_tests {
         );
         let chain_2 = TransformChainBuilder::new(vec![], "test-chain-2".to_string());
 
-        let transform = ConsistentScatterBuilder {
+        let transform = TuneableConsistencyScatterBuilder {
             route_map: vec![chain_1, chain_2],
             write_consistency: 1,
             read_consistency: 1,
@@ -332,7 +334,7 @@ mod scatter_transform_tests {
         assert_eq!(
             transform.validate(),
             vec![
-                "ConsistentScatter:",
+                "TuneableConsistencyScatter:",
                 "  test-chain-2:",
                 "    Chain cannot be empty"
             ]
@@ -358,7 +360,7 @@ mod scatter_transform_tests {
             "test-chain-2".to_string(),
         );
 
-        let transform = ConsistentScatterBuilder {
+        let transform = TuneableConsistencyScatterBuilder {
             route_map: vec![chain_1, chain_2],
             write_consistency: 1,
             read_consistency: 1,

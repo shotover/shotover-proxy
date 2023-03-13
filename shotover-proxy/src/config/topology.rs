@@ -100,7 +100,7 @@ mod topology_tests {
     use crate::{
         sources::{redis::RedisConfig, Sources, SourcesConfig},
         transforms::{
-            distributed::consistent_scatter::ConsistentScatterConfig,
+            distributed::tuneable_consistency_scatter::TuneableConsistencyScatterConfig,
             parallel_map::ParallelMapConfig, redis::cache::RedisConfig as RedisCacheConfig,
             TransformsConfig,
         },
@@ -242,7 +242,7 @@ redis_chain:
     }
 
     #[tokio::test]
-    async fn test_validate_chain_valid_subchain_consistent_scatter() {
+    async fn test_validate_chain_valid_subchain_scatter() {
         let subchain = vec![
             TransformsConfig::DebugPrinter,
             TransformsConfig::DebugPrinter,
@@ -255,7 +255,7 @@ redis_chain:
         run_test_topology(vec![
             TransformsConfig::DebugPrinter,
             TransformsConfig::DebugPrinter,
-            TransformsConfig::ConsistentScatter(ConsistentScatterConfig {
+            TransformsConfig::TuneableConsistencyScatter(TuneableConsistencyScatterConfig {
                 route_map,
                 write_consistency: 1,
                 read_consistency: 1,
@@ -266,10 +266,10 @@ redis_chain:
     }
 
     #[tokio::test]
-    async fn test_validate_chain_invalid_subchain_consistent_scatter() {
+    async fn test_validate_chain_invalid_subchain_scatter() {
         let expected = r#"Topology errors
 redis_chain:
-  ConsistentScatter:
+  TuneableConsistencyScatter:
     subchain-1:
       Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
 "#;
@@ -287,7 +287,7 @@ redis_chain:
         let error = run_test_topology(vec![
             TransformsConfig::DebugPrinter,
             TransformsConfig::DebugPrinter,
-            TransformsConfig::ConsistentScatter(ConsistentScatterConfig {
+            TransformsConfig::TuneableConsistencyScatter(TuneableConsistencyScatterConfig {
                 route_map,
                 write_consistency: 1,
                 read_consistency: 1,
@@ -412,7 +412,7 @@ redis_chain:
     async fn test_validate_chain_subchain_terminating_in_middle() {
         let expected = r#"Topology errors
 redis_chain:
-  ConsistentScatter:
+  TuneableConsistencyScatter:
     subchain-1:
       Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
 "#;
@@ -430,7 +430,7 @@ redis_chain:
         let error = run_test_topology(vec![
             TransformsConfig::DebugPrinter,
             TransformsConfig::DebugPrinter,
-            TransformsConfig::ConsistentScatter(ConsistentScatterConfig {
+            TransformsConfig::TuneableConsistencyScatter(TuneableConsistencyScatterConfig {
                 route_map,
                 write_consistency: 1,
                 read_consistency: 1,
@@ -447,7 +447,7 @@ redis_chain:
     async fn test_validate_chain_subchain_non_terminating_at_end() {
         let expected = r#"Topology errors
 redis_chain:
-  ConsistentScatter:
+  TuneableConsistencyScatter:
     subchain-1:
       Non-terminating transform "DebugPrinter" is last in chain. Last transform must be terminating.
 "#;
@@ -463,7 +463,7 @@ redis_chain:
         let error = run_test_topology(vec![
             TransformsConfig::DebugPrinter,
             TransformsConfig::DebugPrinter,
-            TransformsConfig::ConsistentScatter(ConsistentScatterConfig {
+            TransformsConfig::TuneableConsistencyScatter(TuneableConsistencyScatterConfig {
                 route_map,
                 write_consistency: 1,
                 read_consistency: 1,
@@ -480,7 +480,7 @@ redis_chain:
     async fn test_validate_chain_subchain_terminating_middle_non_terminating_at_end() {
         let expected = r#"Topology errors
 redis_chain:
-  ConsistentScatter:
+  TuneableConsistencyScatter:
     subchain-1:
       Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
       Non-terminating transform "DebugPrinter" is last in chain. Last transform must be terminating.
@@ -498,7 +498,7 @@ redis_chain:
         let error = run_test_topology(vec![
             TransformsConfig::DebugPrinter,
             TransformsConfig::DebugPrinter,
-            TransformsConfig::ConsistentScatter(ConsistentScatterConfig {
+            TransformsConfig::TuneableConsistencyScatter(TuneableConsistencyScatterConfig {
                 route_map,
                 write_consistency: 1,
                 read_consistency: 1,
@@ -528,14 +528,14 @@ a_first_chain:
   Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
   Non-terminating transform "DebugPrinter" is last in chain. Last transform must be terminating.
 b_second_chain:
-  ConsistentScatter:
+  TuneableConsistencyScatter:
     a_chain_1:
       Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
       Non-terminating transform "DebugPrinter" is last in chain. Last transform must be terminating.
     b_chain_2:
       Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
     c_chain_3:
-      ConsistentScatter:
+      TuneableConsistencyScatter:
         sub_chain_2:
           Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
 "#;

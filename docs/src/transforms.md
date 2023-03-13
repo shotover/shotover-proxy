@@ -24,27 +24,27 @@ Future transforms won't be added to the public API while in alpha. But in these 
 
 ## Transforms
 
-| Transform                                             | Terminating | Implementation Status |
-|-------------------------------------------------------|-------------|-----------------------|
-| [CassandraSinkCluster](#cassandrasinkcluster)         | ✅          | Beta                  |
-| [CassandraSinkSingle](#cassandrasinksingle)           | ✅          | Alpha                 |
-| [CassandraPeersRewrite](#cassandrapeersrewrite)       | ❌          | Alpha                 |
-| [Coalesce](#coalesce)                                 | ❌          | Alpha                 |
-| [ConsistentScatter](#consistentscatter)               | ✅          | Alpha                 |
-| [DebugPrinter](#debugprinter)                         | ❌          | Alpha                 |
-| [DebugReturner](#debugreturner)                       | ✅          | Alpha                 |
-| [NullSink](#NullSink)                                         | ✅          | Beta                  |
-| [ParallelMap](#parallelmap)                           | ✅          | Alpha                 |
-| [Protect](#protect)                                   | ❌          | Alpha                 |
-| [QueryCounter](#querycounter)                         | ❌          | Alpha                 |
-| [QueryTypeFilter](#querytypefilter)                   | ❌          | Alpha                 |
-| [RedisCache](#rediscache)                             | ❌          | Alpha                 |
-| [RedisClusterPortsRewrite](#redisclusterportsrewrite) | ❌          | Beta                  |
-| [RedisSinkCluster](#redissinkcluster)                 | ✅          | Beta                  |
-| [RedisSinkSingle](#redissinksingle)                   | ✅          | Beta                  |
-| [RedisTimestampTagger](#redistimestamptagger)         | ❌          | Alpha                 |
-| [Tee](#tee)                                           | ✅          | Alpha                 |
-| [RequestThrottling](#requestthrottling)               |❌           | Alpha                 |
+| Transform                                                | Terminating | Implementation Status |
+|----------------------------------------------------------|-------------|-----------------------|
+| [CassandraSinkCluster](#cassandrasinkcluster)            | ✅          | Beta                  |
+| [CassandraSinkSingle](#cassandrasinksingle)              | ✅          | Alpha                 |
+| [CassandraPeersRewrite](#cassandrapeersrewrite)          | ❌          | Alpha                 |
+| [Coalesce](#coalesce)                                    | ❌          | Alpha                 |
+| [TuneableConsistencyScatter](#tuneableconsistencyscatter)| ✅          | Alpha                 |
+| [DebugPrinter](#debugprinter)                            | ❌          | Alpha                 |
+| [DebugReturner](#debugreturner)                          | ✅          | Alpha                 |
+| [NullSink](#nullsink)                                    | ✅          | Beta                  |
+| [ParallelMap](#parallelmap)                              | ✅          | Alpha                 |
+| [Protect](#protect)                                      | ❌          | Alpha                 |
+| [QueryCounter](#querycounter)                            | ❌          | Alpha                 |
+| [QueryTypeFilter](#querytypefilter)                      | ❌          | Alpha                 |
+| [RedisCache](#rediscache)                                | ❌          | Alpha                 |
+| [RedisClusterPortsRewrite](#redisclusterportsrewrite)    | ❌          | Beta                  |
+| [RedisSinkCluster](#redissinkcluster)                    | ✅          | Beta                  |
+| [RedisSinkSingle](#redissinksingle)                      | ✅          | Beta                  |
+| [RedisTimestampTagger](#redistimestamptagger)            | ❌          | Alpha                 |
+| [Tee](#tee)                                              | ✅          | Alpha                 |
+| [RequestThrottling](#requestthrottling)                  |❌           | Alpha                 |
 <!--| [DebugRandomDelay](#debugrandomdelay)                 | ❌          | Alpha                 |-->
 
 ### CassandraSinkCluster
@@ -204,7 +204,7 @@ Validation will fail if none of the `flush_when_` fields are provided, as this w
     flush_when_millis_since_last_flush: 10000
 ```
 
-### ConsistentScatter
+### TuneableConsistencyScatter
 
 This transform implements a distributed eventual consistency mechanism between the set of defined sub-chains. This transform will wait for a user configurable number of chains to return an OK response before returning the value up-chain. This follows a similar model as used by Cassandra for its consistency model. Strong consistency can be achieved when W + R > RF. In this case RF is always the number of chains in the `route_map`.
 
@@ -213,7 +213,7 @@ No sharding occurs within this transform and all requests/messages are sent to a
 Upon receiving the configured number of responses, the transform will attempt to resolve or unify the response based on metadata about the result. Currently it will try to return the newest response based on a metadata timestamp (last write wins) or it will simply return the largest response if no timestamp information is available.
 
 ```yaml
-- ConsistentScatter:
+- TuneableConsistencyScatter:
     # The number of chains to wait for a "write" response on.
     write_consistency: 2
     # The number of chains to wait for a "read" response on.
@@ -503,7 +503,7 @@ This transfrom emits a metrics [counter](user-guide/observability.md#counter) na
 
 A transform that wraps each Redis command in a Lua script that also fetches the key for the operations idletime. This is then used to build a last modified timestamp and insert it into a response's timestamp. The response from the Lua operation is unwrapped and returned to up-chain transforms looking like a normal Redis response.
 
-This is mainly used in conjunction with the `ConsistentScatter` transform to enable a Cassandra style consistency model within Redis.
+This is mainly used in conjunction with the `TuneableConsistencyScatter` transform to enable a Cassandra style consistency model within Redis.
 
 ```yaml
 - RedisTimestampTagger

@@ -10,7 +10,7 @@ chain_config:
     - DebugPrinter
   b_second_chain:
     - DebugPrinter
-    - ConsistentScatter:
+    - TuneableConsistencyScatter:
         read_consistency: 1
         write_consistency: 1
         route_map:
@@ -21,7 +21,7 @@ chain_config:
             - NullSink
             - NullSink
           c_chain_3:
-            - ConsistentScatter:
+            - TuneableConsistencyScatter:
                 read_consistency: 1
                 write_consistency: 1
                 route_map:
