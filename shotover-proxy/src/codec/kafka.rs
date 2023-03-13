@@ -65,10 +65,10 @@ impl KafkaDecoder {
     }
 }
 
-fn get_length_of_full_message(src: &mut BytesMut) -> Option<usize> {
+fn get_length_of_full_message(src: &BytesMut) -> Option<usize> {
     if src.len() > 4 {
         let size = u32::from_be_bytes(src[0..4].try_into().unwrap()) as usize + 4;
-        if size >= src.len() {
+        if size <= src.len() {
             Some(size)
         } else {
             None
