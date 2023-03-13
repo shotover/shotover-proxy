@@ -128,8 +128,8 @@ impl KafkaFrame {
 
                 let version = header.request_api_version;
                 match body {
-                    RequestBody::Produce(x) => x.encode(bytes, version)?,
-                    RequestBody::FindCoordinator(x) => x.encode(bytes, version)?,
+                    RequestBody::Produce(x) => encode(x, bytes, version)?,
+                    RequestBody::FindCoordinator(x) => encode(x, bytes, version)?,
                     RequestBody::Unknown { message, .. } => bytes.extend_from_slice(&message),
                 }
             }
@@ -140,8 +140,8 @@ impl KafkaFrame {
             } => {
                 header.encode(bytes, body.header_version(version))?;
                 match body {
-                    ResponseBody::Produce(x) => x.encode(bytes, version)?,
-                    ResponseBody::FindCoordinator(x) => x.encode(bytes, version)?,
+                    ResponseBody::Produce(x) => encode(x, bytes, version)?,
+                    ResponseBody::FindCoordinator(x) => encode(x, bytes, version)?,
                     ResponseBody::Unknown { message, .. } => bytes.extend_from_slice(&message),
                 }
             }
@@ -158,6 +158,14 @@ impl KafkaFrame {
 fn decode<T: Decodable>(bytes: &mut Bytes, version: i16) -> Result<T> {
     T::decode(bytes, version).context(format!(
         "Failed to decode {} v{} body",
+        std::any::type_name::<T>(),
+        version
+    ))
+}
+
+fn encode<T: Encodable>(encodable: T, bytes: &mut BytesMut, version: i16) -> Result<()> {
+    encodable.encode(bytes, version).context(format!(
+        "Failed to encode {} v{} body",
         std::any::type_name::<T>(),
         version
     ))
