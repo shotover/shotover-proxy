@@ -23,7 +23,6 @@ async-recursion = "1.0"
 governor = { version = "0.5.0", default-features = false, features = ["std", "jitter", "quanta"] }
 nonzero_ext = "0.3.0"
 version-compare = "0.1"
-split-iter = "0.1.0"
 rand = { features = ["small_rng"], workspace = true }
 clap.workspace = true
 itertools.workspace = true

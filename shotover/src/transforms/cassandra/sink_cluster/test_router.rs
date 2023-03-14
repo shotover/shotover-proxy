@@ -87,7 +87,8 @@ mod test_token_aware_router {
                     &mut rng,
                 )
                 .await
-                .unwrap();
+                .unwrap()
+                .remove(0);
 
             if !rack_replicas.is_empty() {
                 assert!(rack_replicas.contains(&node.address));
