@@ -15,8 +15,8 @@ use crate::transforms::debug::force_parse::{DebugForceEncodeConfig, DebugForcePa
 use crate::transforms::debug::printer::DebugPrinter;
 use crate::transforms::debug::random_delay::DebugRandomDelay;
 use crate::transforms::debug::returner::{DebugReturner, DebugReturnerConfig};
-use crate::transforms::distributed::consistent_scatter::{
-    ConsistentScatter, ConsistentScatterConfig,
+use crate::transforms::distributed::tuneable_consistency_scatter::{
+    TuneableConsistencyScatterConfig, TuneableConsistentencyScatter,
 };
 use crate::transforms::filter::{QueryTypeFilter, QueryTypeFilterConfig};
 use crate::transforms::kafka::sink_single::KafkaSinkSingle;
@@ -116,7 +116,7 @@ pub enum Transforms {
     NullSink(NullSink),
     Loopback(Loopback),
     Protect(Box<Protect>),
-    ConsistentScatter(ConsistentScatter),
+    TuneableConsistencyScatter(TuneableConsistentencyScatter),
     RedisTimestampTagger(RedisTimestampTagger),
     RedisSinkCluster(RedisSinkCluster),
     RedisClusterPortsRewrite(RedisClusterPortsRewrite),
@@ -154,7 +154,7 @@ impl Transforms {
             Transforms::Protect(p) => p.transform(message_wrapper).await,
             Transforms::DebugReturner(p) => p.transform(message_wrapper).await,
             Transforms::DebugRandomDelay(p) => p.transform(message_wrapper).await,
-            Transforms::ConsistentScatter(tc) => tc.transform(message_wrapper).await,
+            Transforms::TuneableConsistencyScatter(tc) => tc.transform(message_wrapper).await,
             Transforms::RedisSinkSingle(r) => r.transform(message_wrapper).await,
             Transforms::RedisTimestampTagger(r) => r.transform(message_wrapper).await,
             Transforms::RedisClusterPortsRewrite(r) => r.transform(message_wrapper).await,
@@ -183,7 +183,9 @@ impl Transforms {
             Transforms::Protect(p) => p.transform_pushed(message_wrapper).await,
             Transforms::DebugReturner(p) => p.transform_pushed(message_wrapper).await,
             Transforms::DebugRandomDelay(p) => p.transform_pushed(message_wrapper).await,
-            Transforms::ConsistentScatter(tc) => tc.transform_pushed(message_wrapper).await,
+            Transforms::TuneableConsistencyScatter(tc) => {
+                tc.transform_pushed(message_wrapper).await
+            }
             Transforms::RedisSinkSingle(r) => r.transform_pushed(message_wrapper).await,
             Transforms::RedisTimestampTagger(r) => r.transform_pushed(message_wrapper).await,
             Transforms::RedisClusterPortsRewrite(r) => r.transform_pushed(message_wrapper).await,
@@ -210,7 +212,9 @@ impl Transforms {
             Transforms::RedisCache(r) => r.set_pushed_messages_tx(pushed_messages_tx),
             Transforms::Tee(t) => t.set_pushed_messages_tx(pushed_messages_tx),
             Transforms::RedisSinkSingle(r) => r.set_pushed_messages_tx(pushed_messages_tx),
-            Transforms::ConsistentScatter(c) => c.set_pushed_messages_tx(pushed_messages_tx),
+            Transforms::TuneableConsistencyScatter(c) => {
+                c.set_pushed_messages_tx(pushed_messages_tx)
+            }
             Transforms::RedisTimestampTagger(r) => r.set_pushed_messages_tx(pushed_messages_tx),
             Transforms::RedisClusterPortsRewrite(r) => r.set_pushed_messages_tx(pushed_messages_tx),
             Transforms::DebugPrinter(p) => p.set_pushed_messages_tx(pushed_messages_tx),
@@ -243,7 +247,7 @@ pub enum TransformsConfig {
     CassandraPeersRewrite(CassandraPeersRewriteConfig),
     RedisCache(RedisConfig),
     Tee(TeeConfig),
-    ConsistentScatter(ConsistentScatterConfig),
+    TuneableConsistencyScatter(TuneableConsistencyScatterConfig),
     RedisSinkCluster(RedisSinkClusterConfig),
     RedisClusterPortsRewrite(RedisClusterPortsRewriteConfig),
     RedisTimestampTagger,
@@ -278,7 +282,7 @@ impl TransformsConfig {
             TransformsConfig::RedisCache(r) => r.get_builder().await,
             TransformsConfig::Tee(t) => t.get_builder().await,
             TransformsConfig::RedisSinkSingle(r) => r.get_builder(chain_name).await,
-            TransformsConfig::ConsistentScatter(c) => c.get_builder().await,
+            TransformsConfig::TuneableConsistencyScatter(c) => c.get_builder().await,
             TransformsConfig::RedisTimestampTagger => {
                 Ok(Box::new(RedisTimestampTagger::new()) as Box<dyn TransformBuilder>)
             }

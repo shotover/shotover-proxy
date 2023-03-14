@@ -99,19 +99,19 @@ a_first_chain:
   Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
   Non-terminating transform "DebugPrinter" is last in chain. Last transform must be terminating.
 b_second_chain:
-  ConsistentScatter:
+  TuneableConsistencyScatter:
     a_chain_1:
       Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
       Non-terminating transform "DebugPrinter" is last in chain. Last transform must be terminating.
     b_chain_2:
       Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
     c_chain_3:
-      ConsistentScatter:
+      TuneableConsistencyScatter:
         sub_chain_2:
           Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
 "#),
             EventMatcher::new().with_level(Level::Warn)
-                .with_target("shotover_proxy::transforms::distributed::consistent_scatter")
+                .with_target("shotover_proxy::transforms::distributed::tuneable_consistency_scatter")
                 .with_message("Using this transform is considered unstable - Does not work with REDIS pipelines")
                 .with_count(Count::Times(2)),
             // TODO: Investigate these
@@ -119,7 +119,7 @@ b_second_chain:
                 .with_message("failed response Couldn't send message to wrapped chain SendError(BufferedChainMessages { local_addr: 127.0.0.1:10000, messages: [], flush: true, return_chan: Some(Sender { inner: Some(Inner { state: State { is_complete: false, is_closed: false, is_rx_task_set: false, is_tx_task_set: false } }) }) })")
                 .with_count(Count::Any),
             EventMatcher::new().with_level(Level::Error)
-                .with_target("shotover_proxy::transforms::distributed::consistent_scatter")
+                .with_target("shotover_proxy::transforms::distributed::tuneable_consistency_scatter")
                 .with_message("failed response channel closed")
                 .with_count(Count::Any),
         ],

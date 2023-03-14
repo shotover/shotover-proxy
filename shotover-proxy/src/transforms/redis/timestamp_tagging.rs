@@ -130,7 +130,7 @@ fn unwrap_response(message: &mut Message) -> Result<()> {
                     }
                 }
 
-                todo!("ConsistentScatter isnt built to handle multiple timestamps yet: {timestamps:?} {results:?}",)
+                todo!("TuneableConsistencyScatter isnt built to handle multiple timestamps yet: {timestamps:?} {results:?}",)
             } else if values.len() == 2 {
                 let timestamp = values.pop().unwrap();
                 let frame = values.pop().unwrap();

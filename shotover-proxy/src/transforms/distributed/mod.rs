@@ -1,1 +1,1 @@
-pub mod consistent_scatter;
+pub mod tuneable_consistency_scatter;

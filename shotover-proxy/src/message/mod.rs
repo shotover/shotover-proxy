@@ -64,7 +64,7 @@ pub struct Message {
     /// The only reason it is an Option is to allow temporarily taking ownership of the value from an &mut T
     inner: Option<MessageInner>,
 
-    // TODO: Not a fan of this field and we could get rid of it by making TimestampTagger an implicit part of ConsistentScatter
+    // TODO: Not a fan of this field and we could get rid of it by making TimestampTagger an implicit part of TuneableConsistencyScatter
     // This metadata field is only used for communication between transforms and should not be touched by sinks or sources
     pub meta_timestamp: Option<i64>,
 

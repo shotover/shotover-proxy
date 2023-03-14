@@ -5,7 +5,7 @@ sources:
       listen_addr: "127.0.0.1:6379"
 chain_config:
   redis_chain:
-    - ConsistentScatter:
+    - TuneableConsistencyScatter:
         write_consistency: 2
         read_consistency: 2
         route_map:
