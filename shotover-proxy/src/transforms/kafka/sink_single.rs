@@ -123,13 +123,17 @@ impl Transform for KafkaSinkSingle {
         for response in &mut responses {
             if let Some(Frame::Kafka(KafkaFrame::Response {
                 body: ResponseBody::FindCoordinator(find_coordinator),
+                version,
                 ..
             })) = response.frame()
             {
                 let port = message_wrapper.local_addr.port() as i32;
-                find_coordinator.port = port;
-                for coordinator in &mut find_coordinator.coordinators {
-                    coordinator.port = port;
+                if *version <= 3 {
+                    find_coordinator.port = port;
+                } else {
+                    for coordinator in &mut find_coordinator.coordinators {
+                        coordinator.port = port;
+                    }
                 }
                 response.invalidate_cache();
             }
