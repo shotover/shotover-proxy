@@ -49,7 +49,7 @@ impl CodecBuilder for CassandraCodecBuilder {
             CassandraEncoder::new(
                 envelope_compression,
                 frame_codec,
-                handshake_complete.clone(),
+                handshake_complete,
                 self.direction,
             ),
         )
@@ -109,12 +109,10 @@ impl CassandraDecoder {
                 match version {
                     // If protocol version 3/4, set envelope compression and leave frame codec as `LegacyFrameDecoder`
                     Version::V3 | Version::V4 => {
-                        tracing::debug!("SETTING v4");
                         set_envelope_compression(&mut self.envelope_compression, &startup);
                     }
                     // If protocol version 5, leave envelope compression as `Compression::None` and set frame codec
                     Version::V5 => {
-                        tracing::debug!("SETTING v5");
                         set_frame_codec(&mut self.frame_codec, &startup);
                     }
                     _ => return Err(anyhow!("Invalid version: {version}")),
@@ -195,22 +193,6 @@ impl Decoder for CassandraDecoder {
                         .unwrap();
 
                     for envelope_bytes in envelopes {
-                        // Clear the read bytes from the FramedReader
-                        // tracing::debug!(
-                        //     "{}: incoming cassandra message:\n{}",
-                        //     self.direction,
-                        //     pretty_hex::pretty_hex(&envelope_bytes)
-                        // );
-
-                        let version = Version::try_from(envelope_bytes[0])
-                        .expect("Gauranteed because check_envelope_size only returns Ok if the Version will parse");
-                        if let Version::V3 | Version::V4 = version {
-                            // Accept these protocols
-                        } else {
-                            // // Reject protocols that cassandra-protocol supports but shotover does not yet support
-                            // return Err(reject_protocol_version(version.into()));
-                        }
-
                         let compressed = self.check_compression(&envelope_bytes).unwrap();
 
                         let mut message = Message::from_bytes(
@@ -253,9 +235,9 @@ impl Decoder for CassandraDecoder {
                 }
                 err => {
                     return Err(CodecReadError::Parser(anyhow!(
-                        "Failed to parse frame {:?}",
+                        "Failed to decode frame {:?}",
                         err
-                    )))
+                    )));
                 }
             }
         }
@@ -349,7 +331,7 @@ fn reject_protocol_version(version: u8) -> CodecReadError {
 }
 
 pub struct CassandraEncoder {
-    compression: Arc<RwLock<Compression>>,
+    envelope_compression: Arc<RwLock<Compression>>,
     frame_codec: Arc<RwLock<CassandraFrameCodec>>,
     handshake_complete: Arc<AtomicBool>,
     direction: Direction,
@@ -357,13 +339,13 @@ pub struct CassandraEncoder {
 
 impl CassandraEncoder {
     pub fn new(
-        compression: Arc<RwLock<Compression>>,
+        envelope_compression: Arc<RwLock<Compression>>,
         frame_codec: Arc<RwLock<CassandraFrameCodec>>,
         handshake_complete: Arc<AtomicBool>,
         direction: Direction,
     ) -> Self {
         Self {
-            compression,
+            envelope_compression,
             frame_codec,
             handshake_complete,
             direction,
@@ -382,7 +364,7 @@ impl Encoder<Messages> for CassandraEncoder {
         let mut envelopes = Vec::<Bytes>::new();
         let mut completed_handshake = false;
         for m in item {
-            let start = dst.len();
+            // let start = dst.len();
             let compression = m.codec_state.as_cassandra();
 
             // TODO: always check if cassandra message
@@ -394,10 +376,24 @@ impl Encoder<Messages> for CassandraEncoder {
                         if Opcode::Startup == opcode {
                             if let CassandraFrame {
                                 operation: CassandraOperation::Startup(startup),
+                                version,
                                 ..
                             } = CassandraFrame::from_bytes(bytes.clone(), Compression::None)?
                             {
-                                set_envelope_compression(&mut self.compression, &startup);
+                                match version {
+                                    // If protocol version 3/4, set envelope compression and leave frame codec as `LegacyFrameDecoder`
+                                    Version::V3 | Version::V4 => {
+                                        set_envelope_compression(
+                                            &mut self.envelope_compression,
+                                            &startup,
+                                        );
+                                    }
+                                    // If protocol version 5, leave envelope compression as `Compression::None` and set frame codec
+                                    Version::V5 => {
+                                        set_frame_codec(&mut self.frame_codec, &startup);
+                                    }
+                                    _ => return Err(anyhow!("Invalid version: {version}")),
+                                }
                             };
                         }
 
@@ -413,10 +409,24 @@ impl Encoder<Messages> for CassandraEncoder {
                         // check if the message is a startup message and set the codec's compression
                         if let Frame::Cassandra(CassandraFrame {
                             operation: CassandraOperation::Startup(startup),
+                            version,
                             ..
                         }) = &frame
                         {
-                            set_envelope_compression(&mut self.compression, startup);
+                            match version {
+                                // If protocol version 3/4, set envelope compression and leave frame codec as `LegacyFrameDecoder`
+                                Version::V3 | Version::V4 => {
+                                    set_envelope_compression(
+                                        &mut self.envelope_compression,
+                                        startup,
+                                    );
+                                }
+                                // If protocol version 5, leave envelope compression as `Compression::None` and set frame codec
+                                Version::V5 => {
+                                    set_frame_codec(&mut self.frame_codec, startup);
+                                }
+                                _ => return Err(anyhow!("Invalid version: {version}")),
+                            }
                         };
 
                         if let Frame::Cassandra(CassandraFrame {
@@ -434,11 +444,6 @@ impl Encoder<Messages> for CassandraEncoder {
                     Bytes::copy_from_slice(buffer.as_slice())
                 }
             };
-            tracing::debug!(
-                "{}: outgoing cassandra message:\n{}",
-                self.direction,
-                pretty_hex::pretty_hex(&&dst[start..])
-            );
             envelopes.push(envelope_bytes);
         }
 
@@ -446,17 +451,15 @@ impl Encoder<Messages> for CassandraEncoder {
             .handshake_complete
             .load(std::sync::atomic::Ordering::Relaxed)
         {
-            self.frame_codec
-                .read()
-                .unwrap()
-                .encode_envelopes(dst, envelopes)
+            self.frame_codec.read().unwrap().encode_envelopes(envelopes)
         } else {
-            LegacyFrameCodec {}.encode_envelopes(dst, envelopes)
+            LegacyFrameCodec {}.encode_envelopes(envelopes)
         };
 
         tracing::debug!(
-            "outgoing cassandra message:\n{}",
-            pretty_hex::pretty_hex(&&bytes)
+            "{}: outgoing cassandra message:\n{}",
+            self.direction,
+            pretty_hex::pretty_hex(&&bytes),
         );
 
         dst.extend_from_slice(&bytes);

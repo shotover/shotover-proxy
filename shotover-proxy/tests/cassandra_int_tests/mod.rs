@@ -1,20 +1,18 @@
 use cassandra_protocol::frame::message_error::{ErrorBody, ErrorType};
-use cdrs_tokio::cluster::session::TcpSessionBuilder;
 use cdrs_tokio::frame::events::{
     SchemaChange, SchemaChangeOptions, SchemaChangeTarget, SchemaChangeType, ServerEvent,
 };
-use cdrs_tokio::load_balancing::RoundRobinLoadBalancingStrategy;
 use futures::future::join_all;
 use futures::Future;
 use rstest::rstest;
 use serial_test::serial;
 #[cfg(feature = "cassandra-cpp-driver-tests")]
 use test_helpers::connection::cassandra::CassandraDriver::Datastax;
-use test_helpers::connection::cassandra::Compression;
 use test_helpers::connection::cassandra::{
     assert_query_result, run_query, CassandraConnection, CassandraConnectionBuilder,
     CassandraDriver, CassandraDriver::CdrsTokio, CassandraDriver::Scylla, ResultValue,
 };
+use test_helpers::connection::cassandra::{Compression, ProtocolVersion};
 use test_helpers::connection::redis_connection;
 use test_helpers::docker_compose::DockerCompose;
 use test_helpers::shotover_process::{Count, EventMatcher, Level, ShotoverProcessBuilder};
@@ -814,44 +812,52 @@ async fn events_keyspace(#[case] driver: CassandraDriver) {
     shotover.shutdown_and_then_consume_events(&[]).await;
 }
 
-// #[tokio::test(flavor = "multi_thread")]
-// #[serial]
-// async fn test_protocol_v5() {
-//     use cdrs_tokio::authenticators::StaticPasswordAuthenticatorProvider;
-//     use cdrs_tokio::cluster::session::SessionBuilder;
-//     use cdrs_tokio::cluster::NodeTcpConfigBuilder;
-//     use cdrs_tokio::frame::Version;
-//     use std::sync::Arc;
+#[rstest]
+#[case::cdrs(CdrsTokio)]
+#[tokio::test(flavor = "multi_thread")]
+#[serial]
+async fn test_protocol_v4(#[case] driver: CassandraDriver) {
+    let _docker_compose =
+        DockerCompose::new("example-configs/cassandra-passthrough/docker-compose.yaml");
 
-//     let _docker_compose =
-//         DockerCompose::new("example-configs/cassandra-passthrough/docker-compose.yaml");
+    let shotover = ShotoverProcessBuilder::new_with_topology(
+        "example-configs/cassandra-passthrough/topology.yaml",
+    )
+    .start()
+    .await;
 
-//     let _shotover_manager = ShotoverProcessBuilder::new_with_topology(
-//         "example-configs/cassandra-passthrough/topology.yaml",
-//     )
-//     .start()
-//     .await;
+    let connection = || {
+        CassandraConnectionBuilder::new("127.0.0.1", 9042, driver)
+            .with_protocol_version(ProtocolVersion::V4)
+            .build()
+    };
 
-//     let user = "cassandra";
-//     let password = "cassandra";
-//     let auth = StaticPasswordAuthenticatorProvider::new(&user, &password);
+    standard_test_suite(&connection, driver).await;
 
-//     let config = NodeTcpConfigBuilder::new()
-//         .with_contact_point("127.0.0.1:9042".into())
-//         .with_authenticator_provider(Arc::new(auth))
-//         .with_version(Version::V5)
-//         .build()
-//         .await
-//         .unwrap();
+    shotover.shutdown_and_then_consume_events(&[]).await;
+}
 
-//     let session = TcpSessionBuilder::new(RoundRobinLoadBalancingStrategy::new(), config)
-//         .build()
-//         .await
-//         .unwrap();
+#[rstest]
+#[case::cdrs(CdrsTokio)]
+#[tokio::test(flavor = "multi_thread")]
+#[serial]
+async fn test_protocol_v5(#[case] driver: CassandraDriver) {
+    let _docker_compose =
+        DockerCompose::new("example-configs/cassandra-passthrough/docker-compose.yaml");
 
-//     // let create_ks = "SELECT * FROM system.peers_v2";
+    let shotover = ShotoverProcessBuilder::new_with_topology(
+        "example-configs/cassandra-passthrough/topology.yaml",
+    )
+    .start()
+    .await;
 
-//     // let r = session.query(create_ks).await.unwrap();
+    let connection = || {
+        CassandraConnectionBuilder::new("127.0.0.1", 9042, driver)
+            .with_protocol_version(ProtocolVersion::V5)
+            .build()
+    };
 
-//     // println!("result : {:?}", r);
-// }
+    standard_test_suite(&connection, driver).await;
+
+    shotover.shutdown_and_then_consume_events(&[]).await;
+}

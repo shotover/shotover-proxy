@@ -1,6 +1,8 @@
+use anyhow::anyhow;
 use bytes::{Bytes, BytesMut};
 use cassandra_protocol::compression::Compression;
 use cassandra_protocol::frame::Version;
+use std::fmt;
 
 pub(self) const UNCOMPRESSED_FRAME_HEADER_LENGTH: usize = 6;
 // pub(self) const COMPRESSED_FRAME_HEADER_LENGTH: usize = 8;
@@ -30,6 +32,17 @@ pub enum CassandraFrameCodec {
     Uncompressed(UncompressedFrameCodec),
 }
 
+impl fmt::Debug for CassandraFrameCodec {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let variant = match self {
+            Self::Legacy(_) => "Legacy",
+            Self::Uncompressed(_) => "Uncompressed",
+        };
+
+        write!(f, "CassandraFrameCodec::{}", variant)
+    }
+}
+
 impl Default for CassandraFrameCodec {
     fn default() -> Self {
         Self::Legacy(LegacyFrameCodec {})
@@ -55,10 +68,10 @@ impl CassandraFrameCodec {
         }
     }
 
-    pub fn encode_envelopes(&self, dst: &mut BytesMut, envelopes: Vec<Bytes>) -> Bytes {
+    pub fn encode_envelopes(&self, envelopes: Vec<Bytes>) -> Bytes {
         match self {
-            Self::Legacy(c) => c.encode_envelopes(dst, envelopes),
-            Self::Uncompressed(c) => c.encode_envelopes(dst, envelopes),
+            Self::Legacy(c) => c.encode_envelopes(envelopes),
+            Self::Uncompressed(c) => c.encode_envelopes(envelopes),
         }
     }
 }
@@ -100,11 +113,7 @@ impl UncompressedFrameCodec {
         src: BytesMut,
         _frame_compression: Compression,
     ) -> anyhow::Result<Vec<BytesMut>> {
-        tracing::debug!("full frame: {src:?}");
         let buffer_len = src.len();
-        // if buffer_len < UNCOMPRESSED_FRAME_HEADER_LENGTH {
-        //     return Ok(None);
-        // }
 
         let header = if buffer_len >= 8 {
             i64::from_le_bytes(src[..8].try_into().unwrap()) & 0xffffffffffff
@@ -121,34 +130,32 @@ impl UncompressedFrameCodec {
         let computed_crc = cassandra_protocol::crc::crc24(&header.to_le_bytes()[..3]);
 
         if header_crc24 != computed_crc {
-            todo!();
-            //return Err(create_header_crc_mismatch_error(computed_crc, header_crc24));
+            return Err(anyhow!(format!(
+                "Header CRC mismatch - expected {header_crc24}, found {computed_crc}."
+            )));
         }
 
         let payload_length = (header & 0x1ffff) as usize;
         let payload_end = UNCOMPRESSED_FRAME_HEADER_LENGTH + payload_length;
 
         let frame_end = payload_end + FRAME_TRAILER_LENGTH;
-        // if buffer_len < frame_end {
-        //     return Ok(None);
-        // }
 
         let payload_crc32 = u32::from_le_bytes(src[payload_end..frame_end].try_into().unwrap());
 
         let computed_crc =
             cassandra_protocol::crc::crc32(&src[UNCOMPRESSED_FRAME_HEADER_LENGTH..payload_end]);
         if payload_crc32 != computed_crc {
-            todo!();
-            // return Err(create_payload_crc_mismatch_error(
-            //     computed_crc,
-            //     payload_crc32,
-            // ));
+            return Err(anyhow!(format!(
+                "Payload CRC mismatch - read {payload_crc32}, computed {computed_crc}."
+            )));
         }
 
-        // let self_contained = (header & (1 << 17)) != 0;
+        let self_contained = (header & (1 << 17)) != 0;
+        if !self_contained {
+            unimplemented!("Cannot support non-self contained frames yet");
+        }
 
         let payload = &src[UNCOMPRESSED_FRAME_HEADER_LENGTH..payload_end];
-        tracing::debug!("payload {payload:?}");
 
         let mut current_pos = 0;
         let mut envelopes: Vec<BytesMut> = vec![];
@@ -158,7 +165,6 @@ impl UncompressedFrameCodec {
                 break;
             }
 
-            tracing::warn!("{:?}", &payload[current_pos..]);
             let body_len = i32::from_be_bytes(
                 payload[current_pos + 5..current_pos + 9]
                     .try_into()
@@ -167,14 +173,11 @@ impl UncompressedFrameCodec {
 
             let envelope_len = ENVELOPE_HEADER_LEN + body_len;
 
-            // tracing::debug!("length : {len}");
-
             if current_pos + envelope_len > payload.len() {
                 break;
             }
 
-            let envelope = &payload[current_pos..envelope_len];
-            tracing::debug!("{envelope:?}");
+            let envelope = &payload[current_pos..current_pos + envelope_len];
 
             envelopes.push(envelope.into());
             current_pos += envelope_len;
@@ -183,7 +186,7 @@ impl UncompressedFrameCodec {
         Ok(envelopes)
     }
 
-    pub fn encode_envelopes(&self, dst: &mut BytesMut, envelopes: Vec<Bytes>) -> Bytes {
+    pub fn encode_envelopes(&self, envelopes: Vec<Bytes>) -> Bytes {
         let mut buffer = BytesMut::new();
         buffer.resize(UNCOMPRESSED_FRAME_HEADER_LENGTH, 0);
         buffer.extend(envelopes.into_iter());
@@ -196,24 +199,33 @@ impl UncompressedFrameCodec {
             len |= 1 << 17;
         }
 
-        write_3_bytes(&mut buffer, len as i32);
+        put3b(&mut buffer[..], len as i32);
+        put3b(
+            &mut buffer[3..],
+            cassandra_protocol::crc::crc24(&len.to_le_bytes()[..3]),
+        );
 
-        let len_bytes = len.to_le_bytes();
-        buffer[0] = len_bytes[0];
-        buffer[1] = len_bytes[1];
-        buffer[2] = len_bytes[2];
-
-        let crc_bytes = cassandra_protocol::crc::crc24(&len.to_le_bytes()[..3]).to_le_bytes();
-        buffer[3] = crc_bytes[0];
-        buffer[4] = crc_bytes[1];
-        buffer[5] = crc_bytes[2];
-
-        let crc = cassandra_protocol::crc::crc32(&buffer[UNCOMPRESSED_FRAME_HEADER_LENGTH..])
-            .to_le_bytes();
-        buffer.extend_from_slice(&crc);
+        add_trailer(&mut buffer, UNCOMPRESSED_FRAME_HEADER_LENGTH);
 
         buffer.freeze()
     }
+}
+
+#[inline]
+fn put3b(buffer: &mut [u8], value: i32) {
+    let value = value.to_le_bytes();
+    buffer[0] = value[0];
+    buffer[1] = value[1];
+    buffer[2] = value[2];
+}
+
+#[inline]
+fn add_trailer(buffer: &mut BytesMut, payload_start: usize) {
+    buffer.reserve(4);
+
+    let crc = cassandra_protocol::crc::crc32(&buffer[payload_start..]).to_le_bytes();
+
+    buffer.extend_from_slice(&[crc[0], crc[1], crc[2], crc[3]]);
 }
 
 #[derive(Copy, Clone)]
@@ -246,18 +258,7 @@ impl LegacyFrameCodec {
         Ok(vec![src])
     }
 
-    pub fn encode_envelopes(&self, dst: &mut BytesMut, envelopes: Vec<Bytes>) -> Bytes {
-        // for envelope in envelopes {
-        //     dst.extend_from_slice(&envelope);
-        // }
-
+    pub fn encode_envelopes(&self, envelopes: Vec<Bytes>) -> Bytes {
         envelopes.into_iter().flatten().collect()
     }
-}
-
-fn write_3_bytes(buffer: &mut BytesMut, value: i32) {
-    let value = value.to_le_bytes();
-    buffer[0] = value[0];
-    buffer[1] = value[1];
-    buffer[2] = value[2];
 }
