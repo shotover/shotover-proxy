@@ -538,6 +538,14 @@ impl<C: CodecBuilder + 'static> Handler<C> {
             debug!("Received raw message {:?}", messages);
             debug!("client details: {:?}", &self.client_details);
 
+            let mut error_report_messages = if reverse_chain {
+                // Avoid allocating for reverse chains as we dont make use of this value in that case
+                vec![]
+            } else {
+                // This clone should be cheap as cloning a Message that has never had `.frame()` called should result in no new allocations.
+                messages.clone()
+            };
+
             let wrapper = Wrapper::new_with_client_details(
                 messages,
                 self.client_details.clone(),
@@ -549,12 +557,30 @@ impl<C: CodecBuilder + 'static> Handler<C> {
                 self.chain
                     .process_request_rev(wrapper, self.client_details.clone())
                     .await
+                    .context("Chain failed to receive pushed messages/events, the connection will now be closed.")?
             } else {
-                self.chain
+                match self
+                    .chain
                     .process_request(wrapper, self.client_details.clone())
                     .await
-            }
-            .context("chain failed to send and/or receive messages")?;
+                    .context("Chain failed to send and/or receive messages, the connection will now be closed.")
+                {
+                    Ok(x) => x,
+                    Err(err) => {
+                        // An internal error occured and we need to terminate the connection because we can no longer make any gaurantees about the state its in.
+                        // However before we do that we need to return errors for all the messages in this batch for two reasons:
+                        // * Poorly programmed clients may hang forever waiting for a response
+                        // * We want to give the user a hint as to what went wrong
+                        //     + they might not know to check the shotover logs
+                        //     + they may not be able to correlate which error in the shotover logs corresponds to their failed message
+                        for m in &mut error_report_messages {
+                            *m = m.to_error_response(format!("Internal shotover (or custom transform) bug: {err:?}"));
+                        }
+                        out_tx.send(error_report_messages)?;
+                        return Err(err);
+                    }
+                }
+            };
 
             debug!("sending message: {:?}", modified_messages);
             // send the result of the process up stream
