@@ -234,18 +234,6 @@ Caused by:
                     )
                     .with_count(Count::Any),
                 EventMatcher::new()
-                    .with_level(Level::Error)
-                    .with_target("shotover_proxy::server")
-                    .with_message(
-                        r#"connection was unexpectedly terminated
-
-Caused by:
-    0: Chain failed to send and/or receive messages, the connection will now be closed.
-    1: CassandraSinkCluster transform failed
-    2: system.local returned unexpected cassandra operation: Error(ErrorBody { message: "Internal shotover error: Broken pipe (os error 32)", ty: Server })"#,
-                    )
-                    .with_count(Count::Any),
-                EventMatcher::new()
                     .with_level(Level::Warn)
                     .with_target("shotover_proxy::transforms::cassandra::sink_cluster")
                     .with_message(
