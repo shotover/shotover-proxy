@@ -1,3 +1,5 @@
+use crate::run_command_to_stdout;
+
 // TODO: Shelling out directly like this is just for experimenting.
 // Either:
 // * get access to latte as a crate
@@ -84,16 +86,4 @@ impl Latte {
     pub fn compare(&self, file_a: &str, file_b: &str) {
         run_command_to_stdout("latte", &["show", file_b, "-b", file_a]);
     }
-}
-
-/// unlike crate::docker_compose::run_command stdout of the command is sent to the stdout of the application
-fn run_command_to_stdout(command: &str, args: &[&str]) {
-    assert!(
-        std::process::Command::new(command)
-            .args(args)
-            .status()
-            .unwrap()
-            .success(),
-        "Failed to run: {command} {args:?}"
-    );
 }

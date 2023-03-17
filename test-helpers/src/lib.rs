@@ -3,6 +3,7 @@ pub mod cert;
 pub mod connection;
 pub mod docker_compose;
 pub mod flamegraph;
+pub mod kafka_producer_perf_test;
 pub mod latte;
 pub mod lazy;
 pub mod metrics;
@@ -25,4 +26,15 @@ pub fn try_wait_for_socket_to_open(address: &str, port: u16) -> Result<()> {
         tries += 1;
     }
     Ok(())
+}
+
+fn run_command_to_stdout(command: &str, args: &[&str]) {
+    assert!(
+        std::process::Command::new(command)
+            .args(args)
+            .status()
+            .unwrap()
+            .success(),
+        "Failed to run: {command} {args:?}"
+    );
 }
