@@ -76,11 +76,13 @@ impl DockerCompose {
             panic!("Could not find docker-compose. Have you installed it?");
         }
 
+        // It is critical that clean_up is run before everything else as the internal `docker-compose` commands act as validation
+        // for the docker-compose.yaml file that we later manually parse with poor error handling
+        DockerCompose::clean_up(file_path).unwrap();
+
         let service_to_image = DockerCompose::get_service_to_image(file_path);
 
         DockerCompose::build_images(&service_to_image);
-
-        DockerCompose::clean_up(file_path).unwrap();
 
         run_command("docker-compose", &["-f", file_path, "up", "-d"]).unwrap();
 
