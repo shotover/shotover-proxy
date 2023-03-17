@@ -777,8 +777,24 @@ impl CassandraSinkCluster {
                             warnings.extend(get_warnings(&mut local_response));
                             warnings.extend(get_warnings(client_peers_response));
 
-                            let mut nodes = parse_system_nodes(peers_response)?;
-                            nodes.extend(parse_system_nodes(local_response)?);
+                            let mut nodes = match parse_system_nodes(peers_response) {
+                                Ok(x) => x,
+                                Err(MessageParseError::CassandraError(err)) => {
+                                    *client_peers_response = client_peers_response
+                                        .to_error_response(format!("{:?}", err.context("Shotover failed to generate system.peers, an error occured when an internal system.peers query was run.")));
+                                    return Ok(());
+                                }
+                                Err(MessageParseError::ParseFailure(err)) => return Err(err),
+                            };
+                            match parse_system_nodes(local_response) {
+                                Ok(x) => nodes.extend(x),
+                                Err(MessageParseError::CassandraError(err)) => {
+                                    *client_peers_response = client_peers_response
+                                        .to_error_response(format!("{:?}", err.context("Shotover failed to generate system.peers, an error occured when an internal system.local query was run.")));
+                                    return Ok(());
+                                }
+                                Err(MessageParseError::ParseFailure(err)) => return Err(err),
+                            };
 
                             self.rewrite_table_peers(table, client_peers_response, nodes, warnings)
                                 .await?;
@@ -1012,7 +1028,14 @@ impl CassandraSinkCluster {
         peers_response: Message,
         warnings: Vec<String>,
     ) -> Result<()> {
-        let mut peers = parse_system_nodes(peers_response)?;
+        let mut peers = match parse_system_nodes(peers_response) {
+            Ok(x) => x,
+            Err(MessageParseError::CassandraError(err)) => {
+                *local_response = local_response.to_error_response(format!("{:?}", err.context("Shotover failed to generate system.local, an error occured when an internal system.peers query was run.")));
+                return Ok(());
+            }
+            Err(MessageParseError::ParseFailure(err)) => return Err(err),
+        };
         peers.retain(|node| {
             node.data_center == self.local_shotover_node.data_center
                 && node.rack == self.local_shotover_node.rack
@@ -1294,43 +1317,63 @@ struct NodeInfo {
     data_center: String,
 }
 
-fn parse_system_nodes(mut response: Message) -> Result<Vec<NodeInfo>> {
+enum MessageParseError {
+    /// The db returned a message that shotover failed to parse or process, this indicates a bug in shotover or the db
+    ParseFailure(anyhow::Error),
+    /// The db returned an error message, this indicates a user error e.g. the user does not have sufficient permissions
+    CassandraError(anyhow::Error),
+}
+
+fn parse_system_nodes(mut response: Message) -> Result<Vec<NodeInfo>, MessageParseError> {
     if let Some(Frame::Cassandra(frame)) = response.frame() {
         match &mut frame.operation {
             CassandraOperation::Result(CassandraResult::Rows { rows, .. }) => rows
                 .iter_mut()
                 .map(|row| {
                     if row.len() != 5 {
-                        return Err(anyhow!("expected 5 columns but was {}", row.len()));
+                        return Err(MessageParseError::ParseFailure(anyhow!(
+                            "expected 5 columns but was {}",
+                            row.len()
+                        )));
                     }
 
                     let release_version = if let Some(MessageValue::Varchar(value)) = row.pop() {
                         value
                     } else {
-                        return Err(anyhow!("release_version not a varchar"));
+                        return Err(MessageParseError::ParseFailure(anyhow!(
+                            "release_version not a varchar"
+                        )));
                     };
 
                     let tokens = if let Some(MessageValue::List(value)) = row.pop() {
                         value
                     } else {
-                        return Err(anyhow!("tokens not a list"));
+                        return Err(MessageParseError::ParseFailure(anyhow!(
+                            "tokens not a list"
+                        )));
                     };
 
                     let schema_version = if let Some(MessageValue::Uuid(value)) = row.pop() {
                         value
                     } else {
-                        return Err(anyhow!("schema_version not a uuid"));
+                        return Err(MessageParseError::ParseFailure(anyhow!(
+                            "schema_version not a uuid"
+                        )));
                     };
 
                     let data_center = if let Some(MessageValue::Varchar(value)) = row.pop() {
                         value
                     } else {
-                        return Err(anyhow!("data_center not a varchar"));
+                        return Err(MessageParseError::ParseFailure(anyhow!(
+                            "data_center not a varchar"
+                        )));
                     };
                     let rack = if let Some(MessageValue::Varchar(value)) = row.pop() {
                         value
                     } else {
-                        return Err(anyhow!("rack not a varchar"));
+                        return Err(MessageParseError::ParseFailure(anyhow!(
+                            "rack not a varchar"
+                        )));
                     };
 
                     Ok(NodeInfo {
@@ -1342,16 +1385,18 @@ fn parse_system_nodes(mut response: Message) -> Result<Vec<NodeInfo>> {
                     })
                 })
                 .collect(),
-            operation => Err(anyhow!(
-                "system.local returned unexpected cassandra operation: {:?}",
-                operation
-            )),
+            CassandraOperation::Error(error) => Err(MessageParseError::CassandraError(anyhow!(
+                "system.local returned error: {error:?}",
+            ))),
+            operation => Err(MessageParseError::ParseFailure(anyhow!(
+                "system.local returned unexpected cassandra operation: {operation:?}",
+            ))),
         }
     } else {
-        Err(anyhow!(
+        Err(MessageParseError::ParseFailure(anyhow!(
             "Failed to parse system.local response {:?}",
             response
-        ))
+        )))
     }
 }
 
