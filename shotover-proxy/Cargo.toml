@@ -26,7 +26,7 @@ async-trait = "0.1.30"
 clap = { version = "4.0.4", features = ["cargo", "derive"] }
 derivative = "2.1.1"
 itertools.workspace = true
-rand = "0.8.4"
+rand = { version = "0.8.4", features = ["small_rng"] }
 rand_distr = "0.4.1"
 cached = "0.42"
 tokio-openssl.workspace = true
@@ -88,10 +88,8 @@ hex-literal = "0.3.3"
 nix.workspace = true
 cdrs-tokio.workspace = true
 rstest = "0.16.0"
-rand = { version = "0.8.4", features = ["small_rng"] }
 rdkafka = { version = "0.29", features = ["cmake-build"] }
 
 [[bench]]
 name = "benches"
 harness = false
-required-features = ["cassandra-cpp-driver-tests"]
