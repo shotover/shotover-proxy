@@ -23,9 +23,19 @@ use tracing::Instrument;
 
 #[derive(Debug)]
 struct Request {
+<<<<<<< v5-compression
     messages: Messages,
     return_chans_tx: Vec<oneshot::Sender<Response>>,
     stream_ids: Vec<i16>,
+||||||| ancestor
+    message: Message,
+    return_chan: oneshot::Sender<Response>,
+    stream_id: i16,
+=======
+    messages: Messages,
+    return_chans: Vec<oneshot::Sender<Response>>,
+    stream_ids: Vec<i16>,
+>>>>>>> cassandra connection pass multiple messages to codec
 }
 
 pub type Response = Result<Message, ResponseError>;
@@ -145,6 +155,7 @@ impl CassandraConnection {
     ///
     /// If an internal invariant is broken the internal tasks may panic and external invariants will no longer be upheld.
     /// But this indicates a bug within CassandraConnection and should be fixed here.
+<<<<<<< v5-compression
     pub fn send_multiple(
         &self,
         messages: Messages,
@@ -173,15 +184,47 @@ impl CassandraConnection {
         Ok(return_chans_rx)
     }
 
+||||||| ancestor
+=======
+    pub fn send_multiple(
+        &self,
+        messages: Messages,
+        return_chans: Vec<oneshot::Sender<Response>>,
+    ) -> Result<()> {
+        let stream_ids = messages
+            .iter()
+            .map(|message| message.stream_id().unwrap())
+            .collect();
+
+        self.connection
+            .send(Request {
+                messages,
+                return_chans,
+                stream_ids,
+            })
+            .map_err(|x| x.into())
+    }
+
+>>>>>>> cassandra connection pass multiple messages to codec
     pub fn send(&self, message: Message) -> Result<oneshot::Receiver<Response>> {
         let (return_chan_tx, return_chan_rx) = oneshot::channel();
         // Convert the message to `Request` and send upstream
         if let Some(stream_id) = message.stream_id() {
             self.connection
                 .send(Request {
+<<<<<<< v5-compression
                     messages: vec![message],
                     return_chans_tx: vec![return_chan_tx],
                     stream_ids: vec![stream_id],
+||||||| ancestor
+                    message,
+                    return_chan: return_chan_tx,
+                    stream_id,
+=======
+                    messages: vec![message],
+                    return_chans: vec![return_chan],
+                    stream_ids: vec![stream_id],
+>>>>>>> cassandra connection pass multiple messages to codec
                 })
                 .map(|_| return_chan_rx)
                 .map_err(|x| x.into())
@@ -213,6 +256,7 @@ async fn tx_process<T: AsyncWrite>(
     loop {
         if let Some(request) = out_rx.recv().await {
             if let Some(error) = &connection_dead_error {
+<<<<<<< v5-compression
                 send_error_to_requests(
                     request.return_chans_tx,
                     request.stream_ids,
@@ -220,17 +264,48 @@ async fn tx_process<T: AsyncWrite>(
                     error,
                 );
             } else if let Err(error) = in_w.send(request.messages).await {
+||||||| ancestor
+                send_error_to_request(request.return_chan, request.stream_id, destination, error);
+            } else if let Err(error) = in_w.send(vec![request.message]).await {
+=======
+                send_error_to_requests(
+                    request.return_chans,
+                    request.stream_ids,
+                    destination,
+                    error,
+                );
+            } else if let Err(error) = in_w.send(request.messages).await {
+>>>>>>> cassandra connection pass multiple messages to codec
                 let error = format!("{:?}", error);
+<<<<<<< v5-compression
                 send_error_to_requests(
                     request.return_chans_tx,
                     request.stream_ids,
                     destination,
                     &error,
                 );
+||||||| ancestor
+                send_error_to_request(request.return_chan, request.stream_id, destination, &error);
+=======
+                send_error_to_requests(
+                    request.return_chans,
+                    request.stream_ids,
+                    destination,
+                    &error,
+                );
+>>>>>>> cassandra connection pass multiple messages to codec
                 connection_dead_error = Some(error.clone());
             } else if let Err(mpsc::error::SendError(return_chan)) = return_tx.send(ReturnChannel {
+<<<<<<< v5-compression
                 return_chans: request.return_chans_tx,
                 stream_ids: request.stream_ids,
+||||||| ancestor
+                return_chan: request.return_chan,
+                stream_id: request.stream_id,
+=======
+                return_chans: request.return_chans,
+                stream_ids: request.stream_ids,
+>>>>>>> cassandra connection pass multiple messages to codec
             }) {
                 let error = rx_process_has_shutdown_rx
                     .try_recv()
