@@ -235,7 +235,13 @@ impl Message {
     /// If self is a response: the returned `Message` is a valid replacement of self
     pub fn to_error_response(&self, error: String) -> Message {
         Message::from_frame(match self.metadata().unwrap() {
-            Metadata::Redis => Frame::Redis(RedisFrame::Error(format!("ERR {error}").into())),
+            Metadata::Redis => {
+                // Redis errors can not contain newlines at the protocol level
+                let message = format!("ERR {error}")
+                    .replace("\r\n", " ")
+                    .replace('\n', " ");
+                Frame::Redis(RedisFrame::Error(message.into()))
+            }
             Metadata::Cassandra(frame) => Frame::Cassandra(CassandraFrame {
                 version: frame.version,
                 stream_id: frame.stream_id,
