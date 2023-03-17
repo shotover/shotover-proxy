@@ -4,7 +4,6 @@ use crate::error::ChainResponse;
 use crate::frame::cassandra::CassandraMetadata;
 use crate::message::{Messages, Metadata};
 use crate::tls::{TlsConnector, TlsConnectorConfig};
-use crate::transforms::cassandra::connection::Response;
 use crate::transforms::{Transform, TransformBuilder, Transforms, Wrapper};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
