@@ -68,7 +68,7 @@ async fn passthrough_redis_down() {
                     r#"connection was unexpectedly terminated
 
 Caused by:
-    0: chain failed to send and/or receive messages
+    0: Chain failed to send and/or receive messages, the connection will now be closed.
     1: RedisSinkSingle transform failed
     2: Failed to connect to destination "127.0.0.1:1111"
     3: Connection refused (os error 111)"#,
