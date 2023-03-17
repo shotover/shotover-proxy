@@ -1,7 +1,7 @@
 use bytes::BufMut;
 #[cfg(feature = "cassandra-cpp-driver-tests")]
 use cassandra_cpp::{
-    stmt, Batch, BatchType, CassErrorCode, CassResult, Cluster, Error, ErrorKind,
+    BatchType, CassErrorCode, CassResult, Cluster, Error, ErrorKind,
     PreparedStatement as PreparedStatementCpp, Session as DatastaxSession, Ssl,
     Statement as StatementCpp, Value, ValueType,
 };
@@ -234,13 +234,13 @@ impl CassandraConnection {
                     panic!("Cannot set compression with Datastax driver");
                 }
 
-                if let Some(Tls::Datastax(mut ssl)) = tls {
-                    cluster.set_ssl(&mut ssl);
+                if let Some(Tls::Datastax(ssl)) = tls {
+                    cluster.set_ssl(ssl);
                 }
 
                 CassandraConnection::Datastax {
                     session: cluster
-                        .connect_async()
+                        .connect()
                         .await
                         // By default unwrap uses the Debug formatter `{:?}` which is extremely noisy for the error type returned by `connect()`.
                         // So we instead force the Display formatter `{}` on the error.
@@ -413,8 +413,7 @@ impl CassandraConnection {
         let result = match self {
             #[cfg(feature = "cassandra-cpp-driver-tests")]
             Self::Datastax { session, .. } => {
-                let statement = stmt!(query);
-                Self::process_datastax_response(session.execute(&statement).await)
+                Self::process_datastax_response(session.execute(query).await)
             }
             Self::CdrsTokio { session, .. } => {
                 Self::process_cdrs_response(session.query(query).await)
@@ -441,9 +440,9 @@ impl CassandraConnection {
         let result = match self {
             #[cfg(feature = "cassandra-cpp-driver-tests")]
             Self::Datastax { session, .. } => {
-                let mut statement = stmt!(query);
+                let mut statement = session.statement(query);
                 statement.set_timestamp(timestamp).unwrap();
-                Self::process_datastax_response(session.execute(&statement).await)
+                Self::process_datastax_response(statement.execute().await)
             }
             Self::CdrsTokio { session, .. } => {
                 let statement_params = StatementParamsBuilder::new()
@@ -473,7 +472,7 @@ impl CassandraConnection {
         match self {
             #[cfg(feature = "cassandra-cpp-driver-tests")]
             Self::Datastax { session, .. } => {
-                PreparedQuery::Datastax(session.prepare(query).unwrap().await.unwrap())
+                PreparedQuery::Datastax(session.prepare(query).await.unwrap())
             }
             Self::CdrsTokio { session, .. } => {
                 let query = session.prepare(query).await.unwrap();
@@ -558,14 +557,14 @@ impl CassandraConnection {
     ) -> Result<Vec<Vec<ResultValue>>, ErrorBody> {
         match self {
             #[cfg(feature = "cassandra-cpp-driver-tests")]
-            Self::Datastax { session, .. } => {
+            Self::Datastax { .. } => {
                 let mut statement = prepared_query.as_datastax().bind();
                 for (i, value) in values.iter().enumerate() {
                     Self::bind_statement_values_cpp(&mut statement, i, value);
                 }
 
                 statement.set_tracing(true).unwrap();
-                Self::process_datastax_response(session.execute(&statement).await)
+                Self::process_datastax_response(statement.execute().await)
             }
             Self::CdrsTokio { session, .. } => {
                 let statement = prepared_query.as_cdrs();
@@ -681,12 +680,14 @@ impl CassandraConnection {
         match self {
             #[cfg(feature = "cassandra-cpp-driver-tests")]
             Self::Datastax { session, .. } => {
-                let mut batch = Batch::new(BatchType::LOGGED);
+                let mut batch = session.batch(BatchType::LOGGED);
                 for query in queries {
-                    batch.add_statement(&stmt!(query.as_str())).unwrap();
+                    batch
+                        .add_statement(session.statement(query.as_str()))
+                        .unwrap();
                 }
 
-                Self::process_datastax_response(session.execute_batch(&batch).await)
+                Self::process_datastax_response(batch.execute().await)
             }
             Self::CdrsTokio { session, .. } => {
                 let mut builder = BatchQueryBuilder::new();

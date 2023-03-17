@@ -17,7 +17,7 @@ regex = "1.7.0"
 tokio-bin-process = { path = "../tokio-bin-process" }
 cdrs-tokio.workspace = true
 cassandra-protocol.workspace = true
-cassandra-cpp = { version = "1.2.0", optional = true }
+cassandra-cpp = { version = "2.0.0", optional = true }
 scylla = { version = "0.7.0", features = ["ssl"] }
 openssl.workspace = true
 bytes.workspace = true
