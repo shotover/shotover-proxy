@@ -227,7 +227,7 @@ async fn cluster_single_rack_v4(#[case] driver: CassandraDriver) {
                         r#"connection was unexpectedly terminated
 
 Caused by:
-    0: chain failed to send and/or receive messages
+    0: Chain failed to send and/or receive messages, the connection will now be closed.
     1: CassandraSinkCluster transform failed
     2: Failed to create new connection
     3: destination 172.16.1.3:9044 did not respond to connection attempt within 3s"#,
@@ -240,7 +240,7 @@ Caused by:
                         r#"connection was unexpectedly terminated
 
 Caused by:
-    0: chain failed to send and/or receive messages
+    0: Chain failed to send and/or receive messages, the connection will now be closed.
     1: CassandraSinkCluster transform failed
     2: system.local returned unexpected cassandra operation: Error(ErrorBody { message: "Internal shotover error: Broken pipe (os error 32)", ty: Server })"#,
                     )

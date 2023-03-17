@@ -1,16 +1,19 @@
 use crate::redis_int_tests::assert::*;
+use bytes::BytesMut;
 use futures::StreamExt;
 use rand::{thread_rng, Rng};
 use rand_distr::Alphanumeric;
 use redis::aio::Connection;
 use redis::cluster::ClusterConnection;
 use redis::{AsyncCommands, Commands, ErrorKind, RedisError, Value};
+use shotover_proxy::frame::RedisFrame;
 use shotover_proxy::tcp;
 use std::collections::{HashMap, HashSet};
 use std::thread::sleep;
 use std::time::Duration;
 use test_helpers::connection::redis_connection;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpStream;
 
 use tokio::time::timeout;
 use tracing::trace;
@@ -1269,7 +1272,7 @@ pub async fn test_trigger_transform_failure_driver(connection: &mut Connection) 
             .await
             .unwrap_err()
             .to_string(),
-        "unexpected end of file".to_string()
+        "An error was signalled by the server: Internal shotover (or custom transform) bug: Chain failed to send and/or receive messages, the connection will now be closed.  Caused by:     0: RedisSinkSingle transform failed     1: Failed to connect to destination \"127.0.0.1:1111\"     2: Connection refused (os error 111)".to_string()
     );
 }
 
@@ -1286,6 +1289,11 @@ pub async fn test_trigger_transform_failure_raw() {
 
     connection.write_all(b"*1\r\n$4\r\nping\r\n").await.unwrap();
 
+    assert_eq!(
+        read_redis_message(&mut connection).await,
+        RedisFrame::Error("ERR Internal shotover (or custom transform) bug: Chain failed to send and/or receive messages, the connection will now be closed.  Caused by:     0: RedisSinkSingle transform failed     1: Failed to connect to destination \"127.0.0.1:1111\"     2: Connection refused (os error 111)".into())
+    );
+
     // If the connection was closed by shotover then we will succesfully read 0 bytes.
     // If the connection was not closed by shotover then read will block for 10 seconds until the time is hit and then the unwrap will panic.
     let amount = timeout(Duration::from_secs(10), connection.read(&mut [0; 1]))
@@ -1294,6 +1302,23 @@ pub async fn test_trigger_transform_failure_raw() {
         .unwrap();
 
     assert_eq!(amount, 0);
+}
+
+async fn read_redis_message(connection: &mut TcpStream) -> RedisFrame {
+    let mut buffer = BytesMut::new();
+    loop {
+        if let Ok(Some((result, len))) =
+            redis_protocol::resp2::decode::decode(&buffer.clone().freeze())
+        {
+            let _ = buffer.split_to(len);
+            return result;
+        }
+
+        let mut data = [0; 1024];
+        if let Ok(read_count) = connection.read(&mut data).await {
+            buffer.extend(&data[..read_count]);
+        }
+    }
 }
 
 /// CAREFUL: This lacks any kind of check that shotover is ready,
