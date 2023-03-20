@@ -300,9 +300,9 @@ checksum = "3a4f925191b4367301851c6d99b09890311d74b0d43f274c0b34c86d308a3663"
 
 [[package]]
 name = "cassandra-cpp"
-version = "1.2.0"
+version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6ac225f80bd80702ff216407c16691ab15c47ae91de8539efe01dc9d60ded34d"
+checksum = "877b9c602f5337bea76f4868f4555a0bf450b8431920d624fc3770a18f7f2247"
 dependencies = [
  "cassandra-cpp-sys",
  "error-chain",

@@ -1,6 +1,5 @@
-use cassandra_cpp::{stmt, Session, Statement};
+use cassandra_cpp::{PreparedStatement, Session, Statement};
 use criterion::{criterion_group, criterion_main, Criterion};
-use std::collections::HashMap;
 use test_helpers::cert::generate_cassandra_test_certs;
 use test_helpers::connection::cassandra::{
     CassandraConnection, CassandraConnectionBuilder, CassandraDriver,
@@ -12,7 +11,7 @@ use tokio::runtime::Runtime;
 
 struct Query {
     name: &'static str,
-    statement: Statement,
+    statement: &'static str,
 }
 
 const DRIVER: CassandraDriver = CassandraDriver::Datastax;
@@ -38,12 +37,7 @@ fn cassandra(c: &mut Criterion) {
                 &resources,
                 |b, resources| {
                     b.iter(|| {
-                        let resources = resources.borrow();
-                        let connection = resources.as_ref().unwrap().get_connection();
-                        connection
-                            .execute(resources.as_ref().unwrap().get(query))
-                            .wait()
-                            .unwrap();
+                        resources.borrow().as_ref().unwrap().run_query(query);
                     })
                 },
             );
@@ -64,12 +58,7 @@ fn cassandra(c: &mut Criterion) {
                 &resources,
                 |b, resources| {
                     b.iter(|| {
-                        let resources = resources.borrow();
-                        let connection = resources.as_ref().unwrap().get_connection();
-                        connection
-                            .execute(resources.as_ref().unwrap().get(query))
-                            .wait()
-                            .unwrap();
+                        resources.borrow().as_ref().unwrap().run_query(query);
                     })
                 },
             );
@@ -89,12 +78,7 @@ fn cassandra(c: &mut Criterion) {
                 &resources,
                 |b, resources| {
                     b.iter(|| {
-                        let resources = resources.borrow();
-                        let connection = resources.as_ref().unwrap().get_connection();
-                        connection
-                            .execute(resources.as_ref().unwrap().get(query))
-                            .wait()
-                            .unwrap();
+                        resources.borrow().as_ref().unwrap().run_query(query);
                     })
                 },
             );
@@ -114,12 +98,7 @@ fn cassandra(c: &mut Criterion) {
                 &resources,
                 |b, resources| {
                     b.iter(|| {
-                        let resources = resources.borrow();
-                        let connection = resources.as_ref().unwrap().get_connection();
-                        connection
-                            .execute(resources.as_ref().unwrap().get(query))
-                            .wait()
-                            .unwrap();
+                        resources.borrow().as_ref().unwrap().run_query(query);
                     })
                 },
             );
@@ -139,12 +118,7 @@ fn cassandra(c: &mut Criterion) {
                 &resources,
                 |b, resources| {
                     b.iter(|| {
-                        let resources = resources.borrow();
-                        let connection = resources.as_ref().unwrap().get_connection();
-                        connection
-                            .execute(resources.as_ref().unwrap().get(query))
-                            .wait()
-                            .unwrap();
+                        resources.borrow().as_ref().unwrap().run_query(query);
                     })
                 },
             );
@@ -161,12 +135,7 @@ fn cassandra(c: &mut Criterion) {
         for query in &queries {
             group.bench_with_input(format!("tls_{}", query), &resources, |b, resources| {
                 b.iter(|| {
-                    let resources = resources.borrow();
-                    let connection = resources.as_ref().unwrap().get_connection();
-                    connection
-                        .execute(resources.as_ref().unwrap().get(query))
-                        .wait()
-                        .unwrap();
+                    resources.borrow().as_ref().unwrap().run_query(query);
                 })
             });
         }
@@ -176,11 +145,11 @@ fn cassandra(c: &mut Criterion) {
         let queries = [
             Query {
                 name: "insert",
-                statement: stmt!("INSERT INTO test_protect_keyspace.test_table (pk, cluster, col1, col2, col3) VALUES ('pk1', 'cluster', 'I am gonna get encrypted!!', 42, true);"),
+                statement: "INSERT INTO test_protect_keyspace.test_table (pk, cluster, col1, col2, col3) VALUES ('pk1', 'cluster', 'I am gonna get encrypted!!', 42, true);",
             },
             Query {
                 name: "select",
-                statement: stmt!("SELECT pk, cluster, col1, col2, col3 FROM test_protect_keyspace.test_table"),
+                statement: "SELECT pk, cluster, col1, col2, col3 FROM test_protect_keyspace.test_table",
             },
         ];
         let resources = new_lazy_shared(|| {
@@ -189,27 +158,9 @@ fn cassandra(c: &mut Criterion) {
                 "example-configs/cassandra-protect-local/docker-compose.yaml",
             );
 
-            resources
-                .get_connection()
-                .execute(&stmt!(
-                    "CREATE KEYSPACE test_protect_keyspace WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };"
-                ))
-                .wait()
-                .unwrap();
-            resources
-                .get_connection()
-                .execute(&stmt!(
-                    "CREATE TABLE test_protect_keyspace.test_table (pk varchar PRIMARY KEY, cluster varchar, col1 blob, col2 int, col3 boolean);"
-                ))
-                .wait()
-                .unwrap();
-            resources
-                .get_connection()
-                .execute(&stmt!(
-                    "INSERT INTO test_protect_keyspace.test_table (pk, cluster, col1, col2, col3) VALUES ('pk1', 'cluster', 'Initial value', 42, true);"
-                ))
-                .wait()
-                .unwrap();
+            resources.execute("CREATE KEYSPACE test_protect_keyspace WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };");
+            resources.execute("CREATE TABLE test_protect_keyspace.test_table (pk varchar PRIMARY KEY, cluster varchar, col1 blob, col2 int, col3 boolean);");
+            resources.execute("INSERT INTO test_protect_keyspace.test_table (pk, cluster, col1, col2, col3) VALUES ('pk1', 'cluster', 'Initial value', 42, true);");
 
             resources
         });
@@ -221,8 +172,12 @@ fn cassandra(c: &mut Criterion) {
                 |b, resources| {
                     b.iter(|| {
                         let resources = resources.borrow();
-                        let connection = resources.as_ref().unwrap().get_connection();
-                        connection.execute(&query.statement).wait().unwrap();
+                        let resources = resources.as_ref().unwrap();
+                        let connection = resources.get_connection();
+                        resources
+                            .tokio
+                            .block_on(connection.execute(query.statement))
+                            .unwrap();
                     })
                 },
             );
@@ -242,12 +197,7 @@ fn cassandra(c: &mut Criterion) {
                 &resources,
                 |b, resources| {
                     b.iter(|| {
-                        let resources = resources.borrow();
-                        let connection = resources.as_ref().unwrap().get_connection();
-                        connection
-                            .execute(resources.as_ref().unwrap().get(query))
-                            .wait()
-                            .unwrap();
+                        resources.borrow().as_ref().unwrap().run_query(query);
                     })
                 },
             );
@@ -262,7 +212,7 @@ pub struct BenchResources {
     connection: CassandraConnection,
     shotover: Option<BinProcess>,
     _compose: DockerCompose,
-    queries: HashMap<String, Statement>,
+    prepared_statement: Option<PreparedStatement>,
     tokio: Runtime,
 }
 
@@ -295,7 +245,7 @@ impl BenchResources {
             _compose: compose,
             shotover,
             connection,
-            queries: HashMap::new(),
+            prepared_statement: None,
             tokio,
         };
         bench_resources.setup();
@@ -329,73 +279,51 @@ impl BenchResources {
             _compose: compose,
             shotover,
             connection,
-            queries: HashMap::new(),
+            prepared_statement: None,
             tokio,
         };
         bench_resources.setup();
         bench_resources
     }
 
-    pub fn get(&self, query: &str) -> &Statement {
-        self.queries.get(query).unwrap()
+    fn get(&self, query: &str) -> Statement {
+        let connection = self.connection.as_datastax();
+        match query {
+            "insert" => connection.statement(
+                "INSERT INTO benchmark_keyspace.table_1 (id, x, name) VALUES (1, 11, 'foo');",
+            ),
+            "select" => connection.statement("SELECT id, x, name FROM benchmark_keyspace.table_1;"),
+            "execute" => self.prepared_statement.as_ref().unwrap().bind(),
+            _ => todo!("Unknown query specifier: {:?}", query),
+        }
+    }
+
+    pub fn run_query(&self, query: &str) {
+        self.tokio.block_on(self.get(query).execute()).unwrap();
     }
 
     fn setup(&mut self) {
-        let create_keyspace = stmt!(
-            "CREATE KEYSPACE benchmark_keyspace WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };"
+        self.execute("CREATE KEYSPACE benchmark_keyspace WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };");
+        self.execute(
+            "CREATE TABLE benchmark_keyspace.table_1 (id int PRIMARY KEY, x int, name varchar);",
+        );
+        self.execute(
+            "INSERT INTO benchmark_keyspace.table_1 (id, x, name) VALUES (0, 10, 'initial value');",
         );
 
-        let create_table = stmt!(
-            "CREATE TABLE benchmark_keyspace.table_1 (id int PRIMARY KEY, x int, name varchar);"
-        );
+        let connection = self.connection.as_datastax();
 
-        let insert = stmt!(
-            "INSERT INTO benchmark_keyspace.table_1 (id, x, name) VALUES (0, 10, 'initial value');"
-        );
-
-        self.connection
-            .as_datastax()
-            .execute(&create_keyspace)
-            .wait()
-            .unwrap();
-
-        self.connection
-            .as_datastax()
-            .execute(&create_table)
-            .wait()
-            .unwrap();
-
-        self.connection
-            .as_datastax()
-            .execute(&insert)
-            .wait()
-            .unwrap();
-
-        let prepared_statement = self
-            .connection
-            .as_datastax()
-            .prepare(
+        self.prepared_statement = Some(self
+            .tokio
+            .block_on(connection.prepare(
                 "INSERT INTO benchmark_keyspace.table_1 (id, x, name) VALUES (0, 10, 'new_value');",
-            )
-            .unwrap()
-            .wait()
-            .unwrap()
-            .bind();
+            ))
+            .unwrap());
+    }
 
-        self.queries = [
-            (
-                "insert".into(),
-                stmt!(
-                    "INSERT INTO benchmark_keyspace.table_1 (id, x, name) VALUES (1, 11, 'foo');"
-                ),
-            ),
-            (
-                "select".into(),
-                stmt!("SELECT id, x, name FROM benchmark_keyspace.table_1;"),
-            ),
-            ("execute".into(), prepared_statement),
-        ]
-        .into_iter()
-        .collect();
+    fn execute(&self, query: &str) {
+        self.tokio
+            .block_on(self.connection.as_datastax().execute(query))
+            .unwrap();
     }
 }
