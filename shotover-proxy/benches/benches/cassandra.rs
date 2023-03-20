@@ -1,5 +1,5 @@
 use cassandra_cpp::{PreparedStatement, Session, Statement};
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, Criterion};
 use test_helpers::cert::generate_cassandra_test_certs;
 use test_helpers::connection::cassandra::{
     CassandraConnection, CassandraConnectionBuilder, CassandraDriver,
@@ -206,7 +206,6 @@ fn cassandra(c: &mut Criterion) {
 }
 
 criterion_group!(benches, cassandra);
-criterion_main!(benches);
 
 pub struct BenchResources {
     connection: CassandraConnection,
