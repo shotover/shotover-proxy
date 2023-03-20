@@ -31,7 +31,7 @@ struct Request {
 pub type Response = Result<Message, ResponseError>;
 
 #[derive(Debug, thiserror::Error)]
-#[error("Connection to destination cassandra node {destination} was closed: {cause}")]
+#[error("Connection to destination cassandra node {destination} was closed: {cause:?}")]
 pub struct ResponseError {
     #[source]
     pub cause: anyhow::Error,
@@ -44,7 +44,7 @@ impl ResponseError {
         Message::from_frame(Frame::Cassandra(CassandraFrame::shotover_error(
             self.stream_id,
             version,
-            &format!("{:#}", self.cause),
+            &format!("{}", self),
         )))
     }
 }
