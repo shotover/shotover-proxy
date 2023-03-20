@@ -141,15 +141,8 @@ impl CassandraSinkSingle {
         trace!("sending frame upstream");
 
         let outbound = self.outbound.as_mut().unwrap();
-        let responses_future: Result<FuturesOrdered<oneshot::Receiver<Response>>> = messages
-            .into_iter()
-            .map(|m| {
-                let (return_chan_tx, return_chan_rx) = oneshot::channel();
-                outbound.send(m, return_chan_tx)?;
-
-                Ok(return_chan_rx)
-            })
-            .collect();
+        let responses_future: Result<FuturesOrdered<oneshot::Receiver<Response>>> =
+            messages.into_iter().map(|m| outbound.send(m)).collect();
 
         super::connection::receive(self.read_timeout, &self.failed_requests, responses_future?)
             .await

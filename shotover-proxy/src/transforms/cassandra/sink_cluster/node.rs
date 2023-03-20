@@ -11,7 +11,7 @@ use derivative::Derivative;
 use std::net::SocketAddr;
 use std::time::Duration;
 use tokio::net::ToSocketAddrs;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::mpsc;
 use uuid::Uuid;
 
 #[derive(Clone, Derivative)]
@@ -116,30 +116,31 @@ impl ConnectionFactory {
         .map_err(|e| e.context("Failed to create new connection"))?;
 
         for handshake_message in &self.init_handshake {
-            let (return_chan_tx, return_chan_rx) = oneshot::channel();
             outbound
-                .send(handshake_message.clone(), return_chan_tx)
+                .send(handshake_message.clone())
                 .map_err(|e| {
                     anyhow!(e)
                         .context("Failed to initialize new connection with handshake, tx failed")
-                })?;
-            return_chan_rx.await.map_err(|e| {
-                anyhow!(e).context("Failed to initialize new connection with handshake, rx failed")
-            })??;
+                })?
+                .await
+                .map_err(|e| {
+                    anyhow!(e)
+                        .context("Failed to initialize new connection with handshake, rx failed")
+                })??;
         }
 
         if let Some(use_message) = &self.use_message {
-            let (return_chan_tx, return_chan_rx) = oneshot::channel();
             outbound
-                .send(use_message.clone(), return_chan_tx)
+                .send(use_message.clone())
                 .map_err(|e| {
                     anyhow!(e)
                         .context("Failed to initialize new connection with use message, tx failed")
-                })?;
-            return_chan_rx.await.map_err(|e| {
-                anyhow!(e)
-                    .context("Failed to initialize new connection with use message, rx failed")
-            })??;
+                })?
+                .await
+                .map_err(|e| {
+                    anyhow!(e)
+                        .context("Failed to initialize new connection with use message, rx failed")
+                })??;
         }
 
         Ok(outbound)

@@ -145,15 +145,17 @@ impl CassandraConnection {
     ///
     /// If an internal invariant is broken the internal tasks may panic and external invariants will no longer be upheld.
     /// But this indicates a bug within CassandraConnection and should be fixed here.
-    pub fn send(&self, message: Message, return_chan: oneshot::Sender<Response>) -> Result<()> {
+    pub fn send(&self, message: Message) -> Result<oneshot::Receiver<Response>> {
+        let (return_chan_tx, return_chan_rx) = oneshot::channel();
         // Convert the message to `Request` and send upstream
         if let Some(stream_id) = message.stream_id() {
             self.connection
                 .send(Request {
                     message,
-                    return_chan,
+                    return_chan: return_chan_tx,
                     stream_id,
                 })
+                .map(|_| return_chan_rx)
                 .map_err(|x| x.into())
         } else {
             Err(anyhow!("no cassandra frame found"))
