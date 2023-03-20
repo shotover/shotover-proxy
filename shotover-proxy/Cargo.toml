@@ -82,7 +82,7 @@ kafka-protocol = "0.6.0"
 criterion = { git = "https://github.com/shotover/criterion.rs", branch = "0.4.0-bench_with_input_fn", features = ["async_tokio"] }
 redis.workspace = true
 serial_test = "1.0.0"
-cassandra-cpp = { version = "1.2.0" }
+cassandra-cpp = { version = "2.0.0" }
 test-helpers = { path = "../test-helpers", features = ["cassandra-cpp-driver-tests"] }
 hex-literal = "0.3.3"
 nix.workspace = true
