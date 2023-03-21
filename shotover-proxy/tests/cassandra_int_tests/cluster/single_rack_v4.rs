@@ -295,7 +295,7 @@ pub async fn test_node_going_down(compose: &DockerCompose, driver: CassandraDriv
 
     {
         // stop one of the containers to trigger a status change event.
-        // event_connection_direct is connecting to cassandra-one, so make sure to instead kill caassandra-two.
+        // event_connections.direct is connecting to cassandra-one, so make sure to instead kill caassandra-two.
         compose.stop_service("cassandra-two");
         assert_down_event(&mut event_connections).await;
 

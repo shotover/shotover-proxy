@@ -15,7 +15,7 @@ use cassandra_protocol::token::Murmur3Token;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use tokio::sync::mpsc::unbounded_channel;
-use tokio::sync::{mpsc, oneshot, watch};
+use tokio::sync::{mpsc, watch};
 
 #[derive(Debug)]
 pub struct TaskConnectionInfo {
@@ -188,27 +188,24 @@ async fn register_for_topology_and_status_events(
     connection: &CassandraConnection,
     version: Version,
 ) -> Result<()> {
-    let (tx, rx) = oneshot::channel();
-    connection
-        .send(
-            Message::from_frame(Frame::Cassandra(CassandraFrame {
-                version,
-                stream_id: 0,
-                tracing: Tracing::Request(false),
-                warnings: vec![],
-                operation: CassandraOperation::Register(BodyReqRegister {
-                    events: vec![
-                        SimpleServerEvent::TopologyChange,
-                        SimpleServerEvent::StatusChange,
-                        SimpleServerEvent::SchemaChange,
-                    ],
-                }),
-            })),
-            tx,
-        )
-        .unwrap();
+    let mut response = connection
+        .send(Message::from_frame(Frame::Cassandra(CassandraFrame {
+            version,
+            stream_id: 0,
+            tracing: Tracing::Request(false),
+            warnings: vec![],
+            operation: CassandraOperation::Register(BodyReqRegister {
+                events: vec![
+                    SimpleServerEvent::TopologyChange,
+                    SimpleServerEvent::StatusChange,
+                    SimpleServerEvent::SchemaChange,
+                ],
+            }),
+        })))
+        .unwrap()
+        .await??;
 
-    if let Some(Frame::Cassandra(CassandraFrame { operation, .. })) = rx.await??.frame() {
+    if let Some(Frame::Cassandra(CassandraFrame { operation, .. })) = response.frame() {
         match operation {
             CassandraOperation::Ready(_) => Ok(()),
             operation => Err(anyhow!("Expected Cassandra to respond to a Register with a Ready. Instead it responded with {:?}", operation))
@@ -244,10 +241,8 @@ mod system_keyspaces {
         data_center: &str,
         version: Version,
     ) -> Result<HashMap<String, KeyspaceMetadata>> {
-        let (tx, rx) = oneshot::channel();
-
-        connection.send(
-            Message::from_frame(Frame::Cassandra(CassandraFrame {
+        let response = connection
+            .send(Message::from_frame(Frame::Cassandra(CassandraFrame {
                 version,
                 stream_id: 0,
                 tracing: Tracing::Request(false),
@@ -259,11 +254,8 @@ mod system_keyspaces {
 
                     params: Box::default(),
                 },
-            })),
-            tx,
-        )?;
-
-        let response = rx.await??;
+            })))?
+            .await??;
         into_keyspaces(response, data_center)
     }
 
@@ -373,9 +365,8 @@ mod system_local {
         address: SocketAddr,
         version: Version,
     ) -> Result<Vec<CassandraNode>> {
-        let (tx, rx) = oneshot::channel();
-        connection.send(
-            Message::from_frame(Frame::Cassandra(CassandraFrame {
+        let response = connection
+            .send(Message::from_frame(Frame::Cassandra(CassandraFrame {
                 version,
                 stream_id: 1,
                 tracing: Tracing::Request(false),
@@ -386,11 +377,10 @@ mod system_local {
                     )),
                     params: Box::default(),
                 },
-            })),
-            tx,
-        )?;
+            })))?
+            .await??;
 
-        into_nodes(rx.await??, data_center, address)
+        into_nodes(response, data_center, address)
     }
 
     fn into_nodes(
@@ -460,8 +450,7 @@ mod system_peers {
         data_center: &str,
         version: Version,
     ) -> Result<Vec<CassandraNode>> {
-        let (tx, rx) = oneshot::channel();
-        connection.send(
+        let mut response = connection.send(
             Message::from_frame(Frame::Cassandra(CassandraFrame {
                 version,
                 stream_id: 0,
@@ -474,15 +463,11 @@ mod system_peers {
                 params: Box::default(),
                 },
             })),
-            tx,
-        )?;
-
-        let mut response = rx.await??;
+        )?.await??;
 
         if is_peers_v2_does_not_exist_error(&mut response) {
-            let (tx, rx) = oneshot::channel();
-            connection.send(
-                Message::from_frame(Frame::Cassandra(CassandraFrame {
+            response = connection
+                .send(Message::from_frame(Frame::Cassandra(CassandraFrame {
                     version,
                     stream_id: 0,
                     tracing: Tracing::Request(false),
@@ -493,10 +478,8 @@ mod system_peers {
                         )),
                         params: Box::default(),
                     },
-                })),
-                tx,
-            )?;
-            response = rx.await??;
+                })))?
+                .await??;
         }
 
         into_nodes(response, data_center)
