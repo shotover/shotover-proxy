@@ -24,7 +24,7 @@ use tracing::Instrument;
 #[derive(Debug)]
 struct Request {
     messages: Messages,
-    return_chans: Vec<oneshot::Sender<Response>>,
+    return_chans_tx: Vec<oneshot::Sender<Response>>,
     stream_ids: Vec<i16>,
 }
 
@@ -148,20 +148,29 @@ impl CassandraConnection {
     pub fn send_multiple(
         &self,
         messages: Messages,
-        return_chans: Vec<oneshot::Sender<Response>>,
-    ) -> Result<()> {
+        // return_chans: Vec<oneshot::Sender<Response>>,
+    ) -> Result<Vec<Result<oneshot::Receiver<Response>>>> {
+        let mut return_chans_tx = Vec::<oneshot::Sender<Response>>::new();
+        let mut return_chans_rx = Vec::<Result<oneshot::Receiver<Response>>>::new();
+
+        for _ in 0..messages.len() {
+            let (return_chan_tx, return_chan_rx) = oneshot::channel();
+            return_chans_tx.push(return_chan_tx);
+            return_chans_rx.push(Ok(return_chan_rx));
+        }
+
         let stream_ids = messages
             .iter()
             .map(|message| message.stream_id().unwrap())
             .collect();
 
-        self.connection
-            .send(Request {
-                messages,
-                return_chans,
-                stream_ids,
-            })
-            .map_err(|x| x.into())
+        self.connection.send(Request {
+            messages,
+            return_chans_tx,
+            stream_ids,
+        })?;
+
+        Ok(return_chans_rx)
     }
 
     pub fn send(&self, message: Message) -> Result<oneshot::Receiver<Response>> {
@@ -171,7 +180,7 @@ impl CassandraConnection {
             self.connection
                 .send(Request {
                     messages: vec![message],
-                    return_chans: vec![return_chan],
+                    return_chans_tx: vec![return_chan_tx],
                     stream_ids: vec![stream_id],
                 })
                 .map(|_| return_chan_rx)
@@ -205,7 +214,7 @@ async fn tx_process<T: AsyncWrite>(
         if let Some(request) = out_rx.recv().await {
             if let Some(error) = &connection_dead_error {
                 send_error_to_requests(
-                    request.return_chans,
+                    request.return_chans_tx,
                     request.stream_ids,
                     destination,
                     error,
@@ -213,14 +222,14 @@ async fn tx_process<T: AsyncWrite>(
             } else if let Err(error) = in_w.send(request.messages).await {
                 let error = format!("{:?}", error);
                 send_error_to_requests(
-                    request.return_chans,
+                    request.return_chans_tx,
                     request.stream_ids,
                     destination,
                     &error,
                 );
                 connection_dead_error = Some(error.clone());
             } else if let Err(mpsc::error::SendError(return_chan)) = return_tx.send(ReturnChannel {
-                return_chans: request.return_chans,
+                return_chans: request.return_chans_tx,
                 stream_ids: request.stream_ids,
             }) {
                 let error = rx_process_has_shutdown_rx
