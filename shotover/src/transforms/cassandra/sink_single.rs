@@ -9,7 +9,12 @@ use crate::tls::{TlsConnector, TlsConnectorConfig};
 ||||||| ancestor
 =======
 <<<<<<< refs/remotes/conorbros/main:shotover/src/transforms/cassandra/sink_single.rs
+<<<<<<< v5-compression
 >>>>>>> cassandra connection pass multiple messages to codec
+||||||| ancestor
+=======
+<<<<<<< refs/remotes/conorbros/main:shotover/src/transforms/cassandra/sink_single.rs
+>>>>>>> rebase
 use crate::transforms::cassandra::connection::Response;
 use crate::transforms::{Transform, TransformBuilder, TransformConfig, Transforms, Wrapper};
 <<<<<<< v5-compression
@@ -27,6 +32,10 @@ use crate::transforms::{Transform, TransformBuilder, Transforms, Wrapper};
 =======
 ||||||| ancestor
 use crate::transforms::cassandra::connection::Response;
+||||||| ancestor
+=======
+use crate::transforms::cassandra::connection::Response;
+>>>>>>> rebase:shotover-proxy/src/transforms/cassandra/sink_single.rs
 use crate::transforms::{Transform, TransformBuilder, Transforms, Wrapper};
 =======
 use crate::transforms::{Transform, TransformBuilder, Transforms, Wrapper};
