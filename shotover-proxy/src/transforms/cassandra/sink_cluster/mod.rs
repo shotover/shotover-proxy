@@ -342,7 +342,7 @@ impl CassandraSinkCluster {
                         );
                     }
 
-                    // This is purely an optimization: To avoid opening these connections sequentially later later on, we open them concurrently now.
+                    // This is purely an optimization: To avoid opening these connections sequentially later on, we open them concurrently now.
                     try_join_all(
                         self.pool
                             .nodes()
@@ -400,18 +400,14 @@ impl CassandraSinkCluster {
         let mut nodes_to_prepare_on: Vec<Uuid> = vec![];
 
         for (i, mut message) in messages.into_iter().enumerate() {
-            let (return_chan_tx, return_chan_rx) = oneshot::channel();
-            if self.pool.nodes().is_empty()
+            let return_chan_rx = if self.pool.nodes().is_empty()
                 || !self.init_handshake_complete
                 // system.local and system.peers must be routed to the same node otherwise the system.local node will be amongst the system.peers nodes and a node will be missing
                 // DDL statements and system.local must be routed through the same connection, so that schema_version changes appear immediately in system.local
                 || is_ddl_statement(&mut message)
                 || self.is_system_query(&mut message)
             {
-                self.control_connection
-                    .as_mut()
-                    .unwrap()
-                    .send(message, return_chan_tx)?;
+                self.control_connection.as_mut().unwrap().send(message)?
             } else if is_use_statement(&mut message) {
                 // Adding the USE statement to the handshake ensures that any new connection
                 // created will have the correct keyspace setup.
@@ -420,18 +416,13 @@ impl CassandraSinkCluster {
                 // Send the USE statement to all open connections to ensure they are all in sync
                 for (node_index, node) in self.pool.nodes().iter().enumerate() {
                     if let Some(connection) = &node.outbound {
-                        let (return_chan_tx, return_chan_rx) = oneshot::channel();
-                        connection.send(message.clone(), return_chan_tx)?;
-                        responses_future_use.push_back(return_chan_rx);
+                        responses_future_use.push_back(connection.send(message.clone())?);
                         use_future_index_to_node_index.push(node_index);
                     }
                 }
 
                 // Send the USE statement to the handshake connection and use the response as shotovers response
-                self.control_connection
-                    .as_mut()
-                    .unwrap()
-                    .send(message, return_chan_tx)?;
+                self.control_connection.as_mut().unwrap().send(message)?
             } else if is_prepare_message(&mut message) {
                 if let Some(rewrite) = tables_to_rewrite.iter().find(|x| x.outgoing_index == i) {
                     if let RewriteTableTy::Prepare { destination_nodes } = &rewrite.ty {
@@ -448,41 +439,37 @@ impl CassandraSinkCluster {
                     .ok_or_else(|| anyhow!("node {next_host_id} has dissapeared"))?
                     .get_connection(&self.connection_factory)
                     .await?
-                    .send(message, return_chan_tx)?;
-            } else {
+                    .send(message)?
+            } else if let Some((execute, metadata)) = get_execute_message(&mut message) {
                 // If the message is an execute we should perform token aware routing
-                if let Some((execute, metadata)) = get_execute_message(&mut message) {
-                    match self
+                match self
+                    .pool
+                    .get_replica_node_in_dc(
+                        execute,
+                        &self.local_shotover_node.rack,
+                        self.version.unwrap(),
+                        &mut self.rng,
+                    )
+                    .await
+                {
+                    Ok(replica_node) => replica_node
+                        .get_connection(&self.connection_factory)
+                        .await?
+                        .send(message)?,
+                    Err(GetReplicaErr::NoReplicasFound | GetReplicaErr::NoKeyspaceMetadata) => self
                         .pool
-                        .get_replica_node_in_dc(
-                            execute,
-                            &self.local_shotover_node.rack,
-                            self.version.unwrap(),
-                            &mut self.rng,
-                        )
-                        .await
-                    {
-                        Ok(replica_node) => {
-                            replica_node
-                                .get_connection(&self.connection_factory)
-                                .await?
-                                .send(message, return_chan_tx)?;
-                        }
-                        Err(GetReplicaErr::NoReplicasFound | GetReplicaErr::NoKeyspaceMetadata) => {
-                            let node = self
-                                .pool
-                                .get_round_robin_node_in_dc_rack(&self.local_shotover_node.rack);
-                            node.get_connection(&self.connection_factory)
-                                .await?
-                                .send(message, return_chan_tx)?;
-                        }
-                        Err(GetReplicaErr::NoPreparedMetadata) => {
-                            let id = execute.id.clone();
-                            tracing::info!("forcing re-prepare on {:?}", id);
-                            // this shotover node doesn't have the metadata.
-                            // send an unprepared error in response to force
-                            // the client to reprepare the query
-                            return_chan_tx
+                        .get_round_robin_node_in_dc_rack(&self.local_shotover_node.rack)
+                        .get_connection(&self.connection_factory)
+                        .await?
+                        .send(message)?,
+                    Err(GetReplicaErr::NoPreparedMetadata) => {
+                        let (return_chan_tx, return_chan_rx) = oneshot::channel();
+                        let id = execute.id.clone();
+                        tracing::info!("forcing re-prepare on {:?}", id);
+                        // this shotover node doesn't have the metadata.
+                        // send an unprepared error in response to force
+                        // the client to reprepare the query
+                        return_chan_tx
                                 .send(Ok(Message::from_frame(Frame::Cassandra(
                                     CassandraFrame {
                                         operation: CassandraOperation::Error(ErrorBody {
@@ -495,22 +482,20 @@ impl CassandraSinkCluster {
                                         warnings: vec![],
                                     },
                                 )))).expect("the receiver is guaranteed to be alive, so this must succeed");
-                        }
-                        Err(GetReplicaErr::Other(err)) => {
-                            return Err(err);
-                        }
-                    };
-
-                    // otherwise just send to a random node
-                } else {
-                    let node = self
-                        .pool
-                        .get_round_robin_node_in_dc_rack(&self.local_shotover_node.rack);
-                    node.get_connection(&self.connection_factory)
-                        .await?
-                        .send(message, return_chan_tx)?;
+                        return_chan_rx
+                    }
+                    Err(GetReplicaErr::Other(err)) => {
+                        return Err(err);
+                    }
                 }
-            }
+            } else {
+                // otherwise just send to a random node
+                self.pool
+                    .get_round_robin_node_in_dc_rack(&self.local_shotover_node.rack)
+                    .get_connection(&self.connection_factory)
+                    .await?
+                    .send(message)?
+            };
 
             responses_future.push_back(return_chan_rx)
         }
