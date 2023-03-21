@@ -24,6 +24,7 @@ pub struct PreparedMetadata {
 pub enum GetReplicaErr {
     NoPreparedMetadata,
     NoKeyspaceMetadata,
+    NoReplicasFound,
     Other(Error),
 }
 
@@ -154,7 +155,7 @@ impl NodePool {
         rack: &str,
         version: Version,
         rng: &mut SmallRng,
-    ) -> Result<Option<&mut CassandraNode>, GetReplicaErr> {
+    ) -> Result<&mut CassandraNode, GetReplicaErr> {
         let metadata = {
             let read_lock = self.prepared_metadata.read().await;
             read_lock
@@ -197,14 +198,16 @@ impl NodePool {
             .split(|node| node.rack == rack);
 
         if let Some(rack_replica) = rack_replicas.choose(rng) {
-            Ok(Some(rack_replica))
+            Ok(rack_replica)
         } else {
             // An execute message is being delivered outside of CassandraSinkCluster's designated rack. The only cases this can occur is when:
             // The client correctly routes to the shotover node that reports it has the token in its rack, however the destination cassandra node has since gone down and is now inaccessible.
             // or
             // The clients token aware routing is broken.
             self.out_of_rack_requests.increment(1);
-            Ok(dc_replicas.choose(rng))
+            dc_replicas
+                .choose(rng)
+                .ok_or(GetReplicaErr::NoReplicasFound)
         }
     }
 }
