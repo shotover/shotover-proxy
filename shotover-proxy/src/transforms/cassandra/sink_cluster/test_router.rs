@@ -87,7 +87,6 @@ mod test_token_aware_router {
                     &mut rng,
                 )
                 .await
-                .unwrap()
                 .unwrap();
 
             if !rack_replicas.is_empty() {

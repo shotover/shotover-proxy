@@ -462,13 +462,13 @@ impl CassandraSinkCluster {
                         )
                         .await
                     {
-                        Ok(Some(replica_node)) => {
+                        Ok(replica_node) => {
                             replica_node
                                 .get_connection(&self.connection_factory)
                                 .await?
                                 .send(message, return_chan_tx)?;
                         }
-                        Ok(None) | Err(GetReplicaErr::NoKeyspaceMetadata) => {
+                        Err(GetReplicaErr::NoReplicasFound | GetReplicaErr::NoKeyspaceMetadata) => {
                             let node = self
                                 .pool
                                 .get_round_robin_node_in_dc_rack(&self.local_shotover_node.rack);
