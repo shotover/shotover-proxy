@@ -87,7 +87,7 @@ test-helpers = { path = "../test-helpers", features = ["cassandra-cpp-driver-tes
 hex-literal = "0.3.3"
 nix.workspace = true
 cdrs-tokio.workspace = true
-rstest = "0.16.0"
+rstest = "0.17.0"
 rdkafka = { version = "0.29", features = ["cmake-build"] }
 
 [[bench]]
