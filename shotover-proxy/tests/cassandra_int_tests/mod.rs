@@ -816,6 +816,31 @@ async fn events_keyspace(#[case] driver: CassandraDriver) {
 #[case::cdrs(CdrsTokio)]
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
+async fn test_protocol_v3(#[case] driver: CassandraDriver) {
+    let _docker_compose =
+        DockerCompose::new("example-configs/cassandra-passthrough/docker-compose.yaml");
+
+    let shotover = ShotoverProcessBuilder::new_with_topology(
+        "example-configs/cassandra-passthrough/topology-encode.yaml",
+    )
+    .start()
+    .await;
+
+    let connection = || {
+        CassandraConnectionBuilder::new("127.0.0.1", 9042, driver)
+            .with_protocol_version(ProtocolVersion::V3)
+            .build()
+    };
+
+    standard_test_suite(&connection, driver).await;
+
+    shotover.shutdown_and_then_consume_events(&[]).await;
+}
+
+#[rstest]
+#[case::cdrs(CdrsTokio)]
+#[tokio::test(flavor = "multi_thread")]
+#[serial]
 async fn test_protocol_v4(#[case] driver: CassandraDriver) {
     let _docker_compose =
         DockerCompose::new("example-configs/cassandra-passthrough/docker-compose.yaml");
