@@ -5,14 +5,13 @@
 /// without worrying about the performance impact of other transform logic.
 /// It could also be used to ensure that messages round trip correctly when parsed.
 use crate::error::ChainResponse;
-use crate::transforms::{Transform, TransformBuilder, Transforms, Wrapper};
-use async_trait::async_trait;
-use serde::Deserialize;
-
 #[cfg(feature = "alpha-transforms")]
 use crate::transforms::TransformConfig;
+use crate::transforms::{Transform, TransformBuilder, Transforms, Wrapper};
 #[cfg(feature = "alpha-transforms")]
 use anyhow::Result;
+use async_trait::async_trait;
+use serde::Deserialize;
 
 /// Messages that pass through this transform will be parsed.
 /// Must be individually enabled at the request or response level.
