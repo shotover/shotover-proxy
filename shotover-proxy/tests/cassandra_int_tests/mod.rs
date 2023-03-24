@@ -8,11 +8,11 @@ use rstest::rstest;
 use serial_test::serial;
 #[cfg(feature = "cassandra-cpp-driver-tests")]
 use test_helpers::connection::cassandra::CassandraDriver::Datastax;
-use test_helpers::connection::cassandra::Compression;
 use test_helpers::connection::cassandra::{
     assert_query_result, run_query, CassandraConnection, CassandraConnectionBuilder,
     CassandraDriver, CassandraDriver::CdrsTokio, CassandraDriver::Scylla, ResultValue,
 };
+use test_helpers::connection::cassandra::{Compression, ProtocolVersion};
 use test_helpers::connection::redis_connection;
 use test_helpers::docker_compose::DockerCompose;
 use test_helpers::shotover_process::{Count, EventMatcher, Level, ShotoverProcessBuilder};
@@ -808,6 +808,82 @@ async fn events_keyspace(#[case] driver: CassandraDriver) {
             options: SchemaChangeOptions::Keyspace("test_events_ks".to_string())
         })
     );
+
+    shotover.shutdown_and_then_consume_events(&[]).await;
+}
+
+// TODO find and fix the cause of this failing test https://github.com/shotover/shotover-proxy/issues/1096
+#[rstest]
+#[case::cdrs(CdrsTokio)]
+#[tokio::test(flavor = "multi_thread")]
+#[serial]
+async fn test_protocol_v3(#[case] driver: CassandraDriver) {
+    let _docker_compose =
+        DockerCompose::new("example-configs/cassandra-passthrough/docker-compose.yaml");
+
+    let shotover = ShotoverProcessBuilder::new_with_topology(
+        "example-configs/cassandra-passthrough/topology-encode.yaml",
+    )
+    .start()
+    .await;
+
+    let _connection = || {
+        CassandraConnectionBuilder::new("127.0.0.1", 9042, driver)
+            .with_protocol_version(ProtocolVersion::V3)
+            .build()
+    };
+
+    // standard_test_suite(&connection, driver).await;
+
+    shotover.shutdown_and_then_consume_events(&[]).await;
+}
+
+#[rstest]
+#[case::cdrs(CdrsTokio)]
+#[tokio::test(flavor = "multi_thread")]
+#[serial]
+async fn test_protocol_v4(#[case] driver: CassandraDriver) {
+    let _docker_compose =
+        DockerCompose::new("example-configs/cassandra-passthrough/docker-compose.yaml");
+
+    let shotover = ShotoverProcessBuilder::new_with_topology(
+        "example-configs/cassandra-passthrough/topology-encode.yaml",
+    )
+    .start()
+    .await;
+
+    let connection = || {
+        CassandraConnectionBuilder::new("127.0.0.1", 9042, driver)
+            .with_protocol_version(ProtocolVersion::V4)
+            .build()
+    };
+
+    standard_test_suite(&connection, driver).await;
+
+    shotover.shutdown_and_then_consume_events(&[]).await;
+}
+
+#[rstest]
+#[case::cdrs(CdrsTokio)]
+#[tokio::test(flavor = "multi_thread")]
+#[serial]
+async fn test_protocol_v5(#[case] _driver: CassandraDriver) {
+    let _docker_compose =
+        DockerCompose::new("example-configs/cassandra-passthrough/docker-compose.yaml");
+
+    let shotover = ShotoverProcessBuilder::new_with_topology(
+        "example-configs/cassandra-passthrough/topology-encode.yaml",
+    )
+    .start()
+    .await;
+
+    // let connection = || {
+    //     CassandraConnectionBuilder::new("127.0.0.1", 9042, driver)
+    //         .with_protocol_version(ProtocolVersion::V5)
+    //         .build()
+    // };
+
+    // standard_test_suite(&connection, driver).await;
 
     shotover.shutdown_and_then_consume_events(&[]).await;
 }
