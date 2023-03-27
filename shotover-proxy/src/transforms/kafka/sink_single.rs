@@ -22,8 +22,14 @@ pub struct KafkaSinkSingleConfig {
     pub read_timeout: Option<u64>,
 }
 
-impl KafkaSinkSingleConfig {
-    pub async fn get_builder(&self, chain_name: String) -> Result<Box<dyn TransformBuilder>> {
+#[cfg(feature = "alpha-transforms")]
+use crate::transforms::TransformConfig;
+
+#[cfg(feature = "alpha-transforms")]
+#[typetag::deserialize(name = "KafkaSinkSingle")]
+#[async_trait(?Send)]
+impl TransformConfig for KafkaSinkSingleConfig {
+    async fn get_builder(&self, chain_name: String) -> Result<Box<dyn TransformBuilder>> {
         Ok(Box::new(KafkaSinkSingleBuilder::new(
             self.address.clone(),
             chain_name,

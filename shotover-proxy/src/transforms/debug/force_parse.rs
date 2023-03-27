@@ -5,7 +5,10 @@
 /// without worrying about the performance impact of other transform logic.
 /// It could also be used to ensure that messages round trip correctly when parsed.
 use crate::error::ChainResponse;
+#[cfg(feature = "alpha-transforms")]
+use crate::transforms::TransformConfig;
 use crate::transforms::{Transform, TransformBuilder, Transforms, Wrapper};
+#[cfg(feature = "alpha-transforms")]
 use anyhow::Result;
 use async_trait::async_trait;
 use serde::Deserialize;
@@ -14,12 +17,15 @@ use serde::Deserialize;
 /// Must be individually enabled at the request or response level.
 #[derive(Deserialize, Debug)]
 pub struct DebugForceParseConfig {
-    parse_requests: bool,
-    parse_responses: bool,
+    pub parse_requests: bool,
+    pub parse_responses: bool,
 }
 
-impl DebugForceParseConfig {
-    pub async fn get_builder(&self) -> Result<Box<dyn TransformBuilder>> {
+#[cfg(feature = "alpha-transforms")]
+#[typetag::deserialize(name = "DebugForceParse")]
+#[async_trait(?Send)]
+impl TransformConfig for DebugForceParseConfig {
+    async fn get_builder(&self, _chain_name: String) -> Result<Box<dyn TransformBuilder>> {
         Ok(Box::new(DebugForceParse {
             parse_requests: self.parse_requests,
             parse_responses: self.parse_responses,
@@ -33,12 +39,15 @@ impl DebugForceParseConfig {
 /// Must be individually enabled at the request or response level.
 #[derive(Deserialize, Debug)]
 pub struct DebugForceEncodeConfig {
-    encode_requests: bool,
-    encode_responses: bool,
+    pub encode_requests: bool,
+    pub encode_responses: bool,
 }
 
-impl DebugForceEncodeConfig {
-    pub async fn get_builder(&self) -> Result<Box<dyn TransformBuilder>> {
+#[cfg(feature = "alpha-transforms")]
+#[typetag::deserialize(name = "DebugForceEncode")]
+#[async_trait(?Send)]
+impl TransformConfig for DebugForceEncodeConfig {
+    async fn get_builder(&self, _chain_name: String) -> Result<Box<dyn TransformBuilder>> {
         Ok(Box::new(DebugForceParse {
             parse_requests: self.encode_requests,
             parse_responses: self.encode_responses,

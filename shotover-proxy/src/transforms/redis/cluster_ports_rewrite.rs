@@ -6,15 +6,17 @@ use serde::Deserialize;
 
 use crate::error::ChainResponse;
 use crate::frame::Frame;
-use crate::transforms::{Transform, TransformBuilder, Transforms, Wrapper};
+use crate::transforms::{Transform, TransformBuilder, TransformConfig, Transforms, Wrapper};
 
 #[derive(Deserialize, Debug)]
 pub struct RedisClusterPortsRewriteConfig {
     pub new_port: u16,
 }
 
-impl RedisClusterPortsRewriteConfig {
-    pub async fn get_builder(&self) -> Result<Box<dyn TransformBuilder>> {
+#[typetag::deserialize(name = "RedisClusterPortsRewrite")]
+#[async_trait(?Send)]
+impl TransformConfig for RedisClusterPortsRewriteConfig {
+    async fn get_builder(&self, _chain_name: String) -> Result<Box<dyn TransformBuilder>> {
         Ok(Box::new(RedisClusterPortsRewrite {
             new_port: self.new_port,
         }))

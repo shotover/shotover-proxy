@@ -12,11 +12,12 @@ use shotover_proxy::transforms::chain::{TransformChain, TransformChainBuilder};
 use shotover_proxy::transforms::debug::returner::{DebugReturner, Response};
 use shotover_proxy::transforms::filter::QueryTypeFilter;
 use shotover_proxy::transforms::null::NullSink;
+#[cfg(feature = "alpha-transforms")]
 use shotover_proxy::transforms::protect::{KeyManagerConfig, ProtectConfig};
 use shotover_proxy::transforms::redis::cluster_ports_rewrite::RedisClusterPortsRewrite;
 use shotover_proxy::transforms::redis::timestamp_tagging::RedisTimestampTagger;
 use shotover_proxy::transforms::throttling::RequestThrottlingConfig;
-use shotover_proxy::transforms::Wrapper;
+use shotover_proxy::transforms::{TransformConfig, Wrapper};
 
 fn criterion_benchmark(c: &mut Criterion) {
     let rt = tokio::runtime::Runtime::new().unwrap();
@@ -175,11 +176,13 @@ fn criterion_benchmark(c: &mut Criterion) {
     {
         let chain = TransformChainBuilder::new(
             vec![
-                RequestThrottlingConfig {
-                    // an absurdly large value is given so that all messages will pass through
-                    max_requests_per_second: std::num::NonZeroU32::new(100_000_000).unwrap(),
-                }
-                .get_builder()
+                rt.block_on(
+                    RequestThrottlingConfig {
+                        // an absurdly large value is given so that all messages will pass through
+                        max_requests_per_second: std::num::NonZeroU32::new(100_000_000).unwrap(),
+                    }
+                    .get_builder("".to_owned()),
+                )
                 .unwrap(),
                 Box::<NullSink>::default(),
             ],
@@ -272,6 +275,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         });
     }
 
+    #[cfg(feature = "alpha-transforms")]
     {
         let chain = TransformChainBuilder::new(
             vec![
@@ -290,7 +294,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                             kek_id: "".to_string(),
                         },
                     }
-                    .get_builder(),
+                    .get_builder("".to_owned()),
                 )
                 .unwrap(),
                 Box::<NullSink>::default(),
@@ -332,6 +336,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     }
 }
 
+#[cfg(feature = "alpha-transforms")]
 fn cassandra_parsed_query(query: &str) -> Wrapper {
     Wrapper::new_with_chain_name(
         vec![Message::from_frame(Frame::Cassandra(CassandraFrame {

@@ -1,8 +1,20 @@
+use crate::error::ChainResponse;
+use crate::transforms::{Transform, TransformBuilder, TransformConfig, Transforms, Wrapper};
+use anyhow::Result;
+use async_trait::async_trait;
+use serde::Deserialize;
 use tracing::info;
 
-use crate::error::ChainResponse;
-use crate::transforms::{Transform, TransformBuilder, Transforms, Wrapper};
-use async_trait::async_trait;
+#[derive(Deserialize, Debug)]
+pub struct DebugPrinterConfig;
+
+#[typetag::deserialize(name = "DebugPrinter")]
+#[async_trait(?Send)]
+impl TransformConfig for DebugPrinterConfig {
+    async fn get_builder(&self, _chain_name: String) -> Result<Box<dyn TransformBuilder>> {
+        Ok(Box::new(DebugPrinter::new()))
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct DebugPrinter {

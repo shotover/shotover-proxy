@@ -9,7 +9,8 @@ use crate::transforms::redis::TransformError;
 use crate::transforms::util::cluster_connection_pool::{Authenticator, ConnectionPool};
 use crate::transforms::util::{Request, Response};
 use crate::transforms::{
-    ResponseFuture, Transform, TransformBuilder, Transforms, Wrapper, CONTEXT_CHAIN_NAME,
+    ResponseFuture, Transform, TransformBuilder, TransformConfig, Transforms, Wrapper,
+    CONTEXT_CHAIN_NAME,
 };
 use anyhow::{anyhow, bail, ensure, Context, Result};
 use async_trait::async_trait;
@@ -45,8 +46,10 @@ pub struct RedisSinkClusterConfig {
     pub connect_timeout_ms: u64,
 }
 
-impl RedisSinkClusterConfig {
-    pub async fn get_builder(&self, chain_name: String) -> Result<Box<dyn TransformBuilder>> {
+#[typetag::deserialize(name = "RedisSinkCluster")]
+#[async_trait(?Send)]
+impl TransformConfig for RedisSinkClusterConfig {
+    async fn get_builder(&self, chain_name: String) -> Result<Box<dyn TransformBuilder>> {
         let mut cluster = RedisSinkCluster::new(
             self.first_contact_points.clone(),
             self.direct_destination.clone(),
