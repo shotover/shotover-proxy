@@ -540,13 +540,7 @@ impl Encoder<Messages> for CassandraEncoder {
     ) -> std::result::Result<(), Self::Error> {
         for m in item {
             let start = dst.len();
-            encode_frame(
-                dst,
-                m,
-                &mut self.compression,
-                &mut self.version,
-                &mut self.handshake_complete,
-            )?;
+            self.encode_frame(dst, m)?;
             tracing::debug!(
                 "{}: outgoing cassandra message:\n{}",
                 self.direction,
@@ -557,116 +551,99 @@ impl Encoder<Messages> for CassandraEncoder {
     }
 }
 
-fn encode_frame(
-    dst: &mut BytesMut,
-    m: Message,
-    compression_state: &mut Arc<AtomicCompressionState>,
-    version_state: &mut Arc<AtomicVersionState>,
-    completed_handshake_state: &mut Arc<AtomicBool>,
-) -> Result<()> {
-    let version: Version = version_state.load(Ordering::Relaxed).into();
-    let handshake_complete = completed_handshake_state.load(Ordering::Relaxed);
-    match (version, handshake_complete) {
-        (Version::V5, true) => {
-            // write envelope header with dummy values for those we cant calculate till after we write the message
-            let header_start = dst.len();
+impl CassandraEncoder {
+    fn encode_frame(&mut self, dst: &mut BytesMut, m: Message) -> Result<()> {
+        let version: Version = self.version.load(Ordering::Relaxed).into();
+        let handshake_complete = self.handshake_complete.load(Ordering::Relaxed);
+        match (version, handshake_complete) {
+            (Version::V5, true) => {
+                // write envelope header with dummy values for those we cant calculate till after we write the message
+                let header_start = dst.len();
 
-            dst.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
-            let payload_start = dst.len();
+                dst.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
+                let payload_start = dst.len();
 
-            encode_envelope(
-                dst,
-                m,
-                version_state,
-                compression_state,
-                completed_handshake_state,
-            )?;
+                self.encode_envelope(dst, m)?;
 
-            //measure length of message and calculate crc24 and overwrite frame header values
-            let mut payload_len = (dst.len() - payload_start) as u64;
+                //measure length of message and calculate crc24 and overwrite frame header values
+                let mut payload_len = (dst.len() - payload_start) as u64;
 
-            if true {
-                // TODO if self_contained
-                payload_len |= 1 << 17;
-            }
-
-            put3b(&mut dst[header_start..], payload_len as i32);
-            put3b(
-                &mut dst[header_start + 3..],
-                cassandra_protocol::crc::crc24(&payload_len.to_le_bytes()[..3]),
-            );
-
-            add_trailer(dst, payload_start);
-
-            Ok(())
-        }
-        (_, _) => encode_envelope(
-            dst,
-            m,
-            version_state,
-            compression_state,
-            completed_handshake_state,
-        ),
-    }
-}
-
-fn encode_envelope(
-    dst: &mut BytesMut,
-    m: Message,
-    version_state: &mut Arc<AtomicVersionState>,
-    compression_state: &mut Arc<AtomicCompressionState>,
-    completed_handshake_state: &mut Arc<AtomicBool>,
-) -> Result<()> {
-    let message_compression = m.codec_state.as_cassandra();
-    // TODO: always check if cassandra message
-    match m.into_encodable(MessageType::Cassandra)? {
-        Encodable::Bytes(bytes) => {
-            // check if the message is a startup message and set the codec's compression
-            {
-                let opcode = Opcode::try_from(bytes[4])?;
-                if Opcode::Startup == opcode {
-                    if let CassandraFrame {
-                        operation: CassandraOperation::Startup(startup),
-                        version,
-                        ..
-                    } = CassandraFrame::from_bytes(bytes.clone(), Compression::None)?
-                    {
-                        set_startup_state(compression_state, version_state, version, &startup);
-                    };
+                if true {
+                    // TODO if self_contained
+                    payload_len |= 1 << 17;
                 }
 
-                if Opcode::Ready == opcode || Opcode::Authenticate == opcode {
-                    completed_handshake_state.store(true, Ordering::Relaxed);
-                }
+                put3b(&mut dst[header_start..], payload_len as i32);
+                put3b(
+                    &mut dst[header_start + 3..],
+                    cassandra_protocol::crc::crc24(&payload_len.to_le_bytes()[..3]),
+                );
+
+                add_trailer(dst, payload_start);
+
+                Ok(())
             }
-
-            dst.extend_from_slice(&bytes)
-        }
-        Encodable::Frame(frame) => {
-            // check if the message is a startup message and set the codec's compression
-            if let Frame::Cassandra(CassandraFrame {
-                operation: CassandraOperation::Startup(startup),
-                version,
-                ..
-            }) = &frame
-            {
-                set_startup_state(compression_state, version_state, *version, startup);
-            };
-
-            if let Frame::Cassandra(CassandraFrame {
-                operation: CassandraOperation::Ready(_) | CassandraOperation::Authenticate(_),
-                ..
-            }) = &frame
-            {
-                completed_handshake_state.store(true, Ordering::Relaxed);
-            };
-
-            let buffer = frame.into_cassandra().unwrap().encode(message_compression);
-
-            dst.put(buffer.as_slice());
+            (_, _) => self.encode_envelope(dst, m),
         }
     }
-    Ok(())
+
+    fn encode_envelope(&mut self, dst: &mut BytesMut, m: Message) -> Result<()> {
+        let message_compression = m.codec_state.as_cassandra();
+        // TODO: always check if cassandra message
+        match m.into_encodable(MessageType::Cassandra)? {
+            Encodable::Bytes(bytes) => {
+                // check if the message is a startup message and set the codec's compression
+                {
+                    let opcode = Opcode::try_from(bytes[4])?;
+                    if Opcode::Startup == opcode {
+                        if let CassandraFrame {
+                            operation: CassandraOperation::Startup(startup),
+                            version,
+                            ..
+                        } = CassandraFrame::from_bytes(bytes.clone(), Compression::None)?
+                        {
+                            set_startup_state(
+                                &mut self.compression,
+                                &mut self.version,
+                                version,
+                                &startup,
+                            );
+                        };
+                    }
+
+                    if Opcode::Ready == opcode || Opcode::Authenticate == opcode {
+                        self.handshake_complete.store(true, Ordering::Relaxed);
+                    }
+                }
+
+                dst.extend_from_slice(&bytes)
+            }
+            Encodable::Frame(frame) => {
+                // check if the message is a startup message and set the codec's compression
+                if let Frame::Cassandra(CassandraFrame {
+                    operation: CassandraOperation::Startup(startup),
+                    version,
+                    ..
+                }) = &frame
+                {
+                    set_startup_state(&mut self.compression, &mut self.version, *version, startup);
+                };
+
+                if let Frame::Cassandra(CassandraFrame {
+                    operation: CassandraOperation::Ready(_) | CassandraOperation::Authenticate(_),
+                    ..
+                }) = &frame
+                {
+                    self.handshake_complete.store(true, Ordering::Relaxed);
+                };
+
+                let buffer = frame.into_cassandra().unwrap().encode(message_compression);
+
+                dst.put(buffer.as_slice());
+            }
+        }
+        Ok(())
+    }
 }
 
 fn put3b(buffer: &mut [u8], value: i32) {
