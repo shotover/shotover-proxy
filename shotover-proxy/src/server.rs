@@ -535,7 +535,7 @@ impl<C: CodecBuilder + 'static> Handler<C> {
                 }
             };
 
-            debug!("Received raw message {:?}", messages);
+            debug!("Received raw messages {:?}", messages);
             debug!("client details: {:?}", &self.client_details);
 
             let mut error_report_messages = if reverse_chain {
