@@ -1,7 +1,7 @@
 use self::node_pool::{NodePoolBuilder, PreparedMetadata};
-use self::rewrite::{MessageRewriter, RewriteTableTy, TableToRewrite};
+use self::rewrite::{MessageRewriter, RewriteTableTy};
 use crate::error::ChainResponse;
-use crate::frame::cassandra::{parse_statement_single, CassandraMetadata, Tracing};
+use crate::frame::cassandra::{CassandraMetadata, Tracing};
 use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame};
 use crate::message::{Message, Messages, Metadata};
 use crate::tls::{TlsConnector, TlsConnectorConfig};
@@ -15,14 +15,9 @@ use cassandra_protocol::frame::message_execute::BodyReqExecuteOwned;
 use cassandra_protocol::frame::{Opcode, Version};
 use cassandra_protocol::types::CBytesShort;
 use cql3_parser::cassandra_statement::CassandraStatement;
-use cql3_parser::common::{
-    FQNameRef, Identifier, IdentifierRef, Operand, RelationElement, RelationOperator,
-};
-use cql3_parser::select::Select;
-use futures::future::try_join_all;
+use cql3_parser::common::IdentifierRef;
 use futures::stream::FuturesOrdered;
 use futures::StreamExt;
-use itertools::Itertools;
 use metrics::{register_counter, Counter};
 use node::{CassandraNode, ConnectionFactory};
 use node_pool::{GetReplicaErr, KeyspaceMetadata, NodePool};
@@ -52,19 +47,6 @@ const SYSTEM_KEYSPACES: [IdentifierRef<'static>; 3] = [
     IdentifierRef::Quoted("system_schema"),
     IdentifierRef::Quoted("system_distributed"),
 ];
-
-const LOCAL_TABLE: FQNameRef = FQNameRef {
-    keyspace: Some(IdentifierRef::Quoted("system")),
-    name: IdentifierRef::Quoted("local"),
-};
-const PEERS_TABLE: FQNameRef = FQNameRef {
-    keyspace: Some(IdentifierRef::Quoted("system")),
-    name: IdentifierRef::Quoted("peers"),
-};
-const PEERS_V2_TABLE: FQNameRef = FQNameRef {
-    keyspace: Some(IdentifierRef::Quoted("system")),
-    name: IdentifierRef::Quoted("peers_v2"),
-};
 
 #[derive(Deserialize, Debug)]
 pub struct CassandraSinkClusterConfig {
@@ -234,20 +216,6 @@ pub struct CassandraSinkCluster {
     task_handshake_tx: mpsc::Sender<TaskConnectionInfo>,
 }
 
-fn create_query(messages: &Messages, query: &str, version: Version) -> Result<Message> {
-    let stream_id = get_unused_stream_id(messages)?;
-    Ok(Message::from_frame(Frame::Cassandra(CassandraFrame {
-        version,
-        stream_id,
-        tracing: Tracing::Request(false),
-        warnings: vec![],
-        operation: CassandraOperation::Query {
-            query: Box::new(parse_statement_single(query)),
-            params: Box::default(),
-        },
-    })))
-}
-
 impl CassandraSinkCluster {
     async fn send_message(&mut self, mut messages: Messages) -> ChainResponse {
         if self.version.is_none() {
@@ -301,62 +269,16 @@ impl CassandraSinkCluster {
             self.pool.update_keyspaces(&mut self.keyspaces_rx).await;
         }
 
-        let mut outgoing_index_offset = 0;
-        let tables_to_rewrite: Vec<TableToRewrite> = messages
-            .iter_mut()
-            .enumerate()
-            .filter_map(|(i, m)| {
-                let table = self.get_rewrite_table(m, i, outgoing_index_offset);
-                if let Some(table) = &table {
-                    outgoing_index_offset += table.ty.extra_messages_needed();
-                }
-                table
-            })
-            .collect();
-
-        // Insert the extra messages required by table rewrites.
-        // After this the incoming_index values are now invalid and the outgoing_index values should be used instead
-        for table_to_rewrite in tables_to_rewrite.iter().rev() {
-            match &table_to_rewrite.ty {
-                RewriteTableTy::Local => {
-                    let query = "SELECT rack, data_center, schema_version, tokens, release_version FROM system.peers";
-                    messages.insert(
-                        table_to_rewrite.incoming_index + 1,
-                        create_query(&messages, query, self.version.unwrap())?,
-                    );
-                }
-                RewriteTableTy::Peers => {
-                    let query = "SELECT rack, data_center, schema_version, tokens, release_version FROM system.peers";
-                    messages.insert(
-                        table_to_rewrite.incoming_index + 1,
-                        create_query(&messages, query, self.version.unwrap())?,
-                    );
-                    let query = "SELECT rack, data_center, schema_version, tokens, release_version FROM system.local";
-                    messages.insert(
-                        table_to_rewrite.incoming_index + 2,
-                        create_query(&messages, query, self.version.unwrap())?,
-                    );
-                }
-                RewriteTableTy::Prepare { destination_nodes } => {
-                    for i in 1..destination_nodes.len() {
-                        messages.insert(
-                            table_to_rewrite.incoming_index + i,
-                            messages[table_to_rewrite.incoming_index].clone(),
-                        );
-                    }
-
-                    // This is purely an optimization: To avoid opening these connections sequentially later on, we open them concurrently now.
-                    try_join_all(
-                        self.pool
-                            .nodes()
-                            .iter_mut()
-                            .filter(|x| destination_nodes.contains(&x.host_id))
-                            .map(|node| node.get_connection(&self.connection_factory)),
-                    )
-                    .await?;
-                }
-            }
-        }
+        // CAREFUL: indexes into messages are invalidated here
+        let tables_to_rewrite = self
+            .message_rewriter
+            .rewrite_requests(
+                &mut messages,
+                &self.connection_factory,
+                &mut self.pool,
+                self.version.unwrap(),
+            )
+            .await?;
 
         // Create the initial connection.
         // Messages will be sent through this connection until we have extracted the handshake.
@@ -548,11 +470,9 @@ impl CassandraSinkCluster {
             }
         }
 
-        for table_to_rewrite in tables_to_rewrite {
-            self.message_rewriter
-                .rewrite_table(table_to_rewrite, &mut responses)
-                .await?;
-        }
+        self.message_rewriter
+            .rewrite_responses(tables_to_rewrite, &mut responses)
+            .await?;
 
         for response in responses.iter_mut() {
             if let Some((id, metadata)) = get_prepared_result_message(response) {
@@ -638,90 +558,6 @@ impl CassandraSinkCluster {
         Err(anyhow!(
             "Attempted to create a control connection against every node in the rack and all attempts failed:{node_errors}"
         ))
-    }
-
-    /// Returns any information required to correctly rewrite the response.
-    /// Will also perform minor modifications to the query required for the rewrite.
-    fn get_rewrite_table(
-        &mut self,
-        request: &mut Message,
-        incoming_index: usize,
-        outgoing_index_offset: usize,
-    ) -> Option<TableToRewrite> {
-        if let Some(Frame::Cassandra(cassandra)) = request.frame() {
-            // No need to handle Batch as selects can only occur on Query
-            match &mut cassandra.operation {
-                CassandraOperation::Query { query, .. } => {
-                    if let CassandraStatement::Select(select) = query.as_mut() {
-                        let ty = if LOCAL_TABLE == select.table_name {
-                            RewriteTableTy::Local
-                        } else if PEERS_TABLE == select.table_name
-                            || PEERS_V2_TABLE == select.table_name
-                        {
-                            RewriteTableTy::Peers
-                        } else {
-                            return None;
-                        };
-
-                        let warnings = if Self::has_no_where_clause(&ty, select) {
-                            vec![]
-                        } else {
-                            select.where_clause.clear();
-                            vec![format!(
-                            "WHERE clause on the query was ignored. Shotover does not support WHERE clauses on queries against {}",
-                            select.table_name
-                        )]
-                        };
-
-                        return Some(TableToRewrite {
-                            incoming_index,
-                            outgoing_index: incoming_index + outgoing_index_offset,
-                            ty,
-                            warnings,
-                            selects: select.columns.clone(),
-                        });
-                    }
-                }
-                CassandraOperation::Prepare(_) => {
-                    return Some(TableToRewrite {
-                        incoming_index,
-                        outgoing_index: incoming_index + outgoing_index_offset,
-                        ty: RewriteTableTy::Prepare {
-                            destination_nodes: self
-                                .pool
-                                .nodes()
-                                .iter()
-                                .filter(|node| {
-                                    node.is_up
-                                        && node.rack
-                                            == self.message_rewriter.local_shotover_node.rack
-                                })
-                                .map(|node| node.host_id)
-                                .collect(),
-                        },
-                        warnings: vec![],
-                        selects: vec![],
-                    });
-                }
-                _ => {}
-            }
-        }
-        None
-    }
-
-    fn has_no_where_clause(ty: &RewriteTableTy, select: &Select) -> bool {
-        select.where_clause.is_empty()
-            // Most drivers do `FROM system.local WHERE key = 'local'` when determining the topology.
-            // I'm not sure why they do that it seems to have no affect as there is only ever one row and its key is always 'local'.
-            // Maybe it was a workaround for an old version of cassandra that got copied around?
-            // To keep warning noise down we consider it as having no where clause.
-            || (ty == &RewriteTableTy::Local
-                && select.where_clause
-                    == [RelationElement {
-                        obj: Operand::Column(Identifier::Quoted("key".to_owned())),
-                        oper: RelationOperator::Equal,
-                        value: Operand::Const("'local'".to_owned()),
-                    }])
     }
 
     fn is_system_query(&self, request: &mut Message) -> bool {
@@ -842,21 +678,6 @@ fn is_use_statement_successful(response: Option<Result<Response>>) -> bool {
         }
     }
     false
-}
-
-fn get_unused_stream_id(messages: &Messages) -> Result<i16> {
-    // start at an unusual number to hopefully avoid looping many times when we receive stream ids that look like [0, 1, 2, ..]
-    // We can quite happily give up 358 stream ids as that still allows for shotover message batches containing 2 ** 16 - 358 = 65178 messages
-    for i in 358..i16::MAX {
-        if !messages
-            .iter()
-            .filter_map(|message| message.stream_id())
-            .contains(&i)
-        {
-            return Ok(i);
-        }
-    }
-    Err(anyhow!("Ran out of stream ids"))
 }
 
 #[async_trait]
