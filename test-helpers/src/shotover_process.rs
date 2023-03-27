@@ -60,8 +60,8 @@ observability_interface: "127.0.0.1:{observability_port}"
 
         let mut shotover = BinProcess::start_with_args(
             "shotover-proxy",
-            &args,
             self.log_name.as_deref().unwrap_or("shotover"),
+            &args,
         )
         .await;
 
@@ -86,8 +86,8 @@ observability_interface: "127.0.0.1:{observability_port}"
     ) -> Events {
         BinProcess::start_with_args(
             "shotover-proxy",
-            &["-t", &self.topology_path, "--log-format", "json"],
             "Shotover",
+            &["-t", &self.topology_path, "--log-format", "json"],
         )
         .await
         .consume_remaining_events_expect_failure(expected_errors_and_warnings)
