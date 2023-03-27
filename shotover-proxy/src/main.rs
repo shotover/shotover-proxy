@@ -3,7 +3,7 @@
 
 use anyhow::{Context, Result};
 use clap::Parser;
-use shotover_proxy::runner::{ConfigOpts, Runner, TracingState};
+use shotover::runner::{ConfigOpts, Runner, TracingState};
 use tokio::runtime::Runtime;
 
 fn main() -> Result<()> {
