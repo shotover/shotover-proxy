@@ -1,9 +1,8 @@
 use super::Transforms;
+use crate::config::chain::TransformChainConfig;
 use crate::error::ChainResponse;
 use crate::transforms::chain::{BufferedChain, TransformChainBuilder};
-use crate::transforms::{
-    build_chain_from_config, Transform, TransformBuilder, TransformsConfig, Wrapper,
-};
+use crate::transforms::{Transform, TransformBuilder, TransformConfig, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
 use serde::Deserialize;
@@ -14,12 +13,14 @@ use tokio::sync::Mutex;
 pub struct ConnectionBalanceAndPoolConfig {
     pub name: String,
     pub max_connections: usize,
-    pub chain: Vec<TransformsConfig>,
+    pub chain: TransformChainConfig,
 }
 
-impl ConnectionBalanceAndPoolConfig {
-    pub async fn get_builder(&self) -> Result<Box<dyn TransformBuilder>> {
-        let chain = build_chain_from_config(self.name.clone(), &self.chain).await?;
+#[typetag::deserialize(name = "ConnectionBalanceAndPool")]
+#[async_trait(?Send)]
+impl TransformConfig for ConnectionBalanceAndPoolConfig {
+    async fn get_builder(&self, _chain_name: String) -> Result<Box<dyn TransformBuilder>> {
+        let chain = self.chain.get_builder(self.name.clone()).await?;
 
         Ok(Box::new(ConnectionBalanceAndPoolBuilder {
             max_connections: self.max_connections,

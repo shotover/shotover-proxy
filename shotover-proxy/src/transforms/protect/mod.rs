@@ -25,8 +25,14 @@ pub struct ProtectConfig {
     pub key_manager: KeyManagerConfig,
 }
 
-impl ProtectConfig {
-    pub async fn get_builder(&self) -> Result<Box<dyn TransformBuilder>> {
+#[cfg(feature = "alpha-transforms")]
+use crate::transforms::TransformConfig;
+
+#[cfg(feature = "alpha-transforms")]
+#[typetag::deserialize(name = "Protect")]
+#[async_trait(?Send)]
+impl TransformConfig for ProtectConfig {
+    async fn get_builder(&self, _chain_name: String) -> Result<Box<dyn TransformBuilder>> {
         Ok(Box::new(Protect {
             keyspace_table_columns: self
                 .keyspace_table_columns

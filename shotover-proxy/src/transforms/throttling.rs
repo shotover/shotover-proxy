@@ -1,8 +1,5 @@
-use crate::{
-    error::ChainResponse,
-    message::Message,
-    transforms::{Transform, TransformBuilder, Wrapper},
-};
+use crate::transforms::{Transform, TransformBuilder, TransformConfig, Wrapper};
+use crate::{error::ChainResponse, message::Message};
 use anyhow::Result;
 use async_trait::async_trait;
 use governor::{
@@ -23,8 +20,10 @@ pub struct RequestThrottlingConfig {
     pub max_requests_per_second: NonZeroU32,
 }
 
-impl RequestThrottlingConfig {
-    pub fn get_builder(&self) -> Result<Box<dyn TransformBuilder>> {
+#[typetag::deserialize(name = "RequestThrottling")]
+#[async_trait(?Send)]
+impl TransformConfig for RequestThrottlingConfig {
+    async fn get_builder(&self, _chain_name: String) -> Result<Box<dyn TransformBuilder>> {
         Ok(Box::new(RequestThrottling {
             limiter: Arc::new(RateLimiter::direct(Quota::per_second(
                 self.max_requests_per_second,

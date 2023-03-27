@@ -2,7 +2,7 @@ use crate::frame::{CassandraOperation, CassandraResult, Frame};
 use crate::message::Message;
 use crate::message_value::{IntSize, MessageValue};
 use crate::transforms::cassandra::peers_rewrite::CassandraOperation::Event;
-use crate::transforms::Transforms;
+use crate::transforms::{TransformConfig, Transforms};
 use crate::{
     error::ChainResponse,
     transforms::{Transform, TransformBuilder, Wrapper},
@@ -20,8 +20,10 @@ pub struct CassandraPeersRewriteConfig {
     pub port: u16,
 }
 
-impl CassandraPeersRewriteConfig {
-    pub async fn get_builder(&self) -> Result<Box<dyn TransformBuilder>> {
+#[typetag::deserialize(name = "CassandraPeersRewrite")]
+#[async_trait(?Send)]
+impl TransformConfig for CassandraPeersRewriteConfig {
+    async fn get_builder(&self, _chain_name: String) -> Result<Box<dyn TransformBuilder>> {
         Ok(Box::new(CassandraPeersRewrite::new(self.port)))
     }
 }

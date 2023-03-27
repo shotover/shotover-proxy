@@ -6,7 +6,7 @@
 //! the [`transforms::Transforms`] enum.
 //!
 //! To allow your [`transforms::Transform`] to be configurable in Shotover config files you will need to create
-//! a serializable config struct and register it in the [`transforms::TransformsConfig`] enum (note plural Transform**s**).
+//! a serializable config struct and implement [`transforms::TransformConfig`] trait.
 //!
 //! ## Messages
 //! * [`message::Message`], the main struct that carries database queries/frames around in Shotover.
@@ -15,7 +15,7 @@
 //! * [`transforms::Wrapper`], used to wrap messages as they traverse the [`transforms::Transform`] chain.
 //! * [`transforms::Transform`], the main extension trait for adding your own behaviour to Shotover.
 //! * [`transforms::Transforms`], the enum to register with (add a variant) for enabling your own transform.
-//! * [`transforms::TransformsConfig`], the enum to register with (add a variant) for configuring your own transform.
+//! * [`transforms::TransformConfig`], the trait to implement for configuring your own transform.
 
 // Accidentally printing would break json log output
 #![deny(clippy::print_stdout)]
