@@ -173,11 +173,14 @@ impl CassandraDecoder {
         Ok(compressed)
     }
 
-    fn decode_frame(&mut self, src: &mut BytesMut, frame_len: usize) -> Result<Vec<Message>> {
-        let version: Version = self.version.load(Ordering::Relaxed).into();
-        let compression: Compression = self.compression.load(Ordering::Relaxed).into();
-        let handshake_complete = self.handshake_complete.load(Ordering::Relaxed);
-
+    fn decode_frame(
+        &mut self,
+        src: &mut BytesMut,
+        frame_len: usize,
+        version: Version,
+        compression: Compression,
+        handshake_complete: bool,
+    ) -> Result<Vec<Message>> {
         match (version, handshake_complete) {
             (Version::V5, true) => match compression {
                 Compression::None => {
@@ -275,7 +278,7 @@ impl CassandraDecoder {
                     bytes.freeze(),
                     crate::message::ProtocolType::Cassandra {
                         compression: if compressed {
-                            self.compression.load(Ordering::Relaxed).into()
+                            compression
                         } else {
                             Compression::None
                         },
@@ -289,11 +292,11 @@ impl CassandraDecoder {
 
     fn check_size(
         &self,
+        src: &BytesMut,
         version: Version,
         compression: Compression,
-        src: &BytesMut,
+        handshake_complete: bool,
     ) -> Result<usize, CheckFrameSizeError> {
-        let handshake_complete = self.handshake_complete.load(Ordering::Relaxed);
         match (version, handshake_complete) {
             (Version::V5, true) => match compression {
                 Compression::None => {
@@ -374,13 +377,16 @@ impl Decoder for CassandraDecoder {
     type Error = CodecReadError;
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, CodecReadError> {
-        loop {
-            let version: Version = self.version.load(Ordering::Relaxed).into();
-            let compression: Compression = self.compression.load(Ordering::Relaxed).into();
+        let version: Version = self.version.load(Ordering::Relaxed).into();
+        let compression: Compression = self.compression.load(Ordering::Relaxed).into();
+        let handshake_complete = self.handshake_complete.load(Ordering::Relaxed);
 
-            match self.check_size(version, compression, src) {
+        loop {
+            match self.check_size(src, version, compression, handshake_complete) {
                 Ok(frame_len) => {
-                    let mut messages = self.decode_frame(src, frame_len).unwrap(); // TODO
+                    let mut messages = self
+                        .decode_frame(src, frame_len, version, compression, handshake_complete)
+                        .unwrap(); // TODO
 
                     for message in messages.iter_mut() {
                         if let Ok(Metadata::Cassandra(CassandraMetadata {
@@ -538,9 +544,12 @@ impl Encoder<Messages> for CassandraEncoder {
         item: Messages,
         dst: &mut BytesMut,
     ) -> std::result::Result<(), Self::Error> {
+        let version: Version = self.version.load(Ordering::Relaxed).into();
+        let handshake_complete = self.handshake_complete.load(Ordering::Relaxed);
+
         for m in item {
             let start = dst.len();
-            self.encode_frame(dst, m)?;
+            self.encode_frame(dst, m, version, handshake_complete)?;
             tracing::debug!(
                 "{}: outgoing cassandra message:\n{}",
                 self.direction,
@@ -552,9 +561,13 @@ impl Encoder<Messages> for CassandraEncoder {
 }
 
 impl CassandraEncoder {
-    fn encode_frame(&mut self, dst: &mut BytesMut, m: Message) -> Result<()> {
-        let version: Version = self.version.load(Ordering::Relaxed).into();
-        let handshake_complete = self.handshake_complete.load(Ordering::Relaxed);
+    fn encode_frame(
+        &mut self,
+        dst: &mut BytesMut,
+        m: Message,
+        version: Version,
+        handshake_complete: bool,
+    ) -> Result<()> {
         match (version, handshake_complete) {
             (Version::V5, true) => {
                 // write envelope header with dummy values for those we cant calculate till after we write the message
