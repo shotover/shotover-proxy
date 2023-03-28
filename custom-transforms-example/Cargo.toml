@@ -9,14 +9,14 @@ license = "Apache-2.0"
 
 [dependencies]
 shotover = { path = "../shotover" }
-anyhow = "1.0"
-clap = "4.0.4"
-serde = "1.0"
-async-trait = "0.1.30"
-tracing = "0.1"
-typetag = "0.2.6"
+clap = "4.0.4" # TODO: this will get removed later anyway
+anyhow.workspace = true
+serde.workspace = true
+async-trait.workspace = true
+tracing.workspace = true
+typetag.workspace = true
 
 [dev-dependencies]
-tokio = "1.25.0"
 test-helpers = {path = "../test-helpers"}
-redis = "0.22.0"
+tokio.workspace = true
+redis.workspace = true
