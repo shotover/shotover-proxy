@@ -26,7 +26,7 @@ async fn test_shotover_responds_sigterm() {
         events.contains(
             &EventMatcher::new()
                 .with_level(Level::Info)
-                .with_target("shotover_proxy::runner")
+                .with_target("shotover::runner")
                 .with_message("received SIGTERM"),
         );
     }
@@ -45,7 +45,7 @@ async fn test_shotover_responds_sigint() {
     events.contains(
         &EventMatcher::new()
             .with_level(Level::Info)
-            .with_target("shotover_proxy::runner")
+            .with_target("shotover::runner")
             .with_message("received SIGINT"),
     );
 }
@@ -58,7 +58,7 @@ async fn test_shotover_shutdown_when_invalid_topology_non_terminating_last() {
     )
     .assert_fails_to_start(&[EventMatcher::new()
         .with_level(Level::Error)
-        .with_target("shotover_proxy::runner")
+        .with_target("shotover::runner")
         .with_message(
             "Topology errors
 redis_chain:
@@ -76,7 +76,7 @@ async fn test_shotover_shutdown_when_invalid_topology_terminating_not_last() {
     )
     .assert_fails_to_start(&[EventMatcher::new()
         .with_level(Level::Error)
-        .with_target("shotover_proxy::runner")
+        .with_target("shotover::runner")
         .with_message("Topology errors
 redis_chain:
   Terminating transform \"NullSink\" is not last in chain. Terminating transform must be last in chain.
@@ -92,7 +92,7 @@ async fn test_shotover_shutdown_when_topology_invalid_topology_subchains() {
     ).assert_fails_to_start(
         &[
             EventMatcher::new().with_level(Level::Error)
-                .with_target("shotover_proxy::runner")
+                .with_target("shotover::runner")
                 .with_message(r#"Topology errors
 a_first_chain:
   Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
@@ -111,7 +111,7 @@ b_second_chain:
           Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
 "#),
             EventMatcher::new().with_level(Level::Warn)
-                .with_target("shotover_proxy::transforms::distributed::tuneable_consistency_scatter")
+                .with_target("shotover::transforms::distributed::tuneable_consistency_scatter")
                 .with_message("Using this transform is considered unstable - Does not work with REDIS pipelines")
                 .with_count(Count::Times(2)),
             // TODO: Investigate these
@@ -119,7 +119,7 @@ b_second_chain:
                 .with_message("failed response Couldn't send message to wrapped chain SendError(BufferedChainMessages { local_addr: 127.0.0.1:10000, messages: [], flush: true, return_chan: Some(Sender { inner: Some(Inner { state: State { is_complete: false, is_closed: false, is_rx_task_set: false, is_tx_task_set: false } }) }) })")
                 .with_count(Count::Any),
             EventMatcher::new().with_level(Level::Error)
-                .with_target("shotover_proxy::transforms::distributed::tuneable_consistency_scatter")
+                .with_target("shotover::transforms::distributed::tuneable_consistency_scatter")
                 .with_message("failed response channel closed")
                 .with_count(Count::Any),
         ],

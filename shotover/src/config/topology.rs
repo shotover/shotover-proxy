@@ -507,7 +507,9 @@ redis_chain:
     async fn test_validate_chain_multiple_subchains() {
         let (_sender, trigger_shutdown_rx) = watch::channel::<bool>(false);
 
-        let topology = Topology::from_file("tests/test-configs/invalid_subchains.yaml").unwrap();
+        let topology =
+            Topology::from_file("../shotover-proxy/tests/test-configs/invalid_subchains.yaml")
+                .unwrap();
         let error = topology
             .run_chains(trigger_shutdown_rx)
             .await

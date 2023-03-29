@@ -16,7 +16,7 @@ pub mod basic_driver_tests;
 fn invalid_frame_event() -> EventMatcher {
     EventMatcher::new()
         .with_level(Level::Warn)
-        .with_target("shotover_proxy::server")
+        .with_target("shotover::server")
         .with_message(
             r#"failed to decode message: Error decoding redis frame
 
@@ -63,7 +63,7 @@ async fn passthrough_redis_down() {
         .shutdown_and_then_consume_events(&[
             EventMatcher::new()
                 .with_level(Level::Error)
-                .with_target("shotover_proxy::server")
+                .with_target("shotover::server")
                 .with_message(
                     r#"connection was unexpectedly terminated
 
@@ -175,7 +175,7 @@ async fn multi() {
     shotover
         .shutdown_and_then_consume_events(&[EventMatcher::new()
             .with_level(Level::Error)
-            .with_target("shotover_proxy::transforms::chain")
+            .with_target("shotover::transforms::chain")
             .with_message(
                 r#"Internal error in buffered chain: RedisTimestampTagger transform failed
 
@@ -205,11 +205,11 @@ async fn cluster_auth() {
         .shutdown_and_then_consume_events(&[
             EventMatcher::new()
                 .with_level(Level::Warn)
-                .with_target("shotover_proxy::transforms::redis::sink_cluster")
+                .with_target("shotover::transforms::redis::sink_cluster")
                 .with_message("failed to build connections: Upstream(BadCredentials)"),
             EventMatcher::new()
                 .with_level(Level::Warn)
-                .with_target("shotover_proxy::transforms::redis::sink_cluster")
+                .with_target("shotover::transforms::redis::sink_cluster")
                 .with_message("failed to build connections: Upstream(NotAuthorized)"),
         ])
         .await;
@@ -342,7 +342,7 @@ async fn cluster_dr() {
     shotover
         .shutdown_and_then_consume_events(&[EventMatcher::new()
             .with_level(Level::Error)
-            .with_target("shotover_proxy::transforms::filter")
+            .with_target("shotover::transforms::filter")
             .with_message("The current filter transform implementation does not obey the current transform invariants. see https://github.com/shotover/shotover-proxy/issues/499")
         ])
         .await;

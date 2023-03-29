@@ -3,94 +3,48 @@ name = "shotover-proxy"
 version = "0.1.9"
 authors = ["Ben <ben@instaclustr.com>"]
 edition = "2021"
-rust-version = "1.56"
 license = "Apache-2.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
-[features]
-# Include WIP alpha transforms in the public API
-alpha-transforms = []
-cassandra-cpp-driver-tests = ["test-helpers/cassandra-cpp-driver-tests"]
-
 [dependencies]
-pretty-hex = "0.3.0"
-hex = "0.4.3"
-tokio.workspace = true
-tokio-util = { version = "0.7.7" }
-tokio-stream = "0.1.2"
-bytes.workspace = true
-bytes-utils = "0.1.1"
-futures = "0.3"
-async-trait = "0.1.30"
-clap = { version = "4.0.4", features = ["cargo", "derive"] }
-derivative = "2.1.1"
-itertools.workspace = true
-rand = { version = "0.8.4", features = ["small_rng"] }
-rand_distr = "0.4.1"
-cached = "0.42"
-tokio-openssl.workspace = true
-openssl.workspace = true
-async-recursion = "1.0"
-governor = { version = "0.5.0", default-features = false, features = ["std", "jitter", "quanta"] }
-nonzero_ext = "0.3.0"
-version-compare = "0.1"
-split-iter = "0.1.0"
-
-# Error handling
-thiserror = "1.0"
 anyhow.workspace = true
-backtrace = "0.3.66"
-
-# Parsers
-cql3-parser = "0.3.2"
-serde.workspace = true
-serde_json.workspace = true
-serde_yaml.workspace = true
-bincode = "1.3.1"
-num = { version = "0.4.0", features = ["serde"] }
-uuid.workspace = true
-bigdecimal = {version ="0.3.0", features = ["serde"] }
-base64 = "0.21.0"
-
-#Observability
-metrics = "0.20.0"
-metrics-exporter-prometheus = "0.11.0"
+tokio.workspace = true
+clap.workspace = true
+shotover = { path = "../shotover" }
 tracing.workspace = true
-tracing-subscriber.workspace = true
-tracing-appender = "0.2.0"
-hyper = { version = "0.14.14", features = ["server"] }
-halfbrown = "0.1.11"
-
-# Transform dependencies
-redis-protocol = { version = "4.0.1", features = ["decode-mut"] }
-cassandra-protocol.workspace = true
-crc16 = "0.4.0"
-ordered-float = { version = "3.0.0", features = ["serde"] }
-
-#Crypto
-rusoto_kms = "0.48.0"
-rusoto_signature = "0.48.0"
-csv = "1.2.0"
-strum_macros = "0.24"
-chacha20poly1305 = { version = "0.10.0", features = ["std"] }
-generic-array = { version = "0.14", features = ["serde"] }
-dyn-clone = "1.0.10"
-kafka-protocol = "0.6.0"
-typetag = "0.2.5"
 
 [dev-dependencies]
 criterion = { git = "https://github.com/shotover/criterion.rs", branch = "0.4.0-bench_with_input_fn", features = ["async_tokio"] }
-redis.workspace = true
 serial_test = "1.0.0"
+rstest = "0.17.0"
 cassandra-cpp = { version = "2.0.0" }
 test-helpers = { path = "../test-helpers", features = ["cassandra-cpp-driver-tests"] }
-hex-literal = "0.3.3"
+rdkafka = { version = "0.29", features = ["cmake-build"] }
+redis.workspace = true
+chacha20poly1305.workspace = true
+serde.workspace = true
+csv.workspace = true
+uuid.workspace = true
+itertools.workspace = true
 nix.workspace = true
 cdrs-tokio.workspace = true
-rstest = "0.17.0"
-rdkafka = { version = "0.29", features = ["cmake-build"] }
+redis-protocol.workspace = true
+tokio-util.workspace = true
+bincode.workspace = true
+futures.workspace = true
+hex.workspace = true
+hex-literal.workspace = true
+cassandra-protocol.workspace = true
+bytes.workspace = true
+rand.workspace = true
+rand_distr.workspace = true
 
 [[bench]]
 name = "benches"
 harness = false
+
+[features]
+# Include WIP alpha transforms in the public API
+alpha-transforms = ["shotover/alpha-transforms"]
+cassandra-cpp-driver-tests = ["test-helpers/cassandra-cpp-driver-tests"]

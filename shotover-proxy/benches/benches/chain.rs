@@ -3,21 +3,21 @@ use cassandra_protocol::compression::Compression;
 use cassandra_protocol::{consistency::Consistency, frame::Version, query::QueryParams};
 use criterion::{criterion_group, BatchSize, Criterion};
 use hex_literal::hex;
-use shotover_proxy::frame::cassandra::{parse_statement_single, Tracing};
-use shotover_proxy::frame::RedisFrame;
-use shotover_proxy::frame::{CassandraFrame, CassandraOperation, Frame};
-use shotover_proxy::message::{Message, ProtocolType, QueryType};
-use shotover_proxy::transforms::cassandra::peers_rewrite::CassandraPeersRewrite;
-use shotover_proxy::transforms::chain::{TransformChain, TransformChainBuilder};
-use shotover_proxy::transforms::debug::returner::{DebugReturner, Response};
-use shotover_proxy::transforms::filter::QueryTypeFilter;
-use shotover_proxy::transforms::null::NullSink;
+use shotover::frame::cassandra::{parse_statement_single, Tracing};
+use shotover::frame::RedisFrame;
+use shotover::frame::{CassandraFrame, CassandraOperation, Frame};
+use shotover::message::{Message, ProtocolType, QueryType};
+use shotover::transforms::cassandra::peers_rewrite::CassandraPeersRewrite;
+use shotover::transforms::chain::{TransformChain, TransformChainBuilder};
+use shotover::transforms::debug::returner::{DebugReturner, Response};
+use shotover::transforms::filter::QueryTypeFilter;
+use shotover::transforms::null::NullSink;
 #[cfg(feature = "alpha-transforms")]
-use shotover_proxy::transforms::protect::{KeyManagerConfig, ProtectConfig};
-use shotover_proxy::transforms::redis::cluster_ports_rewrite::RedisClusterPortsRewrite;
-use shotover_proxy::transforms::redis::timestamp_tagging::RedisTimestampTagger;
-use shotover_proxy::transforms::throttling::RequestThrottlingConfig;
-use shotover_proxy::transforms::{TransformConfig, Wrapper};
+use shotover::transforms::protect::{KeyManagerConfig, ProtectConfig};
+use shotover::transforms::redis::cluster_ports_rewrite::RedisClusterPortsRewrite;
+use shotover::transforms::redis::timestamp_tagging::RedisTimestampTagger;
+use shotover::transforms::throttling::RequestThrottlingConfig;
+use shotover::transforms::{TransformConfig, Wrapper};
 
 fn criterion_benchmark(c: &mut Criterion) {
     let rt = tokio::runtime::Runtime::new().unwrap();
