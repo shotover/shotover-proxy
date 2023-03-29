@@ -4,7 +4,7 @@ use crate::error::ChainResponse;
 use crate::frame::cassandra::{CassandraMetadata, Tracing};
 use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame};
 use crate::message::{Message, Messages, Metadata};
-use crate::tls::{TlsConnector, TlsConnectorConfig};
+use crate::tlsls::{TlsConnector, TlsConnectorConfig};
 use crate::transforms::cassandra::connection::{CassandraConnection, Response, ResponseError};
 use crate::transforms::{Transform, TransformBuilder, TransformConfig, Transforms, Wrapper};
 use anyhow::{anyhow, Result};

@@ -2,7 +2,7 @@ use crate::codec::cassandra::CassandraCodecBuilder;
 use crate::codec::{CodecBuilder, Direction};
 use crate::frame::Frame;
 use crate::message::{Message, Messages};
-use crate::tls::{TlsConnector, ToHostname};
+use crate::tlsls::{TlsConnector, ToHostname};
 use crate::transforms::cassandra::connection::CassandraConnection;
 use anyhow::{anyhow, Result};
 use cassandra_protocol::frame::Version;
@@ -61,11 +61,13 @@ impl CassandraNode {
     }
 }
 
-#[derive(Debug)]
+#[derive(Derivative)]
+#[derivative(Debug)]
 pub struct ConnectionFactory {
     connect_timeout: Duration,
     init_handshake: Vec<Message>,
     use_message: Option<Message>,
+    #[derivative(Debug = "ignore")]
     tls: Option<TlsConnector>,
     pushed_messages_tx: Option<mpsc::UnboundedSender<Messages>>,
 }

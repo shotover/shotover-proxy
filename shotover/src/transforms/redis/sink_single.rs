@@ -5,7 +5,7 @@ use crate::codec::{
 use crate::frame::{Frame, RedisFrame};
 use crate::message::{Message, Messages};
 use crate::tcp;
-use crate::tls::{AsyncStream, TlsConnector, TlsConnectorConfig};
+use crate::tlsls::{AsyncStream, TlsConnector, TlsConnectorConfig};
 use crate::transforms::{
     ChainResponse, Transform, TransformBuilder, TransformConfig, Transforms, Wrapper,
 };

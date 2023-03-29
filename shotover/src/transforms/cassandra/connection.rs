@@ -4,7 +4,7 @@ use crate::frame::cassandra::CassandraMetadata;
 use crate::frame::{CassandraFrame, Frame};
 use crate::message::{Message, Metadata};
 use crate::tcp;
-use crate::tls::{TlsConnector, ToHostname};
+use crate::tlsls::{TlsConnector, ToHostname};
 use crate::transforms::Messages;
 use anyhow::{anyhow, Result};
 use cassandra_protocol::frame::{Opcode, Version};

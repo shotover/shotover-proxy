@@ -79,3 +79,7 @@ chacha20poly1305 = { version = "0.10.0", features = ["std"] }
 generic-array = { version = "0.14", features = ["serde"] }
 dyn-clone = "1.0.10"
 kafka-protocol = "0.6.0"
+rustls = { version = "0.21.0", features = ["dangerous_configuration"] }
+tokio-rustls = "0.24"
+rustls-pemfile = "1.0.2"
+rustls-webpki = "0.100.1"
