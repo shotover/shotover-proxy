@@ -1,3 +1,5 @@
+//! Structures to represent an event created by tokio tracing
+
 use anyhow::Context;
 use anyhow::Result;
 use itertools::Itertools;
@@ -6,34 +8,29 @@ use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
+/// Represents an event created by tokio tracing.
+///
+/// It is not possible to construct one directly from a tracing event.
+/// Instead its expected that they are returned by one of the methods on tokio-bin-process which retrives them by parsing tracings json output.
 #[derive(serde::Deserialize, Debug, Clone, PartialEq)]
 pub struct Event {
+    /// The timestamp of the event
     pub timestamp: String,
+    /// The level of the event
     pub level: Level,
+    /// The target of the event, this is usually the module name of the code that triggered the event.
     pub target: String,
+    /// Contains the message and other fields included in the event.
     pub fields: Fields,
+    /// The last span that was entered before the event was triggered.
     #[serde(default)]
     pub span: HashMap<String, JsonValue>,
+    /// Every span that was active while the event was triggered.
     #[serde(default)]
     pub spans: Vec<HashMap<String, JsonValue>>,
 }
 
-impl Event {
-    pub fn new(level: Level, target: &str, message: &str) -> Event {
-        Event {
-            timestamp: "".to_owned(),
-            level,
-            target: target.to_owned(),
-            fields: Fields {
-                message: message.to_owned(),
-                fields: HashMap::new(),
-            },
-            span: HashMap::new(),
-            spans: vec![],
-        }
-    }
-}
-
+/// The level of the event
 #[derive(serde::Deserialize, Debug, Clone, PartialEq)]
 pub enum Level {
     #[serde(rename = "ERROR")]
@@ -60,10 +57,16 @@ impl Display for Level {
     }
 }
 
+/// Contains the message and other fields included in the event.
 #[derive(serde::Deserialize, Debug, Clone, PartialEq)]
 pub struct Fields {
+    /// The message of the event.
+    /// Some events dont have a message in which case this is an empty String.
     #[serde(default)]
     pub message: String,
+    /// All fields other than the message.
+    /// For an event created by: `tracing::info!("message", some_field=4)`
+    /// This would contain the HashMap: `{"some_field", JsonValue::Number(4)}`
     #[serde(flatten)]
     pub fields: HashMap<String, JsonValue>,
 }
@@ -167,6 +170,7 @@ impl<'a> Display for QuotelessDisplay<'a> {
 }
 
 impl Event {
+    /// Constructs an Event by parsing a single event from tokio tracing's json output
     pub fn from_json_str(s: &str) -> Result<Self> {
         serde_json::from_str(s).context(format!("Failed to parse json: {s}"))
     }
