@@ -222,7 +222,7 @@ async fn cluster_single_rack_v4(#[case] driver: CassandraDriver) {
             .shutdown_and_then_consume_events(&[
                 EventMatcher::new()
                     .with_level(Level::Error)
-                    .with_target("shotover_proxy::server")
+                    .with_target("shotover::server")
                     .with_message(
                         r#"connection was unexpectedly terminated
 
@@ -235,7 +235,7 @@ Caused by:
                     .with_count(Count::Any),
                 EventMatcher::new()
                     .with_level(Level::Warn)
-                    .with_target("shotover_proxy::transforms::cassandra::sink_cluster")
+                    .with_target("shotover::transforms::cassandra::sink_cluster")
                     .with_message(
                         r#"A successful connection to a control node was made but attempts to connect to these nodes failed first:
 * 172.16.1.3:9044:

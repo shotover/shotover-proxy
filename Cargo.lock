@@ -3054,7 +3054,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "43b2853a4d09f215c24cc5489c992ce46052d359b5109343cbafbf26bc62f8a3"
 
 [[package]]
-name = "shotover-proxy"
+name = "shotover"
 version = "0.1.9"
 dependencies = [
  "anyhow",
@@ -3067,14 +3067,11 @@ dependencies = [
  "bytes",
  "bytes-utils",
  "cached",
- "cassandra-cpp",
  "cassandra-protocol",
- "cdrs-tokio",
  "chacha20poly1305",
  "clap 4.1.11",
  "cql3-parser",
  "crc16",
- "criterion",
  "csv",
  "derivative",
  "dyn-clone",
@@ -3089,7 +3086,6 @@ dependencies = [
  "kafka-protocol",
  "metrics",
  "metrics-exporter-prometheus",
- "nix",
  "nonzero_ext",
  "num",
  "openssl",
@@ -3097,19 +3093,14 @@ dependencies = [
  "pretty-hex",
  "rand",
  "rand_distr",
- "rdkafka",
- "redis",
  "redis-protocol",
- "rstest",
  "rusoto_kms",
  "rusoto_signature",
  "serde",
  "serde_json",
  "serde_yaml",
- "serial_test",
  "split-iter",
  "strum_macros 0.24.3",
- "test-helpers",
  "thiserror",
  "tokio",
  "tokio-openssl",
@@ -3121,6 +3112,41 @@ dependencies = [
  "typetag",
  "uuid",
  "version-compare",
+]
+
+[[package]]
+name = "shotover-proxy"
+version = "0.1.9"
+dependencies = [
+ "anyhow",
+ "bincode",
+ "bytes",
+ "cassandra-cpp",
+ "cassandra-protocol",
+ "cdrs-tokio",
+ "chacha20poly1305",
+ "clap 4.1.11",
+ "criterion",
+ "csv",
+ "futures",
+ "hex",
+ "hex-literal",
+ "itertools",
+ "nix",
+ "rand",
+ "rand_distr",
+ "rdkafka",
+ "redis",
+ "redis-protocol",
+ "rstest",
+ "serde",
+ "serial_test",
+ "shotover",
+ "test-helpers",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "uuid",
 ]
 
 [[package]]

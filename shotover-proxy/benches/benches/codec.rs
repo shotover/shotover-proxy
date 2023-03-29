@@ -4,12 +4,12 @@ use cassandra_protocol::frame::message_result::{
 };
 use cassandra_protocol::frame::Version;
 use criterion::{black_box, criterion_group, BatchSize, Criterion};
-use shotover_proxy::codec::cassandra::CassandraCodecBuilder;
-use shotover_proxy::codec::{CodecBuilder, Direction};
-use shotover_proxy::frame::cassandra::{parse_statement_single, Tracing};
-use shotover_proxy::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame};
-use shotover_proxy::message::Message;
-use shotover_proxy::message_value::{IntSize, MessageValue};
+use shotover::codec::cassandra::CassandraCodecBuilder;
+use shotover::codec::{CodecBuilder, Direction};
+use shotover::frame::cassandra::{parse_statement_single, Tracing};
+use shotover::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame};
+use shotover::message::Message;
+use shotover::message_value::{IntSize, MessageValue};
 use tokio_util::codec::Encoder;
 
 fn criterion_benchmark(c: &mut Criterion) {
