@@ -116,7 +116,7 @@ impl Shotover {
         })
     }
 
-    pub fn start_observability_interface(
+    fn start_observability_interface(
         runtime: &Runtime,
         config: &Config,
         tracing: &TracingState,
@@ -132,6 +132,8 @@ impl Shotover {
         Ok(())
     }
 
+    /// Begins running shotover, permanently handing control of the appplication over to shotover.
+    /// As such this method never returns.
     pub fn run_block(self) -> ! {
         let (trigger_shutdown_tx, trigger_shutdown_rx) = watch::channel(false);
 
