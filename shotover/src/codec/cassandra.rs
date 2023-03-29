@@ -386,7 +386,7 @@ impl Decoder for CassandraDecoder {
                 Ok(frame_len) => {
                     let mut messages = self
                         .decode_frame(src, frame_len, version, compression, handshake_complete)
-                        .unwrap(); // TODO
+                        .map_err(CodecReadError::Parser)?;
 
                     for message in messages.iter_mut() {
                         if let Ok(Metadata::Cassandra(CassandraMetadata {
@@ -579,20 +579,24 @@ impl CassandraEncoder {
                 self.encode_envelope(dst, m)?;
 
                 //measure length of message and calculate crc24 and overwrite frame header values
-                let mut payload_len = (dst.len() - payload_start) as u64;
+                let mut payload_len = dst.len() - payload_start;
 
                 if true {
                     // TODO if self_contained
                     payload_len |= 1 << 17;
                 }
 
-                put3b(&mut dst[header_start..], payload_len as i32);
-                put3b(
-                    &mut dst[header_start + 3..],
-                    cassandra_protocol::crc::crc24(&payload_len.to_le_bytes()[..3]),
+                // add header length & header crc
+                let payload_len = &payload_len.to_le_bytes()[..3];
+                dst[header_start..header_start + 3].copy_from_slice(payload_len);
+                dst[header_start + 3..header_start + 6].copy_from_slice(
+                    &cassandra_protocol::crc::crc24(payload_len).to_le_bytes()[..3],
                 );
 
-                add_trailer(dst, payload_start);
+                // add payload crc
+                dst.extend_from_slice(
+                    &cassandra_protocol::crc::crc32(&dst[payload_start..]).to_le_bytes(),
+                );
 
                 Ok(())
             }
@@ -657,21 +661,6 @@ impl CassandraEncoder {
         }
         Ok(())
     }
-}
-
-fn put3b(buffer: &mut [u8], value: i32) {
-    let value = value.to_le_bytes();
-    buffer[0] = value[0];
-    buffer[1] = value[1];
-    buffer[2] = value[2];
-}
-
-fn add_trailer(buffer: &mut BytesMut, payload_start: usize) {
-    buffer.reserve(4);
-
-    let crc = cassandra_protocol::crc::crc32(&buffer[payload_start..]).to_le_bytes();
-
-    buffer.extend_from_slice(&[crc[0], crc[1], crc[2], crc[3]]);
 }
 
 #[cfg(test)]

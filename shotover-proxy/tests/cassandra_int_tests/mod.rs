@@ -872,7 +872,7 @@ async fn test_protocol_v5(#[case] driver: CassandraDriver) {
         DockerCompose::new("example-configs/cassandra-passthrough/docker-compose.yaml");
 
     let shotover = ShotoverProcessBuilder::new_with_topology(
-        "example-configs/cassandra-passthrough/topology.yaml",
+        "example-configs/cassandra-passthrough/topology-encode.yaml",
     )
     .start()
     .await;
