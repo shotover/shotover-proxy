@@ -1,9 +1,9 @@
 use self::node_pool::{NodePoolBuilder, PreparedMetadata};
+use self::rewrite::{MessageRewriter, RewriteTableTy};
 use crate::error::ChainResponse;
-use crate::frame::cassandra::{parse_statement_single, CassandraMetadata, Tracing};
+use crate::frame::cassandra::{CassandraMetadata, Tracing};
 use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame};
 use crate::message::{Message, Messages, Metadata};
-use crate::message_value::{IntSize, MessageValue};
 use crate::tls::{TlsConnector, TlsConnectorConfig};
 use crate::transforms::cassandra::connection::{CassandraConnection, Response};
 use crate::transforms::{Transform, TransformBuilder, TransformConfig, Transforms, Wrapper};
@@ -12,33 +12,27 @@ use async_trait::async_trait;
 use cassandra_protocol::events::ServerEvent;
 use cassandra_protocol::frame::message_error::{ErrorBody, ErrorType, UnpreparedError};
 use cassandra_protocol::frame::message_execute::BodyReqExecuteOwned;
-use cassandra_protocol::frame::message_result::BodyResResultPrepared;
 use cassandra_protocol::frame::{Opcode, Version};
 use cassandra_protocol::types::CBytesShort;
 use cql3_parser::cassandra_statement::CassandraStatement;
-use cql3_parser::common::{
-    FQNameRef, Identifier, IdentifierRef, Operand, RelationElement, RelationOperator,
-};
-use cql3_parser::select::{Select, SelectElement};
-use futures::future::try_join_all;
+use cql3_parser::common::IdentifierRef;
 use futures::stream::FuturesOrdered;
 use futures::StreamExt;
-use itertools::Itertools;
 use metrics::{register_counter, Counter};
 use node::{CassandraNode, ConnectionFactory};
 use node_pool::{GetReplicaErr, KeyspaceMetadata, NodePool};
 use rand::prelude::*;
 use serde::Deserialize;
 use std::collections::HashMap;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::net::SocketAddr;
 use std::time::Duration;
 use tokio::sync::{mpsc, oneshot, watch};
 use topology::{create_topology_task, TaskConnectionInfo};
 use uuid::Uuid;
-use version_compare::Cmp;
 
 pub mod node;
 mod node_pool;
+mod rewrite;
 mod routing_key;
 #[cfg(test)]
 mod test_router;
@@ -53,18 +47,6 @@ const SYSTEM_KEYSPACES: [IdentifierRef<'static>; 3] = [
     IdentifierRef::Quoted("system_schema"),
     IdentifierRef::Quoted("system_distributed"),
 ];
-const LOCAL_TABLE: FQNameRef = FQNameRef {
-    keyspace: Some(IdentifierRef::Quoted("system")),
-    name: IdentifierRef::Quoted("local"),
-};
-const PEERS_TABLE: FQNameRef = FQNameRef {
-    keyspace: Some(IdentifierRef::Quoted("system")),
-    name: IdentifierRef::Quoted("peers"),
-};
-const PEERS_V2_TABLE: FQNameRef = FQNameRef {
-    keyspace: Some(IdentifierRef::Quoted("system")),
-    name: IdentifierRef::Quoted("peers_v2"),
-};
 
 #[derive(Deserialize, Debug)]
 pub struct CassandraSinkClusterConfig {
@@ -113,10 +95,9 @@ impl TransformConfig for CassandraSinkClusterConfig {
 pub struct CassandraSinkClusterBuilder {
     contact_points: Vec<String>,
     connection_factory: ConnectionFactory,
-    shotover_peers: Vec<ShotoverNode>,
     failed_requests: Counter,
     read_timeout: Option<Duration>,
-    local_shotover_node: ShotoverNode,
+    message_rewriter: MessageRewriter,
     nodes_rx: watch::Receiver<Vec<CassandraNode>>,
     keyspaces_rx: KeyspaceChanRx,
     task_handshake_tx: mpsc::Sender<TaskConnectionInfo>,
@@ -150,13 +131,17 @@ impl CassandraSinkClusterBuilder {
             local_shotover_node.data_center.clone(),
         );
 
+        let message_rewriter = MessageRewriter {
+            shotover_peers,
+            local_shotover_node,
+        };
+
         Self {
             contact_points,
             connection_factory: ConnectionFactory::new(connect_timeout, tls),
-            shotover_peers,
+            message_rewriter,
             failed_requests,
             read_timeout: receive_timeout,
-            local_shotover_node,
             nodes_rx: local_nodes_rx,
             keyspaces_rx,
             task_handshake_tx,
@@ -169,7 +154,7 @@ impl TransformBuilder for CassandraSinkClusterBuilder {
     fn build(&self) -> crate::transforms::Transforms {
         Transforms::CassandraSinkCluster(Box::new(CassandraSinkCluster {
             contact_points: self.contact_points.clone(),
-            shotover_peers: self.shotover_peers.clone(),
+            message_rewriter: self.message_rewriter.clone(),
             control_connection: None,
             connection_factory: self.connection_factory.new_with_same_config(),
             control_connection_address: None,
@@ -177,7 +162,6 @@ impl TransformBuilder for CassandraSinkClusterBuilder {
             version: None,
             failed_requests: self.failed_requests.clone(),
             read_timeout: self.read_timeout,
-            local_shotover_node: self.local_shotover_node.clone(),
             pool: self.pool.build(),
             // Because the self.nodes_rx is always copied from the original nodes_rx created before any node lists were sent,
             // once a single node list has been sent all new connections will immediately recognize it as a change.
@@ -210,7 +194,7 @@ pub struct CassandraSinkCluster {
 
     connection_factory: ConnectionFactory,
 
-    shotover_peers: Vec<ShotoverNode>,
+    message_rewriter: MessageRewriter,
     // Used for any messages that require a consistent destination, this includes:
     // * The initial handshake
     // * DDL queries
@@ -222,7 +206,6 @@ pub struct CassandraSinkCluster {
     version: Option<Version>,
     failed_requests: Counter,
     read_timeout: Option<Duration>,
-    local_shotover_node: ShotoverNode,
     /// The nodes list is populated as soon as nodes_rx makes one available, but once a confirmed succesful handshake is reached
     /// we await nodes_rx to ensure that we have a nodes list from that point forward.
     /// Addditionally any changes to nodes_rx is observed and copied over.
@@ -231,20 +214,6 @@ pub struct CassandraSinkCluster {
     keyspaces_rx: KeyspaceChanRx,
     rng: SmallRng,
     task_handshake_tx: mpsc::Sender<TaskConnectionInfo>,
-}
-
-fn create_query(messages: &Messages, query: &str, version: Version) -> Result<Message> {
-    let stream_id = get_unused_stream_id(messages)?;
-    Ok(Message::from_frame(Frame::Cassandra(CassandraFrame {
-        version,
-        stream_id,
-        tracing: Tracing::Request(false),
-        warnings: vec![],
-        operation: CassandraOperation::Query {
-            query: Box::new(parse_statement_single(query)),
-            params: Box::default(),
-        },
-    })))
 }
 
 impl CassandraSinkCluster {
@@ -286,7 +255,7 @@ impl CassandraSinkCluster {
                     .any(|x| x.address == address && x.is_up)
                 {
                     let addresses = self.pool.get_shuffled_addresses_in_dc_rack(
-                        &self.local_shotover_node.rack,
+                        &self.message_rewriter.local_shotover_node.rack,
                         &mut self.rng,
                     );
                     self.create_control_connection(&addresses).await.map_err(|e|
@@ -300,62 +269,16 @@ impl CassandraSinkCluster {
             self.pool.update_keyspaces(&mut self.keyspaces_rx).await;
         }
 
-        let mut outgoing_index_offset = 0;
-        let tables_to_rewrite: Vec<TableToRewrite> = messages
-            .iter_mut()
-            .enumerate()
-            .filter_map(|(i, m)| {
-                let table = self.get_rewrite_table(m, i, outgoing_index_offset);
-                if let Some(table) = &table {
-                    outgoing_index_offset += table.ty.extra_messages_needed();
-                }
-                table
-            })
-            .collect();
-
-        // Insert the extra messages required by table rewrites.
-        // After this the incoming_index values are now invalid and the outgoing_index values should be used instead
-        for table_to_rewrite in tables_to_rewrite.iter().rev() {
-            match &table_to_rewrite.ty {
-                RewriteTableTy::Local => {
-                    let query = "SELECT rack, data_center, schema_version, tokens, release_version FROM system.peers";
-                    messages.insert(
-                        table_to_rewrite.incoming_index + 1,
-                        create_query(&messages, query, self.version.unwrap())?,
-                    );
-                }
-                RewriteTableTy::Peers => {
-                    let query = "SELECT rack, data_center, schema_version, tokens, release_version FROM system.peers";
-                    messages.insert(
-                        table_to_rewrite.incoming_index + 1,
-                        create_query(&messages, query, self.version.unwrap())?,
-                    );
-                    let query = "SELECT rack, data_center, schema_version, tokens, release_version FROM system.local";
-                    messages.insert(
-                        table_to_rewrite.incoming_index + 2,
-                        create_query(&messages, query, self.version.unwrap())?,
-                    );
-                }
-                RewriteTableTy::Prepare { destination_nodes } => {
-                    for i in 1..destination_nodes.len() {
-                        messages.insert(
-                            table_to_rewrite.incoming_index + i,
-                            messages[table_to_rewrite.incoming_index].clone(),
-                        );
-                    }
-
-                    // This is purely an optimization: To avoid opening these connections sequentially later on, we open them concurrently now.
-                    try_join_all(
-                        self.pool
-                            .nodes()
-                            .iter_mut()
-                            .filter(|x| destination_nodes.contains(&x.host_id))
-                            .map(|node| node.get_connection(&self.connection_factory)),
-                    )
-                    .await?;
-                }
-            }
-        }
+        // CAREFUL: indexes into messages are invalidated here
+        let tables_to_rewrite = self
+            .message_rewriter
+            .rewrite_requests(
+                &mut messages,
+                &self.connection_factory,
+                &mut self.pool,
+                self.version.unwrap(),
+            )
+            .await?;
 
         // Create the initial connection.
         // Messages will be sent through this connection until we have extracted the handshake.
@@ -368,7 +291,7 @@ impl CassandraSinkCluster {
                 points
             } else {
                 self.pool.get_shuffled_addresses_in_dc_rack(
-                    &self.local_shotover_node.rack,
+                    &self.message_rewriter.local_shotover_node.rack,
                     &mut self.rng,
                 )
             };
@@ -448,7 +371,7 @@ impl CassandraSinkCluster {
                     .pool
                     .get_replica_node_in_dc(
                         execute,
-                        &self.local_shotover_node.rack,
+                        &self.message_rewriter.local_shotover_node.rack,
                         self.version.unwrap(),
                         &mut self.rng,
                     )
@@ -460,7 +383,9 @@ impl CassandraSinkCluster {
                         .send(message)?,
                     Err(GetReplicaErr::NoReplicasFound | GetReplicaErr::NoKeyspaceMetadata) => self
                         .pool
-                        .get_round_robin_node_in_dc_rack(&self.local_shotover_node.rack)
+                        .get_round_robin_node_in_dc_rack(
+                            &self.message_rewriter.local_shotover_node.rack,
+                        )
                         .get_connection(&self.connection_factory)
                         .await?
                         .send(message)?,
@@ -493,7 +418,9 @@ impl CassandraSinkCluster {
             } else {
                 // otherwise just send to a random node
                 self.pool
-                    .get_round_robin_node_in_dc_rack(&self.local_shotover_node.rack)
+                    .get_round_robin_node_in_dc_rack(
+                        &self.message_rewriter.local_shotover_node.rack,
+                    )
                     .get_connection(&self.connection_factory)
                     .await?
                     .send(message)?
@@ -543,9 +470,9 @@ impl CassandraSinkCluster {
             }
         }
 
-        for table_to_rewrite in tables_to_rewrite {
-            self.rewrite_table(table_to_rewrite, &mut responses).await?;
-        }
+        self.message_rewriter
+            .rewrite_responses(tables_to_rewrite, &mut responses)
+            .await?;
 
         for response in responses.iter_mut() {
             if let Some((id, metadata)) = get_prepared_result_message(response) {
@@ -574,9 +501,10 @@ impl CassandraSinkCluster {
             // If we have to populate the local_nodes at this point then that means the control connection
             // may not have been made against a node in the configured data_center/rack.
             // Therefore we need to recreate the control connection to ensure that it is in the configured data_center/rack.
-            let addresses = self
-                .pool
-                .get_shuffled_addresses_in_dc_rack(&self.local_shotover_node.rack, &mut self.rng);
+            let addresses = self.pool.get_shuffled_addresses_in_dc_rack(
+                &self.message_rewriter.local_shotover_node.rack,
+                &mut self.rng,
+            );
             self.create_control_connection(&addresses)
                 .await
                 .map_err(|e| e.context("Failed to recreate control connection when initial connection was possibly against the wrong node"))?;
@@ -632,507 +560,6 @@ impl CassandraSinkCluster {
         ))
     }
 
-    /// Returns any information required to correctly rewrite the response.
-    /// Will also perform minor modifications to the query required for the rewrite.
-    fn get_rewrite_table(
-        &mut self,
-        request: &mut Message,
-        incoming_index: usize,
-        outgoing_index_offset: usize,
-    ) -> Option<TableToRewrite> {
-        if let Some(Frame::Cassandra(cassandra)) = request.frame() {
-            // No need to handle Batch as selects can only occur on Query
-            match &mut cassandra.operation {
-                CassandraOperation::Query { query, .. } => {
-                    if let CassandraStatement::Select(select) = query.as_mut() {
-                        let ty = if LOCAL_TABLE == select.table_name {
-                            RewriteTableTy::Local
-                        } else if PEERS_TABLE == select.table_name
-                            || PEERS_V2_TABLE == select.table_name
-                        {
-                            RewriteTableTy::Peers
-                        } else {
-                            return None;
-                        };
-
-                        let warnings = if Self::has_no_where_clause(&ty, select) {
-                            vec![]
-                        } else {
-                            select.where_clause.clear();
-                            vec![format!(
-                            "WHERE clause on the query was ignored. Shotover does not support WHERE clauses on queries against {}",
-                            select.table_name
-                        )]
-                        };
-
-                        return Some(TableToRewrite {
-                            incoming_index,
-                            outgoing_index: incoming_index + outgoing_index_offset,
-                            ty,
-                            warnings,
-                            selects: select.columns.clone(),
-                        });
-                    }
-                }
-                CassandraOperation::Prepare(_) => {
-                    return Some(TableToRewrite {
-                        incoming_index,
-                        outgoing_index: incoming_index + outgoing_index_offset,
-                        ty: RewriteTableTy::Prepare {
-                            destination_nodes: self
-                                .pool
-                                .nodes()
-                                .iter()
-                                .filter(|node| {
-                                    node.is_up && node.rack == self.local_shotover_node.rack
-                                })
-                                .map(|node| node.host_id)
-                                .collect(),
-                        },
-                        warnings: vec![],
-                        selects: vec![],
-                    });
-                }
-                _ => {}
-            }
-        }
-        None
-    }
-
-    fn has_no_where_clause(ty: &RewriteTableTy, select: &Select) -> bool {
-        select.where_clause.is_empty()
-            // Most drivers do `FROM system.local WHERE key = 'local'` when determining the topology.
-            // I'm not sure why they do that it seems to have no affect as there is only ever one row and its key is always 'local'.
-            // Maybe it was a workaround for an old version of cassandra that got copied around?
-            // To keep warning noise down we consider it as having no where clause.
-            || (ty == &RewriteTableTy::Local
-                && select.where_clause
-                    == [RelationElement {
-                        obj: Operand::Column(Identifier::Quoted("key".to_owned())),
-                        oper: RelationOperator::Equal,
-                        value: Operand::Const("'local'".to_owned()),
-                    }])
-    }
-
-    async fn rewrite_table(
-        &mut self,
-        table: TableToRewrite,
-        responses: &mut Vec<Message>,
-    ) -> Result<()> {
-        fn get_warnings(message: &mut Message) -> Vec<String> {
-            if let Some(Frame::Cassandra(frame)) = message.frame() {
-                frame.warnings.clone()
-            } else {
-                vec![]
-            }
-        }
-
-        fn remove_extra_message(
-            table: &TableToRewrite,
-            responses: &mut Vec<Message>,
-        ) -> Option<Message> {
-            if table.incoming_index + 1 < responses.len() {
-                Some(responses.remove(table.incoming_index + 1))
-            } else {
-                None
-            }
-        }
-
-        match &table.ty {
-            RewriteTableTy::Local => {
-                if let Some(mut peers_response) = remove_extra_message(&table, responses) {
-                    if let Some(local_response) = responses.get_mut(table.incoming_index) {
-                        // Include warnings from every message that gets combined into the final message + any extra warnings noted in the TableToRewrite
-                        let mut warnings = table.warnings.clone();
-                        warnings.extend(get_warnings(&mut peers_response));
-                        warnings.extend(get_warnings(local_response));
-
-                        self.rewrite_table_local(table, local_response, peers_response, warnings)
-                            .await?;
-                        local_response.invalidate_cache();
-                    }
-                }
-            }
-            RewriteTableTy::Peers => {
-                if let Some(mut peers_response) = remove_extra_message(&table, responses) {
-                    if let Some(mut local_response) = remove_extra_message(&table, responses) {
-                        if let Some(client_peers_response) = responses.get_mut(table.incoming_index)
-                        {
-                            // Include warnings from every message that gets combined into the final message + any extra warnings noted in the TableToRewrite
-                            let mut warnings = table.warnings.clone();
-                            warnings.extend(get_warnings(&mut peers_response));
-                            warnings.extend(get_warnings(&mut local_response));
-                            warnings.extend(get_warnings(client_peers_response));
-
-                            let mut nodes = match parse_system_nodes(peers_response) {
-                                Ok(x) => x,
-                                Err(MessageParseError::CassandraError(err)) => {
-                                    *client_peers_response = client_peers_response
-                                        .to_error_response(format!("{:?}", err.context("Shotover failed to generate system.peers, an error occured when an internal system.peers query was run.")));
-                                    return Ok(());
-                                }
-                                Err(MessageParseError::ParseFailure(err)) => return Err(err),
-                            };
-                            match parse_system_nodes(local_response) {
-                                Ok(x) => nodes.extend(x),
-                                Err(MessageParseError::CassandraError(err)) => {
-                                    *client_peers_response = client_peers_response
-                                        .to_error_response(format!("{:?}", err.context("Shotover failed to generate system.peers, an error occured when an internal system.local query was run.")));
-                                    return Ok(());
-                                }
-                                Err(MessageParseError::ParseFailure(err)) => return Err(err),
-                            };
-
-                            self.rewrite_table_peers(table, client_peers_response, nodes, warnings)
-                                .await?;
-                            client_peers_response.invalidate_cache();
-                        }
-                    }
-                }
-            }
-            RewriteTableTy::Prepare { destination_nodes } => {
-                let prepared_responses = &mut responses
-                    [table.incoming_index..table.incoming_index + destination_nodes.len()];
-
-                let mut warnings: Vec<String> = prepared_responses
-                    .iter_mut()
-                    .flat_map(get_warnings)
-                    .collect();
-
-                {
-                    let prepared_results: Vec<&mut Box<BodyResResultPrepared>> = prepared_responses
-                    .iter_mut()
-                    .filter_map(|message| match message.frame() {
-                        Some(Frame::Cassandra(CassandraFrame {
-                            operation:
-                                CassandraOperation::Result(CassandraResult::Prepared(prepared)),
-                            ..
-                        })) => Some(prepared),
-                        other => {
-                            tracing::error!("Response to Prepare query was not a Prepared, was instead: {other:?}");
-                            warnings.push(format!("Shotover: Response to Prepare query was not a Prepared, was instead: {other:?}"));
-                            None
-                        }
-                    })
-                    .collect();
-                    if !prepared_results.windows(2).all(|w| w[0] == w[1]) {
-                        let err_str = prepared_results
-                            .iter()
-                            .map(|p| format!("\n{:?}", p))
-                            .collect::<String>();
-
-                        tracing::error!(
-                            "Nodes did not return the same response to PREPARE statement {err_str}"
-                        );
-                        warnings.push(format!(
-                            "Shotover: Nodes did not return the same response to PREPARE statement {err_str}"
-                        ));
-                    }
-                }
-
-                // If there is a succesful response, use that as our response by moving it to the beginning
-                for (i, response) in prepared_responses.iter_mut().enumerate() {
-                    if let Some(Frame::Cassandra(CassandraFrame {
-                        operation: CassandraOperation::Result(CassandraResult::Prepared(_)),
-                        ..
-                    })) = response.frame()
-                    {
-                        prepared_responses.swap(0, i);
-                        break;
-                    }
-                }
-
-                // Finalize our response by setting its warnings list to all the warnings we have accumulated
-                if let Some(Frame::Cassandra(frame)) = prepared_responses[0].frame() {
-                    frame.warnings = warnings;
-                }
-
-                // Remove all unused messages so we are only left with the one message that will be used as the response
-                responses.drain(
-                    table.incoming_index + 1..table.incoming_index + destination_nodes.len(),
-                );
-            }
-        }
-
-        Ok(())
-    }
-
-    async fn rewrite_table_peers(
-        &mut self,
-        table: TableToRewrite,
-        peers_response: &mut Message,
-        nodes: Vec<NodeInfo>,
-        warnings: Vec<String>,
-    ) -> Result<()> {
-        let mut data_center_alias = "data_center";
-        let mut rack_alias = "rack";
-        let mut host_id_alias = "host_id";
-        let mut native_address_alias = "native_address";
-        let mut native_port_alias = "native_port";
-        let mut preferred_ip_alias = "preferred_ip";
-        let mut preferred_port_alias = "preferred_port";
-        let mut rpc_address_alias = "rpc_address";
-        let mut peer_alias = "peer";
-        let mut peer_port_alias = "peer_port";
-        let mut release_version_alias = "release_version";
-        let mut tokens_alias = "tokens";
-        let mut schema_version_alias = "schema_version";
-        for select in &table.selects {
-            if let SelectElement::Column(column) = select {
-                if let Some(alias) = &column.alias {
-                    let alias = match alias {
-                        Identifier::Unquoted(alias) => alias,
-                        Identifier::Quoted(alias) => alias,
-                    };
-                    if column.name == IdentifierRef::Quoted("data_center") {
-                        data_center_alias = alias;
-                    } else if column.name == IdentifierRef::Quoted("rack") {
-                        rack_alias = alias;
-                    } else if column.name == IdentifierRef::Quoted("host_id") {
-                        host_id_alias = alias;
-                    } else if column.name == IdentifierRef::Quoted("native_address") {
-                        native_address_alias = alias;
-                    } else if column.name == IdentifierRef::Quoted("native_port") {
-                        native_port_alias = alias;
-                    } else if column.name == IdentifierRef::Quoted("preferred_ip") {
-                        preferred_ip_alias = alias;
-                    } else if column.name == IdentifierRef::Quoted("preferred_port") {
-                        preferred_port_alias = alias;
-                    } else if column.name == IdentifierRef::Quoted("rpc_address") {
-                        rpc_address_alias = alias;
-                    } else if column.name == IdentifierRef::Quoted("peer") {
-                        peer_alias = alias;
-                    } else if column.name == IdentifierRef::Quoted("peer_port") {
-                        peer_port_alias = alias;
-                    } else if column.name == IdentifierRef::Quoted("release_version") {
-                        release_version_alias = alias;
-                    } else if column.name == IdentifierRef::Quoted("tokens") {
-                        tokens_alias = alias;
-                    } else if column.name == IdentifierRef::Quoted("schema_version") {
-                        schema_version_alias = alias;
-                    }
-                }
-            }
-        }
-
-        if let Some(Frame::Cassandra(frame)) = peers_response.frame() {
-            frame.warnings = warnings;
-            if let CassandraOperation::Result(CassandraResult::Rows { rows, metadata }) =
-                &mut frame.operation
-            {
-                *rows = self
-                    .shotover_peers
-                    .iter()
-                    .map(|shotover_peer| {
-                        let mut release_version = "".to_string();
-                        let mut schema_version = None;
-                        let mut tokens = vec![];
-                        for node in &nodes {
-                            if node.data_center == shotover_peer.data_center
-                                && node.rack == shotover_peer.rack
-                            {
-                                if release_version.is_empty() {
-                                    release_version = node.release_version.clone();
-                                }
-                                if let Ok(Cmp::Lt) = version_compare::compare(
-                                    &node.release_version,
-                                    &release_version,
-                                ) {
-                                    release_version = node.release_version.clone();
-                                }
-
-                                match &mut schema_version {
-                                    Some(schema_version) => {
-                                        if &node.schema_version != schema_version {
-                                            *schema_version = Uuid::new_v4();
-                                        }
-                                    }
-                                    None => schema_version = Some(node.schema_version),
-                                }
-                                tokens.extend(node.tokens.iter().cloned());
-                            }
-                        }
-                        tokens.sort();
-
-                        metadata
-                            .col_specs
-                            .iter()
-                            .map(|colspec| {
-                                if colspec.name == data_center_alias {
-                                    MessageValue::Varchar(shotover_peer.data_center.clone())
-                                } else if colspec.name == rack_alias {
-                                    MessageValue::Varchar(shotover_peer.rack.clone())
-                                } else if colspec.name == host_id_alias {
-                                    MessageValue::Uuid(shotover_peer.host_id)
-                                } else if colspec.name == preferred_ip_alias
-                                    || colspec.name == preferred_port_alias
-                                {
-                                    MessageValue::Null
-                                } else if colspec.name == native_address_alias {
-                                    MessageValue::Inet(shotover_peer.address.ip())
-                                } else if colspec.name == native_port_alias {
-                                    MessageValue::Integer(
-                                        shotover_peer.address.port() as i64,
-                                        IntSize::I32,
-                                    )
-                                } else if colspec.name == peer_alias
-                                    || colspec.name == rpc_address_alias
-                                {
-                                    MessageValue::Inet(shotover_peer.address.ip())
-                                } else if colspec.name == peer_port_alias {
-                                    MessageValue::Integer(7000, IntSize::I32)
-                                } else if colspec.name == release_version_alias {
-                                    MessageValue::Varchar(release_version.clone())
-                                } else if colspec.name == tokens_alias {
-                                    MessageValue::List(tokens.clone())
-                                } else if colspec.name == schema_version_alias {
-                                    MessageValue::Uuid(schema_version.unwrap_or_else(Uuid::new_v4))
-                                } else {
-                                    tracing::warn!(
-                                        "Unknown column name in system.peers/system.peers_v2: {}",
-                                        colspec.name
-                                    );
-                                    MessageValue::Null
-                                }
-                            })
-                            .collect()
-                    })
-                    .collect();
-            }
-            Ok(())
-        } else {
-            Err(anyhow!(
-                "Failed to parse system.local response {:?}",
-                peers_response
-            ))
-        }
-    }
-
-    async fn rewrite_table_local(
-        &mut self,
-        table: TableToRewrite,
-        local_response: &mut Message,
-        peers_response: Message,
-        warnings: Vec<String>,
-    ) -> Result<()> {
-        let mut peers = match parse_system_nodes(peers_response) {
-            Ok(x) => x,
-            Err(MessageParseError::CassandraError(err)) => {
-                *local_response = local_response.to_error_response(format!("{:?}", err.context("Shotover failed to generate system.local, an error occured when an internal system.peers query was run.")));
-                return Ok(());
-            }
-            Err(MessageParseError::ParseFailure(err)) => return Err(err),
-        };
-        peers.retain(|node| {
-            node.data_center == self.local_shotover_node.data_center
-                && node.rack == self.local_shotover_node.rack
-        });
-
-        let mut release_version_alias = "release_version";
-        let mut tokens_alias = "tokens";
-        let mut schema_version_alias = "schema_version";
-        let mut broadcast_address_alias = "broadcast_address";
-        let mut listen_address_alias = "listen_address";
-        let mut host_id_alias = "host_id";
-        let mut rpc_address_alias = "rpc_address";
-        let mut rpc_port_alias = "rpc_port";
-        for select in &table.selects {
-            if let SelectElement::Column(column) = select {
-                if let Some(alias) = &column.alias {
-                    let alias = match alias {
-                        Identifier::Unquoted(alias) => alias,
-                        Identifier::Quoted(alias) => alias,
-                    };
-                    if column.name == IdentifierRef::Quoted("release_version") {
-                        release_version_alias = alias;
-                    } else if column.name == IdentifierRef::Quoted("tokens") {
-                        tokens_alias = alias;
-                    } else if column.name == IdentifierRef::Quoted("schema_version") {
-                        schema_version_alias = alias;
-                    } else if column.name == IdentifierRef::Quoted("broadcast_address") {
-                        broadcast_address_alias = alias;
-                    } else if column.name == IdentifierRef::Quoted("listen_address") {
-                        listen_address_alias = alias;
-                    } else if column.name == IdentifierRef::Quoted("host_id") {
-                        host_id_alias = alias;
-                    } else if column.name == IdentifierRef::Quoted("rpc_address") {
-                        rpc_address_alias = alias
-                    } else if column.name == IdentifierRef::Quoted("rpc_port") {
-                        rpc_port_alias = alias
-                    }
-                }
-            }
-        }
-
-        if let Some(Frame::Cassandra(frame)) = local_response.frame() {
-            if let CassandraOperation::Result(CassandraResult::Rows { rows, metadata }) =
-                &mut frame.operation
-            {
-                frame.warnings = warnings;
-                // The local_response message is guaranteed to come from a node that is in our configured data_center/rack.
-                // That means we can leave fields like rack and data_center alone and get exactly what we want.
-                for row in rows {
-                    for (col, col_meta) in row.iter_mut().zip(metadata.col_specs.iter()) {
-                        if col_meta.name == release_version_alias {
-                            if let MessageValue::Varchar(release_version) = col {
-                                for peer in &peers {
-                                    if let Ok(Cmp::Lt) = version_compare::compare(
-                                        &peer.release_version,
-                                        &release_version,
-                                    ) {
-                                        *release_version = peer.release_version.clone();
-                                    }
-                                }
-                            }
-                        } else if col_meta.name == tokens_alias {
-                            if let MessageValue::List(tokens) = col {
-                                for peer in &peers {
-                                    tokens.extend(peer.tokens.iter().cloned());
-                                }
-                                tokens.sort();
-                            }
-                        } else if col_meta.name == schema_version_alias {
-                            if let MessageValue::Uuid(schema_version) = col {
-                                for peer in &peers {
-                                    if schema_version != &peer.schema_version {
-                                        *schema_version = Uuid::new_v4();
-                                        break;
-                                    }
-                                }
-                            }
-                        } else if col_meta.name == broadcast_address_alias
-                            || col_meta.name == listen_address_alias
-                        {
-                            if let MessageValue::Inet(address) = col {
-                                *address = self.local_shotover_node.address.ip();
-                            }
-                        } else if col_meta.name == host_id_alias {
-                            if let MessageValue::Uuid(host_id) = col {
-                                *host_id = self.local_shotover_node.host_id;
-                            }
-                        } else if col_meta.name == rpc_address_alias {
-                            if let MessageValue::Inet(address) = col {
-                                if address != &IpAddr::V4(Ipv4Addr::UNSPECIFIED) {
-                                    *address = self.local_shotover_node.address.ip()
-                                }
-                            }
-                        } else if col_meta.name == rpc_port_alias {
-                            if let MessageValue::Integer(rpc_port, _) = col {
-                                *rpc_port = self.local_shotover_node.address.port() as i64;
-                            }
-                        }
-                    }
-                }
-            }
-            Ok(())
-        } else {
-            Err(anyhow!(
-                "Failed to parse system.local response {:?}",
-                local_response
-            ))
-        }
-    }
-
     fn is_system_query(&self, request: &mut Message) -> bool {
         if let Some(Frame::Cassandra(frame)) = request.frame() {
             if let CassandraOperation::Query { query, .. } = &mut frame.operation {
@@ -1144,34 +571,6 @@ impl CassandraSinkCluster {
             }
         }
         false
-    }
-}
-
-struct TableToRewrite {
-    incoming_index: usize,
-    outgoing_index: usize,
-    ty: RewriteTableTy,
-    selects: Vec<SelectElement>,
-    warnings: Vec<String>,
-}
-
-#[derive(PartialEq, Clone)]
-enum RewriteTableTy {
-    Local,
-    Peers,
-    // We need to know which nodes we are sending to early on so that we can create the appropriate number of messages early and keep our rewrite indexes intact
-    Prepare { destination_nodes: Vec<Uuid> },
-}
-
-impl RewriteTableTy {
-    fn extra_messages_needed(&self) -> usize {
-        match self {
-            RewriteTableTy::Local => 1,
-            RewriteTableTy::Peers => 2,
-            RewriteTableTy::Prepare { destination_nodes } => {
-                destination_nodes.len().saturating_sub(1)
-            }
-        }
     }
 }
 
@@ -1279,112 +678,6 @@ fn is_use_statement_successful(response: Option<Result<Response>>) -> bool {
         }
     }
     false
-}
-
-fn get_unused_stream_id(messages: &Messages) -> Result<i16> {
-    // start at an unusual number to hopefully avoid looping many times when we receive stream ids that look like [0, 1, 2, ..]
-    // We can quite happily give up 358 stream ids as that still allows for shotover message batches containing 2 ** 16 - 358 = 65178 messages
-    for i in 358..i16::MAX {
-        if !messages
-            .iter()
-            .filter_map(|message| message.stream_id())
-            .contains(&i)
-        {
-            return Ok(i);
-        }
-    }
-    Err(anyhow!("Ran out of stream ids"))
-}
-
-struct NodeInfo {
-    tokens: Vec<MessageValue>,
-    schema_version: Uuid,
-    release_version: String,
-    rack: String,
-    data_center: String,
-}
-
-enum MessageParseError {
-    /// The db returned a message that shotover failed to parse or process, this indicates a bug in shotover or the db
-    ParseFailure(anyhow::Error),
-    /// The db returned an error message, this indicates a user error e.g. the user does not have sufficient permissions
-    CassandraError(anyhow::Error),
-}
-
-fn parse_system_nodes(mut response: Message) -> Result<Vec<NodeInfo>, MessageParseError> {
-    if let Some(Frame::Cassandra(frame)) = response.frame() {
-        match &mut frame.operation {
-            CassandraOperation::Result(CassandraResult::Rows { rows, .. }) => rows
-                .iter_mut()
-                .map(|row| {
-                    if row.len() != 5 {
-                        return Err(MessageParseError::ParseFailure(anyhow!(
-                            "expected 5 columns but was {}",
-                            row.len()
-                        )));
-                    }
-
-                    let release_version = if let Some(MessageValue::Varchar(value)) = row.pop() {
-                        value
-                    } else {
-                        return Err(MessageParseError::ParseFailure(anyhow!(
-                            "release_version not a varchar"
-                        )));
-                    };
-
-                    let tokens = if let Some(MessageValue::List(value)) = row.pop() {
-                        value
-                    } else {
-                        return Err(MessageParseError::ParseFailure(anyhow!(
-                            "tokens not a list"
-                        )));
-                    };
-
-                    let schema_version = if let Some(MessageValue::Uuid(value)) = row.pop() {
-                        value
-                    } else {
-                        return Err(MessageParseError::ParseFailure(anyhow!(
-                            "schema_version not a uuid"
-                        )));
-                    };
-
-                    let data_center = if let Some(MessageValue::Varchar(value)) = row.pop() {
-                        value
-                    } else {
-                        return Err(MessageParseError::ParseFailure(anyhow!(
-                            "data_center not a varchar"
-                        )));
-                    };
-                    let rack = if let Some(MessageValue::Varchar(value)) = row.pop() {
-                        value
-                    } else {
-                        return Err(MessageParseError::ParseFailure(anyhow!(
-                            "rack not a varchar"
-                        )));
-                    };
-
-                    Ok(NodeInfo {
-                        tokens,
-                        schema_version,
-                        release_version,
-                        data_center,
-                        rack,
-                    })
-                })
-                .collect(),
-            CassandraOperation::Error(error) => Err(MessageParseError::CassandraError(anyhow!(
-                "system.local returned error: {error:?}",
-            ))),
-            operation => Err(MessageParseError::ParseFailure(anyhow!(
-                "system.local returned unexpected cassandra operation: {operation:?}",
-            ))),
-        }
-    } else {
-        Err(MessageParseError::ParseFailure(anyhow!(
-            "Failed to parse system.local response {:?}",
-            response
-        )))
-    }
 }
 
 #[async_trait]
