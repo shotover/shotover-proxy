@@ -236,18 +236,18 @@ impl CassandraDecoder {
 
                     let mut envelopes: Vec<Message> = vec![];
 
-                    loop {
-                        if payload.len() < ENVELOPE_HEADER_LEN {
-                            break;
-                        }
-
+                    while !payload.is_empty() {
                         let body_len =
                             i32::from_be_bytes(payload[5..9].try_into().unwrap()) as usize;
 
                         let envelope_len = ENVELOPE_HEADER_LEN + body_len;
 
                         if envelope_len > payload.len() {
-                            break;
+                            return Err(anyhow!(format!(
+                                "envelope length {} is longer than payload length {}",
+                                envelope_len,
+                                payload.len()
+                            ),));
                         }
 
                         let envelope = payload.split_to(envelope_len);
