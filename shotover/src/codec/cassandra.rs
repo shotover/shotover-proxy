@@ -329,7 +329,10 @@ impl CassandraDecoder {
                 let version = Version::try_from(src[0])
                     .map_err(|_| CheckFrameSizeError::UnsupportedVersion(src[0] & 0x7f))?;
 
-                if let Version::V3 | Version::V4 | Version::V5 = version {
+                if Version::V3 == version
+                    || Version::V4 == version
+                    || (cfg!(feature = "alpha-transforms") && Version::V5 == version)
+                {
                     // accept these versions
                 } else {
                     // Reject protocols that cassandra-protocol supports but shotover does not yet support
