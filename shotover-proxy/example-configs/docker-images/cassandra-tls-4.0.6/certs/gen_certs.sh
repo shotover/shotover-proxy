@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -e
+
 help()
 {
    echo "Generate keys for the Cassandra docker-compose"
@@ -34,13 +36,11 @@ while getopts ":hoc" option; do
    esac
 done
 
-CURRENT_DIR="$PWD"
 SCRIPT_DIR="$(cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 cd "$SCRIPT_DIR"
 
 KEYSTORE=keystore.p12
-TRUSTSTORE=truststore.p12
-if [ -f "$TRUSTSTORE" ] && [ -f "$KEYSTORE" ] && [ "$OVERWRITE" = false ]; then
+if [ -f "$KEYSTORE" ] && [ "$OVERWRITE" = false ]; then
     echo "$KEYSTORE and $TRUSTSTORE already exist. Use -o to overwrite them."
     exit 0
 fi
@@ -57,14 +57,6 @@ openssl x509 -req -in localhost.csr -CA localhost_CA.crt -CAkey localhost_CA.key
 # generate keystore
 openssl pkcs12 -export -out keystore.p12 -inkey localhost.key -in localhost.crt -passout pass:password
 keytool -importkeystore -destkeystore keystore.jks -srcstoretype PKCS12 -srckeystore keystore.p12 -deststorepass "password" -srcstorepass "password"
-
-# generate truststore
-openssl pkcs12 -export -out truststore.p12 -inkey localhost.key -in localhost.crt -passout pass:password
-keytool -importkeystore -destkeystore truststore.jks -srcstoretype PKCS12 -srckeystore truststore.p12 -deststorepass "password" -srcstorepass "password"
-
 chmod o+rwx keystore.p12
-chmod o+rwx truststore.p12
-
-cd "$CURRENT_DIR"
 
 echo "finished generating certs"
