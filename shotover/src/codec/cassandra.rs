@@ -241,6 +241,12 @@ impl CassandraDecoder {
 
                         let envelope = payload.split_to(envelope_len);
 
+                        tracing::debug!(
+                            "{}: incoming cassandra message:\n{}",
+                            self.direction,
+                            pretty_hex::pretty_hex(&envelope)
+                        );
+
                         envelopes.push(Message::from_bytes(
                             envelope.freeze(),
                             crate::message::ProtocolType::Cassandra {
@@ -294,9 +300,9 @@ impl CassandraDecoder {
                         return Err(CheckFrameSizeError::NotEnoughBytes);
                     }
 
-                    let header = i64::from_le_bytes(src[..8].try_into().unwrap()) & 0xffffffffffff; // convert to 6 byte int
+                    let payload_length =
+                        (u32::from_le_bytes(src[..4].try_into().unwrap()) & 0x1ffff) as usize;
 
-                    let payload_length = (header & 0x1ffff) as usize;
                     let payload_end = UNCOMPRESSED_FRAME_HEADER_LENGTH + payload_length;
 
                     let frame_len = payload_end + FRAME_TRAILER_LENGTH;
@@ -320,8 +326,15 @@ impl CassandraDecoder {
                     return Err(CheckFrameSizeError::NotEnoughBytes);
                 }
 
-                let _ = Version::try_from(src[0])
+                let version = Version::try_from(src[0])
                     .map_err(|_| CheckFrameSizeError::UnsupportedVersion(src[0] & 0x7f))?;
+
+                if let Version::V3 | Version::V4 | Version::V5 = version {
+                    // accept these versions
+                } else {
+                    // Reject protocols that cassandra-protocol supports but shotover does not yet support
+                    return Err(CheckFrameSizeError::UnsupportedVersion(version.into()));
+                };
 
                 Ok(envelope_len)
             }
