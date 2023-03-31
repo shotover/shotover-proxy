@@ -186,19 +186,8 @@ impl CassandraDecoder {
                 Compression::None => {
                     let mut frame_bytes = src.split_to(frame_len);
 
-                    let header = if frame_bytes.len() >= 8 {
-                        i64::from_le_bytes(frame_bytes[..8].try_into().unwrap()) & 0xffffffffffff
-                    } else {
-                        let mut header = 0;
-                        for (i, byte) in frame_bytes[..UNCOMPRESSED_FRAME_HEADER_LENGTH]
-                            .iter()
-                            .enumerate()
-                        {
-                            header |= (*byte as i64) << (8 * i as i64);
-                        }
-
-                        header
-                    };
+                    let header =
+                        i64::from_le_bytes(frame_bytes[..8].try_into().unwrap()) & 0xffffffffffff; // convert to 6 byte int
 
                     let header_crc24 = ((header >> 24) & 0xffffff) as i32;
                     let computed_crc = cassandra_protocol::crc::crc24(&header.to_le_bytes()[..3]);
@@ -305,17 +294,7 @@ impl CassandraDecoder {
                         return Err(CheckFrameSizeError::NotEnoughBytes);
                     }
 
-                    let header = if buffer_len >= 8 {
-                        i64::from_le_bytes(src[..8].try_into().unwrap()) & 0xffffffffffff
-                    } else {
-                        let mut header = 0;
-                        for (i, byte) in src[..UNCOMPRESSED_FRAME_HEADER_LENGTH].iter().enumerate()
-                        {
-                            header |= (*byte as i64) << (8 * i as i64);
-                        }
-
-                        header
-                    };
+                    let header = i64::from_le_bytes(src[..8].try_into().unwrap()) & 0xffffffffffff; // convert to 6 byte int
 
                     let payload_length = (header & 0x1ffff) as usize;
                     let payload_end = UNCOMPRESSED_FRAME_HEADER_LENGTH + payload_length;
