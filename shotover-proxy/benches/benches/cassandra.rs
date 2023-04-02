@@ -1,7 +1,7 @@
 use cassandra_cpp::{PreparedStatement, Session, Statement};
 use criterion::{criterion_group, Criterion};
 use test_helpers::connection::cassandra::{
-    CassandraConnection, CassandraConnectionBuilder, CassandraDriver,
+    CassandraConnection, CassandraConnectionBuilder, CassandraDriver, ProtocolVersion,
 };
 use test_helpers::docker_compose::docker_compose;
 use test_helpers::docker_compose_runner::DockerCompose;
@@ -88,6 +88,31 @@ fn cassandra(c: &mut Criterion) {
     {
         let resources = new_lazy_shared(|| {
             BenchResources::new(
+                "example-configs/cassandra-passthrough/topology.yaml",
+                "example-configs/cassandra-passthrough/docker-compose.yaml",
+            )
+
+            // BenchResources::new_protocol_v5(
+            //     "example-configs/cassandra-passthrough/topology.yaml",
+            //     "example-configs/cassandra-passthrough/docker-compose.yaml",
+            // )
+        });
+        for query in &queries {
+            group.bench_with_input(
+                format!("passthrough_no_parse_v5_{}", query),
+                &resources,
+                |b, resources| {
+                    b.iter(|| {
+                        resources.borrow().as_ref().unwrap().run_query(query);
+                    })
+                },
+            );
+        }
+    }
+
+    {
+        let resources = new_lazy_shared(|| {
+            BenchResources::new(
                 "tests/test-configs/cassandra-passthrough-parse-request/topology.yaml",
                 "tests/test-configs/cassandra-passthrough-parse-request/docker-compose.yaml",
             )
@@ -108,6 +133,31 @@ fn cassandra(c: &mut Criterion) {
     {
         let resources = new_lazy_shared(|| {
             BenchResources::new(
+                "tests/test-configs/cassandra-passthrough-parse-request/topology.yaml",
+                "tests/test-configs/cassandra-passthrough-parse-request/docker-compose.yaml",
+            )
+
+            // BenchResources::new_protocol_v5(
+            //     "tests/test-configs/cassandra-passthrough-parse-request/topology.yaml",
+            //     "tests/test-configs/cassandra-passthrough-parse-request/docker-compose.yaml",
+            // )
+        });
+        for query in &queries {
+            group.bench_with_input(
+                format!("passthrough_parse_request_v5_{}", query),
+                &resources,
+                |b, resources| {
+                    b.iter(|| {
+                        resources.borrow().as_ref().unwrap().run_query(query);
+                    })
+                },
+            );
+        }
+    }
+
+    {
+        let resources = new_lazy_shared(|| {
+            BenchResources::new(
                 "tests/test-configs/cassandra-passthrough-parse-response/topology.yaml",
                 "tests/test-configs/cassandra-passthrough-parse-response/docker-compose.yaml",
             )
@@ -115,6 +165,31 @@ fn cassandra(c: &mut Criterion) {
         for query in &queries {
             group.bench_with_input(
                 format!("passthrough_parse_response_{}", query),
+                &resources,
+                |b, resources| {
+                    b.iter(|| {
+                        resources.borrow().as_ref().unwrap().run_query(query);
+                    })
+                },
+            );
+        }
+    }
+
+    {
+        let resources = new_lazy_shared(|| {
+            BenchResources::new(
+                "tests/test-configs/cassandra-passthrough-parse-response/topology.yaml",
+                "tests/test-configs/cassandra-passthrough-parse-response/docker-compose.yaml",
+            )
+
+            // BenchResources::new_protocol_v5(
+            //     "tests/test-configs/cassandra-passthrough-parse-response/topology.yaml",
+            //     "tests/test-configs/cassandra-passthrough-parse-response/docker-compose.yaml",
+            // )
+        });
+        for query in &queries {
+            group.bench_with_input(
+                format!("passthrough_parse_response_v5_{}", query),
                 &resources,
                 |b, resources| {
                     b.iter(|| {
@@ -251,10 +326,6 @@ impl BenchResources {
         bench_resources
     }
 
-    pub fn get_connection(&self) -> &Session {
-        self.connection.as_datastax()
-    }
-
     fn new_tls(shotover_topology: &str, compose_file: &str) -> Self {
         test_helpers::cert::generate_cassandra_test_certs();
         let tokio = tokio::runtime::Builder::new_multi_thread()
@@ -283,6 +354,38 @@ impl BenchResources {
         };
         bench_resources.setup();
         bench_resources
+    }
+
+    #[allow(unused)]
+    fn new_protocol_v5(shotover_topology: &str, compose_file: &str) -> Self {
+        let tokio = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let compose = DockerCompose::new(compose_file);
+        let shotover = Some(
+            tokio.block_on(ShotoverProcessBuilder::new_with_topology(shotover_topology).start()),
+        );
+
+        let connection = tokio.block_on(
+            CassandraConnectionBuilder::new("127.0.0.1", 9042, DRIVER)
+                .with_protocol_version(ProtocolVersion::V5)
+                .build(),
+        );
+
+        let mut bench_resources = Self {
+            _compose: compose,
+            shotover,
+            connection,
+            prepared_statement: None,
+            tokio,
+        };
+        bench_resources.setup();
+        bench_resources
+    }
+
+    pub fn get_connection(&self) -> &Session {
+        self.connection.as_datastax()
     }
 
     fn get(&self, query: &str) -> Statement {
