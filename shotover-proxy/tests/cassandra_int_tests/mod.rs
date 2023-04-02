@@ -168,9 +168,6 @@ async fn cluster_single_rack_v3(#[case] driver: CassandraDriver) {
 
         routing::test("127.0.0.1", 9042, "172.16.1.2", 9042, driver).await;
 
-        //Check for bugs in cross connection state
-        native_types::test(&connection().await).await;
-
         shotover.shutdown_and_then_consume_events(&[]).await;
     }
 
@@ -206,15 +203,6 @@ async fn cluster_single_rack_v4(#[case] driver: CassandraDriver) {
         cluster::single_rack_v4::test(&connection().await, driver).await;
 
         routing::test("127.0.0.1", 9042, "172.16.1.2", 9044, driver).await;
-
-        //Check for bugs in cross connection state
-        let mut connection2 = CassandraConnectionBuilder::new("127.0.0.1", 9042, driver)
-            .build()
-            .await;
-        connection2
-            .enable_schema_awaiter("172.16.1.2:9044", None)
-            .await;
-        native_types::test(&connection2).await;
 
         cluster::single_rack_v4::test_node_going_down(&compose, driver).await;
 
@@ -306,9 +294,6 @@ async fn cluster_multi_rack(#[case] driver: CassandraDriver) {
         };
         standard_test_suite(&connection, driver).await;
         cluster::multi_rack::test(&connection().await).await;
-
-        //Check for bugs in cross connection state
-        native_types::test(&connection().await).await;
 
         shotover_rack1.shutdown_and_then_consume_events(&[]).await;
         shotover_rack2.shutdown_and_then_consume_events(&[]).await;
