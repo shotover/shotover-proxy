@@ -327,10 +327,7 @@ impl RedisSinkCluster {
                 self.rebuild_connections = false;
                 Err(err)
             }
-            Err(err) => {
-                warn!("failed to build connections: {:?}", err);
-                Err(err)
-            }
+            Err(err) => Err(err),
         }
     }
 
@@ -955,7 +952,9 @@ impl TransformBuilder for RedisSinkCluster {
 impl Transform for RedisSinkCluster {
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
         if self.rebuild_connections {
-            self.build_connections(self.token.clone()).await.ok();
+            if let Err(err) = self.build_connections(self.token.clone()).await {
+                tracing::warn!("Error when rebuilding connections {err:?}");
+            }
         }
 
         let mut responses = FuturesOrdered::new();
