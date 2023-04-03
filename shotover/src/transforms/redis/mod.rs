@@ -1,5 +1,4 @@
 use crate::transforms::util::ConnectionError;
-use anyhow::Error;
 
 pub mod cache;
 pub mod cluster_ports_rewrite;
@@ -41,12 +40,6 @@ pub enum TransformError {
     #[error("protocol error: {0}")]
     Protocol(String),
 
-    #[error("io error: {0}")]
-    IO(Error),
-
-    #[error("TLS error: {0}")]
-    TLS(Error),
-
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 }
@@ -66,8 +59,7 @@ impl TransformError {
 impl From<ConnectionError<TransformError>> for TransformError {
     fn from(error: ConnectionError<TransformError>) -> Self {
         match error {
-            ConnectionError::IO(e) => TransformError::IO(e),
-            ConnectionError::TLS(e) => TransformError::TLS(e),
+            ConnectionError::Other(e) => TransformError::Other(e),
             ConnectionError::Authenticator(e) => e,
         }
     }
