@@ -4,19 +4,88 @@ use crate::frame::cassandra::{CassandraMetadata, CassandraOperation, Tracing};
 use crate::frame::{CassandraFrame, Frame, MessageType};
 use crate::message::{Encodable, Message, Messages, Metadata};
 use anyhow::{anyhow, Result};
+use atomic_enum::atomic_enum;
 use bytes::{Buf, BufMut, BytesMut};
 use cassandra_protocol::compression::Compression;
 use cassandra_protocol::frame::message_error::{ErrorBody, ErrorType};
 use cassandra_protocol::frame::message_startup::BodyReqStartup;
-use cassandra_protocol::frame::{
-    CheckEnvelopeSizeError, Envelope as RawCassandraFrame, Flags, Opcode, Version,
-};
+use cassandra_protocol::frame::{Flags, Opcode, Version};
 use cql3_parser::cassandra_statement::CassandraStatement;
 use cql3_parser::common::Identifier;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::sync::RwLock;
 use tokio_util::codec::{Decoder, Encoder};
 use tracing::info;
+
+const ENVELOPE_HEADER_LEN: usize = 9;
+const UNCOMPRESSED_FRAME_HEADER_LENGTH: usize = 6;
+const FRAME_TRAILER_LENGTH: usize = 4;
+
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum CheckFrameSizeError {
+    #[error("Not enough bytes!")]
+    NotEnoughBytes,
+    #[error("Unsupported version: {0}")]
+    UnsupportedVersion(u8),
+    #[error("Unsupported opcode: {0}")]
+    UnsupportedOpcode(u8),
+}
+
+#[atomic_enum]
+pub enum VersionState {
+    V3,
+    V4,
+    V5,
+}
+
+impl From<Version> for VersionState {
+    fn from(val: Version) -> Self {
+        match val {
+            Version::V3 => VersionState::V3,
+            Version::V4 => VersionState::V4,
+            Version::V5 => VersionState::V5,
+            _ => unimplemented!(),
+        }
+    }
+}
+
+impl From<VersionState> for Version {
+    fn from(val: VersionState) -> Self {
+        match val {
+            VersionState::V3 => Version::V3,
+            VersionState::V4 => Version::V4,
+            VersionState::V5 => Version::V5,
+        }
+    }
+}
+
+#[atomic_enum]
+pub enum CompressionState {
+    None,
+    Lz4,
+    Snappy,
+}
+
+impl From<Compression> for CompressionState {
+    fn from(compression: Compression) -> Self {
+        match compression {
+            Compression::None => CompressionState::None,
+            Compression::Lz4 => CompressionState::Lz4,
+            Compression::Snappy => CompressionState::Snappy,
+        }
+    }
+}
+
+impl From<CompressionState> for Compression {
+    fn from(val: CompressionState) -> Self {
+        match val {
+            CompressionState::None => Compression::None,
+            CompressionState::Lz4 => Compression::Lz4,
+            CompressionState::Snappy => Compression::Snappy,
+        }
+    }
+}
 
 #[derive(Clone)]
 pub struct CassandraCodecBuilder {
@@ -32,25 +101,42 @@ impl CodecBuilder for CassandraCodecBuilder {
     }
 
     fn build(&self) -> (CassandraDecoder, CassandraEncoder) {
-        let compression = Arc::new(RwLock::new(Compression::None));
+        let version = Arc::new(AtomicVersionState::new(VersionState::V4));
+        let compression = Arc::new(AtomicCompressionState::new(CompressionState::None));
+
+        let handshake_complete = Arc::new(AtomicBool::from(false));
         (
-            CassandraDecoder::new(compression.clone(), self.direction),
-            CassandraEncoder::new(compression, self.direction),
+            CassandraDecoder::new(
+                version.clone(),
+                compression.clone(),
+                self.direction,
+                handshake_complete.clone(),
+            ),
+            CassandraEncoder::new(version, compression, self.direction, handshake_complete),
         )
     }
 }
 
 pub struct CassandraDecoder {
-    compression: Arc<RwLock<Compression>>,
+    version: Arc<AtomicVersionState>,
+    compression: Arc<AtomicCompressionState>,
+    handshake_complete: Arc<AtomicBool>,
     messages: Vec<Message>,
     current_use_keyspace: Option<Identifier>,
     direction: Direction,
 }
 
 impl CassandraDecoder {
-    pub fn new(compression: Arc<RwLock<Compression>>, direction: Direction) -> CassandraDecoder {
+    pub fn new(
+        version: Arc<AtomicVersionState>,
+        compression: Arc<AtomicCompressionState>,
+        direction: Direction,
+        handshake_complete: Arc<AtomicBool>,
+    ) -> CassandraDecoder {
         CassandraDecoder {
+            version,
             compression,
+            handshake_complete,
             messages: vec![],
             current_use_keyspace: None,
             direction,
@@ -67,32 +153,218 @@ impl CassandraDecoder {
 
         let compressed = Flags::from_bits_truncate(bytes[1]).contains(Flags::COMPRESSION);
 
-        // check if startup message and set the codec's selected compression
+        // check if startup message and set the codec's selected compression and version
         if Opcode::Startup == opcode {
             if let CassandraFrame {
                 operation: CassandraOperation::Startup(startup),
+                version,
                 ..
             } = CassandraFrame::from_bytes(bytes.clone().freeze(), Compression::None)?
             {
-                set_compression(&mut self.compression, &startup);
+                set_startup_state(&mut self.compression, &mut self.version, version, &startup);
             };
+        }
+
+        if Opcode::Ready == opcode || Opcode::Authenticate == opcode {
+            self.handshake_complete
+                .store(true, std::sync::atomic::Ordering::Relaxed);
         }
 
         Ok(compressed)
     }
+
+    fn decode_frame(
+        &mut self,
+        src: &mut BytesMut,
+        frame_len: usize,
+        version: Version,
+        compression: Compression,
+        handshake_complete: bool,
+    ) -> Result<Vec<Message>> {
+        match (version, handshake_complete) {
+            (Version::V5, true) => match compression {
+                Compression::None => {
+                    let mut frame_bytes = src.split_to(frame_len);
+
+                    let header =
+                        i64::from_le_bytes(frame_bytes[..8].try_into().unwrap()) & 0xffffffffffff; // convert to 6 byte int
+
+                    let header_crc24 = ((header >> 24) & 0xffffff) as i32;
+                    let computed_crc = cassandra_protocol::crc::crc24(&header.to_le_bytes()[..3]);
+
+                    if header_crc24 != computed_crc {
+                        return Err(anyhow!(format!(
+                            "Header CRC mismatch - expected {header_crc24}, found {computed_crc}."
+                        )));
+                    }
+
+                    let payload_length = (header & 0x1ffff) as usize;
+                    let payload_end = UNCOMPRESSED_FRAME_HEADER_LENGTH + payload_length;
+
+                    let frame_end = payload_end + FRAME_TRAILER_LENGTH;
+
+                    let payload_crc32 =
+                        u32::from_le_bytes(frame_bytes[payload_end..frame_end].try_into().unwrap());
+
+                    let computed_crc = cassandra_protocol::crc::crc32(
+                        &frame_bytes[UNCOMPRESSED_FRAME_HEADER_LENGTH..payload_end],
+                    );
+                    if payload_crc32 != computed_crc {
+                        return Err(anyhow!(format!(
+                            "Payload CRC mismatch - read {payload_crc32}, computed {computed_crc}."
+                        )));
+                    }
+
+                    let self_contained = (header & (1 << 17)) != 0;
+                    if !self_contained {
+                        unimplemented!("Cannot support non-self contained frames yet");
+                    }
+
+                    frame_bytes.advance(UNCOMPRESSED_FRAME_HEADER_LENGTH);
+                    let mut payload = frame_bytes.split_to(payload_length);
+
+                    let mut envelopes: Vec<Message> = vec![];
+
+                    while !payload.is_empty() {
+                        let body_len =
+                            i32::from_be_bytes(payload[5..9].try_into().unwrap()) as usize;
+
+                        let envelope_len = ENVELOPE_HEADER_LEN + body_len;
+
+                        if envelope_len > payload.len() {
+                            return Err(anyhow!(format!(
+                                "envelope length {} is longer than payload length {}",
+                                envelope_len,
+                                payload.len()
+                            ),));
+                        }
+
+                        let envelope = payload.split_to(envelope_len);
+
+                        tracing::debug!(
+                            "{}: incoming cassandra message:\n{}",
+                            self.direction,
+                            pretty_hex::pretty_hex(&envelope)
+                        );
+
+                        envelopes.push(Message::from_bytes(
+                            envelope.freeze(),
+                            crate::message::ProtocolType::Cassandra {
+                                compression: Compression::None,
+                            },
+                        ));
+                    }
+
+                    Ok(envelopes)
+                }
+                _ => unimplemented!(),
+            },
+            (_, _) => {
+                let bytes = src.split_to(frame_len);
+                tracing::debug!(
+                    "{}: incoming cassandra message:\n{}",
+                    self.direction,
+                    pretty_hex::pretty_hex(&bytes)
+                );
+
+                let compressed = self.check_compression(&bytes).unwrap();
+
+                let message = Message::from_bytes(
+                    bytes.freeze(),
+                    crate::message::ProtocolType::Cassandra {
+                        compression: if compressed {
+                            compression
+                        } else {
+                            Compression::None
+                        },
+                    },
+                );
+
+                Ok(vec![message])
+            }
+        }
+    }
+
+    fn check_size(
+        &self,
+        src: &BytesMut,
+        version: Version,
+        compression: Compression,
+        handshake_complete: bool,
+    ) -> Result<usize, CheckFrameSizeError> {
+        match (version, handshake_complete) {
+            (Version::V5, true) => match compression {
+                Compression::None => {
+                    let buffer_len = src.len();
+                    if buffer_len < UNCOMPRESSED_FRAME_HEADER_LENGTH {
+                        return Err(CheckFrameSizeError::NotEnoughBytes);
+                    }
+
+                    let payload_length =
+                        (u32::from_le_bytes(src[..4].try_into().unwrap()) & 0x1ffff) as usize;
+
+                    let payload_end = UNCOMPRESSED_FRAME_HEADER_LENGTH + payload_length;
+
+                    let frame_len = payload_end + FRAME_TRAILER_LENGTH;
+                    if buffer_len < frame_len {
+                        return Err(CheckFrameSizeError::NotEnoughBytes);
+                    }
+
+                    Ok(frame_len)
+                }
+                _ => unimplemented!(),
+            },
+            (_, _) => {
+                if src.len() < ENVELOPE_HEADER_LEN {
+                    return Err(CheckFrameSizeError::NotEnoughBytes);
+                }
+
+                let body_len = i32::from_be_bytes(src[5..9].try_into().unwrap()) as usize;
+
+                let envelope_len = ENVELOPE_HEADER_LEN + body_len;
+                if src.len() < envelope_len {
+                    return Err(CheckFrameSizeError::NotEnoughBytes);
+                }
+
+                let version = Version::try_from(src[0])
+                    .map_err(|_| CheckFrameSizeError::UnsupportedVersion(src[0] & 0x7f))?;
+
+                if Version::V3 == version
+                    || Version::V4 == version
+                    || (cfg!(feature = "alpha-transforms") && Version::V5 == version)
+                {
+                    // accept these versions
+                } else {
+                    // Reject protocols that cassandra-protocol supports but shotover does not yet support
+                    return Err(CheckFrameSizeError::UnsupportedVersion(version.into()));
+                };
+
+                Ok(envelope_len)
+            }
+        }
+    }
 }
 
-fn set_compression(compression_state: &mut Arc<RwLock<Compression>>, startup: &BodyReqStartup) {
+fn set_startup_state(
+    compression_state: &mut Arc<AtomicCompressionState>,
+    version_state: &mut Arc<AtomicVersionState>,
+    version: Version,
+    startup: &BodyReqStartup,
+) {
     if let Some(compression) = startup.map.get("COMPRESSION") {
-        let mut write = compression_state.write().unwrap();
-
-        *write = match compression.as_str() {
-            "snappy" | "SNAPPY" => Compression::Snappy,
-            "lz4" | "LZ4" => Compression::Lz4,
-            "" | "none" | "NONE" => Compression::None,
-            _ => panic!(),
-        };
+        compression_state.store(
+            match compression.as_str() {
+                "snappy" | "SNAPPY" => Compression::Snappy,
+                "lz4" | "LZ4" => Compression::Lz4,
+                "" | "none" | "NONE" => Compression::None,
+                _ => unimplemented!(),
+            }
+            .into(),
+            Ordering::Relaxed,
+        );
     }
+
+    version_state.store(version.into(), Ordering::Relaxed);
 }
 
 impl Decoder for CassandraDecoder {
@@ -100,63 +372,43 @@ impl Decoder for CassandraDecoder {
     type Error = CodecReadError;
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, CodecReadError> {
+        let version: Version = self.version.load(Ordering::Relaxed).into();
+        let compression: Compression = self.compression.load(Ordering::Relaxed).into();
+        let handshake_complete = self.handshake_complete.load(Ordering::Relaxed);
+
         loop {
-            match RawCassandraFrame::check_envelope_size(src) {
+            match self.check_size(src, version, compression, handshake_complete) {
                 Ok(frame_len) => {
-                    // Clear the read bytes from the FramedReader
-                    let bytes = src.split_to(frame_len);
-                    tracing::debug!(
-                        "{}: incoming cassandra message:\n{}",
-                        self.direction,
-                        pretty_hex::pretty_hex(&bytes)
-                    );
+                    let mut messages = self
+                        .decode_frame(src, frame_len, version, compression, handshake_complete)
+                        .map_err(CodecReadError::Parser)?;
 
-                    let version = Version::try_from(bytes[0])
-                        .expect("Gauranteed because check_envelope_size only returns Ok if the Version will parse");
-                    if let Version::V3 | Version::V4 = version {
-                        // Accept these protocols
-                    } else {
-                        // Reject protocols that cassandra-protocol supports but shotover does not yet support
-                        return Err(reject_protocol_version(version.into()));
-                    }
+                    for message in messages.iter_mut() {
+                        if let Ok(Metadata::Cassandra(CassandraMetadata {
+                            opcode: Opcode::Query | Opcode::Batch,
+                            ..
+                        })) = message.metadata()
+                        {
+                            if let Some(keyspace) = get_use_keyspace(message) {
+                                self.current_use_keyspace = Some(keyspace);
+                            }
 
-                    let compressed = self.check_compression(&bytes).unwrap();
-
-                    let mut message = Message::from_bytes(
-                        bytes.freeze(),
-                        crate::message::ProtocolType::Cassandra {
-                            compression: if compressed {
-                                *self.compression.read().unwrap()
-                            } else {
-                                Compression::None
-                            },
-                        },
-                    );
-
-                    if let Ok(Metadata::Cassandra(CassandraMetadata {
-                        opcode: Opcode::Query | Opcode::Batch,
-                        ..
-                    })) = message.metadata()
-                    {
-                        if let Some(keyspace) = get_use_keyspace(&mut message) {
-                            self.current_use_keyspace = Some(keyspace);
-                        }
-
-                        if let Some(keyspace) = &self.current_use_keyspace {
-                            set_default_keyspace(&mut message, keyspace);
+                            if let Some(keyspace) = &self.current_use_keyspace {
+                                set_default_keyspace(message, keyspace);
+                            }
                         }
                     }
 
-                    self.messages.push(message);
+                    self.messages.append(&mut messages);
                 }
-                Err(CheckEnvelopeSizeError::NotEnoughBytes) => {
+                Err(CheckFrameSizeError::NotEnoughBytes) => {
                     if self.messages.is_empty() || src.remaining() != 0 {
                         return Ok(None);
                     } else {
                         return Ok(Some(std::mem::take(&mut self.messages)));
                     }
                 }
-                Err(CheckEnvelopeSizeError::UnsupportedVersion(version)) => {
+                Err(CheckFrameSizeError::UnsupportedVersion(version)) => {
                     return Err(reject_protocol_version(version));
                 }
                 err => {
@@ -257,15 +509,24 @@ fn reject_protocol_version(version: u8) -> CodecReadError {
 }
 
 pub struct CassandraEncoder {
-    compression: Arc<RwLock<Compression>>,
+    version: Arc<AtomicVersionState>,
+    compression: Arc<AtomicCompressionState>,
     direction: Direction,
+    handshake_complete: Arc<AtomicBool>,
 }
 
 impl CassandraEncoder {
-    pub fn new(compression: Arc<RwLock<Compression>>, direction: Direction) -> CassandraEncoder {
+    pub fn new(
+        version: Arc<AtomicVersionState>,
+        compression: Arc<AtomicCompressionState>,
+        direction: Direction,
+        handshake_complete: Arc<AtomicBool>,
+    ) -> CassandraEncoder {
         CassandraEncoder {
+            version,
             compression,
             direction,
+            handshake_complete,
         }
     }
 }
@@ -278,49 +539,120 @@ impl Encoder<Messages> for CassandraEncoder {
         item: Messages,
         dst: &mut BytesMut,
     ) -> std::result::Result<(), Self::Error> {
+        let version: Version = self.version.load(Ordering::Relaxed).into();
+        let handshake_complete = self.handshake_complete.load(Ordering::Relaxed);
+
         for m in item {
             let start = dst.len();
-            let compression = m.codec_state.as_cassandra();
-
-            // TODO: always check if cassandra message
-            match m.into_encodable(MessageType::Cassandra)? {
-                Encodable::Bytes(bytes) => {
-                    // check if the message is a startup message and set the codec's compression
-                    {
-                        let opcode = Opcode::try_from(bytes[4])?;
-                        if Opcode::Startup == opcode {
-                            if let CassandraFrame {
-                                operation: CassandraOperation::Startup(startup),
-                                ..
-                            } = CassandraFrame::from_bytes(bytes.clone(), Compression::None)?
-                            {
-                                set_compression(&mut self.compression, &startup);
-                            };
-                        }
-                    }
-
-                    dst.extend_from_slice(&bytes)
-                }
-                Encodable::Frame(frame) => {
-                    // check if the message is a startup message and set the codec's compression
-                    if let Frame::Cassandra(CassandraFrame {
-                        operation: CassandraOperation::Startup(startup),
-                        ..
-                    }) = &frame
-                    {
-                        set_compression(&mut self.compression, startup);
-                    };
-
-                    let buffer = frame.into_cassandra().unwrap().encode(compression);
-
-                    dst.put(buffer.as_slice());
-                }
-            }
+            self.encode_frame(dst, m, version, handshake_complete)?;
             tracing::debug!(
                 "{}: outgoing cassandra message:\n{}",
                 self.direction,
                 pretty_hex::pretty_hex(&&dst[start..])
             );
+        }
+        Ok(())
+    }
+}
+
+impl CassandraEncoder {
+    fn encode_frame(
+        &mut self,
+        dst: &mut BytesMut,
+        m: Message,
+        version: Version,
+        handshake_complete: bool,
+    ) -> Result<()> {
+        match (version, handshake_complete) {
+            (Version::V5, true) => {
+                // write envelope header with dummy values for those we cant calculate till after we write the message
+                let header_start = dst.len();
+
+                dst.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
+                let payload_start = dst.len();
+
+                self.encode_envelope(dst, m)?;
+
+                //measure length of message and calculate crc24 and overwrite frame header values
+                let mut payload_len = dst.len() - payload_start;
+
+                if true {
+                    // TODO if self_contained
+                    payload_len |= 1 << 17;
+                }
+
+                // add header length & header crc
+                let payload_len = &payload_len.to_le_bytes()[..3];
+                dst[header_start..header_start + 3].copy_from_slice(payload_len);
+                dst[header_start + 3..header_start + 6].copy_from_slice(
+                    &cassandra_protocol::crc::crc24(payload_len).to_le_bytes()[..3],
+                );
+
+                // add payload crc
+                dst.extend_from_slice(
+                    &cassandra_protocol::crc::crc32(&dst[payload_start..]).to_le_bytes(),
+                );
+
+                Ok(())
+            }
+            (_, _) => self.encode_envelope(dst, m),
+        }
+    }
+
+    fn encode_envelope(&mut self, dst: &mut BytesMut, m: Message) -> Result<()> {
+        let message_compression = m.codec_state.as_cassandra();
+        // TODO: always check if cassandra message
+        match m.into_encodable(MessageType::Cassandra)? {
+            Encodable::Bytes(bytes) => {
+                // check if the message is a startup message and set the codec's compression
+                {
+                    let opcode = Opcode::try_from(bytes[4])?;
+                    if Opcode::Startup == opcode {
+                        if let CassandraFrame {
+                            operation: CassandraOperation::Startup(startup),
+                            version,
+                            ..
+                        } = CassandraFrame::from_bytes(bytes.clone(), Compression::None)?
+                        {
+                            set_startup_state(
+                                &mut self.compression,
+                                &mut self.version,
+                                version,
+                                &startup,
+                            );
+                        };
+                    }
+
+                    if Opcode::Ready == opcode || Opcode::Authenticate == opcode {
+                        self.handshake_complete.store(true, Ordering::Relaxed);
+                    }
+                }
+
+                dst.extend_from_slice(&bytes)
+            }
+            Encodable::Frame(frame) => {
+                // check if the message is a startup message and set the codec's compression
+                if let Frame::Cassandra(CassandraFrame {
+                    operation: CassandraOperation::Startup(startup),
+                    version,
+                    ..
+                }) = &frame
+                {
+                    set_startup_state(&mut self.compression, &mut self.version, *version, startup);
+                };
+
+                if let Frame::Cassandra(CassandraFrame {
+                    operation: CassandraOperation::Ready(_) | CassandraOperation::Authenticate(_),
+                    ..
+                }) = &frame
+                {
+                    self.handshake_complete.store(true, Ordering::Relaxed);
+                };
+
+                let buffer = frame.into_cassandra().unwrap().encode(message_compression);
+
+                dst.put(buffer.as_slice());
+            }
         }
         Ok(())
     }
