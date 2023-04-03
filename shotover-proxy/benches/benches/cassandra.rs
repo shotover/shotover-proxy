@@ -255,6 +255,7 @@ impl BenchResources {
     }
 
     fn new_tls(shotover_topology: &str, compose_file: &str) -> Self {
+        test_helpers::cert::generate_cassandra_test_certs();
         let tokio = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .build()
