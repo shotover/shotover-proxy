@@ -853,7 +853,6 @@ version = "0.0.1"
 dependencies = [
  "anyhow",
  "async-trait",
- "clap 4.2.1",
  "redis",
  "serde",
  "shotover",
