@@ -1,11 +1,11 @@
-use self::node_pool::{NodePoolBuilder, PreparedMetadata};
+use self::node_pool::{get_accessible_owned_connection, NodePoolBuilder, PreparedMetadata};
 use self::rewrite::{MessageRewriter, RewriteTableTy};
 use crate::error::ChainResponse;
 use crate::frame::cassandra::{CassandraMetadata, Tracing};
 use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame};
 use crate::message::{Message, Messages, Metadata};
 use crate::tls::{TlsConnector, TlsConnectorConfig};
-use crate::transforms::cassandra::connection::{CassandraConnection, Response};
+use crate::transforms::cassandra::connection::{CassandraConnection, Response, ResponseError};
 use crate::transforms::{Transform, TransformBuilder, TransformConfig, Transforms, Wrapper};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
@@ -254,13 +254,15 @@ impl CassandraSinkCluster {
                     .iter()
                     .any(|x| x.address == address && x.is_up)
                 {
-                    let addresses = self.pool.get_shuffled_addresses_in_dc_rack(
+                    let (connection, address) = self.pool.get_random_owned_connection_in_dc_rack(
                         &self.message_rewriter.local_shotover_node.rack,
                         &mut self.rng,
-                    );
-                    self.create_control_connection(&addresses).await.map_err(|e|
+                        &self.connection_factory,
+                    ).await
+                    .map_err(|e|
                         e.context("Failed to recreate control connection after control connection node went down")
                     )?;
+                    self.set_control_connection(connection, address)
                 }
             }
         }
@@ -283,22 +285,34 @@ impl CassandraSinkCluster {
         // Create the initial connection.
         // Messages will be sent through this connection until we have extracted the handshake.
         if self.control_connection.is_none() {
-            let points = if self.pool.nodes().iter().all(|x| !x.is_up) {
-                let mut points = Vec::with_capacity(self.contact_points.len());
+            let (connection, address) = if self.pool.nodes().iter().all(|x| !x.is_up) {
+                let mut start_nodes = Vec::with_capacity(self.contact_points.len());
                 for point in &self.contact_points {
-                    points.push(tokio::net::lookup_host(point).await?.next().unwrap());
+                    start_nodes.push(CassandraNode::new(
+                        tokio::net::lookup_host(point).await?.next().unwrap(),
+                        // All of these fields use the cheapest option because get_accessible_owned_connection does not use them at all
+                        String::new(),
+                        vec![],
+                        Uuid::nil(),
+                    ));
                 }
-                points
-            } else {
-                self.pool.get_shuffled_addresses_in_dc_rack(
-                    &self.message_rewriter.local_shotover_node.rack,
-                    &mut self.rng,
-                )
-            };
 
-            self.create_control_connection(&points)
+                get_accessible_owned_connection(
+                    &self.connection_factory,
+                    start_nodes.iter_mut().collect(),
+                )
                 .await
-                .map_err(|e| e.context("Failed to create initial control connection"))?;
+            } else {
+                self.pool
+                    .get_random_owned_connection_in_dc_rack(
+                        &self.message_rewriter.local_shotover_node.rack,
+                        &mut self.rng,
+                        &self.connection_factory,
+                    )
+                    .await
+            }
+            .map_err(|e| e.context("Failed to create initial control connection"))?;
+            self.set_control_connection(connection, address);
         }
 
         if !self.init_handshake_complete {
@@ -357,38 +371,50 @@ impl CassandraSinkCluster {
                 let next_host_id = nodes_to_prepare_on
                     .pop()
                     .ok_or_else(|| anyhow!("ran out of nodes to send prepare messages to"))?;
-                self.pool
+                match self
+                    .pool
                     .nodes()
                     .iter_mut()
                     .find(|node| node.host_id == next_host_id)
                     .ok_or_else(|| anyhow!("node {next_host_id} has dissapeared"))?
                     .get_connection(&self.connection_factory)
-                    .await?
-                    .send(message)?
-            } else if let Some((execute, metadata)) = get_execute_message(&mut message) {
-                // If the message is an execute we should perform token aware routing
-                match self
-                    .pool
-                    .get_replica_node_in_dc(
-                        execute,
-                        &self.message_rewriter.local_shotover_node.rack,
-                        self.version.unwrap(),
-                        &mut self.rng,
-                    )
                     .await
                 {
-                    Ok(replica_node) => replica_node
-                        .get_connection(&self.connection_factory)
-                        .await?
-                        .send(message)?,
-                    Err(GetReplicaErr::NoReplicasFound | GetReplicaErr::NoKeyspaceMetadata) => self
-                        .pool
-                        .get_round_robin_node_in_dc_rack(
-                            &self.message_rewriter.local_shotover_node.rack,
-                        )
-                        .get_connection(&self.connection_factory)
-                        .await?
-                        .send(message)?,
+                    Ok(connection) => connection.send(message)?,
+                    Err(err) => send_error_in_response_to_message(&message, &format!("{err}"))?,
+                }
+            } else if let Some((execute, metadata)) = get_execute_message(&mut message) {
+                // If the message is an execute we should perform token aware routing
+                let rack = &self.message_rewriter.local_shotover_node.rack;
+                let connection = self
+                    .pool
+                    .get_replica_connection_in_dc(
+                        execute,
+                        rack,
+                        self.version.unwrap(),
+                        &mut self.rng,
+                        &self.connection_factory,
+                    )
+                    .await;
+
+                match connection {
+                    Ok(connection) => connection.send(message)?,
+                    Err(GetReplicaErr::NoKeyspaceMetadata) => {
+                        match self
+                            .pool
+                            .get_random_connection_in_dc_rack(
+                                rack,
+                                &mut self.rng,
+                                &self.connection_factory,
+                            )
+                            .await
+                        {
+                            Ok(connection) => connection.send(message)?,
+                            Err(err) => {
+                                send_error_in_response_to_metadata(&metadata, &format!("{err}"))
+                            }
+                        }
+                    }
                     Err(GetReplicaErr::NoPreparedMetadata) => {
                         let (return_chan_tx, return_chan_rx) = oneshot::channel();
                         let id = execute.id.clone();
@@ -397,19 +423,22 @@ impl CassandraSinkCluster {
                         // send an unprepared error in response to force
                         // the client to reprepare the query
                         return_chan_tx
-                                .send(Ok(Message::from_frame(Frame::Cassandra(
-                                    CassandraFrame {
-                                        operation: CassandraOperation::Error(ErrorBody {
-                                            message: "Shotover does not have this query's metadata. Please re-prepare on this Shotover host before sending again.".into(),
-                                            ty: ErrorType::Unprepared(UnpreparedError { id }),
-                                        }),
-                                        stream_id: metadata.stream_id,
-                                        tracing: Tracing::Response(None), // We didn't actually hit a node so we don't have a tracing id
-                                        version: self.version.unwrap(),
-                                        warnings: vec![],
-                                    },
-                                )))).expect("the receiver is guaranteed to be alive, so this must succeed");
+                            .send(Ok(Message::from_frame(Frame::Cassandra(
+                                CassandraFrame {
+                                    operation: CassandraOperation::Error(ErrorBody {
+                                        message: "Shotover does not have this query's metadata. Please re-prepare on this Shotover host before sending again.".into(),
+                                        ty: ErrorType::Unprepared(UnpreparedError { id }),
+                                    }),
+                                    stream_id: metadata.stream_id,
+                                    tracing: Tracing::Response(None), // We didn't actually hit a node so we don't have a tracing id
+                                    version: self.version.unwrap(),
+                                    warnings: vec![],
+                                },
+                            )))).expect("the receiver is guaranteed to be alive, so this must succeed");
                         return_chan_rx
+                    }
+                    Err(GetReplicaErr::NoNodeAvailable(err)) => {
+                        send_error_in_response_to_metadata(&metadata, &format!("{err}"))
                     }
                     Err(GetReplicaErr::Other(err)) => {
                         return Err(err);
@@ -417,13 +446,18 @@ impl CassandraSinkCluster {
                 }
             } else {
                 // otherwise just send to a random node
-                self.pool
-                    .get_round_robin_node_in_dc_rack(
+                match self
+                    .pool
+                    .get_random_connection_in_dc_rack(
                         &self.message_rewriter.local_shotover_node.rack,
+                        &mut self.rng,
+                        &self.connection_factory,
                     )
-                    .get_connection(&self.connection_factory)
-                    .await?
-                    .send(message)?
+                    .await
+                {
+                    Ok(connection) => connection.send(message)?,
+                    Err(err) => send_error_in_response_to_message(&message, &format!("{err}"))?,
+                }
             };
 
             responses_future.push_back(return_chan_rx)
@@ -501,13 +535,13 @@ impl CassandraSinkCluster {
             // If we have to populate the local_nodes at this point then that means the control connection
             // may not have been made against a node in the configured data_center/rack.
             // Therefore we need to recreate the control connection to ensure that it is in the configured data_center/rack.
-            let addresses = self.pool.get_shuffled_addresses_in_dc_rack(
+            let (connection, address) = self.pool.get_random_owned_connection_in_dc_rack(
                 &self.message_rewriter.local_shotover_node.rack,
                 &mut self.rng,
-            );
-            self.create_control_connection(&addresses)
-                .await
+                &self.connection_factory
+            ).await
                 .map_err(|e| e.context("Failed to recreate control connection when initial connection was possibly against the wrong node"))?;
+            self.set_control_connection(connection, address);
         }
         tracing::info!(
             "Control connection finalized against node at: {:?}",
@@ -517,47 +551,9 @@ impl CassandraSinkCluster {
         Ok(())
     }
 
-    async fn create_control_connection(&mut self, addresses: &[SocketAddr]) -> Result<()> {
-        struct AddressError {
-            address: SocketAddr,
-            error: anyhow::Error,
-        }
-        fn bullet_list_of_node_failures(errors: &[AddressError]) -> String {
-            let mut node_errors = String::new();
-            for AddressError { error, address } in errors {
-                node_errors.push_str(&format!("\n* {address:?}:"));
-                for sub_error in error.chain() {
-                    node_errors.push_str(&format!("\n    - {sub_error}"));
-                }
-            }
-            node_errors
-        }
-
-        let mut errors = vec![];
-        for address in addresses {
-            match self.connection_factory.new_connection(address).await {
-                Ok(connection) => {
-                    self.control_connection = Some(connection);
-                    self.control_connection_address = Some(*address);
-                    if !errors.is_empty() {
-                        let node_errors = bullet_list_of_node_failures(&errors);
-                        tracing::warn!("A successful connection to a control node was made but attempts to connect to these nodes failed first:{node_errors}");
-                    }
-                    return Ok(());
-                }
-                Err(error) => {
-                    errors.push(AddressError {
-                        error,
-                        address: *address,
-                    });
-                }
-            }
-        }
-
-        let node_errors = bullet_list_of_node_failures(&errors);
-        Err(anyhow!(
-            "Attempted to create a control connection against every node in the rack and all attempts failed:{node_errors}"
-        ))
+    fn set_control_connection(&mut self, connection: CassandraConnection, address: SocketAddr) {
+        self.control_connection = Some(connection);
+        self.control_connection_address = Some(address);
     }
 
     fn is_system_query(&self, request: &mut Message) -> bool {
@@ -571,6 +567,29 @@ impl CassandraSinkCluster {
             }
         }
         false
+    }
+}
+
+fn send_error_in_response_to_metadata(
+    metadata: &CassandraMetadata,
+    error: &str,
+) -> oneshot::Receiver<Result<Message, ResponseError>> {
+    let (tx, rx) = oneshot::channel();
+    tx.send(Ok(Message::from_frame(Frame::Cassandra(
+        CassandraFrame::shotover_error(metadata.stream_id, metadata.version, error),
+    ))))
+    .unwrap();
+    rx
+}
+
+fn send_error_in_response_to_message(
+    message: &Message,
+    error: &str,
+) -> Result<oneshot::Receiver<Result<Message, ResponseError>>> {
+    if let Ok(Metadata::Cassandra(metadata)) = message.metadata() {
+        Ok(send_error_in_response_to_metadata(&metadata, error))
+    } else {
+        Err(anyhow!("Expected message to be of type cassandra"))
     }
 }
 
