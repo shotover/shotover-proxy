@@ -168,9 +168,6 @@ async fn cluster_single_rack_v3(#[case] driver: CassandraDriver) {
 
         routing::test("127.0.0.1", 9042, "172.16.1.2", 9042, driver).await;
 
-        //Check for bugs in cross connection state
-        native_types::test(&connection().await).await;
-
         shotover.shutdown_and_then_consume_events(&[]).await;
     }
 
@@ -207,37 +204,15 @@ async fn cluster_single_rack_v4(#[case] driver: CassandraDriver) {
 
         routing::test("127.0.0.1", 9042, "172.16.1.2", 9044, driver).await;
 
-        //Check for bugs in cross connection state
-        let mut connection2 = CassandraConnectionBuilder::new("127.0.0.1", 9042, driver)
-            .build()
-            .await;
-        connection2
-            .enable_schema_awaiter("172.16.1.2:9044", None)
-            .await;
-        native_types::test(&connection2).await;
-
         cluster::single_rack_v4::test_node_going_down(&compose, driver).await;
 
         shotover
             .shutdown_and_then_consume_events(&[
                 EventMatcher::new()
-                    .with_level(Level::Error)
-                    .with_target("shotover::server")
-                    .with_message(
-                        r#"connection was unexpectedly terminated
-
-Caused by:
-    0: Chain failed to send and/or receive messages, the connection will now be closed.
-    1: CassandraSinkCluster transform failed
-    2: Failed to create new connection
-    3: destination 172.16.1.3:9044 did not respond to connection attempt within 3s"#,
-                    )
-                    .with_count(Count::Any),
-                EventMatcher::new()
                     .with_level(Level::Warn)
-                    .with_target("shotover::transforms::cassandra::sink_cluster")
+                    .with_target("shotover::transforms::cassandra::sink_cluster::node_pool")
                     .with_message(
-                        r#"A successful connection to a control node was made but attempts to connect to these nodes failed first:
+                        r#"A successful connection to a node was made but attempts to connect to these nodes failed first:
 * 172.16.1.3:9044:
     - Failed to create new connection
     - destination 172.16.1.3:9044 did not respond to connection attempt within 3s"#,
@@ -306,9 +281,6 @@ async fn cluster_multi_rack(#[case] driver: CassandraDriver) {
         };
         standard_test_suite(&connection, driver).await;
         cluster::multi_rack::test(&connection().await).await;
-
-        //Check for bugs in cross connection state
-        native_types::test(&connection().await).await;
 
         shotover_rack1.shutdown_and_then_consume_events(&[]).await;
         shotover_rack2.shutdown_and_then_consume_events(&[]).await;

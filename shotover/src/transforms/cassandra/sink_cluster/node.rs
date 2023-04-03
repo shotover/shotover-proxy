@@ -54,6 +54,11 @@ impl CassandraNode {
 
         Ok(self.outbound.as_mut().unwrap())
     }
+
+    pub fn report_issue(&mut self) {
+        self.is_up = false;
+        self.outbound = None;
+    }
 }
 
 #[derive(Debug)]
@@ -90,7 +95,7 @@ impl ConnectionFactory {
 
     /// For when you want to clone the config options for creating new connections but none of the state.
     /// When the transform chain is cloned for a new incoming connection, this method should be used so the state doesn't also get cloned to
-    /// the new connection as aswell.
+    /// the new connection as well.
     pub fn new_with_same_config(&self) -> Self {
         Self {
             connect_timeout: self.connect_timeout,
