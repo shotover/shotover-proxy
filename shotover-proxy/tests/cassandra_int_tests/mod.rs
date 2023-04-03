@@ -209,23 +209,10 @@ async fn cluster_single_rack_v4(#[case] driver: CassandraDriver) {
         shotover
             .shutdown_and_then_consume_events(&[
                 EventMatcher::new()
-                    .with_level(Level::Error)
-                    .with_target("shotover::server")
-                    .with_message(
-                        r#"connection was unexpectedly terminated
-
-Caused by:
-    0: Chain failed to send and/or receive messages, the connection will now be closed.
-    1: CassandraSinkCluster transform failed
-    2: Failed to create new connection
-    3: destination 172.16.1.3:9044 did not respond to connection attempt within 3s"#,
-                    )
-                    .with_count(Count::Any),
-                EventMatcher::new()
                     .with_level(Level::Warn)
-                    .with_target("shotover::transforms::cassandra::sink_cluster")
+                    .with_target("shotover::transforms::cassandra::sink_cluster::node_pool")
                     .with_message(
-                        r#"A successful connection to a control node was made but attempts to connect to these nodes failed first:
+                        r#"A successful connection to a node was made but attempts to connect to these nodes failed first:
 * 172.16.1.3:9044:
     - Failed to create new connection
     - destination 172.16.1.3:9044 did not respond to connection attempt within 3s"#,
