@@ -35,9 +35,9 @@ pub async fn new_async(port: u16) -> redis::aio::Connection {
 
 pub async fn new_async_tls(port: u16) -> redis::aio::Connection {
     let address = "127.0.0.1";
-    let certificate_authority_path = "example-configs/redis-tls/certs/ca.crt";
-    let certificate_path = "example-configs/redis-tls/certs/redis.crt";
-    let private_key_path = "example-configs/redis-tls/certs/redis.key";
+    let certificate_authority_path = "example-configs/redis-tls/certs/localhost_CA.crt";
+    let certificate_path = "example-configs/redis-tls/certs/localhost.crt";
+    let private_key_path = "example-configs/redis-tls/certs/localhost.key";
 
     crate::wait_for_socket_to_open(address, port);
 

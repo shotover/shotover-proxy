@@ -13,9 +13,9 @@ services:
       - 'REDIS_NODES=redis-node-0 redis-node-1 redis-node-2 redis-node-3 redis-node-4 redis-node-5'
       - 'REDIS_TLS_PORT=6379'
       - 'REDIS_TLS_ENABLED=true'
-      - 'REDIS_TLS_CERT_FILE=/usr/local/etc/redis/certs/redis.crt'
-      - 'REDIS_TLS_KEY_FILE=/usr/local/etc/redis/certs/redis.key'
-      - 'REDIS_TLS_CA_FILE=/usr/local/etc/redis/certs/ca.crt'
+      - 'REDIS_TLS_CERT_FILE=/usr/local/etc/redis/certs/localhost.crt'
+      - 'REDIS_TLS_KEY_FILE=/usr/local/etc/redis/certs/localhost.key'
+      - 'REDIS_TLS_CA_FILE=/usr/local/etc/redis/certs/localhost_CA.crt'
       - 'REDIS_TLS_AUTH_CLIENTS=yes'
 
   redis-node-1:
@@ -76,6 +76,6 @@ services:
       - 'REDIS_NODES=redis-node-0 redis-node-1 redis-node-2 redis-node-3 redis-node-4 redis-node-5'
       - 'REDIS_TLS_PORT=6379'
       - 'REDIS_TLS_ENABLED=true'
-      - 'REDIS_TLS_CERT_FILE=/usr/local/etc/redis/certs/redis.crt'
-      - 'REDIS_TLS_KEY_FILE=/usr/local/etc/redis/certs/redis.key'
-      - 'REDIS_TLS_CA_FILE=/usr/local/etc/redis/certs/ca.crt'
+      - 'REDIS_TLS_CERT_FILE=/usr/local/etc/redis/certs/localhost.crt'
+      - 'REDIS_TLS_KEY_FILE=/usr/local/etc/redis/certs/localhost.key'
+      - 'REDIS_TLS_CA_FILE=/usr/local/etc/redis/certs/localhost_CA.crt'
