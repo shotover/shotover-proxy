@@ -3,7 +3,7 @@ use crate::codec::{cassandra::CassandraCodecBuilder, CodecBuilder, Direction};
 use crate::error::ChainResponse;
 use crate::frame::cassandra::CassandraMetadata;
 use crate::message::{Messages, Metadata};
-use crate::tlsls::{TlsConnector, TlsConnectorConfig};
+use crate::tls::{TlsConnector, TlsConnectorConfig};
 use crate::transforms::cassandra::connection::Response;
 use crate::transforms::{Transform, TransformBuilder, TransformConfig, Transforms, Wrapper};
 use anyhow::{anyhow, Result};

@@ -55,8 +55,6 @@ pub async fn new_async_tls(port: u16) -> redis::aio::Connection {
         .configure()
         .unwrap()
         .verify_hostname(false)
-        // really upstream should deal with this for us but for now we can easily just disable it ourselves https://github.com/sfackler/rust-openssl/issues/1860
-        .use_server_name_indication(false)
         .into_ssl("127.0.0.1")
         .unwrap();
 

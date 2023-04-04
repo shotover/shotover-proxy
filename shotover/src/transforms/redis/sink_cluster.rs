@@ -3,7 +3,7 @@ use crate::codec::{CodecBuilder, Direction};
 use crate::error::ChainResponse;
 use crate::frame::{Frame, RedisFrame};
 use crate::message::Message;
-use crate::tlsls::TlsConnectorConfig;
+use crate::tls::TlsConnectorConfig;
 use crate::transforms::redis::RedisError;
 use crate::transforms::redis::TransformError;
 use crate::transforms::util::cluster_connection_pool::{Authenticator, ConnectionPool};

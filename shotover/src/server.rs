@@ -1,12 +1,13 @@
 use crate::codec::{CodecBuilder, CodecReadError};
 use crate::message::Messages;
-use crate::tlsls::{AcceptError, TlsAcceptor};
+use crate::tls::{AcceptError, TlsAcceptor};
 use crate::transforms::chain::{TransformChain, TransformChainBuilder};
 use crate::transforms::Wrapper;
 use anyhow::{anyhow, Context, Result};
 use futures::future::join_all;
 use futures::{SinkExt, StreamExt};
 use metrics::{register_gauge, Gauge};
+use std::io::ErrorKind;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncWrite};
@@ -363,7 +364,11 @@ fn spawn_read_write_tasks<
                                     return;
                                 }
                                 Err(CodecReadError::Io(err)) => {
-                                    warn!("failed to receive message on tcp stream: {:?}", err);
+                                    // I suspect (but have not confirmed) that UnexpectedEof occurs here when the ssl client does not send "close notify" before terminating the connection.
+                                    // We shouldnt report that as a warning because its common for clients to do that for performance reasons.
+                                    if !matches!(err.kind(), ErrorKind::UnexpectedEof)  {
+                                        warn!("failed to receive message on tcp stream: {:?}", err);
+                                    }
                                     return;
                                 }
                             }

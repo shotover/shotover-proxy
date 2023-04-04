@@ -1,7 +1,7 @@
 use super::Response;
 use crate::codec::{CodecBuilder, DecoderHalf, EncoderHalf};
 use crate::tcp;
-use crate::tlsls::{TlsConnector, TlsConnectorConfig};
+use crate::tls::{TlsConnector, TlsConnectorConfig};
 use crate::transforms::util::{ConnectionError, Request};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;

@@ -2,7 +2,7 @@ use crate::codec::Direction;
 use crate::codec::{cassandra::CassandraCodecBuilder, CodecBuilder};
 use crate::server::TcpCodecListener;
 use crate::sources::Sources;
-use crate::tlsls::{TlsAcceptor, TlsAcceptorConfig};
+use crate::tls::{TlsAcceptor, TlsAcceptorConfig};
 use crate::transforms::chain::TransformChainBuilder;
 use anyhow::Result;
 use serde::Deserialize;

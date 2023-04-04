@@ -2,7 +2,7 @@ use crate::codec::cassandra::CassandraCodecBuilder;
 use crate::codec::{CodecBuilder, Direction};
 use crate::frame::Frame;
 use crate::message::{Message, Messages};
-use crate::tlsls::{TlsConnector, ToHostname};
+use crate::tls::{TlsConnector, ToHostname};
 use crate::transforms::cassandra::connection::CassandraConnection;
 use anyhow::{anyhow, Result};
 use cassandra_protocol::frame::Version;

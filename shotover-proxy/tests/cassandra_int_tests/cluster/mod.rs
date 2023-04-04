@@ -2,7 +2,7 @@ use cassandra_protocol::frame::message_startup::BodyReqStartup;
 use cassandra_protocol::frame::Version;
 use shotover::frame::{cassandra::Tracing, CassandraFrame, CassandraOperation, Frame};
 use shotover::message::Message;
-use shotover::tlsls::{TlsConnector, TlsConnectorConfig};
+use shotover::tls::{TlsConnector, TlsConnectorConfig};
 use shotover::transforms::cassandra::sink_cluster::{
     node::{CassandraNode, ConnectionFactory},
     topology::{create_topology_task, TaskConnectionInfo},

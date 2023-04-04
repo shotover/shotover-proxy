@@ -33,6 +33,5 @@ mod server;
 mod sources;
 pub mod tcp;
 pub mod tls;
-pub mod tlsls;
 mod tracing_panic_handler;
 pub mod transforms;
