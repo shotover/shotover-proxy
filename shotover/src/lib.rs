@@ -22,7 +22,7 @@
 #![deny(clippy::print_stderr)]
 
 pub mod codec;
-pub mod config;
+mod config;
 pub mod error;
 pub mod frame;
 pub mod message;
@@ -30,8 +30,8 @@ pub mod message_value;
 mod observability;
 pub mod runner;
 mod server;
-pub mod sources;
+mod sources;
 pub mod tcp;
 pub mod tls;
-pub mod tracing_panic_handler;
+mod tracing_panic_handler;
 pub mod transforms;

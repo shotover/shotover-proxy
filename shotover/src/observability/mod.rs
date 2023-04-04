@@ -12,7 +12,7 @@ use std::{net::SocketAddr, sync::Arc};
 use tracing::{error, trace};
 
 /// Exports metrics over HTTP.
-pub struct LogFilterHttpExporter {
+pub(crate) struct LogFilterHttpExporter {
     recorder_handle: PrometheusHandle,
     address: SocketAddr,
     tracing_handle: ReloadHandle,
