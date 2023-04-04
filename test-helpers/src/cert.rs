@@ -1,5 +1,5 @@
 use crate::docker_compose::run_command;
-use rcgen::{BasicConstraints, Certificate, CertificateParams, DnType, IsCa};
+use rcgen::{BasicConstraints, Certificate, CertificateParams, DnType, IsCa, SanType};
 use std::path::Path;
 
 pub fn generate_redis_test_certs(path: &Path) {
@@ -15,7 +15,13 @@ pub fn generate_redis_test_certs(path: &Path) {
         .push(DnType::OrganizationName, "Shotover test certificate");
     let ca_cert = Certificate::from_params(params).unwrap();
 
-    let mut params = CertificateParams::new(vec!["localhost".to_string(), "127.0.0.1".to_string()]);
+    let mut params = CertificateParams::default();
+
+    // This needs to refer to the hosts that certificate will be used by
+    params.subject_alt_names = vec![
+        SanType::DnsName("localhost".into()),
+        SanType::IpAddress("127.0.0.1".parse().unwrap()),
+    ];
     // This can be whatever
     params
         .distinguished_name
