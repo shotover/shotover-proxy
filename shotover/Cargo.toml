@@ -42,6 +42,7 @@ hex-literal.workspace = true
 thiserror = "1.0"
 anyhow.workspace = true
 backtrace = "0.3.66"
+backtrace-ext = "0.2"
 
 # Parsers
 cql3-parser = "0.3.2"

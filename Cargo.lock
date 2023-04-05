@@ -219,6 +219,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "backtrace-ext"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "537beee3be4a18fb023b570f80e3ae28003db9167a751266b259926e25539d50"
+dependencies = [
+ "backtrace",
+]
+
+[[package]]
 name = "base64"
 version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3119,6 +3128,7 @@ dependencies = [
  "async-trait",
  "atomic_enum",
  "backtrace",
+ "backtrace-ext",
  "base64 0.21.0",
  "bigdecimal 0.3.0",
  "bincode",
