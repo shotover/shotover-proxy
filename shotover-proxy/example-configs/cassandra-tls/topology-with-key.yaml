@@ -4,7 +4,6 @@ sources:
     Cassandra:
       listen_addr: "127.0.0.1:9043"
       tls:
-        certificate_authority_path: "example-configs/docker-images/cassandra-tls-4.0.6/certs/localhost_CA.crt"
         certificate_path: "example-configs/docker-images/cassandra-tls-4.0.6/certs/localhost.crt"
         private_key_path: "example-configs/docker-images/cassandra-tls-4.0.6/certs/localhost.key"
 chain_config:

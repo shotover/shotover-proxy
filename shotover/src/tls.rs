@@ -16,7 +16,7 @@ use tokio_openssl::SslStream;
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct TlsAcceptorConfig {
     /// Path to the certificate authority in PEM format
-    pub certificate_authority_path: String,
+    pub certificate_authority_path: Option<String>,
     /// Path to the certificate in PEM format
     pub certificate_path: String,
     /// Path to the private key in PEM format
@@ -48,18 +48,20 @@ pub fn check_file_field(field_name: &str, file_path: &str) -> Result<()> {
 impl TlsAcceptor {
     pub fn new(tls_config: TlsAcceptorConfig) -> Result<TlsAcceptor> {
         // openssl's errors are really bad so we do our own checks so we can provide reasonable errors
-        check_file_field(
-            "certificate_authority_path",
-            &tls_config.certificate_authority_path,
-        )?;
         check_file_field("private_key_path", &tls_config.private_key_path)?;
         check_file_field("certificate_path", &tls_config.certificate_path)?;
 
         let mut builder = SslAcceptor::mozilla_intermediate(SslMethod::tls())
             .map_err(openssl_stack_error_to_anyhow)?;
-        builder
-            .set_ca_file(tls_config.certificate_authority_path)
-            .map_err(openssl_stack_error_to_anyhow)?;
+
+        if let Some(path) = tls_config.certificate_authority_path.as_ref() {
+            check_file_field("certificate_authority_path", path)?;
+            builder
+                .set_ca_file(path)
+                .map_err(openssl_stack_error_to_anyhow)?;
+            return Err(anyhow!("Client auth is not yet supported in shotover"));
+        }
+
         builder
             .set_private_key_file(tls_config.private_key_path, SslFiletype::PEM)
             .map_err(openssl_stack_error_to_anyhow)?;

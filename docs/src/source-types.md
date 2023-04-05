@@ -23,12 +23,13 @@ Cassandra:
   # When this field is provided TLS is used when the client connects to Shotover.
   # Removing this field will disable TLS.
   #tls:
-  #  # Path to the certificate authority file, typically named with a .crt extension.
-  #  certificate_authority_path: "tls/localhost_CA.crt"
   #  # Path to the certificate file, typically named with a .crt extension.
   #  certificate_path: "tls/localhost.crt"
   #  # Path to the private key file, typically named with a .key extension.
   #  private_key_path: "tls/localhost.key"
+  #  # Path to the certificate authority file, typically named with a .crt extension.
+  #  # When this field is provided client authentication will be enabled.
+  #  #certificate_authority_path: "tls/localhost_CA.crt"
  
   # Timeout in seconds after which to terminate an idle connection. This field is optional, if not provided, idle connections will never be terminated.
   # timeout: 60
@@ -57,7 +58,8 @@ Redis:
   #  # Path to the private key file, typically named with a .key extension.
   #  private_key_path: "tls/redis.key"
   #  # Path to the certificate authority file typically named ca.crt.
-  #  certificate_authority_path: "tls/ca.crt"
+  #  # When this field is provided client authentication will be enabled.
+  #  #certificate_authority_path: "tls/ca.crt"
     
   # Timeout in seconds after which to terminate an idle connection. This field is optional, if not provided, idle connections will never be terminated.
   # timeout: 60
