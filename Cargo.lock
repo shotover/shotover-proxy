@@ -857,6 +857,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "custom-transforms-example"
+version = "0.0.1"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "redis",
+ "serde",
+ "shotover",
+ "test-helpers",
+ "tokio",
+ "tracing",
+ "typetag",
+]
+
+[[package]]
 name = "cxx"
 version = "1.0.94"
 source = "registry+https://github.com/rust-lang/crates.io-index"
