@@ -1,6 +1,5 @@
 use cassandra_cpp::{PreparedStatement, Session, Statement};
 use criterion::{criterion_group, Criterion};
-use test_helpers::cert::generate_cassandra_test_certs;
 use test_helpers::connection::cassandra::{
     CassandraConnection, CassandraConnectionBuilder, CassandraDriver,
 };
@@ -256,11 +255,11 @@ impl BenchResources {
     }
 
     fn new_tls(shotover_topology: &str, compose_file: &str) -> Self {
+        test_helpers::cert::generate_cassandra_test_certs();
         let tokio = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .build()
             .unwrap();
-        generate_cassandra_test_certs();
         let compose = DockerCompose::new(compose_file);
         let shotover = Some(
             tokio.block_on(ShotoverProcessBuilder::new_with_topology(shotover_topology).start()),

@@ -21,12 +21,9 @@ pub struct Response {
 
 #[derive(thiserror::Error, Debug)]
 pub enum ConnectionError<E: fmt::Debug + fmt::Display> {
-    #[error("io error: {0}")]
-    IO(Error),
-
-    #[error("TLS error: {0}")]
-    TLS(Error),
-
     #[error("authenticator error: {0}")]
     Authenticator(E),
+
+    #[error(transparent)]
+    Other(#[from] Error),
 }

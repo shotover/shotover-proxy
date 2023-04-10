@@ -1,6 +1,6 @@
-use rcgen::{BasicConstraints, Certificate, CertificateParams, DnType, IsCa};
+use crate::docker_compose::run_command;
+use rcgen::{BasicConstraints, Certificate, CertificateParams, DnType, IsCa, SanType};
 use std::path::Path;
-use std::process::Command;
 
 pub fn generate_redis_test_certs(path: &Path) {
     let mut params = CertificateParams::default();
@@ -15,7 +15,13 @@ pub fn generate_redis_test_certs(path: &Path) {
         .push(DnType::OrganizationName, "Shotover test certificate");
     let ca_cert = Certificate::from_params(params).unwrap();
 
-    let mut params = CertificateParams::new(vec!["localhost".to_string(), "127.0.0.1".to_string()]);
+    let mut params = CertificateParams::default();
+
+    // This needs to refer to the hosts that certificate will be used by
+    params.subject_alt_names = vec![
+        SanType::DnsName("localhost".into()),
+        SanType::IpAddress("127.0.0.1".parse().unwrap()),
+    ];
     // This can be whatever
     params
         .distinguished_name
@@ -27,17 +33,36 @@ pub fn generate_redis_test_certs(path: &Path) {
     let cert = Certificate::from_params(params).unwrap();
 
     std::fs::create_dir_all(path).unwrap();
-    std::fs::write(path.join("ca.crt"), ca_cert.serialize_pem().unwrap()).unwrap();
     std::fs::write(
-        path.join("redis.crt"),
+        path.join("localhost_CA.crt"),
+        ca_cert.serialize_pem().unwrap(),
+    )
+    .unwrap();
+    std::fs::write(
+        path.join("localhost.crt"),
         cert.serialize_pem_with_signer(&ca_cert).unwrap(),
     )
     .unwrap();
-    std::fs::write(path.join("redis.key"), cert.serialize_private_key_pem()).unwrap();
+    std::fs::write(path.join("localhost.key"), cert.serialize_private_key_pem()).unwrap();
 }
 
 pub fn generate_cassandra_test_certs() {
-    Command::new("example-configs/docker-images/cassandra-tls-4.0.6/certs/gen_certs.sh")
-        .output()
-        .unwrap();
+    let path = Path::new("example-configs/docker-images/cassandra-tls-4.0.6/certs");
+    generate_redis_test_certs(path);
+    run_command(
+        "openssl",
+        &[
+            "pkcs12",
+            "-export",
+            "-out",
+            path.join("keystore.p12").to_str().unwrap(),
+            "-inkey",
+            path.join("localhost.key").to_str().unwrap(),
+            "-in",
+            path.join("localhost.crt").to_str().unwrap(),
+            "-passout",
+            "pass:password",
+        ],
+    )
+    .unwrap();
 }

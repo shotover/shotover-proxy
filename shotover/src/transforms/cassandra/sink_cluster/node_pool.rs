@@ -1,15 +1,16 @@
-use super::node::CassandraNode;
+use crate::transforms::cassandra::connection::CassandraConnection;
+
+use super::node::{CassandraNode, ConnectionFactory};
 use super::routing_key::calculate_routing_key;
 use super::token_map::TokenMap;
 use super::KeyspaceChanRx;
-use anyhow::{anyhow, Error, Result};
+use anyhow::{anyhow, Context, Error, Result};
 use cassandra_protocol::frame::message_execute::BodyReqExecuteOwned;
 use cassandra_protocol::frame::Version;
 use cassandra_protocol::token::Murmur3Token;
 use cassandra_protocol::types::CBytesShort;
 use metrics::{register_counter, Counter};
 use rand::prelude::*;
-use split_iter::Splittable;
 use std::sync::Arc;
 use std::{collections::HashMap, net::SocketAddr};
 use tokio::sync::{watch, RwLock};
@@ -24,7 +25,7 @@ pub struct PreparedMetadata {
 pub enum GetReplicaErr {
     NoPreparedMetadata,
     NoKeyspaceMetadata,
-    NoReplicasFound,
+    NoNodeAvailable(anyhow::Error),
     Other(Error),
 }
 
@@ -54,7 +55,6 @@ impl NodePoolBuilder {
             keyspace_metadata: HashMap::new(),
             token_map: TokenMap::new(&[]),
             nodes: vec![],
-            prev_idx: 0,
             out_of_rack_requests: self.out_of_rack_requests.clone(),
         }
     }
@@ -65,7 +65,6 @@ pub struct NodePool {
     keyspace_metadata: HashMap<String, KeyspaceMetadata>,
     token_map: TokenMap,
     nodes: Vec<CassandraNode>,
-    prev_idx: usize,
     out_of_rack_requests: Counter,
 }
 
@@ -95,8 +94,7 @@ impl NodePool {
     pub fn report_issue_with_node(&mut self, address: SocketAddr) {
         for node in &mut self.nodes {
             if node.address == address {
-                node.is_up = false;
-                node.outbound = None;
+                node.report_issue();
             }
         }
     }
@@ -111,39 +109,58 @@ impl NodePool {
         write_lock.insert(id, metadata);
     }
 
-    pub fn get_shuffled_addresses_in_dc_rack(
+    pub async fn get_random_node_in_dc_rack(
         &mut self,
         rack: &str,
         rng: &mut SmallRng,
-    ) -> Vec<SocketAddr> {
+        connection_factory: &ConnectionFactory,
+    ) -> Result<&mut CassandraNode> {
         let mut nodes: Vec<_> = self
             .nodes
             .iter_mut()
             .filter(|node| node.is_up && node.rack == *rack)
-            .map(|node| node.address)
             .collect();
-
         nodes.shuffle(rng);
-        nodes
+        get_accessible_node(connection_factory, nodes)
+            .await
+            .map_err(|err| {
+                err.context(format!(
+                    "Failed to open a connection to any nodes in the rack {rack:?}"
+                ))
+            })
     }
 
-    pub fn get_round_robin_node_in_dc_rack(&mut self, rack: &str) -> &mut CassandraNode {
-        let up_indexes: Vec<usize> = self
-            .nodes
-            .iter()
-            .enumerate()
-            .filter_map(|(i, node)| {
-                if node.is_up && node.rack == *rack {
-                    Some(i)
-                } else {
-                    None
-                }
+    pub async fn get_random_connection_in_dc_rack(
+        &mut self,
+        rack: &str,
+        rng: &mut SmallRng,
+        connection_factory: &ConnectionFactory,
+    ) -> Result<&CassandraConnection> {
+        self.get_random_node_in_dc_rack(rack, rng, connection_factory)
+            .await
+            .map(|x| {
+                x.outbound
+                    .as_ref()
+                    .expect("it is set to Some by get_random_node_in_dc_rack")
             })
-            .collect();
+    }
 
-        self.prev_idx = (self.prev_idx + 1) % up_indexes.len();
-
-        &mut self.nodes[up_indexes[self.prev_idx]]
+    pub async fn get_random_owned_connection_in_dc_rack(
+        &mut self,
+        rack: &str,
+        rng: &mut SmallRng,
+        connection_factory: &ConnectionFactory,
+    ) -> Result<(CassandraConnection, SocketAddr)> {
+        self.get_random_node_in_dc_rack(rack, rng, connection_factory)
+            .await
+            .map(|x| {
+                (
+                    x.outbound
+                        .take()
+                        .expect("it is set to Some by get_random_node_in_dc_rack"),
+                    x.address,
+                )
+            })
     }
 
     /// Get a token routed replica node for the supplied execute message (if exists)
@@ -155,7 +172,7 @@ impl NodePool {
         rack: &str,
         version: Version,
         rng: &mut SmallRng,
-    ) -> Result<&mut CassandraNode, GetReplicaErr> {
+    ) -> Result<Vec<&mut CassandraNode>, GetReplicaErr> {
         let metadata = {
             let read_lock = self.prepared_metadata.read().await;
             read_lock
@@ -191,200 +208,115 @@ impl NodePool {
             )
             .collect::<Vec<uuid::Uuid>>();
 
-        let (dc_replicas, rack_replicas) = self
+        let mut nodes: Vec<&mut CassandraNode> = self
             .nodes
             .iter_mut()
             .filter(|node| replica_host_ids.contains(&node.host_id) && node.is_up)
-            .split(|node| node.rack == rack);
+            .collect();
+        nodes.shuffle(rng);
 
-        if let Some(rack_replica) = rack_replicas.choose(rng) {
-            Ok(rack_replica)
-        } else {
+        // Move all nodes that are in the rack to the front of the list.
+        // This way they will be preferred over all other nodes
+        let mut nodes_found_in_rack = 0;
+        for i in 0..nodes.len() {
+            if nodes[i].rack == rack {
+                nodes.swap(i, nodes_found_in_rack);
+                nodes_found_in_rack += 1;
+            }
+        }
+        if nodes_found_in_rack == 0 {
             // An execute message is being delivered outside of CassandraSinkCluster's designated rack. The only cases this can occur is when:
             // The client correctly routes to the shotover node that reports it has the token in its rack, however the destination cassandra node has since gone down and is now inaccessible.
             // or
             // The clients token aware routing is broken.
             self.out_of_rack_requests.increment(1);
-            dc_replicas
-                .choose(rng)
-                .ok_or(GetReplicaErr::NoReplicasFound)
         }
+
+        Ok(nodes)
+    }
+
+    pub async fn get_replica_connection_in_dc(
+        &mut self,
+        execute: &BodyReqExecuteOwned,
+        rack: &str,
+        version: Version,
+        rng: &mut SmallRng,
+        connection_factory: &ConnectionFactory,
+    ) -> Result<&CassandraConnection, GetReplicaErr> {
+        let nodes = self
+            .get_replica_node_in_dc(execute, rack, version, rng)
+            .await?;
+
+        get_accessible_node(connection_factory, nodes)
+            .await
+            .context("Failed to open a connection to any replicas of a specific token")
+            .map_err(GetReplicaErr::NoNodeAvailable)
+            .map(|x| {
+                x.outbound
+                    .as_ref()
+                    .expect("it is set to Some by get_accessible_node")
+            })
     }
 }
 
-#[cfg(test)]
-mod test_node_pool {
-    use super::*;
-    use crate::transforms::cassandra::sink_cluster::CassandraNode;
-    use uuid::Uuid;
+pub struct AddressError {
+    pub address: SocketAddr,
+    pub error: anyhow::Error,
+}
 
-    #[test]
-    fn test_round_robin() {
-        let nodes = prepare_nodes();
-
-        let mut node_pool = NodePoolBuilder::new("chain".to_owned()).build();
-        let (_nodes_tx, mut nodes_rx) = watch::channel(nodes.clone());
-        node_pool.update_nodes(&mut nodes_rx);
-
-        node_pool.nodes[1].is_up = false;
-        node_pool.nodes[3].is_up = false;
-        node_pool.nodes[5].is_up = false;
-
-        let mut round_robin_nodes = vec![];
-
-        for _ in 0..nodes.iter().filter(|node| node.rack == "rack1").count() - 1 {
-            round_robin_nodes.push(
-                node_pool
-                    .get_round_robin_node_in_dc_rack("rack1")
-                    .address
-                    .to_string(),
-            );
+pub fn bullet_list_of_node_failures<'a, I: Iterator<Item = &'a AddressError>>(errors: I) -> String {
+    let mut node_errors = String::new();
+    for AddressError { error, address } in errors {
+        node_errors.push_str(&format!("\n* {address:?}:"));
+        for sub_error in error.chain() {
+            node_errors.push_str(&format!("\n    - {sub_error}"));
         }
+    }
+    node_errors
+}
 
-        // only includes up nodes in round robin
-        assert_eq!(
-            vec![
-                "172.16.1.2:9044",
-                "172.16.1.4:9044",
-                "172.16.1.6:9044",
-                "172.16.1.7:9044",
-                "172.16.1.0:9044",
-                "172.16.1.2:9044",
-                "172.16.1.4:9044",
-            ],
-            round_robin_nodes
-        );
-
-        node_pool.nodes[1].is_up = true;
-        node_pool.nodes[3].is_up = true;
-        node_pool.nodes[5].is_up = true;
-
-        round_robin_nodes.clear();
-
-        for _ in 0..nodes.iter().filter(|node| node.rack == "rack1").count() - 1 {
-            round_robin_nodes.push(
-                node_pool
-                    .get_round_robin_node_in_dc_rack("rack1")
-                    .address
-                    .to_string(),
-            );
+pub async fn get_accessible_node<'a>(
+    connection_factory: &ConnectionFactory,
+    nodes: Vec<&'a mut CassandraNode>,
+) -> Result<&'a mut CassandraNode> {
+    let mut errors = vec![];
+    for node in nodes {
+        match node.get_connection(connection_factory).await {
+            Ok(_) => {
+                if !errors.is_empty() {
+                    let node_errors = bullet_list_of_node_failures(errors.iter());
+                    tracing::warn!("A successful connection to a node was made but attempts to connect to these nodes failed first:{node_errors}");
+                }
+                return Ok(node);
+            }
+            Err(error) => {
+                node.report_issue();
+                errors.push(AddressError {
+                    error,
+                    address: node.address,
+                });
+            }
         }
-
-        // includes the new up nodes in round robin
-        assert_eq!(
-            vec![
-                "172.16.1.3:9044",
-                "172.16.1.4:9044",
-                "172.16.1.5:9044",
-                "172.16.1.6:9044",
-                "172.16.1.7:9044",
-                "172.16.1.0:9044",
-                "172.16.1.1:9044"
-            ],
-            round_robin_nodes
-        );
     }
 
-    fn prepare_nodes() -> Vec<CassandraNode> {
-        vec![
-            // rack 1 nodes
-            CassandraNode::new(
-                "172.16.1.0:9044".parse().unwrap(),
-                "rack1".into(),
-                vec![],
-                Uuid::new_v4(),
-            ),
-            CassandraNode::new(
-                "172.16.1.1:9044".parse().unwrap(),
-                "rack1".into(),
-                vec![],
-                Uuid::new_v4(),
-            ),
-            CassandraNode::new(
-                "172.16.1.2:9044".parse().unwrap(),
-                "rack1".into(),
-                vec![],
-                Uuid::new_v4(),
-            ),
-            CassandraNode::new(
-                "172.16.1.3:9044".parse().unwrap(),
-                "rack1".into(),
-                vec![],
-                Uuid::new_v4(),
-            ),
-            CassandraNode::new(
-                "172.16.1.4:9044".parse().unwrap(),
-                "rack1".into(),
-                vec![],
-                Uuid::new_v4(),
-            ),
-            CassandraNode::new(
-                "172.16.1.5:9044".parse().unwrap(),
-                "rack1".into(),
-                vec![],
-                Uuid::new_v4(),
-            ),
-            CassandraNode::new(
-                "172.16.1.6:9044".parse().unwrap(),
-                "rack1".into(),
-                vec![],
-                Uuid::new_v4(),
-            ),
-            CassandraNode::new(
-                "172.16.1.7:9044".parse().unwrap(),
-                "rack1".into(),
-                vec![],
-                Uuid::new_v4(),
-            ),
-            // rack 2 nodes
-            CassandraNode::new(
-                "172.16.2.0:9044".parse().unwrap(),
-                "rack2".into(),
-                vec![],
-                Uuid::new_v4(),
-            ),
-            CassandraNode::new(
-                "172.16.2.1:9044".parse().unwrap(),
-                "rack2".into(),
-                vec![],
-                Uuid::new_v4(),
-            ),
-            CassandraNode::new(
-                "172.16.2.2:9044".parse().unwrap(),
-                "rack2".into(),
-                vec![],
-                Uuid::new_v4(),
-            ),
-            CassandraNode::new(
-                "172.16.2.3:9044".parse().unwrap(),
-                "rack2".into(),
-                vec![],
-                Uuid::new_v4(),
-            ),
-            CassandraNode::new(
-                "172.16.2.4:9044".parse().unwrap(),
-                "rack2".into(),
-                vec![],
-                Uuid::new_v4(),
-            ),
-            CassandraNode::new(
-                "172.16.2.5:9044".parse().unwrap(),
-                "rack2".into(),
-                vec![],
-                Uuid::new_v4(),
-            ),
-            CassandraNode::new(
-                "172.16.2.6:9044".parse().unwrap(),
-                "rack2".into(),
-                vec![],
-                Uuid::new_v4(),
-            ),
-            CassandraNode::new(
-                "172.16.2.7:9044".parse().unwrap(),
-                "rack2".into(),
-                vec![],
-                Uuid::new_v4(),
-            ),
-        ]
-    }
+    let node_errors = bullet_list_of_node_failures(errors.iter());
+    Err(anyhow!(
+        "Attempted to open a connection to one of multiple nodes but all attempts failed:{node_errors}"
+    ))
+}
+
+pub async fn get_accessible_owned_connection<'a>(
+    connection_factory: &ConnectionFactory,
+    nodes: Vec<&'a mut CassandraNode>,
+) -> Result<(CassandraConnection, SocketAddr)> {
+    get_accessible_node(connection_factory, nodes)
+        .await
+        .map(|x| {
+            (
+                x.outbound
+                    .take()
+                    .expect("it is set to Some by get_random_node_in_dc_rack"),
+                x.address,
+            )
+        })
 }

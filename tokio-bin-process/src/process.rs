@@ -26,6 +26,7 @@ use tracing_subscriber::fmt::TestWriter;
 // But worst case it just unnecessarily reruns `cargo build`.
 static BUILT_PACKAGES: Lazy<Mutex<HashSet<String>>> = Lazy::new(|| Mutex::new(HashSet::new()));
 
+/// A running process of a binary produced by a crate in the workspace
 pub struct BinProcess {
     /// Always Some while BinProcess is owned
     pub child: Option<Child>,
@@ -49,28 +50,28 @@ fn setup_tracing_subscriber_for_test_logic() {
 }
 
 impl BinProcess {
-    /// Starts the crates binary in a process and returns a BinProcess which can be used to interact with the process.
+    /// Start the crate binary named `cargo_package_name` in a process and returns a BinProcess which can be used to interact with the process.
     /// The binary will be internally compiled by cargo if its not already, it will be compiled in a release/debug mode that matches the release/debug mode of the integration test.
     ///
     /// The `user_args` will be used as the args to the binary.
     /// The args should give the desired setup for the given integration test and should also enable the tracing json logger to stdout if that is not the default.
     /// All tracing events emitted by your binary in json over stdout will be processed by BinProcess and then emitted to the tests stdout in the default human readable tracing format.
     /// To ensure any WARN/ERROR's from your test logic are visible, BinProcess will setup its own subscriber that outputs to the tests stdout in the default human readable format.
-    /// If you set your own subscriber before calling `BinProcess::start_with_args` that will take preference instead.
+    /// If you set your own subscriber before calling [`BinProcess::start_with_args`] that will take preference instead.
     ///
-    /// Dropping the BinProcess will trigger a panic unless shutdown_and_then_consume_events or consume_remaining_events has been called.
+    /// Dropping the BinProcess will trigger a panic unless [`BinProcess::shutdown_and_then_consume_events`] or [`BinProcess::consume_remaining_events`] has been called.
     /// This is done to avoid missing important assertions run by those methods.
     pub async fn start_with_args(
         cargo_package_name: &str,
-        binary_args: &[&str],
         log_name: &str,
+        binary_args: &[&str],
     ) -> BinProcess {
         setup_tracing_subscriber_for_test_logic();
 
         let log_name = if log_name.len() > 10 {
             panic!("In order to line up in log outputs, argument log_name to BinProcess::start_with_args must be of length <= 10 but the value was: {log_name}");
         } else {
-            format!("{log_name: <10}") //pads log_name up to 10 chars so that it lines up properly when included in log output.
+            format!("{log_name: <10}") // pads log_name up to 10 chars so that it lines up properly when included in log output.
         };
 
         // PROFILE is set in build.rs from PROFILE listed in https://doc.rust-lang.org/cargo/reference/environment-variables.html#environment-variables-cargo-sets-for-build-scripts
@@ -165,7 +166,8 @@ impl BinProcess {
     ///       I havent implemented it yet because I dont yet have anywhere to use it.
     ///
     /// Await `event_count` messages to be emitted from the process.
-    pub async fn consume_events(
+    #[allow(dead_code)]
+    async fn consume_events(
         &self,
         _event_count: usize,
         _expected_errors_and_warnings: &[EventMatcher],

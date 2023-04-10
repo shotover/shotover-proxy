@@ -201,18 +201,7 @@ async fn cluster_auth() {
     test_auth(&mut connection).await;
     test_auth_isolation(&mut connection).await;
 
-    shotover
-        .shutdown_and_then_consume_events(&[
-            EventMatcher::new()
-                .with_level(Level::Warn)
-                .with_target("shotover::transforms::redis::sink_cluster")
-                .with_message("failed to build connections: Upstream(BadCredentials)"),
-            EventMatcher::new()
-                .with_level(Level::Warn)
-                .with_target("shotover::transforms::redis::sink_cluster")
-                .with_message("failed to build connections: Upstream(NotAuthorized)"),
-        ])
-        .await;
+    shotover.shutdown_and_then_consume_events(&[]).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]

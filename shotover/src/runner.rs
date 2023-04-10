@@ -3,6 +3,7 @@ use crate::config::Config;
 use crate::observability::LogFilterHttpExporter;
 use crate::transforms::Transforms;
 use crate::transforms::Wrapper;
+use anyhow::Context;
 use anyhow::{anyhow, Result};
 use clap::{crate_version, Parser};
 use metrics_exporter_prometheus::PrometheusBuilder;
@@ -46,7 +47,7 @@ pub struct ConfigOpts {
     pub log_format: LogFormat,
 }
 
-#[derive(clap::ValueEnum, Clone)]
+#[derive(clap::ValueEnum, Clone, Copy)]
 pub enum LogFormat {
     Human,
     Json,
@@ -64,23 +65,50 @@ impl Default for ConfigOpts {
     }
 }
 
-pub struct Runner {
+pub struct Shotover {
     runtime: Runtime,
     topology: Topology,
     config: Config,
     tracing: TracingState,
 }
 
-impl Runner {
-    pub fn new(params: ConfigOpts) -> Result<Self> {
+impl Shotover {
+    #[allow(clippy::new_without_default)]
+    pub fn new() -> Self {
+        let opts = ConfigOpts::parse();
+        let log_format = opts.log_format;
+
+        match Shotover::new_inner(opts) {
+            Ok(x) => x,
+            Err(err) => {
+                // If initialization failed then we have no tokio runtime or tracing to use.
+                // Create the simplest runtime + tracing so we can write out an `error!`, if even that fails then just panic.
+                // Put it all in its own scope so we drop it (and therefore perform tracing log flushing) before we exit
+                {
+                    let rt = Runtime::new()
+                        .context("Failed to create runtime while trying to report {err:?}")
+                        .unwrap();
+                    let _guard = rt.enter();
+                    let _tracing_state = TracingState::new("error", log_format)
+                        .context("Failed to create TracingState while trying to report {err:?}")
+                        .unwrap();
+
+                    tracing::error!("{:?}", err.context("Failed to start shotover"));
+                }
+                std::process::exit(1);
+            }
+        }
+    }
+
+    fn new_inner(params: ConfigOpts) -> Result<Self> {
         let config = Config::from_file(params.config_file)?;
         let topology = Topology::from_file(&params.topology_file)?;
-
         let tracing = TracingState::new(config.main_log_level.as_str(), params.log_format)?;
+        let runtime = Shotover::create_runtime(params.stack_size, params.core_threads);
 
-        let runtime = Runner::create_runtime(params.stack_size, params.core_threads);
+        Shotover::start_observability_interface(&runtime, &config, &tracing)?;
 
-        Ok(Runner {
+        Ok(Shotover {
             runtime,
             topology,
             config,
@@ -88,20 +116,25 @@ impl Runner {
         })
     }
 
-    pub fn with_observability_interface(self) -> Result<Self> {
+    fn start_observability_interface(
+        runtime: &Runtime,
+        config: &Config,
+        tracing: &TracingState,
+    ) -> Result<()> {
         let recorder = PrometheusBuilder::new().build_recorder();
         let handle = recorder.handle();
         metrics::set_boxed_recorder(Box::new(recorder))?;
 
-        let socket: SocketAddr = self.config.observability_interface.parse()?;
-        let exporter = LogFilterHttpExporter::new(handle, socket, self.tracing.handle.clone());
+        let socket: SocketAddr = config.observability_interface.parse()?;
+        let exporter = LogFilterHttpExporter::new(handle, socket, tracing.handle.clone());
 
-        self.runtime.spawn(exporter.async_run());
-
-        Ok(self)
+        runtime.spawn(exporter.async_run());
+        Ok(())
     }
 
-    pub fn run_block(self) -> Result<()> {
+    /// Begins running shotover, permanently handing control of the appplication over to shotover.
+    /// As such this method never returns.
+    pub fn run_block(self) -> ! {
         let (trigger_shutdown_tx, trigger_shutdown_rx) = watch::channel(false);
 
         // We need to block on this part to ensure that we immediately register these signals.
@@ -125,8 +158,23 @@ impl Runner {
             trigger_shutdown_tx.send(true).unwrap();
         });
 
-        self.runtime
+        let code = match self
+            .runtime
             .block_on(run(self.topology, self.config, trigger_shutdown_rx))
+        {
+            Ok(()) => {
+                info!("Shotover was shutdown cleanly.");
+                0
+            }
+            Err(err) => {
+                error!("{:?}", err.context("Failed to start shotover"));
+                1
+            }
+        };
+        // Ensure tracing is flushed by dropping before exiting
+        std::mem::drop(self.tracing);
+        std::mem::drop(self.runtime);
+        std::process::exit(code);
     }
 
     fn create_runtime(stack_size: usize, worker_threads: Option<usize>) -> Runtime {
@@ -264,15 +312,9 @@ pub async fn run(
     match topology.run_chains(trigger_shutdown_rx).await {
         Ok(sources) => {
             futures::future::join_all(sources.into_iter().map(|x| x.into_join_handle())).await;
-            info!("Shotover was shutdown cleanly.");
             Ok(())
         }
-        Err(error) => {
-            error!("{:?}", error);
-            Err(anyhow!(
-                "Shotover failed to initialize, the fatal error was logged."
-            ))
-        }
+        Err(err) => Err(err),
     }
 }
 
