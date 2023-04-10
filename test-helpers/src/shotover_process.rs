@@ -86,7 +86,7 @@ observability_interface: "127.0.0.1:{observability_port}"
     ) -> Events {
         BinProcess::start_with_args(
             "shotover-proxy",
-            "Shotover",
+            "shotover",
             &["-t", &self.topology_path, "--log-format", "json"],
         )
         .await
