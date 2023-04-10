@@ -309,7 +309,7 @@ pub(crate) fn serialize_with_length_prefix(
         .copy_from_slice(&(bytes_len as CInt).to_be_bytes());
 }
 
-pub fn serialize_len(cursor: &mut Cursor<&mut Vec<u8>>, len: usize) {
+pub(crate) fn serialize_len(cursor: &mut Cursor<&mut Vec<u8>>, len: usize) {
     let len = len as CInt;
     cursor.write_all(&len.to_be_bytes()).unwrap();
 }
