@@ -1,5 +1,5 @@
-use crate::error::ChainResponse;
 use crate::message::Messages;
+use crate::transforms::ChainResponse;
 use crate::transforms::{TransformBuilder, Transforms, Wrapper};
 use anyhow::{anyhow, Result};
 use derivative::Derivative;
@@ -17,7 +17,7 @@ pub struct BufferedChainMessages {
     pub local_addr: SocketAddr,
     pub messages: Messages,
     pub flush: bool,
-    pub return_chan: Option<oneshot::Sender<crate::error::ChainResponse>>,
+    pub return_chan: Option<oneshot::Sender<crate::transforms::ChainResponse>>,
 }
 
 impl BufferedChainMessages {

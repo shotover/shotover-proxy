@@ -1,5 +1,5 @@
-use crate::transforms::{Transform, TransformBuilder, TransformConfig, Wrapper};
-use crate::{error::ChainResponse, message::Message};
+use crate::message::Message;
+use crate::transforms::{ChainResponse, Transform, TransformBuilder, TransformConfig, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
 use governor::{

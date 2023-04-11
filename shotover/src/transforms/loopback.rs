@@ -1,4 +1,4 @@
-use crate::error::ChainResponse;
+use crate::transforms::ChainResponse;
 use crate::transforms::{Transform, TransformBuilder, Transforms, Wrapper};
 use async_trait::async_trait;
 

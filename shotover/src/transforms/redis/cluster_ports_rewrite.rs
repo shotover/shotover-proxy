@@ -4,8 +4,8 @@ use async_trait::async_trait;
 use bytes::{BufMut, Bytes, BytesMut};
 use serde::Deserialize;
 
-use crate::error::ChainResponse;
 use crate::frame::Frame;
+use crate::transforms::ChainResponse;
 use crate::transforms::{Transform, TransformBuilder, TransformConfig, Transforms, Wrapper};
 
 #[derive(Deserialize, Debug)]

@@ -1,9 +1,10 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use serde::Deserialize;
-use shotover::error::ChainResponse;
 use shotover::frame::{Frame, RedisFrame};
-use shotover::transforms::{Transform, TransformBuilder, TransformConfig, Transforms, Wrapper};
+use shotover::transforms::{
+    ChainResponse, Transform, TransformBuilder, TransformConfig, Transforms, Wrapper,
+};
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct RedisGetRewriteConfig {

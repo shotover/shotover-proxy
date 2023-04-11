@@ -4,7 +4,7 @@
 /// The use of this transform is to allow benchmarking the performance impact of parsing messages
 /// without worrying about the performance impact of other transform logic.
 /// It could also be used to ensure that messages round trip correctly when parsed.
-use crate::error::ChainResponse;
+use crate::transforms::ChainResponse;
 #[cfg(feature = "alpha-transforms")]
 use crate::transforms::TransformConfig;
 use crate::transforms::{Transform, TransformBuilder, Transforms, Wrapper};

@@ -1,6 +1,5 @@
 //! Various types required for defining a transform
 
-use crate::error::ChainResponse;
 use crate::message::Messages;
 use crate::transforms::cassandra::peers_rewrite::CassandraPeersRewrite;
 use crate::transforms::cassandra::sink_cluster::CassandraSinkCluster;
@@ -490,3 +489,5 @@ pub trait Transform: Send {
 }
 
 type ResponseFuture = Pin<Box<dyn Future<Output = Result<util::Response>> + Send + Sync>>;
+
+pub type ChainResponse = anyhow::Result<Messages>;

@@ -1,6 +1,6 @@
-use crate::error::ChainResponse;
 use crate::frame::Frame;
 use crate::frame::RedisFrame;
+use crate::transforms::ChainResponse;
 use crate::transforms::TransformConfig;
 use crate::transforms::{Transform, TransformBuilder, Transforms, Wrapper};
 use anyhow::Result;

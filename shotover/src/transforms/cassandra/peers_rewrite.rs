@@ -2,10 +2,8 @@ use crate::frame::{CassandraOperation, CassandraResult, Frame};
 use crate::message::Message;
 use crate::message_value::{IntSize, MessageValue};
 use crate::transforms::cassandra::peers_rewrite::CassandraOperation::Event;
-use crate::transforms::{TransformConfig, Transforms};
-use crate::{
-    error::ChainResponse,
-    transforms::{Transform, TransformBuilder, Wrapper},
+use crate::transforms::{
+    ChainResponse, Transform, TransformBuilder, TransformConfig, Transforms, Wrapper,
 };
 use anyhow::Result;
 use async_trait::async_trait;

@@ -1,5 +1,5 @@
-use crate::error::ChainResponse;
 use crate::message::{Message, QueryType};
+use crate::transforms::ChainResponse;
 use crate::transforms::{Transform, TransformBuilder, TransformConfig, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;

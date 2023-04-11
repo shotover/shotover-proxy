@@ -1,11 +1,11 @@
 use crate::codec::{kafka::KafkaCodecBuilder, CodecBuilder, Direction};
-use crate::error::ChainResponse;
 use crate::frame::kafka::{KafkaFrame, ResponseBody};
 use crate::frame::Frame;
 use crate::message::Messages;
 use crate::tcp;
 use crate::transforms::util::cluster_connection_pool::{spawn_read_write_tasks, Connection};
 use crate::transforms::util::{Request, Response};
+use crate::transforms::ChainResponse;
 use crate::transforms::{Transform, TransformBuilder, Transforms, Wrapper};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;

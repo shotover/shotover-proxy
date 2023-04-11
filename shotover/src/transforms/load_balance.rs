@@ -1,7 +1,7 @@
 use super::Transforms;
 use crate::config::chain::TransformChainConfig;
-use crate::error::ChainResponse;
 use crate::transforms::chain::{BufferedChain, TransformChainBuilder};
+use crate::transforms::ChainResponse;
 use crate::transforms::{Transform, TransformBuilder, TransformConfig, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;

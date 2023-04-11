@@ -1,8 +1,9 @@
-use crate::error::ChainResponse;
 use crate::frame::redis::redis_query_type;
 use crate::frame::{Frame, RedisFrame};
 use crate::message::{Message, QueryType};
-use crate::transforms::{Transform, TransformBuilder, TransformConfig, Transforms, Wrapper};
+use crate::transforms::{
+    ChainResponse, Transform, TransformBuilder, TransformConfig, Transforms, Wrapper,
+};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use bytes::Bytes;
