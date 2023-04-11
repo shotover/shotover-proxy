@@ -1,3 +1,5 @@
+//! Use to establish a TLS connection to a DB in a sink transform
+
 use crate::tcp;
 use anyhow::{anyhow, Error, Result};
 use openssl::ssl::{ErrorCode, Ssl};

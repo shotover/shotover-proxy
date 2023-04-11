@@ -1,3 +1,5 @@
+//! Generic representations of data types that appear in messages
+
 use crate::frame::cassandra::to_cassandra_type;
 use crate::frame::RedisFrame;
 use bigdecimal::BigDecimal;

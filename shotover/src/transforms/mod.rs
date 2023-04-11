@@ -1,3 +1,5 @@
+//! Various types required for defining a transform
+
 use crate::error::ChainResponse;
 use crate::message::Messages;
 use crate::transforms::cassandra::peers_rewrite::CassandraPeersRewrite;
