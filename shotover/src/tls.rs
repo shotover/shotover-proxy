@@ -1,17 +1,20 @@
 use crate::tcp;
-use anyhow::{anyhow, Error, Result};
-use openssl::ssl::{ErrorCode, Ssl};
-use openssl::ssl::{SslAcceptor, SslConnector, SslFiletype, SslMethod};
+use anyhow::{anyhow, bail, Context, Error, Result};
+use rustls::client::{InvalidDnsNameError, ServerCertVerified, ServerCertVerifier, WebPkiVerifier};
+use rustls::server::{AllowAnyAuthenticatedClient, NoClientAuth};
+use rustls::{Certificate, CertificateError, PrivateKey, RootCertStore, ServerName};
+use rustls_pemfile::{certs, Item};
 use serde::{Deserialize, Serialize};
-use std::fmt::Write;
+use std::fs::File;
+use std::io::{BufReader, ErrorKind};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
-use std::path::Path;
-use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::{TcpStream, ToSocketAddrs};
-use tokio_openssl::SslStream;
+use tokio_rustls::client::TlsStream as TlsStreamClient;
+use tokio_rustls::server::TlsStream as TlsStreamServer;
+use tokio_rustls::{TlsAcceptor as RustlsAcceptor, TlsConnector as RustlsConnector};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct TlsAcceptorConfig {
@@ -25,7 +28,7 @@ pub struct TlsAcceptorConfig {
 
 #[derive(Clone)]
 pub struct TlsAcceptor {
-    acceptor: Arc<SslAcceptor>,
+    acceptor: RustlsAcceptor,
 }
 
 pub enum AcceptError {
@@ -35,65 +38,84 @@ pub enum AcceptError {
     Failure(Error),
 }
 
-pub fn check_file_field(field_name: &str, file_path: &str) -> Result<()> {
-    if Path::new(file_path).exists() {
-        Ok(())
-    } else {
-        Err(anyhow!(
-            "configured {field_name} does not exist '{file_path}'"
-        ))
+fn load_ca(path: &str) -> Result<RootCertStore> {
+    let mut pem = BufReader::new(File::open(path)?);
+    let certs = rustls_pemfile::certs(&mut pem).context("Error while parsing PEM")?;
+
+    let mut root_cert_store = RootCertStore::empty();
+    for cert in certs {
+        root_cert_store
+            .add(&Certificate(cert))
+            .context("Failed to add cert to cert store")?;
     }
+    Ok(root_cert_store)
+}
+
+fn load_certs(path: &str) -> Result<Vec<Certificate>> {
+    certs(&mut BufReader::new(File::open(path)?))
+        .context("Error while parsing PEM")
+        .map(|certs| certs.into_iter().map(Certificate).collect())
+}
+
+fn load_private_key(path: &str) -> Result<PrivateKey> {
+    let keys = rustls_pemfile::read_all(&mut BufReader::new(File::open(path)?))
+        .context("Error while parsing PEM")?;
+    keys.into_iter()
+        .find_map(|item| match item {
+            Item::RSAKey(x) | Item::PKCS8Key(x) => Some(PrivateKey(x)),
+            _ => None,
+        })
+        .ok_or_else(|| anyhow!("No suitable keys found in PEM"))
 }
 
 impl TlsAcceptor {
     pub fn new(tls_config: TlsAcceptorConfig) -> Result<TlsAcceptor> {
-        // openssl's errors are really bad so we do our own checks so we can provide reasonable errors
-        check_file_field("private_key_path", &tls_config.private_key_path)?;
-        check_file_field("certificate_path", &tls_config.certificate_path)?;
+        let client_cert_verifier =
+            if let Some(path) = tls_config.certificate_authority_path.as_ref() {
+                let root_cert_store = load_ca(path).map_err(|err| {
+                    anyhow!(err).context(format!(
+                        "Failed to read file {path} configured at 'certificate_authority_path'"
+                    ))
+                })?;
+                AllowAnyAuthenticatedClient::new(root_cert_store).boxed()
+            } else {
+                NoClientAuth::boxed()
+            };
 
-        let mut builder = SslAcceptor::mozilla_intermediate(SslMethod::tls())
-            .map_err(openssl_stack_error_to_anyhow)?;
+        let private_key = load_private_key(&tls_config.private_key_path).map_err(|err| {
+            anyhow!(err).context(format!(
+                "Failed to read file {} configured at 'private_key_path",
+                tls_config.private_key_path,
+            ))
+        })?;
+        let certs = load_certs(&tls_config.certificate_path).map_err(|err| {
+            anyhow!(err).context(format!(
+                "Failed to read file {} configured at 'certificate_path'",
+                tls_config.private_key_path,
+            ))
+        })?;
 
-        if let Some(path) = tls_config.certificate_authority_path.as_ref() {
-            check_file_field("certificate_authority_path", path)?;
-            builder
-                .set_ca_file(path)
-                .map_err(openssl_stack_error_to_anyhow)?;
-            return Err(anyhow!("Client auth is not yet supported in shotover"));
-        }
-
-        builder
-            .set_private_key_file(tls_config.private_key_path, SslFiletype::PEM)
-            .map_err(openssl_stack_error_to_anyhow)?;
-        builder
-            .set_certificate_chain_file(tls_config.certificate_path)
-            .map_err(openssl_stack_error_to_anyhow)?;
-        builder
-            .check_private_key()
-            .map_err(openssl_stack_error_to_anyhow)?;
+        let config = rustls::ServerConfig::builder()
+            .with_safe_defaults()
+            .with_client_cert_verifier(client_cert_verifier)
+            .with_single_cert(certs, private_key)?;
 
         Ok(TlsAcceptor {
-            acceptor: Arc::new(builder.build()),
+            acceptor: RustlsAcceptor::from(Arc::new(config)),
         })
     }
 
-    pub async fn accept(&self, tcp_stream: TcpStream) -> Result<SslStream<TcpStream>, AcceptError> {
-        let ssl = Ssl::new(self.acceptor.context())
-            .map_err(|e| AcceptError::Failure(openssl_stack_error_to_anyhow(e)))?;
-        let mut ssl_stream = SslStream::new(ssl, tcp_stream)
-            .map_err(|e| AcceptError::Failure(openssl_stack_error_to_anyhow(e)))?;
-
-        Pin::new(&mut ssl_stream).accept().await.map_err(|e| {
-            // This is the internal logic that results in the "unexpected EOF" error in the ssl::error::Error display impl
-            if e.code() == ErrorCode::SYSCALL && e.io_error().is_none() {
-                AcceptError::Disconnected
-            } else {
-                AcceptError::Failure(
-                    openssl_ssl_error_to_anyhow(e).context("Failed to accept TLS connection"),
-                )
-            }
-        })?;
-        Ok(ssl_stream)
+    pub async fn accept(
+        &self,
+        tcp_stream: TcpStream,
+    ) -> Result<TlsStreamServer<TcpStream>, AcceptError> {
+        self.acceptor
+            .accept(tcp_stream)
+            .await
+            .map_err(|err| match err.kind() {
+                ErrorKind::UnexpectedEof => AcceptError::Disconnected,
+                _ => AcceptError::Failure(anyhow!(err).context("Failed to accept TLS connection")),
+            })
     }
 }
 
@@ -109,41 +131,72 @@ pub struct TlsConnectorConfig {
     pub verify_hostname: bool,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct TlsConnector {
-    connector: Arc<SslConnector>,
-    verify_hostname: bool,
+    connector: RustlsConnector,
 }
 
 impl TlsConnector {
     pub fn new(tls_config: TlsConnectorConfig) -> Result<TlsConnector> {
-        check_file_field(
-            "certificate_authority_path",
-            &tls_config.certificate_authority_path,
-        )?;
-        let mut builder =
-            SslConnector::builder(SslMethod::tls()).map_err(openssl_stack_error_to_anyhow)?;
-        builder
-            .set_ca_file(tls_config.certificate_authority_path)
-            .map_err(openssl_stack_error_to_anyhow)?;
+        let root_cert_store = load_ca(&tls_config.certificate_authority_path).map_err(|err| {
+            anyhow!(err).context(format!(
+                "Failed to read file {} configured at 'certificate_authority_path'",
+                tls_config.certificate_authority_path,
+            ))
+        })?;
 
-        if let Some(private_key_path) = tls_config.private_key_path {
-            check_file_field("private_key_path", &private_key_path)?;
-            builder
-                .set_private_key_file(private_key_path, SslFiletype::PEM)
-                .map_err(openssl_stack_error_to_anyhow)?;
-        }
+        let private_key = tls_config
+            .private_key_path
+            .as_ref()
+            .map(|path| {
+                load_private_key(path).map_err(|err| {
+                    anyhow!(err).context(format!(
+                        "Failed to read file {path} configured at 'private_key_path",
+                    ))
+                })
+            })
+            .transpose()?;
+        let certs = tls_config
+            .certificate_path
+            .as_ref()
+            .map(|path| {
+                load_certs(path).map_err(|err| {
+                    anyhow!(err).context(format!(
+                        "Failed to read file {path} configured at 'certificate_path'",
+                    ))
+                })
+            })
+            .transpose()?;
 
-        if let Some(certificate_path) = tls_config.certificate_path {
-            check_file_field("certificate_path", &certificate_path)?;
-            builder
-                .set_certificate_chain_file(certificate_path)
-                .map_err(openssl_stack_error_to_anyhow)?;
-        }
+        let config_builder = rustls::ClientConfig::builder().with_safe_defaults();
+        let config = match (private_key, certs, tls_config.verify_hostname) {
+            (Some(private_key), Some(certs), true) => config_builder
+                .with_root_certificates(root_cert_store)
+                .with_single_cert(certs, private_key)?,
+            (Some(private_key), Some(certs), false) => config_builder
+                .with_custom_certificate_verifier(Arc::new(SkipVerifyHostName::new(
+                    root_cert_store,
+                )))
+                .with_single_cert(certs, private_key)?,
+            (None, None, true) => config_builder
+                .with_root_certificates(root_cert_store)
+                .with_no_client_auth(),
+            (None, None, false) => config_builder
+                .with_custom_certificate_verifier(Arc::new(SkipVerifyHostName::new(
+                    root_cert_store,
+                )))
+                .with_no_client_auth(),
+
+            (Some(_), None, _) => {
+                bail!("private_key_path was specified but certificate_path was not: Either enable both or none")
+            }
+            (None, Some(_), _) => {
+                bail!("certificate_path was specified but private_key_path was not: Either enable both or none")
+            }
+        };
 
         Ok(TlsConnector {
-            connector: Arc::new(builder.build()),
-            verify_hostname: tls_config.verify_hostname,
+            connector: RustlsConnector::from(Arc::new(config)),
         })
     }
 
@@ -151,76 +204,57 @@ impl TlsConnector {
         &self,
         connect_timeout: Duration,
         address: A,
-    ) -> Result<SslStream<TcpStream>> {
-        let ssl = self
-            .connector
-            .configure()
-            .map_err(openssl_stack_error_to_anyhow)?
-            .verify_hostname(self.verify_hostname)
-            .into_ssl(&address.to_hostname())
-            .map_err(openssl_stack_error_to_anyhow)?;
-
+    ) -> Result<TlsStreamClient<TcpStream>> {
+        let servername = address.to_servername()?;
         let tcp_stream = tcp::tcp_stream(connect_timeout, address).await?;
-        let mut ssl_stream =
-            SslStream::new(ssl, tcp_stream).map_err(openssl_stack_error_to_anyhow)?;
-        Pin::new(&mut ssl_stream).connect().await.map_err(|e| {
-            openssl_ssl_error_to_anyhow(e)
-                .context("Failed to establish TLS connection to destination")
-        })?;
-
-        Ok(ssl_stream)
+        self.connector
+            .connect(servername, tcp_stream)
+            .await
+            .context("Failed to establish TLS connection to destination")
     }
 }
 
-// Always use these openssl_* conversion methods instead of directly converting to anyhow
+pub struct SkipVerifyHostName {
+    verifier: WebPkiVerifier,
+}
 
-fn openssl_ssl_error_to_anyhow(error: openssl::ssl::Error) -> anyhow::Error {
-    if let Some(stack) = error.ssl_error() {
-        openssl_stack_error_to_anyhow(stack.clone())
-    } else {
-        anyhow!("{error}")
+impl SkipVerifyHostName {
+    pub fn new(roots: RootCertStore) -> Self {
+        SkipVerifyHostName {
+            verifier: WebPkiVerifier::new(roots, None),
+        }
     }
 }
 
-fn openssl_stack_error_to_anyhow(error: openssl::error::ErrorStack) -> anyhow::Error {
-    let mut anyhow_stack: Option<anyhow::Error> = None;
-    for inner in error.errors() {
-        let anyhow_error = openssl_error_to_anyhow(inner.clone());
-        anyhow_stack = Some(match anyhow_stack {
-            Some(anyhow) => anyhow.context(anyhow_error),
-            None => anyhow_error,
-        });
+// This recreates the verify_hostname(false) functionality from openssl.
+// This adds an opening for MitM attacks but we provide this functionality because there are some
+// circumstances where providing a cert per instance in a cluster is difficult and this allows at least some security by sharing a single cert between all instances.
+// Note that the SAN dnsname wildcards (e.g. *foo.com) wouldnt help here because we need to refer to destinations by ip address and there is no such wildcard functionality for ip addresses.
+impl ServerCertVerifier for SkipVerifyHostName {
+    fn verify_server_cert(
+        &self,
+        end_entity: &Certificate,
+        intermediates: &[Certificate],
+        server_name: &ServerName,
+        scts: &mut dyn Iterator<Item = &[u8]>,
+        ocsp_response: &[u8],
+        now: std::time::SystemTime,
+    ) -> std::result::Result<rustls::client::ServerCertVerified, rustls::Error> {
+        match self.verifier.verify_server_cert(
+            end_entity,
+            intermediates,
+            server_name,
+            scts,
+            ocsp_response,
+            now,
+        ) {
+            Ok(result) => Ok(result),
+            Err(rustls::Error::InvalidCertificate(CertificateError::NotValidForName)) => {
+                Ok(ServerCertVerified::assertion())
+            }
+            Err(err) => Err(err),
+        }
     }
-    match anyhow_stack {
-        Some(anyhow_stack) => anyhow_stack,
-        None => anyhow!("{error}"),
-    }
-}
-
-fn openssl_error_to_anyhow(error: openssl::error::Error) -> anyhow::Error {
-    let mut fmt = String::new();
-    write!(fmt, "error 0x{:08X} ", error.code()).unwrap();
-    match error.reason() {
-        Some(r) => write!(fmt, "'{}", r).unwrap(),
-        None => write!(fmt, "'Unknown'").unwrap(),
-    }
-    if let Some(data) = error.data() {
-        write!(fmt, ": {}' ", data).unwrap();
-    } else {
-        write!(fmt, "' ").unwrap();
-    }
-    write!(fmt, "occurred in ").unwrap();
-    match error.function() {
-        Some(f) => write!(fmt, "function '{}' ", f).unwrap(),
-        None => write!(fmt, "function 'Unknown' ").unwrap(),
-    }
-    write!(fmt, "in file '{}:{}' ", error.file(), error.line()).unwrap();
-    match error.library() {
-        Some(l) => write!(fmt, "in library '{}'", l).unwrap(),
-        None => write!(fmt, "in library 'Unknown'").unwrap(),
-    }
-
-    anyhow!(fmt)
 }
 
 /// A trait object can only consist of one trait + special language traits like Send/Sync etc
@@ -228,12 +262,14 @@ fn openssl_error_to_anyhow(error: openssl::error::Error) -> anyhow::Error {
 pub trait AsyncStream: AsyncRead + AsyncWrite {}
 
 /// We need to tell rust that these types implement AsyncStream even though they already implement AsyncRead and AsyncWrite
-impl AsyncStream for tokio_openssl::SslStream<TcpStream> {}
+impl AsyncStream for TlsStreamClient<TcpStream> {}
+impl AsyncStream for TlsStreamServer<TcpStream> {}
 impl AsyncStream for TcpStream {}
 
 /// Allows retrieving the hostname from any ToSocketAddrs type
 pub trait ToHostname {
     fn to_hostname(&self) -> String;
+    fn to_servername(&self) -> Result<ServerName, InvalidDnsNameError>;
 }
 
 /// Implement for all reference types
@@ -241,11 +277,17 @@ impl<T: ToHostname + ?Sized> ToHostname for &T {
     fn to_hostname(&self) -> String {
         (**self).to_hostname()
     }
+    fn to_servername(&self) -> Result<ServerName, InvalidDnsNameError> {
+        (**self).to_servername()
+    }
 }
 
 impl ToHostname for String {
     fn to_hostname(&self) -> String {
         self.split(':').next().unwrap_or("").to_owned()
+    }
+    fn to_servername(&self) -> Result<ServerName, InvalidDnsNameError> {
+        ServerName::try_from(self.to_hostname().as_str())
     }
 }
 
@@ -253,11 +295,17 @@ impl ToHostname for &str {
     fn to_hostname(&self) -> String {
         self.split(':').next().unwrap_or("").to_owned()
     }
+    fn to_servername(&self) -> Result<ServerName, InvalidDnsNameError> {
+        ServerName::try_from(self.split(':').next().unwrap_or(""))
+    }
 }
 
 impl ToHostname for (&str, u16) {
     fn to_hostname(&self) -> String {
         self.0.to_string()
+    }
+    fn to_servername(&self) -> Result<ServerName, InvalidDnsNameError> {
+        ServerName::try_from(self.0)
     }
 }
 
@@ -265,11 +313,17 @@ impl ToHostname for (String, u16) {
     fn to_hostname(&self) -> String {
         self.0.to_string()
     }
+    fn to_servername(&self) -> Result<ServerName, InvalidDnsNameError> {
+        ServerName::try_from(self.0.as_str())
+    }
 }
 
 impl ToHostname for (IpAddr, u16) {
     fn to_hostname(&self) -> String {
         self.0.to_string()
+    }
+    fn to_servername(&self) -> Result<ServerName, InvalidDnsNameError> {
+        Ok(ServerName::IpAddress(self.0))
     }
 }
 
@@ -277,16 +331,25 @@ impl ToHostname for (Ipv4Addr, u16) {
     fn to_hostname(&self) -> String {
         self.0.to_string()
     }
+    fn to_servername(&self) -> Result<ServerName, InvalidDnsNameError> {
+        Ok(ServerName::IpAddress(IpAddr::V4(self.0)))
+    }
 }
 
 impl ToHostname for (Ipv6Addr, u16) {
     fn to_hostname(&self) -> String {
         self.0.to_string()
     }
+    fn to_servername(&self) -> Result<ServerName, InvalidDnsNameError> {
+        Ok(ServerName::IpAddress(IpAddr::V6(self.0)))
+    }
 }
 
 impl ToHostname for SocketAddr {
     fn to_hostname(&self) -> String {
         self.ip().to_string()
+    }
+    fn to_servername(&self) -> Result<ServerName, InvalidDnsNameError> {
+        Ok(ServerName::IpAddress(self.ip()))
     }
 }
