@@ -1,4 +1,4 @@
-use backtrace::{Backtrace, BacktraceFmt, BacktraceFrame, BytesOrWideString, PrintFmt};
+use backtrace::{Backtrace, BacktraceFmt, BytesOrWideString, PrintFmt};
 use std::fmt;
 
 pub fn setup() {
@@ -49,37 +49,9 @@ impl fmt::Display for BacktraceFormatter {
 
         let mut f = BacktraceFmt::new(f, PrintFmt::Short, &mut print_path);
         f.add_context()?;
-        let mut include_frames = false;
-        for frame in self.0.frames() {
-            if frame_is_named(
-                frame,
-                "std::sys_common::backtrace::__rust_begin_short_backtrace",
-            ) {
-                break;
-            }
-
-            if include_frames {
-                f.frame().backtrace_frame(frame)?;
-            }
-
-            if frame_is_named(
-                frame,
-                "std::sys_common::backtrace::__rust_end_short_backtrace",
-            ) {
-                include_frames = true;
-            }
+        for (frame, _) in backtrace_ext::short_frames_strict(&self.0) {
+            f.frame().backtrace_frame(frame)?;
         }
         f.finish()
     }
-}
-
-fn frame_is_named(frame: &BacktraceFrame, name: &str) -> bool {
-    for symbol in frame.symbols() {
-        if let Some(full_name) = symbol.name() {
-            if format!("{}", full_name).starts_with(name) {
-                return true;
-            }
-        }
-    }
-    false
 }
