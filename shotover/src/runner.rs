@@ -234,9 +234,7 @@ impl TracingState {
                     .with_env_filter(env_filter)
                     .with_filter_reloading();
                 let handle = ReloadHandle::Json(builder.reload_handle());
-                // To avoid unit tests that run in the same excutable from blowing up when they try to reinitialize tracing we ignore the result returned by try_init.
-                // Currently the implementation of try_init will only fail when it is called multiple times.
-                builder.try_init().ok();
+                builder.init();
                 handle
             }
             LogFormat::Human => {
@@ -245,13 +243,10 @@ impl TracingState {
                     .with_env_filter(env_filter)
                     .with_filter_reloading();
                 let handle = ReloadHandle::Human(builder.reload_handle());
-                builder.try_init().ok();
+                builder.init();
                 handle
             }
         };
-        if let LogFormat::Json = format {
-            crate::tracing_panic_handler::setup();
-        }
 
         // When in json mode we need to process panics as events instead of printing directly to stdout.
         // This is so that:
