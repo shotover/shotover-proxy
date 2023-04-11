@@ -124,7 +124,7 @@ impl Debug for Transforms {
 }
 
 impl Transforms {
-    async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
+    async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> Result<Messages> {
         match self {
             Transforms::KafkaSinkSingle(c) => c.transform(message_wrapper).await,
             Transforms::CassandraSinkSingle(c) => c.transform(message_wrapper).await,
@@ -154,7 +154,7 @@ impl Transforms {
         }
     }
 
-    async fn transform_pushed<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
+    async fn transform_pushed<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> Result<Messages> {
         match self {
             Transforms::KafkaSinkSingle(c) => c.transform_pushed(message_wrapper).await,
             Transforms::CassandraSinkSingle(c) => c.transform_pushed(message_wrapper).await,
@@ -302,7 +302,7 @@ impl<'a> Wrapper<'a> {
     /// the execution time of the [Transform::transform] function as a metrics latency histogram.
     ///
     /// The result of calling the next transform is then provided as a response.
-    pub async fn call_next_transform(mut self) -> ChainResponse {
+    pub async fn call_next_transform(mut self) -> Result<Messages> {
         let transform = match self.transforms.next() {
             Some(transform) => transform,
             None => panic!("The transform chain does not end with a terminating transform. If you want to throw the messages away use a NullSink transform, otherwise use a terminating sink transform to send the messages somewhere.")
@@ -324,7 +324,7 @@ impl<'a> Wrapper<'a> {
         result
     }
 
-    pub async fn call_next_transform_pushed(mut self) -> ChainResponse {
+    pub async fn call_next_transform_pushed(mut self) -> Result<Messages> {
         let transform = match self.transforms.next() {
             Some(transform) => transform,
             None => return Ok(self.messages),
@@ -464,7 +464,7 @@ pub trait Transform: Send {
     /// * Transforms that do call subsquent chains via `message_wrapper.call_next_transform()` are non-terminating transforms.
     ///
     /// You can have have a transforms that is both non-terminating and a sink.
-    async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse;
+    async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> Result<Messages>;
 
     /// This method should be should be implemented by your transform if it is required to process pushed messages (typically events
     /// or messages that your source is subscribed to. The wrapper object contains the queries/frames
@@ -480,7 +480,7 @@ pub trait Transform: Send {
     ///
     /// ## Invariants
     /// * _Non-terminating_ - Your `transform_pushed` method should not be terminating as the messages should get passed back to the source, where they will terminate.
-    async fn transform_pushed<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
+    async fn transform_pushed<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> Result<Messages> {
         let response = message_wrapper.call_next_transform_pushed().await?;
         Ok(response)
     }
@@ -489,5 +489,3 @@ pub trait Transform: Send {
 }
 
 type ResponseFuture = Pin<Box<dyn Future<Output = Result<util::Response>> + Send + Sync>>;
-
-pub type ChainResponse = anyhow::Result<Messages>;

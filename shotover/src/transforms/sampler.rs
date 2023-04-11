@@ -1,7 +1,7 @@
+use crate::message::Messages;
 use crate::transforms::chain::{TransformChain, TransformChainBuilder};
-use crate::transforms::ChainResponse;
 use crate::transforms::{Transform, Wrapper};
-
+use anyhow::Result;
 use async_trait::async_trait;
 use tokio::macros::support::thread_rng_n;
 use tracing::warn;
@@ -44,7 +44,7 @@ impl Sampler {
 
 #[async_trait]
 impl Transform for Sampler {
-    async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
+    async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> Result<Messages> {
         let chance = thread_rng_n(self.denominator);
         if chance < self.numerator {
             let sample = message_wrapper.clone();

@@ -1,5 +1,6 @@
-use crate::transforms::ChainResponse;
+use crate::message::Messages;
 use crate::transforms::{Transform, TransformBuilder, Transforms, Wrapper};
+use anyhow::Result;
 use async_trait::async_trait;
 
 #[derive(Debug, Clone, Default)]
@@ -21,7 +22,7 @@ impl TransformBuilder for Loopback {
 
 #[async_trait]
 impl Transform for Loopback {
-    async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
+    async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> Result<Messages> {
         Ok(message_wrapper.messages)
     }
 }

@@ -1,14 +1,13 @@
+use crate::message::Messages;
 /// This transform will by default parse requests and responses that pass through it.
 /// request and response parsing can be individually disabled if desired.
 ///
 /// The use of this transform is to allow benchmarking the performance impact of parsing messages
 /// without worrying about the performance impact of other transform logic.
 /// It could also be used to ensure that messages round trip correctly when parsed.
-use crate::transforms::ChainResponse;
 #[cfg(feature = "alpha-transforms")]
 use crate::transforms::TransformConfig;
 use crate::transforms::{Transform, TransformBuilder, Transforms, Wrapper};
-#[cfg(feature = "alpha-transforms")]
 use anyhow::Result;
 use async_trait::async_trait;
 use serde::Deserialize;
@@ -77,7 +76,7 @@ impl TransformBuilder for DebugForceParse {
 
 #[async_trait]
 impl Transform for DebugForceParse {
-    async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> ChainResponse {
+    async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> Result<Messages> {
         for message in &mut message_wrapper.messages {
             if self.parse_requests {
                 message.frame();

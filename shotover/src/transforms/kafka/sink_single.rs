@@ -5,7 +5,6 @@ use crate::message::Messages;
 use crate::tcp;
 use crate::transforms::util::cluster_connection_pool::{spawn_read_write_tasks, Connection};
 use crate::transforms::util::{Request, Response};
-use crate::transforms::ChainResponse;
 use crate::transforms::{Transform, TransformBuilder, Transforms, Wrapper};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
@@ -93,7 +92,7 @@ pub struct KafkaSinkSingle {
 
 #[async_trait]
 impl Transform for KafkaSinkSingle {
-    async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
+    async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> Result<Messages> {
         if self.outbound.is_none() {
             let codec = KafkaCodecBuilder::new(Direction::Sink);
             let tcp_stream = tcp::tcp_stream(self.connect_timeout, &self.address).await?;

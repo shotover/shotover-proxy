@@ -1,7 +1,6 @@
 use crate::config::chain::TransformChainConfig;
 use crate::message::Messages;
 use crate::transforms::chain::{TransformChain, TransformChainBuilder};
-use crate::transforms::ChainResponse;
 use crate::transforms::{Transform, TransformBuilder, TransformConfig, Transforms, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
@@ -89,7 +88,7 @@ impl TransformConfig for ParallelMapConfig {
 
 #[async_trait]
 impl Transform for ParallelMap {
-    async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
+    async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> Result<Messages> {
         let mut results = Vec::with_capacity(message_wrapper.messages.len());
         let mut message_iter = message_wrapper.messages.into_iter();
         while message_iter.len() != 0 {

@@ -4,7 +4,6 @@ use crate::frame::cassandra::CassandraMetadata;
 use crate::message::{Messages, Metadata};
 use crate::tls::{TlsConnector, TlsConnectorConfig};
 use crate::transforms::cassandra::connection::Response;
-use crate::transforms::ChainResponse;
 use crate::transforms::{Transform, TransformBuilder, TransformConfig, Transforms, Wrapper};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
@@ -107,7 +106,7 @@ pub struct CassandraSinkSingle {
 }
 
 impl CassandraSinkSingle {
-    async fn send_message(&mut self, messages: Messages) -> ChainResponse {
+    async fn send_message(&mut self, messages: Messages) -> Result<Messages> {
         if self.version.is_none() {
             if let Some(message) = messages.first() {
                 if let Ok(Metadata::Cassandra(CassandraMetadata { version, .. })) =
@@ -162,7 +161,7 @@ impl CassandraSinkSingle {
 
 #[async_trait]
 impl Transform for CassandraSinkSingle {
-    async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
+    async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> Result<Messages> {
         self.send_message(message_wrapper.messages).await
     }
 

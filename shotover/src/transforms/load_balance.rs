@@ -1,7 +1,7 @@
 use super::Transforms;
 use crate::config::chain::TransformChainConfig;
+use crate::message::Messages;
 use crate::transforms::chain::{BufferedChain, TransformChainBuilder};
-use crate::transforms::ChainResponse;
 use crate::transforms::{Transform, TransformBuilder, TransformConfig, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
@@ -68,7 +68,7 @@ pub struct ConnectionBalanceAndPool {
 
 #[async_trait]
 impl Transform for ConnectionBalanceAndPool {
-    async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
+    async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> Result<Messages> {
         if self.active_connection.is_none() {
             let mut all_connections = self.all_connections.lock().await;
             if all_connections.len() < self.max_connections {

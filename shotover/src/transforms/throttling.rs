@@ -1,5 +1,5 @@
-use crate::message::Message;
-use crate::transforms::{ChainResponse, Transform, TransformBuilder, TransformConfig, Wrapper};
+use crate::message::{Message, Messages};
+use crate::transforms::{Transform, TransformBuilder, TransformConfig, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
 use governor::{
@@ -62,7 +62,7 @@ impl TransformBuilder for RequestThrottling {
 
 #[async_trait]
 impl Transform for RequestThrottling {
-    async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> ChainResponse {
+    async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> Result<Messages> {
         // extract throttled messages from the message_wrapper
         let throttled_messages: Vec<(Message, usize)> = (0..message_wrapper.messages.len())
             .rev()

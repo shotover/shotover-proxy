@@ -1,5 +1,4 @@
 use crate::message::Messages;
-use crate::transforms::ChainResponse;
 use crate::transforms::{TransformBuilder, Transforms, Wrapper};
 use anyhow::{anyhow, Result};
 use derivative::Derivative;
@@ -17,7 +16,7 @@ pub struct BufferedChainMessages {
     pub local_addr: SocketAddr,
     pub messages: Messages,
     pub flush: bool,
-    pub return_chan: Option<oneshot::Sender<crate::transforms::ChainResponse>>,
+    pub return_chan: Option<oneshot::Sender<Result<Messages>>>,
 }
 
 impl BufferedChainMessages {
@@ -34,7 +33,7 @@ impl BufferedChainMessages {
         m: Messages,
         local_addr: SocketAddr,
         flush: bool,
-        return_chan: oneshot::Sender<ChainResponse>,
+        return_chan: oneshot::Sender<Result<Messages>>,
     ) -> Self {
         BufferedChainMessages {
             local_addr,
@@ -77,7 +76,7 @@ impl BufferedChain {
         &mut self,
         wrapper: Wrapper<'_>,
         buffer_timeout_micros: Option<u64>,
-    ) -> ChainResponse {
+    ) -> Result<Messages> {
         self.process_request_with_receiver(wrapper, buffer_timeout_micros)
             .await?
             .await?
@@ -87,8 +86,8 @@ impl BufferedChain {
         &mut self,
         wrapper: Wrapper<'_>,
         buffer_timeout_micros: Option<u64>,
-    ) -> Result<oneshot::Receiver<ChainResponse>> {
-        let (one_tx, one_rx) = oneshot::channel::<ChainResponse>();
+    ) -> Result<oneshot::Receiver<Result<Messages>>> {
+        let (one_tx, one_rx) = oneshot::channel::<Result<Messages>>();
         match buffer_timeout_micros {
             None => {
                 self.send_handle
@@ -164,7 +163,7 @@ impl TransformChain {
         &mut self,
         mut wrapper: Wrapper<'_>,
         client_details: String,
-    ) -> ChainResponse {
+    ) -> Result<Messages> {
         let start = Instant::now();
         wrapper.reset(&mut self.chain);
 
@@ -182,7 +181,7 @@ impl TransformChain {
         &mut self,
         mut wrapper: Wrapper<'_>,
         client_details: String,
-    ) -> ChainResponse {
+    ) -> Result<Messages> {
         let start = Instant::now();
         wrapper.reset_rev(&mut self.chain);
 

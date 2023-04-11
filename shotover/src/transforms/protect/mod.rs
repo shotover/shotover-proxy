@@ -1,8 +1,8 @@
 use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame};
+use crate::message::Messages;
 use crate::message_value::MessageValue;
 use crate::transforms::protect::key_management::KeyManager;
 pub use crate::transforms::protect::key_management::KeyManagerConfig;
-use crate::transforms::ChainResponse;
 use crate::transforms::{Transform, TransformBuilder, Transforms, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
@@ -165,7 +165,7 @@ impl Protect {
 
 #[async_trait]
 impl Transform for Protect {
-    async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> ChainResponse {
+    async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> Result<Messages> {
         // encrypt the values included in any INSERT or UPDATE queries
         for message in message_wrapper.messages.iter_mut() {
             let mut invalidate_cache = false;

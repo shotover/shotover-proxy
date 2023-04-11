@@ -1,6 +1,6 @@
 use crate::config::chain::TransformChainConfig;
+use crate::message::Messages;
 use crate::transforms::chain::{BufferedChain, TransformChainBuilder};
-use crate::transforms::ChainResponse;
 use crate::transforms::{Transform, TransformBuilder, TransformConfig, Transforms, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
@@ -144,7 +144,7 @@ impl TransformConfig for TeeConfig {
 
 #[async_trait]
 impl Transform for Tee {
-    async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
+    async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> Result<Messages> {
         match &mut self.behavior {
             ConsistencyBehavior::Ignore => {
                 let (tee_result, chain_result) = tokio::join!(
