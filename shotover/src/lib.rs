@@ -35,3 +35,21 @@ pub mod tcp;
 pub mod tls;
 mod tracing_panic_handler;
 pub mod transforms;
+
+/// When a custom transform is defined in its own crate, typetag wont kick in unless there is some kind of `use crate_name::CustomTransformConfig`.
+/// This macro does that for you while making it clear that the `use` is a little bit magic.
+/// It also performs some type checks to ensure that you are actually importing an implementer of [`transforms::TransformConfig`].
+#[macro_export]
+macro_rules! import_transform {
+    ($ty:ty) => {
+        // import the type, this is required for typetag to pick up the type
+        use $ty;
+
+        // assert that the type actually implements TransformConfig, this prevents the easy mistake of accidentally importing the Transform instead of the TransformConfig
+        const _: fn() = || {
+            // Only callable when `$ty` implements `TransformConfig`
+            fn assert_impls_transform_config<T: ?Sized + shotover::transforms::TransformConfig>() {}
+            assert_impls_transform_config::<$ty>();
+        };
+    };
+}
