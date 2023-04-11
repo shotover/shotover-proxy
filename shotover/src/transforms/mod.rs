@@ -113,6 +113,7 @@ pub enum Transforms {
     QueryTypeFilter(QueryTypeFilter),
     QueryCounter(QueryCounter),
     RequestThrottling(RequestThrottling),
+    Custom(Box<dyn Transform>),
 }
 
 impl Debug for Transforms {
@@ -148,6 +149,7 @@ impl Transforms {
             Transforms::QueryTypeFilter(s) => s.transform(message_wrapper).await,
             Transforms::QueryCounter(s) => s.transform(message_wrapper).await,
             Transforms::RequestThrottling(s) => s.transform(message_wrapper).await,
+            Transforms::Custom(s) => s.transform(message_wrapper).await,
         }
     }
 
@@ -179,6 +181,7 @@ impl Transforms {
             Transforms::QueryTypeFilter(s) => s.transform_pushed(message_wrapper).await,
             Transforms::QueryCounter(s) => s.transform_pushed(message_wrapper).await,
             Transforms::RequestThrottling(s) => s.transform_pushed(message_wrapper).await,
+            Transforms::Custom(s) => s.transform_pushed(message_wrapper).await,
         }
     }
 
@@ -214,6 +217,7 @@ impl Transforms {
             Transforms::DebugReturner(d) => d.set_pushed_messages_tx(pushed_messages_tx),
             Transforms::DebugRandomDelay(d) => d.set_pushed_messages_tx(pushed_messages_tx),
             Transforms::RequestThrottling(d) => d.set_pushed_messages_tx(pushed_messages_tx),
+            Transforms::Custom(d) => d.set_pushed_messages_tx(pushed_messages_tx),
         }
     }
 }
@@ -483,4 +487,4 @@ pub trait Transform: Send {
     fn set_pushed_messages_tx(&mut self, _pushed_messages_tx: mpsc::UnboundedSender<Messages>) {}
 }
 
-pub type ResponseFuture = Pin<Box<dyn Future<Output = Result<util::Response>> + Send + Sync>>;
+type ResponseFuture = Pin<Box<dyn Future<Output = Result<util::Response>> + Send + Sync>>;

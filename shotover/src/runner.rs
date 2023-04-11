@@ -27,7 +27,7 @@ use tracing_subscriber::{EnvFilter, Registry};
 
 #[derive(Parser, Clone)]
 #[clap(version = crate_version!(), author = "Instaclustr")]
-pub struct ConfigOpts {
+struct ConfigOpts {
     #[clap(short, long, default_value = "config/topology.yaml")]
     pub topology_file: String,
 
@@ -48,7 +48,7 @@ pub struct ConfigOpts {
 }
 
 #[derive(clap::ValueEnum, Clone, Copy)]
-pub enum LogFormat {
+enum LogFormat {
     Human,
     Json,
 }
@@ -190,7 +190,7 @@ impl Shotover {
     }
 }
 
-pub struct TracingState {
+struct TracingState {
     /// Once this is dropped tracing logs are ignored
     _guard: WorkerGuard,
     handle: ReloadHandle,
@@ -271,7 +271,7 @@ type Formatter<A, B> = Layered<Layer<Registry, A, Format<B>, NonBlocking>, Regis
 // * https://github.com/tokio-rs/tracing/pull/1035
 // * https://github.com/linkerd/linkerd2-proxy/blob/6c484f6dcdeebda18b68c800b4494263bf98fcdc/linkerd/app/core/src/trace.rs#L19-L36
 #[derive(Clone)]
-pub enum ReloadHandle {
+pub(crate) enum ReloadHandle {
     Json(Handle<EnvFilter, Formatter<JsonFields, Json>>),
     Human(Handle<EnvFilter, Formatter<DefaultFields, Full>>),
 }
@@ -285,7 +285,7 @@ impl ReloadHandle {
     }
 }
 
-pub async fn run(
+async fn run(
     topology: Topology,
     config: Config,
     trigger_shutdown_rx: watch::Receiver<bool>,

@@ -71,7 +71,7 @@ impl BinProcess {
         let log_name = if log_name.len() > 10 {
             panic!("In order to line up in log outputs, argument log_name to BinProcess::start_with_args must be of length <= 10 but the value was: {log_name}");
         } else {
-            format!("{log_name: <10}") //pads log_name up to 10 chars so that it lines up properly when included in log output.
+            format!("{log_name: <10}") // pads log_name up to 10 chars so that it lines up properly when included in log output.
         };
 
         // PROFILE is set in build.rs from PROFILE listed in https://doc.rust-lang.org/cargo/reference/environment-variables.html#environment-variables-cargo-sets-for-build-scripts
