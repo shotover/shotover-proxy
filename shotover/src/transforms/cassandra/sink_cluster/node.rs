@@ -61,11 +61,13 @@ impl CassandraNode {
     }
 }
 
-#[derive(Debug)]
+#[derive(Derivative)]
+#[derivative(Debug)]
 pub struct ConnectionFactory {
     connect_timeout: Duration,
     init_handshake: Vec<Message>,
     use_message: Option<Message>,
+    #[derivative(Debug = "ignore")]
     tls: Option<TlsConnector>,
     pushed_messages_tx: Option<mpsc::UnboundedSender<Messages>>,
 }
