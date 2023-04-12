@@ -3,7 +3,6 @@ members = [
     "shotover",
     "shotover-proxy",
     "test-helpers",
-    "tokio-bin-process",
     "custom-transforms-example",
 ]
 

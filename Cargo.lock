@@ -3601,6 +3601,8 @@ dependencies = [
 [[package]]
 name = "tokio-bin-process"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "724e1fb65ab8cca5e6559192700fe45844eb69545b43b856d61c8d62e3bb0c52"
 dependencies = [
  "anyhow",
  "itertools",
