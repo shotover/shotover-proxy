@@ -11,7 +11,7 @@ pub struct Latte {
 
 impl Latte {
     pub fn new(rate: u64, threads: u64) -> Latte {
-        crate::docker_compose::run_command(
+        crate::docker_compose_runner::run_command(
             "cargo",
             &[
                 "install",
@@ -26,7 +26,7 @@ impl Latte {
     }
 
     pub fn init(&self, name: &str, address_load: &str) {
-        crate::docker_compose::run_command(
+        crate::docker_compose_runner::run_command(
             "latte",
             &[
                 "schema",
@@ -40,7 +40,7 @@ impl Latte {
             ],
         )
         .unwrap();
-        crate::docker_compose::run_command(
+        crate::docker_compose_runner::run_command(
             "latte",
             &[
                 "load",
@@ -57,7 +57,7 @@ impl Latte {
     }
 
     pub fn bench(&self, name: &str, address_bench: &str) {
-        crate::docker_compose::run_command(
+        crate::docker_compose_runner::run_command(
             "latte",
             &[
                 "run",

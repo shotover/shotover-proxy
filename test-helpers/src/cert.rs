@@ -1,4 +1,4 @@
-use crate::docker_compose::run_command;
+use crate::docker_compose_runner::run_command;
 use rcgen::{BasicConstraints, Certificate, CertificateParams, DnType, IsCa, SanType};
 use std::path::Path;
 

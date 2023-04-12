@@ -2,6 +2,7 @@ pub mod bench;
 pub mod cert;
 pub mod connection;
 pub mod docker_compose;
+pub mod docker_compose_runner;
 pub mod flamegraph;
 pub mod kafka_producer_perf_test;
 pub mod latte;
