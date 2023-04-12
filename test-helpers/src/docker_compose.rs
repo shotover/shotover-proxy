@@ -132,52 +132,54 @@ impl DockerCompose {
         // TODO: call wait_for_containers_to_startup
     }
 
-    fn wait_for_containers_to_startup(service_to_image: HashMap<String, String>, file_path: &str) {
-        let images = [
-            Image {
+    fn wait_for_containers_to_startup(service_to_image: HashMap<String, Image>, file_path: &str) {
+        // Currently we dont include versions in our filtering because we havent encountered a need.
+        // However we could add version ranges if we encounter an image that changes its ready log
+        let image_waiters = [
+            ImageWaiter {
                 name: "shotover/shotover-proxy",
                 log_regex_to_wait_for: r"accepting inbound connections",
             },
-            Image {
+            ImageWaiter {
                 name: "motoserver/moto",
                 log_regex_to_wait_for: r"Press CTRL\+C to quit",
             },
-            Image {
-                name: "library/redis:5.0.9",
+            ImageWaiter {
+                name: "library/redis",
                 log_regex_to_wait_for: r"Ready to accept connections",
             },
-            Image {
-                name: "library/redis:6.2.5",
+            ImageWaiter {
+                name: "library/redis",
                 log_regex_to_wait_for: r"Ready to accept connections",
             },
-            Image {
-                name: "docker.io/bitnami/redis-cluster:6.0-debian-10",
+            ImageWaiter {
+                name: "docker.io/bitnami/redis-cluster",
                 log_regex_to_wait_for: r"Cluster state changed|Cluster correctly created",
             },
-            Image {
-                name: "bitnami/redis-cluster:6.0-debian-10",
+            ImageWaiter {
+                name: "bitnami/redis-cluster",
                 //`Cluster state changed` is created by the node services
                 //`Cluster correctly created` is created by the init service
                 log_regex_to_wait_for: r"Cluster state changed|Cluster correctly created",
             },
-            Image {
-                name: "bitnami/cassandra:4.0.6",
+            ImageWaiter {
+                name: "bitnami/cassandra",
                 log_regex_to_wait_for: r"Startup complete",
             },
-            Image {
-                name: "shotover-int-tests/cassandra:4.0.6",
+            ImageWaiter {
+                name: "shotover-int-tests/cassandra",
                 log_regex_to_wait_for: r"Startup complete",
             },
-            Image {
-                name: "shotover-int-tests/cassandra-tls:4.0.6",
+            ImageWaiter {
+                name: "shotover-int-tests/cassandra-tls",
                 log_regex_to_wait_for: r"Startup complete",
             },
-            Image {
-                name: "shotover-int-tests/cassandra:3.11.13",
+            ImageWaiter {
+                name: "shotover-int-tests/cassandra",
                 log_regex_to_wait_for: r"Startup complete",
             },
-            Image {
-                name: "bitnami/kafka:3.3.2",
+            ImageWaiter {
+                name: "bitnami/kafka",
                 log_regex_to_wait_for: r"Kafka Server started",
             },
         ];
@@ -186,12 +188,12 @@ impl DockerCompose {
             service_to_image
             .into_iter()
             .map(
-                |(service_name, image_name)| match images.iter().find(|image| image.name == image_name) {
-                    Some(image) => Service {
+                |(service_name, image)| match image_waiters.iter().find(|image_waiter| image_waiter.name == image.name()) {
+                    Some(image_waiter) => Service {
                         name: service_name,
-                        log_to_wait_for: Regex::new(image.log_regex_to_wait_for).unwrap(),
+                        log_to_wait_for: Regex::new(image_waiter.log_regex_to_wait_for).unwrap(),
                     },
-                    None => panic!("DockerCompose does not yet know about the image {image_name}, please add it to the list above."),
+                    None => panic!("DockerCompose does not yet know about the image {:?}, please add this image name to the image_waiters list above.", image.name()),
                 },
             )
             .collect();
@@ -199,7 +201,7 @@ impl DockerCompose {
         DockerCompose::wait_for_logs(file_path, &services);
     }
 
-    fn get_service_to_image(file_path: &str) -> HashMap<String, String> {
+    fn get_service_to_image(file_path: &str) -> HashMap<String, Image> {
         let compose_yaml: Value =
             serde_yaml::from_str(&std::fs::read_to_string(file_path).unwrap()).unwrap();
         let mut result = HashMap::new();
@@ -217,7 +219,7 @@ impl DockerCompose {
                                     Value::String(image) => image,
                                     image => panic!("Unexpected image {image:?}"),
                                 };
-                                result.insert(service_name.clone(), image.clone());
+                                result.insert(service_name.clone(), Image { tag: image.clone() });
                             }
                             service => panic!("Unexpected service {service:?}"),
                         }
@@ -307,10 +309,10 @@ impl DockerCompose {
         }
     }
 
-    fn build_images(service_to_image: &HashMap<String, String>) {
+    fn build_images(service_to_image: &HashMap<String, Image>) {
         if service_to_image
             .values()
-            .any(|x| x == "shotover-int-tests/cassandra:4.0.6")
+            .any(|x| x.tag == "shotover-int-tests/cassandra:4.0.6")
         {
             run_command(
                 "docker",
@@ -325,7 +327,7 @@ impl DockerCompose {
         }
         if service_to_image
             .values()
-            .any(|x| x == "shotover-int-tests/cassandra:3.11.13")
+            .any(|x| x.tag == "shotover-int-tests/cassandra:3.11.13")
         {
             run_command(
                 "docker",
@@ -340,7 +342,7 @@ impl DockerCompose {
         }
         if service_to_image
             .values()
-            .any(|x| x == "shotover-int-tests/cassandra-tls:4.0.6")
+            .any(|x| x.tag == "shotover-int-tests/cassandra-tls:4.0.6")
             && Path::new("example-configs/docker-images/cassandra-tls-4.0.6/certs/keystore.p12")
                 .exists()
         {
@@ -371,7 +373,28 @@ impl DockerCompose {
     }
 }
 
-struct Image<'a> {
+struct Image {
+    tag: String,
+}
+
+impl Image {
+    /// Returns the image tag with the version postfix stripped off
+    fn name(&self) -> &str {
+        // work backwards to find the `:` denoting the start of the version.
+        // if we encounter a `/` then that means we have reached a hostname and we must abort because the `:` could be indicating a port.
+        let enumerated: Vec<_> = self.tag.chars().enumerate().collect();
+        for (i, char) in enumerated.into_iter().rev() {
+            match char {
+                '/' => return &self.tag,
+                ':' => return &self.tag[0..i],
+                _ => {}
+            }
+        }
+        &self.tag
+    }
+}
+
+struct ImageWaiter<'a> {
     name: &'a str,
     log_regex_to_wait_for: &'a str,
 }
