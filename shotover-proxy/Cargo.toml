@@ -16,7 +16,7 @@ tracing.workspace = true
 
 [dev-dependencies]
 criterion = { git = "https://github.com/shotover/criterion.rs", branch = "0.4.0-bench_with_input_fn", features = ["async_tokio"] }
-serial_test = "1.0.0"
+serial_test = "2.0.0"
 rstest = "0.17.0"
 cassandra-cpp = { version = "2.0.0" }
 test-helpers = { path = "../test-helpers", features = ["cassandra-cpp-driver-tests"] }
