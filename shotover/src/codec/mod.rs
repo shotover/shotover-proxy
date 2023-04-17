@@ -1,3 +1,5 @@
+//! Codec types to use for connecting to a DB in a sink transform
+
 use crate::message::Messages;
 use cassandra_protocol::compression::Compression;
 use core::fmt;

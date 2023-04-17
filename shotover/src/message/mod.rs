@@ -1,3 +1,5 @@
+//! Message and supporting types - used to hold a message/query/result going between the client and database
+
 use crate::codec::kafka::RequestHeader;
 use crate::codec::CodecState;
 use crate::frame::cassandra::Tracing;
@@ -48,15 +50,16 @@ impl From<&ProtocolType> for CodecState {
 
 pub type Messages = Vec<Message>;
 
-/// The Message type is designed to effeciently abstract over the message being in various states of processing.
+/// Message holds a single message/query/result going between the client and database.
+/// It is designed to efficiently abstract over the message being in various states of processing.
 ///
 /// Usually a message is received and starts off containing just raw bytes (or possibly raw bytes + frame)
 /// This can be immediately sent off to the destination without any processing cost.
 ///
-/// However if a transform wants to query the contents of the message it must call `Message::frame()` which will cause the raw bytes to be processed into a raw bytes + Frame.
+/// However if a transform wants to query the contents of the message it must call [`Message::frame`] which will cause the raw bytes to be processed into a raw bytes + Frame.
 /// The first call to frame has an expensive one time cost.
 ///
-/// The transform may also go one step further and modify the message's Frame + call `Message::invalidate_cache()`.
+/// The transform may also go one step further and modify the message's Frame + call [`Message::invalidate_cache`].
 /// This results in an expensive cost to reassemble the message bytes when the message is sent to the destination.
 #[derive(PartialEq, Debug, Clone)]
 pub struct Message {
@@ -66,12 +69,12 @@ pub struct Message {
 
     // TODO: Not a fan of this field and we could get rid of it by making TimestampTagger an implicit part of TuneableConsistencyScatter
     // This metadata field is only used for communication between transforms and should not be touched by sinks or sources
-    pub meta_timestamp: Option<i64>,
+    pub(crate) meta_timestamp: Option<i64>,
 
-    pub codec_state: CodecState,
+    pub(crate) codec_state: CodecState,
 }
 
-/// `from_*` methods for `Message`
+// `from_*` methods for `Message`
 impl Message {
     /// This method should be called when you have have just the raw bytes of a message.
     /// This is expected to be used only by codecs that are decoding a protocol where the length of the message is provided in the header. e.g. cassandra
@@ -110,7 +113,7 @@ impl Message {
     }
 }
 
-/// Methods for interacting with `Message::inner`
+// Methods for interacting with `Message::inner`
 impl Message {
     /// Returns a `&mut Frame` which contains the processed contents of the message.
     /// A transform may choose to modify the contents of the `&mut Frame` in order to modify the message that is sent to the DB.

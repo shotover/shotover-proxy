@@ -1,25 +1,35 @@
-//! The data layer proxy.
+//! This library allows the creation of custom shotover transforms.
 //!
-//! Below are the main areas that you should be looking at to extend and work with Shotover.
+//! There are two consumers of this library:
+//! ## Custom Transforms
 //!
-//! Creating a transform is largely just implementing the [`transforms::Transform`] trait and registering it with
-//! the [`transforms::Transforms`] enum.
+//! To create a custom transform you need to implement these traits:
+//! * [`transforms::TransformConfig`] - Defines what configuration fields the transform has in the `topology.yaml`.
+//! * [`transforms::TransformBuilder`] - Defines how to build the Transform for a new incoming connection. Only one instance is created over shotovers runtime.
+//! * [`transforms::Transform`] - Defines the transformation logic of the transform. A new instance is created per incoming connection.
 //!
-//! To allow your [`transforms::Transform`] to be configurable in Shotover config files you will need to create
-//! a serializable config struct and implement [`transforms::TransformConfig`] trait.
+//! Simple transforms can implement all of these onto a single struct but generally you need seperate structs for each.
 //!
-//! ## Messages
-//! * [`message::Message`], the main struct that carries database queries/frames around in Shotover.
+//! ## The shotover binary
+//! All custom transforms the user wants to use are statically compiled into a single binary.
+//! The crate for this binary is very simple, it just consists of a `main.rs` like:
 //!
-//! ## Transform
-//! * [`transforms::Wrapper`], used to wrap messages as they traverse the [`transforms::Transform`] chain.
-//! * [`transforms::Transform`], the main extension trait for adding your own behaviour to Shotover.
-//! * [`transforms::Transforms`], the enum to register with (add a variant) for enabling your own transform.
-//! * [`transforms::TransformConfig`], the trait to implement for configuring your own transform.
+//! ```no_run
+//! # mod transform_crate {
+//! # pub type TransformConfig = shotover::transforms::null::NullSinkConfig;
+//! # }
+//! shotover::import_transform!(transform_crate::TransformConfig);
+//!
+//! fn main() {
+//!     shotover::runner::Shotover::new().run_block();
+//! }
+//! ```
+//!
 
 // Accidentally printing would break json log output
 #![deny(clippy::print_stdout)]
 #![deny(clippy::print_stderr)]
+#![allow(clippy::needless_doctest_main)]
 
 pub mod codec;
 mod config;
@@ -36,6 +46,8 @@ pub mod tls;
 mod tracing_panic_handler;
 pub mod transforms;
 
+/// Imports a custom transform into the shotover binary.
+///
 /// When a custom transform is defined in its own crate, typetag wont kick in unless there is some kind of `use crate_name::CustomTransformConfig`.
 /// This macro does that for you while making it clear that the `use` is a little bit magic.
 /// It also performs some type checks to ensure that you are actually importing an implementer of [`transforms::TransformConfig`].

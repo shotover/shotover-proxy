@@ -1,3 +1,5 @@
+//! parsed AST-like representations of messages
+
 use crate::{codec::CodecState, message::ProtocolType};
 use anyhow::{anyhow, Result};
 use bytes::Bytes;

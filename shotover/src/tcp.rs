@@ -1,3 +1,5 @@
+//! Use to establish a TCP connection to a DB in a sink transform
+
 use anyhow::{anyhow, Result};
 use std::time::Duration;
 use tokio::{

@@ -1,3 +1,4 @@
+//! Tools for initializing shotover in the final binary.
 use crate::config::topology::Topology;
 use crate::config::Config;
 use crate::observability::LogFilterHttpExporter;
