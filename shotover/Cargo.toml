@@ -18,7 +18,7 @@ pretty-hex = "0.3.0"
 tokio-stream = "0.1.2"
 bytes-utils = "0.1.1"
 derivative = "2.1.1"
-cached = "0.42"
+cached = "0.43"
 async-recursion = "1.0"
 governor = { version = "0.5.0", default-features = false, features = ["std", "jitter", "quanta"] }
 nonzero_ext = "0.3.0"
@@ -57,8 +57,8 @@ bigdecimal = {version ="0.3.0", features = ["serde"] }
 base64 = "0.21.0"
 
 #Observability
-metrics = "0.20.0"
-metrics-exporter-prometheus = "0.11.0"
+metrics = "0.21.0"
+metrics-exporter-prometheus = "0.12.0"
 tracing.workspace = true
 tracing-subscriber.workspace = true
 tracing-appender = "0.2.0"
