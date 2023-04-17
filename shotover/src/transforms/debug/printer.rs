@@ -1,4 +1,4 @@
-use crate::error::ChainResponse;
+use crate::message::Messages;
 use crate::transforms::{Transform, TransformBuilder, TransformConfig, Transforms, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
@@ -45,7 +45,7 @@ impl TransformBuilder for DebugPrinter {
 
 #[async_trait]
 impl Transform for DebugPrinter {
-    async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> ChainResponse {
+    async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> Result<Messages> {
         for request in &mut message_wrapper.messages {
             info!("Request: {}", request.to_high_level_string());
         }

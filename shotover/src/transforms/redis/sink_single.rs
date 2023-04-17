@@ -6,9 +6,7 @@ use crate::frame::{Frame, RedisFrame};
 use crate::message::{Message, Messages};
 use crate::tcp;
 use crate::tls::{AsyncStream, TlsConnector, TlsConnectorConfig};
-use crate::transforms::{
-    ChainResponse, Transform, TransformBuilder, TransformConfig, Transforms, Wrapper,
-};
+use crate::transforms::{Transform, TransformBuilder, TransformConfig, Transforms, Wrapper};
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use futures::{FutureExt, SinkExt, StreamExt};
@@ -111,7 +109,7 @@ pub struct RedisSinkSingle {
 
 #[async_trait]
 impl Transform for RedisSinkSingle {
-    async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> ChainResponse {
+    async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> Result<Messages> {
         // Return immediately if we have no messages.
         // If we tried to send no messages we would block forever waiting for a reply that will never come.
         if message_wrapper.messages.is_empty() {

@@ -1,4 +1,3 @@
-use crate::error::ChainResponse;
 use crate::message::Messages;
 use crate::transforms::{Transform, TransformBuilder, TransformConfig, Transforms, Wrapper};
 use anyhow::Result;
@@ -64,7 +63,7 @@ impl TransformBuilder for Coalesce {
 
 #[async_trait]
 impl Transform for Coalesce {
-    async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> ChainResponse {
+    async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> Result<Messages> {
         self.buffer.append(&mut message_wrapper.messages);
 
         let flush_buffer = message_wrapper.flush
