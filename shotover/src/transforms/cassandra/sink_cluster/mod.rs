@@ -1,6 +1,5 @@
 use self::node_pool::{get_accessible_owned_connection, NodePoolBuilder, PreparedMetadata};
 use self::rewrite::{MessageRewriter, RewriteTableTy};
-use crate::error::ChainResponse;
 use crate::frame::cassandra::{CassandraMetadata, Tracing};
 use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame};
 use crate::message::{Message, Messages, Metadata};
@@ -217,7 +216,7 @@ pub struct CassandraSinkCluster {
 }
 
 impl CassandraSinkCluster {
-    async fn send_message(&mut self, mut messages: Messages) -> ChainResponse {
+    async fn send_message(&mut self, mut messages: Messages) -> Result<Messages> {
         if self.version.is_none() {
             if let Some(message) = messages.first() {
                 if let Ok(Metadata::Cassandra(CassandraMetadata { version, .. })) =
@@ -701,11 +700,14 @@ fn is_use_statement_successful(response: Option<Result<Response>>) -> bool {
 
 #[async_trait]
 impl Transform for CassandraSinkCluster {
-    async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
+    async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> Result<Messages> {
         self.send_message(message_wrapper.messages).await
     }
 
-    async fn transform_pushed<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> ChainResponse {
+    async fn transform_pushed<'a>(
+        &'a mut self,
+        mut message_wrapper: Wrapper<'a>,
+    ) -> Result<Messages> {
         message_wrapper.messages.retain_mut(|message| {
             if let Some(Frame::Cassandra(CassandraFrame {
                 operation: CassandraOperation::Event(event),

@@ -2,8 +2,9 @@ use crate::codec::kafka::RequestHeader as CodecRequestHeader;
 use anyhow::{anyhow, Context, Result};
 use bytes::{BufMut, Bytes, BytesMut};
 use kafka_protocol::messages::{
-    ApiKey, FindCoordinatorRequest, FindCoordinatorResponse, ProduceRequest, ProduceResponse,
-    RequestHeader, ResponseHeader,
+    ApiKey, DescribeClusterResponse, FetchResponse, FindCoordinatorRequest,
+    FindCoordinatorResponse, LeaderAndIsrRequest, MetadataResponse, ProduceRequest,
+    ProduceResponse, RequestHeader, ResponseHeader,
 };
 use kafka_protocol::protocol::{Decodable, Encodable, HeaderVersion};
 
@@ -24,6 +25,7 @@ pub enum KafkaFrame {
 pub enum RequestBody {
     Produce(ProduceRequest),
     FindCoordinator(FindCoordinatorRequest),
+    LeaderAndIsr(LeaderAndIsrRequest),
     Unknown { api_key: ApiKey, message: Bytes },
 }
 
@@ -31,6 +33,9 @@ pub enum RequestBody {
 pub enum ResponseBody {
     Produce(ProduceResponse),
     FindCoordinator(FindCoordinatorResponse),
+    Fetch(FetchResponse),
+    Metadata(MetadataResponse),
+    DescribeCluster(DescribeClusterResponse),
     Unknown { api_key: ApiKey, message: Bytes },
 }
 
@@ -39,6 +44,9 @@ impl ResponseBody {
         match self {
             ResponseBody::Produce(_) => ProduceResponse::header_version(version),
             ResponseBody::FindCoordinator(_) => FindCoordinatorResponse::header_version(version),
+            ResponseBody::Fetch(_) => FetchResponse::header_version(version),
+            ResponseBody::Metadata(_) => MetadataResponse::header_version(version),
+            ResponseBody::DescribeCluster(_) => DescribeClusterResponse::header_version(version),
             ResponseBody::Unknown { api_key, .. } => api_key.response_header_version(version),
         }
     }
@@ -75,6 +83,7 @@ impl KafkaFrame {
             ApiKey::FindCoordinatorKey => {
                 RequestBody::FindCoordinator(decode(&mut bytes, version)?)
             }
+            ApiKey::LeaderAndIsrKey => RequestBody::LeaderAndIsr(decode(&mut bytes, version)?),
             api_key => RequestBody::Unknown {
                 api_key,
                 message: bytes,
@@ -98,6 +107,11 @@ impl KafkaFrame {
             ApiKey::ProduceKey => ResponseBody::Produce(decode(&mut bytes, version)?),
             ApiKey::FindCoordinatorKey => {
                 ResponseBody::FindCoordinator(decode(&mut bytes, version)?)
+            }
+            ApiKey::FetchKey => ResponseBody::Fetch(decode(&mut bytes, version)?),
+            ApiKey::MetadataKey => ResponseBody::Metadata(decode(&mut bytes, version)?),
+            ApiKey::DescribeClusterKey => {
+                ResponseBody::DescribeCluster(decode(&mut bytes, version)?)
             }
             api_key => ResponseBody::Unknown {
                 api_key,
@@ -130,6 +144,7 @@ impl KafkaFrame {
                 match body {
                     RequestBody::Produce(x) => encode(x, bytes, version)?,
                     RequestBody::FindCoordinator(x) => encode(x, bytes, version)?,
+                    RequestBody::LeaderAndIsr(x) => encode(x, bytes, version)?,
                     RequestBody::Unknown { message, .. } => bytes.extend_from_slice(&message),
                 }
             }
@@ -142,6 +157,9 @@ impl KafkaFrame {
                 match body {
                     ResponseBody::Produce(x) => encode(x, bytes, version)?,
                     ResponseBody::FindCoordinator(x) => encode(x, bytes, version)?,
+                    ResponseBody::Fetch(x) => encode(x, bytes, version)?,
+                    ResponseBody::Metadata(x) => encode(x, bytes, version)?,
+                    ResponseBody::DescribeCluster(x) => encode(x, bytes, version)?,
                     ResponseBody::Unknown { message, .. } => bytes.extend_from_slice(&message),
                 }
             }

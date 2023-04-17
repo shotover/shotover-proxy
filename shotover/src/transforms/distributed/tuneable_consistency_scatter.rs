@@ -1,7 +1,6 @@
 use crate::config::chain::TransformChainConfig;
-use crate::error::ChainResponse;
 use crate::frame::{Frame, RedisFrame};
-use crate::message::{Message, QueryType};
+use crate::message::{Message, Messages, QueryType};
 use crate::transforms::chain::{BufferedChain, TransformChainBuilder};
 use crate::transforms::{Transform, TransformBuilder, TransformConfig, Transforms, Wrapper};
 use anyhow::Result;
@@ -183,7 +182,7 @@ enum Resolver {
 
 #[async_trait]
 impl Transform for TuneableConsistentencyScatter {
-    async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> ChainResponse {
+    async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> Result<Messages> {
         let consistency: Vec<_> = message_wrapper
             .messages
             .iter_mut()

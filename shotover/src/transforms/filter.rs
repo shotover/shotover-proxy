@@ -1,5 +1,4 @@
-use crate::error::ChainResponse;
-use crate::message::{Message, QueryType};
+use crate::message::{Message, Messages, QueryType};
 use crate::transforms::{Transform, TransformBuilder, TransformConfig, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
@@ -42,7 +41,7 @@ impl TransformBuilder for QueryTypeFilter {
 
 #[async_trait]
 impl Transform for QueryTypeFilter {
-    async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> ChainResponse {
+    async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> Result<Messages> {
         let removed_indexes: Vec<(usize, Message)> = message_wrapper
             .messages
             .iter_mut()

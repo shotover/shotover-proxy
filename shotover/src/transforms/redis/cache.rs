@@ -1,5 +1,4 @@
 use crate::config::chain::TransformChainConfig;
-use crate::error::ChainResponse;
 use crate::frame::{CassandraFrame, CassandraOperation, Frame, RedisFrame};
 use crate::message::{Message, Messages};
 use crate::transforms::chain::{TransformChain, TransformChainBuilder};
@@ -325,7 +324,7 @@ impl SimpleRedisCache {
     async fn execute_upstream_and_write_to_cache<'a>(
         &mut self,
         mut message_wrapper: Wrapper<'a>,
-    ) -> ChainResponse {
+    ) -> Result<Messages> {
         let local_addr = message_wrapper.local_addr;
         let mut request_messages: Vec<_> = message_wrapper
             .messages
@@ -569,7 +568,7 @@ fn build_redis_key_from_cql3(
 
 #[async_trait]
 impl Transform for SimpleRedisCache {
-    async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> ChainResponse {
+    async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> Result<Messages> {
         let cache_responses = self
             .read_from_cache(&mut message_wrapper.messages, message_wrapper.local_addr)
             .await
