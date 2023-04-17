@@ -1,4 +1,4 @@
-use test_helpers::docker_compose::DockerCompose;
+use test_helpers::docker_compose::docker_compose;
 use test_helpers::flamegraph::Perf;
 use test_helpers::latte::Latte;
 use test_helpers::shotover_process::ShotoverProcessBuilder;
@@ -17,7 +17,7 @@ async fn main() {
     let config_dir = "example-configs/cassandra-cluster-v4";
     let bench = "read";
     {
-        let _compose = DockerCompose::new(&format!("{}/docker-compose.yaml", config_dir));
+        let _compose = docker_compose(&format!("{}/docker-compose.yaml", config_dir));
         latte.init(bench, "172.16.1.2:9044");
 
         let shotover =

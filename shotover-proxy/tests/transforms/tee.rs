@@ -1,6 +1,6 @@
 use serial_test::serial;
 use test_helpers::connection::redis_connection;
-use test_helpers::docker_compose::DockerCompose;
+use test_helpers::docker_compose::docker_compose;
 use test_helpers::shotover_process::ShotoverProcessBuilder;
 
 #[tokio::test(flavor = "multi_thread")]
@@ -91,7 +91,7 @@ async fn test_fail_with_mismatch() {
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_subchain_matches() {
-    let _compose = DockerCompose::new("example-configs/redis-passthrough/docker-compose.yaml");
+    let _compose = docker_compose("example-configs/redis-passthrough/docker-compose.yaml");
     let shotover =
         ShotoverProcessBuilder::new_with_topology("tests/test-configs/tee/subchain.yaml")
             .start()
@@ -128,7 +128,7 @@ async fn test_subchain_matches() {
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_subchain_with_mismatch() {
-    let _compose = DockerCompose::new("example-configs/redis-passthrough/docker-compose.yaml");
+    let _compose = docker_compose("example-configs/redis-passthrough/docker-compose.yaml");
     let shotover = ShotoverProcessBuilder::new_with_topology(
         "tests/test-configs/tee/subchain_with_mismatch.yaml",
     )
