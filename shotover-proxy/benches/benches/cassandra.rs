@@ -3,7 +3,8 @@ use criterion::{criterion_group, Criterion};
 use test_helpers::connection::cassandra::{
     CassandraConnection, CassandraConnectionBuilder, CassandraDriver,
 };
-use test_helpers::docker_compose::DockerCompose;
+use test_helpers::docker_compose::docker_compose;
+use test_helpers::docker_compose_runner::DockerCompose;
 use test_helpers::lazy::new_lazy_shared;
 use test_helpers::shotover_process::{BinProcess, ShotoverProcessBuilder};
 use tokio::runtime::Runtime;
@@ -231,7 +232,7 @@ impl BenchResources {
             .enable_all()
             .build()
             .unwrap();
-        let compose = DockerCompose::new(compose_file);
+        let compose = docker_compose(compose_file);
         let shotover = Some(
             tokio.block_on(ShotoverProcessBuilder::new_with_topology(shotover_topology).start()),
         );
@@ -260,7 +261,7 @@ impl BenchResources {
             .enable_all()
             .build()
             .unwrap();
-        let compose = DockerCompose::new(compose_file);
+        let compose = docker_compose(compose_file);
         let shotover = Some(
             tokio.block_on(ShotoverProcessBuilder::new_with_topology(shotover_topology).start()),
         );
