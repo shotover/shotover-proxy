@@ -8,15 +8,15 @@ license = "Apache-2.0"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-anyhow.workspace = true
-tokio.workspace = true
-clap.workspace = true
 shotover = { path = "../shotover" }
-tracing.workspace = true
 
 [dev-dependencies]
+anyhow.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+clap.workspace = true
 criterion = { git = "https://github.com/shotover/criterion.rs", branch = "0.4.0-bench_with_input_fn", features = ["async_tokio"] }
-serial_test = "1.0.0"
+serial_test = "2.0.0"
 rstest = "0.17.0"
 cassandra-cpp = { version = "2.0.0" }
 test-helpers = { path = "../test-helpers", features = ["cassandra-cpp-driver-tests"] }

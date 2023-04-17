@@ -1,3 +1,5 @@
+//! Use to establish a TLS connection to a DB in a sink transform
+
 use crate::tcp;
 use anyhow::{anyhow, bail, Context, Error, Result};
 use rustls::client::{InvalidDnsNameError, ServerCertVerified, ServerCertVerifier, WebPkiVerifier};
