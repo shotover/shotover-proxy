@@ -1,4 +1,4 @@
-use test_helpers::docker_compose::DockerCompose;
+use test_helpers::docker_compose::docker_compose;
 use test_helpers::kafka_producer_perf_test::run_producer_bench;
 use test_helpers::shotover_process::ShotoverProcessBuilder;
 
@@ -8,7 +8,7 @@ async fn main() {
 
     let config_dir = "tests/test-configs/kafka/passthrough";
     {
-        let _compose = DockerCompose::new(&format!("{}/docker-compose.yaml", config_dir));
+        let _compose = docker_compose(&format!("{}/docker-compose.yaml", config_dir));
         let shotover =
             ShotoverProcessBuilder::new_with_topology(&format!("{}/topology.yaml", config_dir))
                 .start()
@@ -21,7 +21,7 @@ async fn main() {
     }
 
     // restart the docker container to avoid running out of disk space
-    let _compose = DockerCompose::new(&format!("{}/docker-compose.yaml", config_dir));
+    let _compose = docker_compose(&format!("{}/docker-compose.yaml", config_dir));
     println!("\nBenching Direct Kafka ...");
     run_producer_bench("[localhost]:9092");
 }

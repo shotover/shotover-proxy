@@ -2,13 +2,13 @@ use redis::aio::Connection;
 use redis::Cmd;
 use std::time::Duration;
 use test_helpers::connection::redis_connection;
-use test_helpers::docker_compose::DockerCompose;
+use test_helpers::docker_compose::docker_compose;
 use test_helpers::shotover_process::{BinProcess, EventMatcher, Level};
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_custom_transform() {
     // Setup shotover and the redis server it connects to
-    let _compose = DockerCompose::new("config/docker-compose.yaml");
+    let _compose = docker_compose("config/docker-compose.yaml");
     let shotover = shotover_proxy("config/topology.yaml").await;
     let mut connection = redis_connection::new_async(6379).await;
 

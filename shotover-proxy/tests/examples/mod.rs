@@ -3,13 +3,13 @@ use serial_test::serial;
 use test_helpers::connection::cassandra::{
     assert_query_result, CassandraConnectionBuilder, CassandraDriver, ResultValue,
 };
-use test_helpers::docker_compose::DockerCompose;
+use test_helpers::docker_compose::docker_compose;
 
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_cassandra_rewrite_peers_example() {
     let _docker_compose =
-        DockerCompose::new("example-configs-docker/cassandra-peers-rewrite/docker-compose.yaml");
+        docker_compose("example-configs-docker/cassandra-peers-rewrite/docker-compose.yaml");
 
     let connection = CassandraConnectionBuilder::new("172.16.1.2", 9043, CassandraDriver::Datastax)
         .build()

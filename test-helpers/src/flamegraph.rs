@@ -5,7 +5,7 @@ use std::fs::File;
 use std::io::{BufReader, BufWriter};
 use std::process::{Child, Command};
 
-use crate::docker_compose::run_command;
+use crate::docker_compose_runner::run_command;
 
 pub struct Perf(Child);
 
