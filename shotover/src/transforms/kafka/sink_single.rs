@@ -1,5 +1,5 @@
 use crate::codec::{kafka::KafkaCodecBuilder, CodecBuilder, Direction};
-use crate::frame::kafka::{KafkaFrame, ResponseBody};
+use crate::frame::kafka::{KafkaFrame, RequestBody, ResponseBody};
 use crate::frame::Frame;
 use crate::message::Messages;
 use crate::tcp;
@@ -40,7 +40,9 @@ impl TransformConfig for KafkaSinkSingleConfig {
 
 #[derive(Clone)]
 pub struct KafkaSinkSingleBuilder {
+    // contains address and port
     address: String,
+    address_port: u16,
     connect_timeout: Duration,
     read_timeout: Option<Duration>,
 }
@@ -53,9 +55,15 @@ impl KafkaSinkSingleBuilder {
         timeout: Option<u64>,
     ) -> KafkaSinkSingleBuilder {
         let receive_timeout = timeout.map(Duration::from_secs);
+        let address_port = address
+            .rsplit(':')
+            .next()
+            .and_then(|str| str.parse().ok())
+            .unwrap_or(9092);
 
         KafkaSinkSingleBuilder {
             address,
+            address_port,
             connect_timeout: Duration::from_millis(connect_timeout_ms),
             read_timeout: receive_timeout,
         }
@@ -67,6 +75,7 @@ impl TransformBuilder for KafkaSinkSingleBuilder {
         Transforms::KafkaSinkSingle(KafkaSinkSingle {
             outbound: None,
             address: self.address.clone(),
+            address_port: self.address_port,
             pushed_messages_tx: None,
             connect_timeout: self.connect_timeout,
             read_timeout: self.read_timeout,
@@ -84,6 +93,7 @@ impl TransformBuilder for KafkaSinkSingleBuilder {
 
 pub struct KafkaSinkSingle {
     address: String,
+    address_port: u16,
     outbound: Option<Connection>,
     pushed_messages_tx: Option<mpsc::UnboundedSender<Messages>>,
     connect_timeout: Duration,
@@ -92,12 +102,26 @@ pub struct KafkaSinkSingle {
 
 #[async_trait]
 impl Transform for KafkaSinkSingle {
-    async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> Result<Messages> {
+    async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> Result<Messages> {
         if self.outbound.is_none() {
             let codec = KafkaCodecBuilder::new(Direction::Sink);
             let tcp_stream = tcp::tcp_stream(self.connect_timeout, &self.address).await?;
             let (rx, tx) = tcp_stream.into_split();
             self.outbound = Some(spawn_read_write_tasks(&codec, rx, tx));
+        }
+
+        // Rewrite requests to use kafkas port instead of shotovers port
+        for request in &mut message_wrapper.messages {
+            if let Some(Frame::Kafka(KafkaFrame::Request {
+                body: RequestBody::LeaderAndIsr(leader_and_isr),
+                ..
+            })) = request.frame()
+            {
+                for leader in &mut leader_and_isr.live_leaders {
+                    leader.port = self.address_port as i32;
+                }
+                request.invalidate_cache();
+            }
         }
 
         let outbound = self.outbound.as_mut().unwrap();
@@ -124,23 +148,43 @@ impl Transform for KafkaSinkSingle {
             read_responses(responses).await
         }?;
 
-        // Rewrite FindCoordinator responses messages to use shotovers port instead of kafkas port
+        // Rewrite responses to use shotovers port instead of kafkas port
         for response in &mut responses {
-            if let Some(Frame::Kafka(KafkaFrame::Response {
-                body: ResponseBody::FindCoordinator(find_coordinator),
-                version,
-                ..
-            })) = response.frame()
-            {
-                let port = message_wrapper.local_addr.port() as i32;
-                if *version <= 3 {
-                    find_coordinator.port = port;
-                } else {
-                    for coordinator in &mut find_coordinator.coordinators {
-                        coordinator.port = port;
+            let port = message_wrapper.local_addr.port() as i32;
+            match response.frame() {
+                Some(Frame::Kafka(KafkaFrame::Response {
+                    body: ResponseBody::FindCoordinator(find_coordinator),
+                    version,
+                    ..
+                })) => {
+                    if *version <= 3 {
+                        find_coordinator.port = port;
+                    } else {
+                        for coordinator in &mut find_coordinator.coordinators {
+                            coordinator.port = port;
+                        }
                     }
+                    response.invalidate_cache();
                 }
-                response.invalidate_cache();
+                Some(Frame::Kafka(KafkaFrame::Response {
+                    body: ResponseBody::Metadata(metadata),
+                    ..
+                })) => {
+                    for broker in &mut metadata.brokers {
+                        broker.1.port = port;
+                    }
+                    response.invalidate_cache();
+                }
+                Some(Frame::Kafka(KafkaFrame::Response {
+                    body: ResponseBody::DescribeCluster(describe_cluster),
+                    ..
+                })) => {
+                    for broker in &mut describe_cluster.brokers {
+                        broker.1.port = port;
+                    }
+                    response.invalidate_cache();
+                }
+                _ => {}
             }
         }
 
