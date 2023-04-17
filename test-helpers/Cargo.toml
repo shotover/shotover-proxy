@@ -14,7 +14,7 @@ cassandra-cpp-driver-tests = ["cassandra-cpp"]
 tracing.workspace = true
 subprocess.workspace = true
 regex = "1.7.0"
-tokio-bin-process = { path = "../tokio-bin-process" }
+tokio-bin-process = "0.1.0"
 cdrs-tokio.workspace = true
 cassandra-protocol.workspace = true
 cassandra-cpp = { version = "2.0.0", optional = true }
