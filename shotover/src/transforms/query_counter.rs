@@ -1,6 +1,6 @@
-use crate::error::ChainResponse;
 use crate::frame::Frame;
 use crate::frame::RedisFrame;
+use crate::message::Messages;
 use crate::transforms::TransformConfig;
 use crate::transforms::{Transform, TransformBuilder, Transforms, Wrapper};
 use anyhow::Result;
@@ -38,7 +38,7 @@ impl TransformBuilder for QueryCounter {
 
 #[async_trait]
 impl Transform for QueryCounter {
-    async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> ChainResponse {
+    async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> Result<Messages> {
         for m in &mut message_wrapper.messages {
             match m.frame() {
                 Some(Frame::Cassandra(frame)) => {

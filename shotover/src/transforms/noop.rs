@@ -1,5 +1,6 @@
-use crate::error::ChainResponse;
+use crate::message::Messages;
 use crate::transforms::{Transform, Wrapper};
+use anyhow::Result;
 use async_trait::async_trait;
 
 #[derive(Debug, Clone)]
@@ -19,7 +20,7 @@ impl Default for NoOp {
 
 #[async_trait]
 impl Transform for NoOp {
-    async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
+    async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> Result<Messages> {
         message_wrapper.call_next_transform().await
     }
 }

@@ -1,8 +1,7 @@
 use crate::codec::redis::RedisCodecBuilder;
 use crate::codec::{CodecBuilder, Direction};
-use crate::error::ChainResponse;
 use crate::frame::{Frame, RedisFrame};
-use crate::message::Message;
+use crate::message::{Message, Messages};
 use crate::tls::TlsConnectorConfig;
 use crate::transforms::redis::RedisError;
 use crate::transforms::redis::TransformError;
@@ -950,7 +949,7 @@ impl TransformBuilder for RedisSinkCluster {
 
 #[async_trait]
 impl Transform for RedisSinkCluster {
-    async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
+    async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> Result<Messages> {
         if self.rebuild_connections {
             if let Err(err) = self.build_connections(self.token.clone()).await {
                 tracing::warn!("Error when rebuilding connections {err:?}");

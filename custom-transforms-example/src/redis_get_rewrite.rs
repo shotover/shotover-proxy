@@ -1,8 +1,8 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use serde::Deserialize;
-use shotover::error::ChainResponse;
 use shotover::frame::{Frame, RedisFrame};
+use shotover::message::Messages;
 use shotover::transforms::{Transform, TransformBuilder, TransformConfig, Transforms, Wrapper};
 
 #[derive(Deserialize, Debug, Clone)]
@@ -43,7 +43,7 @@ pub struct RedisGetRewrite {
 
 #[async_trait]
 impl Transform for RedisGetRewrite {
-    async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> ChainResponse {
+    async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> Result<Messages> {
         let mut get_indices = vec![];
         for (i, message) in message_wrapper.messages.iter_mut().enumerate() {
             if let Some(frame) = message.frame() {

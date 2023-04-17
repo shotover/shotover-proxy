@@ -1,7 +1,6 @@
-use crate::error::ChainResponse;
 use crate::frame::redis::redis_query_type;
 use crate::frame::{Frame, RedisFrame};
-use crate::message::{Message, QueryType};
+use crate::message::{Message, Messages, QueryType};
 use crate::transforms::{Transform, TransformBuilder, TransformConfig, Transforms, Wrapper};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
@@ -182,7 +181,7 @@ fn unwrap_response(message: &mut Message) -> Result<()> {
 
 #[async_trait]
 impl Transform for RedisTimestampTagger {
-    async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> ChainResponse {
+    async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> Result<Messages> {
         // TODO: This is wrong. We need to keep track of tagged_success per message
         let mut tagged_success = true;
         // TODO: This is wrong. We need more robust handling of transactions

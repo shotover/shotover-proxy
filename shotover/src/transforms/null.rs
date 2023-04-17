@@ -1,4 +1,4 @@
-use crate::error::ChainResponse;
+use crate::message::Messages;
 use crate::transforms::{Transform, TransformBuilder, TransformConfig, Transforms, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
@@ -34,7 +34,7 @@ impl TransformBuilder for NullSink {
 
 #[async_trait]
 impl Transform for NullSink {
-    async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> ChainResponse {
+    async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> Result<Messages> {
         for message in &mut message_wrapper.messages {
             *message = message.to_error_response("Handled by shotover null transform".to_string());
         }

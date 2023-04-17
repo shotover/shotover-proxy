@@ -1,12 +1,8 @@
 use crate::frame::{CassandraOperation, CassandraResult, Frame};
-use crate::message::Message;
+use crate::message::{Message, Messages};
 use crate::message_value::{IntSize, MessageValue};
 use crate::transforms::cassandra::peers_rewrite::CassandraOperation::Event;
-use crate::transforms::{TransformConfig, Transforms};
-use crate::{
-    error::ChainResponse,
-    transforms::{Transform, TransformBuilder, Wrapper},
-};
+use crate::transforms::{Transform, TransformBuilder, TransformConfig, Transforms, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
 use cassandra_protocol::frame::events::{ServerEvent, StatusChange};
@@ -55,7 +51,7 @@ impl TransformBuilder for CassandraPeersRewrite {
 
 #[async_trait]
 impl Transform for CassandraPeersRewrite {
-    async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> ChainResponse {
+    async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> Result<Messages> {
         // Find the indices of queries to system.peers & system.peers_v2
         // we need to know which columns in which CQL queries in which messages have system peers
         let column_names: Vec<(usize, Vec<Identifier>)> = message_wrapper
@@ -81,7 +77,10 @@ impl Transform for CassandraPeersRewrite {
         Ok(response)
     }
 
-    async fn transform_pushed<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> ChainResponse {
+    async fn transform_pushed<'a>(
+        &'a mut self,
+        mut message_wrapper: Wrapper<'a>,
+    ) -> Result<Messages> {
         for message in &mut message_wrapper.messages {
             if let Some(Frame::Cassandra(frame)) = message.frame() {
                 if let Event(ServerEvent::StatusChange(StatusChange { addr, .. })) =

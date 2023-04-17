@@ -33,7 +33,6 @@
 
 pub mod codec;
 mod config;
-pub mod error;
 pub mod frame;
 pub mod message;
 pub mod message_value;
