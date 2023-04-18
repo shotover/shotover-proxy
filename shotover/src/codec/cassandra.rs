@@ -13,7 +13,7 @@ use cassandra_protocol::frame::message_startup::BodyReqStartup;
 use cassandra_protocol::frame::{Flags, Opcode, Version};
 use cql3_parser::cassandra_statement::CassandraStatement;
 use cql3_parser::common::Identifier;
-use lz4_flex::{decompress, compress};
+use lz4_flex::{compress, decompress};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio_util::codec::{Decoder, Encoder};
@@ -700,8 +700,7 @@ impl CassandraEncoder {
                         dst.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0, 0]);
                         let payload_start = dst.len();
 
-                        let uncompressed_len =self.encode_compressed_payload(dst, m)?;
-
+                        let uncompressed_len = self.encode_compressed_payload(dst, m)?;
                         let compressed_len = dst.len() - payload_start;
 
                         let mut header =
@@ -740,19 +739,18 @@ impl CassandraEncoder {
         Ok(match m.into_encodable(MessageType::Cassandra)? {
             Encodable::Bytes(bytes) => {
                 let uncompressed_len = bytes.len();
-                let compressed  = compress(&bytes);
+                let compressed = compress(&bytes);
                 dst.extend_from_slice(&compressed);
                 uncompressed_len
             }
             Encodable::Frame(frame) => {
                 let buffer = frame.into_cassandra().unwrap().encode(Compression::None);
                 let uncompressed_len = buffer.len();
-                let compressed  = compress(&buffer);
+                let compressed = compress(&buffer);
                 dst.extend_from_slice(&compressed);
                 uncompressed_len
             }
         })
-
     }
 
     fn encode_envelope(
