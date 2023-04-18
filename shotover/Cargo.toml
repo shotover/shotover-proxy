@@ -5,6 +5,8 @@ authors = ["Ben <ben@instaclustr.com>"]
 edition = "2021"
 rust-version = "1.56"
 license = "Apache-2.0"
+repository = "https://github.com/shotover/shotover-proxy"
+description = "Shotover API for building custom transforms"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
