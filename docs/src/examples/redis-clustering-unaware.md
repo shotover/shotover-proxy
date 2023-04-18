@@ -2,41 +2,94 @@
 
 The following guide shows you how to configure Shotover Proxy to support transparently proxying Redis cluster _unaware_ clients to a [Redis cluster](https://redis.io/topics/cluster-spec).
 
-## Setting up the Redis cluster
+## General Configuration
 
-First you need to setup a Redis cluster for Shotover to connect to.
+First you need to setup a Redis cluster and Shotover.
 
-The easiest way to do this is with this example [docker-compose.yaml](https://github.com/shotover/shotover-proxy/blob/main/shotover-proxy/example-configs-docker/redis-cluster-hiding/docker-compose.yaml)
+The easiest way to do this is with this example [docker-compose.yaml](https://github.com/shotover/shotover-examples/blob/main/redis-cluster-1-many/docker-compose.yaml)
 You should first inspect the `docker-compose.yaml` to understand what the cluster looks like and how its exposed to the network.
 
 Then run:
 
-```bash
-curl -L https://raw.githubusercontent.com/shotover/shotover-proxy/main/shotover-proxy/example-configs/redis-cluster-hiding/docker-compose.yaml --output docker-compose.yaml
-docker-compose -f docker-compose.yaml up
+```shell
+curl -L https://raw.githubusercontent.com/shotover/shotover-examples/main/redis-cluster-1-many/docker-compose.yaml --output docker-compose.yaml
 ```
-
-When you are finished with the containers <kbd>ctrl</kbd> + <kbd>c</kbd> will shut them down.
 
 Alternatively you could spin up a hosted Redis cluster on [any cloud provider that provides it](https://www.instaclustr.com/products/managed-redis).
 This more accurately reflects a real production use but will take a bit more setup.
-
-## Configuration
-
-Modify your `topology.yaml` file like this:
+And reduce the docker-compose.yaml to just the shotover part
 
 ```yaml
-{{#include ../../../shotover-proxy/example-configs-docker/redis-cluster-hiding/topology.yaml}}
+version: '3.3'
+services:
+  shotover-0:
+    networks:
+      cluster_subnet:
+        ipv4_address: 172.16.1.9
+    image: shotover/shotover-proxy:v0.1.10
+    volumes:
+      - .:/config
+networks:
+  cluster_subnet:
+    name: cluster_subnet
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.16.1.0/24
+          gateway: 172.16.1.1
 ```
 
+## Shotover Configuration
+
+```yaml
+---
+sources:
+  redis_prod:
+    # define how shotover listens for incoming connections from our client application (`redis-benchmark`).
+    Redis:
+      listen_addr: "0.0.0.0:6379"
+chain_config:
+  redis_chain:
+    # configure Shotover to connect to the Redis cluster via our defined contact points
+    - RedisSinkCluster:
+        first_contact_points:
+          - "172.16.1.2:6379"
+          - "172.16.1.3:6379"
+          - "172.16.1.4:6379"
+          - "172.16.1.5:6379"
+          - "172.16.1.6:6379"
+          - "172.16.1.7:6379"
+        connect_timeout_ms: 3000
+source_to_chain_mapping:
+  # connect our Redis source to our Redis cluster sink (transform).
+  redis_prod: redis_chain
+```
+
+Modify an existing `topology.yaml` or create a new one and place the above example as the file's contents.
+
 If you didnt use the standard `docker-compose.yaml` setup then you will need to change `first_contact_points` to point to the Redis instances you used.
+
+You will also need a [config.yaml](https://raw.githubusercontent.com/shotover/shotover-examples/main/redis-cluster-1-1/config.yaml) to run Shotover.
+
+```shell
+curl -L https://raw.githubusercontent.com/shotover/shotover-examples/main/redis-cluster-1-1/config.yaml --output config.yaml
+```
+
+## Starting
+
+We can now start the services with:
+
+```shell
+docker-compose up -d
+```
 
 ## Testing
 
 With your Redis Cluster and Shotover now up and running, we can test out our client application. Let's start it up!
 
 ```console
-redis-benchmark -t set,get
+redis-benchmark -h 172.16.1.9 -t set,get
 ```
 
 Running against local containerised Redis instances on a Ryzen 9 3900X we get the following:

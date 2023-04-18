@@ -13,10 +13,10 @@ In this example, we will be connecting to a Redis cluster that has the following
 * `172.16.1.6:6379`
 * `172.16.1.7:6379`
 
-Shotover will be deployed as a sidecar to each node in the Redis cluster, listening on `6380`. Use the following [docker-compose.yaml](https://github.com/shotover/shotover-proxy/blob/main/shotover-proxy/example-configs-docker/redis-cluster-ports-rewrite/docker-compose.yaml) to run the Redis cluster and Shotover sidecars.
+Shotover will be deployed as a sidecar to each node in the Redis cluster, listening on `6380`. Use the following [docker-compose.yaml](https://github.com/shotover/shotover-examples/blob/main/redis-cluster-1-1/docker-compose.yaml) to run the Redis cluster and Shotover sidecars.
 
 ```console
-curl -L https://raw.githubusercontent.com/shotover/shotover-proxy/main/shotover-proxy/example-configs-docker/redis-cluster-ports-rewrite/docker-compose.yaml --output docker-compose.yaml
+curl -L https://raw.githubusercontent.com/shotover/shotover-examples/main/redis-cluster-1-1/docker-compose.yaml --output docker-compose.yaml
 ```
 
 Below we can see an example of a Redis node and it's Shotover sidecar. Notice they are running on the same network address (`172.16.1.2`) and the present directory is being mounted to allow Shotover to access the config and topology files.
@@ -57,22 +57,35 @@ First we will modify our `topology.yaml` file to have a single Redis source. Thi
 * Connect our Redis Source to our Redis cluster sink (transform).
 
 ```yaml
-{{#include ../../../shotover-proxy/example-configs-docker/redis-cluster-ports-rewrite/topology.yaml}}
+---
+sources:
+  redis_prod:
+    Redis:
+      listen_addr: "0.0.0.0:6380"
+chain_config:
+  redis_chain:
+    - RedisClusterPortsRewrite:
+         new_port: 6380
+    - RedisSinkSingle:
+        remote_address: "0.0.0.0:6379"
+        connect_timeout_ms: 3000
+source_to_chain_mapping:
+  redis_prod: redis_chain
 ```
 
 Modify an existing `topology.yaml` or create a new one and place the above example as the file's contents.
 
-You will also need a [config.yaml](https://raw.githubusercontent.com/shotover/shotover-proxy/main/shotover-proxy/config/config.yaml) to run Shotover.
+You will also need a [config.yaml](https://raw.githubusercontent.com/shotover/shotover-examples/main/redis-cluster-1-1/config.yaml) to run Shotover.
 
-```console
-curl -L https://raw.githubusercontent.com/shotover/shotover-proxy/main/shotover-proxy/example-configs-docker/redis-cluster-ports-rewrite/config.yaml --output config.yaml
+```shell
+curl -L https://raw.githubusercontent.com/shotover/shotover-examples/main/redis-cluster-1-1/config.yaml --output config.yaml
 ```
 
 ## Starting
 
 We can now start the services with:
 
-```console
+```shell
 docker-compose up -d
 ```
 

@@ -12,10 +12,10 @@ In this example, we will be connecting to a Cassandra cluster that has the follo
 
 ### Rewriting the peer ports
 
-Shotover will be deployed as a sidecar to each node in the Cassandra cluster, listening on `9043`. Use the following [docker-compose.yaml](https://raw.githubusercontent.com/shotover/shotover-proxy/cassandra-docs/shotover-proxy/example-configs-docker/cassandra-peers-rewrite/docker-compose.yaml) to run the Cassandra cluster and Shotover sidecars. In this example we want to ensure that all our traffic to Cassandra goes through Shotover.
+Shotover will be deployed as a sidecar to each node in the Cassandra cluster, listening on `9043`. Use the following [docker-compose.yaml](https://raw.githubusercontent.com/shotover/shotover-examples/main/cassandra-1-1/docker-compose.yaml) to run the Cassandra cluster and Shotover sidecars. In this example we want to ensure that all our traffic to Cassandra goes through Shotover.
 
 ```console
-curl -L https://raw.githubusercontent.com/shotover/shotover-proxy/main/shotover-proxy/example-configs-docker/cassandra-peers-rewrite/docker-compose.yaml --output docker-compose.yaml
+curl -L https://raw.githubusercontent.com/shotover/shotover-examples/main/cassandra-1-1/docker-compose.yaml --output docker-compose.yaml
 ```
 
 Below we can see an example of a Cassandra node and it's Shotover sidecar, notice that they are running on the same network address (`172.16.1.2`) and the present directory is being mounted to allow Shotover to access the config and topology files.
@@ -45,7 +45,7 @@ In this example we will use `cqlsh` to connect to our cluster.
 
 #### Configuration
 
-First we will modify our `topology.yaml` file to have a single Cassandra source. This will:
+First we will create our `topology.yaml` file to have a single Cassandra source. This will:
 
 * Define how Shotover listens for incoming connections from our client (`cqlsh`).
 * Configure Shotover to connect to the Cassandra node via our defined remote address.
@@ -53,15 +53,28 @@ First we will modify our `topology.yaml` file to have a single Cassandra source.
 * Connect our Cassandra source to our Cassandra sink (transform).
 
 ```yaml
-{{#include ../../../shotover-proxy/example-configs-docker/cassandra-peers-rewrite/topology.yaml}}
+---
+sources:
+  cassandra_prod:
+    Cassandra:
+      listen_addr: "0.0.0.0:9043"
+chain_config:
+  main_chain:
+    - CassandraPeersRewrite:
+        port: 9043
+    - CassandraSinkSingle:
+        remote_address: "127.0.0.1:9042"
+        connect_timeout_ms: 3000
+source_to_chain_mapping:
+  cassandra_prod: main_chain
 ```
 
 Modify an existing `topology.yaml` or create a new one and place the above example as the file's contents.
 
-You will also need a [config.yaml](https://raw.githubusercontent.com/shotover/shotover-proxy/main/shotover-proxy/config/config.yaml) to run Shotover.
+You will also need a [config.yaml](https://raw.githubusercontent.com/shotover/shotover-examples/main/cassandra-1-1/config.yaml) to run Shotover.
 
 ```console
-curl -L https://raw.githubusercontent.com/shotover/shotover-proxy/main/shotover-proxy/config/config.yaml --output config.yaml
+curl -L https://raw.githubusercontent.com/shotover/shotover-examples/main/cassandra-1-1/config.yaml --output config.yaml
 ```
 
 #### Starting
