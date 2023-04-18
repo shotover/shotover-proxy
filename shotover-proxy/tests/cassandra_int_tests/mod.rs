@@ -864,7 +864,7 @@ async fn test_protocol_v5_single(#[case] driver: CassandraDriver) {
 async fn test_protocol_v5_compression(#[case] driver: CassandraDriver) {
     {
         let _docker_compose =
-            DockerCompose::new("example-configs/cassandra-passthrough/docker-compose.yaml");
+            docker_compose("example-configs/cassandra-passthrough/docker-compose.yaml");
 
         let shotover = ShotoverProcessBuilder::new_with_topology(
             "example-configs/cassandra-passthrough/topology-encode.yaml",
