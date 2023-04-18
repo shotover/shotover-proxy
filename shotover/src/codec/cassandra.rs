@@ -700,6 +700,7 @@ impl CassandraEncoder {
                         dst.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0, 0]);
                         let payload_start = dst.len();
 
+                        // TODO we should not be encoding small frames
                         let uncompressed_len = self.encode_compressed_payload(dst, m)?;
                         let compressed_len = dst.len() - payload_start;
 
