@@ -13,7 +13,7 @@ use cassandra_protocol::frame::message_startup::BodyReqStartup;
 use cassandra_protocol::frame::{Flags, Opcode, Version};
 use cql3_parser::cassandra_statement::CassandraStatement;
 use cql3_parser::common::Identifier;
-use lz4_flex::{compress, decompress};
+use lz4_flex::{block::get_maximum_output_size, compress_into, decompress_into};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio_util::codec::{Decoder, Encoder};
@@ -276,11 +276,9 @@ impl CassandraDecoder {
                         // and not decompressed.
                         frame_bytes.split_to(compressed_len)
                     } else {
-                        BytesMut::from(
-                            decompress(&frame_bytes.split_to(compressed_len), uncompressed_length)
-                                .unwrap() // TODO
-                                .as_slice(),
-                        )
+                        let mut payload = BytesMut::zeroed(uncompressed_length);
+                        decompress_into(&frame_bytes.split_to(compressed_len), &mut payload)?;
+                        payload
                     };
 
                     let envelopes = self.extract_envelopes_from_payload(payload)?;
@@ -432,7 +430,7 @@ impl CassandraDecoder {
 
 fn header_crc_mismatch_error(computed_crc: i32, header_crc24: i32) -> anyhow::Error {
     anyhow!(format!(
-        "Header CRC mismatch - expected {header_crc24}, found {computed_crc}."
+        "Header CRC mismatch - read {header_crc24}, computed {computed_crc}."
     ))
 }
 
@@ -685,14 +683,11 @@ impl CassandraEncoder {
                         // add header length & header crc
                         let payload_len = &payload_len.to_le_bytes()[..3];
                         dst[header_start..header_start + 3].copy_from_slice(payload_len);
-                        dst[header_start + 3..header_start + 6].copy_from_slice(
-                            &cassandra_protocol::crc::crc24(payload_len).to_le_bytes()[..3],
-                        );
+                        dst[header_start + 3..header_start + 6]
+                            .copy_from_slice(&crc24(payload_len).to_le_bytes()[..3]);
 
                         // add payload crc
-                        dst.extend_from_slice(
-                            &cassandra_protocol::crc::crc32(&dst[payload_start..]).to_le_bytes(),
-                        );
+                        dst.extend_from_slice(&crc32(&dst[payload_start..]).to_le_bytes());
                     }
                     Compression::Lz4 => {
                         let header_start = dst.len();
@@ -701,8 +696,8 @@ impl CassandraEncoder {
                         let payload_start = dst.len();
 
                         // TODO we should not be encoding small frames
-                        let uncompressed_len = self.encode_compressed_payload(dst, m)?;
-                        let compressed_len = dst.len() - payload_start;
+                        let (uncompressed_len, compressed_len) =
+                            self.encode_compressed_payload(dst, m, payload_start)?;
 
                         let mut header =
                             (compressed_len) as u64 | ((uncompressed_len as u64) << 17);
@@ -735,23 +730,27 @@ impl CassandraEncoder {
         }
     }
 
-    fn encode_compressed_payload(&mut self, dst: &mut BytesMut, m: Message) -> Result<usize> {
+    fn encode_compressed_payload(
+        &mut self,
+        dst: &mut BytesMut,
+        m: Message,
+        payload_start: usize,
+    ) -> Result<(usize, usize)> {
         // TODO: always check if cassandra message
-        Ok(match m.into_encodable(MessageType::Cassandra)? {
-            Encodable::Bytes(bytes) => {
-                let uncompressed_len = bytes.len();
-                let compressed = compress(&bytes);
-                dst.extend_from_slice(&compressed);
-                uncompressed_len
-            }
-            Encodable::Frame(frame) => {
-                let buffer = frame.into_cassandra().unwrap().encode(Compression::None);
-                let uncompressed_len = buffer.len();
-                let compressed = compress(&buffer);
-                dst.extend_from_slice(&compressed);
-                uncompressed_len
-            }
-        })
+        let bytes = match m.into_encodable(MessageType::Cassandra)? {
+            Encodable::Bytes(bytes) => bytes,
+            Encodable::Frame(frame) => frame
+                .into_cassandra()
+                .unwrap()
+                .encode(Compression::None)
+                .into(),
+        };
+
+        let uncompressed_len = bytes.len();
+        dst.resize(payload_start + get_maximum_output_size(uncompressed_len), 0);
+        let compressed_len = compress_into(&bytes, &mut dst[payload_start..])?;
+        dst.truncate(payload_start + compressed_len);
+        Ok((uncompressed_len, compressed_len))
     }
 
     fn encode_envelope(
