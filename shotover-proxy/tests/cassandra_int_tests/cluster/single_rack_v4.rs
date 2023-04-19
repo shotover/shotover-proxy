@@ -8,7 +8,7 @@ use test_helpers::connection::cassandra::{
     CassandraDriver, ResultValue,
 };
 
-use test_helpers::docker_compose_runner::DockerCompose;
+use test_helpers::docker_compose::DockerCompose;
 use tokio::sync::broadcast;
 use tokio::time::timeout;
 

@@ -3,8 +3,7 @@ use criterion::{criterion_group, Criterion};
 use test_helpers::connection::cassandra::{
     CassandraConnection, CassandraConnectionBuilder, CassandraDriver,
 };
-use test_helpers::docker_compose::docker_compose;
-use test_helpers::docker_compose_runner::DockerCompose;
+use test_helpers::docker_compose::{docker_compose, DockerCompose};
 use test_helpers::lazy::new_lazy_shared;
 use test_helpers::shotover_process::{BinProcess, ShotoverProcessBuilder};
 use tokio::runtime::Runtime;

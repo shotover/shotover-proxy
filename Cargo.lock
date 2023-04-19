@@ -1073,6 +1073,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "docker-compose-runner"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a02a210319584c67a336a5d964b23f8598cb101eb8e5929b2c65b2a4f769451c"
+dependencies = [
+ "anyhow",
+ "regex",
+ "serde_yaml",
+ "subprocess",
+ "tracing",
+]
+
+[[package]]
 name = "dyn-clone"
 version = "1.0.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3452,6 +3465,7 @@ dependencies = [
  "cassandra-cpp",
  "cassandra-protocol",
  "cdrs-tokio",
+ "docker-compose-runner",
  "inferno",
  "itertools",
  "openssl",
