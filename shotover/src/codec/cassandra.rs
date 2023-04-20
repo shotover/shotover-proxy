@@ -5,15 +5,15 @@ use crate::frame::{CassandraFrame, Frame, MessageType};
 use crate::message::{Encodable, Message, Messages, Metadata};
 use anyhow::{anyhow, Result};
 use atomic_enum::atomic_enum;
-use bytes::{Buf, BufMut, BytesMut};
+use bytes::{Buf, BufMut, Bytes, BytesMut};
 use cassandra_protocol::compression::Compression;
 use cassandra_protocol::crc::{crc24, crc32};
 use cassandra_protocol::frame::message_error::{ErrorBody, ErrorType};
 use cassandra_protocol::frame::message_startup::BodyReqStartup;
-use cassandra_protocol::frame::{Flags, Opcode, Version};
+use cassandra_protocol::frame::{Flags, Opcode, Version, PAYLOAD_SIZE_LIMIT};
 use cql3_parser::cassandra_statement::CassandraStatement;
 use cql3_parser::common::Identifier;
-use lz4_flex::{block::get_maximum_output_size, compress_into, decompress_into};
+use lz4_flex::{block::get_maximum_output_size, compress_into, decompress};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio_util::codec::{Decoder, Encoder};
@@ -219,7 +219,7 @@ impl CassandraDecoder {
                     }
 
                     frame_bytes.advance(UNCOMPRESSED_FRAME_HEADER_LENGTH);
-                    let payload = frame_bytes.split_to(payload_length);
+                    let payload = frame_bytes.split_to(payload_length).freeze();
                     let envelopes = self.extract_envelopes_from_payload(payload)?;
 
                     Ok(envelopes)
@@ -274,18 +274,20 @@ impl CassandraDecoder {
                         // protocol spec 2.2:
                         // An uncompressed length of 0 signals that the compressed payload should be used as-is
                         // and not decompressed.
-                        frame_bytes.split_to(compressed_len)
+                        frame_bytes.split_to(compressed_len).freeze()
                     } else {
-                        let mut payload = BytesMut::zeroed(uncompressed_length);
-                        decompress_into(&frame_bytes.split_to(compressed_len), &mut payload)?;
-                        payload
+                        decompress(
+                            &frame_bytes.split_to(compressed_len).freeze(),
+                            uncompressed_length,
+                        )?
+                        .into()
                     };
 
                     let envelopes = self.extract_envelopes_from_payload(payload)?;
 
                     Ok(envelopes)
                 }
-                _ => unimplemented!("Only Lz4 compression is supported for v5"),
+                _ => Err(anyhow!("Only Lz4 compression is supported for v5")),
             },
             (_, _) => {
                 let bytes = src.split_to(frame_len);
@@ -392,7 +394,7 @@ impl CassandraDecoder {
         }
     }
 
-    fn extract_envelopes_from_payload(&self, mut payload: BytesMut) -> Result<Vec<Message>> {
+    fn extract_envelopes_from_payload(&self, mut payload: Bytes) -> Result<Vec<Message>> {
         let mut envelopes: Vec<Message> = vec![];
 
         while !payload.is_empty() {
@@ -417,7 +419,7 @@ impl CassandraDecoder {
             );
 
             envelopes.push(Message::from_bytes(
-                envelope.freeze(),
+                envelope,
                 crate::message::ProtocolType::Cassandra {
                     compression: Compression::None,
                 },
@@ -699,6 +701,14 @@ impl CassandraEncoder {
                         let (uncompressed_len, compressed_len) =
                             self.encode_compressed_payload(dst, m, payload_start)?;
 
+                        if compressed_len > PAYLOAD_SIZE_LIMIT {
+                            todo!("non self contained frames not yet implemented.")
+                        }
+
+                        if uncompressed_len > PAYLOAD_SIZE_LIMIT {
+                            todo!("non self contained frames not yet implemented.")
+                        }
+
                         let mut header =
                             (compressed_len) as u64 | ((uncompressed_len as u64) << 17);
 
@@ -714,9 +724,7 @@ impl CassandraEncoder {
                         dst[header_start..header_start + 8].copy_from_slice(&header.to_le_bytes());
 
                         // add payload crc
-                        dst.extend_from_slice(
-                            &cassandra_protocol::crc::crc32(&dst[payload_start..]).to_le_bytes(),
-                        );
+                        dst.extend_from_slice(&crc32(&dst[payload_start..]).to_le_bytes());
                     }
                     _ => unimplemented!("Only Lz4 compression is supported for v5"),
                 }
