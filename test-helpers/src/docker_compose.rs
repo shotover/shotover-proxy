@@ -66,7 +66,7 @@ fn get_image_waiters() -> &'static [Image] {
             log_regex_to_wait_for: r"Startup complete",
         },
         Image {
-            name: "bitnami/kafka:3.3.2",
+            name: "bitnami/kafka:3.4.0-debian-11-r22",
             log_regex_to_wait_for: r"Kafka Server started",
         },
     ]
