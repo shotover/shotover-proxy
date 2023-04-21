@@ -943,3 +943,52 @@ async fn test_protocol_v5_compression_encode(#[case] driver: CassandraDriver) {
         shotover.shutdown_and_then_consume_events(&[]).await;
     }
 }
+
+#[rstest]
+#[case::cdrs(CdrsTokio)]
+#[tokio::test(flavor = "multi_thread")]
+#[serial]
+async fn test_protocol_v5_non_self_contained(#[case] driver: CassandraDriver) {
+    use rand::Rng;
+
+    let _docker_compose =
+        docker_compose("example-configs/cassandra-passthrough/docker-compose.yaml");
+
+    let shotover = ShotoverProcessBuilder::new_with_topology(
+        "example-configs/cassandra-passthrough/topology-encode.yaml",
+    )
+    .start()
+    .await;
+
+    let connection_creator = || {
+        CassandraConnectionBuilder::new("127.0.0.1", 9042, driver)
+            .with_protocol_version(ProtocolVersion::V5)
+            .build()
+    };
+
+    let connection = connection_creator().await;
+
+    connection.execute(
+        "CREATE KEYSPACE keyspace_name WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };",
+    ).await;
+
+    connection
+        .execute("CREATE TABLE keyspace_name.my_table (id INT PRIMARY KEY, data BLOB);")
+        .await;
+
+    let random_bytes = rand::thread_rng().gen::<[u8; 32]>();
+
+    let mut queries = Vec::new();
+    for id in 0..1000 {
+        let statement = format!(
+            "INSERT INTO keyspace_name.my_table (id, data) VALUES ({}, 0x{})",
+            id,
+            hex::encode(random_bytes)
+        );
+        queries.push(statement);
+    }
+
+    connection.execute_batch(queries).await;
+
+    shotover.shutdown_and_then_consume_events(&[]).await;
+}
