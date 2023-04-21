@@ -129,6 +129,8 @@ pub struct CassandraDecoder {
     messages: Vec<Message>,
     current_use_keyspace: Option<Identifier>,
     direction: Direction,
+    expected_payload_len: Option<usize>,
+    payload_buffer: BytesMut,
 }
 
 impl CassandraDecoder {
@@ -145,6 +147,8 @@ impl CassandraDecoder {
             messages: vec![],
             current_use_keyspace: None,
             direction,
+            payload_buffer: BytesMut::new(),
+            expected_payload_len: None,
         }
     }
 }
@@ -216,13 +220,28 @@ impl CassandraDecoder {
                     }
 
                     let self_contained = (header & (1 << 17)) != 0;
-                    if !self_contained {
-                        unimplemented!("Cannot support non-self contained frames yet");
-                    }
 
                     frame_bytes.advance(UNCOMPRESSED_FRAME_HEADER_LENGTH);
                     let payload = frame_bytes.split_to(payload_length).freeze();
-                    let envelopes = self.extract_envelopes_from_payload(payload)?;
+
+                    let envelopes = if !self_contained {
+                        self.payload_buffer.extend_from_slice(&payload);
+
+                        if let Some(expected_payload_len) = self.expected_payload_len {
+                            if self.payload_buffer.len() < expected_payload_len {
+                                vec![]
+                            } else {
+                                let payload = self.payload_buffer.split().freeze();
+                                self.expected_payload_len = None;
+                                self.extract_envelopes_from_payload(payload)?
+                            }
+                        } else {
+                            self.expected_payload_len = extract_expected_payload_len(&self.payload_buffer);
+                            vec![]
+                        }
+                    } else {
+                        self.extract_envelopes_from_payload(payload)?
+                    };
 
                     Ok(envelopes)
                 }
@@ -432,6 +451,14 @@ impl CassandraDecoder {
 
         Ok(envelopes)
     }
+}
+
+fn extract_expected_payload_len(payload_buffer: &BytesMut) -> Option<usize> {
+    if payload_buffer.len() < ENVELOPE_HEADER_LEN {
+        return None;
+    }
+
+    Some(i32::from_be_bytes(payload_buffer[5..9].try_into().unwrap()) as usize)
 }
 
 fn header_crc_mismatch_error(computed_crc: i32, header_crc24: i32) -> anyhow::Error {
