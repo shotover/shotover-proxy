@@ -33,6 +33,8 @@ pub enum CheckFrameSizeError {
     UnsupportedVersion(u8),
     #[error("Unsupported opcode: {0}")]
     UnsupportedOpcode(u8),
+    #[error("Unsupported compression: {0}")]
+    UnsupportedCompression(String),
 }
 
 #[atomic_enum]
@@ -362,7 +364,9 @@ impl CassandraDecoder {
 
                     Ok(frame_len)
                 }
-                _ => unimplemented!("Only Lz4 compression is supported for v5"),
+                _ => Err(CheckFrameSizeError::UnsupportedCompression(
+                    "Only Lz4 compression is supported for v5".into(),
+                )),
             },
             (_, _) => {
                 if src.len() < ENVELOPE_HEADER_LEN {
@@ -507,6 +511,9 @@ impl Decoder for CassandraDecoder {
                 }
                 Err(CheckFrameSizeError::UnsupportedVersion(version)) => {
                     return Err(reject_protocol_version(version));
+                }
+                Err(CheckFrameSizeError::UnsupportedCompression(msg)) => {
+                    return Err(CodecReadError::Parser(anyhow!(msg)));
                 }
                 err => {
                     return Err(CodecReadError::Parser(anyhow!(
