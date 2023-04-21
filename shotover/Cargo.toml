@@ -1,6 +1,6 @@
 [package]
 name = "shotover"
-version = "0.1.9"
+version = "0.1.10"
 authors = ["Ben <ben@instaclustr.com>"]
 edition = "2021"
 rust-version = "1.56"
