@@ -17,6 +17,8 @@ mod single_key {
     pub async fn test(shotover: &CassandraConnection, cassandra: &CassandraConnection) {
         create_keyspace(shotover).await;
         create_table(shotover).await;
+        shotover.await_schema_agreement().await;
+        cassandra.await_schema_agreement().await;
 
         let insert_cql =
             "INSERT INTO test_routing_ks.my_test_table_single (key, name) VALUES (?, 'my_name')";
@@ -91,6 +93,8 @@ mod compound_key {
     pub async fn test(shotover: &CassandraConnection, cassandra: &CassandraConnection) {
         create_keyspace(shotover).await;
         create_table(shotover).await;
+        shotover.await_schema_agreement().await;
+        cassandra.await_schema_agreement().await;
 
         let insert_cql =
             "INSERT INTO test_routing_ks.my_test_table_compound (key, name, age, blah) VALUES (?, ?, ?, 'blah')";
@@ -205,6 +209,8 @@ mod composite_key {
     async fn simple_test(shotover: &CassandraConnection, cassandra: &CassandraConnection) {
         create_keyspace(shotover).await;
         create_table(shotover).await;
+        shotover.await_schema_agreement().await;
+        cassandra.await_schema_agreement().await;
 
         let insert_cql =
             "INSERT INTO test_routing_ks.my_test_table_composite (key, name, age, blah) VALUES (?, ?, ?, 'blah')";
@@ -410,10 +416,16 @@ pub async fn test(
                 None,
             )
             .await;
-        let cassandra =
+        let mut cassandra =
             CassandraConnectionBuilder::new(cassandra_contact_point, cassandra_port, driver)
                 .build()
                 .await;
+        cassandra
+            .enable_schema_awaiter(
+                &format!("{}:{}", cassandra_contact_point, cassandra_port),
+                None,
+            )
+            .await;
 
         single_key::test(&shotover, &cassandra).await;
         composite_key::test(&shotover, &cassandra).await;
