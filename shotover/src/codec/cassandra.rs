@@ -236,7 +236,8 @@ impl CassandraDecoder {
                                 self.extract_envelopes_from_payload(payload)?
                             }
                         } else {
-                            self.expected_payload_len = extract_expected_payload_len(&self.payload_buffer);
+                            self.expected_payload_len =
+                                extract_expected_payload_len(&self.payload_buffer);
                             vec![]
                         }
                     } else {
@@ -701,30 +702,53 @@ impl CassandraEncoder {
             (Version::V5, true) => {
                 match compression {
                     Compression::None => {
-                        // write envelope header with dummy values for those we cant calculate till after we write the message
-                        let header_start = dst.len();
+                        let mut envelope_bytes = self.encode_envelope(m, Compression::None)?;
 
-                        dst.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
-                        let payload_start = dst.len();
+                        if envelope_bytes.len() > PAYLOAD_SIZE_LIMIT {
+                            while !envelope_bytes.is_empty() {
+                                // write envelope header with dummy values for those we cant calculate till after we write the message
+                                let header_start = dst.len();
 
-                        self.encode_envelope(dst, m, Compression::None)?;
+                                dst.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
+                                let payload_start = dst.len();
 
-                        //measure length of message and calculate crc24 and overwrite frame header values
-                        let mut payload_len = (dst.len() - payload_start) as u64;
+                                let payload_bytes = envelope_bytes
+                                    .split_to(envelope_bytes.len().min(PAYLOAD_SIZE_LIMIT - 1));
+                                let payload_len = payload_bytes.len();
 
-                        if true {
-                            // TODO if self_contained
+                                dst.put(payload_bytes);
+
+                                // add header length & header crc
+                                let payload_len = &payload_len.to_le_bytes()[..3];
+                                dst[header_start..header_start + 3].copy_from_slice(payload_len);
+                                dst[header_start + 3..header_start + 6]
+                                    .copy_from_slice(&crc24(payload_len).to_le_bytes()[..3]);
+
+                                // add payload crc
+                                dst.extend_from_slice(&crc32(&dst[payload_start..]).to_le_bytes());
+                            }
+                        } else {
+                            // write envelope header with dummy values for those we cant calculate till after we write the message
+                            let header_start = dst.len();
+
+                            dst.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
+                            let payload_start = dst.len();
+
+                            let mut payload_len = envelope_bytes.len();
+                            dst.put(envelope_bytes);
+
+                            // self contained flag
                             payload_len |= 1 << 17;
+
+                            // add header length & header crc
+                            let payload_len = &payload_len.to_le_bytes()[..3];
+                            dst[header_start..header_start + 3].copy_from_slice(payload_len);
+                            dst[header_start + 3..header_start + 6]
+                                .copy_from_slice(&crc24(payload_len).to_le_bytes()[..3]);
+
+                            // add payload crc
+                            dst.extend_from_slice(&crc32(&dst[payload_start..]).to_le_bytes());
                         }
-
-                        // add header length & header crc
-                        let payload_len = &payload_len.to_le_bytes()[..3];
-                        dst[header_start..header_start + 3].copy_from_slice(payload_len);
-                        dst[header_start + 3..header_start + 6]
-                            .copy_from_slice(&crc24(payload_len).to_le_bytes()[..3]);
-
-                        // add payload crc
-                        dst.extend_from_slice(&crc32(&dst[payload_start..]).to_le_bytes());
                     }
                     Compression::Lz4 => {
                         let header_start = dst.len();
@@ -768,7 +792,9 @@ impl CassandraEncoder {
             }
             (_, _) => {
                 let message_compression = m.codec_state.as_cassandra();
-                self.encode_envelope(dst, m, message_compression)
+                let frame_bytes = self.encode_envelope(m, message_compression)?;
+                dst.put(frame_bytes);
+                Ok(())
             }
         }
     }
@@ -806,14 +832,9 @@ impl CassandraEncoder {
         Ok((uncompressed_len, compressed_len))
     }
 
-    fn encode_envelope(
-        &mut self,
-        dst: &mut BytesMut,
-        m: Message,
-        envelope_compresson: Compression,
-    ) -> Result<()> {
+    fn encode_envelope(&mut self, m: Message, envelope_compresson: Compression) -> Result<Bytes> {
         // TODO: always check if cassandra message
-        match m.into_encodable(MessageType::Cassandra)? {
+        Ok(match m.into_encodable(MessageType::Cassandra)? {
             Encodable::Bytes(bytes) => {
                 // check if the message is a startup message and set the codec's compression
                 {
@@ -839,7 +860,7 @@ impl CassandraEncoder {
                     }
                 }
 
-                dst.extend_from_slice(&bytes)
+                bytes
             }
             Encodable::Frame(frame) => {
                 // check if the message is a startup message and set the codec's compression
@@ -862,10 +883,9 @@ impl CassandraEncoder {
 
                 let buffer = frame.into_cassandra().unwrap().encode(envelope_compresson);
 
-                dst.put(buffer.as_slice());
+                buffer.into()
             }
-        }
-        Ok(())
+        })
     }
 }
 
