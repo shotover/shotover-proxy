@@ -4,7 +4,7 @@ use test_helpers::latte::Latte;
 use test_helpers::shotover_process::ShotoverProcessBuilder;
 
 /// e.g.
-/// cargo run --release --example cassandra_bench -- --config-dir example-configs/cassandra-passthrough -r 1000
+/// cargo run --release --example cassandra_bench -- --config-dir tests/test-configs/cassandra-passthrough -r 1000
 /// or
 /// cargo run --release --example cassandra_bench -- --config-dir tests/test-configs/cassandra-passthrough-parse-request -r 1000
 #[derive(Parser, Clone)]

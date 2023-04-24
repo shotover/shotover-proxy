@@ -27,8 +27,8 @@ fn cassandra(c: &mut Criterion) {
     {
         let resources = new_lazy_shared(|| {
             BenchResources::new(
-                "example-configs/cassandra-protect-local/topology.yaml",
-                "example-configs/cassandra-protect-local/docker-compose.yaml",
+                "tests/test-configs/cassandra-protect-local/topology.yaml",
+                "tests/test-configs/cassandra-protect-local/docker-compose.yaml",
             )
         });
         for query in &queries {
@@ -47,8 +47,8 @@ fn cassandra(c: &mut Criterion) {
     {
         let resources = new_lazy_shared(|| {
             BenchResources::new(
-                "example-configs/cassandra-redis-cache/topology.yaml",
-                "example-configs/cassandra-redis-cache/docker-compose.yaml",
+                "tests/test-configs/cassandra-redis-cache/topology.yaml",
+                "tests/test-configs/cassandra-redis-cache/docker-compose.yaml",
             )
         });
         // Benches the case where the message does not meet the criteria for caching
@@ -68,8 +68,8 @@ fn cassandra(c: &mut Criterion) {
     {
         let resources = new_lazy_shared(|| {
             BenchResources::new(
-                "example-configs/cassandra-passthrough/topology.yaml",
-                "example-configs/cassandra-passthrough/docker-compose.yaml",
+                "tests/test-configs/cassandra-passthrough/topology.yaml",
+                "tests/test-configs/cassandra-passthrough/docker-compose.yaml",
             )
         });
         for query in &queries {
@@ -128,8 +128,8 @@ fn cassandra(c: &mut Criterion) {
     {
         let resources = new_lazy_shared(|| {
             BenchResources::new_tls(
-                "example-configs/cassandra-tls/topology.yaml",
-                "example-configs/cassandra-tls/docker-compose.yaml",
+                "tests/test-configs/cassandra-tls/topology.yaml",
+                "tests/test-configs/cassandra-tls/docker-compose.yaml",
             )
         });
         for query in &queries {
@@ -154,8 +154,8 @@ fn cassandra(c: &mut Criterion) {
         ];
         let resources = new_lazy_shared(|| {
             let resources = BenchResources::new(
-                "example-configs/cassandra-protect-local/topology.yaml",
-                "example-configs/cassandra-protect-local/docker-compose.yaml",
+                "tests/test-configs/cassandra-protect-local/topology.yaml",
+                "tests/test-configs/cassandra-protect-local/docker-compose.yaml",
             );
 
             resources.execute("CREATE KEYSPACE test_protect_keyspace WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };");
@@ -187,8 +187,8 @@ fn cassandra(c: &mut Criterion) {
     {
         let resources = new_lazy_shared(|| {
             BenchResources::new(
-                "example-configs/cassandra-request-throttling/topology.yaml",
-                "example-configs/cassandra-request-throttling/docker-compose.yaml",
+                "tests/test-configs/cassandra-request-throttling/topology.yaml",
+                "tests/test-configs/cassandra-request-throttling/docker-compose.yaml",
             )
         });
         for query in &queries {
@@ -266,7 +266,7 @@ impl BenchResources {
             tokio.block_on(ShotoverProcessBuilder::new_with_topology(shotover_topology).start()),
         );
 
-        let ca_cert = "example-configs/docker-images/cassandra-tls-4.0.6/certs/localhost_CA.crt";
+        let ca_cert = "tests/test-configs/docker-images/cassandra-tls-4.0.6/certs/localhost_CA.crt";
 
         let connection = tokio.block_on(
             CassandraConnectionBuilder::new("127.0.0.1", 9042, DRIVER)
