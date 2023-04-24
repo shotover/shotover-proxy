@@ -4,7 +4,7 @@ use test_helpers::shotover_process::{Count, EventMatcher, Level, ShotoverProcess
 #[tokio::test]
 #[serial]
 async fn test_early_shutdown_cassandra_source() {
-    ShotoverProcessBuilder::new_with_topology("example-configs/null-cassandra/topology.yaml")
+    ShotoverProcessBuilder::new_with_topology("tests/test-configs/null-cassandra/topology.yaml")
         .start()
         .await
         .shutdown_and_then_consume_events(&[])
@@ -16,10 +16,11 @@ async fn test_early_shutdown_cassandra_source() {
 async fn test_shotover_responds_sigterm() {
     // Ensure it isnt reliant on timing
     for _ in 0..1000 {
-        let shotover_process =
-            ShotoverProcessBuilder::new_with_topology("example-configs/null-redis/topology.yaml")
-                .start()
-                .await;
+        let shotover_process = ShotoverProcessBuilder::new_with_topology(
+            "tests/test-configs/null-redis/topology.yaml",
+        )
+        .start()
+        .await;
         shotover_process.signal(nix::sys::signal::Signal::SIGTERM);
 
         let events = shotover_process.consume_remaining_events(&[]).await;
@@ -36,7 +37,7 @@ async fn test_shotover_responds_sigterm() {
 #[serial]
 async fn test_shotover_responds_sigint() {
     let shotover_process =
-        ShotoverProcessBuilder::new_with_topology("example-configs/null-redis/topology.yaml")
+        ShotoverProcessBuilder::new_with_topology("tests/test-configs/null-redis/topology.yaml")
             .start()
             .await;
     shotover_process.signal(nix::sys::signal::Signal::SIGINT);

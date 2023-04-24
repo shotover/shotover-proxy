@@ -41,9 +41,9 @@ Shotover provides a set of predefined transforms that can modify, route and cont
 <!--
 You can also implement your own transforms natively with Rust. For concrete examples of what you can achieve with shotover-proxy, see the following examples:
 
-* [Multi-region, active-active redis](../example-configs/redis-multi)
-* [Cassandra query caching in redis, with a query audit trail sent to kafka](../example-configs/cass-redis-kafka)
-* [Field level, "In Application" encryption for Apache Cassandra with AWS Key Management Service](../example-configs/cassandra-encryption)
+* [Multi-region, active-active redis](../tests/test-configs/redis-multi)
+* [Cassandra query caching in redis, with a query audit trail sent to kafka](../tests/test-configs/cass-redis-kafka)
+* [Field level, "In Application" encryption for Apache Cassandra with AWS Key Management Service](../tests/test-configs/cassandra-encryption)
 -->
 
 Shotover proxy currently supports the following protocols as sources:
