@@ -5,6 +5,8 @@ authors = ["Ben <ben@instaclustr.com>"]
 edition = "2021"
 rust-version = "1.56"
 license = "Apache-2.0"
+repository = "https://github.com/shotover/shotover-proxy"
+description = "Shotover API for building custom transforms"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -24,6 +26,7 @@ governor = { version = "0.5.0", default-features = false, features = ["std", "ji
 nonzero_ext = "0.3.0"
 version-compare = "0.1"
 rand = { features = ["small_rng"], workspace = true }
+lz4_flex = "0.10.0"
 clap.workspace = true
 itertools.workspace = true
 rand_distr.workspace = true

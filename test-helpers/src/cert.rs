@@ -1,4 +1,4 @@
-use crate::docker_compose_runner::run_command;
+use crate::run_command;
 use rcgen::{BasicConstraints, Certificate, CertificateParams, DnType, IsCa, SanType};
 use std::path::Path;
 
@@ -47,7 +47,7 @@ pub fn generate_redis_test_certs(path: &Path) {
 }
 
 pub fn generate_cassandra_test_certs() {
-    let path = Path::new("example-configs/docker-images/cassandra-tls-4.0.6/certs");
+    let path = Path::new("tests/test-configs/docker-images/cassandra-tls-4.0.6/certs");
     generate_redis_test_certs(path);
     run_command(
         "openssl",
