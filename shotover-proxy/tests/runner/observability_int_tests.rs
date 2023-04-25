@@ -7,7 +7,7 @@ use test_helpers::shotover_process::ShotoverProcessBuilder;
 #[serial]
 async fn test_metrics() {
     let shotover =
-        ShotoverProcessBuilder::new_with_topology("example-configs/null-redis/topology.yaml")
+        ShotoverProcessBuilder::new_with_topology("tests/test-configs/null-redis/topology.yaml")
             .start()
             .await;
     let mut connection = redis_connection::new_async(6379).await;

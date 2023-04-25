@@ -10,14 +10,14 @@ SCRIPT_DIR="$(cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 #echo -1 | sudo tee /proc/sys/kernel/perf_event_paranoid
 
 
-docker-compose -f $SCRIPT_DIR/../../example-configs/redis-cluster/docker-compose.yaml up -d
+docker-compose -f $SCRIPT_DIR/../../tests/test-configs/redis-cluster/docker-compose.yaml up -d
 echo "Getting ready to run proxy"
 sleep 5
 echo "Running shotover"
 
 cd $SCRIPT_DIR/../../
-timeout 30 cargo flamegraph --bin shotover-proxy -- --topology-file example-configs/redis-cluster/topology.yaml --config-file config/config.yaml &
+timeout 30 cargo flamegraph --bin shotover-proxy -- --topology-file tests/test-configs/redis-cluster/topology.yaml --config-file config/config.yaml &
 sleep 10
 timeout 20 ~/Downloads/redis-5.0.8/src/redis-benchmark -t set,get -l -q
 
-docker-compose -f $SCRIPT_DIR/../../example-configs/redis-cluster/docker-compose.yaml down
+docker-compose -f $SCRIPT_DIR/../../tests/test-configs/redis-cluster/docker-compose.yaml down

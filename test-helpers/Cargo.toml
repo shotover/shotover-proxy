@@ -34,3 +34,4 @@ tracing-subscriber.workspace = true
 serde_yaml.workspace = true
 anyhow.workspace = true
 rcgen.workspace = true
+docker-compose-runner = "0.1.0"

@@ -11,9 +11,9 @@ FAIL=0
 
 echo "starting"
 
-cargo run -- --topology-file $SCRIPT_DIR/../../example-configs/cassandra-cluster/topology1.yaml --config-file $SCRIPT_DIR/../../example-configs/cassandra-cluster/config1.yaml &
-cargo run -- --topology-file $SCRIPT_DIR/../../example-configs/cassandra-cluster/topology2.yaml --config-file $SCRIPT_DIR/../../example-configs/cassandra-cluster/config2.yaml &
-cargo run -- --topology-file $SCRIPT_DIR/../../example-configs/cassandra-cluster/topology3.yaml --config-file $SCRIPT_DIR/../../example-configs/cassandra-cluster/config3.yaml &
+cargo run -- --topology-file $SCRIPT_DIR/../../tests/test-configs/cassandra-cluster/topology1.yaml --config-file $SCRIPT_DIR/../../tests/test-configs/cassandra-cluster/config1.yaml &
+cargo run -- --topology-file $SCRIPT_DIR/../../tests/test-configs/cassandra-cluster/topology2.yaml --config-file $SCRIPT_DIR/../../tests/test-configs/cassandra-cluster/config2.yaml &
+cargo run -- --topology-file $SCRIPT_DIR/../../tests/test-configs/cassandra-cluster/topology3.yaml --config-file $SCRIPT_DIR/../../tests/test-configs/cassandra-cluster/config3.yaml &
 
 for job in `jobs -p`
 do

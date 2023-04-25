@@ -1,6 +1,8 @@
-use crate::docker_compose_runner::*;
+use docker_compose_runner::*;
 use std::{env, path::Path};
 use tracing_subscriber::fmt::TestWriter;
+
+pub use docker_compose_runner::DockerCompose;
 
 fn setup_tracing_subscriber_for_test_logic() {
     tracing_subscriber::fmt()
@@ -77,11 +79,11 @@ fn build_images(service_to_image: &[&str]) {
         .iter()
         .any(|x| *x == "shotover-int-tests/cassandra:4.0.6")
     {
-        run_command(
+        crate::run_command(
             "docker",
             &[
                 "build",
-                "example-configs/docker-images/cassandra-4.0.6",
+                "tests/test-configs/docker-images/cassandra-4.0.6",
                 "--tag",
                 "shotover-int-tests/cassandra:4.0.6",
             ],
@@ -92,11 +94,11 @@ fn build_images(service_to_image: &[&str]) {
         .iter()
         .any(|x| *x == "shotover-int-tests/cassandra:3.11.13")
     {
-        run_command(
+        crate::run_command(
             "docker",
             &[
                 "build",
-                "example-configs/docker-images/cassandra-3.11.13",
+                "tests/test-configs/docker-images/cassandra-3.11.13",
                 "--tag",
                 "shotover-int-tests/cassandra:3.11.13",
             ],
@@ -106,14 +108,14 @@ fn build_images(service_to_image: &[&str]) {
     if service_to_image
         .iter()
         .any(|x| *x == "shotover-int-tests/cassandra-tls:4.0.6")
-        && Path::new("example-configs/docker-images/cassandra-tls-4.0.6/certs/keystore.p12")
+        && Path::new("tests/test-configs/docker-images/cassandra-tls-4.0.6/certs/keystore.p12")
             .exists()
     {
-        run_command(
+        crate::run_command(
             "docker",
             &[
                 "build",
-                "example-configs/docker-images/cassandra-tls-4.0.6",
+                "tests/test-configs/docker-images/cassandra-tls-4.0.6",
                 "--tag",
                 "shotover-int-tests/cassandra-tls:4.0.6",
             ],
