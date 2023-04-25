@@ -3213,6 +3213,7 @@ dependencies = [
  "hyper",
  "itertools",
  "kafka-protocol",
+ "lz4_flex 0.10.0",
  "metrics",
  "metrics-exporter-prometheus",
  "nonzero_ext",
