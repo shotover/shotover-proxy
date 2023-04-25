@@ -386,7 +386,8 @@ checksum = "8234d29d30873ab5a41e3557b8515d3ecbaefb1ea5be579425b3b0074b6d0e40"
 [[package]]
 name = "cassandra-protocol"
 version = "3.0.0"
-source = "git+https://github.com/krojew/cdrs-tokio#8b401cd91a3ae6e66bf87ca07bb79d407d34b5aa"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c1b0db701f00813be8682ee7fdf654a29e071602bb277cdae2154bee535cb168"
 dependencies = [
  "arc-swap",
  "arrayref",
@@ -422,7 +423,8 @@ checksum = "50d30906286121d95be3d479533b458f87493b30a4b5f79a607db8f5d11aa91f"
 [[package]]
 name = "cdrs-tokio"
 version = "8.0.0"
-source = "git+https://github.com/krojew/cdrs-tokio#8b401cd91a3ae6e66bf87ca07bb79d407d34b5aa"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d60bc6b0d42ffbcfbb6a8669faec68e74d7956908135ae240ea9b3dcb2381b97"
 dependencies = [
  "arc-swap",
  "atomic",
@@ -1070,6 +1072,19 @@ dependencies = [
  "libc",
  "redox_users",
  "winapi",
+]
+
+[[package]]
+name = "docker-compose-runner"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a02a210319584c67a336a5d964b23f8598cb101eb8e5929b2c65b2a4f769451c"
+dependencies = [
+ "anyhow",
+ "regex",
+ "serde_yaml",
+ "subprocess",
+ "tracing",
 ]
 
 [[package]]
@@ -3198,6 +3213,7 @@ dependencies = [
  "hyper",
  "itertools",
  "kafka-protocol",
+ "lz4_flex 0.10.0",
  "metrics",
  "metrics-exporter-prometheus",
  "nonzero_ext",
@@ -3452,6 +3468,7 @@ dependencies = [
  "cassandra-cpp",
  "cassandra-protocol",
  "cdrs-tokio",
+ "docker-compose-runner",
  "inferno",
  "itertools",
  "openssl",

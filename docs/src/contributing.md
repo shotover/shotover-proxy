@@ -39,26 +39,17 @@ The Cassandra tests require the Cassandra CPP driver.
 
 Upstream installation information and dependencies for the Cassandra CPP driver can be found [here](https://docs.datastax.com/en/developer/cpp-driver/2.16/).
 
-However that is unlikely unusable because datastax do not ship packages for modern ubuntu so we have our own script which will compile, package and install the driver on a modern ubuntu.
+However that is likely unusable because datastax do not ship packages for modern ubuntu so we have our own script which will compile, package and install the driver on a modern ubuntu.
 So to install the driver on ubuntu just run the script at `shotover-proxy/build/install_ubuntu_packages.sh`.
-
-### Functionally Testing Shotover
-
-To setup Shotover for functional testing perform the following steps:
-
-1. Find an example in `example-configs/` that is closest to your use case.
-    * If you don't know what you want, we suggest starting with `example-configs/redis-passthrough`.
-2. Copy the `topology.yaml` file from that example to `config/topology.yaml`.
-3. Do one of the following:
-    * In the example directory you copied the `topology.yaml` from, run: `docker-compose -f docker-compose.yaml up`.
-    * Modify `config/topology.yaml` to point to a service you have setup and want to use.
-4. Run `cargo run`. Or `cargo run --release` to run with optimizations.
-5. Connect to Shotover using the relevant client.
-    * For example `example-configs/redis-passthrough` sets up Shotover as a simple redis proxy on the default redis port, so you can connect by just running `redis-cli`.
 
 ### Run Shotover tests
 
 Run `cargo test`, refer to the [cargo test documentation](https://doc.rust-lang.org/cargo/commands/cargo-test.html) for more information.
+
+The tests rely on configuration in `tests/test-configs/`, so if for example, you wanted to manually setup the services for the redis-passthrough test, you could run these commands in the `shotover-proxy` directory:
+
+* `docker-compose -f shotover-proxy/tests/test-configs/redis-passthrough/docker-compose.yaml up`
+* `cargo run -- --topology-file tests/test-configs/redis-passthrough/topology.yaml`
 
 ## Submitting a PR
 

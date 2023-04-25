@@ -22,7 +22,7 @@ async fn main() {
         };
 
     let latte = Latte::new(10000000, client_cores);
-    let config_dir = "example-configs/cassandra-passthrough";
+    let config_dir = "tests/test-configs/cassandra-passthrough";
     let bench = "read";
     {
         test_helpers::mock_cassandra::start(db_cores, 9043);

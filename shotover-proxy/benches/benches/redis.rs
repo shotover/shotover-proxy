@@ -2,8 +2,7 @@ use criterion::{criterion_group, Criterion};
 use redis::Cmd;
 use std::path::Path;
 use test_helpers::connection::redis_connection;
-use test_helpers::docker_compose::docker_compose;
-use test_helpers::docker_compose_runner::DockerCompose;
+use test_helpers::docker_compose::{docker_compose, DockerCompose};
 use test_helpers::lazy::new_lazy_shared;
 use test_helpers::shotover_process::{BinProcess, ShotoverProcessBuilder};
 use tokio::runtime::Runtime;
@@ -32,8 +31,8 @@ fn redis(c: &mut Criterion) {
     {
         let resources = new_lazy_shared(|| {
             BenchResources::new(
-                "example-configs/redis-multi/topology.yaml",
-                "example-configs/redis-multi/docker-compose.yaml",
+                "tests/test-configs/redis-multi/topology.yaml",
+                "tests/test-configs/redis-multi/docker-compose.yaml",
             )
         });
         for query in &queries {
@@ -55,8 +54,8 @@ fn redis(c: &mut Criterion) {
     {
         let resources = new_lazy_shared(|| {
             BenchResources::new(
-                "example-configs/redis-cluster-hiding/topology.yaml",
-                "example-configs/redis-cluster-hiding/docker-compose.yaml",
+                "tests/test-configs/redis-cluster-hiding/topology.yaml",
+                "tests/test-configs/redis-cluster-hiding/docker-compose.yaml",
             )
         });
         for query in &queries {
@@ -78,8 +77,8 @@ fn redis(c: &mut Criterion) {
     {
         let resources = new_lazy_shared(|| {
             BenchResources::new(
-                "example-configs/redis-passthrough/topology.yaml",
-                "example-configs/redis-passthrough/docker-compose.yaml",
+                "tests/test-configs/redis-passthrough/topology.yaml",
+                "tests/test-configs/redis-passthrough/docker-compose.yaml",
             )
         });
         for query in &queries {
@@ -103,11 +102,11 @@ fn redis(c: &mut Criterion) {
         "single_tls",
         || {
             test_helpers::cert::generate_redis_test_certs(Path::new(
-                "example-configs/redis-tls/certs",
+                "tests/test-configs/redis-tls/certs",
             ));
             BenchResources::new(
-                "example-configs/redis-tls/topology.yaml",
-                "example-configs/redis-tls/docker-compose.yaml",
+                "tests/test-configs/redis-tls/topology.yaml",
+                "tests/test-configs/redis-tls/docker-compose.yaml",
             )
         },
         move |b, state| {
@@ -125,11 +124,11 @@ fn redis(c: &mut Criterion) {
         "cluster_tls",
         || {
             test_helpers::cert::generate_redis_test_certs(Path::new(
-                "example-configs/redis-tls/certs",
+                "tests/test-configs/redis-tls/certs",
             ));
             BenchResources::new(
-                "example-configs/redis-cluster-tls/topology.yaml",
-                "example-configs/redis-cluster-tls/docker-compose.yaml",
+                "tests/test-configs/redis-cluster-tls/topology.yaml",
+                "tests/test-configs/redis-cluster-tls/docker-compose.yaml",
             )
         },
         move |b, state| {
