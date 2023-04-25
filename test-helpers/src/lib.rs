@@ -2,7 +2,6 @@ pub mod bench;
 pub mod cert;
 pub mod connection;
 pub mod docker_compose;
-pub mod docker_compose_runner;
 pub mod flamegraph;
 pub mod kafka_producer_perf_test;
 pub mod latte;
@@ -11,7 +10,8 @@ pub mod metrics;
 pub mod mock_cassandra;
 pub mod shotover_process;
 
-use anyhow::{bail, Result};
+use anyhow::{anyhow, bail, Result};
+use subprocess::{Exec, Redirection};
 
 pub fn wait_for_socket_to_open(address: &str, port: u16) {
     try_wait_for_socket_to_open(address, port).unwrap();
@@ -38,4 +38,32 @@ fn run_command_to_stdout(command: &str, args: &[&str]) {
             .success(),
         "Failed to run: {command} {args:?}"
     );
+}
+
+/// Runs a command and returns the output as a string.
+///
+/// Both stderr and stdout are returned in the result.
+///
+/// # Arguments
+/// * `command` - The system command to run
+/// * `args` - An array of command line arguments for the command
+pub(crate) fn run_command(command: &str, args: &[&str]) -> Result<String> {
+    tracing::trace!("executing {}", command);
+    let data = Exec::cmd(command)
+        .args(args)
+        .stdout(Redirection::Pipe)
+        .stderr(Redirection::Merge)
+        .capture()?;
+
+    if data.exit_status.success() {
+        Ok(data.stdout_str())
+    } else {
+        Err(anyhow!(
+            "command {} {:?} exited with {:?} and output:\n{}",
+            command,
+            args,
+            data.exit_status,
+            data.stdout_str()
+        ))
+    }
 }
