@@ -305,7 +305,25 @@ impl CassandraDecoder {
                         .into()
                     };
 
-                    let envelopes = self.extract_envelopes_from_payload(payload)?;
+                    let envelopes = if !self_contained {
+                        self.payload_buffer.extend_from_slice(&payload);
+
+                        if let Some(expected_payload_len) = self.expected_payload_len {
+                            if self.payload_buffer.len() < expected_payload_len {
+                                vec![]
+                            } else {
+                                let payload = self.payload_buffer.split().freeze();
+                                self.expected_payload_len = None;
+                                self.extract_envelopes_from_payload(payload)?
+                            }
+                        } else {
+                            self.expected_payload_len =
+                                extract_expected_payload_len(&self.payload_buffer);
+                            vec![]
+                        }
+                    } else {
+                        self.extract_envelopes_from_payload(payload)?
+                    };
 
                     Ok(envelopes)
                 }
