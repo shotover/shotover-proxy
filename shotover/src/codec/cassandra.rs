@@ -224,25 +224,7 @@ impl CassandraDecoder {
                     frame_bytes.advance(UNCOMPRESSED_FRAME_HEADER_LENGTH);
                     let payload = frame_bytes.split_to(payload_length).freeze();
 
-                    let envelopes = if !self_contained {
-                        self.payload_buffer.extend_from_slice(&payload);
-
-                        if let Some(expected_payload_len) = self.expected_payload_len {
-                            if self.payload_buffer.len() < expected_payload_len {
-                                vec![]
-                            } else {
-                                let payload = self.payload_buffer.split().freeze();
-                                self.expected_payload_len = None;
-                                self.extract_envelopes_from_payload(payload)?
-                            }
-                        } else {
-                            self.expected_payload_len =
-                                extract_expected_payload_len(&self.payload_buffer);
-                            vec![]
-                        }
-                    } else {
-                        self.extract_envelopes_from_payload(payload)?
-                    };
+                    let envelopes = self.extract_envelopes_from_payload(payload, self_contained)?;
 
                     Ok(envelopes)
                 }
@@ -302,25 +284,7 @@ impl CassandraDecoder {
                         .into()
                     };
 
-                    let envelopes = if !self_contained {
-                        self.payload_buffer.extend_from_slice(&payload);
-
-                        if let Some(expected_payload_len) = self.expected_payload_len {
-                            if self.payload_buffer.len() < expected_payload_len {
-                                vec![]
-                            } else {
-                                let payload = self.payload_buffer.split().freeze();
-                                self.expected_payload_len = None;
-                                self.extract_envelopes_from_payload(payload)?
-                            }
-                        } else {
-                            self.expected_payload_len =
-                                extract_expected_payload_len(&self.payload_buffer);
-                            vec![]
-                        }
-                    } else {
-                        self.extract_envelopes_from_payload(payload)?
-                    };
+                    let envelopes = self.extract_envelopes_from_payload(payload, self_contained)?;
 
                     Ok(envelopes)
                 }
@@ -433,7 +397,32 @@ impl CassandraDecoder {
         }
     }
 
-    fn extract_envelopes_from_payload(&self, mut payload: Bytes) -> Result<Vec<Message>> {
+    fn extract_envelopes_from_payload(
+        &mut self,
+        payload: Bytes,
+        self_contained: bool,
+    ) -> Result<Vec<Message>> {
+        if !self_contained {
+            self.payload_buffer.extend_from_slice(&payload);
+
+            if let Some(expected_payload_len) = self.expected_payload_len {
+                if self.payload_buffer.len() < expected_payload_len {
+                    Ok(vec![])
+                } else {
+                    let payload = self.payload_buffer.split().freeze();
+                    self.expected_payload_len = None;
+                    self.parse_full_envelopes_from_payload(payload)
+                }
+            } else {
+                self.expected_payload_len = extract_expected_payload_len(&self.payload_buffer);
+                Ok(vec![])
+            }
+        } else {
+            self.parse_full_envelopes_from_payload(payload)
+        }
+    }
+
+    fn parse_full_envelopes_from_payload(&self, mut payload: Bytes) -> Result<Vec<Message>> {
         let mut envelopes: Vec<Message> = vec![];
 
         while !payload.is_empty() {
@@ -765,14 +754,7 @@ impl CassandraEncoder {
                         }
                     }
                     Compression::Lz4 => {
-                        let mut envelope_bytes = match m.into_encodable(MessageType::Cassandra)? {
-                            Encodable::Bytes(bytes) => bytes,
-                            Encodable::Frame(frame) => frame
-                                .into_cassandra()
-                                .unwrap()
-                                .encode(Compression::None)
-                                .into(),
-                        };
+                        let mut envelope_bytes = self.encode_envelope(m, Compression::None)?;
 
                         if get_maximum_output_size(envelope_bytes.len()) > PAYLOAD_SIZE_LIMIT {
                             while !envelope_bytes.is_empty() {
@@ -784,17 +766,22 @@ impl CassandraEncoder {
                                 let payload_bytes = envelope_bytes
                                     .split_to(envelope_bytes.len().min(PAYLOAD_SIZE_LIMIT - 1));
 
-                                let (uncompressed_len, compressed_len) = self
+                                let (mut uncompressed_len, mut compressed_len) = self
                                     .encode_compressed_payload_into_buffer(
                                         dst,
-                                        payload_bytes,
+                                        &payload_bytes,
                                         payload_start,
                                     )?;
 
-                                if compressed_len > PAYLOAD_SIZE_LIMIT {
-                                    panic!("VERY BAD! should send the payload uncompressed if this occurs");
-                                    // TODO
+                                if compressed_len >= PAYLOAD_SIZE_LIMIT {
+                                    dst[payload_start..(payload_start + uncompressed_len)]
+                                        .copy_from_slice(&payload_bytes[..uncompressed_len]);
+
+                                    compressed_len = uncompressed_len;
+                                    uncompressed_len = 0;
                                 }
+
+                                dst.truncate(payload_start + compressed_len);
 
                                 let header =
                                     (compressed_len) as u64 | ((uncompressed_len as u64) << 17);
@@ -819,17 +806,17 @@ impl CassandraEncoder {
                             let (uncompressed_len, compressed_len) = self
                                 .encode_compressed_payload_into_buffer(
                                     dst,
-                                    envelope_bytes,
+                                    &envelope_bytes,
                                     payload_start,
                                 )?;
+
+                            dst.truncate(payload_start + compressed_len);
 
                             let mut header =
                                 (compressed_len) as u64 | ((uncompressed_len as u64) << 17);
 
-                            if true {
-                                // TODO if self_contained
-                                header |= 1 << 34;
-                            }
+                            // self contained flag
+                            header |= 1 << 34;
 
                             let crc = crc24(&header.to_le_bytes()[..5]) as u64;
 
@@ -859,19 +846,9 @@ impl CassandraEncoder {
     fn encode_compressed_payload_into_buffer(
         &mut self,
         dst: &mut BytesMut,
-        bytes: Bytes,
+        bytes: &Bytes,
         payload_start: usize,
     ) -> Result<(usize, usize)> {
-        // TODO: always check if cassandra message
-        // let bytes = match m.into_encodable(MessageType::Cassandra)? {
-        //     Encodable::Bytes(bytes) => bytes,
-        //     Encodable::Frame(frame) => frame
-        //         .into_cassandra()
-        //         .unwrap()
-        //         .encode(Compression::None)
-        //         .into(),
-        // };
-
         let mut uncompressed_len = bytes.len();
         dst.resize(payload_start + get_maximum_output_size(uncompressed_len), 0);
         let mut compressed_len = compress_into(&bytes, &mut dst[payload_start..])?;
