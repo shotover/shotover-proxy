@@ -14,7 +14,7 @@ async fn main() {
     test_helpers::bench::init();
 
     let latte = Latte::new(10000000, 1);
-    let config_dir = "example-configs/cassandra-passthrough";
+    let config_dir = "tests/test-configs/cassandra-passthrough";
     let bench = "read";
     {
         let _compose = docker_compose(&format!("{}/docker-compose.yaml", config_dir));

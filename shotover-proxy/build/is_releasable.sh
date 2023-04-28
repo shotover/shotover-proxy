@@ -40,4 +40,7 @@ then
     exit 1
 fi
 
+cd shotover
+cargo publish --dry-run
+
 echo "Shotover repository is ready for publishing"
