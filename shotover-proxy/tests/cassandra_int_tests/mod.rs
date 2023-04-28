@@ -915,7 +915,6 @@ async fn test_protocol_v5_compression_encode(#[case] driver: CassandraDriver) {
     }
 }
 
-
 #[rstest]
 #[case::cdrs(CdrsTokio)]
 #[tokio::test(flavor = "multi_thread")]
