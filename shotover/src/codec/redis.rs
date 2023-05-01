@@ -1,4 +1,4 @@
-use super::Direction;
+use super::{CodecWriteError, Direction};
 use crate::codec::{CodecBuilder, CodecReadError};
 use crate::frame::{Frame, MessageType};
 use crate::message::{Encodable, Message, Messages};
@@ -51,7 +51,7 @@ impl Decoder for RedisDecoder {
     type Item = Messages;
     type Error = CodecReadError;
 
-    fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, CodecReadError> {
+    fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
         loop {
             match decode_mut(src).map_err(|e| {
                 CodecReadError::Parser(anyhow!(e).context("Error decoding redis frame"))
@@ -84,12 +84,15 @@ impl RedisEncoder {
 }
 
 impl Encoder<Messages> for RedisEncoder {
-    type Error = anyhow::Error;
+    type Error = CodecWriteError;
 
-    fn encode(&mut self, item: Messages, dst: &mut BytesMut) -> Result<()> {
+    fn encode(&mut self, item: Messages, dst: &mut BytesMut) -> Result<(), Self::Error> {
         item.into_iter().try_for_each(|m| {
             let start = dst.len();
-            let result = match m.into_encodable(MessageType::Redis)? {
+            let result = match m
+                .into_encodable(MessageType::Redis)
+                .map_err(CodecWriteError::Encoder)?
+            {
                 Encodable::Bytes(bytes) => {
                     dst.extend_from_slice(&bytes);
                     Ok(())
@@ -106,7 +109,7 @@ impl Encoder<Messages> for RedisEncoder {
                 self.direction,
                 pretty_hex::pretty_hex(&&dst[start..])
             );
-            result
+            result.map_err(CodecWriteError::Encoder)
         })
     }
 }

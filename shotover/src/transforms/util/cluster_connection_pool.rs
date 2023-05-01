@@ -1,5 +1,5 @@
 use super::Response;
-use crate::codec::{CodecBuilder, DecoderHalf, EncoderHalf};
+use crate::codec::{CodecBuilder, CodecWriteError, DecoderHalf, EncoderHalf};
 use crate::tcp;
 use crate::tls::{TlsConnector, TlsConnectorConfig};
 use crate::transforms::util::{ConnectionError, Request};
@@ -233,11 +233,13 @@ async fn tx_process<C: EncoderHalf, W: AsyncWrite + Unpin + Send + 'static>(
     out_rx: UnboundedReceiver<Request>,
     return_tx: UnboundedSender<Request>,
     codec: C,
-) -> Result<()> {
+) -> Result<(), CodecWriteError> {
     let writer = FramedWrite::new(write, codec);
     let rx_stream = UnboundedReceiverStream::new(out_rx).map(|x| {
         let ret = Ok(vec![x.message.clone()]);
-        return_tx.send(x)?;
+        return_tx
+            .send(x)
+            .map_err(|err| CodecWriteError::Encoder(anyhow!(err)))?;
         ret
     });
     rx_stream.forward(writer).await
