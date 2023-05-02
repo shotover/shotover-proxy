@@ -766,22 +766,12 @@ impl CassandraEncoder {
                                 let payload_bytes = envelope_bytes
                                     .split_to(envelope_bytes.len().min(PAYLOAD_SIZE_LIMIT - 1));
 
-                                let (mut uncompressed_len, mut compressed_len) = self
+                                let (uncompressed_len, compressed_len) = self
                                     .encode_compressed_payload_into_buffer(
                                         dst,
                                         &payload_bytes,
                                         payload_start,
                                     )?;
-
-                                if compressed_len >= PAYLOAD_SIZE_LIMIT {
-                                    dst[payload_start..(payload_start + uncompressed_len)]
-                                        .copy_from_slice(&payload_bytes[..uncompressed_len]);
-
-                                    compressed_len = uncompressed_len;
-                                    uncompressed_len = 0;
-                                }
-
-                                dst.truncate(payload_start + compressed_len);
 
                                 let header =
                                     (compressed_len) as u64 | ((uncompressed_len as u64) << 17);
@@ -802,15 +792,12 @@ impl CassandraEncoder {
                             dst.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0, 0]);
                             let payload_start = dst.len();
 
-                            // TODO we should not be encoding small frames
                             let (uncompressed_len, compressed_len) = self
                                 .encode_compressed_payload_into_buffer(
                                     dst,
                                     &envelope_bytes,
                                     payload_start,
                                 )?;
-
-                            dst.truncate(payload_start + compressed_len);
 
                             let mut header =
                                 (compressed_len) as u64 | ((uncompressed_len as u64) << 17);
@@ -851,7 +838,7 @@ impl CassandraEncoder {
     ) -> Result<(usize, usize)> {
         let mut uncompressed_len = bytes.len();
         dst.resize(payload_start + get_maximum_output_size(uncompressed_len), 0);
-        let mut compressed_len = compress_into(&bytes, &mut dst[payload_start..])?;
+        let mut compressed_len = compress_into(bytes, &mut dst[payload_start..])?;
 
         // fallback to uncompressed data if its more efficient
         if compressed_len > uncompressed_len {
