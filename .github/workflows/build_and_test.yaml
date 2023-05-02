@@ -74,7 +74,9 @@ jobs:
       run: |
         cargo run --release --example cassandra
         cargo run --release --example windsock
-        cargo run --release --example windsock -- --flamegraph
+        cargo run --release --example windsock -- --flamegraph --name cassandra,OPS=unlimited,connections=128,message_type=read_bigint,shotover=standard,topology=single
+        cargo run --release --example windsock -- --flamegraph --name cassandra,OPS=unlimited,connections=128,message_type=read_bigint,shotover=standard,topology=cluster3
+        cargo run --release --example windsock -- --flamegraph --name cassandra-mocked,OPS=unlimited,connections=128,message_type=read_bigint,shotover=standard,topology=single
       if: ${{ matrix.name == 'Ubuntu 20.04 - Release' }}
     - name: Ensure that tests did not create or modify any files that arent .gitignore'd
       run: |

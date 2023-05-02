@@ -2,9 +2,14 @@ use async_trait::async_trait;
 use docker_compose_runner::{DockerCompose, Image};
 use scylla::transport::Compression;
 use scylla::SessionBuilder;
-use std::path::Path;
+use std::{
+    collections::HashMap,
+    path::Path,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 use tokio::sync::mpsc::UnboundedSender;
-use windsock::{Bench, Report, Tags, Windsock};
+use windsock::{Bench, Report, Windsock};
 
 fn main() {
     set_working_dir();
@@ -30,10 +35,10 @@ impl CassandraBench {
 
 #[async_trait]
 impl Bench for CassandraBench {
-    fn tags(&self) -> Tags {
+    fn tags(&self) -> HashMap<String, String> {
         [
             ("name".to_owned(), "cassandra".to_owned()),
-            ("topology".to_owned(), "3_nodes".to_owned()),
+            ("topology".to_owned(), "single".to_owned()),
             ("OPS".to_owned(), "1000".to_owned()),
             ("message_type".to_owned(), "write1000bytes".to_owned()),
             (
@@ -59,20 +64,49 @@ impl Bench for CassandraBench {
             todo!("run flamegraph");
         }
 
-        let session = SessionBuilder::new()
-            .known_nodes(&["172.16.1.2:9042"])
-            .user("cassandra", "cassandra")
-            .compression(self.compression)
-            .build()
-            .await
-            .unwrap();
+        let session = Arc::new(
+            SessionBuilder::new()
+                .known_nodes(&["172.16.1.2:9042"])
+                .user("cassandra", "cassandra")
+                .compression(self.compression)
+                .build()
+                .await
+                .unwrap(),
+        );
 
-        // TODO: run benchmark, sending reports as it goes
-        session
-            .query("SELECT * FROM system.peers", ())
-            .await
-            .unwrap();
-        reporter.send(Report::ThingHappen).unwrap();
+        let mut tasks = vec![];
+
+        reporter.send(Report::Start).unwrap();
+        let start = Instant::now();
+
+        for _ in 0..100 {
+            let session = session.clone();
+            let reporter = reporter.clone();
+            tasks.push(tokio::spawn(async move {
+                loop {
+                    let instant = Instant::now();
+                    session
+                        .query("SELECT * FROM system.peers", ())
+                        .await
+                        .unwrap();
+                    if reporter
+                        .send(Report::QueryCompletedIn(instant.elapsed()))
+                        .is_err()
+                    {
+                        // The benchmark has completed and the reporter no longer wants to receive reports so just shutdown
+                        return;
+                    }
+                }
+            }));
+        }
+
+        tokio::time::sleep(Duration::from_secs(10)).await;
+        reporter.send(Report::FinishedIn(start.elapsed())).unwrap();
+
+        // make sure the tasks complete before we drop the database they are connecting to
+        for task in tasks {
+            task.await.unwrap();
+        }
     }
 }
 

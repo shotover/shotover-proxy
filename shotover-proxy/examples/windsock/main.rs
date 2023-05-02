@@ -23,14 +23,33 @@ fn main() {
             Box::new(CassandraBench::new(
                 CassandraDb::Cassandra,
                 Topology::Single,
+                Shotover::None,
+            )),
+            Box::new(CassandraBench::new(
+                CassandraDb::Cassandra,
+                Topology::Single,
+                Shotover::Standard,
             )),
             Box::new(CassandraBench::new(
                 CassandraDb::Cassandra,
                 Topology::Cluster3,
+                Shotover::None,
             )),
-            // CassandraDb::Mocked needs to be run last because the mocked db can not yet be shutdown
-            // TODO: allow shutting down the mocked db
-            Box::new(CassandraBench::new(CassandraDb::Mocked, Topology::Single)),
+            Box::new(CassandraBench::new(
+                CassandraDb::Cassandra,
+                Topology::Cluster3,
+                Shotover::Standard,
+            )),
+            Box::new(CassandraBench::new(
+                CassandraDb::Mocked,
+                Topology::Single,
+                Shotover::None,
+            )),
+            Box::new(CassandraBench::new(
+                CassandraDb::Mocked,
+                Topology::Single,
+                Shotover::Standard,
+            )),
         ],
         &["release"],
     )
