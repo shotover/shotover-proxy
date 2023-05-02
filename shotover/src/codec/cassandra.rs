@@ -765,6 +765,7 @@ impl CassandraEncoder {
         dst.resize(payload_start + get_maximum_output_size(uncompressed_len), 0);
         let mut compressed_len = compress_into(&bytes, &mut dst[payload_start..])?;
 
+        // fallback to uncompressed data if its more efficient
         if compressed_len > uncompressed_len {
             dst[payload_start..(payload_start + uncompressed_len)]
                 .copy_from_slice(&bytes[..uncompressed_len]);
