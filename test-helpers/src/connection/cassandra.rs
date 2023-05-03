@@ -35,7 +35,9 @@ use scylla::frame::value::Value as ScyllaValue;
 use scylla::prepared_statement::PreparedStatement as PreparedStatementScylla;
 use scylla::statement::query::Query as ScyllaQuery;
 use scylla::transport::errors::{DbError, QueryError};
-use scylla::{QueryResult, Session as SessionScylla, SessionBuilder as SessionBuilderScylla};
+use scylla::{
+    ExecutionProfile, QueryResult, Session as SessionScylla, SessionBuilder as SessionBuilderScylla,
+};
 #[cfg(feature = "cassandra-cpp-driver-tests")]
 use std::fs::read_to_string;
 use std::net::IpAddr;
@@ -312,16 +314,12 @@ impl CassandraConnection {
                         Compression::Snappy => scylla::transport::Compression::Snappy,
                         Compression::Lz4 => scylla::transport::Compression::Lz4,
                     }))
-                    .default_consistency(Consistency::One);
-
-                if let Some(compression) = compression {
-                    let compression = match compression {
-                        Compression::Snappy => scylla::transport::Compression::Snappy,
-                        Compression::Lz4 => scylla::transport::Compression::Lz4,
-                    };
-
-                    builder = builder.compression(Some(compression));
-                }
+                    .default_execution_profile_handle(
+                        ExecutionProfile::builder()
+                            .consistency(Consistency::One)
+                            .build()
+                            .into_handle(),
+                    );
 
                 if protocol.is_some() {
                     panic!("Cannot set protocol with Scylla");

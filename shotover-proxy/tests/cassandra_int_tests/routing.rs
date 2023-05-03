@@ -3,21 +3,16 @@ use test_helpers::connection::cassandra::{CassandraConnectionBuilder, CassandraD
 mod single_key {
     use test_helpers::connection::cassandra::{run_query, CassandraConnection, ResultValue};
 
-    pub async fn create_keyspace(connection: &CassandraConnection) {
+    pub async fn setup_schema(connection: &CassandraConnection) {
         let create_ks: &'static str = "CREATE KEYSPACE IF NOT EXISTS test_routing_ks WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };";
         run_query(connection, create_ks).await;
-    }
 
-    pub async fn create_table(connection: &CassandraConnection) {
         let create_table_cql =
         "CREATE TABLE IF NOT EXISTS test_routing_ks.my_test_table_single (key int PRIMARY KEY, name text);";
         run_query(connection, create_table_cql).await;
     }
 
     pub async fn test(shotover: &CassandraConnection, cassandra: &CassandraConnection) {
-        create_keyspace(shotover).await;
-        create_table(shotover).await;
-
         let insert_cql =
             "INSERT INTO test_routing_ks.my_test_table_single (key, name) VALUES (?, 'my_name')";
         let prepared_insert = shotover.prepare(insert_cql).await;
@@ -77,21 +72,16 @@ mod single_key {
 mod compound_key {
     use test_helpers::connection::cassandra::{run_query, CassandraConnection, ResultValue};
 
-    async fn create_keyspace(connection: &CassandraConnection) {
+    pub async fn setup_schema(connection: &CassandraConnection) {
         let create_ks: &'static str = "CREATE KEYSPACE IF NOT EXISTS test_routing_ks WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };";
         run_query(connection, create_ks).await;
-    }
 
-    async fn create_table(connection: &CassandraConnection) {
         let create_table_cql =
         "CREATE TABLE IF NOT EXISTS test_routing_ks.my_test_table_compound (key int, name text, age int, blah text, PRIMARY KEY (key, age)) WITH CLUSTERING ORDER BY (age DESC);";
         run_query(connection, create_table_cql).await;
     }
 
     pub async fn test(shotover: &CassandraConnection, cassandra: &CassandraConnection) {
-        create_keyspace(shotover).await;
-        create_table(shotover).await;
-
         let insert_cql =
             "INSERT INTO test_routing_ks.my_test_table_compound (key, name, age, blah) VALUES (?, ?, ?, 'blah')";
         let prepared_insert = shotover.prepare(insert_cql).await;
@@ -191,21 +181,22 @@ mod composite_key {
         types_test(shotover).await;
     }
 
-    async fn create_keyspace(connection: &CassandraConnection) {
+    pub async fn setup_schema(connection: &CassandraConnection) {
         let create_ks: &'static str = "CREATE KEYSPACE IF NOT EXISTS test_routing_ks WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };";
         run_query(connection, create_ks).await;
-    }
 
-    async fn create_table(connection: &CassandraConnection) {
         let create_table_cql =
         "CREATE TABLE IF NOT EXISTS test_routing_ks.my_test_table_composite (key int, name text, age int, blah text, PRIMARY KEY((key, name), age));";
         run_query(connection, create_table_cql).await;
+
+        let create_keyspace = "CREATE KEYSPACE stresscql2small WITH replication = {'class': 'NetworkTopologyStrategy', 'dc1': 3};";
+        let create_table =
+        "CREATE TABLE stresscql2small.typestest (name text, choice boolean, address inet, PRIMARY KEY((name,choice), address)) WITH compaction = { 'class':'LeveledCompactionStrategy' } AND comment='A table of many types to test wide rows'";
+        run_query(connection, create_keyspace).await;
+        run_query(connection, create_table).await;
     }
 
     async fn simple_test(shotover: &CassandraConnection, cassandra: &CassandraConnection) {
-        create_keyspace(shotover).await;
-        create_table(shotover).await;
-
         let insert_cql =
             "INSERT INTO test_routing_ks.my_test_table_composite (key, name, age, blah) VALUES (?, ?, ?, 'blah')";
         let prepared_insert = shotover.prepare(insert_cql).await;
@@ -319,13 +310,6 @@ mod composite_key {
     }
 
     async fn types_test(connection: &CassandraConnection) {
-        let create_keyspace = "CREATE KEYSPACE stresscql2small WITH replication = {'class': 'NetworkTopologyStrategy', 'dc1': 3};";
-        let create_table =
-        "CREATE TABLE stresscql2small.typestest (name text, choice boolean, address inet, PRIMARY KEY((name,choice), address)) WITH compaction = { 'class':'LeveledCompactionStrategy' } AND comment='A table of many types to test wide rows'";
-
-        run_query(connection, create_keyspace).await;
-        run_query(connection, create_table).await;
-
         for _ in 0..1000 {
             let name: String = rand::thread_rng()
                 .sample_iter(&Alphanumeric)
@@ -410,6 +394,12 @@ pub async fn test(
                 None,
             )
             .await;
+        single_key::setup_schema(&shotover).await;
+        composite_key::setup_schema(&shotover).await;
+        compound_key::setup_schema(&shotover).await;
+
+        // We need to create this `cassandra` connection after we setup the schema to ensure that its routing metadata is completely up to date with the schema changes we just made.
+        // We dont need to worry about the metadata of the `shotover` connection as the driver will automatically refresh its metadata due to running schema altering queries.
         let cassandra =
             CassandraConnectionBuilder::new(cassandra_contact_point, cassandra_port, driver)
                 .build()
