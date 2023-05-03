@@ -1,4 +1,4 @@
-use super::Direction;
+use super::{CodecWriteError, Direction};
 use crate::codec::{CodecBuilder, CodecReadError};
 use crate::frame::MessageType;
 use crate::message::{Encodable, Message, Messages, ProtocolType};
@@ -82,7 +82,7 @@ impl Decoder for KafkaDecoder {
     type Item = Messages;
     type Error = CodecReadError;
 
-    fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, CodecReadError> {
+    fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
         loop {
             if let Some(size) = get_length_of_full_message(src) {
                 let bytes = src.split_to(size);
@@ -129,12 +129,15 @@ impl KafkaEncoder {
 }
 
 impl Encoder<Messages> for KafkaEncoder {
-    type Error = anyhow::Error;
+    type Error = CodecWriteError;
 
-    fn encode(&mut self, item: Messages, dst: &mut BytesMut) -> Result<()> {
+    fn encode(&mut self, item: Messages, dst: &mut BytesMut) -> Result<(), Self::Error> {
         item.into_iter().try_for_each(|m| {
             let start = dst.len();
-            let result = match m.into_encodable(MessageType::Kafka)? {
+            let result = match m
+                .into_encodable(MessageType::Kafka)
+                .map_err(CodecWriteError::Encoder)?
+            {
                 Encodable::Bytes(bytes) => {
                     dst.extend_from_slice(&bytes);
                     Ok(())
@@ -145,16 +148,17 @@ impl Encoder<Messages> for KafkaEncoder {
             if let Some(tx) = self.request_header_tx.as_ref() {
                 let api_key = i16::from_be_bytes(dst[start + 4..start + 6].try_into().unwrap());
                 let version = i16::from_be_bytes(dst[start + 6..start + 8].try_into().unwrap());
-                let api_key =
-                    ApiKey::try_from(api_key).map_err(|_| anyhow!("unknown api key {api_key}"))?;
-                tx.send(RequestHeader { api_key, version })?;
+                let api_key = ApiKey::try_from(api_key)
+                    .map_err(|_| CodecWriteError::Encoder(anyhow!("unknown api key {api_key}")))?;
+                tx.send(RequestHeader { api_key, version })
+                    .map_err(|e| CodecWriteError::Encoder(anyhow!(e)))?;
             }
             tracing::debug!(
                 "{}: outgoing kafka message:\n{}",
                 self.direction,
                 pretty_hex::pretty_hex(&&dst[start..])
             );
-            result
+            result.map_err(CodecWriteError::Encoder)
         })
     }
 }
