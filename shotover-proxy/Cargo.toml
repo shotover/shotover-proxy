@@ -39,6 +39,8 @@ cassandra-protocol.workspace = true
 bytes.workspace = true
 rand.workspace = true
 rand_distr.workspace = true
+async-trait.workspace = true
+windsock = { path = "../windsock" }
 
 [[bench]]
 name = "benches"

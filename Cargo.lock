@@ -3252,6 +3252,7 @@ name = "shotover-proxy"
 version = "0.1.10"
 dependencies = [
  "anyhow",
+ "async-trait",
  "bincode",
  "bytes",
  "cassandra-cpp",
@@ -3280,6 +3281,7 @@ dependencies = [
  "tokio-util",
  "tracing",
  "uuid",
+ "windsock",
 ]
 
 [[package]]
@@ -4279,6 +4281,17 @@ name = "windows_x86_64_msvc"
 version = "0.48.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1a515f5799fe4961cb532f983ce2b23082366b898e52ffbce459c86f67c8378a"
+
+[[package]]
+name = "windsock"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "clap 4.2.2",
+ "docker-compose-runner",
+ "scylla",
+ "tokio",
+]
 
 [[package]]
 name = "winnow"

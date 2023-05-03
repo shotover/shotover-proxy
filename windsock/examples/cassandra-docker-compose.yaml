@@ -1,0 +1,26 @@
+version: "3.3"
+
+networks:
+  cassandra_subnet:
+    name: cassandra_subnet
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.16.1.0/24
+          gateway: 172.16.1.1
+
+services:
+  cassandra-one:
+    image: bitnami/cassandra:4.0.6
+    networks:
+      cassandra_subnet:
+        ipv4_address: 172.16.1.2
+    environment:
+      &environment
+      MAX_HEAP_SIZE: "400M"
+      MIN_HEAP_SIZE: "400M"
+      HEAP_NEWSIZE: "48M"
+    volumes:
+      - type: tmpfs
+        target: /var/lib/cassandra
