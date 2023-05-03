@@ -1,4 +1,4 @@
-use crate::codec::{CodecBuilder, CodecReadError};
+use crate::codec::{CodecBuilder, CodecReadError, CodecWriteError};
 use crate::message::Messages;
 use crate::tls::{AcceptError, TlsAcceptor};
 use crate::transforms::chain::{TransformChain, TransformChainBuilder};
@@ -338,6 +338,7 @@ fn spawn_read_write_tasks<
     // 1. The reader task detects that the client has closed the connection via reader returning None and terminates, dropping in_tx and the first out_tx
     // 2. The main task detects that in_tx is dropped by in_rx returning None and terminates, dropping the last out_tx
     // 3. The writer task detects that the last out_tx is dropped by out_rx returning None and terminates
+    // The writer task could also close early by detecting that the client has closed the connection via writer returning BrokenPipe
 
     // reader task
     tokio::spawn(
@@ -391,18 +392,40 @@ fn spawn_read_write_tasks<
         async move {
             loop {
                 if let Some(message) = out_rx.recv().await {
-                    if let Err(err) = writer.send(message).await {
-                        error!("failed to send or encode message: {:?}", err);
+                    match writer.send(message).await {
+                        Err(CodecWriteError::Encoder(err)) => {
+                            error!("failed to encode message: {err:?}")
+                        }
+                        Err(CodecWriteError::Io(err)) => {
+                            if matches!(err.kind(), ErrorKind::BrokenPipe) {
+                                debug!("client disconnected before it could receive a response");
+                                return;
+                            } else {
+                                error!("failed to send message: {err:?}");
+                            }
+                        }
+                        Ok(_) => {}
                     }
                 } else {
                     // Main task has ended.
                     // First flush out any remaining messages.
                     // Then end the task thus closing the connection by dropping the write half
                     while let Ok(message) = out_rx.try_recv() {
-                        if let Err(err) = writer.send(message).await {
-                            error!(
-                                "while flushing messages: failed to send or encode message: {err:?}",
-                            );
+                        match writer.send(message).await {
+                            Err(CodecWriteError::Encoder(err)) => {
+                                error!("while flushing messages: failed to encode message: {err:?}")
+                            }
+                            Err(CodecWriteError::Io(err)) => {
+                                if matches!(err.kind(), ErrorKind::BrokenPipe) {
+                                    debug!("while flushing messages: client disconnected before it could receive a response");
+                                    return;
+                                } else {
+                                    error!(
+                                        "while flushing messages: failed to send message: {err:?}"
+                                    );
+                                }
+                            }
+                            Ok(_) => {}
                         }
                     }
                     break;
