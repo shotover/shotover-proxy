@@ -1,4 +1,4 @@
-use super::Direction;
+use super::{CodecWriteError, Direction};
 use crate::codec::{CodecBuilder, CodecReadError};
 use crate::frame::cassandra::{CassandraMetadata, CassandraOperation, Tracing};
 use crate::frame::{CassandraFrame, Frame, MessageType};
@@ -636,7 +636,7 @@ impl CassandraEncoder {
 }
 
 impl Encoder<Messages> for CassandraEncoder {
-    type Error = anyhow::Error;
+    type Error = CodecWriteError;
 
     fn encode(
         &mut self,
@@ -649,7 +649,8 @@ impl Encoder<Messages> for CassandraEncoder {
 
         for m in item {
             let start = dst.len();
-            self.encode_frame(dst, m, version, compression, handshake_complete)?;
+            self.encode_frame(dst, m, version, compression, handshake_complete)
+                .map_err(CodecWriteError::Encoder)?;
             tracing::debug!(
                 "{}: outgoing cassandra message:\n{}",
                 self.direction,
