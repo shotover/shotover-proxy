@@ -14,6 +14,7 @@ use cassandra_protocol::frame::{Flags, Opcode, Version, PAYLOAD_SIZE_LIMIT};
 use cql3_parser::cassandra_statement::CassandraStatement;
 use cql3_parser::common::Identifier;
 use lz4_flex::{block::get_maximum_output_size, compress_into, decompress};
+use metrics::increment_counter;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio_util::codec::{Decoder, Encoder};
@@ -166,7 +167,13 @@ impl CassandraDecoder {
                 ..
             } = CassandraFrame::from_bytes(bytes.clone().freeze(), Compression::None)?
             {
-                set_startup_state(&mut self.compression, &mut self.version, version, &startup);
+                set_startup_state(
+                    &mut self.compression,
+                    &mut self.version,
+                    version,
+                    &startup,
+                    self.direction,
+                );
             };
         }
 
@@ -451,6 +458,7 @@ fn set_startup_state(
     version_state: &mut Arc<AtomicVersionState>,
     version: Version,
     startup: &BodyReqStartup,
+    direction: Direction,
 ) {
     if let Some(compression) = startup.map.get("COMPRESSION") {
         compression_state.store(
@@ -463,6 +471,15 @@ fn set_startup_state(
             .into(),
             Ordering::Relaxed,
         );
+    }
+
+    if direction == Direction::Source {
+        match version {
+            Version::V3 => increment_counter!("client_protocol_version", "version" => "v3"),
+            Version::V4 => increment_counter!("client_protocol_version", "version" => "v4"),
+            Version::V5 => increment_counter!("client_protocol_version", "version" => "v5"),
+            _ => unimplemented!(),
+        };
     }
 
     version_state.store(version.into(), Ordering::Relaxed);
@@ -803,6 +820,7 @@ impl CassandraEncoder {
                                 &mut self.version,
                                 version,
                                 &startup,
+                                self.direction,
                             );
                         };
                     }
@@ -822,7 +840,13 @@ impl CassandraEncoder {
                     ..
                 }) = &frame
                 {
-                    set_startup_state(&mut self.compression, &mut self.version, *version, startup);
+                    set_startup_state(
+                        &mut self.compression,
+                        &mut self.version,
+                        *version,
+                        startup,
+                        self.direction,
+                    );
                 };
 
                 if let Frame::Cassandra(CassandraFrame {
