@@ -841,6 +841,8 @@ impl CassandraEncoder {
         let mut compressed_len = compress_into(bytes, &mut dst[payload_start..])?;
 
         // fallback to uncompressed data if its more efficient
+        // this is also important for correctness, if the compressed len is larger than the uncompressed len,
+        // the compressed payload could overflow the PAYLOAD_SIZE_LIMIT that was previously checked against the uncompressed size
         if compressed_len > uncompressed_len {
             dst[payload_start..(payload_start + uncompressed_len)]
                 .copy_from_slice(&bytes[..uncompressed_len]);
