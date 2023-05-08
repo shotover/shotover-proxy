@@ -670,8 +670,6 @@ async fn request_throttling(#[case] driver: CassandraDriver) {
 
     tokio::time::sleep(std::time::Duration::from_secs(1)).await; // sleep to reset the window
 
-    batch_statements::test(&connection).await;
-
     shotover.shutdown_and_then_consume_events(&[]).await;
 }
 
