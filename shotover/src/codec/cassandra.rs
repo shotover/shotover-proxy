@@ -129,6 +129,8 @@ pub struct CassandraDecoder {
     messages: Vec<Message>,
     current_use_keyspace: Option<Identifier>,
     direction: Direction,
+    expected_payload_len: Option<usize>,
+    payload_buffer: BytesMut,
 }
 
 impl CassandraDecoder {
@@ -145,6 +147,8 @@ impl CassandraDecoder {
             messages: vec![],
             current_use_keyspace: None,
             direction,
+            payload_buffer: BytesMut::new(),
+            expected_payload_len: None,
         }
     }
 }
@@ -216,13 +220,11 @@ impl CassandraDecoder {
                     }
 
                     let self_contained = (header & (1 << 17)) != 0;
-                    if !self_contained {
-                        unimplemented!("Cannot support non-self contained frames yet");
-                    }
 
                     frame_bytes.advance(UNCOMPRESSED_FRAME_HEADER_LENGTH);
                     let payload = frame_bytes.split_to(payload_length).freeze();
-                    let envelopes = self.extract_envelopes_from_payload(payload)?;
+
+                    let envelopes = self.extract_envelopes_from_payload(payload, self_contained)?;
 
                     Ok(envelopes)
                 }
@@ -264,9 +266,6 @@ impl CassandraDecoder {
                     }
 
                     let self_contained = (header & (1 << 34)) != 0;
-                    if !self_contained {
-                        unimplemented!("Cannot support non-self contained frames yet");
-                    }
 
                     let uncompressed_length = ((header >> 17) & 0x1ffff) as usize;
 
@@ -285,7 +284,7 @@ impl CassandraDecoder {
                         .into()
                     };
 
-                    let envelopes = self.extract_envelopes_from_payload(payload)?;
+                    let envelopes = self.extract_envelopes_from_payload(payload, self_contained)?;
 
                     Ok(envelopes)
                 }
@@ -398,7 +397,32 @@ impl CassandraDecoder {
         }
     }
 
-    fn extract_envelopes_from_payload(&self, mut payload: Bytes) -> Result<Vec<Message>> {
+    fn extract_envelopes_from_payload(
+        &mut self,
+        payload: Bytes,
+        self_contained: bool,
+    ) -> Result<Vec<Message>> {
+        if !self_contained {
+            self.payload_buffer.extend_from_slice(&payload);
+
+            if let Some(expected_payload_len) = self.expected_payload_len {
+                if self.payload_buffer.len() < expected_payload_len {
+                    Ok(vec![])
+                } else {
+                    let payload = self.payload_buffer.split().freeze();
+                    self.expected_payload_len = None;
+                    self.parse_full_envelopes_from_payload(payload)
+                }
+            } else {
+                self.expected_payload_len = extract_expected_payload_len(&self.payload_buffer);
+                Ok(vec![])
+            }
+        } else {
+            self.parse_full_envelopes_from_payload(payload)
+        }
+    }
+
+    fn parse_full_envelopes_from_payload(&self, mut payload: Bytes) -> Result<Vec<Message>> {
         let mut envelopes: Vec<Message> = vec![];
 
         while !payload.is_empty() {
@@ -432,6 +456,14 @@ impl CassandraDecoder {
 
         Ok(envelopes)
     }
+}
+
+fn extract_expected_payload_len(payload_buffer: &BytesMut) -> Option<usize> {
+    if payload_buffer.len() < ENVELOPE_HEADER_LEN {
+        return None;
+    }
+
+    Some(i32::from_be_bytes(payload_buffer[5..9].try_into().unwrap()) as usize)
 }
 
 fn header_crc_mismatch_error(computed_crc: i32, header_crc24: i32) -> anyhow::Error {
@@ -674,65 +706,115 @@ impl CassandraEncoder {
             (Version::V5, true) => {
                 match compression {
                     Compression::None => {
-                        // write envelope header with dummy values for those we cant calculate till after we write the message
-                        let header_start = dst.len();
+                        let mut envelope_bytes = self.encode_envelope(m, Compression::None)?;
 
-                        dst.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
-                        let payload_start = dst.len();
+                        if envelope_bytes.len() > PAYLOAD_SIZE_LIMIT {
+                            while !envelope_bytes.is_empty() {
+                                // write envelope header with dummy values for those we cant calculate till after we write the message
+                                let header_start = dst.len();
+                                dst.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
+                                let payload_start = dst.len();
 
-                        self.encode_envelope(dst, m, Compression::None)?;
+                                let payload_bytes = envelope_bytes
+                                    .split_to(envelope_bytes.len().min(PAYLOAD_SIZE_LIMIT - 1));
+                                let payload_len = payload_bytes.len();
 
-                        //measure length of message and calculate crc24 and overwrite frame header values
-                        let mut payload_len = (dst.len() - payload_start) as u64;
+                                dst.put(payload_bytes);
 
-                        if true {
-                            // TODO if self_contained
+                                // add header length & header crc
+                                let payload_len = &payload_len.to_le_bytes()[..3];
+                                dst[header_start..header_start + 3].copy_from_slice(payload_len);
+                                dst[header_start + 3..header_start + 6]
+                                    .copy_from_slice(&crc24(payload_len).to_le_bytes()[..3]);
+
+                                // add payload crc
+                                dst.extend_from_slice(&crc32(&dst[payload_start..]).to_le_bytes());
+                            }
+                        } else {
+                            // write envelope header with dummy values for those we cant calculate till after we write the message
+                            let header_start = dst.len();
+
+                            dst.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
+                            let payload_start = dst.len();
+
+                            let mut payload_len = envelope_bytes.len();
+                            dst.put(envelope_bytes);
+
+                            // self contained flag
                             payload_len |= 1 << 17;
+
+                            // add header length & header crc
+                            let payload_len = &payload_len.to_le_bytes()[..3];
+                            dst[header_start..header_start + 3].copy_from_slice(payload_len);
+                            dst[header_start + 3..header_start + 6]
+                                .copy_from_slice(&crc24(payload_len).to_le_bytes()[..3]);
+
+                            // add payload crc
+                            dst.extend_from_slice(&crc32(&dst[payload_start..]).to_le_bytes());
                         }
-
-                        // add header length & header crc
-                        let payload_len = &payload_len.to_le_bytes()[..3];
-                        dst[header_start..header_start + 3].copy_from_slice(payload_len);
-                        dst[header_start + 3..header_start + 6]
-                            .copy_from_slice(&crc24(payload_len).to_le_bytes()[..3]);
-
-                        // add payload crc
-                        dst.extend_from_slice(&crc32(&dst[payload_start..]).to_le_bytes());
                     }
                     Compression::Lz4 => {
-                        let header_start = dst.len();
+                        let mut envelope_bytes = self.encode_envelope(m, Compression::None)?;
 
-                        dst.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0, 0]);
-                        let payload_start = dst.len();
+                        if get_maximum_output_size(envelope_bytes.len()) > PAYLOAD_SIZE_LIMIT {
+                            while !envelope_bytes.is_empty() {
+                                let header_start = dst.len();
 
-                        // TODO we should not be encoding small frames
-                        let (uncompressed_len, compressed_len) =
-                            self.encode_compressed_payload(dst, m, payload_start)?;
+                                dst.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0, 0]);
+                                let payload_start = dst.len();
 
-                        if compressed_len > PAYLOAD_SIZE_LIMIT {
-                            todo!("non self contained frames not yet implemented.")
-                        }
+                                let payload_bytes = envelope_bytes
+                                    .split_to(envelope_bytes.len().min(PAYLOAD_SIZE_LIMIT - 1));
 
-                        if uncompressed_len > PAYLOAD_SIZE_LIMIT {
-                            todo!("non self contained frames not yet implemented.")
-                        }
+                                let (uncompressed_len, compressed_len) = self
+                                    .encode_compressed_payload_into_buffer(
+                                        dst,
+                                        &payload_bytes,
+                                        payload_start,
+                                    )?;
 
-                        let mut header =
-                            (compressed_len) as u64 | ((uncompressed_len as u64) << 17);
+                                let header =
+                                    (compressed_len) as u64 | ((uncompressed_len as u64) << 17);
 
-                        if true {
-                            // TODO if self_contained
+                                let crc = crc24(&header.to_le_bytes()[..5]) as u64;
+
+                                let header = header | (crc << 40);
+
+                                dst[header_start..header_start + 8]
+                                    .copy_from_slice(&header.to_le_bytes());
+
+                                // add payload crc
+                                dst.extend_from_slice(&crc32(&dst[payload_start..]).to_le_bytes());
+                            }
+                        } else {
+                            let header_start = dst.len();
+
+                            dst.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0, 0]);
+                            let payload_start = dst.len();
+
+                            let (uncompressed_len, compressed_len) = self
+                                .encode_compressed_payload_into_buffer(
+                                    dst,
+                                    &envelope_bytes,
+                                    payload_start,
+                                )?;
+
+                            let mut header =
+                                (compressed_len) as u64 | ((uncompressed_len as u64) << 17);
+
+                            // self contained flag
                             header |= 1 << 34;
+
+                            let crc = crc24(&header.to_le_bytes()[..5]) as u64;
+
+                            let header = header | (crc << 40);
+
+                            dst[header_start..header_start + 8]
+                                .copy_from_slice(&header.to_le_bytes());
+
+                            // add payload crc
+                            dst.extend_from_slice(&crc32(&dst[payload_start..]).to_le_bytes());
                         }
-
-                        let crc = crc24(&header.to_le_bytes()[..5]) as u64;
-
-                        let header = header | (crc << 40);
-
-                        dst[header_start..header_start + 8].copy_from_slice(&header.to_le_bytes());
-
-                        // add payload crc
-                        dst.extend_from_slice(&crc32(&dst[payload_start..]).to_le_bytes());
                     }
                     _ => unimplemented!("Only Lz4 compression is supported for v5"),
                 }
@@ -741,32 +823,26 @@ impl CassandraEncoder {
             }
             (_, _) => {
                 let message_compression = m.codec_state.as_cassandra();
-                self.encode_envelope(dst, m, message_compression)
+                let frame_bytes = self.encode_envelope(m, message_compression)?;
+                dst.put(frame_bytes);
+                Ok(())
             }
         }
     }
 
-    fn encode_compressed_payload(
+    fn encode_compressed_payload_into_buffer(
         &mut self,
         dst: &mut BytesMut,
-        m: Message,
+        bytes: &Bytes,
         payload_start: usize,
     ) -> Result<(usize, usize)> {
-        // TODO: always check if cassandra message
-        let bytes = match m.into_encodable(MessageType::Cassandra)? {
-            Encodable::Bytes(bytes) => bytes,
-            Encodable::Frame(frame) => frame
-                .into_cassandra()
-                .unwrap()
-                .encode(Compression::None)
-                .into(),
-        };
-
         let mut uncompressed_len = bytes.len();
         dst.resize(payload_start + get_maximum_output_size(uncompressed_len), 0);
-        let mut compressed_len = compress_into(&bytes, &mut dst[payload_start..])?;
+        let mut compressed_len = compress_into(bytes, &mut dst[payload_start..])?;
 
         // fallback to uncompressed data if its more efficient
+        // this is also important for correctness, if the compressed len is larger than the uncompressed len,
+        // the compressed payload could overflow the PAYLOAD_SIZE_LIMIT that was previously checked against the uncompressed size
         if compressed_len > uncompressed_len {
             dst[payload_start..(payload_start + uncompressed_len)]
                 .copy_from_slice(&bytes[..uncompressed_len]);
@@ -779,15 +855,11 @@ impl CassandraEncoder {
         Ok((uncompressed_len, compressed_len))
     }
 
-    fn encode_envelope(
-        &mut self,
-        dst: &mut BytesMut,
-        m: Message,
-        envelope_compresson: Compression,
-    ) -> Result<()> {
+    fn encode_envelope(&mut self, m: Message, envelope_compresson: Compression) -> Result<Bytes> {
         // TODO: always check if cassandra message
-        match m.into_encodable(MessageType::Cassandra)? {
+        Ok(match m.into_encodable(MessageType::Cassandra)? {
             Encodable::Bytes(bytes) => {
+                // TODO this is a weird side effect to keep in this function
                 // check if the message is a startup message and set the codec's compression
                 {
                     let opcode = Opcode::try_from(bytes[4])?;
@@ -812,7 +884,7 @@ impl CassandraEncoder {
                     }
                 }
 
-                dst.extend_from_slice(&bytes)
+                bytes
             }
             Encodable::Frame(frame) => {
                 // check if the message is a startup message and set the codec's compression
@@ -835,10 +907,9 @@ impl CassandraEncoder {
 
                 let buffer = frame.into_cassandra().unwrap().encode(envelope_compresson);
 
-                dst.put(buffer.as_slice());
+                buffer.into()
             }
-        }
-        Ok(())
+        })
     }
 }
 

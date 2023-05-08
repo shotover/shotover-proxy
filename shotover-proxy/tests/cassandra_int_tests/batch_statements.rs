@@ -1,6 +1,27 @@
+use rand::Rng;
 use test_helpers::connection::cassandra::{
     assert_query_result, run_query, CassandraConnection, ResultValue,
 };
+
+async fn large_batch(connection: &CassandraConnection) {
+    connection
+        .execute("CREATE TABLE batch_keyspace.my_table (id INT PRIMARY KEY, data BLOB);")
+        .await;
+
+    let random_bytes = rand::thread_rng().gen::<[u8; 32]>();
+
+    let mut queries = Vec::new();
+    for id in 0..1000 {
+        let statement = format!(
+            "INSERT INTO batch_keyspace.my_table (id, data) VALUES ({}, 0x{})",
+            id,
+            hex::encode(random_bytes)
+        );
+        queries.push(statement);
+    }
+
+    connection.execute_batch(queries).await;
+}
 
 async fn use_statement(connection: &CassandraConnection) {
     {
@@ -175,4 +196,5 @@ pub async fn test(connection: &CassandraConnection) {
     delete_batch(connection).await;
     empty_batch(connection).await;
     query_protocol_batch(connection).await;
+    large_batch(connection).await;
 }
