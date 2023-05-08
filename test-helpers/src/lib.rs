@@ -1,4 +1,3 @@
-pub mod bench;
 pub mod cert;
 pub mod connection;
 pub mod docker_compose;
