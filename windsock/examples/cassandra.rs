@@ -8,10 +8,13 @@ use windsock::{Bench, Report, Tags, Windsock};
 
 fn main() {
     set_working_dir();
-    Windsock::new(vec![
-        Box::new(CassandraBench::new(Some(Compression::Lz4))),
-        Box::new(CassandraBench::new(None)),
-    ])
+    Windsock::new(
+        vec![
+            Box::new(CassandraBench::new(Some(Compression::Lz4))),
+            Box::new(CassandraBench::new(None)),
+        ],
+        &["release"],
+    )
     .run();
 }
 

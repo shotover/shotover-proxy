@@ -12,10 +12,16 @@ pub struct Windsock {
 }
 
 impl Windsock {
-    // The benches will be run and filtered out according to the CLI arguments
-    // The benches that are run will always be done so in the order they are listed, this allows tricks to avoid recreating DB's for every bench.
-    // e.g. the database handle can be put behind a mutex and only resetup when actually neccessary
-    pub fn new(benches: Vec<Box<dyn Bench>>) -> Self {
+    /// The benches will be run and filtered out according to the CLI arguments
+    /// The benches that are run will always be done so in the order they are listed, this allows tricks to avoid recreating DB's for every bench.
+    /// e.g. the database handle can be put behind a mutex and only resetup when actually neccessary
+    ///
+    /// `release_profiles` specifies which cargo profiles Windsock will run under, if a different profile is used windsock will refuse to run.
+    pub fn new(benches: Vec<Box<dyn Bench>>, release_profiles: &[&str]) -> Self {
+        if !release_profiles.contains(&env!("PROFILE")) {
+            panic!("Windsock was not run with a configured release profile, maybe try running with the `--release` flag. Failing that check the release profiles provided in `Windsock::new(..)`.");
+        }
+
         Windsock {
             benches: benches
                 .into_iter()
