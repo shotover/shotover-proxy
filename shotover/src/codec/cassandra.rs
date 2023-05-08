@@ -14,7 +14,7 @@ use cassandra_protocol::frame::{Flags, Opcode, Version, PAYLOAD_SIZE_LIMIT};
 use cql3_parser::cassandra_statement::CassandraStatement;
 use cql3_parser::common::Identifier;
 use lz4_flex::{block::get_maximum_output_size, compress_into, decompress};
-use metrics::increment_counter;
+use metrics::{register_counter, Counter};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio_util::codec::{Decoder, Encoder};
@@ -96,6 +96,7 @@ impl From<CompressionState> for Compression {
 #[derive(Clone)]
 pub struct CassandraCodecBuilder {
     direction: Direction,
+    version_counter: VersionCounter,
 }
 
 impl CodecBuilder for CassandraCodecBuilder {
@@ -103,7 +104,12 @@ impl CodecBuilder for CassandraCodecBuilder {
     type Encoder = CassandraEncoder;
 
     fn new(direction: Direction) -> Self {
-        Self { direction }
+        let version_counter = VersionCounter::new();
+
+        Self {
+            direction,
+            version_counter,
+        }
     }
 
     fn build(&self) -> (CassandraDecoder, CassandraEncoder) {
@@ -117,9 +123,36 @@ impl CodecBuilder for CassandraCodecBuilder {
                 compression.clone(),
                 self.direction,
                 handshake_complete.clone(),
+                self.version_counter.clone(),
             ),
             CassandraEncoder::new(version, compression, self.direction, handshake_complete),
         )
+    }
+}
+
+#[derive(Clone)]
+pub struct VersionCounter {
+    v3: Counter,
+    v4: Counter,
+    v5: Counter,
+}
+
+impl VersionCounter {
+    fn new() -> Self {
+        Self {
+            v3: register_counter!("client_protocol_version", "version" => "v3"),
+            v4: register_counter!("client_protocol_version", "version" => "v4"),
+            v5: register_counter!("client_protocol_version", "version" => "v5"),
+        }
+    }
+
+    fn increment(&self, version: Version) {
+        match version {
+            Version::V3 => self.v3.increment(1),
+            Version::V4 => self.v4.increment(1),
+            Version::V5 => self.v5.increment(1),
+            _ => unimplemented!(),
+        };
     }
 }
 
@@ -130,6 +163,7 @@ pub struct CassandraDecoder {
     messages: Vec<Message>,
     current_use_keyspace: Option<Identifier>,
     direction: Direction,
+    version_counter: VersionCounter,
 }
 
 impl CassandraDecoder {
@@ -138,6 +172,7 @@ impl CassandraDecoder {
         compression: Arc<AtomicCompressionState>,
         direction: Direction,
         handshake_complete: Arc<AtomicBool>,
+        version_counter: VersionCounter,
     ) -> CassandraDecoder {
         CassandraDecoder {
             version,
@@ -146,6 +181,7 @@ impl CassandraDecoder {
             messages: vec![],
             current_use_keyspace: None,
             direction,
+            version_counter,
         }
     }
 }
@@ -167,13 +203,11 @@ impl CassandraDecoder {
                 ..
             } = CassandraFrame::from_bytes(bytes.clone().freeze(), Compression::None)?
             {
-                set_startup_state(
-                    &mut self.compression,
-                    &mut self.version,
-                    version,
-                    &startup,
-                    self.direction,
-                );
+                set_startup_state(&mut self.compression, &mut self.version, version, &startup);
+
+                if self.direction == Direction::Source {
+                    self.version_counter.increment(version);
+                }
             };
         }
 
@@ -458,7 +492,6 @@ fn set_startup_state(
     version_state: &mut Arc<AtomicVersionState>,
     version: Version,
     startup: &BodyReqStartup,
-    direction: Direction,
 ) {
     if let Some(compression) = startup.map.get("COMPRESSION") {
         compression_state.store(
@@ -471,15 +504,6 @@ fn set_startup_state(
             .into(),
             Ordering::Relaxed,
         );
-    }
-
-    if direction == Direction::Source {
-        match version {
-            Version::V3 => increment_counter!("client_protocol_version", "version" => "v3"),
-            Version::V4 => increment_counter!("client_protocol_version", "version" => "v4"),
-            Version::V5 => increment_counter!("client_protocol_version", "version" => "v5"),
-            _ => unimplemented!(),
-        };
     }
 
     version_state.store(version.into(), Ordering::Relaxed);
@@ -820,7 +844,6 @@ impl CassandraEncoder {
                                 &mut self.version,
                                 version,
                                 &startup,
-                                self.direction,
                             );
                         };
                     }
@@ -840,13 +863,7 @@ impl CassandraEncoder {
                     ..
                 }) = &frame
                 {
-                    set_startup_state(
-                        &mut self.compression,
-                        &mut self.version,
-                        *version,
-                        startup,
-                        self.direction,
-                    );
+                    set_startup_state(&mut self.compression, &mut self.version, *version, startup);
                 };
 
                 if let Frame::Cassandra(CassandraFrame {

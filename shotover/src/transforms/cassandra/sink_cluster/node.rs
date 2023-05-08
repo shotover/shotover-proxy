@@ -70,6 +70,8 @@ pub struct ConnectionFactory {
     #[derivative(Debug = "ignore")]
     tls: Option<TlsConnector>,
     pushed_messages_tx: Option<mpsc::UnboundedSender<Messages>>,
+    #[derivative(Debug = "ignore")]
+    codec_builder: CassandraCodecBuilder,
 }
 
 impl Clone for ConnectionFactory {
@@ -80,6 +82,7 @@ impl Clone for ConnectionFactory {
             use_message: None,
             tls: self.tls.clone(),
             pushed_messages_tx: None,
+            codec_builder: self.codec_builder.clone(),
         }
     }
 }
@@ -92,6 +95,7 @@ impl ConnectionFactory {
             use_message: None,
             tls,
             pushed_messages_tx: None,
+            codec_builder: CassandraCodecBuilder::new(Direction::Sink),
         }
     }
 
@@ -105,6 +109,7 @@ impl ConnectionFactory {
             use_message: None,
             tls: self.tls.clone(),
             pushed_messages_tx: None,
+            codec_builder: self.codec_builder.clone(),
         }
     }
 
@@ -115,7 +120,7 @@ impl ConnectionFactory {
         let outbound = CassandraConnection::new(
             self.connect_timeout,
             address,
-            CassandraCodecBuilder::new(Direction::Sink),
+            self.codec_builder.clone(),
             self.tls.clone(),
             self.pushed_messages_tx.clone(),
         )
