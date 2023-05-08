@@ -408,6 +408,15 @@ impl CassandraConnection {
     }
 
     pub async fn execute_fallible(&self, query: &str) -> Result<Vec<Vec<ResultValue>>, ErrorBody> {
+        tokio::time::timeout(Duration::from_secs(10), self.execute_fallible_inner(query))
+            .await
+            .unwrap_or_else(|_| panic!("The CQL query: {query}\nTimed out after 10s"))
+    }
+
+    pub async fn execute_fallible_inner(
+        &self,
+        query: &str,
+    ) -> Result<Vec<Vec<ResultValue>>, ErrorBody> {
         let result = match self {
             #[cfg(feature = "cassandra-cpp-driver-tests")]
             Self::Datastax { session, .. } => {
@@ -431,6 +440,18 @@ impl CassandraConnection {
     }
 
     pub async fn execute_with_timestamp(
+        &self,
+        query: &str,
+        timestamp: i64,
+    ) -> Result<Vec<Vec<ResultValue>>, ErrorBody> {
+        tokio::time::timeout(
+            Duration::from_secs(10),
+            self.execute_with_timestamp_inner(query, timestamp),
+        )
+        .await
+        .unwrap_or_else(|_| panic!("The CQL query: {query}\nTimed out after 10s"))
+    }
+    pub async fn execute_with_timestamp_inner(
         &self,
         query: &str,
         timestamp: i64,
@@ -467,6 +488,12 @@ impl CassandraConnection {
     }
 
     pub async fn prepare(&self, query: &str) -> PreparedQuery {
+        tokio::time::timeout(Duration::from_secs(10), self.prepare_inner(query))
+            .await
+            .unwrap_or_else(|_| panic!("Preparing the CQL query: {query}\nTimed out after 10s"))
+    }
+
+    pub async fn prepare_inner(&self, query: &str) -> PreparedQuery {
         match self {
             #[cfg(feature = "cassandra-cpp-driver-tests")]
             Self::Datastax { session, .. } => {
@@ -485,6 +512,19 @@ impl CassandraConnection {
     }
 
     pub async fn execute_prepared_coordinator_node(
+        &self,
+        prepared_query: &PreparedQuery,
+        values: &[ResultValue],
+    ) -> IpAddr {
+        tokio::time::timeout(
+            Duration::from_secs(10),
+            self.execute_prepared_coordinator_node_inner(prepared_query, values),
+        )
+        .await
+        .expect("Attempted to execute a CQL prepared query but timed out after 10s")
+    }
+
+    pub async fn execute_prepared_coordinator_node_inner(
         &self,
         prepared_query: &PreparedQuery,
         values: &[ResultValue],
@@ -549,6 +589,19 @@ impl CassandraConnection {
     }
 
     pub async fn execute_prepared(
+        &self,
+        prepared_query: &PreparedQuery,
+        values: &[ResultValue],
+    ) -> Result<Vec<Vec<ResultValue>>, ErrorBody> {
+        tokio::time::timeout(
+            Duration::from_secs(10),
+            self.execute_prepared_inner(prepared_query, values),
+        )
+        .await
+        .expect("Attempted to execute a CQL prepared query but timed out after 10s")
+    }
+
+    pub async fn execute_prepared_inner(
         &self,
         prepared_query: &PreparedQuery,
         values: &[ResultValue],
@@ -672,6 +725,18 @@ impl CassandraConnection {
     }
 
     pub async fn execute_batch_fallible(
+        &self,
+        queries: Vec<String>,
+    ) -> Result<Vec<Vec<ResultValue>>, ErrorBody> {
+        tokio::time::timeout(
+            Duration::from_secs(10),
+            self.execute_batch_fallible_inner(queries.clone()),
+        )
+        .await
+        .expect("timed out after executing cassandra batch for 10s")
+    }
+
+    pub async fn execute_batch_fallible_inner(
         &self,
         queries: Vec<String>,
     ) -> Result<Vec<Vec<ResultValue>>, ErrorBody> {
