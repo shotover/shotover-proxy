@@ -8,8 +8,12 @@ license = "Apache-2.0"
 
 [dependencies]
 async-trait = "0.1.68"
+bincode.workspace = true
 clap.workspace = true
+console = "0.15.5"
 docker-compose-runner = "0.1.0"
+serde = { workspace = true, features = ["derive"] }
+strum = { version = "0.24.1", features = ["derive"] }
 tokio.workspace = true
 
 [dev-dependencies]
