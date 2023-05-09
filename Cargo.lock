@@ -632,6 +632,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "console"
+version = "0.15.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c3d79fbe8970a77e3e34151cc13d3b3e248aa0faaecb9f6091fa07ebefe5ad60"
+dependencies = [
+ "encode_unicode",
+ "lazy_static",
+ "libc",
+ "unicode-width",
+ "windows-sys 0.42.0",
+]
+
+[[package]]
 name = "convert_case"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1098,6 +1111,12 @@ name = "either"
 version = "1.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7fcaabb2fef8c910e7f4c7ce9f67a1283a1715879a7c230ca9d6d1ae31f16d91"
+
+[[package]]
+name = "encode_unicode"
+version = "0.3.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a357d28ed41a50f9c765dbfe56cbc04a64e53e5fc58ba79fbc34c10ef3df831f"
 
 [[package]]
 name = "encoding_rs"
@@ -3005,7 +3024,7 @@ dependencies = [
  "scylla-macros 0.1.2",
  "smallvec",
  "snap",
- "strum",
+ "strum 0.23.0",
  "strum_macros 0.23.1",
  "thiserror",
  "tokio",
@@ -3040,7 +3059,7 @@ dependencies = [
  "scylla-macros 0.2.0",
  "smallvec",
  "snap",
- "strum",
+ "strum 0.23.0",
  "strum_macros 0.23.1",
  "thiserror",
  "tokio",
@@ -3349,6 +3368,7 @@ dependencies = [
  "redis",
  "redis-protocol",
  "rstest",
+ "scylla 0.8.1",
  "serde",
  "serial_test",
  "shotover",
@@ -3450,6 +3470,15 @@ name = "strum"
 version = "0.23.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cae14b91c7d11c9a851d3fbc80a963198998c2a64eec840477fa92d8ce9b70bb"
+
+[[package]]
+name = "strum"
+version = "0.24.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "063e6045c0e62079840579a7e47a355ae92f60eb74daaf156fb1e84ba164e63f"
+dependencies = [
+ "strum_macros 0.24.3",
+]
 
 [[package]]
 name = "strum_macros"
@@ -4363,9 +4392,13 @@ name = "windsock"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "bincode",
  "clap 4.2.2",
+ "console",
  "docker-compose-runner",
  "scylla 0.7.0",
+ "serde",
+ "strum 0.24.1",
  "tokio",
 ]
 
