@@ -9,7 +9,7 @@ use crate::frame::{
     cassandra::{CassandraMetadata, CassandraOperation},
 };
 use crate::frame::{CassandraFrame, Frame, MessageType, RedisFrame};
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use bytes::{Buf, Bytes};
 use cassandra_protocol::compression::Compression;
 use cassandra_protocol::frame::message_error::{ErrorBody, ErrorType};
@@ -232,12 +232,11 @@ impl Message {
         }
     }
 
-    #[must_use]
     /// Returns an error response with the provided error message.
     /// If self is a request: the returned `Message` is a valid response to self
     /// If self is a response: the returned `Message` is a valid replacement of self
-    pub fn to_error_response(&self, error: String) -> Message {
-        Message::from_frame(match self.metadata().unwrap() {
+    pub fn to_error_response(&self, error: String) -> Result<Message> {
+        Ok(Message::from_frame(match self.metadata().context("Failed to parse metadata of request or response when producing an error")? {
             Metadata::Redis => {
                 // Redis errors can not contain newlines at the protocol level
                 let message = format!("ERR {error}")
@@ -255,8 +254,14 @@ impl Message {
                 tracing: Tracing::Response(None),
                 warnings: vec![],
             }),
-            Metadata::Kafka => todo!(),
-        })
+            // In theory we could actually support kafka errors in some form here but:
+            // * kafka errors are defined per response type and many response types only provide an error code without a field for a custom error message.
+            //     + Implementing this per response type would add a lot of (localized) complexity but might be worth it.
+            // * the official C++ kafka driver we use for integration tests does not pick up errors sent just before closing a connection, so this wouldnt help the usage in server.rs where we send an error before terminating the connection for at least that driver.
+            Metadata::Kafka => return Err(anyhow!(error).context(
+                "A generic error cannot be formed because the kafka protocol does not support it",
+            )),
+        }))
     }
 
     /// Get metadata for this `Message`

@@ -36,7 +36,8 @@ impl TransformBuilder for NullSink {
 impl Transform for NullSink {
     async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> Result<Messages> {
         for message in &mut message_wrapper.messages {
-            *message = message.to_error_response("Handled by shotover null transform".to_string());
+            *message =
+                message.to_error_response("Handled by shotover null transform".to_string())?;
         }
         Ok(message_wrapper.messages)
     }
