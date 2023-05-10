@@ -17,11 +17,11 @@ impl BenchState {
         BenchState { bench, tags }
     }
 
-    pub async fn run(&mut self, args: &Args) {
+    pub async fn run(&mut self, args: &Args, running_in_release: bool) {
         println!("Running {:?}", self.tags.get_name());
 
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-        let process = tokio::spawn(report_builder(self.tags.clone(), rx));
+        let process = tokio::spawn(report_builder(self.tags.clone(), rx, running_in_release));
         self.bench.run(args.flamegraph, true, tx).await;
         let report = process.await.unwrap();
         crate::tables::display_results_table(&[report]);
