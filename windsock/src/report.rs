@@ -9,6 +9,7 @@ use tokio::sync::mpsc::UnboundedReceiver;
 pub enum Report {
     Start,
     QueryCompletedIn(Duration),
+    SecondPassed(Duration),
     /// contains the time that the test ran for
     FinishedIn(Duration),
 }
@@ -82,6 +83,7 @@ pub(crate) struct ReportArchive {
     pub(crate) ops: f32,
     pub(crate) mean_response_time: Duration,
     pub(crate) response_time_percentiles: [Duration; Percentile::COUNT],
+    pub(crate) operations_each_second: Vec<u64>,
 }
 
 impl ReportArchive {
@@ -160,6 +162,8 @@ pub(crate) async fn report_builder(
     let mut total_response_time = Duration::from_secs(0);
     let mut finished_in = None;
     let mut started = false;
+    let mut operations_each_second = vec![0];
+
     while let Some(report) = rx.recv().await {
         match report {
             Report::Start => {
@@ -170,9 +174,20 @@ pub(crate) async fn report_builder(
                     operations_total += 1;
                     total_response_time += duration;
                     response_times.push(duration);
+                    *operations_each_second.last_mut().unwrap() += 1;
                 }
             }
+            Report::SecondPassed(duration) => {
+                assert!(
+                    duration >= Duration::from_secs(1) && duration < Duration::from_millis(1050),
+                    "Expected duration to be within 50ms of a second but was {duration:?}"
+                );
+                operations_each_second.push(0);
+            }
             Report::FinishedIn(duration) => {
+                // This is not a complete result so discard it.
+                operations_each_second.pop();
+
                 if !started {
                     panic!("The bench never returned Report::Start")
                 }
@@ -213,6 +228,7 @@ pub(crate) async fn report_builder(
         operations_total,
         mean_response_time,
         response_time_percentiles,
+        operations_each_second,
     };
     archive.save();
     archive

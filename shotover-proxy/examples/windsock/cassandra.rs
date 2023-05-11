@@ -199,7 +199,14 @@ impl Bench for CassandraBench {
             reporter.send(Report::Start).unwrap();
             let start = Instant::now();
 
-            tokio::time::sleep(Duration::from_secs(15)).await;
+            for _ in 0..15 {
+                let second = Instant::now();
+                tokio::time::sleep(Duration::from_secs(1)).await;
+                reporter
+                    .send(Report::SecondPassed(second.elapsed()))
+                    .unwrap();
+            }
+
             reporter.send(Report::FinishedIn(start.elapsed())).unwrap();
 
             // make sure the tasks complete before we drop the database they are connecting to
