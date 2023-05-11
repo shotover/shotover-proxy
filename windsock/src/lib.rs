@@ -110,8 +110,9 @@ impl Windsock {
         Ok(())
     }
 }
+
 fn run_bench(bench: &mut BenchState, args: &Args, running_in_release: bool) {
-    let runtime = create_runtime(Some(1));
+    let runtime = create_runtime(bench.cores_required());
     runtime.block_on(async {
         bench.run(args, running_in_release).await;
     });
