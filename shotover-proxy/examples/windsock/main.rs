@@ -77,20 +77,8 @@ fn main() {
             Box::new(CassandraBench::new(
                 CassandraDb::Mocked,
                 Topology::Single,
-                Shotover::None,
-                Compression::Lz4,
-            )),
-            Box::new(CassandraBench::new(
-                CassandraDb::Mocked,
-                Topology::Single,
                 Shotover::Standard,
                 Compression::None,
-            )),
-            Box::new(CassandraBench::new(
-                CassandraDb::Mocked,
-                Topology::Single,
-                Shotover::Standard,
-                Compression::Lz4,
             )),
         ],
         &["release"],
