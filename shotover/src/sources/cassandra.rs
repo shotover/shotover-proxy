@@ -23,12 +23,12 @@ pub struct CassandraConfig {
 impl CassandraConfig {
     pub async fn get_source(
         &self,
-        chain: &TransformChainBuilder,
+        chain_builder: TransformChainBuilder,
         trigger_shutdown_rx: watch::Receiver<bool>,
     ) -> Result<Vec<Sources>> {
         Ok(vec![Sources::Cassandra(
             CassandraSource::new(
-                chain,
+                chain_builder,
                 self.listen_addr.clone(),
                 trigger_shutdown_rx,
                 self.connection_limit,
@@ -50,7 +50,7 @@ pub struct CassandraSource {
 
 impl CassandraSource {
     pub async fn new(
-        chain: &TransformChainBuilder,
+        chain_builder: TransformChainBuilder,
         listen_addr: String,
         mut trigger_shutdown_rx: watch::Receiver<bool>,
         connection_limit: Option<usize>,
@@ -63,7 +63,7 @@ impl CassandraSource {
         info!("Starting Cassandra source on [{}]", listen_addr);
 
         let mut listener = TcpCodecListener::new(
-            chain.clone(),
+            chain_builder,
             name.to_string(),
             listen_addr.clone(),
             hard_connection_limit.unwrap_or(false),
