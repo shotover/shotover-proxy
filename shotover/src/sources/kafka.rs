@@ -22,12 +22,12 @@ pub struct KafkaConfig {
 impl KafkaConfig {
     pub async fn get_source(
         &self,
-        chain: &TransformChainBuilder,
+        chain_builder: TransformChainBuilder,
         trigger_shutdown_rx: watch::Receiver<bool>,
     ) -> Result<Vec<Sources>> {
         Ok(vec![Sources::Kafka(
             KafkaSource::new(
-                chain,
+                chain_builder,
                 self.listen_addr.clone(),
                 trigger_shutdown_rx,
                 self.connection_limit,
@@ -49,7 +49,7 @@ pub struct KafkaSource {
 
 impl KafkaSource {
     pub async fn new(
-        chain: &TransformChainBuilder,
+        chain_builder: TransformChainBuilder,
         listen_addr: String,
         mut trigger_shutdown_rx: watch::Receiver<bool>,
         connection_limit: Option<usize>,
@@ -62,7 +62,7 @@ impl KafkaSource {
         info!("Starting Kafka source on [{}]", listen_addr);
 
         let mut listener = TcpCodecListener::new(
-            chain.clone(),
+            chain_builder,
             name.to_string(),
             listen_addr.clone(),
             hard_connection_limit.unwrap_or(false),

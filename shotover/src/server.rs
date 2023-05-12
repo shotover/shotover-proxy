@@ -23,7 +23,7 @@ use tracing::Instrument;
 use tracing::{debug, error, info, warn};
 
 pub struct TcpCodecListener<C: CodecBuilder> {
-    chain: TransformChainBuilder,
+    chain_builder: TransformChainBuilder,
     source_name: String,
 
     /// TCP listener supplied by the `run` caller.
@@ -69,7 +69,7 @@ pub struct TcpCodecListener<C: CodecBuilder> {
 impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
     #![allow(clippy::too_many_arguments)]
     pub async fn new(
-        chain: TransformChainBuilder,
+        chain_builder: TransformChainBuilder,
         source_name: String,
         listen_addr: String,
         hard_connection_limit: bool,
@@ -86,7 +86,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
         let listener = Some(create_listener(&listen_addr).await?);
 
         Ok(TcpCodecListener {
-            chain,
+            chain_builder,
             source_name,
             listener,
             listen_addr,
@@ -188,7 +188,9 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                     tokio::sync::mpsc::unbounded_channel::<Messages>();
 
                 let mut handler = Handler {
-                    chain: self.chain.build_with_pushed_messages(pushed_messages_tx),
+                    chain: self
+                        .chain_builder
+                        .build_with_pushed_messages(pushed_messages_tx),
                     client_details: peer,
                     conn_details: conn_string,
                     source_details: self.source_name.clone(),
@@ -602,7 +604,13 @@ impl<C: CodecBuilder + 'static> Handler<C> {
                         //     + they might not know to check the shotover logs
                         //     + they may not be able to correlate which error in the shotover logs corresponds to their failed message
                         for m in &mut error_report_messages {
-                            *m = m.to_error_response(format!("Internal shotover (or custom transform) bug: {err:?}"));
+                            #[allow(clippy::single_match)]
+                            match m.to_error_response(format!("Internal shotover (or custom transform) bug: {err:?}")) {
+                                Ok(new_m) => *m = new_m,
+                                Err(_) => {
+                                    // If we cant produce an error then nothing we can do, just continue on and close the connection.
+                                }
+                            }
                         }
                         out_tx.send(error_report_messages)?;
                         return Err(err);

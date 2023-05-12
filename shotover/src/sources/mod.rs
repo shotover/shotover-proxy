@@ -38,13 +38,13 @@ pub enum SourcesConfig {
 impl SourcesConfig {
     pub(crate) async fn get_source(
         &self,
-        chain: &TransformChainBuilder,
+        chain_builder: TransformChainBuilder,
         trigger_shutdown_rx: watch::Receiver<bool>,
     ) -> Result<Vec<Sources>> {
         match self {
-            SourcesConfig::Cassandra(c) => c.get_source(chain, trigger_shutdown_rx).await,
-            SourcesConfig::Redis(r) => r.get_source(chain, trigger_shutdown_rx).await,
-            SourcesConfig::Kafka(r) => r.get_source(chain, trigger_shutdown_rx).await,
+            SourcesConfig::Cassandra(c) => c.get_source(chain_builder, trigger_shutdown_rx).await,
+            SourcesConfig::Redis(r) => r.get_source(chain_builder, trigger_shutdown_rx).await,
+            SourcesConfig::Kafka(r) => r.get_source(chain_builder, trigger_shutdown_rx).await,
         }
     }
 }
