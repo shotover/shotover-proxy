@@ -1,5 +1,6 @@
 mod cassandra;
 mod common;
+mod cassandra_protocols;
 mod kafka;
 mod profilers;
 mod redis;
@@ -8,6 +9,10 @@ use crate::cassandra::*;
 use crate::common::*;
 use crate::kafka::*;
 use crate::redis::*;
+use cassandra::*;
+use common::*;
+use cassandra_protocols::*;
+use kafka::*;
 use std::path::Path;
 use tracing_subscriber::EnvFilter;
 use windsock::{Bench, Windsock};
@@ -131,6 +136,66 @@ fn main() {
                 Shotover::Standard,
                 Compression::None,
                 Operation::ReadI64,
+            )),
+            Box::new(CassandraProtocolBench::new(
+                CassandraProtocol::V3,
+                Topology::Single,
+                Shotover::Standard,
+            )),
+            Box::new(CassandraProtocolBench::new(
+                CassandraProtocol::V4,
+                Topology::Single,
+                Shotover::Standard,
+            )),
+            Box::new(CassandraProtocolBench::new(
+                CassandraProtocol::V5,
+                Topology::Single,
+                Shotover::Standard,
+            )),
+            Box::new(CassandraProtocolBench::new(
+                CassandraProtocol::V3,
+                Topology::Cluster3,
+                Shotover::Standard,
+            )),
+            Box::new(CassandraProtocolBench::new(
+                CassandraProtocol::V4,
+                Topology::Cluster3,
+                Shotover::Standard,
+            )),
+            Box::new(CassandraProtocolBench::new(
+                CassandraProtocol::V5,
+                Topology::Cluster3,
+                Shotover::Standard,
+            )),
+            Box::new(CassandraProtocolBench::new(
+                CassandraProtocol::V3,
+                Topology::Single,
+                Shotover::None,
+            )),
+            Box::new(CassandraProtocolBench::new(
+                CassandraProtocol::V4,
+                Topology::Single,
+                Shotover::None,
+            )),
+            Box::new(CassandraProtocolBench::new(
+                CassandraProtocol::V5,
+                Topology::Single,
+                Shotover::None,
+            )),
+            Box::new(CassandraProtocolBench::new(
+                CassandraProtocol::V3,
+                Topology::Cluster3,
+                Shotover::None,
+            )),
+            Box::new(CassandraProtocolBench::new(
+                CassandraProtocol::V4,
+                Topology::Cluster3,
+                Shotover::None,
+            )),
+            Box::new(CassandraProtocolBench::new(
+                CassandraProtocol::V5,
+                Topology::Cluster3,
+                Shotover::None,
             )),
         ]
         .into_iter()
