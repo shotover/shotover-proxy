@@ -8,7 +8,6 @@ use metrics::{register_counter, Counter};
 use serde::Deserialize;
 use tracing::trace;
 
-#[derive(Clone)]
 pub struct TeeBuilder {
     pub tx: TransformChainBuilder,
     pub buffer_size: usize,
@@ -17,7 +16,6 @@ pub struct TeeBuilder {
     dropped_messages: Counter,
 }
 
-#[derive(Clone)]
 pub enum ConsistencyBehaviorBuilder {
     Ignore,
     FailOnMismatch,

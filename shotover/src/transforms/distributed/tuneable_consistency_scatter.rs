@@ -38,7 +38,6 @@ impl TransformConfig for TuneableConsistencyScatterConfig {
     }
 }
 
-#[derive(Clone)]
 pub struct TuneableConsistencyScatterBuilder {
     route_map: Vec<TransformChainBuilder>,
     write_consistency: i32,
