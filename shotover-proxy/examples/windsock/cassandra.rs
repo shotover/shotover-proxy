@@ -4,6 +4,8 @@ use scylla::{
     prepared_statement::PreparedStatement, transport::Compression as ScyllaCompression, Session,
     SessionBuilder,
 };
+use rand::prelude::*;
+use scylla::{transport::Compression as ScyllaCompression, Session, SessionBuilder};
 use std::{
     collections::HashMap,
     sync::Arc,
@@ -49,11 +51,160 @@ struct CoreCount {
     cassandra: usize,
 }
 
+pub enum Operation {
+    Read,
+    Blob,
+}
+
+impl Operation {
+    async fn prepare(&self, session: &Arc<Session>, db: &CassandraDb, row_count: usize) {
+        if let CassandraDb::Cassandra = db {
+            session.query("CREATE KEYSPACE IF NOT EXISTS ks WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 }", ()).await.unwrap();
+            session.await_schema_agreement().await.unwrap();
+            session
+                .query("DROP TABLE IF EXISTS ks.bench", ())
+                .await
+                .unwrap();
+            session.await_schema_agreement().await.unwrap();
+
+            match self {
+                Operation::Read => {
+                    session
+                        .query("CREATE TABLE ks.bench(id bigint PRIMARY KEY)", ())
+                        .await
+                        .unwrap();
+                    session.await_schema_agreement().await.unwrap();
+                    tokio::time::sleep(Duration::from_secs(1)).await; //TODO: this should not be needed >:[
+
+                    for i in 0..row_count {
+                        session
+                            .query("INSERT INTO ks.bench(id) VALUES (:id)", (i as i64,))
+                            .await
+                            .unwrap();
+                    }
+                }
+                Operation::Blob => {
+                    session
+                        .query(
+                            "CREATE TABLE ks.bench(id bigint PRIMARY KEY, data BLOB)",
+                            (),
+                        )
+                        .await
+                        .unwrap();
+                    session.await_schema_agreement().await.unwrap();
+                    tokio::time::sleep(Duration::from_secs(1)).await; //TODO: this should not be needed >:[
+                }
+            }
+        }
+    }
+
+    async fn run(
+        &self,
+        session: &Arc<Session>,
+        reporter: UnboundedSender<Report>,
+        connections: usize,
+        row_count: usize,
+    ) {
+        match self {
+            Operation::Read => {
+                let bench_query = session
+                    .prepare("SELECT * FROM ks.bench WHERE id = :id")
+                    .await
+                    .unwrap();
+                let mut tasks = vec![];
+                for _ in 0..connections {
+                    let session = session.clone();
+                    let reporter = reporter.clone();
+                    let bench_query = bench_query.clone();
+                    tasks.push(tokio::spawn(async move {
+                        loop {
+                            let i = rand::random::<u32>() % row_count as u32;
+                            let instant = Instant::now();
+                            session.execute(&bench_query, (i as i64,)).await.unwrap();
+                            if reporter
+                                .send(Report::QueryCompletedIn(instant.elapsed()))
+                                .is_err()
+                            {
+                                // The benchmark has completed and the reporter no longer wants to receive reports so just shutdown
+                                return;
+                            }
+                        }
+                    }));
+                }
+
+                // warm up and then start
+                // TODO: properly reevaluate our warmup time once we have graphs showing throughput and latency over time.
+                tokio::time::sleep(Duration::from_secs(2)).await;
+                reporter.send(Report::Start).unwrap();
+                let start = Instant::now();
+
+                tokio::time::sleep(Duration::from_secs(15)).await;
+                reporter.send(Report::FinishedIn(start.elapsed())).unwrap();
+
+                // make sure the tasks complete before we drop the database they are connecting to
+                for task in tasks {
+                    task.await.unwrap();
+                }
+            }
+            Operation::Blob => {
+                let bench_query = session
+                    .prepare("INSERT INTO ks.bench (id, data) VALUES (:id, :data)")
+                    .await
+                    .unwrap();
+
+                let mut tasks = vec![];
+                for _ in 0..connections {
+                    let session = session.clone();
+                    let reporter = reporter.clone();
+                    let bench_query = bench_query.clone();
+                    tasks.push(tokio::spawn(async move {
+                        loop {
+                            let i = rand::random::<u32>() % row_count as u32;
+                            let blob = {
+                                let mut rng = rand::thread_rng();
+                                rng.gen::<[u8; 16]>()
+                            };
+                            let instant = Instant::now();
+                            session
+                                .execute(&bench_query, (i as i64, blob))
+                                .await
+                                .unwrap();
+                            if reporter
+                                .send(Report::QueryCompletedIn(instant.elapsed()))
+                                .is_err()
+                            {
+                                // The benchmark has completed and the reporter no longer wants to receive reports so just shutdown
+                                return;
+                            }
+                        }
+                    }));
+                }
+
+                // warm up and then start
+                // TODO: properly reevaluate our warmup time once we have graphs showing throughput and latency over time.
+                tokio::time::sleep(Duration::from_secs(2)).await;
+                reporter.send(Report::Start).unwrap();
+                let start = Instant::now();
+
+                tokio::time::sleep(Duration::from_secs(15)).await;
+                reporter.send(Report::FinishedIn(start.elapsed())).unwrap();
+
+                // make sure the tasks complete before we drop the database they are connecting to
+                for task in tasks {
+                    task.await.unwrap();
+                }
+            }
+        }
+    }
+}
+
 pub struct CassandraBench {
     db: CassandraDb,
     topology: Topology,
     shotover: Shotover,
+    connections: usize,
     compression: Compression,
+    operation: Operation,
 }
 
 impl CassandraBench {
@@ -61,13 +212,17 @@ impl CassandraBench {
         db: CassandraDb,
         topology: Topology,
         shotover: Shotover,
+        connections: usize,
         compression: Compression,
+        operation: Operation,
     ) -> Self {
         CassandraBench {
             db,
             topology,
             shotover,
+            connections,
             compression,
+            operation,
         }
     }
 
@@ -101,7 +256,13 @@ impl Bench for CassandraBench {
             ),
             self.shotover.to_tag(),
             // TODO: run with different message types
-            ("message_type".to_owned(), "read_bigint".to_owned()),
+            (
+                "operation".to_owned(),
+                match self.operation {
+                    Operation::Read => "read".to_owned(),
+                    Operation::Blob => "blob".to_owned(),
+                },
+            ),
             (
                 "compression".to_owned(),
                 match self.compression {
@@ -186,60 +347,18 @@ impl Bench for CassandraBench {
                     .unwrap(),
             );
 
-            if let CassandraDb::Cassandra = self.db {
-                session.query("CREATE KEYSPACE IF NOT EXISTS ks WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 }", ()).await.unwrap();
-                session.await_schema_agreement().await.unwrap();
-                session
-                    .query("DROP TABLE IF EXISTS ks.bench", ())
-                    .await
-                    .unwrap();
-                session.await_schema_agreement().await.unwrap();
-                session
-                    .query("CREATE TABLE ks.bench(id bigint PRIMARY KEY)", ())
-                    .await
-                    .unwrap();
-                session.await_schema_agreement().await.unwrap();
-                tokio::time::sleep(Duration::from_secs(1)).await; //TODO: this should not be needed >:[
+            let row_count = 1000usize;
 
-                for i in 0..ROW_COUNT {
-                    session
-                        .query("INSERT INTO ks.bench(id) VALUES (:id)", (i as i64,))
-                        .await
-                        .unwrap();
-                }
-            }
+            // TODO message_type prepare
+            //
+            self.operation.prepare(&session, &self.db, row_count).await;
 
-            let bench_query = session
-                .prepare("SELECT * FROM ks.bench WHERE id = :id")
-                .await
-                .unwrap();
+            // TODO message_type run
+            //
+            self.operation
+                .run(&session, reporter, self.connections, row_count)
+                .await;
 
-            let tasks = BenchTaskCassandra {
-                session,
-                query: bench_query,
-            }
-            .spawn_tasks(reporter.clone(), operations_per_second)
-            .await;
-
-            // warm up and then start
-            tokio::time::sleep(Duration::from_secs(1)).await;
-            reporter.send(Report::Start).unwrap();
-            let start = Instant::now();
-
-            for _ in 0..runtime_seconds {
-                let second = Instant::now();
-                tokio::time::sleep(Duration::from_secs(1)).await;
-                reporter
-                    .send(Report::SecondPassed(second.elapsed()))
-                    .unwrap();
-            }
-
-            reporter.send(Report::FinishedIn(start.elapsed())).unwrap();
-
-            // make sure the tasks complete before we drop the database they are connecting to
-            for task in tasks {
-                task.await.unwrap();
-            }
             if let Some(shotover) = shotover {
                 shotover.shutdown_and_then_consume_events(&[]).await;
             }
