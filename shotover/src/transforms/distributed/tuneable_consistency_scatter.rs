@@ -237,7 +237,7 @@ impl Transform for TuneableConsistentencyScatter {
         Ok(if results.len() < max_required_successes as usize {
             let mut messages = message_wrapper.messages;
             for message in &mut messages {
-                *message = message.to_error_response("Not enough responses".into());
+                *message = message.to_error_response("Not enough responses".into())?
             }
             messages
         } else {

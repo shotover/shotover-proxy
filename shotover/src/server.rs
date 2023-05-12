@@ -604,7 +604,13 @@ impl<C: CodecBuilder + 'static> Handler<C> {
                         //     + they might not know to check the shotover logs
                         //     + they may not be able to correlate which error in the shotover logs corresponds to their failed message
                         for m in &mut error_report_messages {
-                            *m = m.to_error_response(format!("Internal shotover (or custom transform) bug: {err:?}"));
+                            #[allow(clippy::single_match)]
+                            match m.to_error_response(format!("Internal shotover (or custom transform) bug: {err:?}")) {
+                                Ok(new_m) => *m = new_m,
+                                Err(_) => {
+                                    // If we cant produce an error then nothing we can do, just continue on and close the connection.
+                                }
+                            }
                         }
                         out_tx.send(error_report_messages)?;
                         return Err(err);
