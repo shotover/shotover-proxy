@@ -1,6 +1,9 @@
 ---
 sources:
-  redis_prod:
+  redis1:
+    Redis:
+      listen_addr: "127.0.0.1:6379"
+  redis2:
     Redis:
       listen_addr: "127.0.0.1:6379"
 chain_config:
@@ -31,4 +34,5 @@ chain_config:
                     - NullSink
                     - NullSink
 source_to_chain_mapping:
-  redis_prod: redis_chain
+  redis1: a_first_chain
+  redis2: b_second_chain

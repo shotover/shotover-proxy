@@ -42,7 +42,7 @@ impl TransformBuilder for QueryTypeFilter {
 #[async_trait]
 impl Transform for QueryTypeFilter {
     async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> Result<Messages> {
-        let removed_indexes: Vec<(usize, Message)> = message_wrapper
+        let removed_indexes: Result<Vec<(usize, Message)>> = message_wrapper
             .messages
             .iter_mut()
             .enumerate()
@@ -54,12 +54,15 @@ impl Transform for QueryTypeFilter {
                 }
             })
             .map(|(i, m)| {
-                (
+                Ok((
                     i,
-                    m.to_error_response("Message was filtered out by shotover".to_owned()),
-                )
+                    m.to_error_response("Message was filtered out by shotover".to_owned())
+                        .map_err(|e| e.context("Failed to filter message {e:?}"))?,
+                ))
             })
             .collect();
+
+        let removed_indexes = removed_indexes?;
 
         for (i, _) in removed_indexes.iter().rev() {
             message_wrapper.messages.remove(*i);

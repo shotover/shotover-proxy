@@ -26,10 +26,17 @@ impl Topology {
             .context(format!("Failed to parse topology file {}", filepath))
     }
 
-    async fn build_chains(&self) -> Result<HashMap<String, TransformChainBuilder>> {
+    async fn build_chains(&self) -> Result<HashMap<String, Option<TransformChainBuilder>>> {
         let mut result = HashMap::new();
-        for (key, value) in &self.chain_config {
-            result.insert(key.clone(), value.get_builder(key.clone()).await?);
+        for (source_name, chain_name) in &self.source_to_chain_mapping {
+            let chain_config = self.chain_config.get(chain_name);
+            result.insert(
+                source_name.clone(),
+                match chain_config {
+                    Some(chain_config) => Some(chain_config.get_builder(chain_name.clone()).await?),
+                    None => None,
+                },
+            );
         }
         Ok(result)
     }
@@ -40,11 +47,15 @@ impl Topology {
     ) -> Result<Vec<Sources>> {
         let mut sources_list: Vec<Sources> = Vec::new();
 
-        let chains = self.build_chains().await?;
+        let mut chains = self.build_chains().await?;
         info!("Loaded chains {:?}", chains.keys());
 
         let mut chain_errors = String::new();
-        for chain in chains.values().sorted_by_key(|x| x.name.clone()) {
+        for chain in chains
+            .values()
+            .sorted_by_key(|x| x.as_ref().map(|x| x.name.clone()))
+            .flatten()
+        {
             let errs = chain.validate().join("\n");
 
             if !errs.is_empty() {
@@ -63,7 +74,7 @@ impl Topology {
 
         for (source_name, chain_name) in &self.source_to_chain_mapping {
             if let Some(source_config) = self.sources.get(source_name.as_str()) {
-                if let Some(chain) = chains.get(chain_name.as_str()) {
+                if let Some(Some(chain)) = chains.remove(source_name.as_str()) {
                     sources_list.append(
                         &mut source_config
                             .get_source(chain, trigger_shutdown_rx.clone())
@@ -73,15 +84,21 @@ impl Topology {
                             })?,
                     );
                 } else {
-                    return Err(anyhow!("Could not find the [{}] chain from \
-                    the source to chain mapping definition [{:?}] in list of configured chains [{:?}].",
-                                                        chain_name.as_str(),
-                                                        &self.source_to_chain_mapping.values().cloned().collect::<Vec<_>>(),
-                                                        chains.into_keys().collect::<Vec<_>>()));
+                    return Err(anyhow!(
+                        "Could not find the {:?} chain from \
+                    the source to chain mapping definition {:?} in list of configured chains {:?}.",
+                        chain_name.as_str(),
+                        &self
+                            .source_to_chain_mapping
+                            .values()
+                            .cloned()
+                            .collect::<Vec<_>>(),
+                        self.chain_config.keys().collect::<Vec<_>>()
+                    ));
                 }
             } else {
-                return Err(anyhow!("Could not find the [{}] source from \
-                    the source to chain mapping definition [{:?}] in list of configured sources [{:?}].",
+                return Err(anyhow!("Could not find the {:?} source from \
+                    the source to chain mapping definition {:?} in list of configured sources {:?}.",
                                                     source_name.as_str(),
                                                     &self.source_to_chain_mapping.keys().cloned().collect::<Vec<_>>(),
                                                     self.sources.keys().cloned().collect::<Vec<_>>()));
