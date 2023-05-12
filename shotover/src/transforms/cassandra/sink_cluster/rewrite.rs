@@ -255,7 +255,8 @@ impl MessageRewriter {
                                 Ok(x) => x,
                                 Err(MessageParseError::CassandraError(err)) => {
                                     *client_peers_response = client_peers_response
-                                        .to_error_response(format!("{:?}", err.context("Shotover failed to generate system.peers, an error occured when an internal system.peers query was run.")));
+                                        .to_error_response(format!("{:?}", err.context("Shotover failed to generate system.peers, an error occured when an internal system.peers query was run.")))
+                                        .expect("This must succeed because it is a cassandra message and we already know it to be parseable");
                                     return Ok(());
                                 }
                                 Err(MessageParseError::ParseFailure(err)) => return Err(err),
@@ -264,7 +265,8 @@ impl MessageRewriter {
                                 Ok(x) => nodes.extend(x),
                                 Err(MessageParseError::CassandraError(err)) => {
                                     *client_peers_response = client_peers_response
-                                        .to_error_response(format!("{:?}", err.context("Shotover failed to generate system.peers, an error occured when an internal system.local query was run.")));
+                                        .to_error_response(format!("{:?}", err.context("Shotover failed to generate system.peers, an error occured when an internal system.local query was run.")))
+                                        .expect("This must succeed because it is a cassandra message and we already know it to be parseable");
                                     return Ok(());
                                 }
                                 Err(MessageParseError::ParseFailure(err)) => return Err(err),
@@ -505,7 +507,8 @@ impl MessageRewriter {
         let mut peers = match parse_system_nodes(peers_response) {
             Ok(x) => x,
             Err(MessageParseError::CassandraError(err)) => {
-                *local_response = local_response.to_error_response(format!("{:?}", err.context("Shotover failed to generate system.local, an error occured when an internal system.peers query was run.")));
+                *local_response = local_response.to_error_response(format!("{:?}", err.context("Shotover failed to generate system.local, an error occured when an internal system.peers query was run.")))
+                    .expect("This must succeed because it is a cassandra message and we already know it to be parseable");
                 return Ok(());
             }
             Err(MessageParseError::ParseFailure(err)) => return Err(err),
