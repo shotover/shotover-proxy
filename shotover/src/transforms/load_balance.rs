@@ -20,7 +20,7 @@ pub struct ConnectionBalanceAndPoolConfig {
 #[async_trait(?Send)]
 impl TransformConfig for ConnectionBalanceAndPoolConfig {
     async fn get_builder(&self, _chain_name: String) -> Result<Box<dyn TransformBuilder>> {
-        let chain = self.chain.get_builder(self.name.clone()).await?;
+        let chain = Arc::new(self.chain.get_builder(self.name.clone()).await?);
 
         Ok(Box::new(ConnectionBalanceAndPoolBuilder {
             max_connections: self.max_connections,
@@ -30,11 +30,11 @@ impl TransformConfig for ConnectionBalanceAndPoolConfig {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct ConnectionBalanceAndPoolBuilder {
     pub max_connections: usize,
     pub all_connections: Arc<Mutex<Vec<BufferedChain>>>,
-    pub chain_to_clone: TransformChainBuilder,
+    pub chain_to_clone: Arc<TransformChainBuilder>,
 }
 
 impl TransformBuilder for ConnectionBalanceAndPoolBuilder {
@@ -63,7 +63,7 @@ pub struct ConnectionBalanceAndPool {
     pub active_connection: Option<BufferedChain>,
     pub max_connections: usize,
     pub all_connections: Arc<Mutex<Vec<BufferedChain>>>,
-    pub chain_to_clone: TransformChainBuilder,
+    pub chain_to_clone: Arc<TransformChainBuilder>,
 }
 
 #[async_trait]
@@ -105,19 +105,18 @@ mod test {
         let transform = Box::new(ConnectionBalanceAndPoolBuilder {
             max_connections: 3,
             all_connections: Arc::new(Default::default()),
-            chain_to_clone: TransformChainBuilder::new(
+            chain_to_clone: Arc::new(TransformChainBuilder::new(
                 vec![Box::new(DebugReturner::new(Response::Message(
                     Messages::new(),
                 )))],
                 "child_test".to_string(),
-            ),
+            )),
         });
 
         let chain = TransformChainBuilder::new(vec![transform], "test".to_string());
 
         for _ in 0..90 {
             chain
-                .clone()
                 .build()
                 .process_request(Wrapper::new(Messages::new()), "test_client".to_string())
                 .await

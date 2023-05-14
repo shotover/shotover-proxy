@@ -197,7 +197,7 @@ impl TransformChain {
 }
 
 #[derive(Derivative)]
-#[derivative(Debug, Clone)]
+#[derivative(Debug)]
 pub struct TransformChainBuilder {
     pub name: String,
     pub chain: Vec<Box<dyn TransformBuilder>>,
