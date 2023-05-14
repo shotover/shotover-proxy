@@ -107,6 +107,9 @@ fn base(reports: &[ReportArchive], table_type: &str, comparison: bool) {
         .into_iter()
         .collect();
     nonintersecting_keys.sort();
+    if !nonintersecting_keys.is_empty() {
+        rows.push(Row::Heading("Tags".to_owned()));
+    }
     for key in nonintersecting_keys {
         rows.push(Row::ColumnNames {
             names: reports.iter().map(|x| x.tags.0[&key].clone()).collect(),
@@ -233,8 +236,6 @@ fn base(reports: &[ReportArchive], table_type: &str, comparison: bool) {
                             None,
                             '─',
                         ))
-                        .yellow()
-                        .bold()
                     )
                 }
                 println!()
