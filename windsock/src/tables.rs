@@ -1,18 +1,62 @@
-use std::{collections::HashSet, time::Duration};
-
+use crate::{
+    bench::Tags,
+    filter::Filter,
+    report::{Percentile, ReportArchive},
+};
+use anyhow::Result;
 use console::{pad_str, pad_str_with, style, Alignment};
+use std::{collections::HashSet, time::Duration};
 use strum::IntoEnumIterator;
 
-use crate::report::{Percentile, ReportArchive};
-
-pub fn compare_by_name(names: &str) {
-    let archives: Vec<ReportArchive> = names.split_whitespace().map(ReportArchive::load).collect();
-    display_compare_table(&archives);
+pub fn compare_by_name(names: &str) -> Result<()> {
+    let archives: Result<Vec<ReportArchive>> =
+        names.split_whitespace().map(ReportArchive::load).collect();
+    display_compare_table(&archives?);
+    Ok(())
 }
 
-pub fn results_by_name(names: &str) {
-    let archives: Vec<ReportArchive> = names.split_whitespace().map(ReportArchive::load).collect();
-    display_results_table(&archives);
+pub fn results_by_name(names: &str) -> Result<()> {
+    let archives: Result<Vec<ReportArchive>> =
+        names.split_whitespace().map(ReportArchive::load).collect();
+    display_results_table(&archives?);
+    Ok(())
+}
+
+pub fn compare_by_tags(arg: &str) -> Result<()> {
+    let mut split = arg.split_whitespace();
+    let base_name = split.next().unwrap().to_owned();
+    let base = ReportArchive::load(&base_name)?;
+
+    let tag_args: Vec<_> = split.collect();
+    let tag_args = tag_args.join(" ");
+
+    let filter = Filter::from_query(&tag_args)
+        .map_err(|e| e.context(format!("Failed to parse tag filter from {:?}", tag_args)))?;
+    let archives: Result<Vec<ReportArchive>> = ReportArchive::reports_in_last_run()
+        .iter()
+        .filter(|name| **name != base_name && filter.matches(&Tags::from_name(name)))
+        .map(|x| ReportArchive::load(x))
+        .collect();
+    let mut archives = archives?;
+
+    archives.insert(0, base);
+
+    display_compare_table(&archives);
+
+    Ok(())
+}
+
+pub fn results_by_tags(arg: &str) -> Result<()> {
+    let filter = Filter::from_query(arg)
+        .map_err(|e| e.context(format!("Failed to parse tag filter from {:?}", arg)))?;
+    let archives: Result<Vec<ReportArchive>> = ReportArchive::reports_in_last_run()
+        .iter()
+        .filter(|name| filter.matches(&Tags::from_name(name)))
+        .map(|x| ReportArchive::load(x))
+        .collect();
+    display_results_table(&archives?);
+
+    Ok(())
 }
 
 fn display_compare_table(reports: &[ReportArchive]) {
