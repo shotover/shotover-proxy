@@ -99,7 +99,6 @@ impl TransformConfig for RedisConfig {
     }
 }
 
-#[derive(Clone)]
 pub struct SimpleRedisCacheBuilder {
     cache_chain: TransformChainBuilder,
     caching_schema: HashMap<FQName, TableCacheSchema>,
