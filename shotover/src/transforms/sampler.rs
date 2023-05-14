@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use tokio::macros::support::thread_rng_n;
 use tracing::warn;
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct SamplerBuilder {
     pub numerator: u32,
     pub denominator: u32,

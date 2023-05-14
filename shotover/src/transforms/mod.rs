@@ -28,7 +28,6 @@ use crate::transforms::throttling::RequestThrottling;
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use core::fmt;
-use dyn_clone::DynClone;
 use futures::Future;
 use metrics::{counter, histogram};
 use std::fmt::{Debug, Formatter};
@@ -60,10 +59,7 @@ pub mod tee;
 pub mod throttling;
 pub mod util;
 
-// TODO: probably better, semantically, to have this not Clone.
-//       Fixing that is left to a followup PR though.
-//       It would also affect whether sources pointing into the same chain share state, which will require careful consideration
-pub trait TransformBuilder: DynClone + Send {
+pub trait TransformBuilder: Send + Sync {
     fn build(&self) -> Transforms;
 
     fn get_name(&self) -> &'static str;
@@ -76,7 +72,6 @@ pub trait TransformBuilder: DynClone + Send {
         false
     }
 }
-dyn_clone::clone_trait_object!(TransformBuilder);
 
 impl Debug for dyn TransformBuilder {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
