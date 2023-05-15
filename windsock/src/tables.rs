@@ -153,6 +153,22 @@ fn base(reports: &[ReportArchive], table_type: &str, comparison: bool) {
         }));
     }
 
+    rows.push(Row::Heading("Ops Each Second".to_owned()));
+    for i in 0..reports
+        .iter()
+        .map(|x| x.operations_each_second.len())
+        .max()
+        .unwrap()
+    {
+        rows.push(Row::measurements(reports, &i.to_string(), |report| {
+            if let Some(value) = report.operations_each_second.get(i) {
+                (*value as f64, value.to_string(), Goal::BiggerIsBetter)
+            } else {
+                (0.0, "".to_owned(), Goal::BiggerIsBetter)
+            }
+        }));
+    }
+
     // the width of the legend column
     let legend_width: usize = rows
         .iter()
@@ -173,7 +189,7 @@ fn base(reports: &[ReportArchive], table_type: &str, comparison: bool) {
                 .map(|x| match x {
                     Row::Heading(_) => 0,
                     Row::ColumnNames { .. } => 0,
-                    Row::Measurements { measurements, .. } => measurements[i].comparison.len() + 1, // + 1 ensures we get seperation from the previous column
+                    Row::Measurements { measurements, .. } => measurements[i].comparison.len() + 1, // + 1 ensures we get separation from the previous column
                 })
                 .max()
                 .unwrap()
