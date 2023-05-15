@@ -278,6 +278,16 @@ fn base(reports: &[ReportArchive], table_type: &str, comparison: bool) {
             }
         }
     }
+
+    for report in reports {
+        if !report.running_in_release {
+            let error = format!(
+                "Bench results invalid! Bench compiled with non-release profile: {}",
+                report.tags.get_name()
+            );
+            println!("{}", style(error).red().bold());
+        }
+    }
 }
 
 fn duration_ms(duration: Duration) -> String {
