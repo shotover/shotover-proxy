@@ -107,6 +107,9 @@ fn base(reports: &[ReportArchive], table_type: &str, comparison: bool) {
         .into_iter()
         .collect();
     nonintersecting_keys.sort();
+    if !nonintersecting_keys.is_empty() {
+        rows.push(Row::Heading("Unique Tags".to_owned()));
+    }
     for key in nonintersecting_keys {
         rows.push(Row::ColumnNames {
             names: reports.iter().map(|x| x.tags.0[&key].clone()).collect(),
@@ -116,14 +119,14 @@ fn base(reports: &[ReportArchive], table_type: &str, comparison: bool) {
 
     rows.push(Row::Heading("Measurements".to_owned()));
 
-    rows.push(Row::measurements(reports, "Operations Total", |report| {
+    rows.push(Row::measurements(reports, "Ops (Operations)", |report| {
         (
             report.operations_total as f64,
             report.operations_total.to_string(),
             Goal::BiggerIsBetter,
         )
     }));
-    rows.push(Row::measurements(reports, "Operations Per Sec", |report| {
+    rows.push(Row::measurements(reports, "Ops Per Sec", |report| {
         (
             report.ops as f64,
             format!("{:.0}", report.ops),
@@ -131,19 +134,15 @@ fn base(reports: &[ReportArchive], table_type: &str, comparison: bool) {
         )
     }));
 
-    rows.push(Row::measurements(
-        reports,
-        "Operation Time Mean",
-        |report| {
-            (
-                report.mean_response_time.as_secs_f64(),
-                duration_ms(report.mean_response_time),
-                Goal::SmallerIsBetter,
-            )
-        },
-    ));
+    rows.push(Row::measurements(reports, "Op Time Mean", |report| {
+        (
+            report.mean_response_time.as_secs_f64(),
+            duration_ms(report.mean_response_time),
+            Goal::SmallerIsBetter,
+        )
+    }));
 
-    rows.push(Row::Heading("Operation Time Percentiles".to_owned()));
+    rows.push(Row::Heading("Op Time Percentiles".to_owned()));
     for (i, p) in Percentile::iter().enumerate() {
         rows.push(Row::measurements(reports, p.name(), |report| {
             (
@@ -157,8 +156,9 @@ fn base(reports: &[ReportArchive], table_type: &str, comparison: bool) {
     // the width of the legend column
     let legend_width: usize = rows
         .iter()
+        .skip(1) // skip the main heading because its big and its alignment doesnt matter
         .map(|x| match x {
-            Row::Heading(_) => 0, // Ignore these
+            Row::Heading(heading) => heading.len(),
             Row::ColumnNames { legend, .. } => legend.len(),
             Row::Measurements { legend, .. } => legend.len(),
         })
@@ -233,8 +233,6 @@ fn base(reports: &[ReportArchive], table_type: &str, comparison: bool) {
                             None,
                             '─',
                         ))
-                        .yellow()
-                        .bold()
                     )
                 }
                 println!()
