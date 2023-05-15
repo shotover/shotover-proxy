@@ -3,12 +3,12 @@ use scylla::{transport::Compression as ScyllaCompression, SessionBuilder};
 use std::{
     collections::HashMap,
     sync::Arc,
-    thread::JoinHandle,
     time::{Duration, Instant},
 };
 use test_helpers::{
     docker_compose::{docker_compose, DockerCompose},
     flamegraph::Perf,
+    mock_cassandra::MockHandle,
     shotover_process::ShotoverProcessBuilder,
 };
 use tokio::sync::mpsc::UnboundedSender;
@@ -26,7 +26,7 @@ pub enum CassandraDb {
 
 enum CassandraDbInstance {
     Compose(DockerCompose),
-    Mocked(JoinHandle<()>),
+    Mocked(MockHandle),
 }
 
 pub enum Topology {

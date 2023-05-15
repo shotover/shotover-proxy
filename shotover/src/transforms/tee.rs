@@ -8,7 +8,6 @@ use metrics::{register_counter, Counter};
 use serde::Deserialize;
 use tracing::trace;
 
-#[derive(Clone)]
 pub struct TeeBuilder {
     pub tx: TransformChainBuilder,
     pub buffer_size: usize,
@@ -17,7 +16,6 @@ pub struct TeeBuilder {
     dropped_messages: Counter,
 }
 
-#[derive(Clone)]
 pub enum ConsistencyBehaviorBuilder {
     Ignore,
     FailOnMismatch,
@@ -170,7 +168,7 @@ impl Transform for Tee {
                 if !chain_response.eq(&tee_response) {
                     for message in &mut chain_response {
                         *message = message.to_error_response(
-                            "ERR The responses from the Tee subchain and down-chain did not match and behavior is set to fail on mismatch".into());
+                            "ERR The responses from the Tee subchain and down-chain did not match and behavior is set to fail on mismatch".into())?;
                     }
                 }
                 Ok(chain_response)

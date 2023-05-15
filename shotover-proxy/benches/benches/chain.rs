@@ -36,7 +36,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         group.bench_function("NullSink", |b| {
             b.to_async(&rt).iter_batched(
                 || BenchInput {
-                    chain: chain.clone().build(),
+                    chain: chain.build(),
                     wrapper: wrapper.clone(),
                     client_details: "".into(),
                 },
@@ -75,7 +75,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         group.bench_function("redis_filter", |b| {
             b.to_async(&rt).iter_batched(
                 || BenchInput {
-                    chain: chain.clone().build(),
+                    chain: chain.build(),
                     wrapper: wrapper.clone(),
                     client_details: "".into(),
                 },
@@ -111,7 +111,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         group.bench_function("redis_timestamp_tagger_untagged", |b| {
             b.to_async(&rt).iter_batched(
                 || BenchInput {
-                    chain: chain.clone().build(),
+                    chain: chain.build(),
                     wrapper: wrapper_set.clone(),
                     client_details: "".into(),
                 },
@@ -132,7 +132,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         group.bench_function("redis_timestamp_tagger_tagged", |b| {
             b.to_async(&rt).iter_batched(
                 || BenchInput {
-                    chain: chain.clone().build(),
+                    chain: chain.build(),
                     wrapper: wrapper_get.clone(),
                     client_details: "".into(),
                 },
@@ -163,7 +163,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         group.bench_function("redis_cluster_ports_rewrite", |b| {
             b.to_async(&rt).iter_batched(
                 || BenchInput {
-                    chain: chain.clone().build(),
+                    chain: chain.build(),
                     wrapper: wrapper.clone(),
                     client_details: "".into(),
                 },
@@ -209,7 +209,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         group.bench_function("cassandra_request_throttling_unparsed", |b| {
             b.to_async(&rt).iter_batched(
                 || BenchInput {
-                    chain: chain.clone().build(),
+                    chain: chain.build(),
                     wrapper: wrapper.clone(),
                     client_details: "".into(),
                 },
@@ -265,7 +265,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         group.bench_function("cassandra_rewrite_peers_passthrough", |b| {
             b.to_async(&rt).iter_batched(
                 || BenchInput {
-                    chain: chain.clone().build(),
+                    chain: chain.build(),
                     wrapper: wrapper.clone(),
                     client_details: "".into(),
                 },
@@ -309,7 +309,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         group.bench_function("cassandra_protect_unprotected", |b| {
             b.to_async(&rt).iter_batched(
                 || BenchInput {
-                    chain: chain.clone().build(),
+                    chain: chain.build(),
                     wrapper: wrapper.clone(),
                     client_details: "".into(),
                 },
@@ -325,7 +325,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         group.bench_function("cassandra_protect_protected", |b| {
             b.to_async(&rt).iter_batched(
                 || BenchInput {
-                    chain: chain.clone().build(),
+                    chain: chain.build(),
                     wrapper: wrapper.clone(),
                     client_details: "".into(),
                 },

@@ -1,6 +1,7 @@
 use crate::bench::Tags;
+use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
-use std::{path::PathBuf, time::Duration};
+use std::{io::ErrorKind, path::PathBuf, time::Duration};
 use strum::{EnumCount, EnumIter, IntoEnumIterator};
 use tokio::sync::mpsc::UnboundedReceiver;
 
@@ -75,6 +76,7 @@ impl Percentile {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub(crate) struct ReportArchive {
+    pub(crate) running_in_release: bool,
     pub(crate) tags: Tags,
     pub(crate) operations_total: u64,
     pub(crate) ops: f32,
@@ -87,8 +89,34 @@ impl ReportArchive {
         windsock_path().join(self.tags.get_name())
     }
 
-    pub fn load(path: &str) -> Self {
-        bincode::deserialize(&std::fs::read(windsock_path().join(path)).unwrap()).unwrap()
+    pub fn load(path: &str) -> Result<Self> {
+        match std::fs::read(windsock_path().join(path)) {
+            Ok(bytes) => bincode::deserialize(&bytes).map_err(|e|
+                anyhow!(e).context("The bench archive from the previous run is not valid archive, maybe the format changed since the last run")
+            ),
+            Err(err) if err.kind() == ErrorKind::NotFound => Err(anyhow!("The bench {path:?} does not exist or was not run in the previous run")),
+            Err(err) => Err(anyhow!("The bench {path:?} encountered a file read error {err:?}"))
+        }
+    }
+
+    pub fn reports_in_last_run() -> Vec<String> {
+        let report_dir = windsock_path();
+        std::fs::create_dir_all(&report_dir).unwrap();
+
+        let mut reports: Vec<String> = std::fs::read_dir(report_dir)
+            .unwrap()
+            .map(|x| {
+                x.unwrap()
+                    .path()
+                    .file_name()
+                    .unwrap()
+                    .to_str()
+                    .unwrap()
+                    .to_owned()
+            })
+            .collect();
+        reports.sort();
+        reports
     }
 
     fn save(&self) {
@@ -97,6 +125,15 @@ impl ReportArchive {
         std::fs::write(&path, bincode::serialize(self).unwrap())
             .map_err(|e| panic!("Failed to write to {path:?} {e}"))
             .unwrap()
+    }
+
+    pub(crate) fn clear_last_run() {
+        let path = windsock_path();
+        if path.exists() {
+            // Just an extra sanity check that we truly are deleting a windsock_data directory
+            assert_eq!(path.file_name().unwrap(), "windsock_data");
+            std::fs::remove_dir_all(windsock_path()).unwrap();
+        }
     }
 }
 
@@ -113,7 +150,11 @@ pub fn windsock_path() -> PathBuf {
     PathBuf::from("windsock_data")
 }
 
-pub(crate) async fn report_builder(tags: Tags, mut rx: UnboundedReceiver<Report>) -> ReportArchive {
+pub(crate) async fn report_builder(
+    tags: Tags,
+    mut rx: UnboundedReceiver<Report>,
+    running_in_release: bool,
+) -> ReportArchive {
     let mut operations_total = 0;
     let mut response_times = vec![];
     let mut total_response_time = Duration::from_secs(0);
@@ -166,6 +207,7 @@ pub(crate) async fn report_builder(tags: Tags, mut rx: UnboundedReceiver<Report>
     }
 
     let archive = ReportArchive {
+        running_in_release,
         tags,
         ops,
         operations_total,
