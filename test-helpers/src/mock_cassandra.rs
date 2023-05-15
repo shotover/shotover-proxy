@@ -1,31 +1,59 @@
 use bytes::{Bytes, BytesMut};
 use cassandra_protocol::frame::{CheckEnvelopeSizeError, Opcode};
-use std::io::{Read, Write};
+use std::io::{ErrorKind, Read, Write};
 use std::net::{TcpListener, TcpStream};
-use std::sync::mpsc;
+use std::sync::{mpsc, Arc, RwLock};
 use std::thread::JoinHandle;
+use std::time::Duration;
 
 struct Worker {
     handle: JoinHandle<()>,
     connection_tx: mpsc::Sender<Connection>,
 }
 
+pub struct MockHandle {
+    handle: Option<JoinHandle<()>>,
+    shutdown: Arc<RwLock<bool>>,
+}
+
+impl Drop for MockHandle {
+    fn drop(&mut self) {
+        *self.shutdown.write().unwrap() = true;
+        self.handle.take().unwrap().join().unwrap();
+    }
+}
+
 // Spawns a single thread which will reply to cassandra messages with dummy responses.
 // No attempt at correctness is made here, its purely just whatever is enough to get the benchmark to complete
 // What we want to test is the speed of a basic message moving through shotover
-pub fn start(cores: usize, port: u16) -> JoinHandle<()> {
-    std::thread::spawn(move || {
+pub fn start(cores: usize, port: u16) -> MockHandle {
+    let shutdown = Arc::new(RwLock::new(false));
+    let shutdown_clone = shutdown.clone();
+    let handle = Some(std::thread::spawn(move || {
         let mut workers = vec![];
 
         for _ in 0..cores {
-            workers.push(Worker::spawn());
+            let shutdown = shutdown_clone.clone();
+            workers.push(Worker::spawn(shutdown));
         }
 
         let listener = TcpListener::bind(("127.0.0.1", port)).unwrap();
+        listener.set_nonblocking(true).unwrap();
 
         let mut worker_index = 0;
         for stream in listener.incoming() {
-            let stream = stream.unwrap();
+            let stream = match stream {
+                Ok(stream) => stream,
+                Err(e) if e.kind() == ErrorKind::WouldBlock => {
+                    std::thread::sleep(Duration::from_millis(10));
+                    if *shutdown_clone.read().unwrap() {
+                        break;
+                    } else {
+                        continue;
+                    }
+                }
+                Err(e) => panic!("Unexpected error when listening for streams {e}"),
+            };
             stream.set_nonblocking(true).unwrap();
             stream.set_nodelay(true).unwrap();
 
@@ -44,15 +72,16 @@ pub fn start(cores: usize, port: u16) -> JoinHandle<()> {
         for worker in workers {
             worker.handle.join().unwrap();
         }
-    })
+    }));
+    MockHandle { shutdown, handle }
 }
 
 impl Worker {
-    fn spawn() -> Worker {
+    fn spawn(shutdown: Arc<RwLock<bool>>) -> Worker {
         let (connection_tx, connection_rx) = mpsc::channel();
         let handle = std::thread::spawn(move || {
             let mut connections: Vec<Connection> = vec![];
-            loop {
+            while !*shutdown.read().unwrap() {
                 for connection in connection_rx.try_iter() {
                     connections.push(connection);
                 }
