@@ -80,7 +80,8 @@ pub(crate) struct ReportArchive {
     pub(crate) running_in_release: bool,
     pub(crate) tags: Tags,
     pub(crate) operations_total: u64,
-    pub(crate) ops: u32,
+    pub(crate) requested_ops: Option<u64>,
+    pub(crate) actual_ops: u64,
     pub(crate) mean_response_time: Duration,
     pub(crate) response_time_percentiles: [Duration; Percentile::COUNT],
     pub(crate) operations_each_second: Vec<u64>,
@@ -155,6 +156,7 @@ pub fn windsock_path() -> PathBuf {
 pub(crate) async fn report_builder(
     tags: Tags,
     mut rx: UnboundedReceiver<Report>,
+    requested_ops: Option<u64>,
     running_in_release: bool,
 ) -> ReportArchive {
     let mut operations_total = 0;
@@ -208,7 +210,7 @@ pub(crate) async fn report_builder(
     } else {
         Duration::from_secs(0)
     };
-    let ops = (operations_total as u128 / (finished_in.as_nanos() / 1_000_000_000)) as u32;
+    let actual_ops = (operations_total as u128 / (finished_in.as_nanos() / 1_000_000_000)) as u64;
 
     let mut response_time_percentiles = [Duration::new(0, 0); Percentile::COUNT];
     response_times.sort();
@@ -224,7 +226,8 @@ pub(crate) async fn report_builder(
     let archive = ReportArchive {
         running_in_release,
         tags,
-        ops,
+        requested_ops,
+        actual_ops,
         operations_total,
         mean_response_time,
         response_time_percentiles,

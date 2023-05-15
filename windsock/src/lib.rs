@@ -3,7 +3,7 @@ mod cli;
 mod filter;
 mod report;
 mod tables;
-pub use bench::Bench;
+pub use bench::{Bench, BenchTask};
 pub use report::Report;
 
 use anyhow::{anyhow, Result};

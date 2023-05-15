@@ -40,6 +40,7 @@ impl Bench for KafkaBench {
         flamegraph: bool,
         _local: bool,
         _runtime_seconds: u32,
+        _operations_per_second: Option<u64>,
         reporter: UnboundedSender<Report>,
     ) {
         let config_dir = "tests/test-configs/kafka/passthrough";

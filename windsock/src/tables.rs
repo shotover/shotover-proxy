@@ -126,10 +126,23 @@ fn base(reports: &[ReportArchive], table_type: &str, comparison: bool) {
             Goal::BiggerIsBetter,
         )
     }));
-    rows.push(Row::measurements(reports, "Ops Per Sec", |report| {
+    rows.push(Row::measurements(reports, "Target Ops Per Sec", |report| {
         (
-            report.ops as f64,
-            format!("{:.0}", report.ops),
+            report
+                .requested_ops
+                .map(|x| x as f64)
+                .unwrap_or(f64::INFINITY),
+            report
+                .requested_ops
+                .map(|x| x.to_string())
+                .unwrap_or("MAX".to_owned()),
+            Goal::BiggerIsBetter,
+        )
+    }));
+    rows.push(Row::measurements(reports, "Actual Ops Per Sec", |report| {
+        (
+            report.actual_ops as f64,
+            format!("{:.0}", report.actual_ops),
             Goal::BiggerIsBetter,
         )
     }));
