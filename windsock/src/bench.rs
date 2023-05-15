@@ -17,11 +17,11 @@ impl BenchState {
         BenchState { bench, tags }
     }
 
-    pub async fn run(&mut self, args: &Args) {
+    pub async fn run(&mut self, args: &Args, running_in_release: bool) {
         println!("Running {:?}", self.tags.get_name());
 
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-        let process = tokio::spawn(report_builder(self.tags.clone(), rx));
+        let process = tokio::spawn(report_builder(self.tags.clone(), rx, running_in_release));
         self.bench.run(args.flamegraph, true, tx).await;
         let report = process.await.unwrap();
         crate::tables::display_results_table(&[report]);
@@ -59,6 +59,24 @@ impl Tags {
             }
         }
         result
+    }
+
+    /// Does not handle invalid names, only use on internally generated names
+    pub fn from_name(name: &str) -> Self {
+        let mut map = HashMap::new();
+        for tag in name.split(',') {
+            if tag.contains('=') {
+                let mut pair = tag.split('=');
+                let key = pair.next().unwrap().to_owned();
+                let value = pair.next().unwrap().to_owned();
+                map.insert(key, value);
+            } else if map.contains_key("name") {
+                panic!("The name tag was already set and a tag without an '=' was found")
+            } else {
+                map.insert("name".to_owned(), tag.to_owned());
+            }
+        }
+        Tags(map)
     }
 
     /// returns the set wise intersection of two `Tags`s

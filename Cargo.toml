@@ -28,7 +28,7 @@ serde = { version = "1.0.111", features = ["derive"] }
 serde_yaml = "0.9.17"
 uuid = { version = "1.0.0", features = ["serde", "v4"] }
 reqwest = "0.11.6"
-redis = { version = "0.22.0", features = ["tokio-comp", "cluster"] }
+redis = { version = "0.23.0", features = ["tokio-comp", "cluster"] }
 cdrs-tokio = "8.0"
 cassandra-protocol = "3.0"
 tracing = "0.1.15"
@@ -43,7 +43,7 @@ redis-protocol = { version = "4.0.1", features = ["decode-mut"] }
 bincode = "1.3.1"
 futures = "0.3"
 hex = "0.4.3"
-hex-literal = "0.3.3"
+hex-literal = "0.4.1"
 rand = "0.8.4"
 rand_distr = "0.4.1"
 clap = { version = "4.0.4", features = ["cargo", "derive"] }
