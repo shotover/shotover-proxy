@@ -18,4 +18,4 @@ strum = { version = "0.24.1", features = ["derive"] }
 tokio.workspace = true
 
 [dev-dependencies]
-scylla = { version = "0.7.0", features = ["ssl"] }
+scylla = { version = "0.8.0", features = ["ssl"] }
