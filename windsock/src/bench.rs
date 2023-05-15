@@ -22,7 +22,14 @@ impl BenchState {
 
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
         let process = tokio::spawn(report_builder(self.tags.clone(), rx, running_in_release));
-        self.bench.run(args.flamegraph, true, tx).await;
+        self.bench
+            .run(
+                args.flamegraph,
+                true,
+                args.bench_length_seconds.unwrap_or(15),
+                tx,
+            )
+            .await;
         let report = process.await.unwrap();
         crate::tables::display_results_table(&[report]);
     }
@@ -34,7 +41,13 @@ pub trait Bench {
     fn tags(&self) -> HashMap<String, String>;
     /// Runs the benchmark.
     /// Setup, benching and teardown all take place in here.
-    async fn run(&self, flamegraph: bool, local: bool, reporter: UnboundedSender<Report>);
+    async fn run(
+        &self,
+        flamegraph: bool,
+        local: bool,
+        runtime_seconds: u32,
+        reporter: UnboundedSender<Report>,
+    );
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

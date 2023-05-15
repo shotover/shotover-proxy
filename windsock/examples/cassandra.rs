@@ -54,7 +54,13 @@ impl Bench for CassandraBench {
         .collect()
     }
 
-    async fn run(&self, flamegraph: bool, local: bool, reporter: UnboundedSender<Report>) {
+    async fn run(
+        &self,
+        flamegraph: bool,
+        local: bool,
+        _runtime_seconds: u32,
+        reporter: UnboundedSender<Report>,
+    ) {
         let _docker_compose = if local {
             docker_compose("examples/cassandra-docker-compose.yaml")
         } else {

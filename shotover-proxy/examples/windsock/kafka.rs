@@ -35,7 +35,13 @@ impl Bench for KafkaBench {
         .collect()
     }
 
-    async fn run(&self, flamegraph: bool, _local: bool, reporter: UnboundedSender<Report>) {
+    async fn run(
+        &self,
+        flamegraph: bool,
+        _local: bool,
+        _runtime_seconds: u32,
+        reporter: UnboundedSender<Report>,
+    ) {
         let config_dir = "tests/test-configs/kafka/passthrough";
         {
             let _compose = docker_compose(&format!("{}/docker-compose.yaml", config_dir));
