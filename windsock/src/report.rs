@@ -76,6 +76,7 @@ impl Percentile {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub(crate) struct ReportArchive {
+    pub(crate) running_in_release: bool,
     pub(crate) tags: Tags,
     pub(crate) operations_total: u64,
     pub(crate) ops: f32,
@@ -149,7 +150,11 @@ pub fn windsock_path() -> PathBuf {
     PathBuf::from("windsock_data")
 }
 
-pub(crate) async fn report_builder(tags: Tags, mut rx: UnboundedReceiver<Report>) -> ReportArchive {
+pub(crate) async fn report_builder(
+    tags: Tags,
+    mut rx: UnboundedReceiver<Report>,
+    running_in_release: bool,
+) -> ReportArchive {
     let mut operations_total = 0;
     let mut response_times = vec![];
     let mut total_response_time = Duration::from_secs(0);
@@ -202,6 +207,7 @@ pub(crate) async fn report_builder(tags: Tags, mut rx: UnboundedReceiver<Report>
     }
 
     let archive = ReportArchive {
+        running_in_release,
         tags,
         ops,
         operations_total,
