@@ -628,10 +628,7 @@ async fn test_nice_api(connection: &mut Connection) {
 }
 
 async fn test_auto_m_versions(connection: &mut Connection) {
-    assert_eq!(
-        connection.set_multiple(&[("key1", 1), ("key2", 2)]).await,
-        Ok(())
-    );
+    assert_eq!(connection.mset(&[("key1", 1), ("key2", 2)]).await, Ok(()));
     assert_eq!(connection.get(&["key1", "key2"]).await, Ok((1, 2)));
 }
 

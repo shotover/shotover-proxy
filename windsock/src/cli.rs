@@ -50,4 +50,8 @@ pub struct Args {
     /// --results-by-tags "db=kafka OPS=10000"
     #[clap(long)]
     pub results_by_tags: Option<String>,
+
+    /// Prevent release mode safety check from triggering to allow running in debug mode
+    #[clap(long)]
+    pub disable_release_safety_check: bool,
 }
