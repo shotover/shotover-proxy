@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use scylla::SessionBuilder;
+use scylla::{transport::Compression as ScyllaCompression, SessionBuilder};
 use std::{
     collections::HashMap,
     sync::Arc,
@@ -13,6 +13,11 @@ use test_helpers::{
 };
 use tokio::sync::mpsc::UnboundedSender;
 use windsock::{Bench, Report};
+
+pub enum Compression {
+    None,
+    Lz4,
+}
 
 pub enum CassandraDb {
     Cassandra,
@@ -40,14 +45,21 @@ pub struct CassandraBench {
     db: CassandraDb,
     topology: Topology,
     shotover: Shotover,
+    compression: Compression,
 }
 
 impl CassandraBench {
-    pub fn new(db: CassandraDb, topology: Topology, shotover: Shotover) -> Self {
+    pub fn new(
+        db: CassandraDb,
+        topology: Topology,
+        shotover: Shotover,
+        compression: Compression,
+    ) -> Self {
         CassandraBench {
             db,
             topology,
             shotover,
+            compression,
         }
     }
 }
@@ -84,6 +96,13 @@ impl Bench for CassandraBench {
             ("connections".to_owned(), "128".to_owned()),
             // TODO: run with different message types
             ("message_type".to_owned(), "read_bigint".to_owned()),
+            (
+                "compression".to_owned(),
+                match self.compression {
+                    Compression::None => "none".to_owned(),
+                    Compression::Lz4 => "lz4".to_owned(),
+                },
+            ),
         ]
         .into_iter()
         .collect()
@@ -138,6 +157,10 @@ impl Bench for CassandraBench {
                 SessionBuilder::new()
                     .known_nodes(&[address])
                     .user("cassandra", "cassandra")
+                    .compression(match self.compression {
+                        Compression::None => None,
+                        Compression::Lz4 => Some(ScyllaCompression::Lz4),
+                    })
                     .build()
                     .await
                     .unwrap(),
