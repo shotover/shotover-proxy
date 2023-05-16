@@ -142,7 +142,7 @@ impl Bench for CassandraProtocolBench {
                 .unwrap();
             // session.await_schema_agreement().await.unwrap();
             tokio::time::sleep(Duration::from_secs(1)).await; //TODO: this should not be needed >:[
-            //
+                                                              //
             for i in 0..row_count {
                 session
                     .query(format!("INSERT INTO ks.bench(id) VALUES ({})", i))
