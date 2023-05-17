@@ -108,7 +108,13 @@ impl Bench for CassandraBench {
         .collect()
     }
 
-    async fn run(&self, flamegraph: bool, _local: bool, reporter: UnboundedSender<Report>) {
+    async fn run(
+        &self,
+        flamegraph: bool,
+        _local: bool,
+        runtime_seconds: u32,
+        reporter: UnboundedSender<Report>,
+    ) {
         let address = match (&self.topology, &self.shotover) {
             (Topology::Single, Shotover::None) => "127.0.0.1:9043",
             (Topology::Single, Shotover::Standard) => "127.0.0.1:9042",
@@ -222,7 +228,7 @@ impl Bench for CassandraBench {
             reporter.send(Report::Start).unwrap();
             let start = Instant::now();
 
-            for _ in 0..15 {
+            for _ in 0..runtime_seconds {
                 let second = Instant::now();
                 tokio::time::sleep(Duration::from_secs(1)).await;
                 reporter

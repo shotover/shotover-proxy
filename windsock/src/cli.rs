@@ -15,6 +15,9 @@ pub struct Args {
     /// Instruct benches to profile the application under test and produce a flamegraph
     #[clap(long)]
     pub flamegraph: bool,
+    /// How long in seconds to run each bench for
+    #[clap(long)]
+    pub bench_length_seconds: Option<u32>,
 
     /// The results of the last benchmarks run becomes the new baseline from which following benchmark runs will be compared.
     /// Baseline bench results are merged with the results of following results under a `baseline=true` tag.
