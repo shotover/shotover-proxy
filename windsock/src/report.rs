@@ -80,7 +80,7 @@ pub(crate) struct ReportArchive {
     pub(crate) running_in_release: bool,
     pub(crate) tags: Tags,
     pub(crate) operations_total: u64,
-    pub(crate) ops: f32,
+    pub(crate) ops: u32,
     pub(crate) mean_response_time: Duration,
     pub(crate) response_time_percentiles: [Duration; Percentile::COUNT],
     pub(crate) operations_each_second: Vec<u64>,
@@ -208,7 +208,7 @@ pub(crate) async fn report_builder(
     } else {
         Duration::from_secs(0)
     };
-    let ops = operations_total as f32 / (finished_in.as_nanos() / 1024 / 1024 / 1024) as f32;
+    let ops = (operations_total as u128 / (finished_in.as_nanos() / 1_000_000_000)) as u32;
 
     let mut response_time_percentiles = [Duration::new(0, 0); Percentile::COUNT];
     response_times.sort();
