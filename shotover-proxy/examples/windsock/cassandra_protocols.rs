@@ -73,7 +73,14 @@ impl Bench for CassandraProtocolBench {
         .collect()
     }
 
-    async fn run(&self, flamegraph: bool, _local: bool, reporter: UnboundedSender<Report>) {
+    async fn run(
+        &self,
+        flamegraph: bool,
+        _local: bool,
+        _runtime_seconds: u32,
+        _operations_per_second: Option<u64>,
+        reporter: UnboundedSender<Report>,
+    ) {
         let address = match (&self.topology, &self.shotover) {
             (Topology::Single, Shotover::None) => "127.0.0.1:9043",
             (Topology::Single, Shotover::Standard) => "127.0.0.1:9042",
