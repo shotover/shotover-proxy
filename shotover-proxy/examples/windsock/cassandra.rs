@@ -1,11 +1,10 @@
 use crate::common::Shotover;
 use async_trait::async_trait;
+use rand::prelude::*;
 use scylla::{
     prepared_statement::PreparedStatement, transport::Compression as ScyllaCompression, Session,
     SessionBuilder,
 };
-use rand::prelude::*;
-use scylla::{transport::Compression as ScyllaCompression, Session, SessionBuilder};
 use std::{
     collections::HashMap,
     sync::Arc,
@@ -51,13 +50,14 @@ struct CoreCount {
     cassandra: usize,
 }
 
+#[derive(Clone)]
 pub enum Operation {
     Read,
     Blob,
 }
 
 impl Operation {
-    async fn prepare(&self, session: &Arc<Session>, db: &CassandraDb, row_count: usize) {
+    async fn prepare(&self, session: &Arc<Session>, db: &CassandraDb) {
         if let CassandraDb::Cassandra = db {
             session.query("CREATE KEYSPACE IF NOT EXISTS ks WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 }", ()).await.unwrap();
             session.await_schema_agreement().await.unwrap();
@@ -76,7 +76,7 @@ impl Operation {
                     session.await_schema_agreement().await.unwrap();
                     tokio::time::sleep(Duration::from_secs(1)).await; //TODO: this should not be needed >:[
 
-                    for i in 0..row_count {
+                    for i in 0..ROW_COUNT {
                         session
                             .query("INSERT INTO ks.bench(id) VALUES (:id)", (i as i64,))
                             .await
@@ -102,98 +102,39 @@ impl Operation {
         &self,
         session: &Arc<Session>,
         reporter: UnboundedSender<Report>,
-        connections: usize,
-        row_count: usize,
+        operations_per_second: Option<u64>,
     ) {
-        match self {
-            Operation::Read => {
-                let bench_query = session
-                    .prepare("SELECT * FROM ks.bench WHERE id = :id")
-                    .await
-                    .unwrap();
-                let mut tasks = vec![];
-                for _ in 0..connections {
-                    let session = session.clone();
-                    let reporter = reporter.clone();
-                    let bench_query = bench_query.clone();
-                    tasks.push(tokio::spawn(async move {
-                        loop {
-                            let i = rand::random::<u32>() % row_count as u32;
-                            let instant = Instant::now();
-                            session.execute(&bench_query, (i as i64,)).await.unwrap();
-                            if reporter
-                                .send(Report::QueryCompletedIn(instant.elapsed()))
-                                .is_err()
-                            {
-                                // The benchmark has completed and the reporter no longer wants to receive reports so just shutdown
-                                return;
-                            }
-                        }
-                    }));
-                }
+        let bench_query = match self {
+            Operation::Read => session
+                .prepare("SELECT * FROM ks.bench WHERE id = :id")
+                .await
+                .unwrap(),
+            Operation::Blob => session
+                .prepare("INSERT INTO ks.bench (id, data) VALUES (:id, :data)")
+                .await
+                .unwrap(),
+        };
 
-                // warm up and then start
-                // TODO: properly reevaluate our warmup time once we have graphs showing throughput and latency over time.
-                tokio::time::sleep(Duration::from_secs(2)).await;
-                reporter.send(Report::Start).unwrap();
-                let start = Instant::now();
+        let tasks = BenchTaskCassandra {
+            session: session.clone(),
+            query: bench_query,
+            operation: self.clone(),
+        }
+        .spawn_tasks(reporter.clone(), operations_per_second)
+        .await;
 
-                tokio::time::sleep(Duration::from_secs(15)).await;
-                reporter.send(Report::FinishedIn(start.elapsed())).unwrap();
+        // warm up and then start
+        // TODO: properly reevaluate our warmup time once we have graphs showing throughput and latency over time.
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        reporter.send(Report::Start).unwrap();
+        let start = Instant::now();
 
-                // make sure the tasks complete before we drop the database they are connecting to
-                for task in tasks {
-                    task.await.unwrap();
-                }
-            }
-            Operation::Blob => {
-                let bench_query = session
-                    .prepare("INSERT INTO ks.bench (id, data) VALUES (:id, :data)")
-                    .await
-                    .unwrap();
+        tokio::time::sleep(Duration::from_secs(15)).await;
+        reporter.send(Report::FinishedIn(start.elapsed())).unwrap();
 
-                let mut tasks = vec![];
-                for _ in 0..connections {
-                    let session = session.clone();
-                    let reporter = reporter.clone();
-                    let bench_query = bench_query.clone();
-                    tasks.push(tokio::spawn(async move {
-                        loop {
-                            let i = rand::random::<u32>() % row_count as u32;
-                            let blob = {
-                                let mut rng = rand::thread_rng();
-                                rng.gen::<[u8; 16]>()
-                            };
-                            let instant = Instant::now();
-                            session
-                                .execute(&bench_query, (i as i64, blob))
-                                .await
-                                .unwrap();
-                            if reporter
-                                .send(Report::QueryCompletedIn(instant.elapsed()))
-                                .is_err()
-                            {
-                                // The benchmark has completed and the reporter no longer wants to receive reports so just shutdown
-                                return;
-                            }
-                        }
-                    }));
-                }
-
-                // warm up and then start
-                // TODO: properly reevaluate our warmup time once we have graphs showing throughput and latency over time.
-                tokio::time::sleep(Duration::from_secs(2)).await;
-                reporter.send(Report::Start).unwrap();
-                let start = Instant::now();
-
-                tokio::time::sleep(Duration::from_secs(15)).await;
-                reporter.send(Report::FinishedIn(start.elapsed())).unwrap();
-
-                // make sure the tasks complete before we drop the database they are connecting to
-                for task in tasks {
-                    task.await.unwrap();
-                }
-            }
+        // make sure the tasks complete before we drop the database they are connecting to
+        for task in tasks {
+            task.await.unwrap();
         }
     }
 }
@@ -202,7 +143,6 @@ pub struct CassandraBench {
     db: CassandraDb,
     topology: Topology,
     shotover: Shotover,
-    connections: usize,
     compression: Compression,
     operation: Operation,
 }
@@ -212,7 +152,6 @@ impl CassandraBench {
         db: CassandraDb,
         topology: Topology,
         shotover: Shotover,
-        connections: usize,
         compression: Compression,
         operation: Operation,
     ) -> Self {
@@ -220,7 +159,6 @@ impl CassandraBench {
             db,
             topology,
             shotover,
-            connections,
             compression,
             operation,
         }
@@ -254,8 +192,14 @@ impl Bench for CassandraBench {
                     Topology::Cluster3 => "cluster3".to_owned(),
                 },
             ),
-            self.shotover.to_tag(),
-            // TODO: run with different message types
+            (
+                "shotover".to_owned(),
+                match self.shotover {
+                    Shotover::None => "none".to_owned(),
+                    Shotover::Standard => "standard".to_owned(),
+                    Shotover::ForcedMessageParsed => "forced-message-parsed".to_owned(),
+                },
+            ),
             (
                 "operation".to_owned(),
                 match self.operation {
@@ -283,7 +227,7 @@ impl Bench for CassandraBench {
         &self,
         flamegraph: bool,
         _local: bool,
-        runtime_seconds: u32,
+        _runtime_seconds: u32,
         operations_per_second: Option<u64>,
         reporter: UnboundedSender<Report>,
     ) {
@@ -347,16 +291,10 @@ impl Bench for CassandraBench {
                     .unwrap(),
             );
 
-            let row_count = 1000usize;
+            self.operation.prepare(&session, &self.db).await;
 
-            // TODO message_type prepare
-            //
-            self.operation.prepare(&session, &self.db, row_count).await;
-
-            // TODO message_type run
-            //
             self.operation
-                .run(&session, reporter, self.connections, row_count)
+                .run(&session, reporter, operations_per_second)
                 .await;
 
             if let Some(shotover) = shotover {
@@ -374,15 +312,31 @@ impl Bench for CassandraBench {
 struct BenchTaskCassandra {
     session: Arc<Session>,
     query: PreparedStatement,
+    operation: Operation,
 }
 
 #[async_trait]
 impl BenchTask for BenchTaskCassandra {
     async fn run_one_operation(&self) {
         let i = rand::random::<u32>() % ROW_COUNT as u32;
-        self.session
-            .execute(&self.query, (i as i64,))
-            .await
-            .unwrap();
+        match self.operation {
+            Operation::Read => {
+                self.session
+                    .execute(&self.query, (i as i64,))
+                    .await
+                    .unwrap();
+            }
+            Operation::Blob => {
+                let blob = {
+                    let mut rng = rand::thread_rng();
+                    rng.gen::<[u8; 16]>()
+                };
+
+                self.session
+                    .execute(&self.query, (i as i64, blob))
+                    .await
+                    .unwrap();
+            }
+        }
     }
 }
