@@ -1,5 +1,8 @@
 use async_trait::async_trait;
-use scylla::{transport::Compression as ScyllaCompression, SessionBuilder};
+use scylla::{
+    prepared_statement::PreparedStatement, transport::Compression as ScyllaCompression, Session,
+    SessionBuilder,
+};
 use std::{
     collections::HashMap,
     sync::Arc,
@@ -12,7 +15,9 @@ use test_helpers::{
     shotover_process::ShotoverProcessBuilder,
 };
 use tokio::sync::mpsc::UnboundedSender;
-use windsock::{Bench, Report};
+use windsock::{Bench, BenchTask, Report};
+
+const ROW_COUNT: usize = 1000;
 
 pub enum Compression {
     None,
@@ -90,10 +95,6 @@ impl Bench for CassandraBench {
                     Shotover::ForcedMessageParsed => "forced-message-parsed".to_owned(),
                 },
             ),
-            // TODO: run with different OPS values
-            ("OPS".to_owned(), "unlimited".to_owned()),
-            // TODO: run with different connection count
-            ("connections".to_owned(), "128".to_owned()),
             // TODO: run with different message types
             ("message_type".to_owned(), "read_bigint".to_owned()),
             (
@@ -113,6 +114,7 @@ impl Bench for CassandraBench {
         flamegraph: bool,
         _local: bool,
         runtime_seconds: u32,
+        operations_per_second: Option<u64>,
         reporter: UnboundedSender<Report>,
     ) {
         let address = match (&self.topology, &self.shotover) {
@@ -172,8 +174,6 @@ impl Bench for CassandraBench {
                     .unwrap(),
             );
 
-            let row_count = 1000usize;
-
             if let CassandraDb::Cassandra = self.db {
                 session.query("CREATE KEYSPACE IF NOT EXISTS ks WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 }", ()).await.unwrap();
                 session.await_schema_agreement().await.unwrap();
@@ -189,7 +189,7 @@ impl Bench for CassandraBench {
                 session.await_schema_agreement().await.unwrap();
                 tokio::time::sleep(Duration::from_secs(1)).await; //TODO: this should not be needed >:[
 
-                for i in 0..row_count {
+                for i in 0..ROW_COUNT {
                     session
                         .query("INSERT INTO ks.bench(id) VALUES (:id)", (i as i64,))
                         .await
@@ -201,30 +201,16 @@ impl Bench for CassandraBench {
                 .prepare("SELECT * FROM ks.bench WHERE id = :id")
                 .await
                 .unwrap();
-            let mut tasks = vec![];
-            for _ in 0..128 {
-                let session = session.clone();
-                let reporter = reporter.clone();
-                let bench_query = bench_query.clone();
-                tasks.push(tokio::spawn(async move {
-                    loop {
-                        let i = rand::random::<u32>() % row_count as u32;
-                        let instant = Instant::now();
-                        session.execute(&bench_query, (i as i64,)).await.unwrap();
-                        if reporter
-                            .send(Report::QueryCompletedIn(instant.elapsed()))
-                            .is_err()
-                        {
-                            // The benchmark has completed and the reporter no longer wants to receive reports so just shutdown
-                            return;
-                        }
-                    }
-                }));
+
+            let tasks = BenchTaskCassandra {
+                session,
+                query: bench_query,
             }
+            .spawn_tasks(reporter.clone(), operations_per_second)
+            .await;
 
             // warm up and then start
-            // TODO: properly reevaluate our warmup time once we have graphs showing throughput and latency over time.
-            tokio::time::sleep(Duration::from_secs(2)).await;
+            tokio::time::sleep(Duration::from_secs(1)).await;
             reporter.send(Report::Start).unwrap();
             let start = Instant::now();
 
@@ -250,5 +236,22 @@ impl Bench for CassandraBench {
                 perf.flamegraph();
             }
         }
+    }
+}
+
+#[derive(Clone)]
+struct BenchTaskCassandra {
+    session: Arc<Session>,
+    query: PreparedStatement,
+}
+
+#[async_trait]
+impl BenchTask for BenchTaskCassandra {
+    async fn run_one_operation(&self) {
+        let i = rand::random::<u32>() % ROW_COUNT as u32;
+        self.session
+            .execute(&self.query, (i as i64,))
+            .await
+            .unwrap();
     }
 }

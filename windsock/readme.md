@@ -30,7 +30,7 @@ To use windsock create a rust crate that imports windsock:
 windsock = { git = "https://github.com/shotover/shotover-proxy" }
 ```
 
-And then implement the crate like this:
+And then implement the crate like this (simplified):
 
 ```rust
 fn main() {
@@ -49,60 +49,60 @@ pub struct CassandraBench { topology: Topology }
 #[async_trait]
 impl Bench for CassandraBench {
     // define tags that windsock will use to filter and name the benchmark instance
-    fn tags(&self) -> Tags {
-        Tags(
-            [
-                ("name".to_owned(), "cassandra".to_owned()),
-                (
-                    "topology".to_owned(),
-                    match &self.topology {
-                        Topology::Single => "single".to_owned(),
-                        Topology::Cluster3 => "cluster3".to_owned(),
-                    },
-                ),
-            ]
-            .into_iter()
-            .collect(),
-        )
+    fn tags(&self) -> HashMap<String, String> {
+        [
+            ("name".to_owned(), "cassandra".to_owned()),
+            (
+                "topology".to_owned(),
+                match &self.topology {
+                    Topology::Single => "single".to_owned(),
+                    Topology::Cluster3 => "cluster3".to_owned(),
+                },
+            ),
+        ]
+        .into_iter()
+        .collect()
     }
 
     // the benchmark logic for this benchmark instance
-    async fn run(&self, _flamegraph: bool, _local: bool, reporter: UnboundedSender<Report>) {
+    async fn run(&self, runtime_seconds: usize, operations_per_second: Option<u64>, reporter: UnboundedSender<Report>) {
         // bring up the DB
         let _handle = init_cassandra();
 
         // create the DB driver session
         let session = init_session().await;
 
+        // spawn tokio tasks to concurrently hit the database
+        // The exact query is defined in `run_one_operation` below
+        BenchTaskCassandra { session }.spawn_tasks(reporter.clone(), operations_per_second).await;
+
         // tell windsock to begin benchmarking
         reporter.send(Report::Start).unwrap();
         let start = Instant::now();
 
-        // run 100 connections to the database
-        let mut tasks = vec![];
-        for _ in 0..100 {
-            tasks.push(tokio::spawn(async move {
-                loop {
-                    let instant = Instant::now();
-                    session.query("SELECT * FROM table").await.unwrap();
-                    // report the time it took to run a single query
-                    if reporter.send(Report::QueryCompletedIn(instant.elapsed())).is_err() {
-                        return;
-                    }
-                }
-            }));
-        }
-
-        // run the bench for 10s
-        tokio::time::sleep(Duration::from_secs(10)).await;
+        // run the bench for the time requested by the user on the CLI (defaults to 15s)
+        tokio::time::sleep(Duration::from_secs(runtime_seconds)).await;
 
         // tell windsock to finalize the benchmark
         reporter.send(Report::FinishedIn(start.elapsed())).unwrap();
     }
 }
+
+// This struct is cloned once for each tokio task it will be run in.
+#[derive(Clone)]
+struct BenchTaskCassandra {
+    session: Arc<Session>,
+}
+
+#[async_trait]
+impl BenchTask for BenchTaskCassandra {
+    async fn run_one_operation(&self) {
+        self.session.query("SELECT * FROM table").await.unwrap();
+    }
+}
 ```
 
-Refer to `examples/cassandra.rs` for a full working example.
+This example is simplified for demonstration purposes, refer to `examples/cassandra.rs` for a full working example.
 
 ## Running benches
 

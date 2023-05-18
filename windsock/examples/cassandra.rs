@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use docker_compose_runner::{DockerCompose, Image};
-use scylla::transport::Compression;
 use scylla::SessionBuilder;
+use scylla::{transport::Compression, Session};
 use std::{
     collections::HashMap,
     path::Path,
@@ -9,7 +9,7 @@ use std::{
     time::{Duration, Instant},
 };
 use tokio::sync::mpsc::UnboundedSender;
-use windsock::{Bench, Report, Windsock};
+use windsock::{Bench, BenchTask, Report, Windsock};
 
 fn main() {
     set_working_dir();
@@ -39,7 +39,6 @@ impl Bench for CassandraBench {
         [
             ("name".to_owned(), "cassandra".to_owned()),
             ("topology".to_owned(), "single".to_owned()),
-            ("OPS".to_owned(), "1000".to_owned()),
             ("message_type".to_owned(), "write1000bytes".to_owned()),
             (
                 "compression".to_owned(),
@@ -59,6 +58,7 @@ impl Bench for CassandraBench {
         flamegraph: bool,
         local: bool,
         _runtime_seconds: u32,
+        operations_per_second: Option<u64>,
         reporter: UnboundedSender<Report>,
     ) {
         let _docker_compose = if local {
@@ -80,31 +80,12 @@ impl Bench for CassandraBench {
                 .unwrap(),
         );
 
-        let mut tasks = vec![];
+        let tasks = BenchTaskCassandra { session }
+            .spawn_tasks(reporter.clone(), operations_per_second)
+            .await;
 
-        reporter.send(Report::Start).unwrap();
         let start = Instant::now();
-
-        for _ in 0..100 {
-            let session = session.clone();
-            let reporter = reporter.clone();
-            tasks.push(tokio::spawn(async move {
-                loop {
-                    let instant = Instant::now();
-                    session
-                        .query("SELECT * FROM system.peers", ())
-                        .await
-                        .unwrap();
-                    if reporter
-                        .send(Report::QueryCompletedIn(instant.elapsed()))
-                        .is_err()
-                    {
-                        // The benchmark has completed and the reporter no longer wants to receive reports so just shutdown
-                        return;
-                    }
-                }
-            }));
-        }
+        reporter.send(Report::Start).unwrap();
 
         tokio::time::sleep(Duration::from_secs(10)).await;
         reporter.send(Report::FinishedIn(start.elapsed())).unwrap();
@@ -113,6 +94,21 @@ impl Bench for CassandraBench {
         for task in tasks {
             task.await.unwrap();
         }
+    }
+}
+
+#[derive(Clone)]
+struct BenchTaskCassandra {
+    session: Arc<Session>,
+}
+
+#[async_trait]
+impl BenchTask for BenchTaskCassandra {
+    async fn run_one_operation(&self) {
+        self.session
+            .query("SELECT * FROM system.peers", ())
+            .await
+            .unwrap();
     }
 }
 

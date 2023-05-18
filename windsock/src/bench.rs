@@ -4,7 +4,9 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
+use std::time::{Duration, Instant};
 use tokio::sync::mpsc::UnboundedSender;
+use tokio::task::JoinHandle;
 
 pub struct BenchState {
     bench: Box<dyn Bench>,
@@ -21,12 +23,18 @@ impl BenchState {
         println!("Running {:?}", self.tags.get_name());
 
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-        let process = tokio::spawn(report_builder(self.tags.clone(), rx, running_in_release));
+        let process = tokio::spawn(report_builder(
+            self.tags.clone(),
+            rx,
+            args.operations_per_second,
+            running_in_release,
+        ));
         self.bench
             .run(
                 args.flamegraph,
                 true,
                 args.bench_length_seconds.unwrap_or(15),
+                args.operations_per_second,
                 tx,
             )
             .await;
@@ -35,6 +43,8 @@ impl BenchState {
     }
 }
 
+/// Implement this to define your benchmarks
+/// A single implementation of `Bench` can represent multiple benchmarks by initializing it multiple times with different state that returns unique tags.
 #[async_trait]
 pub trait Bench {
     /// Returns tags that are used for forming comparisons, graphs and naming the benchmark
@@ -46,6 +56,7 @@ pub trait Bench {
         flamegraph: bool,
         local: bool,
         runtime_seconds: u32,
+        operations_per_second: Option<u64>,
         reporter: UnboundedSender<Report>,
     );
 }
@@ -105,5 +116,60 @@ impl Tags {
 
     pub(crate) fn keys(&self) -> HashSet<String> {
         self.0.keys().cloned().collect()
+    }
+}
+
+/// An optional helper trait for defining benchmarks.
+/// Usually you have an async rust DB driver that you need to call across multiple tokio tasks
+/// This helper will spawn these tasks and send the required `Report::QueryCompletedIn`.
+///
+/// To use this helper:
+///  1. implement `BenchTask` for a struct that contains the required db resources
+///  2. have run_one_operation use those resources to perform a single operation
+///  3. call spawn_tasks on an instance of BenchTask, it will clone your BenchTask instance once for each task it generates
+#[async_trait]
+pub trait BenchTask: Clone + Send + Sync + 'static {
+    async fn run_one_operation(&self);
+
+    async fn spawn_tasks(
+        &self,
+        reporter: UnboundedSender<Report>,
+        operations_per_second: Option<u64>,
+    ) -> Vec<JoinHandle<()>> {
+        let mut tasks = vec![];
+        // 100 is a generally nice amount of tasks to have, but if we have more tasks than OPS the throughput is very unstable
+        let task_count = operations_per_second.map(|x| x.min(100)).unwrap_or(100);
+
+        let allocated_time_per_op = operations_per_second
+            .map(|ops| (Duration::from_secs(1) * task_count as u32) / ops as u32);
+        for i in 0..task_count {
+            let task = self.clone();
+            let reporter = reporter.clone();
+            tasks.push(tokio::spawn(async move {
+                // spread load out over a second
+                tokio::time::sleep(Duration::from_nanos((1_000_000_000 / task_count) * i)).await;
+
+                let mut interval = allocated_time_per_op.map(tokio::time::interval);
+
+                loop {
+                    if let Some(interval) = &mut interval {
+                        interval.tick().await;
+                    }
+
+                    let operation_start = Instant::now();
+                    task.run_one_operation().await;
+                    let report = Report::QueryCompletedIn(operation_start.elapsed());
+                    if reporter.send(report).is_err() {
+                        // The benchmark has completed and the reporter no longer wants to receive reports so just shutdown
+                        return;
+                    }
+                }
+            }));
+        }
+
+        // sleep until all tasks have started running
+        tokio::time::sleep(Duration::from_secs(1)).await;
+
+        tasks
     }
 }
