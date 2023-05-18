@@ -398,7 +398,7 @@ impl CassandraSinkCluster {
 
                 match connection {
                     Ok(connection) => connection.send(message)?,
-                    Err(GetReplicaErr::NoKeyspaceMetadata) => {
+                    Err(GetReplicaErr::NoKeyspaceMetadata | GetReplicaErr::NoRoutingKey) => {
                         match self
                             .pool
                             .get_random_connection_in_dc_rack(
