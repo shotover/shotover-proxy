@@ -569,7 +569,10 @@ impl<C: CodecBuilder + 'static> Handler<C> {
 
             debug!("sending message: {:?}", modified_messages);
             // send the result of the process up stream
-            out_tx.send(modified_messages)?;
+            if out_tx.send(modified_messages).is_err() {
+                // the client has disconnected so we should terminate this connection
+                return Ok(());
+            }
         }
 
         Ok(())
