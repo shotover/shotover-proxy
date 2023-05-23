@@ -112,61 +112,72 @@ fn base(reports: &[ReportArchive], table_type: &str, comparison: bool) {
     }
     for key in nonintersecting_keys {
         rows.push(Row::ColumnNames {
-            names: reports.iter().map(|x| x.tags.0[&key].clone()).collect(),
+            names: reports
+                .iter()
+                .map(|x| x.tags.0.get(&key).cloned().unwrap_or("".to_owned()))
+                .collect(),
             legend: key,
         });
     }
 
-    rows.push(Row::Heading("Measurements".to_owned()));
+    rows.push(Row::Heading("Opns (Operations)".to_owned()));
 
-    rows.push(Row::measurements(reports, "Ops (Operations)", |report| {
-        (
+    rows.push(Row::measurements(reports, "Total Opns", |report| {
+        Some((
             report.operations_total as f64,
             report.operations_total.to_string(),
             Goal::BiggerIsBetter,
-        )
+        ))
     }));
-    rows.push(Row::measurements(reports, "Target Ops Per Sec", |report| {
-        (
-            report
-                .requested_ops
-                .map(|x| x as f64)
-                .unwrap_or(f64::INFINITY),
-            report
-                .requested_ops
-                .map(|x| x.to_string())
-                .unwrap_or("MAX".to_owned()),
-            Goal::BiggerIsBetter,
-        )
-    }));
-    rows.push(Row::measurements(reports, "Actual Ops Per Sec", |report| {
-        (
-            report.actual_ops as f64,
-            format!("{:.0}", report.actual_ops),
-            Goal::BiggerIsBetter,
-        )
-    }));
+    rows.push(Row::measurements(
+        reports,
+        "Target Opns Per Sec",
+        |report| {
+            Some((
+                report
+                    .requested_ops
+                    .map(|x| x as f64)
+                    .unwrap_or(f64::INFINITY),
+                report
+                    .requested_ops
+                    .map(|x| x.to_string())
+                    .unwrap_or("MAX".to_owned()),
+                Goal::BiggerIsBetter,
+            ))
+        },
+    ));
+    rows.push(Row::measurements(
+        reports,
+        "Actual Opns Per Sec",
+        |report| {
+            Some((
+                report.actual_ops as f64,
+                format!("{:.0}", report.actual_ops),
+                Goal::BiggerIsBetter,
+            ))
+        },
+    ));
 
-    rows.push(Row::measurements(reports, "Op Time Mean", |report| {
-        (
+    rows.push(Row::measurements(reports, "Opn Time Mean", |report| {
+        Some((
             report.mean_response_time.as_secs_f64(),
             duration_ms(report.mean_response_time),
             Goal::SmallerIsBetter,
-        )
+        ))
     }));
 
-    rows.push(Row::Heading("Op Time Percentiles".to_owned()));
+    rows.push(Row::Heading("Opn Time Percentiles".to_owned()));
     for (i, p) in Percentile::iter().enumerate() {
         rows.push(Row::measurements(reports, p.name(), |report| {
-            (
+            Some((
                 report.response_time_percentiles[i].as_secs_f64(),
                 duration_ms(report.response_time_percentiles[i]),
                 Goal::SmallerIsBetter,
-            )
+            ))
         }));
     }
 
-    rows.push(Row::Heading("Ops Each Second".to_owned()));
+    rows.push(Row::Heading("Opns Each Second".to_owned()));
     for i in 0..reports
         .iter()
         .map(|x| x.operations_each_second.len())
@@ -174,11 +185,10 @@ fn base(reports: &[ReportArchive], table_type: &str, comparison: bool) {
         .unwrap()
     {
         rows.push(Row::measurements(reports, &i.to_string(), |report| {
-            if let Some(value) = report.operations_each_second.get(i) {
-                (*value as f64, value.to_string(), Goal::BiggerIsBetter)
-            } else {
-                (0.0, "".to_owned(), Goal::BiggerIsBetter)
-            }
+            report
+                .operations_each_second
+                .get(i)
+                .map(|value| (*value as f64, value.to_string(), Goal::BiggerIsBetter))
         }));
     }
 
@@ -351,7 +361,7 @@ enum Color {
 }
 
 impl Row {
-    fn measurements<F: Fn(&ReportArchive) -> (f64, String, Goal)>(
+    fn measurements<F: Fn(&ReportArchive) -> Option<(f64, String, Goal)>>(
         reports: &[ReportArchive],
         legend: &str,
         f: F,
@@ -361,14 +371,23 @@ impl Row {
         let measurements = reports
             .iter()
             .map(|x| {
-                let (compare, value, goal) = f(x);
-                let (comparison, comparison_raw) = if let Some(base) = base {
-                    let comparison_raw = (compare - base) / base * 100.0;
-                    (format!("{:+.1}%", comparison_raw), comparison_raw)
-                } else {
-                    base = Some(compare);
-                    ("".to_owned(), 0.0)
-                };
+                let (value, comparison, comparison_raw, goal) =
+                    if let Some((compare, value, goal)) = f(x) {
+                        if let Some(base) = base {
+                            let comparison_raw = (compare - base) / base * 100.0;
+                            (
+                                value,
+                                format!("{:+.1}%", comparison_raw),
+                                comparison_raw,
+                                goal,
+                            )
+                        } else {
+                            base = Some(compare);
+                            (value, "".to_owned(), 0.0, Goal::BiggerIsBetter)
+                        }
+                    } else {
+                        ("".to_owned(), "".to_owned(), 0.0, Goal::BiggerIsBetter)
+                    };
 
                 let color = if comparison_raw > 5.0 {
                     if let Goal::BiggerIsBetter = goal {
