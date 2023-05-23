@@ -47,6 +47,7 @@ pub struct CassandraSinkSingleBuilder {
     tls: Option<TlsConnector>,
     connect_timeout: Duration,
     read_timeout: Option<Duration>,
+    codec_builder: CassandraCodecBuilder,
 }
 
 impl CassandraSinkSingleBuilder {
@@ -59,6 +60,7 @@ impl CassandraSinkSingleBuilder {
     ) -> CassandraSinkSingleBuilder {
         let failed_requests = register_counter!("failed_requests", "chain" => chain_name, "transform" => "CassandraSinkSingle");
         let receive_timeout = timeout.map(Duration::from_secs);
+        let codec_builder = CassandraCodecBuilder::new(Direction::Sink);
 
         CassandraSinkSingleBuilder {
             version: None,
@@ -67,6 +69,7 @@ impl CassandraSinkSingleBuilder {
             tls,
             connect_timeout: Duration::from_millis(connect_timeout_ms),
             read_timeout: receive_timeout,
+            codec_builder,
         }
     }
 }
@@ -82,6 +85,7 @@ impl TransformBuilder for CassandraSinkSingleBuilder {
             pushed_messages_tx: None,
             connect_timeout: self.connect_timeout,
             read_timeout: self.read_timeout,
+            codec_builder: self.codec_builder.clone(),
         })
     }
 
@@ -103,6 +107,7 @@ pub struct CassandraSinkSingle {
     pushed_messages_tx: Option<mpsc::UnboundedSender<Messages>>,
     connect_timeout: Duration,
     read_timeout: Option<Duration>,
+    codec_builder: CassandraCodecBuilder,
 }
 
 impl CassandraSinkSingle {
@@ -132,7 +137,7 @@ impl CassandraSinkSingle {
                 CassandraConnection::new(
                     self.connect_timeout,
                     self.address.clone(),
-                    CassandraCodecBuilder::new(Direction::Sink),
+                    self.codec_builder.clone(),
                     self.tls.clone(),
                     self.pushed_messages_tx.clone(),
                 )

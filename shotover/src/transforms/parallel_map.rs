@@ -8,12 +8,11 @@ use futures::stream::{FuturesOrdered, FuturesUnordered};
 use futures::task::{Context, Poll};
 use futures::Stream;
 use futures::StreamExt;
-use itertools::Itertools;
 use serde::Deserialize;
 use std::future::Future;
 use std::pin::Pin;
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct ParallelMapBuilder {
     chains: Vec<TransformChainBuilder>,
     ordered: bool,
@@ -75,12 +74,13 @@ pub struct ParallelMapConfig {
 #[async_trait(?Send)]
 impl TransformConfig for ParallelMapConfig {
     async fn get_builder(&self, _chain_name: String) -> Result<Box<dyn TransformBuilder>> {
-        let chain = self.chain.get_builder("parallel_map_chain".into()).await?;
+        let mut chains = vec![];
+        for _ in 0..self.parallelism {
+            chains.push(self.chain.get_builder("parallel_map_chain".into()).await?);
+        }
 
         Ok(Box::new(ParallelMapBuilder {
-            chains: std::iter::repeat(chain)
-                .take(self.parallelism as usize)
-                .collect_vec(),
+            chains,
             ordered: self.ordered_results,
         }))
     }

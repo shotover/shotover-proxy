@@ -1,10 +1,11 @@
 use async_trait::async_trait;
+use std::collections::HashMap;
 use test_helpers::{
     docker_compose::docker_compose, flamegraph::Perf, kafka_producer_perf_test::run_producer_bench,
     shotover_process::ShotoverProcessBuilder,
 };
 use tokio::sync::mpsc::UnboundedSender;
-use windsock::{Bench, Report, Tags};
+use windsock::{Bench, Report};
 
 pub struct KafkaBench {}
 
@@ -16,7 +17,7 @@ impl KafkaBench {
 
 #[async_trait]
 impl Bench for KafkaBench {
-    fn tags(&self) -> Tags {
+    fn tags(&self) -> HashMap<String, String> {
         [
             ("name".to_owned(), "kafka".to_owned()),
             ("topology".to_owned(), "single".to_owned()),
@@ -34,7 +35,14 @@ impl Bench for KafkaBench {
         .collect()
     }
 
-    async fn run(&self, flamegraph: bool, _local: bool, _reporter: UnboundedSender<Report>) {
+    async fn run(
+        &self,
+        flamegraph: bool,
+        _local: bool,
+        _runtime_seconds: u32,
+        _operations_per_second: Option<u64>,
+        reporter: UnboundedSender<Report>,
+    ) {
         let config_dir = "tests/test-configs/kafka/passthrough";
         {
             let _compose = docker_compose(&format!("{}/docker-compose.yaml", config_dir));
@@ -68,5 +76,11 @@ impl Bench for KafkaBench {
         if std::env::var("CI").is_err() {
             run_producer_bench("[localhost]:9092");
         }
+
+        // just pretend to do windsock things for now
+        reporter.send(Report::Start).unwrap();
+        reporter
+            .send(Report::FinishedIn(std::time::Duration::from_secs(1)))
+            .unwrap();
     }
 }

@@ -1,10 +1,15 @@
 use async_trait::async_trait;
 use docker_compose_runner::{DockerCompose, Image};
-use scylla::transport::Compression;
 use scylla::SessionBuilder;
-use std::path::Path;
+use scylla::{transport::Compression, Session};
+use std::{
+    collections::HashMap,
+    path::Path,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 use tokio::sync::mpsc::UnboundedSender;
-use windsock::{Bench, Report, Tags, Windsock};
+use windsock::{Bench, BenchTask, Report, Windsock};
 
 fn main() {
     set_working_dir();
@@ -30,11 +35,10 @@ impl CassandraBench {
 
 #[async_trait]
 impl Bench for CassandraBench {
-    fn tags(&self) -> Tags {
+    fn tags(&self) -> HashMap<String, String> {
         [
             ("name".to_owned(), "cassandra".to_owned()),
-            ("topology".to_owned(), "3_nodes".to_owned()),
-            ("OPS".to_owned(), "1000".to_owned()),
+            ("topology".to_owned(), "single".to_owned()),
             ("message_type".to_owned(), "write1000bytes".to_owned()),
             (
                 "compression".to_owned(),
@@ -49,7 +53,14 @@ impl Bench for CassandraBench {
         .collect()
     }
 
-    async fn run(&self, flamegraph: bool, local: bool, reporter: UnboundedSender<Report>) {
+    async fn run(
+        &self,
+        flamegraph: bool,
+        local: bool,
+        _runtime_seconds: u32,
+        operations_per_second: Option<u64>,
+        reporter: UnboundedSender<Report>,
+    ) {
         let _docker_compose = if local {
             docker_compose("examples/cassandra-docker-compose.yaml")
         } else {
@@ -59,20 +70,45 @@ impl Bench for CassandraBench {
             todo!("run flamegraph");
         }
 
-        let session = SessionBuilder::new()
-            .known_nodes(&["172.16.1.2:9042"])
-            .user("cassandra", "cassandra")
-            .compression(self.compression)
-            .build()
-            .await
-            .unwrap();
+        let session = Arc::new(
+            SessionBuilder::new()
+                .known_nodes(&["172.16.1.2:9042"])
+                .user("cassandra", "cassandra")
+                .compression(self.compression)
+                .build()
+                .await
+                .unwrap(),
+        );
 
-        // TODO: run benchmark, sending reports as it goes
-        session
+        let tasks = BenchTaskCassandra { session }
+            .spawn_tasks(reporter.clone(), operations_per_second)
+            .await;
+
+        let start = Instant::now();
+        reporter.send(Report::Start).unwrap();
+
+        tokio::time::sleep(Duration::from_secs(10)).await;
+        reporter.send(Report::FinishedIn(start.elapsed())).unwrap();
+
+        // make sure the tasks complete before we drop the database they are connecting to
+        for task in tasks {
+            task.await.unwrap();
+        }
+    }
+}
+
+#[derive(Clone)]
+struct BenchTaskCassandra {
+    session: Arc<Session>,
+}
+
+#[async_trait]
+impl BenchTask for BenchTaskCassandra {
+    async fn run_one_operation(&self) {
+        self.session
             .query("SELECT * FROM system.peers", ())
             .await
             .unwrap();
-        reporter.send(Report::ThingHappen).unwrap();
     }
 }
 

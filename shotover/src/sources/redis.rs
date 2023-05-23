@@ -22,11 +22,11 @@ pub struct RedisConfig {
 impl RedisConfig {
     pub async fn get_source(
         &self,
-        chain: &TransformChainBuilder,
+        chain_builder: TransformChainBuilder,
         trigger_shutdown_rx: watch::Receiver<bool>,
     ) -> Result<Vec<Sources>> {
         RedisSource::new(
-            chain,
+            chain_builder,
             self.listen_addr.clone(),
             trigger_shutdown_rx,
             self.connection_limit,
@@ -48,7 +48,7 @@ pub struct RedisSource {
 
 impl RedisSource {
     pub async fn new(
-        chain: &TransformChainBuilder,
+        chain_builder: TransformChainBuilder,
         listen_addr: String,
         mut trigger_shutdown_rx: watch::Receiver<bool>,
         connection_limit: Option<usize>,
@@ -60,7 +60,7 @@ impl RedisSource {
         let name = "RedisSource";
 
         let mut listener = TcpCodecListener::new(
-            chain.clone(),
+            chain_builder,
             name.to_string(),
             listen_addr.clone(),
             hard_connection_limit.unwrap_or(false),

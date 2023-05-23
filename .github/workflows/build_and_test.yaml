@@ -74,7 +74,7 @@ jobs:
       run: |
         cargo run --release --example cassandra
         cargo run --release --example windsock
-        cargo run --release --example windsock -- --flamegraph
+        cargo run --release --example windsock -- --flamegraph "name=cassandra shotover=standard"
       if: ${{ matrix.name == 'Ubuntu 20.04 - Release' }}
     - name: Ensure that tests did not create or modify any files that arent .gitignore'd
       run: |

@@ -23,14 +23,63 @@ fn main() {
             Box::new(CassandraBench::new(
                 CassandraDb::Cassandra,
                 Topology::Single,
+                Shotover::None,
+                Compression::None,
+            )),
+            Box::new(CassandraBench::new(
+                CassandraDb::Cassandra,
+                Topology::Single,
+                Shotover::None,
+                Compression::Lz4,
+            )),
+            Box::new(CassandraBench::new(
+                CassandraDb::Cassandra,
+                Topology::Single,
+                Shotover::Standard,
+                Compression::None,
+            )),
+            Box::new(CassandraBench::new(
+                CassandraDb::Cassandra,
+                Topology::Single,
+                Shotover::Standard,
+                Compression::Lz4,
             )),
             Box::new(CassandraBench::new(
                 CassandraDb::Cassandra,
                 Topology::Cluster3,
+                Shotover::None,
+                Compression::None,
             )),
-            // CassandraDb::Mocked needs to be run last because the mocked db can not yet be shutdown
-            // TODO: allow shutting down the mocked db
-            Box::new(CassandraBench::new(CassandraDb::Mocked, Topology::Single)),
+            Box::new(CassandraBench::new(
+                CassandraDb::Cassandra,
+                Topology::Cluster3,
+                Shotover::None,
+                Compression::Lz4,
+            )),
+            Box::new(CassandraBench::new(
+                CassandraDb::Cassandra,
+                Topology::Cluster3,
+                Shotover::Standard,
+                Compression::None,
+            )),
+            Box::new(CassandraBench::new(
+                CassandraDb::Cassandra,
+                Topology::Cluster3,
+                Shotover::Standard,
+                Compression::Lz4,
+            )),
+            Box::new(CassandraBench::new(
+                CassandraDb::Mocked,
+                Topology::Single,
+                Shotover::None,
+                Compression::None,
+            )),
+            Box::new(CassandraBench::new(
+                CassandraDb::Mocked,
+                Topology::Single,
+                Shotover::Standard,
+                Compression::None,
+            )),
         ],
         &["release"],
     )

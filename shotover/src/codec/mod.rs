@@ -10,7 +10,7 @@ pub mod cassandra;
 pub mod kafka;
 pub mod redis;
 
-#[derive(Copy, Clone)]
+#[derive(Eq, PartialEq, Copy, Clone)]
 pub enum Direction {
     Source,
     Sink,
