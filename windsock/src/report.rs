@@ -56,21 +56,21 @@ impl Percentile {
 
     pub fn name(&self) -> &'static str {
         match self {
-            Percentile::Min => "  Min   ",
-            Percentile::P1 => "    1   ",
-            Percentile::P2 => "    2   ",
-            Percentile::P5 => "    5   ",
-            Percentile::P10 => "   10   ",
-            Percentile::P25 => "   25   ",
-            Percentile::P50 => "   50   ",
-            Percentile::P75 => "   75   ",
-            Percentile::P90 => "   90   ",
-            Percentile::P95 => "   95   ",
-            Percentile::P98 => "   98   ",
-            Percentile::P99 => "   99   ",
-            Percentile::P99_9 => "   99.9 ",
-            Percentile::P99_99 => "  99.99",
-            Percentile::Max => "  Max   ",
+            Percentile::Min => "Min   ",
+            Percentile::P1 => "1   ",
+            Percentile::P2 => "2   ",
+            Percentile::P5 => "5   ",
+            Percentile::P10 => "10   ",
+            Percentile::P25 => "25   ",
+            Percentile::P50 => "50   ",
+            Percentile::P75 => "75   ",
+            Percentile::P90 => "90   ",
+            Percentile::P95 => "95   ",
+            Percentile::P98 => "98   ",
+            Percentile::P99 => "99   ",
+            Percentile::P99_9 => "99.9 ",
+            Percentile::P99_99 => "99.99",
+            Percentile::Max => "Max   ",
         }
     }
 }
@@ -95,7 +95,7 @@ impl ReportArchive {
     pub fn load(path: &str) -> Result<Self> {
         match std::fs::read(windsock_path().join(path)) {
             Ok(bytes) => bincode::deserialize(&bytes).map_err(|e|
-                anyhow!(e).context("The bench archive from the previous run is not valid archive, maybe the format changed since the last run")
+                anyhow!(e).context("The bench archive from the previous run is not a valid archive, maybe the format changed since the last run")
             ),
             Err(err) if err.kind() == ErrorKind::NotFound => Err(anyhow!("The bench {path:?} does not exist or was not run in the previous run")),
             Err(err) => Err(anyhow!("The bench {path:?} encountered a file read error {err:?}"))
