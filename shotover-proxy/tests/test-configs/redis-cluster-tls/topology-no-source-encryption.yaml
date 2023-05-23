@@ -3,9 +3,6 @@ sources:
   redis_prod:
     Redis:
       listen_addr: "127.0.0.1:6379"
-      tls:
-        certificate_path: "tests/test-configs/redis-tls/certs/localhost.crt"
-        private_key_path: "tests/test-configs/redis-tls/certs/localhost.key"
 chain_config:
   redis_chain:
     - RedisSinkCluster:
