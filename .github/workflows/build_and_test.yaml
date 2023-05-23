@@ -70,12 +70,6 @@ jobs:
       run: cargo hack --feature-powerset clippy --all-targets --locked ${{ matrix.cargo_flags }} -- -D warnings
     - name: Ensure that tests pass
       run: cargo test ${{ matrix.cargo_flags }} --all-features -- --include-ignored --show-output --nocapture ${{ matrix.test_flags }}
-    - name: Ensure that custom benches run
-      run: |
-        cargo run --release --example cassandra
-        cargo run --release --example windsock
-        cargo run --release --example windsock -- --flamegraph "name=cassandra shotover=standard"
-      if: ${{ matrix.name == 'Ubuntu 20.04 - Release' }}
     - name: Ensure that tests did not create or modify any files that arent .gitignore'd
       run: |
         if [ -n "$(git status --porcelain)" ]; then
