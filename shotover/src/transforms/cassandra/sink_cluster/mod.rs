@@ -398,7 +398,18 @@ impl CassandraSinkCluster {
 
                 match connection {
                     Ok(connection) => connection.send(message)?,
-                    Err(GetReplicaErr::NoKeyspaceMetadata | GetReplicaErr::NoRoutingKey) => {
+                    Err(
+                        err @ GetReplicaErr::NoKeyspaceMetadata | err @ GetReplicaErr::NoRoutingKey,
+                    ) => {
+                        if matches!(err, GetReplicaErr::NoRoutingKey)
+                            && self.version.unwrap() != Version::V3
+                        {
+                            tracing::error!(
+                                "No routing key found for message on version: {}",
+                                self.version.unwrap()
+                            );
+                        };
+
                         match self
                             .pool
                             .get_random_connection_in_dc_rack(
