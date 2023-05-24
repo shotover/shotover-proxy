@@ -134,10 +134,9 @@ impl Encoder<Messages> for KafkaEncoder {
     fn encode(&mut self, item: Messages, dst: &mut BytesMut) -> Result<(), Self::Error> {
         item.into_iter().try_for_each(|m| {
             let start = dst.len();
-            let result = match m
-                .into_encodable(MessageType::Kafka)
-                .map_err(CodecWriteError::Encoder)?
-            {
+            m.ensure_message_type(MessageType::Kafka)
+                .map_err(CodecWriteError::Encoder)?;
+            let result = match m.into_encodable() {
                 Encodable::Bytes(bytes) => {
                     dst.extend_from_slice(&bytes);
                     Ok(())
