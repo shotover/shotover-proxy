@@ -41,6 +41,11 @@ impl BenchState {
         let report = process.await.unwrap();
         crate::tables::display_results_table(&[report]);
     }
+
+    // TODO: will return None when running in non-local setup
+    pub fn cores_required(&self) -> Option<usize> {
+        Some(self.bench.cores_required())
+    }
 }
 
 /// Implement this to define your benchmarks
@@ -59,6 +64,11 @@ pub trait Bench {
         operations_per_second: Option<u64>,
         reporter: UnboundedSender<Report>,
     );
+
+    /// How many cores to assign the async runtime in which the bench runs.
+    fn cores_required(&self) -> usize {
+        1
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
