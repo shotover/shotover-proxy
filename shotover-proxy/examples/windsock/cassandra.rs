@@ -46,6 +46,15 @@ pub enum Shotover {
     ForcedMessageParsed,
 }
 
+struct CoreCount {
+    /// Cores to be assigned to the bench's tokio runtime
+    bench: usize,
+    /// Cores per shotover instance
+    shotover: usize,
+    /// Cores per DB instance
+    cassandra: usize,
+}
+
 pub struct CassandraBench {
     db: CassandraDb,
     topology: Topology,
@@ -65,6 +74,15 @@ impl CassandraBench {
             topology,
             shotover,
             compression,
+        }
+    }
+
+    fn core_count(&self) -> CoreCount {
+        CoreCount {
+            bench: 1,
+            shotover: 1,
+            // TODO: actually use this to configure actual cassandra instances, currently only affects cassandra-mocked
+            cassandra: 1,
         }
     }
 }
@@ -109,6 +127,10 @@ impl Bench for CassandraBench {
         .collect()
     }
 
+    fn cores_required(&self) -> usize {
+        self.core_count().bench
+    }
+
     async fn run(
         &self,
         flamegraph: bool,
@@ -117,6 +139,8 @@ impl Bench for CassandraBench {
         operations_per_second: Option<u64>,
         reporter: UnboundedSender<Report>,
     ) {
+        let core_count = self.core_count();
+
         let address = match (&self.topology, &self.shotover) {
             (Topology::Single, Shotover::None) => "127.0.0.1:9043",
             (Topology::Single, Shotover::Standard) => "127.0.0.1:9042",
@@ -133,9 +157,9 @@ impl Bench for CassandraBench {
                 (CassandraDb::Cassandra, _) => CassandraDbInstance::Compose(docker_compose(
                     &format!("{config_dir}/docker-compose.yaml"),
                 )),
-                (CassandraDb::Mocked, Topology::Single) => {
-                    CassandraDbInstance::Mocked(test_helpers::mock_cassandra::start(1, 9043))
-                }
+                (CassandraDb::Mocked, Topology::Single) => CassandraDbInstance::Mocked(
+                    test_helpers::mock_cassandra::start(core_count.cassandra, 9043),
+                ),
                 (CassandraDb::Mocked, Topology::Cluster3) => {
                     panic!("Mocked cassandra database does not provide a clustered mode")
                 }
@@ -145,6 +169,7 @@ impl Bench for CassandraBench {
                     ShotoverProcessBuilder::new_with_topology(&format!(
                         "{config_dir}/topology.yaml"
                     ))
+                    .with_cores(core_count.shotover as u32)
                     .start()
                     .await,
                 ),
