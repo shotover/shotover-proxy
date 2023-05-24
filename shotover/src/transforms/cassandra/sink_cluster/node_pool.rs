@@ -27,6 +27,7 @@ pub enum GetReplicaErr {
     NoKeyspaceMetadata,
     NoNodeAvailable(anyhow::Error),
     Other(Error),
+    NoRoutingKey,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -198,7 +199,7 @@ impl NodePool {
             })?,
             version,
         )
-        .unwrap();
+        .ok_or(GetReplicaErr::NoRoutingKey)?;
 
         let replica_host_ids = self
             .token_map
