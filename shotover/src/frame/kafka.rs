@@ -7,6 +7,7 @@ use kafka_protocol::messages::{
     ProduceResponse, RequestHeader, ResponseHeader,
 };
 use kafka_protocol::protocol::{Decodable, Encodable, HeaderVersion};
+use std::fmt::{Display, Formatter, Result as FmtResult};
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum KafkaFrame {
@@ -19,6 +20,51 @@ pub enum KafkaFrame {
         header: ResponseHeader,
         body: ResponseBody,
     },
+}
+
+impl Display for KafkaFrame {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        match self {
+            KafkaFrame::Request { header, body } => {
+                write!(
+                    f,
+                    "version:{} correlation_id:{}",
+                    header.request_api_version, header.correlation_id
+                )?;
+                if let Some(id) = header.client_id.as_ref() {
+                    write!(f, " client_id:{id:?}")?;
+                }
+                if !header.unknown_tagged_fields.is_empty() {
+                    write!(
+                        f,
+                        " unknown_tagged_fields:{:?}",
+                        header.unknown_tagged_fields
+                    )?;
+                }
+                write!(f, " {:?}", body)?;
+            }
+            KafkaFrame::Response {
+                version,
+                header,
+                body,
+            } => {
+                write!(
+                    f,
+                    "version:{version} correlation_id:{}",
+                    header.correlation_id
+                )?;
+                if !header.unknown_tagged_fields.is_empty() {
+                    write!(
+                        f,
+                        " unknown_tagged_fields:{:?}",
+                        header.unknown_tagged_fields
+                    )?;
+                }
+                write!(f, " {body:?}",)?;
+            }
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, PartialEq, Clone)]
