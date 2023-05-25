@@ -1,4 +1,5 @@
 use serial_test::serial;
+use std::time::Duration;
 use test_helpers::docker_compose::docker_compose;
 use test_helpers::shotover_process::ShotoverProcessBuilder;
 
@@ -17,7 +18,12 @@ async fn passthrough_standard() {
 
     test_cases::basic().await;
 
-    shotover.shutdown_and_then_consume_events(&[]).await;
+    tokio::time::timeout(
+        Duration::from_secs(10),
+        shotover.shutdown_and_then_consume_events(&[]),
+    )
+    .await
+    .expect("Shotover did not shutdown within 10s");
 }
 
 #[tokio::test]

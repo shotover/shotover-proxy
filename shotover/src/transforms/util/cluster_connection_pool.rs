@@ -259,17 +259,20 @@ async fn rx_process<C: DecoderHalf, R: AsyncRead + Unpin + Send + 'static>(
         match responses {
             Ok(responses) => {
                 for response_message in responses {
-                    if let Some(Request {
-                        message: request_message,
-                        return_chan: Some(ret),
-                        ..
-                    }) = return_rx.recv().await
-                    {
-                        // If the receiver hangs up, just silently ignore
-                        let _ = ret.send(Response {
-                            original: request_message,
-                            response: Ok(response_message),
-                        });
+                    loop {
+                        if let Some(Request {
+                            message: request_message,
+                            return_chan: Some(ret),
+                            ..
+                        }) = return_rx.recv().await
+                        {
+                            // If the receiver hangs up, just silently ignore
+                            let _ = ret.send(Response {
+                                original: request_message,
+                                response: Ok(response_message),
+                            });
+                            break;
+                        }
                     }
                 }
             }

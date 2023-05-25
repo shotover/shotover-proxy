@@ -18,6 +18,7 @@ pub enum MessageType {
     Redis,
     Cassandra,
     Kafka,
+    Dummy,
 }
 
 impl From<&ProtocolType> for MessageType {
@@ -40,6 +41,7 @@ impl Frame {
             Frame::Kafka(_) => CodecState::Kafka {
                 request_header: None,
             },
+            Frame::Dummy => CodecState::Dummy,
         }
     }
 }
@@ -49,6 +51,9 @@ pub enum Frame {
     Cassandra(CassandraFrame),
     Redis(RedisFrame),
     Kafka(KafkaFrame),
+    /// Represents a message that has must exist due to shotovers requirement that every request has a corresponding response.
+    /// It exists purely to keep transform invariants and codecs will completely ignore this frame when they receive it
+    Dummy,
 }
 
 impl Frame {
@@ -67,6 +72,7 @@ impl Frame {
             MessageType::Kafka => {
                 KafkaFrame::from_bytes(bytes, codec_state.as_kafka()).map(Frame::Kafka)
             }
+            MessageType::Dummy => Ok(Frame::Dummy),
         }
     }
 
@@ -75,6 +81,7 @@ impl Frame {
             Frame::Redis(_) => "Redis",
             Frame::Cassandra(_) => "Cassandra",
             Frame::Kafka(_) => "Kafka",
+            Frame::Dummy => "Dummy",
         }
     }
 
@@ -83,6 +90,7 @@ impl Frame {
             Frame::Cassandra(_) => MessageType::Cassandra,
             Frame::Redis(_) => MessageType::Redis,
             Frame::Kafka(_) => MessageType::Kafka,
+            Frame::Dummy => MessageType::Dummy,
         }
     }
 
@@ -133,6 +141,7 @@ impl Display for Frame {
             Frame::Cassandra(frame) => write!(f, "Cassandra {}", frame),
             Frame::Redis(frame) => write!(f, "Redis {:?})", frame),
             Frame::Kafka(frame) => write!(f, "Kafka {})", frame),
+            Frame::Dummy => write!(f, "Shotover internal dummy message"),
         }
     }
 }

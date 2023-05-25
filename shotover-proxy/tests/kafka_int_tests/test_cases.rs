@@ -41,6 +41,57 @@ async fn produce_consume(brokers: &str, topic_name: &str) {
     assert_eq!(0, message.partition());
 }
 
+async fn produce_consume_acks0(brokers: &str) {
+    let topic_name = "acks0";
+    let producer: FutureProducer = ClientConfig::new()
+        .set("bootstrap.servers", brokers)
+        .set("message.timeout.ms", "5000")
+        .set("acks", "0")
+        .create()
+        .unwrap();
+
+    for _ in 0..10 {
+        tokio::time::timeout(
+            Duration::from_secs(10),
+            producer
+                .send_result(
+                    FutureRecord::to(topic_name)
+                        .payload("MessageAcks0")
+                        .key("KeyAcks0"),
+                )
+                .unwrap(),
+        )
+        .await
+        .expect("Timeout while receiving from producer")
+        .unwrap()
+        .unwrap();
+    }
+
+    let consumer: StreamConsumer = ClientConfig::new()
+        .set("bootstrap.servers", brokers)
+        .set("group.id", "some_group")
+        .set("session.timeout.ms", "6000")
+        .set("auto.offset.reset", "earliest")
+        .set("enable.auto.commit", "false")
+        .create()
+        .unwrap();
+    consumer.subscribe(&[topic_name]).unwrap();
+
+    for i in 0..10 {
+        let message = tokio::time::timeout(Duration::from_secs(10), consumer.recv())
+            .await
+            .expect("Timeout while receiving from producer")
+            .unwrap();
+        let contents = message.payload_view::<str>().unwrap().unwrap();
+        assert_eq!("MessageAcks0", contents);
+        assert_eq!(b"KeyAcks0", message.key().unwrap());
+        assert_eq!("acks0", message.topic());
+        assert_eq!(i, message.offset());
+        assert_eq!(0, message.partition());
+    }
+}
+
 pub async fn basic() {
     produce_consume("localhost:9192", "foo").await;
+    produce_consume_acks0("localhost:9192").await;
 }
