@@ -16,14 +16,13 @@ async fn log_to_file() {
     let mut connection = redis_connection::new_async(6379).await;
 
     assert_ok(redis::cmd("SET").arg("foo").arg(42), &mut connection).await;
-    // skip connection 1 as that comes from the redis_connection::new_async creating a dummy connection to the server to see if its awake yet
-    let request = std::fs::read("message-log/2/requests/message1.bin").unwrap();
+    let request = std::fs::read("message-log/1/requests/message1.bin").unwrap();
     assert_eq!(
         request,
         "*3\r\n$3\r\nSET\r\n$3\r\nfoo\r\n$2\r\n42\r\n".as_bytes()
     );
 
-    let response = std::fs::read("message-log/2/responses/message1.bin").unwrap();
+    let response = std::fs::read("message-log/1/responses/message1.bin").unwrap();
     assert_eq!(response, "+OK\r\n".as_bytes());
 
     shotover.shutdown_and_then_consume_events(&[]).await;

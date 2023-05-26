@@ -34,10 +34,10 @@ async fn passthrough() {
     )
     .start()
     .await;
-    let mut connection = redis_connection::new_async(6379).await;
+    let connection = || redis_connection::new_async(6379);
     let mut flusher = Flusher::new_single_connection(redis_connection::new_async(6379).await).await;
 
-    run_all(&mut connection, &mut flusher).await;
+    run_all(&connection, &mut flusher).await;
     test_invalid_frame().await;
     shotover
         .shutdown_and_then_consume_events(&[invalid_frame_event()])
@@ -112,11 +112,11 @@ async fn tls_source_and_tls_single_sink() {
                 .start()
                 .await;
 
-        let mut connection = redis_connection::new_async_tls(6380).await;
+        let connection = || redis_connection::new_async_tls(6380);
         let mut flusher =
             Flusher::new_single_connection(redis_connection::new_async_tls(6380).await).await;
 
-        run_all(&mut connection, &mut flusher).await;
+        run_all(&connection, &mut flusher).await;
 
         shotover.shutdown_and_then_consume_events(&[]).await;
     }
@@ -217,7 +217,8 @@ async fn cluster_auth() {
     let mut connection = redis_connection::new_async(6379).await;
 
     test_auth(&mut connection).await;
-    test_auth_isolation(&mut connection).await;
+    let connection = || redis_connection::new_async(6379);
+    test_auth_isolation(&connection).await;
 
     shotover.shutdown_and_then_consume_events(&[]).await;
 }
