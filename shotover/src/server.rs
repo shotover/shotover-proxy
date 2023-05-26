@@ -268,7 +268,6 @@ fn spawn_read_write_tasks<
     in_tx: UnboundedSender<Messages>,
     mut out_rx: UnboundedReceiver<Messages>,
     out_tx: UnboundedSender<Messages>,
-    mut terminate_tasks_rx: watch::Receiver<()>,
 ) {
     let (decoder, encoder) = codec.build();
     let mut reader = FramedRead::new(rx, decoder);
@@ -276,9 +275,9 @@ fn spawn_read_write_tasks<
 
     // Shutdown flows
     //
-    // main task shuts down due to transform error:
-    // 1. The main task terminates, sending terminate_tasks_tx and dropping the first out_tx
-    // 2. The reader task detects change on terminate_tasks_rx and terminates, the last out_tx instance is dropped
+    // main task shuts down due to transform error or shotover shutting down:
+    // 1. The main task terminates, dropping in_rx and the first out_tx
+    // 2. The reader task detects that in_rx has dropped and terminates, the last out_tx instance is dropped
     // 3. The writer task detects that the last out_tx is dropped by out_rx returning None and terminates
     //
     // client closes connection:
@@ -296,14 +295,14 @@ fn spawn_read_write_tasks<
                         if let Some(message) = result {
                             match message {
                                 Ok(messages) => {
-                                    if let Err(error) = in_tx.send(messages) {
-                                        warn!("failed to pass on received message: {}", error);
+                                    if in_tx.send(messages).is_err() {
+                                        // main task has shutdown down, this task is no longer needed
                                         return;
                                     }
                                 }
                                 Err(CodecReadError::RespondAndThenCloseConnection(messages)) => {
                                     if let Err(err) = out_tx.send(messages) {
-                                        error!("Failed to send RespondAndThenShutdown message: {:?}", err);
+                                        error!("Failed to send RespondAndThenCloseConnection message: {:?}", err);
                                     }
                                     return;
                                 }
@@ -314,7 +313,7 @@ fn spawn_read_write_tasks<
                                 Err(CodecReadError::Io(err)) => {
                                     // I suspect (but have not confirmed) that UnexpectedEof occurs here when the ssl client does not send "close notify" before terminating the connection.
                                     // We shouldnt report that as a warning because its common for clients to do that for performance reasons.
-                                    if !matches!(err.kind(), ErrorKind::UnexpectedEof)  {
+                                    if !matches!(err.kind(), ErrorKind::UnexpectedEof) {
                                         warn!("failed to receive message on tcp stream: {:?}", err);
                                     }
                                     return;
@@ -325,7 +324,8 @@ fn spawn_read_write_tasks<
                             return;
                         }
                     }
-                    _ = terminate_tasks_rx.changed() => {
+                    _ = in_tx.closed() => {
+                        // main task has shutdown down, this task is no longer needed
                         return;
                     }
                 }
@@ -341,14 +341,14 @@ fn spawn_read_write_tasks<
                 if let Some(message) = out_rx.recv().await {
                     match writer.send(message).await {
                         Err(CodecWriteError::Encoder(err)) => {
-                            error!("failed to encode message: {err:?}")
+                            error!("failed to encode message destined for client: {err:?}")
                         }
                         Err(CodecWriteError::Io(err)) => {
-                            if matches!(err.kind(), ErrorKind::BrokenPipe) {
+                            if matches!(err.kind(), ErrorKind::BrokenPipe | ErrorKind::ConnectionReset) {
                                 debug!("client disconnected before it could receive a response");
                                 return;
                             } else {
-                                error!("failed to send message: {err:?}");
+                                error!("failed to send message to client: {err:?}");
                             }
                         }
                         Ok(_) => {}
@@ -360,15 +360,15 @@ fn spawn_read_write_tasks<
                     while let Ok(message) = out_rx.try_recv() {
                         match writer.send(message).await {
                             Err(CodecWriteError::Encoder(err)) => {
-                                error!("while flushing messages: failed to encode message: {err:?}")
+                                error!("while flushing messages: failed to encode message destined for client: {err:?}")
                             }
                             Err(CodecWriteError::Io(err)) => {
-                                if matches!(err.kind(), ErrorKind::BrokenPipe) {
+                                if matches!(err.kind(), ErrorKind::BrokenPipe | ErrorKind::ConnectionReset) {
                                     debug!("while flushing messages: client disconnected before it could receive a response");
                                     return;
                                 } else {
                                     error!(
-                                        "while flushing messages: failed to send message: {err:?}"
+                                        "while flushing messages: failed to send message to client: {err:?}"
                                     );
                                 }
                             }
@@ -400,8 +400,6 @@ impl<C: CodecBuilder + 'static> Handler<C> {
             .unwrap_or_else(|_| "Unknown peer".to_string());
         tracing::debug!("New connection from {}", client_details);
 
-        let (terminate_tx, terminate_rx) = watch::channel::<()>(());
-
         let (in_tx, in_rx) = mpsc::unbounded_channel::<Messages>();
         let (out_tx, out_rx) = mpsc::unbounded_channel::<Messages>();
 
@@ -414,26 +412,10 @@ impl<C: CodecBuilder + 'static> Handler<C> {
                 Err(AcceptError::Failure(err)) => return Err(err),
             };
             let (rx, tx) = tokio::io::split(tls_stream);
-            spawn_read_write_tasks(
-                self.codec.clone(),
-                rx,
-                tx,
-                in_tx,
-                out_rx,
-                out_tx.clone(),
-                terminate_rx,
-            );
+            spawn_read_write_tasks(self.codec.clone(), rx, tx, in_tx, out_rx, out_tx.clone());
         } else {
             let (rx, tx) = stream.into_split();
-            spawn_read_write_tasks(
-                self.codec.clone(),
-                rx,
-                tx,
-                in_tx,
-                out_rx,
-                out_tx.clone(),
-                terminate_rx,
-            );
+            spawn_read_write_tasks(self.codec.clone(), rx, tx, in_tx, out_rx, out_tx.clone());
         };
 
         let result = self
@@ -459,8 +441,6 @@ impl<C: CodecBuilder + 'static> Handler<C> {
             ),
         }
 
-        // shutdown the read/write tasks
-        std::mem::drop(terminate_tx);
         result
     }
 

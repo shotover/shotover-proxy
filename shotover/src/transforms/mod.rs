@@ -396,6 +396,18 @@ impl<'a> Wrapper<'a> {
         }
     }
 
+    /// Helper for writing debug logs while testing
+    /// feature flagged behind alpha-transforms as this call is too expensive to ever make it into production
+    #[cfg(feature = "alpha-transforms")]
+    pub fn messages_to_high_level_string(&mut self) -> String {
+        let messages = self
+            .messages
+            .iter_mut()
+            .map(|x| x.to_high_level_string())
+            .collect::<Vec<_>>();
+        format!("{:?}", messages)
+    }
+
     pub fn reset(&mut self, transforms: &'a mut [Transforms]) {
         self.transforms = TransformIter::new_forwards(transforms);
     }
