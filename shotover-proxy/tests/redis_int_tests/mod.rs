@@ -81,60 +81,78 @@ Caused by:
 
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
-async fn cluster_tls() {
-    test_helpers::cert::generate_redis_test_certs(Path::new("tests/test-configs/redis-tls/certs"));
+async fn tls_cluster_sink() {
+    test_helpers::cert::generate_test_certs(Path::new("tests/test-configs/redis-tls/certs"));
 
-    {
-        let _compose = docker_compose("tests/test-configs/redis-cluster-tls/docker-compose.yaml");
-        let shotover = ShotoverProcessBuilder::new_with_topology(
-            "tests/test-configs/redis-cluster-tls/topology.yaml",
-        )
-        .start()
-        .await;
+    let _compose = docker_compose("tests/test-configs/redis-cluster-tls/docker-compose.yaml");
+    let shotover = ShotoverProcessBuilder::new_with_topology(
+        "tests/test-configs/redis-cluster-tls/topology.yaml",
+    )
+    .start()
+    .await;
 
-        let mut connection = redis_connection::new_async(6379).await;
-        let mut flusher = Flusher::new_cluster().await;
+    let mut connection = redis_connection::new_async(6379).await;
+    let mut flusher = Flusher::new_cluster().await;
 
-        run_all_cluster_hiding(&mut connection, &mut flusher).await;
-        test_cluster_ports_rewrite_slots(&mut connection, 6379).await;
+    run_all_cluster_hiding(&mut connection, &mut flusher).await;
+    test_cluster_ports_rewrite_slots(&mut connection, 6379).await;
 
-        shotover.shutdown_and_then_consume_events(&[]).await;
-    }
-
-    // Quick test to verify it works with private key
-    {
-        let _compose =
-            docker_compose("tests/test-configs/redis-cluster-tls/docker-compose-with-key.yaml");
-        let shotover = ShotoverProcessBuilder::new_with_topology(
-            "tests/test-configs/redis-cluster-tls/topology-with-key.yaml",
-        )
-        .start()
-        .await;
-
-        let mut connection = redis_connection::new_async(6379).await;
-        test_cluster_basics(&mut connection).await;
-        shotover.shutdown_and_then_consume_events(&[]).await;
-    }
+    shotover.shutdown_and_then_consume_events(&[]).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
-async fn source_tls_and_single_tls() {
-    test_helpers::cert::generate_redis_test_certs(Path::new("tests/test-configs/redis-tls/certs"));
+async fn tls_source_and_tls_single_sink() {
+    test_helpers::cert::generate_test_certs(Path::new("tests/test-configs/redis-tls/certs"));
 
-    let _compose = docker_compose("tests/test-configs/redis-tls/docker-compose.yaml");
-    let shotover =
-        ShotoverProcessBuilder::new_with_topology("tests/test-configs/redis-tls/topology.yaml")
-            .start()
-            .await;
+    {
+        let _compose = docker_compose("tests/test-configs/redis-tls/docker-compose.yaml");
+        let shotover =
+            ShotoverProcessBuilder::new_with_topology("tests/test-configs/redis-tls/topology.yaml")
+                .start()
+                .await;
 
-    let mut connection = redis_connection::new_async_tls(6380).await;
-    let mut flusher =
-        Flusher::new_single_connection(redis_connection::new_async_tls(6380).await).await;
+        let mut connection = redis_connection::new_async_tls(6380).await;
+        let mut flusher =
+            Flusher::new_single_connection(redis_connection::new_async_tls(6380).await).await;
 
-    run_all(&mut connection, &mut flusher).await;
+        run_all(&mut connection, &mut flusher).await;
 
-    shotover.shutdown_and_then_consume_events(&[]).await;
+        shotover.shutdown_and_then_consume_events(&[]).await;
+    }
+
+    // Quick test to verify client authentication disabling works
+    {
+        let _compose =
+            docker_compose("tests/test-configs/redis-tls-no-client-auth/docker-compose.yaml");
+        let shotover = ShotoverProcessBuilder::new_with_topology(
+            "tests/test-configs/redis-tls-no-client-auth/topology.yaml",
+        )
+        .start()
+        .await;
+
+        let mut connection = redis_connection::new_async_tls(6380).await;
+        test_cluster_basics(&mut connection).await;
+        shotover.shutdown_and_then_consume_events(&[]).await;
+    }
+
+    // Quick test to verify `verify-hostname: false` works
+    test_helpers::cert::generate_test_certs_with_bad_san(Path::new(
+        "tests/test-configs/redis-tls/certs",
+    ));
+    {
+        let _compose =
+            docker_compose("tests/test-configs/redis-tls-no-verify-hostname/docker-compose.yaml");
+        let shotover = ShotoverProcessBuilder::new_with_topology(
+            "tests/test-configs/redis-tls-no-verify-hostname/topology.yaml",
+        )
+        .start()
+        .await;
+
+        let mut connection = redis_connection::new_async_tls(6380).await;
+        test_cluster_basics(&mut connection).await;
+        shotover.shutdown_and_then_consume_events(&[]).await;
+    }
 }
 
 #[tokio::test(flavor = "multi_thread")]
