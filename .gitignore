@@ -1,9 +1,5 @@
 /target
 .idea/
-/old_builds
-*.data
-*.data.old
-tests/soaktest-*
 *.gz
 /.vscode
 /shotover-proxy/tests/test-configs/redis-tls/certs
@@ -14,13 +10,8 @@ tests/soaktest-*
 /shotover-proxy/tests/test-configs/docker-images/cassandra-tls-4.0.6/certs/*.csr
 /shotover-proxy/tests/test-configs/docker-images/cassandra-tls-4.0.6/certs/*.crt
 .workspace.code-workspace
-output.txt
 **/.DS_Store
 /.project
 /docs/book
 /docs/mdbook_bin
-shotover-proxy/read-127.0.0.1:9042.json
-shotover-proxy/read-127.0.0.1:9043.json
-shotover-proxy/read-172.16.1.2:9044.json
-shotover-proxy/flamegraph.svg
 /shotover-proxy/build/packages

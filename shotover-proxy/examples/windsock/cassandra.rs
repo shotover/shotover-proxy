@@ -1,4 +1,4 @@
-use crate::common::Shotover;
+use crate::{common::Shotover, profilers::ProfilerRunner};
 use async_trait::async_trait;
 use rand::prelude::*;
 use scylla::{
@@ -12,12 +12,11 @@ use std::{
 };
 use test_helpers::{
     docker_compose::{docker_compose, DockerCompose},
-    flamegraph::Perf,
     mock_cassandra::MockHandle,
     shotover_process::ShotoverProcessBuilder,
 };
 use tokio::sync::mpsc::UnboundedSender;
-use windsock::{Bench, BenchTask, Report};
+use windsock::{Bench, BenchTask, Profiling, Report};
 
 const ROW_COUNT: usize = 1000;
 
@@ -219,13 +218,17 @@ impl Bench for CassandraBench {
         .collect()
     }
 
+    fn supported_profilers(&self) -> Vec<String> {
+        ProfilerRunner::supported_profilers(self.shotover)
+    }
+
     fn cores_required(&self) -> usize {
         self.core_count().bench
     }
 
     async fn run(
         &self,
-        flamegraph: bool,
+        profiling: Profiling,
         _local: bool,
         runtime_seconds: u32,
         operations_per_second: Option<u64>,
@@ -256,27 +259,21 @@ impl Bench for CassandraBench {
                     panic!("Mocked cassandra database does not provide a clustered mode")
                 }
             };
+            let mut profiler = ProfilerRunner::new(profiling);
             let shotover = match self.shotover {
                 Shotover::Standard => Some(
                     ShotoverProcessBuilder::new_with_topology(&format!(
                         "{config_dir}/topology.yaml"
                     ))
                     .with_cores(core_count.shotover as u32)
+                    .with_profile(profiler.shotover_profile())
                     .start()
                     .await,
                 ),
                 Shotover::None => None,
                 Shotover::ForcedMessageParsed => todo!(),
             };
-            let perf = if flamegraph {
-                if let Some(shotover) = &shotover {
-                    Some(Perf::new(shotover.child().id().unwrap()))
-                } else {
-                    todo!()
-                }
-            } else {
-                None
-            };
+            profiler.run(&shotover);
 
             let session = Arc::new(
                 SessionBuilder::new()
@@ -299,10 +296,6 @@ impl Bench for CassandraBench {
 
             if let Some(shotover) = shotover {
                 shotover.shutdown_and_then_consume_events(&[]).await;
-            }
-
-            if let Some(perf) = perf {
-                perf.flamegraph();
             }
         }
     }

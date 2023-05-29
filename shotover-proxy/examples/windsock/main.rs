@@ -1,6 +1,7 @@
 mod cassandra;
 mod common;
 mod kafka;
+mod profilers;
 mod redis;
 
 use crate::cassandra::*;

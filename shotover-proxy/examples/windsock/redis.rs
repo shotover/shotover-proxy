@@ -1,4 +1,4 @@
-use crate::common::Shotover;
+use crate::{common::Shotover, profilers::ProfilerRunner};
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use fred::{
@@ -15,11 +15,10 @@ use std::{
 };
 use test_helpers::{
     docker_compose::docker_compose,
-    flamegraph::Perf,
     shotover_process::{Count, EventMatcher, Level, ShotoverProcessBuilder},
 };
 use tokio::sync::mpsc::UnboundedSender;
-use windsock::{Bench, BenchTask, Report};
+use windsock::{Bench, BenchTask, Profiling, Report};
 
 #[derive(Clone, Copy)]
 pub enum RedisOperation {
@@ -94,13 +93,17 @@ impl Bench for RedisBench {
         .collect()
     }
 
+    fn supported_profilers(&self) -> Vec<String> {
+        ProfilerRunner::supported_profilers(self.shotover)
+    }
+
     fn cores_required(&self) -> usize {
         2
     }
 
     async fn run(
         &self,
-        flamegraph: bool,
+        profiling: Profiling,
         _local: bool,
         runtime_seconds: u32,
         operations_per_second: Option<u64>,
@@ -126,9 +129,11 @@ impl Bench for RedisBench {
             (RedisTopology::Cluster3, Encryption::Tls) => "tests/test-configs/redis-cluster-tls",
         };
         let _compose = docker_compose(&format!("{config_dir}/docker-compose.yaml"));
+        let mut profiler = ProfilerRunner::new(profiling);
         let shotover = match self.shotover {
             Shotover::Standard => Some(
                 ShotoverProcessBuilder::new_with_topology(&format!("{config_dir}/topology.yaml"))
+                    .with_profile(profiler.shotover_profile())
                     .start()
                     .await,
             ),
@@ -136,20 +141,13 @@ impl Bench for RedisBench {
                 ShotoverProcessBuilder::new_with_topology(&format!(
                     "{config_dir}/topology-encode.yaml"
                 ))
+                .with_profile(profiler.shotover_profile())
                 .start()
                 .await,
             ),
             Shotover::None => None,
         };
-        let perf = if flamegraph {
-            if let Some(shotover) = &shotover {
-                Some(Perf::new(shotover.child().id().unwrap()))
-            } else {
-                todo!()
-            }
-        } else {
-            None
-        };
+        profiler.run(&shotover);
 
         let mut config = RedisConfig::from_url(address).unwrap();
         if let Encryption::Tls = self.encryption {
@@ -214,10 +212,6 @@ impl Bench for RedisBench {
                     .with_target("shotover::transforms::redis::sink_single")
                     .with_count(Count::Any)])
                 .await;
-        }
-
-        if let Some(perf) = perf {
-            perf.flamegraph();
         }
     }
 }

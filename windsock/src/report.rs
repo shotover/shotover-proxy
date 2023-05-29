@@ -1,4 +1,4 @@
-use crate::bench::Tags;
+use crate::{bench::Tags, data::windsock_path};
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use std::{io::ErrorKind, path::PathBuf, time::Duration};
@@ -202,19 +202,6 @@ impl ReportArchive {
     pub fn baseline_path() -> PathBuf {
         windsock_path().join("baseline")
     }
-}
-
-pub fn windsock_path() -> PathBuf {
-    // If we are run via cargo (we are in a target directory) use the target directory for storage.
-    // Otherwise just fallback to the current working directory.
-    let mut path = std::env::current_exe().unwrap();
-    while path.pop() {
-        if path.file_name().map(|x| x == "target").unwrap_or(false) {
-            return path.join("windsock_data");
-        }
-    }
-
-    PathBuf::from("windsock_data")
 }
 
 pub(crate) async fn report_builder(
