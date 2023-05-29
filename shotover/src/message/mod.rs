@@ -144,16 +144,11 @@ impl Message {
         }
     }
 
-    // TODO: Considering we already have the expected message type here maybe we should perform any required conversions and return a Result<Bytes> here.
-    // I've left it as is to keep the PR simpler and there could be a need for codecs to control this process that I havent investigated.
-    pub fn into_encodable(self, expected_message_type: MessageType) -> Result<Encodable> {
-        match self.inner.unwrap() {
-            MessageInner::RawBytes {
-                bytes,
-                message_type,
-            } => {
-                if message_type == expected_message_type {
-                    Ok(Encodable::Bytes(bytes))
+    pub fn ensure_message_type(&self, expected_message_type: MessageType) -> Result<()> {
+        match self.inner.as_ref().unwrap() {
+            MessageInner::RawBytes { message_type, .. } => {
+                if *message_type == expected_message_type {
+                    Ok(())
                 } else {
                     Err(anyhow!(
                         "Expected message of type {:?} but was of type {:?}",
@@ -162,9 +157,9 @@ impl Message {
                     ))
                 }
             }
-            MessageInner::Parsed { bytes, frame } => {
+            MessageInner::Parsed { frame, .. } => {
                 if frame.get_type() == expected_message_type {
-                    Ok(Encodable::Bytes(bytes))
+                    Ok(())
                 } else {
                     Err(anyhow!(
                         "Expected message of type {:?} but was of type {:?}",
@@ -175,7 +170,7 @@ impl Message {
             }
             MessageInner::Modified { frame } => {
                 if frame.get_type() == expected_message_type {
-                    Ok(Encodable::Frame(frame))
+                    Ok(())
                 } else {
                     Err(anyhow!(
                         "Expected message of type {:?} but was of type {:?}",
@@ -184,6 +179,14 @@ impl Message {
                     ))
                 }
             }
+        }
+    }
+
+    pub fn into_encodable(self) -> Encodable {
+        match self.inner.unwrap() {
+            MessageInner::RawBytes { bytes, .. } => Encodable::Bytes(bytes),
+            MessageInner::Parsed { bytes, .. } => Encodable::Bytes(bytes),
+            MessageInner::Modified { frame } => Encodable::Frame(frame),
         }
     }
 
