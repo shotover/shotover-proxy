@@ -34,6 +34,7 @@ pub enum CodecState {
     Kafka {
         request_header: Option<RequestHeader>,
     },
+    Dummy,
 }
 
 impl CodecState {
