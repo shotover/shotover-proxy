@@ -1,8 +1,5 @@
 ---
 sources:
-  redis_prod:
-    Redis:
-      listen_addr: "127.0.0.1:6379"
   redis_prod_tls:
     Redis:
       listen_addr: "127.0.0.1:6380"
@@ -20,5 +17,4 @@ chain_config:
           private_key_path: "tests/test-configs/redis-tls/certs/localhost.key"
           verify_hostname: true
 source_to_chain_mapping:
-  redis_prod: redis_chain_tls
   redis_prod_tls: redis_chain_tls
