@@ -7,7 +7,7 @@ use crate::message::{Message, Messages};
 use crate::tcp;
 use crate::tls::{AsyncStream, TlsConnector, TlsConnectorConfig};
 use crate::transforms::{Transform, TransformBuilder, TransformConfig, Transforms, Wrapper};
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use futures::{FutureExt, SinkExt, StreamExt};
 use metrics::{register_counter, Counter};
@@ -181,7 +181,7 @@ impl Transform for RedisSinkSingle {
             .outbound_tx
             .send(message_wrapper.messages)
             .await
-            .context("Failed to send messages to redis destination")?;
+            .map_err(|err| anyhow!("Failed to send messages to redis destination: {err:?}"))?;
 
         let mut result = Vec::with_capacity(messages_len);
         while result.len() < messages_len {

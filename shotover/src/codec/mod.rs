@@ -10,7 +10,7 @@ pub mod cassandra;
 pub mod kafka;
 pub mod redis;
 
-#[derive(Copy, Clone)]
+#[derive(Eq, PartialEq, Copy, Clone)]
 pub enum Direction {
     Source,
     Sink,
@@ -72,13 +72,27 @@ impl From<std::io::Error> for CodecReadError {
     }
 }
 
+#[derive(Debug)]
+pub enum CodecWriteError {
+    /// The codec failed to encode a received message
+    Encoder(anyhow::Error),
+    /// The tcp connection returned an error
+    Io(std::io::Error),
+}
+
+impl From<std::io::Error> for CodecWriteError {
+    fn from(err: std::io::Error) -> Self {
+        CodecWriteError::Io(err)
+    }
+}
+
 // TODO: Replace with trait_alias (rust-lang/rust#41517).
 pub trait DecoderHalf: Decoder<Item = Messages, Error = CodecReadError> + Send {}
 impl<T: Decoder<Item = Messages, Error = CodecReadError> + Send> DecoderHalf for T {}
 
 // TODO: Replace with trait_alias (rust-lang/rust#41517).
-pub trait EncoderHalf: Encoder<Messages, Error = anyhow::Error> + Send {}
-impl<T: Encoder<Messages, Error = anyhow::Error> + Send> EncoderHalf for T {}
+pub trait EncoderHalf: Encoder<Messages, Error = CodecWriteError> + Send {}
+impl<T: Encoder<Messages, Error = CodecWriteError> + Send> EncoderHalf for T {}
 
 pub trait CodecBuilder: Clone + Send {
     type Decoder: DecoderHalf;

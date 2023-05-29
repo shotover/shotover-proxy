@@ -1,10 +1,8 @@
-pub mod bench;
 pub mod cert;
 pub mod connection;
 pub mod docker_compose;
 pub mod flamegraph;
 pub mod kafka_producer_perf_test;
-pub mod latte;
 pub mod lazy;
 pub mod metrics;
 pub mod mock_cassandra;

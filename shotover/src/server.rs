@@ -1,4 +1,4 @@
-use crate::codec::{CodecBuilder, CodecReadError};
+use crate::codec::{CodecBuilder, CodecReadError, CodecWriteError};
 use crate::message::Messages;
 use crate::tls::{AcceptError, TlsAcceptor};
 use crate::transforms::chain::{TransformChain, TransformChainBuilder};
@@ -13,7 +13,7 @@ use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
-use tokio::sync::{mpsc, watch, Semaphore};
+use tokio::sync::{mpsc, watch, OwnedSemaphorePermit, Semaphore};
 use tokio::task::JoinHandle;
 use tokio::time;
 use tokio::time::timeout;
@@ -23,7 +23,7 @@ use tracing::Instrument;
 use tracing::{debug, error, info, warn};
 
 pub struct TcpCodecListener<C: CodecBuilder> {
-    chain: TransformChainBuilder,
+    chain_builder: TransformChainBuilder,
     source_name: String,
 
     /// TCP listener supplied by the `run` caller.
@@ -69,7 +69,7 @@ pub struct TcpCodecListener<C: CodecBuilder> {
 impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
     #![allow(clippy::too_many_arguments)]
     pub async fn new(
-        chain: TransformChainBuilder,
+        chain_builder: TransformChainBuilder,
         source_name: String,
         listen_addr: String,
         hard_connection_limit: bool,
@@ -86,7 +86,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
         let listener = Some(create_listener(&listen_addr).await?);
 
         Ok(TcpCodecListener {
-            chain,
+            chain_builder,
             source_name,
             listener,
             listen_addr,
@@ -122,37 +122,21 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
 
         loop {
             // Wait for a permit to become available
-            //
-            // `acquire` returns a permit that is bound via a lifetime to the
-            // semaphore. When the permit value is dropped, it is automatically
-            // returned to the semaphore. This is convenient in many cases.
-            // However, in this case, the permit must be returned in a different
-            // task than it is acquired in (the handler task). To do this, we
-            // "forget" the permit, which drops the permit value **without**
-            // incrementing the semaphore's permits. Then, in the handler task
-            // we manually add a new permit when processing completes.
-            if self.hard_connection_limit {
-                match self.limit_connections.try_acquire() {
-                    Ok(p) => {
-                        if self.listener.is_none() {
-                            self.listener = Some(create_listener(&self.listen_addr).await?);
-                        }
-                        p.forget();
-                    }
+            let permit = if self.hard_connection_limit {
+                match self.limit_connections.clone().try_acquire_owned() {
+                    Ok(p) => p,
                     Err(_e) => {
-                        if self.listener.is_some() {
-                            //close the socket too full!
-                            self.listener = None;
-                        }
-                        tokio::time::sleep(Duration::new(1, 0)).await;
+                        //close the socket too full!
+                        self.listener = None;
+                        tokio::time::sleep(Duration::from_secs(1)).await;
                         continue;
                     }
                 }
             } else {
-                self.limit_connections.acquire().await?.forget();
-                if self.listener.is_none() {
-                    self.listener = Some(create_listener(&self.listen_addr).await?);
-                }
+                self.limit_connections.clone().acquire_owned().await?
+            };
+            if self.listener.is_none() {
+                self.listener = Some(create_listener(&self.listen_addr).await?);
             }
 
             self.connection_count = self.connection_count.wrapping_add(1);
@@ -165,55 +149,32 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                 // Accept a new socket. This will attempt to perform error handling.
                 // The `accept` method internally attempts to recover errors, so an
                 // error here is non-recoverable.
-                let socket = self.accept().await?;
+                let stream = self.accept().await?;
 
                 debug!("got socket");
                 self.available_connections_gauge
                     .set(self.limit_connections.available_permits() as f64);
 
-                let peer = socket
-                    .peer_addr()
-                    .map(|p| format!("{}", p.ip()))
-                    .unwrap_or_else(|_| "Unknown peer".to_string());
-
-                let conn_string = socket
-                    .peer_addr()
-                    .map(|p| format!("{}:{}", p.ip(), p.port()))
-                    .unwrap_or_else(|_| "Unknown peer".to_string());
-
-                // Create the necessary per-connection handler state.
-                socket.set_nodelay(true)?;
-
                 let (pushed_messages_tx, pushed_messages_rx) =
                     tokio::sync::mpsc::unbounded_channel::<Messages>();
 
-                let mut handler = Handler {
-                    chain: self.chain.build_with_pushed_messages(pushed_messages_tx),
-                    client_details: peer,
-                    conn_details: conn_string,
-                    source_details: self.source_name.clone(),
-
-                    // The connection state needs a handle to the max connections
-                    // semaphore. When the handler is done processing the
-                    // connection, a permit is added back to the semaphore.
+                let handler = Handler {
+                    chain: self
+                        .chain_builder
+                        .build_with_pushed_messages(pushed_messages_tx),
                     codec: self.codec.clone(),
-                    limit_connections: self.limit_connections.clone(),
-
-                    // Receive shutdown notifications.
                     shutdown: Shutdown::new(self.trigger_shutdown_rx.clone()),
-
-                    terminate_tasks: None,
                     tls: self.tls.clone(),
                     timeout: self.timeout,
+                    pushed_messages_rx,
+                    _permit: permit,
                 };
 
                 // Spawn a new task to process the connections.
                 self.connection_handles.push(tokio::spawn(
                     async move {
-                        tracing::debug!("New connection from {}", handler.conn_details);
-
                         // Process the connection. If an error is encountered, log it.
-                        if let Err(err) = handler.run(socket, pushed_messages_rx).await {
+                        if let Err(err) = handler.run(stream).await {
                             error!(
                                 "{:?}",
                                 err.context("connection was unexpectedly terminated")
@@ -279,20 +240,8 @@ async fn create_listener(listen_addr: &str) -> Result<TcpListener> {
 
 pub struct Handler<C: CodecBuilder> {
     chain: TransformChain,
-    client_details: String,
-    conn_details: String,
-
-    #[allow(dead_code)]
-    source_details: String,
     codec: C,
-
-    /// Max connection semaphore.
-    ///
-    /// When the handler is dropped, a permit is returned to this semaphore. If
-    /// the listener is waiting for connections to close, it will be notified of
-    /// the newly available permit and resume accepting connections.
-    limit_connections: Arc<Semaphore>,
-
+    tls: Option<TlsAcceptor>,
     /// Listen for shutdown notifications.
     ///
     /// A wrapper around the `broadcast::Receiver` paired with the sender in
@@ -302,12 +251,10 @@ pub struct Handler<C: CodecBuilder> {
     /// processed for the peer is continued until it reaches a safe state, at
     /// which point the connection is terminated.
     shutdown: Shutdown,
-
-    terminate_tasks: Option<watch::Sender<()>>,
-    tls: Option<TlsAcceptor>,
-
     /// Timeout in seconds after which to kill an idle connection. No timeout means connections will never be timed out.
     timeout: Option<u64>,
+    pushed_messages_rx: UnboundedReceiver<Messages>,
+    _permit: OwnedSemaphorePermit,
 }
 
 fn spawn_read_write_tasks<
@@ -321,7 +268,6 @@ fn spawn_read_write_tasks<
     in_tx: UnboundedSender<Messages>,
     mut out_rx: UnboundedReceiver<Messages>,
     out_tx: UnboundedSender<Messages>,
-    mut terminate_tasks_rx: watch::Receiver<()>,
 ) {
     let (decoder, encoder) = codec.build();
     let mut reader = FramedRead::new(rx, decoder);
@@ -329,15 +275,16 @@ fn spawn_read_write_tasks<
 
     // Shutdown flows
     //
-    // main task shuts down due to transform error:
-    // 1. The main task terminates, sending terminate_tasks_tx and dropping the first out_tx
-    // 2. The reader task detects change on terminate_tasks_rx and terminates, the last out_tx instance is dropped
+    // main task shuts down due to transform error or shotover shutting down:
+    // 1. The main task terminates, dropping in_rx and the first out_tx
+    // 2. The reader task detects that in_rx has dropped and terminates, the last out_tx instance is dropped
     // 3. The writer task detects that the last out_tx is dropped by out_rx returning None and terminates
     //
     // client closes connection:
     // 1. The reader task detects that the client has closed the connection via reader returning None and terminates, dropping in_tx and the first out_tx
     // 2. The main task detects that in_tx is dropped by in_rx returning None and terminates, dropping the last out_tx
     // 3. The writer task detects that the last out_tx is dropped by out_rx returning None and terminates
+    // The writer task could also close early by detecting that the client has closed the connection via writer returning BrokenPipe
 
     // reader task
     tokio::spawn(
@@ -348,14 +295,14 @@ fn spawn_read_write_tasks<
                         if let Some(message) = result {
                             match message {
                                 Ok(messages) => {
-                                    if let Err(error) = in_tx.send(messages) {
-                                        warn!("failed to pass on received message: {}", error);
+                                    if in_tx.send(messages).is_err() {
+                                        // main task has shutdown down, this task is no longer needed
                                         return;
                                     }
                                 }
                                 Err(CodecReadError::RespondAndThenCloseConnection(messages)) => {
                                     if let Err(err) = out_tx.send(messages) {
-                                        error!("Failed to send RespondAndThenShutdown message: {:?}", err);
+                                        error!("Failed to send RespondAndThenCloseConnection message: {:?}", err);
                                     }
                                     return;
                                 }
@@ -366,7 +313,7 @@ fn spawn_read_write_tasks<
                                 Err(CodecReadError::Io(err)) => {
                                     // I suspect (but have not confirmed) that UnexpectedEof occurs here when the ssl client does not send "close notify" before terminating the connection.
                                     // We shouldnt report that as a warning because its common for clients to do that for performance reasons.
-                                    if !matches!(err.kind(), ErrorKind::UnexpectedEof)  {
+                                    if !matches!(err.kind(), ErrorKind::UnexpectedEof) {
                                         warn!("failed to receive message on tcp stream: {:?}", err);
                                     }
                                     return;
@@ -377,7 +324,8 @@ fn spawn_read_write_tasks<
                             return;
                         }
                     }
-                    _ = terminate_tasks_rx.changed() => {
+                    _ = in_tx.closed() => {
+                        // main task has shutdown down, this task is no longer needed
                         return;
                     }
                 }
@@ -391,18 +339,40 @@ fn spawn_read_write_tasks<
         async move {
             loop {
                 if let Some(message) = out_rx.recv().await {
-                    if let Err(err) = writer.send(message).await {
-                        error!("failed to send or encode message: {:?}", err);
+                    match writer.send(message).await {
+                        Err(CodecWriteError::Encoder(err)) => {
+                            error!("failed to encode message destined for client: {err:?}")
+                        }
+                        Err(CodecWriteError::Io(err)) => {
+                            if matches!(err.kind(), ErrorKind::BrokenPipe | ErrorKind::ConnectionReset) {
+                                debug!("client disconnected before it could receive a response");
+                                return;
+                            } else {
+                                error!("failed to send message to client: {err:?}");
+                            }
+                        }
+                        Ok(_) => {}
                     }
                 } else {
                     // Main task has ended.
                     // First flush out any remaining messages.
                     // Then end the task thus closing the connection by dropping the write half
                     while let Ok(message) = out_rx.try_recv() {
-                        if let Err(err) = writer.send(message).await {
-                            error!(
-                                "while flushing messages: failed to send or encode message: {err:?}",
-                            );
+                        match writer.send(message).await {
+                            Err(CodecWriteError::Encoder(err)) => {
+                                error!("while flushing messages: failed to encode message destined for client: {err:?}")
+                            }
+                            Err(CodecWriteError::Io(err)) => {
+                                if matches!(err.kind(), ErrorKind::BrokenPipe | ErrorKind::ConnectionReset) {
+                                    debug!("while flushing messages: client disconnected before it could receive a response");
+                                    return;
+                                } else {
+                                    error!(
+                                        "while flushing messages: failed to send message to client: {err:?}"
+                                    );
+                                }
+                            }
+                            Ok(_) => {}
                         }
                     }
                     break;
@@ -421,13 +391,14 @@ impl<C: CodecBuilder + 'static> Handler<C> {
     ///
     /// When the shutdown signal is received, the connection is processed until
     /// it reaches a safe state, at which point it is terminated.
-    pub async fn run(
-        &mut self,
-        stream: TcpStream,
-        pushed_messages_rx: UnboundedReceiver<Messages>,
-    ) -> Result<()> {
-        let (terminate_tx, terminate_rx) = watch::channel::<()>(());
-        self.terminate_tasks = Some(terminate_tx);
+    pub async fn run(mut self, stream: TcpStream) -> Result<()> {
+        stream.set_nodelay(true)?;
+
+        let client_details = stream
+            .peer_addr()
+            .map(|p| p.ip().to_string())
+            .unwrap_or_else(|_| "Unknown peer".to_string());
+        tracing::debug!("New connection from {}", client_details);
 
         let (in_tx, in_rx) = mpsc::unbounded_channel::<Messages>();
         let (out_tx, out_rx) = mpsc::unbounded_channel::<Messages>();
@@ -441,30 +412,14 @@ impl<C: CodecBuilder + 'static> Handler<C> {
                 Err(AcceptError::Failure(err)) => return Err(err),
             };
             let (rx, tx) = tokio::io::split(tls_stream);
-            spawn_read_write_tasks(
-                self.codec.clone(),
-                rx,
-                tx,
-                in_tx,
-                out_rx,
-                out_tx.clone(),
-                terminate_rx,
-            );
+            spawn_read_write_tasks(self.codec.clone(), rx, tx, in_tx, out_rx, out_tx.clone());
         } else {
             let (rx, tx) = stream.into_split();
-            spawn_read_write_tasks(
-                self.codec.clone(),
-                rx,
-                tx,
-                in_tx,
-                out_rx,
-                out_tx.clone(),
-                terminate_rx,
-            );
+            spawn_read_write_tasks(self.codec.clone(), rx, tx, in_tx, out_rx, out_tx.clone());
         };
 
         let result = self
-            .process_messages(local_addr, in_rx, out_tx, pushed_messages_rx)
+            .process_messages(&client_details, local_addr, in_rx, out_tx)
             .await;
 
         // Flush messages regardless of if we are shutting down due to a failure or due to application shutdown
@@ -472,7 +427,7 @@ impl<C: CodecBuilder + 'static> Handler<C> {
             .chain
             .process_request(
                 Wrapper::flush_with_chain_name(self.chain.name.clone()),
-                self.client_details.clone(),
+                client_details,
             )
             .await
         {
@@ -491,10 +446,10 @@ impl<C: CodecBuilder + 'static> Handler<C> {
 
     async fn process_messages(
         &mut self,
+        client_details: &str,
         local_addr: SocketAddr,
         mut in_rx: mpsc::UnboundedReceiver<Messages>,
         out_tx: mpsc::UnboundedSender<Messages>,
-        mut pushed_messages_rx: UnboundedReceiver<Messages>,
     ) -> Result<()> {
         // As long as the shutdown signal has not been received, try to read a
         // new request frame.
@@ -502,7 +457,7 @@ impl<C: CodecBuilder + 'static> Handler<C> {
 
         while !self.shutdown.is_shutdown() {
             // While reading a request frame, also listen for the shutdown signal
-            debug!("Waiting for message");
+            debug!("Waiting for message {client_details}");
             let mut reverse_chain = false;
 
             let messages = tokio::select! {
@@ -518,9 +473,9 @@ impl<C: CodecBuilder + 'static> Handler<C> {
                         Err(_) => {
                             if let Some(timeout) =  self.timeout {
                                 if idle_time_seconds < timeout {
-                                    debug!("Connection Idle for more than {} seconds {}", timeout, self.conn_details);
+                                    debug!("Connection Idle for more than {} seconds {}", timeout, client_details);
                                 } else {
-                                    debug!("Dropping. Connection Idle for more than {} seconds {}", timeout, self.conn_details);
+                                    debug!("Dropping. Connection Idle for more than {} seconds {}", timeout, client_details);
                                     return Ok(());
                                 }
                             }
@@ -529,7 +484,7 @@ impl<C: CodecBuilder + 'static> Handler<C> {
                         }
                     }
                 },
-                Some(res) = pushed_messages_rx.recv() => {
+                Some(res) = self.pushed_messages_rx.recv() => {
                     reverse_chain = true;
                     res
                 },
@@ -541,7 +496,6 @@ impl<C: CodecBuilder + 'static> Handler<C> {
             };
 
             debug!("Received raw messages {:?}", messages);
-            debug!("client details: {:?}", &self.client_details);
 
             let mut error_report_messages = if reverse_chain {
                 // Avoid allocating for reverse chains as we dont make use of this value in that case
@@ -553,20 +507,20 @@ impl<C: CodecBuilder + 'static> Handler<C> {
 
             let wrapper = Wrapper::new_with_client_details(
                 messages,
-                self.client_details.clone(),
+                client_details.to_owned(),
                 self.chain.name.clone(),
                 local_addr,
             );
 
             let modified_messages = if reverse_chain {
                 self.chain
-                    .process_request_rev(wrapper, self.client_details.clone())
+                    .process_request_rev(wrapper, client_details.to_owned())
                     .await
                     .context("Chain failed to receive pushed messages/events, the connection will now be closed.")?
             } else {
                 match self
                     .chain
-                    .process_request(wrapper, self.client_details.clone())
+                    .process_request(wrapper, client_details.to_owned())
                     .await
                     .context("Chain failed to send and/or receive messages, the connection will now be closed.")
                 {
@@ -579,7 +533,13 @@ impl<C: CodecBuilder + 'static> Handler<C> {
                         //     + they might not know to check the shotover logs
                         //     + they may not be able to correlate which error in the shotover logs corresponds to their failed message
                         for m in &mut error_report_messages {
-                            *m = m.to_error_response(format!("Internal shotover (or custom transform) bug: {err:?}"));
+                            #[allow(clippy::single_match)]
+                            match m.to_error_response(format!("Internal shotover (or custom transform) bug: {err:?}")) {
+                                Ok(new_m) => *m = new_m,
+                                Err(_) => {
+                                    // If we cant produce an error then nothing we can do, just continue on and close the connection.
+                                }
+                            }
                         }
                         out_tx.send(error_report_messages)?;
                         return Err(err);
@@ -589,33 +549,16 @@ impl<C: CodecBuilder + 'static> Handler<C> {
 
             debug!("sending message: {:?}", modified_messages);
             // send the result of the process up stream
-            out_tx.send(modified_messages)?;
+            if out_tx.send(modified_messages).is_err() {
+                // the client has disconnected so we should terminate this connection
+                return Ok(());
+            }
         }
 
         Ok(())
     }
 }
 
-impl<C: CodecBuilder> Drop for Handler<C> {
-    fn drop(&mut self) {
-        // Add a permit back to the semaphore.
-        //
-        // Doing so unblocks the listener if the max number of
-        // connections has been reached.
-        //
-        // This is done in a `Drop` implementation in order to guarantee that
-        // the permit is added even if the task handling the connection panics.
-        // If `add_permit` was called at the end of the `run` function and some
-        // bug causes a panic. The permit would never be returned to the
-        // semaphore.
-
-        self.limit_connections.add_permits(1);
-
-        if let Some(terminate_tasks) = &self.terminate_tasks {
-            terminate_tasks.send(()).ok();
-        }
-    }
-}
 /// Listens for the server shutdown signal.
 ///
 /// Shutdown is signaled using a `broadcast::Receiver`. Only a single value is

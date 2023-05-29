@@ -1,0 +1,37 @@
+name: Windsock Benches
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+# Cancel already running jobs
+concurrency:
+  group: windsock_benches_${{ github.head_ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  windsock_benches:
+    name: "Windsock benches"
+    runs-on: ubuntu-22.04
+    steps:
+    - uses: actions/checkout@v3
+    - uses: Swatinem/rust-cache@v2
+    - name: Ensure that custom benches run
+      run: |
+        cargo windsock --bench-length-seconds 5 --operations-per-second 100
+        cargo windsock --bench-length-seconds 5 --operations-per-second 100 --flamegraph "name=cassandra shotover=standard"
+
+        # windsock/examples/cassandra.rs - this can stay here until windsock is moved to its own repo
+        cargo run --release --example cassandra -- --bench-length-seconds 5 --operations-per-second 100
+    - name: Ensure that tests did not create or modify any files that arent .gitignore'd
+      run: |
+        if [ -n "$(git status --porcelain)" ]; then
+          git status
+          exit 1
+        fi

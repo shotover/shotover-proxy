@@ -19,9 +19,8 @@ output.txt
 /.project
 /docs/book
 /docs/mdbook_bin
-shotover-proxy/read-localhost:9042.json
-shotover-proxy/read-localhost:9043.json
-shotover-proxy/read-localhost:9043.json
-shotover-proxy/flamegraph.svg
+shotover-proxy/read-127.0.0.1:9042.json
+shotover-proxy/read-127.0.0.1:9043.json
 shotover-proxy/read-172.16.1.2:9044.json
+shotover-proxy/flamegraph.svg
 /shotover-proxy/build/packages
