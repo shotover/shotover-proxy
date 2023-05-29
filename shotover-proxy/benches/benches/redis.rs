@@ -101,7 +101,7 @@ fn redis(c: &mut Criterion) {
     group.bench_with_input(
         "single_tls",
         || {
-            test_helpers::cert::generate_redis_test_certs(Path::new(
+            test_helpers::cert::generate_test_certs(Path::new(
                 "tests/test-configs/redis-tls/certs",
             ));
             BenchResources::new(
@@ -123,7 +123,7 @@ fn redis(c: &mut Criterion) {
     group.bench_with_input(
         "cluster_tls",
         || {
-            test_helpers::cert::generate_redis_test_certs(Path::new(
+            test_helpers::cert::generate_test_certs(Path::new(
                 "tests/test-configs/redis-tls/certs",
             ));
             BenchResources::new(
