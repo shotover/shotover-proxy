@@ -2,7 +2,30 @@ use crate::run_command;
 use rcgen::{BasicConstraints, Certificate, CertificateParams, DnType, IsCa, SanType};
 use std::path::Path;
 
-pub fn generate_redis_test_certs(path: &Path) {
+pub fn generate_test_certs(path: &Path) {
+    generate_test_certs_with_sans(
+        path,
+        vec![
+            // Just dump every address we could ever need in here.
+            // Usually you would want unique certs per instance but this works just fine for integration testing.
+            SanType::DnsName("localhost".into()),
+            SanType::IpAddress("127.0.0.1".parse().unwrap()),
+            SanType::IpAddress("172.16.1.2".parse().unwrap()),
+            SanType::IpAddress("172.16.1.3".parse().unwrap()),
+            SanType::IpAddress("172.16.1.4".parse().unwrap()),
+            SanType::IpAddress("172.16.1.5".parse().unwrap()),
+            SanType::IpAddress("172.16.1.6".parse().unwrap()),
+            SanType::IpAddress("172.16.1.7".parse().unwrap()),
+        ],
+    );
+}
+
+/// used for testing `verify_hostname: false` config
+pub fn generate_test_certs_with_bad_san(path: &Path) {
+    generate_test_certs_with_sans(path, vec![]);
+}
+
+pub fn generate_test_certs_with_sans(path: &Path, sans: Vec<SanType>) {
     let mut params = CertificateParams::default();
     params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
     // This must be "Certificate Authority"
@@ -13,15 +36,13 @@ pub fn generate_redis_test_certs(path: &Path) {
     params
         .distinguished_name
         .push(DnType::OrganizationName, "Shotover test certificate");
+
     let ca_cert = Certificate::from_params(params).unwrap();
 
     let mut params = CertificateParams::default();
 
     // This needs to refer to the hosts that certificate will be used by
-    params.subject_alt_names = vec![
-        SanType::DnsName("localhost".into()),
-        SanType::IpAddress("127.0.0.1".parse().unwrap()),
-    ];
+    params.subject_alt_names = sans;
     // This can be whatever
     params
         .distinguished_name
@@ -48,7 +69,7 @@ pub fn generate_redis_test_certs(path: &Path) {
 
 pub fn generate_cassandra_test_certs() {
     let path = Path::new("tests/test-configs/docker-images/cassandra-tls-4.0.6/certs");
-    generate_redis_test_certs(path);
+    generate_test_certs(path);
     run_command(
         "openssl",
         &[

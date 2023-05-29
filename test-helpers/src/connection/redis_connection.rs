@@ -1,3 +1,4 @@
+use anyhow::anyhow;
 use openssl::ssl::{SslConnector, SslFiletype, SslMethod};
 use redis::aio::AsyncStream;
 use redis::Client;
@@ -9,11 +10,12 @@ use tokio_openssl::SslStream;
 
 pub fn new(port: u16) -> redis::Connection {
     let address = "127.0.0.1";
-    crate::wait_for_socket_to_open(address, port);
-
     let connection = Client::open((address, port))
         .unwrap()
         .get_connection()
+        .map_err(|e| {
+            anyhow!(e).context(format!("Failed to create redis connection to port {port}"))
+        })
         .unwrap();
     connection
         .set_read_timeout(Some(Duration::from_secs(10)))
@@ -23,11 +25,15 @@ pub fn new(port: u16) -> redis::Connection {
 
 pub async fn new_async(port: u16) -> redis::aio::Connection {
     let address = "127.0.0.1";
-    crate::wait_for_socket_to_open(address, port);
 
     let stream = Box::pin(
         tokio::net::TcpStream::connect((address, port))
             .await
+            .map_err(|e| {
+                anyhow!(e).context(format!(
+                    "Failed to create async redis connection to port {port}"
+                ))
+            })
             .unwrap(),
     );
     new_async_inner(Box::pin(stream) as Pin<Box<dyn AsyncStream + Send + Sync>>).await
@@ -38,8 +44,6 @@ pub async fn new_async_tls(port: u16) -> redis::aio::Connection {
     let certificate_authority_path = "tests/test-configs/redis-tls/certs/localhost_CA.crt";
     let certificate_path = "tests/test-configs/redis-tls/certs/localhost.crt";
     let private_key_path = "tests/test-configs/redis-tls/certs/localhost.key";
-
-    crate::wait_for_socket_to_open(address, port);
 
     let mut builder = SslConnector::builder(SslMethod::tls()).unwrap();
     builder.set_ca_file(certificate_authority_path).unwrap();
