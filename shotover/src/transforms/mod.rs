@@ -6,6 +6,7 @@ use crate::transforms::cassandra::sink_cluster::CassandraSinkCluster;
 use crate::transforms::cassandra::sink_single::CassandraSinkSingle;
 use crate::transforms::coalesce::Coalesce;
 use crate::transforms::debug::force_parse::DebugForceParse;
+use crate::transforms::debug::log_to_file::DebugLogToFile;
 use crate::transforms::debug::printer::DebugPrinter;
 use crate::transforms::debug::random_delay::DebugRandomDelay;
 use crate::transforms::debug::returner::DebugReturner;
@@ -102,6 +103,7 @@ pub enum Transforms {
     DebugReturner(DebugReturner),
     DebugRandomDelay(DebugRandomDelay),
     DebugPrinter(DebugPrinter),
+    DebugLogToFile(DebugLogToFile),
     DebugForceParse(DebugForceParse),
     ParallelMap(ParallelMap),
     PoolConnections(ConnectionBalanceAndPool),
@@ -128,6 +130,7 @@ impl Transforms {
             Transforms::RedisCache(r) => r.transform(message_wrapper).await,
             Transforms::Tee(m) => m.transform(message_wrapper).await,
             Transforms::DebugPrinter(p) => p.transform(message_wrapper).await,
+            Transforms::DebugLogToFile(p) => p.transform(message_wrapper).await,
             Transforms::DebugForceParse(p) => p.transform(message_wrapper).await,
             Transforms::NullSink(n) => n.transform(message_wrapper).await,
             Transforms::Loopback(n) => n.transform(message_wrapper).await,
@@ -158,6 +161,7 @@ impl Transforms {
             Transforms::RedisCache(r) => r.transform_pushed(message_wrapper).await,
             Transforms::Tee(m) => m.transform_pushed(message_wrapper).await,
             Transforms::DebugPrinter(p) => p.transform_pushed(message_wrapper).await,
+            Transforms::DebugLogToFile(p) => p.transform_pushed(message_wrapper).await,
             Transforms::DebugForceParse(p) => p.transform_pushed(message_wrapper).await,
             Transforms::NullSink(n) => n.transform_pushed(message_wrapper).await,
             Transforms::Loopback(n) => n.transform_pushed(message_wrapper).await,
@@ -200,6 +204,7 @@ impl Transforms {
             Transforms::RedisTimestampTagger(r) => r.set_pushed_messages_tx(pushed_messages_tx),
             Transforms::RedisClusterPortsRewrite(r) => r.set_pushed_messages_tx(pushed_messages_tx),
             Transforms::DebugPrinter(p) => p.set_pushed_messages_tx(pushed_messages_tx),
+            Transforms::DebugLogToFile(p) => p.set_pushed_messages_tx(pushed_messages_tx),
             Transforms::DebugForceParse(p) => p.set_pushed_messages_tx(pushed_messages_tx),
             Transforms::NullSink(n) => n.set_pushed_messages_tx(pushed_messages_tx),
             Transforms::RedisSinkCluster(r) => r.set_pushed_messages_tx(pushed_messages_tx),
