@@ -1,7 +1,7 @@
 use crate::codec::{kafka::KafkaCodecBuilder, CodecBuilder, Direction};
 use crate::frame::kafka::{KafkaFrame, RequestBody, ResponseBody};
 use crate::frame::Frame;
-use crate::message::Messages;
+use crate::message::{Message, Messages};
 use crate::tcp;
 use crate::transforms::util::cluster_connection_pool::{spawn_read_write_tasks, Connection};
 use crate::transforms::util::{Request, Response};
@@ -128,12 +128,32 @@ impl Transform for KafkaSinkSingle {
         let responses: Result<Vec<_>> = message_wrapper
             .messages
             .into_iter()
-            .map(|message| {
+            .map(|mut message| {
+                let acks0 = if let Some(Frame::Kafka(KafkaFrame::Request {
+                    body: RequestBody::Produce(produce),
+                    ..
+                })) = message.frame()
+                {
+                    produce.acks == 0
+                } else {
+                    false
+                };
+
                 let (tx, rx) = oneshot::channel();
+                let return_chan = if acks0 {
+                    tx.send(Response {
+                        original: Message::from_frame(Frame::Dummy),
+                        response: Ok(Message::from_frame(Frame::Dummy)),
+                    })
+                    .unwrap();
+                    None
+                } else {
+                    Some(tx)
+                };
                 outbound
                     .send(Request {
                         message,
-                        return_chan: Some(tx),
+                        return_chan,
                     })
                     .map(|_| rx)
                     .map_err(|_| anyhow!("Failed to send"))
