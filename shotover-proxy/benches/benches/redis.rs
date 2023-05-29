@@ -1,6 +1,5 @@
 use criterion::{criterion_group, Criterion};
 use redis::Cmd;
-use std::path::Path;
 use test_helpers::connection::redis_connection;
 use test_helpers::docker_compose::{docker_compose, DockerCompose};
 use test_helpers::lazy::new_lazy_shared;
@@ -96,50 +95,6 @@ fn redis(c: &mut Criterion) {
             );
         }
     }
-
-    // Only need to test one case here as the type of command shouldnt affect TLS
-    group.bench_with_input(
-        "single_tls",
-        || {
-            test_helpers::cert::generate_test_certs(Path::new(
-                "tests/test-configs/redis-tls/certs",
-            ));
-            BenchResources::new(
-                "tests/test-configs/redis-tls/topology.yaml",
-                "tests/test-configs/redis-tls/docker-compose.yaml",
-            )
-        },
-        move |b, state| {
-            b.iter(|| {
-                redis::cmd("SET")
-                    .arg("foo")
-                    .arg(42)
-                    .execute(&mut state.connection);
-            })
-        },
-    );
-
-    // Only need to test one case here as the type of command shouldnt affect TLS
-    group.bench_with_input(
-        "cluster_tls",
-        || {
-            test_helpers::cert::generate_test_certs(Path::new(
-                "tests/test-configs/redis-tls/certs",
-            ));
-            BenchResources::new(
-                "tests/test-configs/redis-cluster-tls/topology.yaml",
-                "tests/test-configs/redis-cluster-tls/docker-compose.yaml",
-            )
-        },
-        move |b, state| {
-            b.iter(|| {
-                redis::cmd("SET")
-                    .arg("foo")
-                    .arg(42)
-                    .execute(&mut state.connection);
-            })
-        },
-    );
 }
 
 criterion_group!(benches, redis);

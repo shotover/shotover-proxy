@@ -1,6 +1,6 @@
 use crate::redis_int_tests::assert::*;
 use bytes::BytesMut;
-use futures::StreamExt;
+use futures::{Future, StreamExt};
 use rand::{thread_rng, Rng};
 use rand_distr::Alphanumeric;
 use redis::aio::Connection;
@@ -863,9 +863,14 @@ pub async fn test_auth(connection: &mut Connection) {
     );
 }
 
-pub async fn test_auth_isolation(connection: &mut Connection) {
+pub async fn test_auth_isolation<Fut>(connection_creator: impl Fn() -> Fut)
+where
+    Fut: Future<Output = Connection>,
+{
+    let mut connection = connection_creator().await;
+
     // ensure we are authenticated as the default superuser to setup for the auth isolation test.
-    assert_ok(redis::cmd("AUTH").arg("shotover"), connection).await;
+    assert_ok(redis::cmd("AUTH").arg("shotover"), &mut connection).await;
 
     // Create users with only access to their own key, and test their permissions using new connections.
     for i in 1..=100 {
@@ -883,11 +888,11 @@ pub async fn test_auth_isolation(connection: &mut Connection) {
                 &format!(">{pass}"),
                 &format!("~{key}"),
             ])
-            .query_async::<_, ()>(connection)
+            .query_async::<_, ()>(&mut connection)
             .await
             .unwrap();
 
-        let mut new_connection = redis_connection::new_async(6379).await;
+        let mut new_connection = connection_creator().await;
 
         assert_eq!(
             redis::cmd("GET")
@@ -1589,7 +1594,12 @@ pub async fn run_all_cluster_handling(connection: &mut Connection, flusher: &mut
     test_time(connection).await;
 }
 
-pub async fn run_all(connection: &mut Connection, flusher: &mut Flusher) {
+pub async fn run_all<Fut>(connection_creator: impl Fn() -> Fut, flusher: &mut Flusher)
+where
+    Fut: Future<Output = Connection>,
+{
+    let mut connection = connection_creator().await;
+    let connection = &mut connection;
     test_args(connection).await;
     test_getset(connection).await;
     test_incr(connection).await;
@@ -1620,29 +1630,29 @@ pub async fn run_all(connection: &mut Connection, flusher: &mut Flusher) {
     test_ping_echo(connection).await;
     test_time(connection).await;
 
-    let sub_connection = redis_connection::new_async(6379).await;
+    let sub_connection = connection_creator().await;
     test_pubsub(connection, sub_connection).await;
 
     // test again!
-    let sub_connection = redis_connection::new_async(6379).await;
+    let sub_connection = connection_creator().await;
     test_pubsub(connection, sub_connection).await;
 
-    let sub_connection = redis_connection::new_async(6379).await;
+    let sub_connection = connection_creator().await;
     test_pubsub_2subs(connection, sub_connection).await;
 
-    let sub_connection = redis_connection::new_async(6379).await;
+    let sub_connection = connection_creator().await;
     test_pubsub_unused(sub_connection).await;
 
-    let sub_connection = redis_connection::new_async(6379).await;
+    let sub_connection = connection_creator().await;
     test_pubsub_unsubscription(connection, sub_connection).await;
 
-    let sub_connection = redis_connection::new_async(6379).await;
+    let sub_connection = connection_creator().await;
     test_pubsub_automatic_unsubscription(connection, sub_connection).await;
 
-    let sub_connection = redis_connection::new_async(6379).await;
+    let sub_connection = connection_creator().await;
     test_pubsub_conn_reuse_simple(sub_connection).await;
 
-    let sub_connection = redis_connection::new_async(6379).await;
+    let sub_connection = connection_creator().await;
     test_pubsub_conn_reuse_multisub(sub_connection).await;
 }
 
