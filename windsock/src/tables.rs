@@ -120,76 +120,248 @@ fn base(reports: &[ReportArchive], table_type: &str, comparison: bool) {
         });
     }
 
-    rows.push(Row::Heading("Opns (Operations)".to_owned()));
-
-    rows.push(Row::measurements(reports, "Total Opns", |report| {
-        Some((
-            report.operations_total as f64,
-            report.operations_total.to_string(),
-            Goal::BiggerIsBetter,
-        ))
-    }));
-    rows.push(Row::measurements(
-        reports,
-        "Target Opns Per Sec",
-        |report| {
-            Some((
-                report
-                    .requested_ops
-                    .map(|x| x as f64)
-                    .unwrap_or(f64::INFINITY),
-                report
-                    .requested_ops
-                    .map(|x| x.to_string())
-                    .unwrap_or("MAX".to_owned()),
-                Goal::BiggerIsBetter,
-            ))
-        },
-    ));
-    rows.push(Row::measurements(
-        reports,
-        "Actual Opns Per Sec",
-        |report| {
-            Some((
-                report.actual_ops as f64,
-                format!("{:.0}", report.actual_ops),
-                Goal::BiggerIsBetter,
-            ))
-        },
-    ));
-
-    rows.push(Row::measurements(reports, "Opn Time Mean", |report| {
-        Some((
-            report.mean_response_time.as_secs_f64(),
-            duration_ms(report.mean_response_time),
-            Goal::SmallerIsBetter,
-        ))
-    }));
-
-    rows.push(Row::Heading("Opn Time Percentiles".to_owned()));
-    for (i, p) in Percentile::iter().enumerate() {
-        rows.push(Row::measurements(reports, p.name(), |report| {
-            Some((
-                report.response_time_percentiles[i].as_secs_f64(),
-                duration_ms(report.response_time_percentiles[i]),
-                Goal::SmallerIsBetter,
-            ))
+    if reports.iter().any(|x| x.operations_report.is_some()) {
+        rows.push(Row::Heading("(Opns) Operations".to_owned()));
+        rows.push(Row::measurements(reports, "Total Opns", |report| {
+            report.operations_report.as_ref().map(|report| {
+                (
+                    report.total as f64,
+                    report.total.to_string(),
+                    Goal::BiggerIsBetter,
+                )
+            })
         }));
+        rows.push(Row::measurements(
+            reports,
+            "Target Opns Per Sec",
+            |report| {
+                report.operations_report.as_ref().map(|report| {
+                    (
+                        report
+                            .requested_ops
+                            .map(|x| x as f64)
+                            .unwrap_or(f64::INFINITY),
+                        report
+                            .requested_ops
+                            .map(|x| x.to_string())
+                            .unwrap_or("MAX".to_owned()),
+                        Goal::BiggerIsBetter,
+                    )
+                })
+            },
+        ));
+        rows.push(Row::measurements(reports, "Opns Per Sec", |report| {
+            report.operations_report.as_ref().map(|report| {
+                (
+                    report.total_ops as f64,
+                    format!("{:.0}", report.total_ops),
+                    Goal::BiggerIsBetter,
+                )
+            })
+        }));
+
+        rows.push(Row::measurements(reports, "Opn Time Mean", |report| {
+            report.operations_report.as_ref().map(|report| {
+                (
+                    report.mean_time.as_secs_f64(),
+                    duration_ms(report.mean_time),
+                    Goal::SmallerIsBetter,
+                )
+            })
+        }));
+
+        rows.push(Row::Heading("Opn Time Percentiles".to_owned()));
+        for (i, p) in Percentile::iter().enumerate() {
+            rows.push(Row::measurements(reports, p.name(), |report| {
+                report.operations_report.as_ref().map(|report| {
+                    (
+                        report.time_percentiles[i].as_secs_f64(),
+                        duration_ms(report.time_percentiles[i]),
+                        Goal::SmallerIsBetter,
+                    )
+                })
+            }));
+        }
+
+        rows.push(Row::Heading("Opns Each Second".to_owned()));
+        for i in 0..reports
+            .iter()
+            .map(|x| {
+                x.operations_report
+                    .as_ref()
+                    .map(|report| report.total_each_second.len())
+                    .unwrap_or(0)
+            })
+            .max()
+            .unwrap()
+        {
+            rows.push(Row::measurements(reports, &i.to_string(), |report| {
+                report.operations_report.as_ref().and_then(|report| {
+                    report
+                        .total_each_second
+                        .get(i)
+                        .map(|value| (*value as f64, value.to_string(), Goal::BiggerIsBetter))
+                })
+            }));
+        }
     }
 
-    rows.push(Row::Heading("Opns Each Second".to_owned()));
-    for i in 0..reports
-        .iter()
-        .map(|x| x.operations_each_second.len())
-        .max()
-        .unwrap()
-    {
-        rows.push(Row::measurements(reports, &i.to_string(), |report| {
-            report
-                .operations_each_second
-                .get(i)
-                .map(|value| (*value as f64, value.to_string(), Goal::BiggerIsBetter))
+    if reports.iter().any(|x| x.pubsub_report.is_some()) {
+        rows.push(Row::Heading("Produce/Consume".to_owned()));
+        rows.push(Row::measurements(reports, "Total Produce", |report| {
+            report.pubsub_report.as_ref().map(|report| {
+                (
+                    report.total_produce as f64,
+                    report.total_produce.to_string(),
+                    Goal::BiggerIsBetter,
+                )
+            })
         }));
+        rows.push(Row::measurements(reports, "Total Consume", |report| {
+            report.pubsub_report.as_ref().map(|report| {
+                (
+                    report.total_consume as f64,
+                    report.total_consume.to_string(),
+                    Goal::BiggerIsBetter,
+                )
+            })
+        }));
+        rows.push(Row::measurements(reports, "Total Backlog", |report| {
+            report.pubsub_report.as_ref().map(|report| {
+                (
+                    report.total_backlog as f64,
+                    report.total_backlog.to_string(),
+                    Goal::SmallerIsBetter,
+                )
+            })
+        }));
+
+        rows.push(Row::measurements(
+            reports,
+            "Target Produce Per Sec",
+            |report| {
+                report.pubsub_report.as_ref().map(|report| {
+                    (
+                        report
+                            .requested_produce_per_second
+                            .map(|x| x as f64)
+                            .unwrap_or(f64::INFINITY),
+                        report
+                            .requested_produce_per_second
+                            .map(|x| x.to_string())
+                            .unwrap_or("MAX".to_owned()),
+                        Goal::BiggerIsBetter,
+                    )
+                })
+            },
+        ));
+        rows.push(Row::measurements(reports, "Produce Per Sec", |report| {
+            report.pubsub_report.as_ref().map(|report| {
+                (
+                    report.produce_per_second as f64,
+                    format!("{:.0}", report.produce_per_second),
+                    Goal::BiggerIsBetter,
+                )
+            })
+        }));
+        rows.push(Row::measurements(reports, "Consume Per Sec", |report| {
+            report.pubsub_report.as_ref().map(|report| {
+                (
+                    report.consume_per_second as f64,
+                    format!("{:.0}", report.consume_per_second),
+                    Goal::BiggerIsBetter,
+                )
+            })
+        }));
+
+        rows.push(Row::measurements(reports, "Produce Time Mean", |report| {
+            report.pubsub_report.as_ref().map(|report| {
+                (
+                    report.produce_mean_time.as_secs_f64(),
+                    duration_ms(report.produce_mean_time),
+                    Goal::SmallerIsBetter,
+                )
+            })
+        }));
+
+        rows.push(Row::Heading("Produce Time Percentiles".to_owned()));
+        for (i, p) in Percentile::iter().enumerate() {
+            rows.push(Row::measurements(reports, p.name(), |report| {
+                report.pubsub_report.as_ref().map(|report| {
+                    (
+                        report.produce_time_percentiles[i].as_secs_f64(),
+                        duration_ms(report.produce_time_percentiles[i]),
+                        Goal::SmallerIsBetter,
+                    )
+                })
+            }));
+        }
+
+        rows.push(Row::Heading("Produce Each Second".to_owned()));
+        for i in 0..reports
+            .iter()
+            .map(|x| {
+                x.pubsub_report
+                    .as_ref()
+                    .map(|report| report.produce_each_second.len())
+                    .unwrap_or(0)
+            })
+            .max()
+            .unwrap()
+        {
+            rows.push(Row::measurements(reports, &i.to_string(), |report| {
+                report.pubsub_report.as_ref().and_then(|report| {
+                    report
+                        .produce_each_second
+                        .get(i)
+                        .map(|value| (*value as f64, value.to_string(), Goal::BiggerIsBetter))
+                })
+            }));
+        }
+
+        rows.push(Row::Heading("Consume Each Second".to_owned()));
+        for i in 0..reports
+            .iter()
+            .map(|x| {
+                x.pubsub_report
+                    .as_ref()
+                    .map(|report| report.consume_each_second.len())
+                    .unwrap_or(0)
+            })
+            .max()
+            .unwrap()
+        {
+            rows.push(Row::measurements(reports, &i.to_string(), |report| {
+                report.pubsub_report.as_ref().and_then(|report| {
+                    report
+                        .consume_each_second
+                        .get(i)
+                        .map(|value| (*value as f64, value.to_string(), Goal::BiggerIsBetter))
+                })
+            }));
+        }
+
+        rows.push(Row::Heading("Total Backlog Each Second".to_owned()));
+        for i in 0..reports
+            .iter()
+            .map(|x| {
+                x.pubsub_report
+                    .as_ref()
+                    .map(|report| report.backlog_each_second.len())
+                    .unwrap_or(0)
+            })
+            .max()
+            .unwrap()
+        {
+            rows.push(Row::measurements(reports, &i.to_string(), |report| {
+                report.pubsub_report.as_ref().and_then(|report| {
+                    report
+                        .backlog_each_second
+                        .get(i)
+                        .map(|value| (*value as f64, value.to_string(), Goal::SmallerIsBetter))
+                })
+            }));
+        }
     }
 
     // the width of the legend column
@@ -202,7 +374,7 @@ fn base(reports: &[ReportArchive], table_type: &str, comparison: bool) {
             Row::Measurements { legend, .. } => legend.len(),
         })
         .max()
-        .unwrap();
+        .unwrap_or(10);
     // the width of the comparison compoenent of each column
     let comparison_widths: Vec<usize> = reports
         .iter()
