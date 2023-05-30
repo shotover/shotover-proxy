@@ -9,6 +9,8 @@ use tokio::sync::mpsc::UnboundedReceiver;
 pub enum Report {
     Start,
     QueryCompletedIn(Duration),
+    ProduceCompletedIn(Duration),
+    ConsumeCompleted,
     SecondPassed(Duration),
     /// contains the time that the test ran for
     FinishedIn(Duration),
@@ -75,16 +77,39 @@ impl Percentile {
     }
 }
 
+type Percentiles = [Duration; Percentile::COUNT];
+
 #[derive(Debug, Serialize, Deserialize)]
 pub(crate) struct ReportArchive {
     pub(crate) running_in_release: bool,
     pub(crate) tags: Tags,
-    pub(crate) operations_total: u64,
+    pub(crate) operations_report: Option<OperationsReport>,
+    pub(crate) pubsub_report: Option<PubSubReport>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Default)]
+pub(crate) struct OperationsReport {
+    pub(crate) total: u64,
     pub(crate) requested_ops: Option<u64>,
-    pub(crate) actual_ops: u64,
-    pub(crate) mean_response_time: Duration,
-    pub(crate) response_time_percentiles: [Duration; Percentile::COUNT],
-    pub(crate) operations_each_second: Vec<u64>,
+    pub(crate) total_ops: u32,
+    pub(crate) mean_time: Duration,
+    pub(crate) time_percentiles: Percentiles,
+    pub(crate) total_each_second: Vec<u64>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Default)]
+pub(crate) struct PubSubReport {
+    pub(crate) total_produce: u64,
+    pub(crate) total_consume: u64,
+    pub(crate) total_backlog: i64,
+    pub(crate) requested_produce_per_second: Option<u64>,
+    pub(crate) produce_per_second: u32,
+    pub(crate) consume_per_second: u32,
+    pub(crate) produce_mean_time: Duration,
+    pub(crate) produce_time_percentiles: Percentiles,
+    pub(crate) produce_each_second: Vec<u64>,
+    pub(crate) consume_each_second: Vec<u64>,
+    pub(crate) backlog_each_second: Vec<i64>,
 }
 
 impl ReportArchive {
@@ -159,12 +184,14 @@ pub(crate) async fn report_builder(
     requested_ops: Option<u64>,
     running_in_release: bool,
 ) -> ReportArchive {
-    let mut operations_total = 0;
-    let mut response_times = vec![];
-    let mut total_response_time = Duration::from_secs(0);
     let mut finished_in = None;
     let mut started = false;
-    let mut operations_each_second = vec![0];
+    let mut pubsub_report = None;
+    let mut operations_report = None;
+    let mut operation_times = vec![];
+    let mut produce_times = vec![];
+    let mut total_operation_time = Duration::from_secs(0);
+    let mut total_produce_time = Duration::from_secs(0);
 
     while let Some(report) = rx.recv().await {
         match report {
@@ -172,11 +199,39 @@ pub(crate) async fn report_builder(
                 started = true;
             }
             Report::QueryCompletedIn(duration) => {
+                let report = operations_report.get_or_insert_with(OperationsReport::default);
                 if started {
-                    operations_total += 1;
-                    total_response_time += duration;
-                    response_times.push(duration);
-                    *operations_each_second.last_mut().unwrap() += 1;
+                    report.total += 1;
+                    total_operation_time += duration;
+                    operation_times.push(duration);
+                    match report.total_each_second.last_mut() {
+                        Some(last) => *last += 1,
+                        None => report.total_each_second.push(0),
+                    }
+                }
+            }
+            Report::ProduceCompletedIn(duration) => {
+                let report = pubsub_report.get_or_insert_with(PubSubReport::default);
+                if started {
+                    report.total_backlog += 1;
+                    report.total_produce += 1;
+                    total_produce_time += duration;
+                    produce_times.push(duration);
+                    match report.produce_each_second.last_mut() {
+                        Some(last) => *last += 1,
+                        None => report.produce_each_second.push(0),
+                    }
+                }
+            }
+            Report::ConsumeCompleted => {
+                let report = pubsub_report.get_or_insert_with(PubSubReport::default);
+                if started {
+                    report.total_backlog -= 1;
+                    report.total_consume += 1;
+                    match report.consume_each_second.last_mut() {
+                        Some(last) => *last += 1,
+                        None => report.consume_each_second.push(0),
+                    }
                 }
             }
             Report::SecondPassed(duration) => {
@@ -184,12 +239,16 @@ pub(crate) async fn report_builder(
                     duration >= Duration::from_secs(1) && duration < Duration::from_millis(1050),
                     "Expected duration to be within 50ms of a second but was {duration:?}"
                 );
-                operations_each_second.push(0);
+                if let Some(report) = operations_report.as_mut() {
+                    report.total_each_second.push(0);
+                }
+                if let Some(report) = pubsub_report.as_mut() {
+                    report.produce_each_second.push(0);
+                    report.consume_each_second.push(0);
+                    report.backlog_each_second.push(report.total_backlog);
+                }
             }
             Report::FinishedIn(duration) => {
-                // This is not a complete result so discard it.
-                operations_each_second.pop();
-
                 if !started {
                     panic!("The bench never returned Report::Start")
                 }
@@ -205,34 +264,60 @@ pub(crate) async fn report_builder(
         None => panic!("The bench never returned Report::FinishedIn(..)"),
     };
 
-    let mean_response_time = if !response_times.is_empty() {
-        total_response_time / response_times.len() as u32
-    } else {
-        Duration::from_secs(0)
-    };
-    let actual_ops = (operations_total as u128 / (finished_in.as_nanos() / 1_000_000_000)) as u64;
+    if let Some(report) = operations_report.as_mut() {
+        report.requested_ops = requested_ops;
+        report.mean_time = mean_time(&operation_times, total_operation_time);
+        report.total_ops = calculate_ops(report.total, finished_in);
+        report.time_percentiles = calculate_percentiles(operation_times);
 
-    let mut response_time_percentiles = [Duration::new(0, 0); Percentile::COUNT];
-    response_times.sort();
-    if !response_times.is_empty() {
-        for (i, p) in Percentile::iter().enumerate() {
-            let percentile_index = (p.value() * response_times.len() as f64) as usize;
-            // Need to cap at last index, otherwise the MAX percentile will overflow by 1
-            let index = percentile_index.min(response_times.len() - 1);
-            response_time_percentiles[i] = response_times[index];
-        }
+        // This is not a complete result so discard it.
+        report.total_each_second.pop();
+    }
+
+    if let Some(report) = pubsub_report.as_mut() {
+        report.requested_produce_per_second = requested_ops;
+        report.produce_mean_time = mean_time(&produce_times, total_produce_time);
+        report.produce_per_second = calculate_ops(report.total_produce, finished_in);
+        report.consume_per_second = calculate_ops(report.total_consume, finished_in);
+        report.produce_time_percentiles = calculate_percentiles(produce_times);
+
+        // This is not a complete result so discard it.
+        report.produce_each_second.pop();
+        report.consume_each_second.pop();
     }
 
     let archive = ReportArchive {
         running_in_release,
         tags,
-        requested_ops,
-        actual_ops,
-        operations_total,
-        mean_response_time,
-        response_time_percentiles,
-        operations_each_second,
+        pubsub_report,
+        operations_report,
     };
     archive.save();
     archive
+}
+
+fn mean_time(times: &[Duration], total_time: Duration) -> Duration {
+    if !times.is_empty() {
+        total_time / times.len() as u32
+    } else {
+        Duration::from_secs(0)
+    }
+}
+
+fn calculate_ops(total: u64, finished_in: Duration) -> u32 {
+    (total as u128 / (finished_in.as_nanos() / 1_000_000_000)) as u32
+}
+
+fn calculate_percentiles(mut times: Vec<Duration>) -> Percentiles {
+    let mut percentiles = [Duration::ZERO; Percentile::COUNT];
+    times.sort();
+    if !times.is_empty() {
+        for (i, p) in Percentile::iter().enumerate() {
+            let percentile_index = (p.value() * times.len() as f64) as usize;
+            // Need to cap at last index, otherwise the MAX percentile will overflow by 1
+            let index = percentile_index.min(times.len() - 1);
+            percentiles[i] = times[index];
+        }
+    }
+    percentiles
 }
