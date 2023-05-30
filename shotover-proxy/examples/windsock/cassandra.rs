@@ -1,3 +1,4 @@
+use crate::common::Shotover;
 use async_trait::async_trait;
 use scylla::{
     prepared_statement::PreparedStatement, transport::Compression as ScyllaCompression, Session,
@@ -37,13 +38,6 @@ enum CassandraDbInstance {
 pub enum Topology {
     Single,
     Cluster3,
-}
-
-pub enum Shotover {
-    None,
-    Standard,
-    #[allow(dead_code)]
-    ForcedMessageParsed,
 }
 
 struct CoreCount {
@@ -105,14 +99,7 @@ impl Bench for CassandraBench {
                     Topology::Cluster3 => "cluster3".to_owned(),
                 },
             ),
-            (
-                "shotover".to_owned(),
-                match self.shotover {
-                    Shotover::None => "none".to_owned(),
-                    Shotover::Standard => "standard".to_owned(),
-                    Shotover::ForcedMessageParsed => "forced-message-parsed".to_owned(),
-                },
-            ),
+            self.shotover.to_tag(),
             // TODO: run with different message types
             ("message_type".to_owned(), "read_bigint".to_owned()),
             (
