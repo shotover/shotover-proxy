@@ -114,11 +114,11 @@ pub(crate) struct PubSubReport {
 
 impl ReportArchive {
     fn path(&self) -> PathBuf {
-        windsock_path().join(self.tags.get_name())
+        ReportArchive::last_run_path().join(self.tags.get_name())
     }
 
     pub fn load(path: &str) -> Result<Self> {
-        match std::fs::read(windsock_path().join(path)) {
+        match std::fs::read(ReportArchive::last_run_path().join(path)) {
             Ok(bytes) => bincode::deserialize(&bytes).map_err(|e|
                 anyhow!(e).context("The bench archive from the previous run is not a valid archive, maybe the format changed since the last run")
             ),
@@ -128,7 +128,7 @@ impl ReportArchive {
     }
 
     pub fn reports_in_last_run() -> Vec<String> {
-        let report_dir = windsock_path();
+        let report_dir = ReportArchive::last_run_path();
         std::fs::create_dir_all(&report_dir).unwrap();
 
         let mut reports: Vec<String> = std::fs::read_dir(report_dir)
@@ -156,12 +156,16 @@ impl ReportArchive {
     }
 
     pub(crate) fn clear_last_run() {
-        let path = windsock_path();
+        let path = ReportArchive::last_run_path();
         if path.exists() {
-            // Just an extra sanity check that we truly are deleting a windsock_data directory
-            assert_eq!(path.file_name().unwrap(), "windsock_data");
-            std::fs::remove_dir_all(windsock_path()).unwrap();
+            // Just an extra sanity check that we truly are deleting a last_run directory
+            assert_eq!(path.file_name().unwrap(), "last_run");
+            std::fs::remove_dir_all(path).unwrap();
         }
+    }
+
+    pub fn last_run_path() -> PathBuf {
+        windsock_path().join("last_run")
     }
 }
 
