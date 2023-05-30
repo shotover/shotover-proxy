@@ -41,6 +41,8 @@ bytes.workspace = true
 rand.workspace = true
 rand_distr.workspace = true
 async-trait.workspace = true
+tracing-subscriber.workspace = true
+tracing-appender = "0.2.0"
 windsock = { path = "../windsock" }
 
 [[bench]]
