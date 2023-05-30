@@ -897,8 +897,8 @@ impl CassandraEncoder {
     }
 
     fn encode_envelope(&mut self, m: Message, envelope_compresson: Compression) -> Result<Bytes> {
-        // TODO: always check if cassandra message
-        Ok(match m.into_encodable(MessageType::Cassandra)? {
+        m.ensure_message_type(MessageType::Cassandra)?;
+        Ok(match m.into_encodable() {
             Encodable::Bytes(bytes) => {
                 // TODO this is a weird side effect to keep in this function
                 // check if the message is a startup message and set the codec's compression

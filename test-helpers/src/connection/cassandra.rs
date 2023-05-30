@@ -208,10 +208,6 @@ impl CassandraConnection {
         tls: Option<Tls>,
         protocol: Option<ProtocolVersion>,
     ) -> Self {
-        for contact_point in contact_points.split(',') {
-            crate::wait_for_socket_to_open(contact_point, port);
-        }
-
         match driver {
             #[cfg(feature = "cassandra-cpp-driver-tests")]
             CassandraDriver::Datastax => {

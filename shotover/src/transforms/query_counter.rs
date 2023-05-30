@@ -56,6 +56,9 @@ impl Transform for QueryCounter {
                 Some(Frame::Kafka(_)) => {
                     counter!("query_count", 1, "name" => self.counter_name.clone(), "query" => "unknown", "type" => "kafka");
                 }
+                Some(Frame::Dummy) => {
+                    // Dummy does not count as a message
+                }
                 None => {
                     counter!("query_count", 1, "name" => self.counter_name.clone(), "query" => "unknown", "type" => "none")
                 }

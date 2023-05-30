@@ -144,16 +144,11 @@ impl Message {
         }
     }
 
-    // TODO: Considering we already have the expected message type here maybe we should perform any required conversions and return a Result<Bytes> here.
-    // I've left it as is to keep the PR simpler and there could be a need for codecs to control this process that I havent investigated.
-    pub fn into_encodable(self, expected_message_type: MessageType) -> Result<Encodable> {
-        match self.inner.unwrap() {
-            MessageInner::RawBytes {
-                bytes,
-                message_type,
-            } => {
-                if message_type == expected_message_type {
-                    Ok(Encodable::Bytes(bytes))
+    pub fn ensure_message_type(&self, expected_message_type: MessageType) -> Result<()> {
+        match self.inner.as_ref().unwrap() {
+            MessageInner::RawBytes { message_type, .. } => {
+                if *message_type == expected_message_type || *message_type == MessageType::Dummy {
+                    Ok(())
                 } else {
                     Err(anyhow!(
                         "Expected message of type {:?} but was of type {:?}",
@@ -162,9 +157,10 @@ impl Message {
                     ))
                 }
             }
-            MessageInner::Parsed { bytes, frame } => {
-                if frame.get_type() == expected_message_type {
-                    Ok(Encodable::Bytes(bytes))
+            MessageInner::Parsed { frame, .. } => {
+                let message_type = frame.get_type();
+                if message_type == expected_message_type || message_type == MessageType::Dummy {
+                    Ok(())
                 } else {
                     Err(anyhow!(
                         "Expected message of type {:?} but was of type {:?}",
@@ -174,8 +170,9 @@ impl Message {
                 }
             }
             MessageInner::Modified { frame } => {
-                if frame.get_type() == expected_message_type {
-                    Ok(Encodable::Frame(frame))
+                let message_type = frame.get_type();
+                if message_type == expected_message_type || message_type == MessageType::Dummy {
+                    Ok(())
                 } else {
                     Err(anyhow!(
                         "Expected message of type {:?} but was of type {:?}",
@@ -184,6 +181,17 @@ impl Message {
                     ))
                 }
             }
+        }
+    }
+
+    pub fn into_encodable(self) -> Encodable {
+        match self.inner.unwrap() {
+            MessageInner::RawBytes { bytes, .. } => Encodable::Bytes(bytes),
+            MessageInner::Parsed { bytes, .. } => Encodable::Bytes(bytes),
+            MessageInner::Modified {
+                frame: Frame::Dummy,
+            } => Encodable::Bytes(Bytes::new()),
+            MessageInner::Modified { frame } => Encodable::Frame(frame),
         }
     }
 
@@ -201,11 +209,13 @@ impl Message {
                 MessageType::Redis => nonzero!(1u32),
                 MessageType::Cassandra => cassandra::raw_frame::cell_count(bytes)?,
                 MessageType::Kafka => todo!(),
+                MessageType::Dummy => nonzero!(1u32),
             },
             MessageInner::Modified { frame } | MessageInner::Parsed { frame, .. } => match frame {
                 Frame::Cassandra(frame) => frame.cell_count()?,
                 Frame::Redis(_) => nonzero!(1u32),
                 Frame::Kafka(_) => todo!(),
+                Frame::Dummy => nonzero!(1u32),
             },
         })
     }
@@ -228,6 +238,7 @@ impl Message {
             Some(Frame::Cassandra(cassandra)) => cassandra.get_query_type(),
             Some(Frame::Redis(redis)) => redis_query_type(redis), // free-standing function as we cant define methods on RedisFrame
             Some(Frame::Kafka(_)) => todo!(),
+            Some(Frame::Dummy) => todo!(),
             None => QueryType::ReadWrite,
         }
     }
@@ -276,11 +287,13 @@ impl Message {
                 }
                 MessageType::Redis => Ok(Metadata::Redis),
                 MessageType::Kafka => Ok(Metadata::Kafka),
+                MessageType::Dummy => Err(anyhow!("dummy has no metadata")),
             },
             MessageInner::Parsed { frame, .. } | MessageInner::Modified { frame } => match frame {
                 Frame::Cassandra(frame) => Ok(Metadata::Cassandra(frame.metadata())),
                 Frame::Kafka(_) => Ok(Metadata::Kafka),
                 Frame::Redis(_) => Ok(Metadata::Redis),
+                Frame::Dummy => Err(anyhow!("dummy has no metadata")),
             },
         }
     }
@@ -334,6 +347,7 @@ impl Message {
                     Frame::Cassandra(cassandra) => Some(cassandra.stream_id),
                     Frame::Redis(_) => None,
                     Frame::Kafka(_) => None,
+                    Frame::Dummy => None,
                 }
             }
             None => None,
