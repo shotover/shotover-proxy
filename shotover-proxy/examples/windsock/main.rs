@@ -1,6 +1,6 @@
 mod cassandra;
-mod common;
 mod cassandra_protocols;
+mod common;
 mod kafka;
 mod profilers;
 mod redis;
@@ -10,8 +10,8 @@ use crate::common::*;
 use crate::kafka::*;
 use crate::redis::*;
 use cassandra::*;
-use common::*;
 use cassandra_protocols::*;
+use common::*;
 use kafka::*;
 use std::path::Path;
 use tracing_subscriber::EnvFilter;

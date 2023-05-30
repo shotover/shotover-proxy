@@ -1,10 +1,13 @@
 use super::cassandra::*;
+use crate::common::Shotover;
 use async_trait::async_trait;
-use cdrs_tokio::cluster::session::{SessionBuilder, TcpSessionBuilder};
-use cdrs_tokio::cluster::NodeTcpConfigBuilder;
+use cdrs_tokio::cluster::session::{Session, SessionBuilder, TcpSessionBuilder};
+use cdrs_tokio::cluster::{NodeTcpConfigBuilder, TcpConnectionManager};
 use cdrs_tokio::frame::Version;
 use cdrs_tokio::load_balancing::RoundRobinLoadBalancingStrategy;
+use cdrs_tokio::query::PreparedQuery;
 use cdrs_tokio::query_values;
+use cdrs_tokio::transport::TransportTcp;
 use std::sync::Arc;
 use std::{
     collections::HashMap,
@@ -77,8 +80,8 @@ impl Bench for CassandraProtocolBench {
         &self,
         flamegraph: bool,
         _local: bool,
-        _runtime_seconds: u32,
-        _operations_per_second: Option<u64>,
+        runtime_seconds: u32,
+        operations_per_second: Option<u64>,
         reporter: UnboundedSender<Report>,
     ) {
         let address = match (&self.topology, &self.shotover) {
@@ -157,39 +160,35 @@ impl Bench for CassandraProtocolBench {
                     .unwrap();
             }
 
-            let bench_query = session
-                .prepare("SELECT * FROM ks.bench WHERE id = ?")
-                .await
-                .unwrap();
-            let mut tasks = vec![];
-            for _ in 0..128 {
-                let session = session.clone();
-                let reporter = reporter.clone();
-                let bench_query = bench_query.clone();
-                tasks.push(tokio::spawn(async move {
-                    loop {
-                        let i = rand::random::<u32>() % row_count as u32;
-                        let instant = Instant::now();
-                        session
-                            .exec_with_values(&bench_query, query_values!(i))
-                            .await
-                            .unwrap();
-                        if reporter
-                            .send(Report::QueryCompletedIn(instant.elapsed()))
-                            .is_err()
-                        {
-                            // The benchmark has completed and the reporter no longer wants to receive reports so just shutdown
-                            return;
-                        }
-                    }
-                }));
-            }
+            let bench_query = Arc::new(
+                session
+                    .prepare("SELECT * FROM ks.bench WHERE id = ?")
+                    .await
+                    .unwrap(),
+            );
 
-            // warm up and then start
-            // TODO: properly reevaluate our warmup time once we have graphs showing throughput and latency over time.
             tokio::time::sleep(Duration::from_secs(2)).await;
+
+            let bench_task = BenchTaskCassandra {
+                bench_query,
+                session,
+                row_count,
+            };
+
             reporter.send(Report::Start).unwrap();
             let start = Instant::now();
+
+            let tasks = bench_task
+                .spawn_tasks(reporter.clone(), operations_per_second)
+                .await;
+
+            for _ in 0..runtime_seconds {
+                let second = Instant::now();
+                tokio::time::sleep(Duration::from_secs(1)).await;
+                reporter
+                    .send(Report::SecondPassed(second.elapsed()))
+                    .unwrap();
+            }
 
             tokio::time::sleep(Duration::from_secs(15)).await;
             reporter.send(Report::FinishedIn(start.elapsed())).unwrap();
@@ -206,5 +205,70 @@ impl Bench for CassandraProtocolBench {
                 perf.flamegraph();
             }
         }
+    }
+}
+
+#[derive(Clone)]
+struct BenchTaskCassandra {
+    bench_query: Arc<PreparedQuery>,
+    session: Arc<
+        Session<
+            TransportTcp,
+            TcpConnectionManager,
+            RoundRobinLoadBalancingStrategy<TransportTcp, TcpConnectionManager>,
+        >,
+    >,
+    row_count: usize,
+}
+
+impl BenchTaskCassandra {
+    async fn produce_one(&self) {
+        let i = rand::random::<u32>() % self.row_count as u32;
+        self.session
+            .exec_with_values(&self.bench_query, query_values!(i))
+            .await
+            .unwrap();
+    }
+
+    async fn spawn_tasks(
+        self,
+        reporter: UnboundedSender<Report>,
+        operations_per_second: Option<u64>,
+    ) -> Vec<tokio::task::JoinHandle<()>> {
+        let mut tasks = vec![];
+        let task_count = operations_per_second.map(|x| x.min(10000)).unwrap_or(10000);
+        let allocated_time_per_op = operations_per_second
+            .map(|ops| (Duration::from_secs(1) * task_count as u32) / ops as u32);
+
+        for _ in 0..task_count {
+            let task = self.clone();
+            let reporter = reporter.clone();
+            tasks.push(tokio::spawn(async move {
+                let mut interval = allocated_time_per_op.map(tokio::time::interval);
+
+                loop {
+                    if let Some(interval) = &mut interval {
+                        interval.tick().await;
+                    }
+
+                    let operation_start = Instant::now();
+
+                    tokio::select!(
+                        _ = task.produce_one() => {
+                            let report = Report::QueryCompletedIn(operation_start.elapsed());
+                            if reporter.send(report).is_err() {
+                                // Errors indicate the reporter has closed so we should end the bench
+                                return;
+                            }
+                        }
+                        _ = reporter.closed() => {
+                            return
+                        }
+                    );
+                }
+            }));
+        }
+
+        tasks
     }
 }
