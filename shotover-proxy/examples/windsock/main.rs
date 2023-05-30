@@ -1,7 +1,9 @@
 mod cassandra;
+mod common;
 mod kafka;
 
 use cassandra::*;
+use common::*;
 use kafka::*;
 use std::path::Path;
 use windsock::Windsock;
@@ -19,7 +21,15 @@ fn main() {
 
     Windsock::new(
         vec![
-            Box::new(KafkaBench::new()),
+            Box::new(KafkaBench::new(Shotover::None, Size::B1)),
+            Box::new(KafkaBench::new(Shotover::None, Size::KB1)),
+            Box::new(KafkaBench::new(Shotover::None, Size::KB100)),
+            Box::new(KafkaBench::new(Shotover::Standard, Size::B1)),
+            Box::new(KafkaBench::new(Shotover::Standard, Size::KB1)),
+            Box::new(KafkaBench::new(Shotover::Standard, Size::KB100)),
+            Box::new(KafkaBench::new(Shotover::ForcedMessageParsed, Size::B1)),
+            Box::new(KafkaBench::new(Shotover::ForcedMessageParsed, Size::KB1)),
+            Box::new(KafkaBench::new(Shotover::ForcedMessageParsed, Size::KB100)),
             Box::new(CassandraBench::new(
                 CassandraDb::Cassandra,
                 Topology::Single,
