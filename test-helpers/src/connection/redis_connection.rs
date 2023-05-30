@@ -23,9 +23,7 @@ pub fn new(port: u16) -> redis::Connection {
     connection
 }
 
-pub async fn new_async(port: u16) -> redis::aio::Connection {
-    let address = "127.0.0.1";
-
+pub async fn new_async(address: &str, port: u16) -> redis::aio::Connection {
     let stream = Box::pin(
         tokio::net::TcpStream::connect((address, port))
             .await
@@ -39,8 +37,7 @@ pub async fn new_async(port: u16) -> redis::aio::Connection {
     new_async_inner(Box::pin(stream) as Pin<Box<dyn AsyncStream + Send + Sync>>).await
 }
 
-pub async fn new_async_tls(port: u16) -> redis::aio::Connection {
-    let address = "127.0.0.1";
+pub async fn new_async_tls(address: &str, port: u16) -> redis::aio::Connection {
     let certificate_authority_path = "tests/test-configs/redis-tls/certs/localhost_CA.crt";
     let certificate_path = "tests/test-configs/redis-tls/certs/localhost.crt";
     let private_key_path = "tests/test-configs/redis-tls/certs/localhost.key";
@@ -59,7 +56,7 @@ pub async fn new_async_tls(port: u16) -> redis::aio::Connection {
         .configure()
         .unwrap()
         .verify_hostname(false)
-        .into_ssl("127.0.0.1")
+        .into_ssl(address)
         .unwrap();
 
     let tcp_stream = TcpStream::connect((address, port)).await.unwrap();

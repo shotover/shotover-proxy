@@ -13,7 +13,7 @@ async fn log_to_file() {
             .start()
             .await;
 
-    let mut connection = redis_connection::new_async(6379).await;
+    let mut connection = redis_connection::new_async("127.0.0.1", 6379).await;
 
     assert_ok(redis::cmd("SET").arg("foo").arg(42), &mut connection).await;
     let request = std::fs::read("message-log/1/requests/message1.bin").unwrap();
