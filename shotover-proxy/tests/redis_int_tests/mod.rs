@@ -34,8 +34,9 @@ async fn passthrough() {
     )
     .start()
     .await;
-    let connection = || redis_connection::new_async(6379);
-    let mut flusher = Flusher::new_single_connection(redis_connection::new_async(6379).await).await;
+    let connection = || redis_connection::new_async("127.0.0.1", 6379);
+    let mut flusher =
+        Flusher::new_single_connection(redis_connection::new_async("127.0.0.1", 6379).await).await;
 
     run_all(&connection, &mut flusher).await;
     test_invalid_frame().await;
@@ -52,7 +53,7 @@ async fn passthrough_redis_down() {
     )
     .start()
     .await;
-    let mut connection = redis_connection::new_async(6379).await;
+    let mut connection = redis_connection::new_async("127.0.0.1", 6379).await;
 
     test_trigger_transform_failure_driver(&mut connection).await;
     test_trigger_transform_failure_raw().await;
@@ -91,8 +92,8 @@ async fn tls_cluster_sink() {
     .start()
     .await;
 
-    let mut connection = redis_connection::new_async(6379).await;
-    let mut flusher = Flusher::new_cluster().await;
+    let mut connection = redis_connection::new_async("127.0.0.1", 6379).await;
+    let mut flusher = Flusher::new_cluster_tls().await;
 
     run_all_cluster_hiding(&mut connection, &mut flusher).await;
     test_cluster_ports_rewrite_slots(&mut connection, 6379).await;
@@ -112,9 +113,11 @@ async fn tls_source_and_tls_single_sink() {
                 .start()
                 .await;
 
-        let connection = || redis_connection::new_async_tls(6380);
-        let mut flusher =
-            Flusher::new_single_connection(redis_connection::new_async_tls(6380).await).await;
+        let connection = || redis_connection::new_async_tls("127.0.0.1", 6379);
+        let mut flusher = Flusher::new_single_connection(
+            redis_connection::new_async_tls("127.0.0.1", 6379).await,
+        )
+        .await;
 
         run_all(&connection, &mut flusher).await;
 
@@ -131,7 +134,7 @@ async fn tls_source_and_tls_single_sink() {
         .start()
         .await;
 
-        let mut connection = redis_connection::new_async_tls(6380).await;
+        let mut connection = redis_connection::new_async_tls("127.0.0.1", 6379).await;
         test_cluster_basics(&mut connection).await;
         shotover.shutdown_and_then_consume_events(&[]).await;
     }
@@ -149,7 +152,7 @@ async fn tls_source_and_tls_single_sink() {
         .start()
         .await;
 
-        let mut connection = redis_connection::new_async_tls(6380).await;
+        let mut connection = redis_connection::new_async_tls("127.0.0.1", 6379).await;
         test_cluster_basics(&mut connection).await;
         shotover.shutdown_and_then_consume_events(&[]).await;
     }
@@ -166,8 +169,9 @@ async fn cluster_ports_rewrite() {
     .start()
     .await;
 
-    let mut connection = redis_connection::new_async(6380).await;
-    let mut flusher = Flusher::new_single_connection(redis_connection::new_async(6380).await).await;
+    let mut connection = redis_connection::new_async("127.0.0.1", 6380).await;
+    let mut flusher =
+        Flusher::new_single_connection(redis_connection::new_async("127.0.0.1", 6380).await).await;
 
     run_all_cluster_hiding(&mut connection, &mut flusher).await;
 
@@ -185,8 +189,9 @@ async fn multi() {
         ShotoverProcessBuilder::new_with_topology("tests/test-configs/redis-multi/topology.yaml")
             .start()
             .await;
-    let mut connection = redis_connection::new_async(6379).await;
-    let mut flusher = Flusher::new_single_connection(redis_connection::new_async(6379).await).await;
+    let mut connection = redis_connection::new_async("127.0.0.1", 6379).await;
+    let mut flusher =
+        Flusher::new_single_connection(redis_connection::new_async("127.0.0.1", 6379).await).await;
 
     run_all_multi_safe(&mut connection, &mut flusher).await;
 
@@ -214,10 +219,10 @@ async fn cluster_auth() {
     )
     .start()
     .await;
-    let mut connection = redis_connection::new_async(6379).await;
+    let mut connection = redis_connection::new_async("127.0.0.1", 6379).await;
 
     test_auth(&mut connection).await;
-    let connection = || redis_connection::new_async(6379);
+    let connection = || redis_connection::new_async("127.0.0.1", 6379);
     test_auth_isolation(&connection).await;
 
     shotover.shutdown_and_then_consume_events(&[]).await;
@@ -233,7 +238,7 @@ async fn cluster_hiding() {
     .start()
     .await;
 
-    let mut connection = redis_connection::new_async(6379).await;
+    let mut connection = redis_connection::new_async("127.0.0.1", 6379).await;
     let connection = &mut connection;
     let mut flusher = Flusher::new_cluster().await;
 
@@ -254,7 +259,7 @@ async fn cluster_handling() {
     .start()
     .await;
 
-    let mut connection = redis_connection::new_async(6379).await;
+    let mut connection = redis_connection::new_async("127.0.0.1", 6379).await;
     let connection = &mut connection;
 
     let mut flusher = Flusher::new_cluster().await;
@@ -292,7 +297,7 @@ async fn cluster_dr() {
         )
         .start()
         .await;
-        let mut connection = redis_connection::new_async(6379).await;
+        let mut connection = redis_connection::new_async("127.0.0.1", 6379).await;
         redis::cmd("AUTH")
             .arg("default")
             .arg("shotover")
@@ -330,7 +335,7 @@ async fn cluster_dr() {
     .await;
 
     async fn new_connection() -> Connection {
-        let mut connection = redis_connection::new_async(6379).await;
+        let mut connection = redis_connection::new_async("127.0.0.1", 6379).await;
 
         redis::cmd("AUTH")
             .arg("default")

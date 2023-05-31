@@ -10,7 +10,7 @@ async fn test_metrics() {
         ShotoverProcessBuilder::new_with_topology("tests/test-configs/null-redis/topology.yaml")
             .start()
             .await;
-    let mut connection = redis_connection::new_async(6379).await;
+    let mut connection = redis_connection::new_async("127.0.0.1", 6379).await;
 
     // Expected string looks unnatural because it is sorted in alphabetical order to make it match the sorted error output
     let expected = r#"

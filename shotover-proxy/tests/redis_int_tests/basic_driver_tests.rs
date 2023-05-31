@@ -1202,16 +1202,16 @@ pub async fn test_cluster_replication(
 // This test case is picky about the ordering of connection auth so we make all the connections ourselves
 pub async fn test_dr_auth() {
     // setup 3 different connections in different states
-    let mut connection_shotover_noauth = redis_connection::new_async(6379).await;
+    let mut connection_shotover_noauth = redis_connection::new_async("127.0.0.1", 6379).await;
 
-    let mut connection_shotover_auth = redis_connection::new_async(6379).await;
+    let mut connection_shotover_auth = redis_connection::new_async("127.0.0.1", 6379).await;
     assert_ok(
         redis::cmd("AUTH").arg("default").arg("shotover"),
         &mut connection_shotover_auth,
     )
     .await;
 
-    let mut connection_dr_auth = redis_connection::new_async(2120).await;
+    let mut connection_dr_auth = redis_connection::new_async("127.0.0.1", 2120).await;
     assert_ok(
         redis::cmd("AUTH").arg("default").arg("shotover"),
         &mut connection_dr_auth,
@@ -1666,14 +1666,30 @@ impl Flusher {
         Flusher {
             connections: vec![
                 // shotover - shotover might have internal handling for flush that we want to run
-                redis_connection::new_async(6379).await,
+                redis_connection::new_async("127.0.0.1", 6379).await,
                 // redis cluster instances - shotover may or may not run flush on all cluster instances
-                redis_connection::new_async(2220).await,
-                redis_connection::new_async(2221).await,
-                redis_connection::new_async(2222).await,
-                redis_connection::new_async(2223).await,
-                redis_connection::new_async(2224).await,
-                redis_connection::new_async(2225).await,
+                redis_connection::new_async("172.16.1.2", 6379).await,
+                redis_connection::new_async("172.16.1.3", 6379).await,
+                redis_connection::new_async("172.16.1.4", 6379).await,
+                redis_connection::new_async("172.16.1.5", 6379).await,
+                redis_connection::new_async("172.16.1.6", 6379).await,
+                redis_connection::new_async("172.16.1.7", 6379).await,
+            ],
+        }
+    }
+
+    pub async fn new_cluster_tls() -> Self {
+        Flusher {
+            connections: vec![
+                // shotover - shotover might have internal handling for flush that we want to run
+                redis_connection::new_async("127.0.0.1", 6379).await,
+                // redis cluster instances - shotover may or may not run flush on all cluster instances
+                redis_connection::new_async_tls("172.16.1.2", 6379).await,
+                redis_connection::new_async_tls("172.16.1.3", 6379).await,
+                redis_connection::new_async_tls("172.16.1.4", 6379).await,
+                redis_connection::new_async_tls("172.16.1.5", 6379).await,
+                redis_connection::new_async_tls("172.16.1.6", 6379).await,
+                redis_connection::new_async_tls("172.16.1.7", 6379).await,
             ],
         }
     }

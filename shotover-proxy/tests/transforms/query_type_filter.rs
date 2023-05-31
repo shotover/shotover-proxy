@@ -11,7 +11,7 @@ async fn test_query_type_filter() {
     .start()
     .await;
 
-    let mut connection = redis_connection::new_async(6379).await;
+    let mut connection = redis_connection::new_async("127.0.0.1", 6379).await;
 
     // using individual queries tests QueryTypeFilter with a MessageWrapper containing a single message at a time.
     for _ in 0..100 {

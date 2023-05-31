@@ -10,7 +10,7 @@ async fn test_ignore_matches() {
         .start()
         .await;
 
-    let mut connection = redis_connection::new_async(6379).await;
+    let mut connection = redis_connection::new_async("127.0.0.1", 6379).await;
 
     let result = redis::cmd("SET")
         .arg("key")
@@ -32,7 +32,7 @@ async fn test_ignore_with_mismatch() {
     .start()
     .await;
 
-    let mut connection = redis_connection::new_async(6379).await;
+    let mut connection = redis_connection::new_async("127.0.0.1", 6379).await;
 
     let result = redis::cmd("SET")
         .arg("key")
@@ -52,7 +52,7 @@ async fn test_fail_matches() {
         .start()
         .await;
 
-    let mut connection = redis_connection::new_async(6379).await;
+    let mut connection = redis_connection::new_async("127.0.0.1", 6379).await;
 
     let result = redis::cmd("SET")
         .arg("key")
@@ -73,7 +73,7 @@ async fn test_fail_with_mismatch() {
             .start()
             .await;
 
-    let mut connection = redis_connection::new_async(6379).await;
+    let mut connection = redis_connection::new_async("127.0.0.1", 6379).await;
 
     let err = redis::cmd("SET")
         .arg("key")
@@ -97,8 +97,8 @@ async fn test_subchain_matches() {
             .start()
             .await;
 
-    let mut shotover_connection = redis_connection::new_async(6379).await;
-    let mut mismatch_chain_redis = redis_connection::new_async(1111).await;
+    let mut shotover_connection = redis_connection::new_async("127.0.0.1", 6379).await;
+    let mut mismatch_chain_redis = redis_connection::new_async("127.0.0.1", 1111).await;
     redis::cmd("SET")
         .arg("key")
         .arg("myvalue")
@@ -135,8 +135,8 @@ async fn test_subchain_with_mismatch() {
     .start()
     .await;
 
-    let mut shotover_connection = redis_connection::new_async(6379).await;
-    let mut mismatch_chain_redis = redis_connection::new_async(1111).await;
+    let mut shotover_connection = redis_connection::new_async("127.0.0.1", 6379).await;
+    let mut mismatch_chain_redis = redis_connection::new_async("127.0.0.1", 1111).await;
 
     // Set the value on the top level chain redis
     let mut result = redis::cmd("SET")
