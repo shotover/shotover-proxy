@@ -5,8 +5,6 @@ use cdrs_tokio::cluster::session::{Session, SessionBuilder, TcpSessionBuilder};
 use cdrs_tokio::cluster::{NodeTcpConfigBuilder, TcpConnectionManager};
 use cdrs_tokio::frame::Version;
 use cdrs_tokio::load_balancing::RoundRobinLoadBalancingStrategy;
-use cdrs_tokio::query::PreparedQuery;
-use cdrs_tokio::query_values;
 use cdrs_tokio::transport::TransportTcp;
 use std::sync::Arc;
 use std::{
@@ -160,20 +158,9 @@ impl Bench for CassandraProtocolBench {
                     .unwrap();
             }
 
-            let bench_query = Arc::new(
-                session
-                    .prepare("SELECT * FROM ks.bench WHERE id = ?")
-                    .await
-                    .unwrap(),
-            );
-
             tokio::time::sleep(Duration::from_secs(2)).await;
 
-            let bench_task = BenchTaskCassandra {
-                bench_query,
-                session,
-                row_count,
-            };
+            let bench_task = BenchTaskCassandra { session, row_count };
 
             reporter.send(Report::Start).unwrap();
             let start = Instant::now();
@@ -210,7 +197,6 @@ impl Bench for CassandraProtocolBench {
 
 #[derive(Clone)]
 struct BenchTaskCassandra {
-    bench_query: Arc<PreparedQuery>,
     session: Arc<
         Session<
             TransportTcp,
@@ -225,7 +211,7 @@ impl BenchTaskCassandra {
     async fn produce_one(&self) {
         let i = rand::random::<u32>() % self.row_count as u32;
         self.session
-            .exec_with_values(&self.bench_query, query_values!(i))
+            .query(format!("SELECT * FROM ks.bench WHERE id = {}", i))
             .await
             .unwrap();
     }
