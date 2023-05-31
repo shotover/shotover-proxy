@@ -16,7 +16,7 @@ async fn passthrough_standard() {
     .start()
     .await;
 
-    test_cases::basic().await;
+    test_cases::basic("127.0.0.1:9192").await;
 
     tokio::time::timeout(
         Duration::from_secs(10),
@@ -37,7 +37,7 @@ async fn passthrough_encode() {
     .start()
     .await;
 
-    test_cases::basic().await;
+    test_cases::basic("127.0.0.1:9192").await;
 
     shotover.shutdown_and_then_consume_events(&[]).await;
 }
