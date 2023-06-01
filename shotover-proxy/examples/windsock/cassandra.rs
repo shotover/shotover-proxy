@@ -52,8 +52,8 @@ struct CoreCount {
 
 #[derive(Clone)]
 pub enum Operation {
-    Read,
-    Blob,
+    ReadI64,
+    WriteBlob,
 }
 
 impl Operation {
@@ -68,7 +68,7 @@ impl Operation {
             session.await_schema_agreement().await.unwrap();
 
             match self {
-                Operation::Read => {
+                Operation::ReadI64 => {
                     session
                         .query("CREATE TABLE ks.bench(id bigint PRIMARY KEY)", ())
                         .await
@@ -83,7 +83,7 @@ impl Operation {
                             .unwrap();
                     }
                 }
-                Operation::Blob => {
+                Operation::WriteBlob => {
                     session
                         .query(
                             "CREATE TABLE ks.bench(id bigint PRIMARY KEY, data BLOB)",
@@ -106,11 +106,11 @@ impl Operation {
         runtime_seconds: u32,
     ) {
         let bench_query = match self {
-            Operation::Read => session
+            Operation::ReadI64 => session
                 .prepare("SELECT * FROM ks.bench WHERE id = :id")
                 .await
                 .unwrap(),
-            Operation::Blob => session
+            Operation::WriteBlob => session
                 .prepare("INSERT INTO ks.bench (id, data) VALUES (:id, :data)")
                 .await
                 .unwrap(),
@@ -124,9 +124,7 @@ impl Operation {
         .spawn_tasks(reporter.clone(), operations_per_second)
         .await;
 
-        // warm up and then start
-        // TODO: properly reevaluate our warmup time once we have graphs showing throughput and latency over time.
-        tokio::time::sleep(Duration::from_secs(2)).await;
+        tokio::time::sleep(Duration::from_secs(1)).await;
         reporter.send(Report::Start).unwrap();
         let start = Instant::now();
 
@@ -204,8 +202,8 @@ impl Bench for CassandraBench {
             (
                 "operation".to_owned(),
                 match self.operation {
-                    Operation::Read => "read".to_owned(),
-                    Operation::Blob => "blob".to_owned(),
+                    Operation::ReadI64 => "read_i64".to_owned(),
+                    Operation::WriteBlob => "write_blob".to_owned(),
                 },
             ),
             (
@@ -321,13 +319,13 @@ impl BenchTask for BenchTaskCassandra {
     async fn run_one_operation(&self) {
         let i = rand::random::<u32>() % ROW_COUNT as u32;
         match self.operation {
-            Operation::Read => {
+            Operation::ReadI64 => {
                 self.session
                     .execute(&self.query, (i as i64,))
                     .await
                     .unwrap();
             }
-            Operation::Blob => {
+            Operation::WriteBlob => {
                 let blob = {
                     let mut rng = rand::thread_rng();
                     rng.gen::<[u8; 16]>()
