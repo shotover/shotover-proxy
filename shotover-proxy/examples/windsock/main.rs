@@ -6,13 +6,10 @@ mod profilers;
 mod redis;
 
 use crate::cassandra::*;
+use crate::cassandra_protocols::*;
 use crate::common::*;
 use crate::kafka::*;
 use crate::redis::*;
-use cassandra::*;
-use cassandra_protocols::*;
-use common::*;
-use kafka::*;
 use std::path::Path;
 use tracing_subscriber::EnvFilter;
 use windsock::{Bench, Windsock};
