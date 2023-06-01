@@ -43,6 +43,8 @@ rand_distr.workspace = true
 async-trait.workspace = true
 tracing-subscriber.workspace = true
 tracing-appender = "0.2.0"
+fred = { version = "6.3.0", features = ["enable-rustls"] }
+rustls-pemfile = "1.0.2"
 windsock = { path = "../windsock" }
 
 [[bench]]
