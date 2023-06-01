@@ -1,3 +1,4 @@
+#[derive(Clone, Copy)]
 pub enum Shotover {
     None,
     Standard,
@@ -5,7 +6,7 @@ pub enum Shotover {
 }
 
 impl Shotover {
-    pub fn to_tag(&self) -> (String, String) {
+    pub fn to_tag(self) -> (String, String) {
         (
             "shotover".to_owned(),
             match self {
