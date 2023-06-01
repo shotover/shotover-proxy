@@ -103,6 +103,7 @@ impl Operation {
         session: &Arc<Session>,
         reporter: UnboundedSender<Report>,
         operations_per_second: Option<u64>,
+        runtime_seconds: u32,
     ) {
         let bench_query = match self {
             Operation::Read => session
@@ -129,7 +130,14 @@ impl Operation {
         reporter.send(Report::Start).unwrap();
         let start = Instant::now();
 
-        tokio::time::sleep(Duration::from_secs(15)).await;
+        for _ in 0..runtime_seconds {
+            let second = Instant::now();
+            tokio::time::sleep(Duration::from_secs(1)).await;
+            reporter
+                .send(Report::SecondPassed(second.elapsed()))
+                .unwrap();
+        }
+
         reporter.send(Report::FinishedIn(start.elapsed())).unwrap();
 
         // make sure the tasks complete before we drop the database they are connecting to
@@ -192,14 +200,7 @@ impl Bench for CassandraBench {
                     Topology::Cluster3 => "cluster3".to_owned(),
                 },
             ),
-            (
-                "shotover".to_owned(),
-                match self.shotover {
-                    Shotover::None => "none".to_owned(),
-                    Shotover::Standard => "standard".to_owned(),
-                    Shotover::ForcedMessageParsed => "forced-message-parsed".to_owned(),
-                },
-            ),
+            self.shotover.to_tag(),
             (
                 "operation".to_owned(),
                 match self.operation {
@@ -227,7 +228,7 @@ impl Bench for CassandraBench {
         &self,
         flamegraph: bool,
         _local: bool,
-        _runtime_seconds: u32,
+        runtime_seconds: u32,
         operations_per_second: Option<u64>,
         reporter: UnboundedSender<Report>,
     ) {
@@ -294,7 +295,7 @@ impl Bench for CassandraBench {
             self.operation.prepare(&session, &self.db).await;
 
             self.operation
-                .run(&session, reporter, operations_per_second)
+                .run(&session, reporter, operations_per_second, runtime_seconds)
                 .await;
 
             if let Some(shotover) = shotover {
