@@ -83,11 +83,11 @@ Caused by:
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn tls_cluster_sink() {
-    test_helpers::cert::generate_test_certs(Path::new("tests/test-configs/redis-tls/certs"));
+    test_helpers::cert::generate_redis_test_certs();
 
     let _compose = docker_compose("tests/test-configs/redis-cluster-tls/docker-compose.yaml");
     let shotover = ShotoverProcessBuilder::new_with_topology(
-        "tests/test-configs/redis-cluster-tls/topology.yaml",
+        "tests/test-configs/redis-cluster-tls/topology-no-source-encryption.yaml",
     )
     .start()
     .await;
@@ -104,7 +104,7 @@ async fn tls_cluster_sink() {
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn tls_source_and_tls_single_sink() {
-    test_helpers::cert::generate_test_certs(Path::new("tests/test-configs/redis-tls/certs"));
+    test_helpers::cert::generate_redis_test_certs();
 
     {
         let _compose = docker_compose("tests/test-configs/redis-tls/docker-compose.yaml");

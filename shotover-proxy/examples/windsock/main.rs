@@ -1,13 +1,15 @@
 mod cassandra;
 mod common;
 mod kafka;
+mod redis;
 
-use cassandra::*;
-use common::*;
-use kafka::*;
+use crate::cassandra::*;
+use crate::common::*;
+use crate::kafka::*;
+use crate::redis::*;
 use std::path::Path;
 use tracing_subscriber::EnvFilter;
-use windsock::Windsock;
+use windsock::{Bench, Windsock};
 
 fn main() {
     let (non_blocking, _guard) = tracing_appender::non_blocking(std::io::stdout());
@@ -28,7 +30,7 @@ fn main() {
 
     Windsock::new(
         vec![
-            Box::new(KafkaBench::new(Shotover::None, Size::B1)),
+            Box::new(KafkaBench::new(Shotover::None, Size::B1)) as Box<dyn Bench>,
             Box::new(KafkaBench::new(Shotover::None, Size::KB1)),
             Box::new(KafkaBench::new(Shotover::None, Size::KB100)),
             Box::new(KafkaBench::new(Shotover::Standard, Size::B1)),
@@ -114,7 +116,25 @@ fn main() {
                 Compression::None,
                 Operation::Read,
             )),
-        ],
+        ]
+        .into_iter()
+        .chain(
+            itertools::iproduct!(
+                [RedisTopology::Cluster3, RedisTopology::Single],
+                [
+                    Shotover::None,
+                    Shotover::Standard,
+                    Shotover::ForcedMessageParsed
+                ],
+                [RedisOperation::Get, RedisOperation::Set],
+                [Encryption::None, Encryption::Tls]
+            )
+            .map(|(topology, shotover, operation, encryption)| {
+                Box::new(RedisBench::new(topology, shotover, operation, encryption))
+                    as Box<dyn Bench>
+            }),
+        )
+        .collect(),
         &["release"],
     )
     .run();
