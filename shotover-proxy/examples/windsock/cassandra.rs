@@ -124,6 +124,7 @@ impl Operation {
         .spawn_tasks(reporter.clone(), operations_per_second)
         .await;
 
+        // warm up and then start
         tokio::time::sleep(Duration::from_secs(1)).await;
         reporter.send(Report::Start).unwrap();
         let start = Instant::now();
