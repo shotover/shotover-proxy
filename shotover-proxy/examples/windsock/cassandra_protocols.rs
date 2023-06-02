@@ -15,7 +15,7 @@ use test_helpers::{
     docker_compose::docker_compose, flamegraph::Perf, shotover_process::ShotoverProcessBuilder,
 };
 use tokio::sync::mpsc::UnboundedSender;
-use windsock::{Bench, Report};
+use windsock::{Bench, BenchTask, Report};
 
 pub enum CassandraProtocol {
     V3,
@@ -207,54 +207,13 @@ struct BenchTaskCassandra {
     row_count: usize,
 }
 
-impl BenchTaskCassandra {
-    async fn produce_one(&self) {
+#[async_trait]
+impl BenchTask for BenchTaskCassandra {
+    async fn run_one_operation(&self) {
         let i = rand::random::<u32>() % self.row_count as u32;
         self.session
             .query(format!("SELECT * FROM ks.bench WHERE id = {}", i))
             .await
             .unwrap();
-    }
-
-    async fn spawn_tasks(
-        self,
-        reporter: UnboundedSender<Report>,
-        operations_per_second: Option<u64>,
-    ) -> Vec<tokio::task::JoinHandle<()>> {
-        let mut tasks = vec![];
-        let task_count = operations_per_second.map(|x| x.min(10000)).unwrap_or(10000);
-        let allocated_time_per_op = operations_per_second
-            .map(|ops| (Duration::from_secs(1) * task_count as u32) / ops as u32);
-
-        for _ in 0..task_count {
-            let task = self.clone();
-            let reporter = reporter.clone();
-            tasks.push(tokio::spawn(async move {
-                let mut interval = allocated_time_per_op.map(tokio::time::interval);
-
-                loop {
-                    if let Some(interval) = &mut interval {
-                        interval.tick().await;
-                    }
-
-                    let operation_start = Instant::now();
-
-                    tokio::select!(
-                        _ = task.produce_one() => {
-                            let report = Report::QueryCompletedIn(operation_start.elapsed());
-                            if reporter.send(report).is_err() {
-                                // Errors indicate the reporter has closed so we should end the bench
-                                return;
-                            }
-                        }
-                        _ = reporter.closed() => {
-                            return
-                        }
-                    );
-                }
-            }));
-        }
-
-        tasks
     }
 }
