@@ -60,14 +60,7 @@ impl Bench for CassandraProtocolBench {
                     Topology::Cluster3 => "cluster3".to_owned(),
                 },
             ),
-            (
-                "shotover".to_owned(),
-                match self.shotover {
-                    Shotover::None => "none".to_owned(),
-                    Shotover::Standard => "standard".to_owned(),
-                    _ => todo!(),
-                },
-            ),
+            self.shotover.to_tag(),
         ]
         .iter()
         .cloned()
@@ -138,19 +131,15 @@ impl Bench for CassandraProtocolBench {
             let row_count = 1000usize;
 
             session.query("CREATE KEYSPACE IF NOT EXISTS ks WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 }").await.unwrap();
-            // session.await_schema_agreement().await.unwrap();
             session
                 .query("DROP TABLE IF EXISTS ks.bench")
                 .await
                 .unwrap();
-            // session.await_schema_agreement().await.unwrap();
             session
                 .query("CREATE TABLE ks.bench(id int PRIMARY KEY)")
                 .await
                 .unwrap();
-            // session.await_schema_agreement().await.unwrap();
-            tokio::time::sleep(Duration::from_secs(1)).await; //TODO: this should not be needed >:[
-                                                              //
+            tokio::time::sleep(Duration::from_secs(1)).await;
             for i in 0..row_count {
                 session
                     .query(format!("INSERT INTO ks.bench(id) VALUES ({})", i))
@@ -177,7 +166,6 @@ impl Bench for CassandraProtocolBench {
                     .unwrap();
             }
 
-            tokio::time::sleep(Duration::from_secs(15)).await;
             reporter.send(Report::FinishedIn(start.elapsed())).unwrap();
 
             // make sure the tasks complete before we drop the database they are connecting to
