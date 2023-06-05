@@ -114,11 +114,11 @@ pub(crate) struct PubSubReport {
 
 impl ReportArchive {
     fn path(&self) -> PathBuf {
-        ReportArchive::last_run_path().join(self.tags.get_name())
+        Self::last_run_path().join(self.tags.get_name())
     }
 
     pub fn load(path: &str) -> Result<Self> {
-        match std::fs::read(ReportArchive::last_run_path().join(path)) {
+        match std::fs::read(Self::last_run_path().join(path)) {
             Ok(bytes) => bincode::deserialize(&bytes).map_err(|e|
                 anyhow!(e).context("The bench archive from the previous run is not a valid archive, maybe the format changed since the last run")
             ),
@@ -127,8 +127,20 @@ impl ReportArchive {
         }
     }
 
+    pub fn load_baseline(path: &str) -> Result<Option<Self>> {
+        match std::fs::read(Self::baseline_path().join(path)) {
+            Ok(bytes) => bincode::deserialize(&bytes)
+                .map_err(|e|
+                    anyhow!(e).context("The bench archive from the baseline is not a valid archive, maybe the format changed since the baseline was set")
+                )
+                .map(Some),
+            Err(err) if err.kind() == ErrorKind::NotFound => Ok(None),
+            Err(err) => Err(anyhow!("The bench {path:?} encountered a file read error {err:?}"))
+        }
+    }
+
     pub fn reports_in_last_run() -> Vec<String> {
-        let report_dir = ReportArchive::last_run_path();
+        let report_dir = Self::last_run_path();
         std::fs::create_dir_all(&report_dir).unwrap();
 
         let mut reports: Vec<String> = std::fs::read_dir(report_dir)
@@ -156,7 +168,7 @@ impl ReportArchive {
     }
 
     pub(crate) fn clear_last_run() {
-        let path = ReportArchive::last_run_path();
+        let path = Self::last_run_path();
         if path.exists() {
             // Just an extra sanity check that we truly are deleting a last_run directory
             assert_eq!(path.file_name().unwrap(), "last_run");
@@ -164,8 +176,31 @@ impl ReportArchive {
         }
     }
 
+    pub fn set_baseline() {
+        Self::clear_baseline();
+
+        let last_run_path = Self::last_run_path();
+        let baseline_path = Self::baseline_path();
+        if last_run_path.exists() {
+            copy_dir::copy_dir(last_run_path, baseline_path).unwrap();
+        }
+    }
+
+    pub fn clear_baseline() {
+        let path = Self::baseline_path();
+        if path.exists() {
+            // Just an extra sanity check that we truly are deleting a baseline directory
+            assert_eq!(path.file_name().unwrap(), "baseline");
+            std::fs::remove_dir_all(path).unwrap();
+        }
+    }
+
     pub fn last_run_path() -> PathBuf {
         windsock_path().join("last_run")
+    }
+
+    pub fn baseline_path() -> PathBuf {
+        windsock_path().join("baseline")
     }
 }
 
