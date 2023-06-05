@@ -30,10 +30,6 @@ pub fn new_moto() -> DockerCompose {
 fn get_image_waiters() -> &'static [Image] {
     &[
         Image {
-            name: "shotover/shotover-proxy",
-            log_regex_to_wait_for: r"accepting inbound connections",
-        },
-        Image {
             name: "motoserver/moto",
             log_regex_to_wait_for: r"Press CTRL\+C to quit",
         },
