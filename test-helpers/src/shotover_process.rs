@@ -70,8 +70,7 @@ observability_interface: "127.0.0.1:{observability_port}"
             shotover.wait_for(
                 &EventMatcher::new()
                     .with_level(Level::Info)
-                    .with_target("shotover::server")
-                    .with_message("accepting inbound connections"),
+                    .with_message("Shotover is now accepting inbound connections"),
             ),
         )
         .await
