@@ -1,5 +1,5 @@
 use crate::cli::Args;
-use crate::report::{report_builder, Report};
+use crate::report::{report_builder, Report, ReportArchive};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -20,7 +20,8 @@ impl BenchState {
     }
 
     pub async fn run(&mut self, args: &Args, running_in_release: bool) {
-        println!("Running {:?}", self.tags.get_name());
+        let name = self.tags.get_name();
+        println!("Running {:?}", name);
 
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
         let process = tokio::spawn(report_builder(
@@ -39,7 +40,12 @@ impl BenchState {
             )
             .await;
         let report = process.await.unwrap();
-        crate::tables::display_results_table(&[report]);
+
+        if let Some(baseline) = ReportArchive::load_baseline(&name).unwrap() {
+            crate::tables::display_compare_table(&[baseline, report]);
+        } else {
+            crate::tables::display_results_table(&[report]);
+        }
     }
 
     // TODO: will return None when running in non-local setup
