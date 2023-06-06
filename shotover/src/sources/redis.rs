@@ -1,6 +1,6 @@
 use crate::codec::{redis::RedisCodecBuilder, CodecBuilder, Direction};
 use crate::server::TcpCodecListener;
-use crate::sources::Sources;
+use crate::sources::Source;
 use crate::tls::{TlsAcceptor, TlsAcceptorConfig};
 use crate::transforms::chain::TransformChainBuilder;
 use anyhow::Result;
@@ -24,7 +24,7 @@ impl RedisConfig {
         &self,
         chain_builder: TransformChainBuilder,
         trigger_shutdown_rx: watch::Receiver<bool>,
-    ) -> Result<Vec<Sources>> {
+    ) -> Result<Vec<Source>> {
         RedisSource::new(
             chain_builder,
             self.listen_addr.clone(),
@@ -35,7 +35,7 @@ impl RedisConfig {
             self.timeout,
         )
         .await
-        .map(|x| vec![Sources::Redis(x)])
+        .map(|x| vec![Source::Redis(x)])
     }
 }
 
