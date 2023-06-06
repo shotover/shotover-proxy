@@ -280,7 +280,7 @@ impl Bench for CassandraBench {
 
             let session = Arc::new(
                 SessionBuilder::new()
-                    .known_nodes(&[address])
+                    .known_nodes([address])
                     .user("cassandra", "cassandra")
                     .compression(match self.compression {
                         Compression::None => None,
