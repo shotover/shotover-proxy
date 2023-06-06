@@ -1,7 +1,7 @@
 use crate::codec::Direction;
 use crate::codec::{cassandra::CassandraCodecBuilder, CodecBuilder};
 use crate::server::TcpCodecListener;
-use crate::sources::Sources;
+use crate::sources::Source;
 use crate::tls::{TlsAcceptor, TlsAcceptorConfig};
 use crate::transforms::chain::TransformChainBuilder;
 use anyhow::Result;
@@ -25,8 +25,8 @@ impl CassandraConfig {
         &self,
         chain_builder: TransformChainBuilder,
         trigger_shutdown_rx: watch::Receiver<bool>,
-    ) -> Result<Vec<Sources>> {
-        Ok(vec![Sources::Cassandra(
+    ) -> Result<Vec<Source>> {
+        Ok(vec![Source::Cassandra(
             CassandraSource::new(
                 chain_builder,
                 self.listen_addr.clone(),
