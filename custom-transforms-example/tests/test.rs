@@ -3,7 +3,7 @@ use redis::Cmd;
 use std::time::Duration;
 use test_helpers::connection::redis_connection;
 use test_helpers::docker_compose::docker_compose;
-use test_helpers::shotover_process::{BinProcess, EventMatcher, Level};
+use test_helpers::shotover_process::{bin_path, BinProcess, EventMatcher, Level};
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_custom_transform() {
@@ -36,8 +36,8 @@ async fn test_custom_transform() {
 }
 
 async fn shotover_proxy(topology_path: &str) -> BinProcess {
-    let mut shotover = BinProcess::start_with_args(
-        "custom-transforms-example",
+    let mut shotover = BinProcess::start_binary(
+        bin_path!("custom-transforms-example"),
         "shotover",
         &["-t", topology_path, "--log-format", "json"],
     )
