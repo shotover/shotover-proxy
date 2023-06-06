@@ -72,7 +72,7 @@ impl Bench for CassandraBench {
 
         let session = Arc::new(
             SessionBuilder::new()
-                .known_nodes(&["172.16.1.2:9042"])
+                .known_nodes(["172.16.1.2:9042"])
                 .user("cassandra", "cassandra")
                 .compression(self.compression)
                 .build()

@@ -300,7 +300,7 @@ impl CassandraConnection {
             CassandraDriver::Scylla => {
                 let mut builder = SessionBuilderScylla::new()
                     .known_nodes(
-                        &contact_points
+                        contact_points
                             .split(',')
                             .map(|contact_point| format!("{contact_point}:{port}"))
                             .collect::<Vec<String>>(),
