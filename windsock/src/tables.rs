@@ -546,13 +546,14 @@ impl Row {
                 let (value, comparison, comparison_raw, goal) =
                     if let Some((compare, value, goal)) = f(x) {
                         if let Some(base) = base {
-                            let comparison_raw = (compare - base) / base * 100.0;
-                            (
-                                value,
-                                format!("{:+.1}%", comparison_raw),
-                                comparison_raw,
-                                goal,
-                            )
+                            let comparison_raw: f64 = (compare - base) / base * 100.0;
+                            let comparison = if comparison_raw.is_nan() {
+                                "-".into()
+                            } else {
+                                format!("{:+.1}%", comparison_raw)
+                            };
+
+                            (value, comparison, comparison_raw, goal)
                         } else {
                             base = Some(compare);
                             (value, "".to_owned(), 0.0, Goal::BiggerIsBetter)
