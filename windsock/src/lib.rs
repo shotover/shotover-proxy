@@ -66,6 +66,12 @@ impl Windsock {
             tables::compare_by_tags(compare_by_tags)?;
         } else if let Some(results_by_tags) = &args.results_by_tags {
             tables::results_by_tags(results_by_tags)?;
+        } else if args.set_baseline {
+            ReportArchive::set_baseline();
+            println!("Baseline set");
+        } else if args.clear_baseline {
+            ReportArchive::clear_baseline();
+            println!("Baseline cleared");
         } else if args.list {
             println!("Benches:");
             for bench in &self.benches {

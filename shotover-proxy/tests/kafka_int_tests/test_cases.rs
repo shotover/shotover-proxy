@@ -91,7 +91,7 @@ async fn produce_consume_acks0(brokers: &str) {
     }
 }
 
-pub async fn basic() {
-    produce_consume("localhost:9192", "foo").await;
-    produce_consume_acks0("localhost:9192").await;
+pub async fn basic(address: &str) {
+    produce_consume(address, "foo").await;
+    produce_consume_acks0(address).await;
 }

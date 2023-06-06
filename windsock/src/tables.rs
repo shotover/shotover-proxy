@@ -59,7 +59,7 @@ pub fn results_by_tags(arg: &str) -> Result<()> {
     Ok(())
 }
 
-fn display_compare_table(reports: &[ReportArchive]) {
+pub(crate) fn display_compare_table(reports: &[ReportArchive]) {
     if reports.len() < 2 {
         println!("Need at least two reports to display a comparison");
         return;
