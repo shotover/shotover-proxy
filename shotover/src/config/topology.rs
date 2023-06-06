@@ -104,10 +104,11 @@ impl Topology {
                                                     self.sources.keys().cloned().collect::<Vec<_>>()));
             }
         }
-        info!(
-            "Loaded sources [{:?}] and linked to chains",
-            &self.source_to_chain_mapping.keys()
-        );
+
+        // This info log is considered part of our external API.
+        // Users rely on this to know when shotover is ready in their integration tests.
+        // In production they would probably just have some kind of retry mechanism though.
+        info!("Shotover is now accepting inbound connections");
         Ok(sources_list)
     }
 }
