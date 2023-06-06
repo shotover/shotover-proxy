@@ -92,8 +92,8 @@ impl Bench for KafkaBench {
         };
 
         let brokers = match self.shotover {
-            Shotover::ForcedMessageParsed | Shotover::Standard => "localhost:9192",
-            Shotover::None => "localhost:9092",
+            Shotover::ForcedMessageParsed | Shotover::Standard => "127.0.0.1:9192",
+            Shotover::None => "127.0.0.1:9092",
         };
 
         let producer: FutureProducer = ClientConfig::new()
