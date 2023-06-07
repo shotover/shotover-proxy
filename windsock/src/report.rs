@@ -79,7 +79,7 @@ impl Percentile {
 
 type Percentiles = [Duration; Percentile::COUNT];
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub(crate) struct ReportArchive {
     pub(crate) running_in_release: bool,
     pub(crate) tags: Tags,
@@ -87,7 +87,7 @@ pub(crate) struct ReportArchive {
     pub(crate) pubsub_report: Option<PubSubReport>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub(crate) struct OperationsReport {
     pub(crate) total: u64,
     pub(crate) requested_ops: Option<u64>,
@@ -97,7 +97,7 @@ pub(crate) struct OperationsReport {
     pub(crate) total_each_second: Vec<u64>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub(crate) struct PubSubReport {
     pub(crate) total_produce: u64,
     pub(crate) total_consume: u64,
@@ -117,25 +117,25 @@ impl ReportArchive {
         Self::last_run_path().join(self.tags.get_name())
     }
 
-    pub fn load(path: &str) -> Result<Self> {
-        match std::fs::read(Self::last_run_path().join(path)) {
+    pub fn load(name: &str) -> Result<Self> {
+        match std::fs::read(Self::last_run_path().join(name)) {
             Ok(bytes) => bincode::deserialize(&bytes).map_err(|e|
                 anyhow!(e).context("The bench archive from the previous run is not a valid archive, maybe the format changed since the last run")
             ),
-            Err(err) if err.kind() == ErrorKind::NotFound => Err(anyhow!("The bench {path:?} does not exist or was not run in the previous run")),
-            Err(err) => Err(anyhow!("The bench {path:?} encountered a file read error {err:?}"))
+            Err(err) if err.kind() == ErrorKind::NotFound => Err(anyhow!("The bench {name:?} does not exist or was not run in the previous run")),
+            Err(err) => Err(anyhow!("The bench {name:?} encountered a file read error {err:?}"))
         }
     }
 
-    pub fn load_baseline(path: &str) -> Result<Option<Self>> {
-        match std::fs::read(Self::baseline_path().join(path)) {
+    pub fn load_baseline(name: &str) -> Result<Option<Self>> {
+        match std::fs::read(Self::baseline_path().join(name)) {
             Ok(bytes) => bincode::deserialize(&bytes)
                 .map_err(|e|
                     anyhow!(e).context("The bench archive from the baseline is not a valid archive, maybe the format changed since the baseline was set")
                 )
                 .map(Some),
             Err(err) if err.kind() == ErrorKind::NotFound => Ok(None),
-            Err(err) => Err(anyhow!("The bench {path:?} encountered a file read error {err:?}"))
+            Err(err) => Err(anyhow!("The bench {name:?} encountered a file read error {err:?}"))
         }
     }
 
