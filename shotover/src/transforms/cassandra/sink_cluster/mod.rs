@@ -282,7 +282,21 @@ impl CassandraSinkCluster {
         // Create the initial connection.
         // Messages will be sent through this connection until we have extracted the handshake.
         if self.control_connection.is_none() {
-            let (connection, address) = if self.pool.nodes().iter().all(|x| !x.is_up) {
+            let (connection, address) = if self
+                .pool
+                .nodes()
+                .iter()
+                .any(|x| x.is_up && x.rack == self.message_rewriter.local_shotover_node.rack)
+            {
+                self.pool
+                    .get_random_owned_connection_in_dc_rack(
+                        &self.message_rewriter.local_shotover_node.rack,
+                        &mut self.rng,
+                        &self.connection_factory,
+                    )
+                    .await
+                    .context("Failed to create initial control connection from current node pool")
+            } else {
                 let mut start_nodes = Vec::with_capacity(self.contact_points.len());
                 for point in &self.contact_points {
                     start_nodes.push(CassandraNode::new(
@@ -300,15 +314,6 @@ impl CassandraSinkCluster {
                 )
                 .await
                 .context("Failed to create initial control connection from initial contact points")
-            } else {
-                self.pool
-                    .get_random_owned_connection_in_dc_rack(
-                        &self.message_rewriter.local_shotover_node.rack,
-                        &mut self.rng,
-                        &self.connection_factory,
-                    )
-                    .await
-                    .context("Failed to create initial control connection from current node pool")
             }?;
             self.set_control_connection(connection, address);
         }
