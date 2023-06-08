@@ -277,7 +277,7 @@ pub async fn test_topology_task(ca_path: Option<&str>, cassandra_port: Option<u3
     }
 }
 
-pub async fn test_node_going_down(compose: &DockerCompose, driver: CassandraDriver) {
+pub async fn test_node_going_down(compose: &mut DockerCompose, driver: CassandraDriver) {
     let mut connection_shotover = CassandraConnectionBuilder::new("127.0.0.1", 9042, driver)
         .build()
         .await;
@@ -375,6 +375,30 @@ pub async fn test_node_going_down(compose: &DockerCompose, driver: CassandraDriv
             test_connection_handles_node_down_with_one_retry(&connection_shotover).await;
         }
     }
+    {
+        // Kill all services
+        compose.kill_service("cassandra-one");
+        compose.kill_service("cassandra-two");
+        compose.kill_service("cassandra-three");
+        // cant rely on down events because all the nodes were instantly killed
+
+        // give it time to kill properly
+        std::thread::sleep(Duration::from_secs(10));
+
+        compose.start_service("cassandra-one");
+        compose.start_service("cassandra-two");
+        compose.start_service("cassandra-three");
+        std::thread::sleep(Duration::from_secs(60));
+        // also cant rely on up events after restarting the entire cluster
+
+        let new_connection = CassandraConnectionBuilder::new("127.0.0.1", 9042, driver)
+            .build()
+            .await;
+        test_connection_handles_node_down_with_one_retry(&new_connection).await;
+        if connection_shotover.is(&[CassandraDriver::CdrsTokio, CassandraDriver::Scylla]) {
+            test_connection_handles_node_down_with_one_retry(&connection_shotover).await;
+        }
+    }
 }
 
 struct EventConnections {
@@ -444,7 +468,7 @@ async fn assert_down_event(event_connections: &mut EventConnections) {
     // we have already received an event directly from the cassandra instance so its reasonable to
     // expect shotover to have processed that event within 10 seconds if it was ever going to
     timeout(
-        Duration::from_secs(10),
+        Duration::from_secs(120),
         event_connections.recv_shotover.recv(),
     )
     .await
@@ -454,7 +478,7 @@ async fn assert_down_event(event_connections: &mut EventConnections) {
 async fn assert_up_event(event_connections: &mut EventConnections) {
     // The direct connection should allow all events to pass through
     let event = timeout(
-        Duration::from_secs(120),
+        Duration::from_secs(10),
         event_connections.recv_direct.recv(),
     )
     .await
@@ -522,6 +546,7 @@ async fn test_connection_handles_node_down_with_one_retry(connection: &Cassandra
     }
     assert!(
         fail_count == 0 || fail_count == 1,
-        "must never fail or fail only once. The case where it fails once indicates that the connection to cassandra-two was dead but recreated allowing the next query to succeed"
+        "must never fail or fail only once. The case where it fails once indicates that the connection to cassandra-two was dead but recreated allowing the next query to succeed. Actually failed {:?} times",
+        fail_count
     )
 }

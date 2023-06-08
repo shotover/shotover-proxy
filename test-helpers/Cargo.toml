@@ -34,4 +34,4 @@ tracing-subscriber.workspace = true
 serde_yaml.workspace = true
 anyhow.workspace = true
 rcgen.workspace = true
-docker-compose-runner = "0.1.0"
+docker-compose-runner = { version = "0.1.0", git = "https://github.com/rukai/docker-compose-runner", branch = "start_service_wait" }
