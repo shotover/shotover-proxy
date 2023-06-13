@@ -69,6 +69,7 @@ impl RedisSource {
             trigger_shutdown_rx.clone(),
             tls.map(TlsAcceptor::new).transpose()?,
             timeout,
+            false,
         )
         .await?;
 

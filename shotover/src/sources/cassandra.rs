@@ -18,6 +18,7 @@ pub struct CassandraConfig {
     pub hard_connection_limit: Option<bool>,
     pub tls: Option<TlsAcceptorConfig>,
     pub timeout: Option<u64>,
+    pub websocket: Option<bool>,
 }
 
 impl CassandraConfig {
@@ -35,6 +36,7 @@ impl CassandraConfig {
                 self.hard_connection_limit,
                 self.tls.clone(),
                 self.timeout,
+                self.websocket,
             )
             .await?,
         )])
@@ -49,6 +51,7 @@ pub struct CassandraSource {
 }
 
 impl CassandraSource {
+    #![allow(clippy::too_many_arguments)]
     pub async fn new(
         chain_builder: TransformChainBuilder,
         listen_addr: String,
@@ -57,6 +60,7 @@ impl CassandraSource {
         hard_connection_limit: Option<bool>,
         tls: Option<TlsAcceptorConfig>,
         timeout: Option<u64>,
+        websocket: Option<bool>,
     ) -> Result<CassandraSource> {
         let name = "CassandraSource";
 
@@ -72,6 +76,7 @@ impl CassandraSource {
             trigger_shutdown_rx.clone(),
             tls.map(TlsAcceptor::new).transpose()?,
             timeout,
+            websocket.unwrap_or(false),
         )
         .await?;
 

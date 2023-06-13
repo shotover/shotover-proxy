@@ -18,7 +18,8 @@ use tokio::task::JoinHandle;
 use tokio::time;
 use tokio::time::timeout;
 use tokio::time::Duration;
-use tokio_util::codec::{FramedRead, FramedWrite};
+use tokio_tungstenite::{tungstenite::protocol::Message as WsMessage, WebSocketStream};
+use tokio_util::codec::{Decoder, Encoder, FramedRead, FramedWrite};
 use tracing::Instrument;
 use tracing::{debug, error, warn};
 
@@ -64,6 +65,8 @@ pub struct TcpCodecListener<C: CodecBuilder> {
     timeout: Option<u64>,
 
     connection_handles: Vec<JoinHandle<()>>,
+
+    websocket: bool,
 }
 
 impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
@@ -78,6 +81,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
         trigger_shutdown_rx: watch::Receiver<bool>,
         tls: Option<TlsAcceptor>,
         timeout: Option<u64>,
+        websocket: bool,
     ) -> Result<Self> {
         let available_connections_gauge =
             register_gauge!("shotover_available_connections", "source" => source_name.clone());
@@ -99,6 +103,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
             available_connections_gauge,
             timeout,
             connection_handles: vec![],
+            websocket,
         })
     }
 
@@ -143,6 +148,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                 id = self.connection_count,
                 source = self.source_name.as_str(),
             );
+            let websocket = self.websocket;
             async {
                 // Accept a new socket. This will attempt to perform error handling.
                 // The `accept` method internally attempts to recover errors, so an
@@ -172,7 +178,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                 self.connection_handles.push(tokio::spawn(
                     async move {
                         // Process the connection. If an error is encountered, log it.
-                        if let Err(err) = handler.run(stream).await {
+                        if let Err(err) = handler.run(stream, websocket).await {
                             error!(
                                 "{:?}",
                                 err.context("connection was unexpectedly terminated")
@@ -253,6 +259,45 @@ pub struct Handler<C: CodecBuilder> {
     timeout: Option<u64>,
     pushed_messages_rx: UnboundedReceiver<Messages>,
     _permit: OwnedSemaphorePermit,
+}
+
+fn spawn_websocket_read_write_tasks<C: CodecBuilder + 'static>(
+    codec: C,
+    ws_stream: WebSocketStream<TcpStream>,
+    in_tx: UnboundedSender<Messages>,
+    mut out_rx: UnboundedReceiver<Messages>,
+    _out_tx: UnboundedSender<Messages>,
+) {
+    let (mut write, mut read) = ws_stream.split();
+
+    let (mut decoder, mut encoder) = codec.build();
+
+    // read task
+    tokio::spawn(async move {
+        loop {
+            while let Some(msg) = read.next().await {
+                tracing::info!("Received a message from: {:?}", msg);
+                let msg = msg.unwrap();
+                let message = decoder
+                    .decode(&mut bytes::BytesMut::from(msg.into_data().as_slice()))
+                    .unwrap()
+                    .unwrap();
+                in_tx.send(message).unwrap();
+            }
+        }
+    });
+
+    // write task
+    tokio::spawn(async move {
+        loop {
+            while let Some(msg) = out_rx.recv().await {
+                let mut bytes = bytes::BytesMut::new();
+                encoder.encode(msg, &mut bytes).unwrap();
+                let message = WsMessage::binary(bytes);
+                write.send(message).await.unwrap();
+            }
+        }
+    });
 }
 
 fn spawn_read_write_tasks<
@@ -389,7 +434,7 @@ impl<C: CodecBuilder + 'static> Handler<C> {
     ///
     /// When the shutdown signal is received, the connection is processed until
     /// it reaches a safe state, at which point it is terminated.
-    pub async fn run(mut self, stream: TcpStream) -> Result<()> {
+    pub async fn run(mut self, stream: TcpStream, websocket: bool) -> Result<()> {
         stream.set_nodelay(true)?;
 
         let client_details = stream
@@ -403,7 +448,21 @@ impl<C: CodecBuilder + 'static> Handler<C> {
 
         let local_addr = stream.local_addr()?;
 
-        if let Some(tls) = &self.tls {
+        let codec_builder = self.codec.clone();
+
+        if websocket {
+            let ws_stream = tokio_tungstenite::accept_async(stream)
+                .await
+                .expect("Error during the websocket handshake occurred");
+
+            spawn_websocket_read_write_tasks(
+                codec_builder,
+                ws_stream,
+                in_tx,
+                out_rx,
+                out_tx.clone(),
+            );
+        } else if let Some(tls) = &self.tls {
             let tls_stream = match tls.accept(stream).await {
                 Ok(x) => x,
                 Err(AcceptError::Disconnected) => return Ok(()),
