@@ -6,7 +6,7 @@ use crate::message::{Message, Messages, Metadata};
 use crate::tls::{TlsConnector, TlsConnectorConfig};
 use crate::transforms::cassandra::connection::{CassandraConnection, Response, ResponseError};
 use crate::transforms::{Transform, TransformBuilder, TransformConfig, Transforms, Wrapper};
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use cassandra_protocol::events::ServerEvent;
 use cassandra_protocol::frame::message_error::{ErrorBody, ErrorType, UnpreparedError};
@@ -258,9 +258,7 @@ impl CassandraSinkCluster {
                         &mut self.rng,
                         &self.connection_factory,
                     ).await
-                    .map_err(|e|
-                        e.context("Failed to recreate control connection after control connection node went down")
-                    )?;
+                    .context("Failed to recreate control connection after control connection node went down")?;
                     self.set_control_connection(connection, address)
                 }
             }
@@ -301,6 +299,7 @@ impl CassandraSinkCluster {
                     start_nodes.iter_mut().collect(),
                 )
                 .await
+                .context("Failed to create initial control connection from initial contact points")
             } else {
                 self.pool
                     .get_random_owned_connection_in_dc_rack(
@@ -309,8 +308,8 @@ impl CassandraSinkCluster {
                         &self.connection_factory,
                     )
                     .await
-            }
-            .map_err(|e| e.context("Failed to create initial control connection"))?;
+                    .context("Failed to create initial control connection from current node pool")
+            }?;
             self.set_control_connection(connection, address);
         }
 
@@ -550,7 +549,7 @@ impl CassandraSinkCluster {
                 &mut self.rng,
                 &self.connection_factory
             ).await
-                .map_err(|e| e.context("Failed to recreate control connection when initial connection was possibly against the wrong node"))?;
+            .context("Failed to recreate control connection when initial connection was possibly against the wrong node")?;
             self.set_control_connection(connection, address);
         }
         tracing::info!(
