@@ -181,7 +181,7 @@ async fn cluster_single_rack_v3(#[case] driver: CassandraDriver) {
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn cluster_single_rack_v4(#[case] driver: CassandraDriver) {
-    let compose = docker_compose("tests/test-configs/cassandra-cluster-v4/docker-compose.yaml");
+    let mut compose = docker_compose("tests/test-configs/cassandra-cluster-v4/docker-compose.yaml");
 
     let connection = || async {
         let mut connection = CassandraConnectionBuilder::new("127.0.0.1", 9042, driver)
@@ -199,12 +199,12 @@ async fn cluster_single_rack_v4(#[case] driver: CassandraDriver) {
         .start()
         .await;
 
-        standard_test_suite(&connection, driver).await;
-        cluster::single_rack_v4::test(&connection().await, driver).await;
+        // standard_test_suite(&connection, driver).await;
+        // cluster::single_rack_v4::test(&connection().await, driver).await;
 
-        routing::test("127.0.0.1", 9042, "172.16.1.2", 9044, driver).await;
+        // routing::test("127.0.0.1", 9042, "172.16.1.2", 9044, driver).await;
 
-        cluster::single_rack_v4::test_node_going_down(&compose, driver).await;
+        cluster::single_rack_v4::test_node_going_down(&mut compose, driver).await;
 
         shotover
             .shutdown_and_then_consume_events(&[

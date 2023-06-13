@@ -1052,6 +1052,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "docker-compose-runner"
+version = "0.1.0"
+source = "git+https://github.com/rukai/docker-compose-runner?branch=start_service_wait#ef674d1b4cabcdf839c429501573b20d851bfa76"
+dependencies = [
+ "anyhow",
+ "regex",
+ "serde_yaml",
+ "subprocess",
+ "tracing",
+]
+
+[[package]]
 name = "either"
 version = "1.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3573,7 +3585,7 @@ dependencies = [
  "cassandra-cpp",
  "cassandra-protocol",
  "cdrs-tokio",
- "docker-compose-runner",
+ "docker-compose-runner 0.1.0 (git+https://github.com/rukai/docker-compose-runner?branch=start_service_wait)",
  "inferno",
  "itertools",
  "openssl",
@@ -4401,7 +4413,7 @@ dependencies = [
  "clap",
  "console",
  "copy_dir",
- "docker-compose-runner",
+ "docker-compose-runner 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "scylla",
  "serde",
  "strum 0.24.1",
