@@ -6,7 +6,7 @@ use crate::message::{Message, Messages, Metadata};
 use crate::tls::{TlsConnector, TlsConnectorConfig};
 use crate::transforms::cassandra::connection::{CassandraConnection, Response, ResponseError};
 use crate::transforms::{Transform, TransformBuilder, TransformConfig, Transforms, Wrapper};
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use cassandra_protocol::events::ServerEvent;
 use cassandra_protocol::frame::message_error::{ErrorBody, ErrorType, UnpreparedError};
@@ -258,9 +258,7 @@ impl CassandraSinkCluster {
                         &mut self.rng,
                         &self.connection_factory,
                     ).await
-                    .map_err(|e|
-                        e.context("Failed to recreate control connection after control connection node went down")
-                    )?;
+                    .context("Failed to recreate control connection after control connection node went down")?;
                     self.set_control_connection(connection, address)
                 }
             }
@@ -284,7 +282,21 @@ impl CassandraSinkCluster {
         // Create the initial connection.
         // Messages will be sent through this connection until we have extracted the handshake.
         if self.control_connection.is_none() {
-            let (connection, address) = if self.pool.nodes().iter().all(|x| !x.is_up) {
+            let (connection, address) = if self
+                .pool
+                .nodes()
+                .iter()
+                .any(|x| x.is_up && x.rack == self.message_rewriter.local_shotover_node.rack)
+            {
+                self.pool
+                    .get_random_owned_connection_in_dc_rack(
+                        &self.message_rewriter.local_shotover_node.rack,
+                        &mut self.rng,
+                        &self.connection_factory,
+                    )
+                    .await
+                    .context("Failed to create initial control connection from current node pool")
+            } else {
                 let mut start_nodes = Vec::with_capacity(self.contact_points.len());
                 for point in &self.contact_points {
                     start_nodes.push(CassandraNode::new(
@@ -301,16 +313,8 @@ impl CassandraSinkCluster {
                     start_nodes.iter_mut().collect(),
                 )
                 .await
-            } else {
-                self.pool
-                    .get_random_owned_connection_in_dc_rack(
-                        &self.message_rewriter.local_shotover_node.rack,
-                        &mut self.rng,
-                        &self.connection_factory,
-                    )
-                    .await
-            }
-            .map_err(|e| e.context("Failed to create initial control connection"))?;
+                .context("Failed to create initial control connection from initial contact points")
+            }?;
             self.set_control_connection(connection, address);
         }
 
@@ -550,7 +554,7 @@ impl CassandraSinkCluster {
                 &mut self.rng,
                 &self.connection_factory
             ).await
-                .map_err(|e| e.context("Failed to recreate control connection when initial connection was possibly against the wrong node"))?;
+            .context("Failed to recreate control connection when initial connection was possibly against the wrong node")?;
             self.set_control_connection(connection, address);
         }
         tracing::info!(
