@@ -99,9 +99,7 @@ impl ConnectionFactory {
         }
     }
 
-    /// For when you want to clone the config options for creating new connections but none of the state.
-    /// When the transform chain is cloned for a new incoming connection, this method should be used so the state doesn't also get cloned to
-    /// the new connection as well.
+    /// Create a new instance with the same configuration but a fresh state.
     pub fn new_with_same_config(&self) -> Self {
         Self {
             connect_timeout: self.connect_timeout,

@@ -1,5 +1,5 @@
 use crate::config::chain::TransformChainConfig;
-use crate::sources::{Sources, SourcesConfig};
+use crate::sources::{Source, SourceConfig};
 use crate::transforms::chain::TransformChainBuilder;
 use anyhow::{anyhow, Context, Result};
 use itertools::Itertools;
@@ -10,7 +10,7 @@ use tracing::info;
 
 #[derive(Deserialize, Debug)]
 pub struct Topology {
-    pub sources: HashMap<String, SourcesConfig>,
+    pub sources: HashMap<String, SourceConfig>,
     pub chain_config: HashMap<String, TransformChainConfig>,
     pub source_to_chain_mapping: HashMap<String, String>,
 }
@@ -44,8 +44,8 @@ impl Topology {
     pub async fn run_chains(
         &self,
         trigger_shutdown_rx: watch::Receiver<bool>,
-    ) -> Result<Vec<Sources>> {
-        let mut sources_list: Vec<Sources> = Vec::new();
+    ) -> Result<Vec<Source>> {
+        let mut sources_list: Vec<Source> = Vec::new();
 
         let mut chains = self.build_chains().await?;
         info!("Loaded chains {:?}", chains.keys());
@@ -104,10 +104,11 @@ impl Topology {
                                                     self.sources.keys().cloned().collect::<Vec<_>>()));
             }
         }
-        info!(
-            "Loaded sources [{:?}] and linked to chains",
-            &self.source_to_chain_mapping.keys()
-        );
+
+        // This info log is considered part of our external API.
+        // Users rely on this to know when shotover is ready in their integration tests.
+        // In production they would probably just have some kind of retry mechanism though.
+        info!("Shotover is now accepting inbound connections");
         Ok(sources_list)
     }
 }
@@ -121,7 +122,7 @@ mod topology_tests {
     use crate::transforms::null::NullSinkConfig;
     use crate::transforms::TransformConfig;
     use crate::{
-        sources::{redis::RedisConfig, Sources, SourcesConfig},
+        sources::{redis::RedisConfig, Source, SourceConfig},
         transforms::{
             distributed::tuneable_consistency_scatter::TuneableConsistencyScatterConfig,
             parallel_map::ParallelMapConfig, redis::cache::RedisConfig as RedisCacheConfig,
@@ -134,12 +135,12 @@ mod topology_tests {
         chain: Vec<Box<dyn TransformConfig>>,
     ) -> (
         HashMap<String, TransformChainConfig>,
-        HashMap<String, SourcesConfig>,
+        HashMap<String, SourceConfig>,
     ) {
         let mut chain_config = HashMap::new();
         chain_config.insert("redis_chain".to_string(), TransformChainConfig(chain));
 
-        let redis_source = SourcesConfig::Redis(RedisConfig {
+        let redis_source = SourceConfig::Redis(RedisConfig {
             listen_addr: "127.0.0.1:0".to_string(),
             connection_limit: None,
             hard_connection_limit: None,
@@ -163,7 +164,7 @@ mod topology_tests {
     async fn run_test_topology(
         chain: Vec<Box<dyn TransformConfig>>,
         source_to_chain_mapping: HashMap<String, String>,
-    ) -> anyhow::Result<Vec<Sources>> {
+    ) -> anyhow::Result<Vec<Source>> {
         let (chain_config, sources) = create_chain_config_and_sources(chain);
 
         let topology = Topology {

@@ -57,7 +57,7 @@ impl Bench for CassandraBench {
         &self,
         flamegraph: bool,
         local: bool,
-        _runtime_seconds: u32,
+        runtime_seconds: u32,
         operations_per_second: Option<u64>,
         reporter: UnboundedSender<Report>,
     ) {
@@ -72,7 +72,7 @@ impl Bench for CassandraBench {
 
         let session = Arc::new(
             SessionBuilder::new()
-                .known_nodes(&["172.16.1.2:9042"])
+                .known_nodes(["172.16.1.2:9042"])
                 .user("cassandra", "cassandra")
                 .compression(self.compression)
                 .build()
@@ -87,7 +87,14 @@ impl Bench for CassandraBench {
         let start = Instant::now();
         reporter.send(Report::Start).unwrap();
 
-        tokio::time::sleep(Duration::from_secs(10)).await;
+        for _ in 0..runtime_seconds {
+            let second = Instant::now();
+            tokio::time::sleep(Duration::from_secs(1)).await;
+            reporter
+                .send(Report::SecondPassed(second.elapsed()))
+                .unwrap();
+        }
+
         reporter.send(Report::FinishedIn(start.elapsed())).unwrap();
 
         // make sure the tasks complete before we drop the database they are connecting to

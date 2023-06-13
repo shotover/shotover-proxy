@@ -12,39 +12,39 @@ pub mod kafka;
 pub mod redis;
 
 #[derive(Debug)]
-pub enum Sources {
+pub enum Source {
     Cassandra(CassandraSource),
     Redis(RedisSource),
     Kafka(KafkaSource),
 }
 
-impl Sources {
+impl Source {
     pub fn into_join_handle(self) -> JoinHandle<()> {
         match self {
-            Sources::Cassandra(c) => c.join_handle,
-            Sources::Redis(r) => r.join_handle,
-            Sources::Kafka(r) => r.join_handle,
+            Source::Cassandra(c) => c.join_handle,
+            Source::Redis(r) => r.join_handle,
+            Source::Kafka(r) => r.join_handle,
         }
     }
 }
 
 #[derive(Deserialize, Debug, Clone)]
-pub enum SourcesConfig {
+pub enum SourceConfig {
     Cassandra(CassandraConfig),
     Redis(RedisConfig),
     Kafka(KafkaConfig),
 }
 
-impl SourcesConfig {
+impl SourceConfig {
     pub(crate) async fn get_source(
         &self,
         chain_builder: TransformChainBuilder,
         trigger_shutdown_rx: watch::Receiver<bool>,
-    ) -> Result<Vec<Sources>> {
+    ) -> Result<Vec<Source>> {
         match self {
-            SourcesConfig::Cassandra(c) => c.get_source(chain_builder, trigger_shutdown_rx).await,
-            SourcesConfig::Redis(r) => r.get_source(chain_builder, trigger_shutdown_rx).await,
-            SourcesConfig::Kafka(r) => r.get_source(chain_builder, trigger_shutdown_rx).await,
+            SourceConfig::Cassandra(c) => c.get_source(chain_builder, trigger_shutdown_rx).await,
+            SourceConfig::Redis(r) => r.get_source(chain_builder, trigger_shutdown_rx).await,
+            SourceConfig::Kafka(r) => r.get_source(chain_builder, trigger_shutdown_rx).await,
         }
     }
 }

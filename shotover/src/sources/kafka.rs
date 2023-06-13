@@ -1,6 +1,6 @@
 use crate::codec::{kafka::KafkaCodecBuilder, CodecBuilder, Direction};
 use crate::server::TcpCodecListener;
-use crate::sources::Sources;
+use crate::sources::Source;
 use crate::tls::{TlsAcceptor, TlsAcceptorConfig};
 use crate::transforms::chain::TransformChainBuilder;
 use anyhow::Result;
@@ -24,8 +24,8 @@ impl KafkaConfig {
         &self,
         chain_builder: TransformChainBuilder,
         trigger_shutdown_rx: watch::Receiver<bool>,
-    ) -> Result<Vec<Sources>> {
-        Ok(vec![Sources::Kafka(
+    ) -> Result<Vec<Source>> {
+        Ok(vec![Source::Kafka(
             KafkaSource::new(
                 chain_builder,
                 self.listen_addr.clone(),

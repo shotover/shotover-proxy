@@ -20,7 +20,7 @@ use tokio::time::timeout;
 use tokio::time::Duration;
 use tokio_util::codec::{FramedRead, FramedWrite};
 use tracing::Instrument;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, warn};
 
 pub struct TcpCodecListener<C: CodecBuilder> {
     chain_builder: TransformChainBuilder,
@@ -118,8 +118,6 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
     /// itself. One strategy for handling this is to implement a back off
     /// strategy, which is what we do here.
     pub async fn run(&mut self) -> Result<()> {
-        info!("accepting inbound connections");
-
         loop {
             // Wait for a permit to become available
             let permit = if self.hard_connection_limit {

@@ -6,6 +6,9 @@ sources:
       listen_addr: "127.0.0.1:6379"
 chain_config:
   redis_chain:
+    - DebugForceEncode:
+        encode_requests: true
+        encode_responses: true
     # configure Shotover to connect to the Redis cluster via our defined contact points
     - RedisSinkCluster:
         first_contact_points:

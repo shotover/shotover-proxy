@@ -1,5 +1,6 @@
 use crate::common::Shotover;
 use async_trait::async_trait;
+use rand::prelude::*;
 use scylla::{
     prepared_statement::PreparedStatement, transport::Compression as ScyllaCompression, Session,
     SessionBuilder,
@@ -49,11 +50,108 @@ struct CoreCount {
     cassandra: usize,
 }
 
+#[derive(Clone)]
+pub enum Operation {
+    ReadI64,
+    WriteBlob,
+}
+
+impl Operation {
+    async fn prepare(&self, session: &Arc<Session>, db: &CassandraDb) {
+        if let CassandraDb::Cassandra = db {
+            session.query("CREATE KEYSPACE IF NOT EXISTS ks WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 }", ()).await.unwrap();
+            session.await_schema_agreement().await.unwrap();
+            session
+                .query("DROP TABLE IF EXISTS ks.bench", ())
+                .await
+                .unwrap();
+            session.await_schema_agreement().await.unwrap();
+
+            match self {
+                Operation::ReadI64 => {
+                    session
+                        .query("CREATE TABLE ks.bench(id bigint PRIMARY KEY)", ())
+                        .await
+                        .unwrap();
+                    session.await_schema_agreement().await.unwrap();
+                    tokio::time::sleep(Duration::from_secs(1)).await; //TODO: this should not be needed >:[
+
+                    for i in 0..ROW_COUNT {
+                        session
+                            .query("INSERT INTO ks.bench(id) VALUES (:id)", (i as i64,))
+                            .await
+                            .unwrap();
+                    }
+                }
+                Operation::WriteBlob => {
+                    session
+                        .query(
+                            "CREATE TABLE ks.bench(id bigint PRIMARY KEY, data BLOB)",
+                            (),
+                        )
+                        .await
+                        .unwrap();
+                    session.await_schema_agreement().await.unwrap();
+                    tokio::time::sleep(Duration::from_secs(1)).await; //TODO: this should not be needed >:[
+                }
+            }
+        }
+    }
+
+    async fn run(
+        &self,
+        session: &Arc<Session>,
+        reporter: UnboundedSender<Report>,
+        operations_per_second: Option<u64>,
+        runtime_seconds: u32,
+    ) {
+        let bench_query = match self {
+            Operation::ReadI64 => session
+                .prepare("SELECT * FROM ks.bench WHERE id = :id")
+                .await
+                .unwrap(),
+            Operation::WriteBlob => session
+                .prepare("INSERT INTO ks.bench (id, data) VALUES (:id, :data)")
+                .await
+                .unwrap(),
+        };
+
+        let tasks = BenchTaskCassandra {
+            session: session.clone(),
+            query: bench_query,
+            operation: self.clone(),
+        }
+        .spawn_tasks(reporter.clone(), operations_per_second)
+        .await;
+
+        // warm up and then start
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        reporter.send(Report::Start).unwrap();
+        let start = Instant::now();
+
+        for _ in 0..runtime_seconds {
+            let second = Instant::now();
+            tokio::time::sleep(Duration::from_secs(1)).await;
+            reporter
+                .send(Report::SecondPassed(second.elapsed()))
+                .unwrap();
+        }
+
+        reporter.send(Report::FinishedIn(start.elapsed())).unwrap();
+
+        // make sure the tasks complete before we drop the database they are connecting to
+        for task in tasks {
+            task.await.unwrap();
+        }
+    }
+}
+
 pub struct CassandraBench {
     db: CassandraDb,
     topology: Topology,
     shotover: Shotover,
     compression: Compression,
+    operation: Operation,
 }
 
 impl CassandraBench {
@@ -62,12 +160,14 @@ impl CassandraBench {
         topology: Topology,
         shotover: Shotover,
         compression: Compression,
+        operation: Operation,
     ) -> Self {
         CassandraBench {
             db,
             topology,
             shotover,
             compression,
+            operation,
         }
     }
 
@@ -100,8 +200,13 @@ impl Bench for CassandraBench {
                 },
             ),
             self.shotover.to_tag(),
-            // TODO: run with different message types
-            ("message_type".to_owned(), "read_bigint".to_owned()),
+            (
+                "operation".to_owned(),
+                match self.operation {
+                    Operation::ReadI64 => "read_i64".to_owned(),
+                    Operation::WriteBlob => "write_blob".to_owned(),
+                },
+            ),
             (
                 "compression".to_owned(),
                 match self.compression {
@@ -175,7 +280,7 @@ impl Bench for CassandraBench {
 
             let session = Arc::new(
                 SessionBuilder::new()
-                    .known_nodes(&[address])
+                    .known_nodes([address])
                     .user("cassandra", "cassandra")
                     .compression(match self.compression {
                         Compression::None => None,
@@ -186,60 +291,12 @@ impl Bench for CassandraBench {
                     .unwrap(),
             );
 
-            if let CassandraDb::Cassandra = self.db {
-                session.query("CREATE KEYSPACE IF NOT EXISTS ks WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 }", ()).await.unwrap();
-                session.await_schema_agreement().await.unwrap();
-                session
-                    .query("DROP TABLE IF EXISTS ks.bench", ())
-                    .await
-                    .unwrap();
-                session.await_schema_agreement().await.unwrap();
-                session
-                    .query("CREATE TABLE ks.bench(id bigint PRIMARY KEY)", ())
-                    .await
-                    .unwrap();
-                session.await_schema_agreement().await.unwrap();
-                tokio::time::sleep(Duration::from_secs(1)).await; //TODO: this should not be needed >:[
+            self.operation.prepare(&session, &self.db).await;
 
-                for i in 0..ROW_COUNT {
-                    session
-                        .query("INSERT INTO ks.bench(id) VALUES (:id)", (i as i64,))
-                        .await
-                        .unwrap();
-                }
-            }
+            self.operation
+                .run(&session, reporter, operations_per_second, runtime_seconds)
+                .await;
 
-            let bench_query = session
-                .prepare("SELECT * FROM ks.bench WHERE id = :id")
-                .await
-                .unwrap();
-
-            let tasks = BenchTaskCassandra {
-                session,
-                query: bench_query,
-            }
-            .spawn_tasks(reporter.clone(), operations_per_second)
-            .await;
-
-            // warm up and then start
-            tokio::time::sleep(Duration::from_secs(1)).await;
-            reporter.send(Report::Start).unwrap();
-            let start = Instant::now();
-
-            for _ in 0..runtime_seconds {
-                let second = Instant::now();
-                tokio::time::sleep(Duration::from_secs(1)).await;
-                reporter
-                    .send(Report::SecondPassed(second.elapsed()))
-                    .unwrap();
-            }
-
-            reporter.send(Report::FinishedIn(start.elapsed())).unwrap();
-
-            // make sure the tasks complete before we drop the database they are connecting to
-            for task in tasks {
-                task.await.unwrap();
-            }
             if let Some(shotover) = shotover {
                 shotover.shutdown_and_then_consume_events(&[]).await;
             }
@@ -255,15 +312,31 @@ impl Bench for CassandraBench {
 struct BenchTaskCassandra {
     session: Arc<Session>,
     query: PreparedStatement,
+    operation: Operation,
 }
 
 #[async_trait]
 impl BenchTask for BenchTaskCassandra {
     async fn run_one_operation(&self) {
         let i = rand::random::<u32>() % ROW_COUNT as u32;
-        self.session
-            .execute(&self.query, (i as i64,))
-            .await
-            .unwrap();
+        match self.operation {
+            Operation::ReadI64 => {
+                self.session
+                    .execute(&self.query, (i as i64,))
+                    .await
+                    .unwrap();
+            }
+            Operation::WriteBlob => {
+                let blob = {
+                    let mut rng = rand::thread_rng();
+                    rng.gen::<[u8; 16]>()
+                };
+
+                self.session
+                    .execute(&self.query, (i as i64, blob))
+                    .await
+                    .unwrap();
+            }
+        }
     }
 }

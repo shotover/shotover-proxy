@@ -10,7 +10,7 @@ async fn test_custom_transform() {
     // Setup shotover and the redis server it connects to
     let _compose = docker_compose("config/docker-compose.yaml");
     let shotover = shotover_proxy("config/topology.yaml").await;
-    let mut connection = redis_connection::new_async(6379).await;
+    let mut connection = redis_connection::new_async("127.0.0.1", 6379).await;
 
     // Verify functionality of transform
     assert_ok(
@@ -48,8 +48,7 @@ async fn shotover_proxy(topology_path: &str) -> BinProcess {
         shotover.wait_for(
             &EventMatcher::new()
                 .with_level(Level::Info)
-                .with_target("shotover::server")
-                .with_message("accepting inbound connections"),
+                .with_message("Shotover is now accepting inbound connections"),
         ),
     )
     .await
