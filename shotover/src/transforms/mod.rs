@@ -12,6 +12,7 @@ use crate::transforms::debug::random_delay::DebugRandomDelay;
 use crate::transforms::debug::returner::DebugReturner;
 use crate::transforms::distributed::tuneable_consistency_scatter::TuneableConsistentencyScatter;
 use crate::transforms::filter::QueryTypeFilter;
+use crate::transforms::kafka::sink_cluster::KafkaSinkCluster;
 use crate::transforms::kafka::sink_single::KafkaSinkSingle;
 use crate::transforms::load_balance::ConnectionBalanceAndPool;
 use crate::transforms::loopback::Loopback;
@@ -87,6 +88,7 @@ impl Debug for dyn TransformBuilder {
 #[derive(IntoStaticStr)]
 pub enum Transforms {
     KafkaSinkSingle(KafkaSinkSingle),
+    KafkaSinkCluster(KafkaSinkCluster),
     CassandraSinkSingle(CassandraSinkSingle),
     CassandraSinkCluster(Box<CassandraSinkCluster>),
     RedisSinkSingle(RedisSinkSingle),
@@ -124,6 +126,7 @@ impl Transforms {
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> Result<Messages> {
         match self {
             Transforms::KafkaSinkSingle(c) => c.transform(message_wrapper).await,
+            Transforms::KafkaSinkCluster(c) => c.transform(message_wrapper).await,
             Transforms::CassandraSinkSingle(c) => c.transform(message_wrapper).await,
             Transforms::CassandraSinkCluster(c) => c.transform(message_wrapper).await,
             Transforms::CassandraPeersRewrite(c) => c.transform(message_wrapper).await,
@@ -155,6 +158,7 @@ impl Transforms {
     async fn transform_pushed<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> Result<Messages> {
         match self {
             Transforms::KafkaSinkSingle(c) => c.transform_pushed(message_wrapper).await,
+            Transforms::KafkaSinkCluster(c) => c.transform_pushed(message_wrapper).await,
             Transforms::CassandraSinkSingle(c) => c.transform_pushed(message_wrapper).await,
             Transforms::CassandraSinkCluster(c) => c.transform_pushed(message_wrapper).await,
             Transforms::CassandraPeersRewrite(c) => c.transform_pushed(message_wrapper).await,
@@ -192,6 +196,7 @@ impl Transforms {
     fn set_pushed_messages_tx(&mut self, pushed_messages_tx: mpsc::UnboundedSender<Messages>) {
         match self {
             Transforms::KafkaSinkSingle(c) => c.set_pushed_messages_tx(pushed_messages_tx),
+            Transforms::KafkaSinkCluster(c) => c.set_pushed_messages_tx(pushed_messages_tx),
             Transforms::CassandraSinkSingle(c) => c.set_pushed_messages_tx(pushed_messages_tx),
             Transforms::CassandraSinkCluster(c) => c.set_pushed_messages_tx(pushed_messages_tx),
             Transforms::CassandraPeersRewrite(c) => c.set_pushed_messages_tx(pushed_messages_tx),
