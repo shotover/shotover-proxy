@@ -1,6 +1,7 @@
 use std::time::Duration;
 use uuid::Uuid;
 
+pub use tokio_bin_process::bin_path;
 pub use tokio_bin_process::event::{Event, Level};
 pub use tokio_bin_process::event_matcher::{Count, EventMatcher, Events};
 pub use tokio_bin_process::BinProcess;
@@ -58,10 +59,11 @@ observability_interface: "127.0.0.1:{observability_port}"
         };
         args.extend(["-c", &config_path]);
 
-        let mut shotover = BinProcess::start_with_args(
+        let mut shotover = BinProcess::start_crate_name(
             "shotover-proxy",
             self.log_name.as_deref().unwrap_or("shotover"),
             &args,
+            None,
         )
         .await;
 
@@ -83,10 +85,11 @@ observability_interface: "127.0.0.1:{observability_port}"
         &self,
         expected_errors_and_warnings: &[EventMatcher],
     ) -> Events {
-        BinProcess::start_with_args(
+        BinProcess::start_crate_name(
             "shotover-proxy",
             "shotover",
             &["-t", &self.topology_path, "--log-format", "json"],
+            None,
         )
         .await
         .consume_remaining_events_expect_failure(expected_errors_and_warnings)
