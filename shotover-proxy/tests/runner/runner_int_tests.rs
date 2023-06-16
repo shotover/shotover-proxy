@@ -24,7 +24,7 @@ async fn test_shotover_responds_sigterm() {
         shotover_process.signal(nix::sys::signal::Signal::SIGTERM);
 
         let events = shotover_process.consume_remaining_events(&[]).await;
-        events.contains(
+        events.assert_contains(
             &EventMatcher::new()
                 .with_level(Level::Info)
                 .with_target("shotover::runner")
@@ -43,7 +43,7 @@ async fn test_shotover_responds_sigint() {
     shotover_process.signal(nix::sys::signal::Signal::SIGINT);
 
     let events = shotover_process.consume_remaining_events(&[]).await;
-    events.contains(
+    events.assert_contains(
         &EventMatcher::new()
             .with_level(Level::Info)
             .with_target("shotover::runner")
