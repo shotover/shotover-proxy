@@ -3341,6 +3341,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
+ "string",
  "strum_macros 0.24.3",
  "thiserror",
  "tokio",
@@ -3354,6 +3355,7 @@ dependencies = [
  "typetag",
  "uuid",
  "version-compare",
+ "xxhash-rust",
 ]
 
 [[package]]
@@ -4475,6 +4477,12 @@ name = "xml-rs"
 version = "0.8.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "52839dc911083a8ef63efa4d039d1f58b5e409f923e44c80828f206f66e5541c"
+
+[[package]]
+name = "xxhash-rust"
+version = "0.8.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "735a71d46c4d68d71d4b24d03fdc2b98e38cea81730595801db779c04fe80d70"
 
 [[package]]
 name = "yasna"
