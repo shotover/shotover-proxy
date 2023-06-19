@@ -31,7 +31,7 @@ async fn produce_consume(brokers: &str, topic_name: &str) {
 
     let message = tokio::time::timeout(Duration::from_secs(10), consumer.recv())
         .await
-        .expect("Timeout while receiving from producer")
+        .expect("Timeout while receiving from consumer")
         .unwrap();
     let contents = message.payload_view::<str>().unwrap().unwrap();
     assert_eq!("Message", contents);
@@ -80,7 +80,7 @@ async fn produce_consume_acks0(brokers: &str) {
     for i in 0..10 {
         let message = tokio::time::timeout(Duration::from_secs(10), consumer.recv())
             .await
-            .expect("Timeout while receiving from producer")
+            .expect("Timeout while receiving from consumer")
             .unwrap();
         let contents = message.payload_view::<str>().unwrap().unwrap();
         assert_eq!("MessageAcks0", contents);

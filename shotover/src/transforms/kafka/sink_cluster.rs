@@ -1,5 +1,5 @@
 use crate::codec::{kafka::KafkaCodecBuilder, CodecBuilder, Direction};
-use crate::frame::kafka::{KafkaFrame, RequestBody, ResponseBody};
+use crate::frame::kafka::{strbytes, KafkaFrame, ResponseBody};
 use crate::frame::Frame;
 use crate::message::Messages;
 use crate::tcp;
@@ -9,15 +9,18 @@ use crate::transforms::util::Response;
 use crate::transforms::{Transform, TransformBuilder, Transforms, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
+use kafka_protocol::protocol::StrBytes;
 use serde::Deserialize;
+use std::hash::Hasher;
+use std::net::SocketAddr;
 use std::time::Duration;
 use tokio::sync::{mpsc, oneshot};
 use tokio::time::timeout;
 
 #[derive(Deserialize, Debug)]
-pub struct KafkaSinkSingleConfig {
-    #[serde(rename = "remote_address")]
-    pub address: String,
+pub struct KafkaSinkClusterConfig {
+    pub first_contact_points: Vec<String>,
+    pub shotover_nodes: Vec<String>,
     pub connect_timeout_ms: u64,
     pub read_timeout: Option<u64>,
 }
@@ -26,12 +29,13 @@ pub struct KafkaSinkSingleConfig {
 use crate::transforms::TransformConfig;
 
 #[cfg(feature = "alpha-transforms")]
-#[typetag::deserialize(name = "KafkaSinkSingle")]
+#[typetag::deserialize(name = "KafkaSinkCluster")]
 #[async_trait(?Send)]
-impl TransformConfig for KafkaSinkSingleConfig {
+impl TransformConfig for KafkaSinkClusterConfig {
     async fn get_builder(&self, chain_name: String) -> Result<Box<dyn TransformBuilder>> {
-        Ok(Box::new(KafkaSinkSingleBuilder::new(
-            self.address.clone(),
+        Ok(Box::new(KafkaSinkClusterBuilder::new(
+            self.first_contact_points.clone(),
+            self.shotover_nodes.clone(),
             chain_name,
             self.connect_timeout_ms,
             self.read_timeout,
@@ -39,43 +43,50 @@ impl TransformConfig for KafkaSinkSingleConfig {
     }
 }
 
-pub struct KafkaSinkSingleBuilder {
+pub struct KafkaSinkClusterBuilder {
     // contains address and port
-    address: String,
-    address_port: u16,
+    first_contact_points: Vec<String>,
+    shotover_nodes: Vec<KafkaAddress>,
     connect_timeout: Duration,
     read_timeout: Option<Duration>,
 }
 
-impl KafkaSinkSingleBuilder {
+impl KafkaSinkClusterBuilder {
     pub fn new(
-        address: String,
+        first_contact_points: Vec<String>,
+        shotover_nodes: Vec<String>,
         _chain_name: String,
         connect_timeout_ms: u64,
         timeout: Option<u64>,
-    ) -> KafkaSinkSingleBuilder {
+    ) -> KafkaSinkClusterBuilder {
         let receive_timeout = timeout.map(Duration::from_secs);
-        let address_port = address
-            .rsplit(':')
-            .next()
-            .and_then(|str| str.parse().ok())
-            .unwrap_or(9092);
 
-        KafkaSinkSingleBuilder {
-            address,
-            address_port,
+        let shotover_nodes = shotover_nodes
+            .into_iter()
+            .map(|node| {
+                let address: SocketAddr = node.parse().unwrap();
+                KafkaAddress {
+                    host: strbytes(&address.ip().to_string()),
+                    port: address.port() as i32,
+                }
+            })
+            .collect();
+
+        KafkaSinkClusterBuilder {
+            first_contact_points,
+            shotover_nodes,
             connect_timeout: Duration::from_millis(connect_timeout_ms),
             read_timeout: receive_timeout,
         }
     }
 }
 
-impl TransformBuilder for KafkaSinkSingleBuilder {
+impl TransformBuilder for KafkaSinkClusterBuilder {
     fn build(&self) -> Transforms {
-        Transforms::KafkaSinkSingle(KafkaSinkSingle {
+        Transforms::KafkaSinkCluster(KafkaSinkCluster {
             outbound: None,
-            address: self.address.clone(),
-            address_port: self.address_port,
+            first_contact_points: self.first_contact_points.clone(),
+            shotover_nodes: self.shotover_nodes.clone(),
             pushed_messages_tx: None,
             connect_timeout: self.connect_timeout,
             read_timeout: self.read_timeout,
@@ -83,7 +94,7 @@ impl TransformBuilder for KafkaSinkSingleBuilder {
     }
 
     fn get_name(&self) -> &'static str {
-        "KafkaSinkSingle"
+        "KafkaClusterSingle"
     }
 
     fn is_terminating(&self) -> bool {
@@ -91,9 +102,15 @@ impl TransformBuilder for KafkaSinkSingleBuilder {
     }
 }
 
-pub struct KafkaSinkSingle {
-    address: String,
-    address_port: u16,
+#[derive(Clone)]
+struct KafkaAddress {
+    host: StrBytes,
+    port: i32,
+}
+
+pub struct KafkaSinkCluster {
+    first_contact_points: Vec<String>,
+    shotover_nodes: Vec<KafkaAddress>,
     outbound: Option<Connection>,
     pushed_messages_tx: Option<mpsc::UnboundedSender<Messages>>,
     connect_timeout: Duration,
@@ -101,27 +118,17 @@ pub struct KafkaSinkSingle {
 }
 
 #[async_trait]
-impl Transform for KafkaSinkSingle {
-    async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> Result<Messages> {
+impl Transform for KafkaSinkCluster {
+    async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> Result<Messages> {
         if self.outbound.is_none() {
             let codec = KafkaCodecBuilder::new(Direction::Sink);
-            let tcp_stream = tcp::tcp_stream(self.connect_timeout, &self.address).await?;
+            let tcp_stream = tcp::tcp_stream(
+                self.connect_timeout,
+                self.first_contact_points.first().unwrap(),
+            )
+            .await?;
             let (rx, tx) = tcp_stream.into_split();
             self.outbound = Some(spawn_read_write_tasks(&codec, rx, tx));
-        }
-
-        // Rewrite requests to use kafkas port instead of shotovers port
-        for request in &mut message_wrapper.messages {
-            if let Some(Frame::Kafka(KafkaFrame::Request {
-                body: RequestBody::LeaderAndIsr(leader_and_isr),
-                ..
-            })) = request.frame()
-            {
-                for leader in &mut leader_and_isr.live_leaders {
-                    leader.port = self.address_port as i32;
-                }
-                request.invalidate_cache();
-            }
         }
 
         let outbound = self.outbound.as_mut().unwrap();
@@ -136,7 +143,6 @@ impl Transform for KafkaSinkSingle {
 
         // Rewrite responses to use shotovers port instead of kafkas port
         for response in &mut responses {
-            let port = message_wrapper.local_addr.port() as i32;
             match response.frame() {
                 Some(Frame::Kafka(KafkaFrame::Response {
                     body: ResponseBody::FindCoordinator(find_coordinator),
@@ -144,10 +150,18 @@ impl Transform for KafkaSinkSingle {
                     ..
                 })) => {
                     if *version <= 3 {
-                        find_coordinator.port = port;
+                        rewrite_address(
+                            &self.shotover_nodes,
+                            &mut find_coordinator.host,
+                            &mut find_coordinator.port,
+                        )
                     } else {
                         for coordinator in &mut find_coordinator.coordinators {
-                            coordinator.port = port;
+                            rewrite_address(
+                                &self.shotover_nodes,
+                                &mut coordinator.host,
+                                &mut coordinator.port,
+                            )
                         }
                     }
                     response.invalidate_cache();
@@ -157,7 +171,11 @@ impl Transform for KafkaSinkSingle {
                     ..
                 })) => {
                     for broker in &mut metadata.brokers {
-                        broker.1.port = port;
+                        rewrite_address(
+                            &self.shotover_nodes,
+                            &mut broker.1.host,
+                            &mut broker.1.port,
+                        )
                     }
                     response.invalidate_cache();
                 }
@@ -166,7 +184,11 @@ impl Transform for KafkaSinkSingle {
                     ..
                 })) => {
                     for broker in &mut describe_cluster.brokers {
-                        broker.1.port = port;
+                        rewrite_address(
+                            &self.shotover_nodes,
+                            &mut broker.1.host,
+                            &mut broker.1.port,
+                        )
                     }
                     response.invalidate_cache();
                 }
@@ -188,4 +210,22 @@ async fn read_responses(responses: Vec<oneshot::Receiver<Response>>) -> Result<M
         result.push(response.await.unwrap().response?);
     }
     Ok(result)
+}
+
+fn hash_address(host: &str, port: i32) -> u64 {
+    let mut hasher = xxhash_rust::xxh3::Xxh3::new();
+    hasher.write(host.as_bytes());
+    hasher.write(&port.to_be_bytes());
+    hasher.finish()
+}
+
+fn rewrite_address(shotover_nodes: &[KafkaAddress], host: &mut StrBytes, port: &mut i32) {
+    // do not attempt to rewrite if the port is not provided (-1)
+    // this is known to occur in an error response
+    if *port >= 0 {
+        let shotover_node =
+            &shotover_nodes[hash_address(host, *port) as usize % shotover_nodes.len()];
+        *host = shotover_node.host.clone();
+        *port = shotover_node.port;
+    }
 }
