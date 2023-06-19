@@ -270,7 +270,7 @@ impl Bench for CassandraBench {
             };
             let perf = if flamegraph {
                 if let Some(shotover) = &shotover {
-                    Some(Perf::new(shotover.child.as_ref().unwrap().id().unwrap()))
+                    Some(Perf::new(shotover.child().id().unwrap()))
                 } else {
                     todo!()
                 }
