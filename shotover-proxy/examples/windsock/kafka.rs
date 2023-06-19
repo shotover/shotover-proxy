@@ -18,6 +18,7 @@ pub struct KafkaBench {
     message_size: Size,
 }
 
+#[derive(Clone)]
 pub enum Size {
     B1,
     KB1,
