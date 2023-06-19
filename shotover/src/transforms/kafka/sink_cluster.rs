@@ -143,7 +143,6 @@ impl Transform for KafkaSinkCluster {
 
         // Rewrite responses to use shotovers port instead of kafkas port
         for response in &mut responses {
-            tracing::info!("{:?}", response.to_high_level_string());
             match response.frame() {
                 Some(Frame::Kafka(KafkaFrame::Response {
                     body: ResponseBody::FindCoordinator(find_coordinator),
@@ -221,8 +220,6 @@ fn hash_address(host: &str, port: i32) -> u64 {
 }
 
 fn rewrite_address(shotover_nodes: &[KafkaAddress], host: &mut StrBytes, port: &mut i32) {
-    //tracing::info!("rewriting {} {}", host, port);
-
     // do not attempt to rewrite if the port is not provided (-1)
     // this is known to occur in an error response
     if *port >= 0 {

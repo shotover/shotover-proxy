@@ -16,6 +16,8 @@ pub fn send_requests(
     messages
         .into_iter()
         .map(|mut message| {
+            // when a produce request has acks set to 0, the kafka instance will return no response.
+            // In order to maintain shotover transform invariants we need to return a dummy response instead.
             let acks0 = if let Some(Frame::Kafka(KafkaFrame::Request {
                 body: RequestBody::Produce(produce),
                 ..
