@@ -8,17 +8,58 @@ use console::{pad_str, pad_str_with, style, Alignment};
 use std::{collections::HashSet, time::Duration};
 use strum::IntoEnumIterator;
 
+pub(crate) struct ReportColumn {
+    pub(crate) baseline: Option<ReportArchive>,
+    pub(crate) current: ReportArchive,
+}
+
+impl ReportColumn {
+    pub fn load(name: &str) -> Result<Self> {
+        Ok(ReportColumn {
+            baseline: None,
+            current: ReportArchive::load(name)?,
+        })
+    }
+
+    pub fn load_with_baseline(name: &str) -> Result<Self> {
+        Ok(ReportColumn {
+            baseline: ReportArchive::load_baseline(name)?,
+            current: ReportArchive::load(name)?,
+        })
+    }
+}
+
 pub fn compare_by_name(names: &str) -> Result<()> {
-    let archives: Result<Vec<ReportArchive>> =
-        names.split_whitespace().map(ReportArchive::load).collect();
-    display_compare_table(&archives?);
+    let columns: Result<Vec<ReportColumn>> =
+        names.split_whitespace().map(ReportColumn::load).collect();
+    let mut columns = columns?;
+
+    let baseline = columns.get(0).map(|x| x.current.clone());
+    for column in &mut columns.iter_mut().skip(1) {
+        column.baseline = baseline.clone();
+    }
+
+    display_compare_table(&columns);
     Ok(())
 }
 
 pub fn results_by_name(names: &str) -> Result<()> {
-    let archives: Result<Vec<ReportArchive>> =
-        names.split_whitespace().map(ReportArchive::load).collect();
+    let archives: Result<Vec<ReportColumn>> =
+        names.split_whitespace().map(ReportColumn::load).collect();
     display_results_table(&archives?);
+    Ok(())
+}
+
+pub fn baseline_compare_by_tags(arg: &str) -> Result<()> {
+    let filter = Filter::from_query(arg)
+        .map_err(|e| e.context(format!("Failed to parse tag filter from {:?}", arg)))?;
+    let archives: Result<Vec<ReportColumn>> = ReportArchive::reports_in_last_run()
+        .iter()
+        .filter(|name| filter.matches(&Tags::from_name(name)))
+        .map(|x| ReportColumn::load_with_baseline(x))
+        .collect();
+    display_baseline_compare_table(&archives?);
+
     Ok(())
 }
 
@@ -32,14 +73,25 @@ pub fn compare_by_tags(arg: &str) -> Result<()> {
 
     let filter = Filter::from_query(&tag_args)
         .map_err(|e| e.context(format!("Failed to parse tag filter from {:?}", tag_args)))?;
-    let archives: Result<Vec<ReportArchive>> = ReportArchive::reports_in_last_run()
+    let archives: Result<Vec<ReportColumn>> = ReportArchive::reports_in_last_run()
         .iter()
         .filter(|name| **name != base_name && filter.matches(&Tags::from_name(name)))
-        .map(|x| ReportArchive::load(x))
+        .map(|x| {
+            Ok(ReportColumn {
+                baseline: Some(base.clone()),
+                current: ReportArchive::load(x)?,
+            })
+        })
         .collect();
     let mut archives = archives?;
 
-    archives.insert(0, base);
+    archives.insert(
+        0,
+        ReportColumn {
+            baseline: None,
+            current: base,
+        },
+    );
 
     display_compare_table(&archives);
 
@@ -49,38 +101,47 @@ pub fn compare_by_tags(arg: &str) -> Result<()> {
 pub fn results_by_tags(arg: &str) -> Result<()> {
     let filter = Filter::from_query(arg)
         .map_err(|e| e.context(format!("Failed to parse tag filter from {:?}", arg)))?;
-    let archives: Result<Vec<ReportArchive>> = ReportArchive::reports_in_last_run()
+    let archives: Result<Vec<ReportColumn>> = ReportArchive::reports_in_last_run()
         .iter()
         .filter(|name| filter.matches(&Tags::from_name(name)))
-        .map(|x| ReportArchive::load(x))
+        .map(|x| ReportColumn::load(x))
         .collect();
     display_results_table(&archives?);
 
     Ok(())
 }
 
-pub(crate) fn display_compare_table(reports: &[ReportArchive]) {
-    if reports.len() < 2 {
-        println!("Need at least two reports to display a comparison");
+pub(crate) fn display_baseline_compare_table(reports: &[ReportColumn]) {
+    if reports.is_empty() {
+        println!("Need at least one report to display baseline comparison");
         return;
     }
 
-    base(reports, "Comparison", true);
+    base(reports, "Comparison against baseline");
 }
 
-pub(crate) fn display_results_table(reports: &[ReportArchive]) {
+pub(crate) fn display_compare_table(reports: &[ReportColumn]) {
+    if reports.len() < 2 {
+        println!("Need at least two reports to display a comparison against first column");
+        return;
+    }
+
+    base(reports, "Comparison against first column");
+}
+
+pub(crate) fn display_results_table(reports: &[ReportColumn]) {
     if reports.is_empty() {
         println!("Need at least one report to display results");
         return;
     }
 
-    base(reports, "Results", false);
+    base(reports, "Results");
 }
 
-fn base(reports: &[ReportArchive], table_type: &str, comparison: bool) {
-    let mut intersection = reports[0].tags.clone();
+fn base(reports: &[ReportColumn], table_type: &str) {
+    let mut intersection = reports[0].current.tags.clone();
     for report in reports {
-        intersection = intersection.intersection(&report.tags);
+        intersection = intersection.intersection(&report.current.tags);
     }
 
     let mut rows = vec![];
@@ -95,7 +156,8 @@ fn base(reports: &[ReportArchive], table_type: &str, comparison: bool) {
         .iter()
         .fold(HashSet::new(), |acc, x| {
             acc.union(
-                &x.tags
+                &x.current
+                    .tags
                     .keys()
                     .difference(&intersection_keys)
                     .cloned()
@@ -114,13 +176,16 @@ fn base(reports: &[ReportArchive], table_type: &str, comparison: bool) {
         rows.push(Row::ColumnNames {
             names: reports
                 .iter()
-                .map(|x| x.tags.0.get(&key).cloned().unwrap_or("".to_owned()))
+                .map(|x| x.current.tags.0.get(&key).cloned().unwrap_or("".to_owned()))
                 .collect(),
             legend: key,
         });
     }
 
-    if reports.iter().any(|x| x.operations_report.is_some()) {
+    if reports
+        .iter()
+        .any(|x| x.current.operations_report.is_some())
+    {
         rows.push(Row::Heading("(Opns) Operations".to_owned()));
         rows.push(Row::measurements(reports, "Total Opns", |report| {
             report.operations_report.as_ref().map(|report| {
@@ -187,7 +252,8 @@ fn base(reports: &[ReportArchive], table_type: &str, comparison: bool) {
         for i in 0..reports
             .iter()
             .map(|x| {
-                x.operations_report
+                x.current
+                    .operations_report
                     .as_ref()
                     .map(|report| report.total_each_second.len())
                     .unwrap_or(0)
@@ -206,7 +272,7 @@ fn base(reports: &[ReportArchive], table_type: &str, comparison: bool) {
         }
     }
 
-    if reports.iter().any(|x| x.pubsub_report.is_some()) {
+    if reports.iter().any(|x| x.current.pubsub_report.is_some()) {
         rows.push(Row::Heading("Produce/Consume".to_owned()));
         rows.push(Row::measurements(reports, "Total Produce", |report| {
             report.pubsub_report.as_ref().map(|report| {
@@ -301,7 +367,8 @@ fn base(reports: &[ReportArchive], table_type: &str, comparison: bool) {
         for i in 0..reports
             .iter()
             .map(|x| {
-                x.pubsub_report
+                x.current
+                    .pubsub_report
                     .as_ref()
                     .map(|report| report.produce_each_second.len())
                     .unwrap_or(0)
@@ -323,7 +390,8 @@ fn base(reports: &[ReportArchive], table_type: &str, comparison: bool) {
         for i in 0..reports
             .iter()
             .map(|x| {
-                x.pubsub_report
+                x.current
+                    .pubsub_report
                     .as_ref()
                     .map(|report| report.consume_each_second.len())
                     .unwrap_or(0)
@@ -345,7 +413,8 @@ fn base(reports: &[ReportArchive], table_type: &str, comparison: bool) {
         for i in 0..reports
             .iter()
             .map(|x| {
-                x.pubsub_report
+                x.current
+                    .pubsub_report
                     .as_ref()
                     .map(|report| report.backlog_each_second.len())
                     .unwrap_or(0)
@@ -400,9 +469,8 @@ fn base(reports: &[ReportArchive], table_type: &str, comparison: bool) {
                     Row::Heading(_) => 0,                                 // Ignore these
                     Row::ColumnNames { names, .. } => names[i].len() + 1, // + 1 ensures we get separation from the previous column
                     Row::Measurements { measurements, .. } => {
-                        measurements[i].value.len()
-                            + 1 // ensures we get seperation from the previous column
-                            + if comparison { comparison_widths[i] } else { 0 }
+                        measurements[i].value.len() + 1 // ensures we get seperation from the previous column
+                        + comparison_widths[i]
                     }
                 })
                 .max()
@@ -459,25 +527,21 @@ fn base(reports: &[ReportArchive], table_type: &str, comparison: bool) {
                         .bold()
                 );
                 for (i, measurement) in measurements.into_iter().enumerate() {
-                    let contents = if comparison && i != 0 {
-                        let colorer = match measurement.color {
-                            Color::Good => |x| style(x).green(),
-                            Color::Bad => |x| style(x).red(),
-                            Color::Neutral => |x| style(x).dim(),
-                        };
-                        format!(
-                            "{}{}",
-                            measurement.value,
-                            colorer(pad_str(
-                                &measurement.comparison,
-                                comparison_widths[i],
-                                Alignment::Right,
-                                None
-                            )),
-                        )
-                    } else {
-                        measurement.value
+                    let colorer = match measurement.color {
+                        Color::Good => |x| style(x).green(),
+                        Color::Bad => |x| style(x).red(),
+                        Color::Neutral => |x| style(x).dim(),
                     };
+                    let contents = format!(
+                        "{}{}",
+                        measurement.value,
+                        colorer(pad_str(
+                            &measurement.comparison,
+                            comparison_widths[i],
+                            Alignment::Right,
+                            None
+                        )),
+                    );
                     print!(
                         "{}",
                         pad_str(&contents, column_widths[i], Alignment::Right, None),
@@ -489,12 +553,22 @@ fn base(reports: &[ReportArchive], table_type: &str, comparison: bool) {
     }
 
     for report in reports {
-        if !report.running_in_release {
+        if !report.current.running_in_release {
             let error = format!(
                 "Bench results invalid! Bench compiled with non-release profile: {}",
-                report.tags.get_name()
+                report.current.tags.get_name()
             );
             println!("{}", style(error).red().bold());
+        }
+
+        if let Some(baseline) = &report.baseline {
+            if !baseline.running_in_release {
+                let error = format!(
+                    "Baseline bench results invalid! Baseline bench compiled with non-release profile: {}",
+                    baseline.tags.get_name()
+                );
+                println!("{}", style(error).red().bold());
+            }
         }
     }
 }
@@ -534,18 +608,17 @@ enum Color {
 
 impl Row {
     fn measurements<F: Fn(&ReportArchive) -> Option<(f64, String, Goal)>>(
-        reports: &[ReportArchive],
+        reports: &[ReportColumn],
         legend: &str,
         f: F,
     ) -> Row {
         let legend = legend.to_owned();
-        let mut base = None;
         let measurements = reports
             .iter()
             .map(|x| {
                 let (value, comparison, comparison_raw, goal) =
-                    if let Some((compare, value, goal)) = f(x) {
-                        if let Some(base) = base {
+                    if let Some((compare, value, goal)) = f(&x.current) {
+                        if let Some((base, _, _)) = x.baseline.as_ref().and_then(&f) {
                             let comparison_raw: f64 = (compare - base) / base * 100.0;
                             let comparison = if comparison_raw.is_nan() {
                                 "-".into()
@@ -555,7 +628,6 @@ impl Row {
 
                             (value, comparison, comparison_raw, goal)
                         } else {
-                            base = Some(compare);
                             (value, "".to_owned(), 0.0, Goal::BiggerIsBetter)
                         }
                     } else {
