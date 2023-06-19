@@ -1,5 +1,6 @@
 use crate::cli::Args;
 use crate::report::{report_builder, Report, ReportArchive};
+use crate::tables::ReportColumn;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -41,11 +42,10 @@ impl BenchState {
             .await;
         let report = process.await.unwrap();
 
-        if let Some(baseline) = ReportArchive::load_baseline(&name).unwrap() {
-            crate::tables::display_compare_table(&[baseline, report]);
-        } else {
-            crate::tables::display_results_table(&[report]);
-        }
+        crate::tables::display_results_table(&[ReportColumn {
+            baseline: ReportArchive::load_baseline(&name).unwrap(),
+            current: report,
+        }]);
     }
 
     // TODO: will return None when running in non-local setup
