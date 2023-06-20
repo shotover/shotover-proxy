@@ -1,9 +1,10 @@
 mod bench;
 mod cli;
+mod data;
 mod filter;
 mod report;
 mod tables;
-pub use bench::{Bench, BenchTask};
+pub use bench::{Bench, BenchTask, Profiling};
 pub use report::Report;
 
 use anyhow::{anyhow, Result};
@@ -82,7 +83,17 @@ impl Windsock {
         } else if let Some(name) = &args.name {
             ReportArchive::clear_last_run();
             match self.benches.iter_mut().find(|x| &x.tags.get_name() == name) {
-                Some(bench) => run_bench(bench, &args, running_in_release),
+                Some(bench) => {
+                    if args
+                        .profilers
+                        .iter()
+                        .all(|x| bench.supported_profilers.contains(x))
+                    {
+                        run_bench(bench, &args, running_in_release)
+                    } else {
+                        return Err(anyhow!("Specified bench {name:?} was requested to run with the profilers {:?} but it only supports the profilers {:?}", args.profilers, bench.supported_profilers));
+                    }
+                }
                 None => {
                     return Err(anyhow!("Specified bench {name:?} does not exist."));
                 }
@@ -107,7 +118,13 @@ impl Windsock {
             for bench in &mut self.benches {
                 if filter
                     .as_ref()
-                    .map(|x| x.matches(&bench.tags))
+                    .map(|x| {
+                        x.matches(&bench.tags)
+                            && args
+                                .profilers
+                                .iter()
+                                .all(|x| bench.supported_profilers.contains(x))
+                    })
                     .unwrap_or(true)
                 {
                     run_bench(bench, &args, running_in_release)

@@ -1,4 +1,5 @@
 use crate::common::Shotover;
+use crate::profilers::ProfilerRunner;
 use async_trait::async_trait;
 use futures::StreamExt;
 use rdkafka::config::ClientConfig;
@@ -7,11 +8,9 @@ use rdkafka::producer::{FutureProducer, FutureRecord};
 use rdkafka::util::Timeout;
 use std::sync::Arc;
 use std::{collections::HashMap, time::Duration};
-use test_helpers::{
-    docker_compose::docker_compose, flamegraph::Perf, shotover_process::ShotoverProcessBuilder,
-};
+use test_helpers::{docker_compose::docker_compose, shotover_process::ShotoverProcessBuilder};
 use tokio::{sync::mpsc::UnboundedSender, task::JoinHandle, time::Instant};
-use windsock::{Bench, Report};
+use windsock::{Bench, Profiling, Report};
 
 pub struct KafkaBench {
     shotover: Shotover,
@@ -55,9 +54,13 @@ impl Bench for KafkaBench {
         .collect()
     }
 
+    fn supported_profilers(&self) -> Vec<String> {
+        ProfilerRunner::supported_profilers(self.shotover)
+    }
+
     async fn run(
         &self,
-        flamegraph: bool,
+        profiling: Profiling,
         _local: bool,
         runtime_seconds: u32,
         operations_per_second: Option<u64>,
@@ -66,9 +69,11 @@ impl Bench for KafkaBench {
         let config_dir = "tests/test-configs/kafka/bench";
         let _compose = docker_compose(&format!("{}/docker-compose.yaml", config_dir));
 
+        let mut profiler = ProfilerRunner::new(profiling);
         let shotover = match self.shotover {
             Shotover::Standard => Some(
                 ShotoverProcessBuilder::new_with_topology(&format!("{config_dir}/topology.yaml"))
+                    .with_profile(profiler.shotover_profile())
                     .start()
                     .await,
             ),
@@ -77,20 +82,13 @@ impl Bench for KafkaBench {
                 ShotoverProcessBuilder::new_with_topology(&format!(
                     "{config_dir}/topology-encode.yaml"
                 ))
+                .with_profile(profiler.shotover_profile())
                 .start()
                 .await,
             ),
         };
 
-        let perf = if flamegraph {
-            if let Some(shotover) = &shotover {
-                Some(Perf::new(shotover.child().id().unwrap()))
-            } else {
-                todo!()
-            }
-        } else {
-            None
-        };
+        profiler.run(&shotover);
 
         let brokers = match self.shotover {
             Shotover::ForcedMessageParsed | Shotover::Standard => "127.0.0.1:9192",
@@ -154,10 +152,6 @@ impl Bench for KafkaBench {
 
         if let Some(shotover) = shotover {
             shotover.shutdown_and_then_consume_events(&[]).await;
-        }
-
-        if let Some(perf) = perf {
-            perf.flamegraph();
         }
     }
 }

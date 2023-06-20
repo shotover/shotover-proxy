@@ -5,6 +5,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::task::JoinHandle;
@@ -12,12 +13,18 @@ use tokio::task::JoinHandle;
 pub struct BenchState {
     bench: Box<dyn Bench>,
     pub(crate) tags: Tags,
+    pub(crate) supported_profilers: Vec<String>,
 }
 
 impl BenchState {
     pub fn new(bench: Box<dyn Bench>) -> Self {
         let tags = Tags(bench.tags());
-        BenchState { bench, tags }
+        let supported_profilers = bench.supported_profilers();
+        BenchState {
+            bench,
+            tags,
+            supported_profilers,
+        }
     }
 
     pub async fn run(&mut self, args: &Args, running_in_release: bool) {
@@ -31,9 +38,24 @@ impl BenchState {
             args.operations_per_second,
             running_in_release,
         ));
+
+        let profilers_to_use = args.profilers.clone();
+        let results_path = if !profilers_to_use.is_empty() {
+            let path = crate::data::windsock_path()
+                .join("profiler_results")
+                .join(&name);
+            std::fs::create_dir_all(&path).unwrap();
+            path
+        } else {
+            PathBuf::new()
+        };
+
         self.bench
             .run(
-                args.flamegraph,
+                Profiling {
+                    results_path,
+                    profilers_to_use,
+                },
                 true,
                 args.bench_length_seconds.unwrap_or(15),
                 args.operations_per_second,
@@ -60,21 +82,32 @@ impl BenchState {
 pub trait Bench {
     /// Returns tags that are used for forming comparisons, graphs and naming the benchmark
     fn tags(&self) -> HashMap<String, String>;
-    /// Runs the benchmark.
-    /// Setup, benching and teardown all take place in here.
-    async fn run(
-        &self,
-        flamegraph: bool,
-        local: bool,
-        runtime_seconds: u32,
-        operations_per_second: Option<u64>,
-        reporter: UnboundedSender<Report>,
-    );
+
+    /// Returns the names of profilers that this bench can be run with
+    fn supported_profilers(&self) -> Vec<String> {
+        vec![]
+    }
 
     /// How many cores to assign the async runtime in which the bench runs.
     fn cores_required(&self) -> usize {
         1
     }
+
+    /// Runs the benchmark.
+    /// Setup, benching and teardown all take place in here.
+    async fn run(
+        &self,
+        profiling: Profiling,
+        local: bool,
+        runtime_seconds: u32,
+        operations_per_second: Option<u64>,
+        reporter: UnboundedSender<Report>,
+    );
+}
+
+pub struct Profiling {
+    pub results_path: PathBuf,
+    pub profilers_to_use: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
