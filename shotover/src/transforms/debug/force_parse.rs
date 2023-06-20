@@ -77,7 +77,7 @@ impl TransformBuilder for DebugForceParse {
 #[async_trait]
 impl Transform for DebugForceParse {
     async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> Result<Messages> {
-        for message in &mut message_wrapper.messages {
+        for message in &mut message_wrapper.requests {
             if self.parse_requests {
                 message.frame();
             }

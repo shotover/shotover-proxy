@@ -187,7 +187,7 @@ impl Transform for RedisTimestampTagger {
         // TODO: This is wrong. We need more robust handling of transactions
         let mut exec_block = false;
 
-        for message in message_wrapper.messages.iter_mut() {
+        for message in message_wrapper.requests.iter_mut() {
             if let Some(Frame::Redis(frame)) = message.frame() {
                 if let RedisFrame::Array(array) = frame {
                     if array

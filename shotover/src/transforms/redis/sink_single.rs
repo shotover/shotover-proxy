@@ -112,8 +112,8 @@ impl Transform for RedisSinkSingle {
     async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> Result<Messages> {
         // Return immediately if we have no messages.
         // If we tried to send no messages we would block forever waiting for a reply that will never come.
-        if message_wrapper.messages.is_empty() {
-            return Ok(message_wrapper.messages);
+        if message_wrapper.requests.is_empty() {
+            return Ok(message_wrapper.requests);
         }
 
         if self.connection.is_none() {
@@ -153,7 +153,7 @@ impl Transform for RedisSinkSingle {
 
         let connection = self.connection.as_mut().unwrap();
 
-        for message in &mut message_wrapper.messages {
+        for message in &mut message_wrapper.requests {
             let ty = if let Some(Frame::Redis(RedisFrame::Array(array))) = message.frame() {
                 if let Some(RedisFrame::BulkString(bytes)) = array.first() {
                     match bytes.to_ascii_uppercase().as_slice() {
@@ -176,10 +176,10 @@ impl Transform for RedisSinkSingle {
                 .map_err(|_| anyhow!("Failed to send message type because RedisSinkSingle response processing task is dead"))?;
         }
 
-        let messages_len = message_wrapper.messages.len();
+        let messages_len = message_wrapper.requests.len();
         connection
             .outbound_tx
-            .send(message_wrapper.messages)
+            .send(message_wrapper.requests)
             .await
             .map_err(|err| anyhow!("Failed to send messages to redis destination: {err:?}"))?;
 

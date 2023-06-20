@@ -46,7 +46,7 @@ impl TransformBuilder for DebugPrinter {
 #[async_trait]
 impl Transform for DebugPrinter {
     async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> Result<Messages> {
-        for request in &mut message_wrapper.messages {
+        for request in &mut message_wrapper.requests {
             info!("Request: {}", request.to_high_level_string());
         }
 

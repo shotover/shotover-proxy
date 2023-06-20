@@ -326,7 +326,7 @@ impl SimpleRedisCache {
     ) -> Result<Messages> {
         let local_addr = message_wrapper.local_addr;
         let mut request_messages: Vec<_> = message_wrapper
-            .messages
+            .requests
             .iter_mut()
             .map(|message| message.frame().cloned())
             .collect();
@@ -569,7 +569,7 @@ fn build_redis_key_from_cql3(
 impl Transform for SimpleRedisCache {
     async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> Result<Messages> {
         let cache_responses = self
-            .read_from_cache(&mut message_wrapper.messages, message_wrapper.local_addr)
+            .read_from_cache(&mut message_wrapper.requests, message_wrapper.local_addr)
             .await
             .unwrap_or_else(|err| {
                 error!("Failed to fetch from cache: {err:?}");
@@ -578,7 +578,7 @@ impl Transform for SimpleRedisCache {
 
         // remove requests we succesfully got back a cached response for
         for (_, cache_index) in cache_responses.iter().rev() {
-            message_wrapper.messages.remove(*cache_index);
+            message_wrapper.requests.remove(*cache_index);
         }
 
         let mut responses = self

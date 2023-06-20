@@ -50,7 +50,7 @@ impl Transform for RedisClusterPortsRewrite {
         let mut cluster_slots_indices = vec![];
         let mut cluster_nodes_indices = vec![];
 
-        for (i, message) in message_wrapper.messages.iter_mut().enumerate() {
+        for (i, message) in message_wrapper.requests.iter_mut().enumerate() {
             if let Some(frame) = message.frame() {
                 if is_cluster_slots(frame) {
                     cluster_slots_indices.push(i);

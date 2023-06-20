@@ -236,10 +236,10 @@ pub trait TransformConfig: Debug {
 
 /// The [`Wrapper`] struct is passed into each transform and contains a list of mutable references to the
 /// remaining transforms that will process the messages attached to this [`Wrapper`].
-/// Most [`Transform`] authors will only be interested in [`Wrapper.messages`].
+/// Most [`Transform`] authors will only be interested in [`wrapper.requests`].
 #[derive(Debug)]
 pub struct Wrapper<'a> {
-    pub messages: Messages,
+    pub requests: Messages,
     transforms: TransformIter<'a>,
     pub client_details: String,
     /// Contains the shotover source's ip address and port which the message was received on
@@ -284,7 +284,7 @@ impl<'a> Iterator for TransformIter<'a> {
 impl<'a> Clone for Wrapper<'a> {
     fn clone(&self) -> Self {
         Wrapper {
-            messages: self.messages.clone(),
+            requests: self.requests.clone(),
             transforms: TransformIter::new_forwards(&mut []),
             client_details: self.client_details.clone(),
             chain_name: self.chain_name.clone(),
@@ -332,7 +332,7 @@ impl<'a> Wrapper<'a> {
     pub async fn call_next_transform_pushed(mut self) -> Result<Messages> {
         let transform = match self.transforms.next() {
             Some(transform) => transform,
-            None => return Ok(self.messages),
+            None => return Ok(self.requests),
         };
 
         let transform_name = transform.get_name();
@@ -351,9 +351,9 @@ impl<'a> Wrapper<'a> {
     }
 
     #[cfg(test)]
-    pub fn new(m: Messages) -> Self {
+    pub fn new(requests: Messages) -> Self {
         Wrapper {
-            messages: m,
+            requests,
             transforms: TransformIter::new_forwards(&mut []),
             client_details: "".to_string(),
             local_addr: "127.0.0.1:8000".parse().unwrap(),
@@ -362,9 +362,13 @@ impl<'a> Wrapper<'a> {
         }
     }
 
-    pub fn new_with_chain_name(m: Messages, chain_name: String, local_addr: SocketAddr) -> Self {
+    pub fn new_with_chain_name(
+        requests: Messages,
+        chain_name: String,
+        local_addr: SocketAddr,
+    ) -> Self {
         Wrapper {
-            messages: m,
+            requests,
             transforms: TransformIter::new_forwards(&mut []),
             client_details: "".to_string(),
             local_addr,
@@ -375,7 +379,7 @@ impl<'a> Wrapper<'a> {
 
     pub fn flush_with_chain_name(chain_name: String) -> Self {
         Wrapper {
-            messages: vec![],
+            requests: vec![],
             transforms: TransformIter::new_forwards(&mut []),
             client_details: "".into(),
             // The connection is closed so we need to just fake an address here
@@ -386,13 +390,13 @@ impl<'a> Wrapper<'a> {
     }
 
     pub fn new_with_client_details(
-        m: Messages,
+        requests: Messages,
         client_details: String,
         chain_name: String,
         local_addr: SocketAddr,
     ) -> Self {
         Wrapper {
-            messages: m,
+            requests,
             transforms: TransformIter::new_forwards(&mut []),
             client_details,
             local_addr,
@@ -406,7 +410,7 @@ impl<'a> Wrapper<'a> {
     #[cfg(feature = "alpha-transforms")]
     pub fn messages_to_high_level_string(&mut self) -> String {
         let messages = self
-            .messages
+            .requests
             .iter_mut()
             .map(|x| x.to_high_level_string())
             .collect::<Vec<_>>();
@@ -447,7 +451,7 @@ pub trait Transform: Send {
     /// frames in a [`Vec<Message>`](crate::message::Message). Some protocols support multiple queries before a response is expected
     /// for example pipelined Redis queries or batched Cassandra queries.
     ///
-    /// Shotover expects the same number of messages in [`wrapper.messages`](crate::transforms::Wrapper) to be returned as was passed
+    /// Shotover expects the same number of messages in [`wrapper.requests`](crate::transforms::Wrapper) to be returned as was passed
     /// into the method via the parameter message_wrapper. For in order protocols (such as Redis) you will
     /// also need to ensure the order of responses matches the order of the queries.
     ///
@@ -466,8 +470,8 @@ pub trait Transform: Send {
     /// messages to an external system or generates its own response to the query e.g.
     /// [`crate::transforms::cassandra::sink_single::CassandraSinkSingle`]. This type of transform
     /// is called a Terminating transform (as no subsequent transforms in the chain will be called).
-    /// * _Message count_ - message_wrapper.messages will contain 0 or more messages.
-    /// Your transform should return the same number of responses as messages received in message_wrapper.messages. Transforms that
+    /// * _Message count_ - message_wrapper.requests will contain 0 or more messages.
+    /// Your transform should return the same number of responses as messages received in message_wrapper.requests. Transforms that
     /// don't do this explicitly for each call, should return the same number of responses as messages it receives over the lifetime
     /// of the transform chain. A good example of this is the [`crate::transforms::coalesce::Coalesce`] transform. The
     /// [`crate::transforms::sampler::Sampler`] transform is also another example of this, with a slightly different twist.

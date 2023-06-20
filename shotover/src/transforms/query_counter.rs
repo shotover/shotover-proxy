@@ -39,7 +39,7 @@ impl TransformBuilder for QueryCounter {
 #[async_trait]
 impl Transform for QueryCounter {
     async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> Result<Messages> {
-        for m in &mut message_wrapper.messages {
+        for m in &mut message_wrapper.requests {
             match m.frame() {
                 Some(Frame::Cassandra(frame)) => {
                     for statement in frame.operation.queries() {

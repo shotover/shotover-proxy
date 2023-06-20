@@ -64,7 +64,7 @@ impl TransformBuilder for Coalesce {
 #[async_trait]
 impl Transform for Coalesce {
     async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> Result<Messages> {
-        self.buffer.append(&mut message_wrapper.messages);
+        self.buffer.append(&mut message_wrapper.requests);
 
         let flush_buffer = message_wrapper.flush
             || self
@@ -80,7 +80,7 @@ impl Transform for Coalesce {
             if self.flush_when_millis_since_last_flush.is_some() {
                 self.last_write = Instant::now()
             }
-            std::mem::swap(&mut self.buffer, &mut message_wrapper.messages);
+            std::mem::swap(&mut self.buffer, &mut message_wrapper.requests);
             message_wrapper.call_next_transform().await
         } else {
             Ok(vec![])

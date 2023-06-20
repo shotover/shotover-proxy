@@ -45,7 +45,7 @@ pub struct RedisGetRewrite {
 impl Transform for RedisGetRewrite {
     async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> Result<Messages> {
         let mut get_indices = vec![];
-        for (i, message) in message_wrapper.messages.iter_mut().enumerate() {
+        for (i, message) in message_wrapper.requests.iter_mut().enumerate() {
             if let Some(frame) = message.frame() {
                 if is_get(frame) {
                     get_indices.push(i);

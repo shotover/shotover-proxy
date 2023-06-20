@@ -167,7 +167,7 @@ impl CassandraSinkSingle {
 #[async_trait]
 impl Transform for CassandraSinkSingle {
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> Result<Messages> {
-        self.send_message(message_wrapper.messages).await
+        self.send_message(message_wrapper.requests).await
     }
 
     fn set_pushed_messages_tx(&mut self, pushed_messages_tx: mpsc::UnboundedSender<Messages>) {

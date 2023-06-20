@@ -58,7 +58,7 @@ impl Transform for DebugReturner {
         match &self.response {
             Response::Message(message) => Ok(message.clone()),
             Response::Redis(string) => Ok(message_wrapper
-                .messages
+                .requests
                 .iter()
                 .map(|_| {
                     Message::from_frame(Frame::Redis(RedisFrame::BulkString(

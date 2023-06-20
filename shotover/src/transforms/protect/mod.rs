@@ -167,7 +167,7 @@ impl Protect {
 impl Transform for Protect {
     async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> Result<Messages> {
         // encrypt the values included in any INSERT or UPDATE queries
-        for message in message_wrapper.messages.iter_mut() {
+        for message in message_wrapper.requests.iter_mut() {
             let mut invalidate_cache = false;
 
             if let Some(Frame::Cassandra(CassandraFrame { operation, .. })) = message.frame() {
@@ -180,7 +180,7 @@ impl Transform for Protect {
             }
         }
 
-        let mut original_messages = message_wrapper.messages.clone();
+        let mut original_messages = message_wrapper.requests.clone();
         let mut result = message_wrapper.call_next_transform().await?;
 
         for (response, request) in result.iter_mut().zip(original_messages.iter_mut()) {

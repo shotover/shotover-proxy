@@ -183,7 +183,7 @@ enum Resolver {
 impl Transform for TuneableConsistentencyScatter {
     async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> Result<Messages> {
         let consistency: Vec<_> = message_wrapper
-            .messages
+            .requests
             .iter_mut()
             .map(|m| match get_upper_command_name(m).as_slice() {
                 b"DBSIZE" => Consistency {
@@ -234,7 +234,7 @@ impl Transform for TuneableConsistentencyScatter {
         drop(rec_fu);
 
         Ok(if results.len() < max_required_successes as usize {
-            let mut messages = message_wrapper.messages;
+            let mut messages = message_wrapper.requests;
             for message in &mut messages {
                 *message = message.to_error_response("Not enough responses".into())?
             }

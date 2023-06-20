@@ -111,7 +111,7 @@ impl Transform for KafkaSinkSingle {
         }
 
         // Rewrite requests to use kafkas port instead of shotovers port
-        for request in &mut message_wrapper.messages {
+        for request in &mut message_wrapper.requests {
             if let Some(Frame::Kafka(KafkaFrame::Request {
                 body: RequestBody::LeaderAndIsr(leader_and_isr),
                 ..
@@ -125,7 +125,7 @@ impl Transform for KafkaSinkSingle {
         }
 
         let outbound = self.outbound.as_mut().unwrap();
-        let responses = send_requests(message_wrapper.messages, outbound)?;
+        let responses = send_requests(message_wrapper.requests, outbound)?;
 
         // TODO: since kafka will never send requests out of order I wonder if it would be faster to use an mpsc instead of a oneshot or maybe just directly run the sending/receiving here?
         let mut responses = if let Some(read_timeout) = self.read_timeout {
