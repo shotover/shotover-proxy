@@ -10,6 +10,7 @@ pub struct ShotoverProcessBuilder {
     topology_path: String,
     log_name: Option<String>,
     cores: Option<String>,
+    profile: Option<String>,
     observability_port: Option<u16>,
 }
 
@@ -19,6 +20,7 @@ impl ShotoverProcessBuilder {
             topology_path: topology_path.to_owned(),
             log_name: None,
             cores: None,
+            profile: None,
             observability_port: None,
         }
     }
@@ -30,6 +32,13 @@ impl ShotoverProcessBuilder {
 
     pub fn with_cores(mut self, cores: u32) -> Self {
         self.cores = Some(cores.to_string());
+        self
+    }
+
+    pub fn with_profile(mut self, profile: Option<&str>) -> Self {
+        if let Some(profile) = profile {
+            self.profile = Some(profile.to_string());
+        }
         self
     }
 
@@ -63,7 +72,7 @@ observability_interface: "127.0.0.1:{observability_port}"
             "shotover-proxy",
             self.log_name.as_deref().unwrap_or("shotover"),
             &args,
-            None,
+            self.profile.as_deref(),
         )
         .await;
 

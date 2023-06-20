@@ -9,7 +9,7 @@ use std::{
     time::{Duration, Instant},
 };
 use tokio::sync::mpsc::UnboundedSender;
-use windsock::{Bench, BenchTask, Report, Windsock};
+use windsock::{Bench, BenchTask, Profiling, Report, Windsock};
 
 fn main() {
     set_working_dir();
@@ -55,7 +55,7 @@ impl Bench for CassandraBench {
 
     async fn run(
         &self,
-        flamegraph: bool,
+        _profiling: Profiling,
         local: bool,
         runtime_seconds: u32,
         operations_per_second: Option<u64>,
@@ -66,9 +66,6 @@ impl Bench for CassandraBench {
         } else {
             todo!("create instances on real infrastructure that reflects production use, that might mean spinning up instances on AWS or deploying and using physical infrastructure")
         };
-        if flamegraph {
-            todo!("run flamegraph");
-        }
 
         let session = Arc::new(
             SessionBuilder::new()

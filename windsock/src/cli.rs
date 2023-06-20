@@ -12,9 +12,10 @@ pub struct Args {
     /// Run a specific bench with the name produced via `--list`
     #[clap(long)]
     pub name: Option<String>,
-    /// Instruct benches to profile the application under test and produce a flamegraph
+    /// Instruct benches to profile the application under test with the specified profilers
+    /// Benches that do not support the specified profilers will be skipped.
     #[clap(long)]
-    pub flamegraph: bool,
+    pub profilers: Vec<String>,
     /// How long in seconds to run each bench for
     #[clap(long)]
     pub bench_length_seconds: Option<u32>,
