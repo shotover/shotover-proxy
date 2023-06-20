@@ -29,24 +29,39 @@ fn main() {
     )
     .unwrap();
 
+    let kafka_benches = itertools::iproduct!(
+        [
+            Shotover::None,
+            Shotover::Standard,
+            Shotover::ForcedMessageParsed
+        ],
+        [Size::B1, Size::KB1, Size::KB100,]
+    )
+    .map(|(shotover, size)| Box::new(KafkaBench::new(shotover, size)) as Box<dyn Bench>);
+
+    let redis_benches = itertools::iproduct!(
+        [RedisTopology::Cluster3, RedisTopology::Single],
+        [
+            Shotover::None,
+            Shotover::Standard,
+            Shotover::ForcedMessageParsed
+        ],
+        [RedisOperation::Get, RedisOperation::Set],
+        [Encryption::None, Encryption::Tls]
+    )
+    .map(|(topology, shotover, operation, encryption)| {
+        Box::new(RedisBench::new(topology, shotover, operation, encryption)) as Box<dyn Bench>
+    });
+
     Windsock::new(
         vec![
-            Box::new(KafkaBench::new(Shotover::None, Size::B1)) as Box<dyn Bench>,
-            Box::new(KafkaBench::new(Shotover::None, Size::KB1)),
-            Box::new(KafkaBench::new(Shotover::None, Size::KB100)),
-            Box::new(KafkaBench::new(Shotover::Standard, Size::B1)),
-            Box::new(KafkaBench::new(Shotover::Standard, Size::KB1)),
-            Box::new(KafkaBench::new(Shotover::Standard, Size::KB100)),
-            Box::new(KafkaBench::new(Shotover::ForcedMessageParsed, Size::B1)),
-            Box::new(KafkaBench::new(Shotover::ForcedMessageParsed, Size::KB1)),
-            Box::new(KafkaBench::new(Shotover::ForcedMessageParsed, Size::KB100)),
             Box::new(CassandraBench::new(
                 CassandraDb::Cassandra,
                 Topology::Single,
                 Shotover::None,
                 Compression::None,
                 Operation::ReadI64,
-            )),
+            )) as Box<dyn Bench>,
             Box::new(CassandraBench::new(
                 CassandraDb::Cassandra,
                 Topology::Single,
@@ -119,22 +134,8 @@ fn main() {
             )),
         ]
         .into_iter()
-        .chain(
-            itertools::iproduct!(
-                [RedisTopology::Cluster3, RedisTopology::Single],
-                [
-                    Shotover::None,
-                    Shotover::Standard,
-                    Shotover::ForcedMessageParsed
-                ],
-                [RedisOperation::Get, RedisOperation::Set],
-                [Encryption::None, Encryption::Tls]
-            )
-            .map(|(topology, shotover, operation, encryption)| {
-                Box::new(RedisBench::new(topology, shotover, operation, encryption))
-                    as Box<dyn Bench>
-            }),
-        )
+        .chain(kafka_benches)
+        .chain(redis_benches)
         .collect(),
         &["release"],
     )
