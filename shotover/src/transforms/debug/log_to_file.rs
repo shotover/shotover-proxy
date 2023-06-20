@@ -71,8 +71,8 @@ pub struct DebugLogToFile {
 
 #[async_trait]
 impl Transform for DebugLogToFile {
-    async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> Result<Vec<Message>> {
-        for message in &message_wrapper.requests {
+    async fn transform<'a>(&'a mut self, requests_wrapper: Wrapper<'a>) -> Result<Vec<Message>> {
+        for message in &requests_wrapper.requests {
             self.request_counter += 1;
             let path = self
                 .requests
@@ -80,7 +80,7 @@ impl Transform for DebugLogToFile {
             log_message(message, path.as_path()).await?;
         }
 
-        let response = message_wrapper.call_next_transform().await?;
+        let response = requests_wrapper.call_next_transform().await?;
 
         for message in &response {
             self.response_counter += 1;

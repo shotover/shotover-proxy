@@ -22,7 +22,7 @@ impl TransformBuilder for Loopback {
 
 #[async_trait]
 impl Transform for Loopback {
-    async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> Result<Messages> {
-        Ok(message_wrapper.requests)
+    async fn transform<'a>(&'a mut self, requests_wrapper: Wrapper<'a>) -> Result<Messages> {
+        Ok(requests_wrapper.requests)
     }
 }

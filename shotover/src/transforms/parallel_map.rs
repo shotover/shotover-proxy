@@ -88,9 +88,9 @@ impl TransformConfig for ParallelMapConfig {
 
 #[async_trait]
 impl Transform for ParallelMap {
-    async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> Result<Messages> {
-        let mut results = Vec::with_capacity(message_wrapper.requests.len());
-        let mut message_iter = message_wrapper.requests.into_iter();
+    async fn transform<'a>(&'a mut self, requests_wrapper: Wrapper<'a>) -> Result<Messages> {
+        let mut results = Vec::with_capacity(requests_wrapper.requests.len());
+        let mut message_iter = requests_wrapper.requests.into_iter();
         while message_iter.len() != 0 {
             let mut future = UOFutures::new(self.ordered);
             for chain in self.chains.iter_mut() {
@@ -99,7 +99,7 @@ impl Transform for ParallelMap {
                         Wrapper::new_with_chain_name(
                             vec![message],
                             chain.name.clone(),
-                            message_wrapper.local_addr,
+                            requests_wrapper.local_addr,
                         ),
                         "Parallel".to_string(),
                     ));

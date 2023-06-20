@@ -45,13 +45,13 @@ impl TransformBuilder for DebugPrinter {
 
 #[async_trait]
 impl Transform for DebugPrinter {
-    async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> Result<Messages> {
-        for request in &mut message_wrapper.requests {
+    async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Messages> {
+        for request in &mut requests_wrapper.requests {
             info!("Request: {}", request.to_high_level_string());
         }
 
         self.counter += 1;
-        let mut responses = message_wrapper.call_next_transform().await?;
+        let mut responses = requests_wrapper.call_next_transform().await?;
 
         for response in &mut responses {
             info!("Response: {}", response.to_high_level_string());

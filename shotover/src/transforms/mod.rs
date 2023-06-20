@@ -123,69 +123,69 @@ impl Debug for Transforms {
 }
 
 impl Transforms {
-    async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> Result<Messages> {
+    async fn transform<'a>(&'a mut self, requests_wrapper: Wrapper<'a>) -> Result<Messages> {
         match self {
-            Transforms::KafkaSinkSingle(c) => c.transform(message_wrapper).await,
-            Transforms::KafkaSinkCluster(c) => c.transform(message_wrapper).await,
-            Transforms::CassandraSinkSingle(c) => c.transform(message_wrapper).await,
-            Transforms::CassandraSinkCluster(c) => c.transform(message_wrapper).await,
-            Transforms::CassandraPeersRewrite(c) => c.transform(message_wrapper).await,
-            Transforms::RedisCache(r) => r.transform(message_wrapper).await,
-            Transforms::Tee(m) => m.transform(message_wrapper).await,
-            Transforms::DebugPrinter(p) => p.transform(message_wrapper).await,
-            Transforms::DebugLogToFile(p) => p.transform(message_wrapper).await,
-            Transforms::DebugForceParse(p) => p.transform(message_wrapper).await,
-            Transforms::NullSink(n) => n.transform(message_wrapper).await,
-            Transforms::Loopback(n) => n.transform(message_wrapper).await,
-            Transforms::Protect(p) => p.transform(message_wrapper).await,
-            Transforms::DebugReturner(p) => p.transform(message_wrapper).await,
-            Transforms::DebugRandomDelay(p) => p.transform(message_wrapper).await,
-            Transforms::TuneableConsistencyScatter(tc) => tc.transform(message_wrapper).await,
-            Transforms::RedisSinkSingle(r) => r.transform(message_wrapper).await,
-            Transforms::RedisTimestampTagger(r) => r.transform(message_wrapper).await,
-            Transforms::RedisClusterPortsRewrite(r) => r.transform(message_wrapper).await,
-            Transforms::RedisSinkCluster(r) => r.transform(message_wrapper).await,
-            Transforms::ParallelMap(s) => s.transform(message_wrapper).await,
-            Transforms::PoolConnections(s) => s.transform(message_wrapper).await,
-            Transforms::Coalesce(s) => s.transform(message_wrapper).await,
-            Transforms::QueryTypeFilter(s) => s.transform(message_wrapper).await,
-            Transforms::QueryCounter(s) => s.transform(message_wrapper).await,
-            Transforms::RequestThrottling(s) => s.transform(message_wrapper).await,
-            Transforms::Custom(s) => s.transform(message_wrapper).await,
+            Transforms::KafkaSinkSingle(c) => c.transform(requests_wrapper).await,
+            Transforms::KafkaSinkCluster(c) => c.transform(requests_wrapper).await,
+            Transforms::CassandraSinkSingle(c) => c.transform(requests_wrapper).await,
+            Transforms::CassandraSinkCluster(c) => c.transform(requests_wrapper).await,
+            Transforms::CassandraPeersRewrite(c) => c.transform(requests_wrapper).await,
+            Transforms::RedisCache(r) => r.transform(requests_wrapper).await,
+            Transforms::Tee(m) => m.transform(requests_wrapper).await,
+            Transforms::DebugPrinter(p) => p.transform(requests_wrapper).await,
+            Transforms::DebugLogToFile(p) => p.transform(requests_wrapper).await,
+            Transforms::DebugForceParse(p) => p.transform(requests_wrapper).await,
+            Transforms::NullSink(n) => n.transform(requests_wrapper).await,
+            Transforms::Loopback(n) => n.transform(requests_wrapper).await,
+            Transforms::Protect(p) => p.transform(requests_wrapper).await,
+            Transforms::DebugReturner(p) => p.transform(requests_wrapper).await,
+            Transforms::DebugRandomDelay(p) => p.transform(requests_wrapper).await,
+            Transforms::TuneableConsistencyScatter(tc) => tc.transform(requests_wrapper).await,
+            Transforms::RedisSinkSingle(r) => r.transform(requests_wrapper).await,
+            Transforms::RedisTimestampTagger(r) => r.transform(requests_wrapper).await,
+            Transforms::RedisClusterPortsRewrite(r) => r.transform(requests_wrapper).await,
+            Transforms::RedisSinkCluster(r) => r.transform(requests_wrapper).await,
+            Transforms::ParallelMap(s) => s.transform(requests_wrapper).await,
+            Transforms::PoolConnections(s) => s.transform(requests_wrapper).await,
+            Transforms::Coalesce(s) => s.transform(requests_wrapper).await,
+            Transforms::QueryTypeFilter(s) => s.transform(requests_wrapper).await,
+            Transforms::QueryCounter(s) => s.transform(requests_wrapper).await,
+            Transforms::RequestThrottling(s) => s.transform(requests_wrapper).await,
+            Transforms::Custom(s) => s.transform(requests_wrapper).await,
         }
     }
 
-    async fn transform_pushed<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> Result<Messages> {
+    async fn transform_pushed<'a>(&'a mut self, requests_wrapper: Wrapper<'a>) -> Result<Messages> {
         match self {
-            Transforms::KafkaSinkSingle(c) => c.transform_pushed(message_wrapper).await,
-            Transforms::KafkaSinkCluster(c) => c.transform_pushed(message_wrapper).await,
-            Transforms::CassandraSinkSingle(c) => c.transform_pushed(message_wrapper).await,
-            Transforms::CassandraSinkCluster(c) => c.transform_pushed(message_wrapper).await,
-            Transforms::CassandraPeersRewrite(c) => c.transform_pushed(message_wrapper).await,
-            Transforms::RedisCache(r) => r.transform_pushed(message_wrapper).await,
-            Transforms::Tee(m) => m.transform_pushed(message_wrapper).await,
-            Transforms::DebugPrinter(p) => p.transform_pushed(message_wrapper).await,
-            Transforms::DebugLogToFile(p) => p.transform_pushed(message_wrapper).await,
-            Transforms::DebugForceParse(p) => p.transform_pushed(message_wrapper).await,
-            Transforms::NullSink(n) => n.transform_pushed(message_wrapper).await,
-            Transforms::Loopback(n) => n.transform_pushed(message_wrapper).await,
-            Transforms::Protect(p) => p.transform_pushed(message_wrapper).await,
-            Transforms::DebugReturner(p) => p.transform_pushed(message_wrapper).await,
-            Transforms::DebugRandomDelay(p) => p.transform_pushed(message_wrapper).await,
+            Transforms::KafkaSinkSingle(c) => c.transform_pushed(requests_wrapper).await,
+            Transforms::KafkaSinkCluster(c) => c.transform_pushed(requests_wrapper).await,
+            Transforms::CassandraSinkSingle(c) => c.transform_pushed(requests_wrapper).await,
+            Transforms::CassandraSinkCluster(c) => c.transform_pushed(requests_wrapper).await,
+            Transforms::CassandraPeersRewrite(c) => c.transform_pushed(requests_wrapper).await,
+            Transforms::RedisCache(r) => r.transform_pushed(requests_wrapper).await,
+            Transforms::Tee(m) => m.transform_pushed(requests_wrapper).await,
+            Transforms::DebugPrinter(p) => p.transform_pushed(requests_wrapper).await,
+            Transforms::DebugLogToFile(p) => p.transform_pushed(requests_wrapper).await,
+            Transforms::DebugForceParse(p) => p.transform_pushed(requests_wrapper).await,
+            Transforms::NullSink(n) => n.transform_pushed(requests_wrapper).await,
+            Transforms::Loopback(n) => n.transform_pushed(requests_wrapper).await,
+            Transforms::Protect(p) => p.transform_pushed(requests_wrapper).await,
+            Transforms::DebugReturner(p) => p.transform_pushed(requests_wrapper).await,
+            Transforms::DebugRandomDelay(p) => p.transform_pushed(requests_wrapper).await,
             Transforms::TuneableConsistencyScatter(tc) => {
-                tc.transform_pushed(message_wrapper).await
+                tc.transform_pushed(requests_wrapper).await
             }
-            Transforms::RedisSinkSingle(r) => r.transform_pushed(message_wrapper).await,
-            Transforms::RedisTimestampTagger(r) => r.transform_pushed(message_wrapper).await,
-            Transforms::RedisClusterPortsRewrite(r) => r.transform_pushed(message_wrapper).await,
-            Transforms::RedisSinkCluster(r) => r.transform_pushed(message_wrapper).await,
-            Transforms::ParallelMap(s) => s.transform_pushed(message_wrapper).await,
-            Transforms::PoolConnections(s) => s.transform_pushed(message_wrapper).await,
-            Transforms::Coalesce(s) => s.transform_pushed(message_wrapper).await,
-            Transforms::QueryTypeFilter(s) => s.transform_pushed(message_wrapper).await,
-            Transforms::QueryCounter(s) => s.transform_pushed(message_wrapper).await,
-            Transforms::RequestThrottling(s) => s.transform_pushed(message_wrapper).await,
-            Transforms::Custom(s) => s.transform_pushed(message_wrapper).await,
+            Transforms::RedisSinkSingle(r) => r.transform_pushed(requests_wrapper).await,
+            Transforms::RedisTimestampTagger(r) => r.transform_pushed(requests_wrapper).await,
+            Transforms::RedisClusterPortsRewrite(r) => r.transform_pushed(requests_wrapper).await,
+            Transforms::RedisSinkCluster(r) => r.transform_pushed(requests_wrapper).await,
+            Transforms::ParallelMap(s) => s.transform_pushed(requests_wrapper).await,
+            Transforms::PoolConnections(s) => s.transform_pushed(requests_wrapper).await,
+            Transforms::Coalesce(s) => s.transform_pushed(requests_wrapper).await,
+            Transforms::QueryTypeFilter(s) => s.transform_pushed(requests_wrapper).await,
+            Transforms::QueryCounter(s) => s.transform_pushed(requests_wrapper).await,
+            Transforms::RequestThrottling(s) => s.transform_pushed(requests_wrapper).await,
+            Transforms::Custom(s) => s.transform_pushed(requests_wrapper).await,
         }
     }
 
@@ -452,26 +452,26 @@ pub trait Transform: Send {
     /// for example pipelined Redis queries or batched Cassandra queries.
     ///
     /// Shotover expects the same number of messages in [`wrapper.requests`](crate::transforms::Wrapper) to be returned as was passed
-    /// into the method via the parameter message_wrapper. For in order protocols (such as Redis) you will
+    /// into the method via the parameter requests_wrapper. For in order protocols (such as Redis) you will
     /// also need to ensure the order of responses matches the order of the queries.
     ///
     /// You can modify the messages in the wrapper struct to achieve your own designs. Your transform
-    /// can also modify the response from `message_wrapper.call_next_transform()` if it needs
+    /// can also modify the response from `requests_wrapper.call_next_transform()` if it needs
     /// to. As long as you return the same number of messages as you received, you won't break behavior
     /// from other transforms.
     ///
     /// ## Invariants
     /// Your transform method at a minimum needs to
     /// * _Non-terminating_ - If your transform does not send the message to an external system or generate its own response to the query,
-    /// it will need to call and return the response from `message_wrapper.call_next_transform()`. This ensures that your
+    /// it will need to call and return the response from `requests_wrapper.call_next_transform()`. This ensures that your
     /// transform will call any subsequent downstream transforms without needing to know about what they
     /// do. This type of transform is called an non-terminating transform.
-    /// * _Terminating_ - Your transform can also choose not to call `message_wrapper.call_next_transform()` if it sends the
+    /// * _Terminating_ - Your transform can also choose not to call `requests_wrapper.call_next_transform()` if it sends the
     /// messages to an external system or generates its own response to the query e.g.
     /// [`crate::transforms::cassandra::sink_single::CassandraSinkSingle`]. This type of transform
     /// is called a Terminating transform (as no subsequent transforms in the chain will be called).
-    /// * _Message count_ - message_wrapper.requests will contain 0 or more messages.
-    /// Your transform should return the same number of responses as messages received in message_wrapper.requests. Transforms that
+    /// * _Message count_ - requests_wrapper.requests will contain 0 or more messages.
+    /// Your transform should return the same number of responses as messages received in requests_wrapper.requests. Transforms that
     /// don't do this explicitly for each call, should return the same number of responses as messages it receives over the lifetime
     /// of the transform chain. A good example of this is the [`crate::transforms::coalesce::Coalesce`] transform. The
     /// [`crate::transforms::sampler::Sampler`] transform is also another example of this, with a slightly different twist.
@@ -481,11 +481,11 @@ pub trait Transform: Send {
     /// ## Naming
     /// Transforms also have different naming conventions.
     /// * Transforms that interact with an external system are called Sinks.
-    /// * Transforms that don't call subsequent chains via `message_wrapper.call_next_transform()` are called terminating transforms.
-    /// * Transforms that do call subsquent chains via `message_wrapper.call_next_transform()` are non-terminating transforms.
+    /// * Transforms that don't call subsequent chains via `requests_wrapper.call_next_transform()` are called terminating transforms.
+    /// * Transforms that do call subsquent chains via `requests_wrapper.call_next_transform()` are non-terminating transforms.
     ///
     /// You can have have a transforms that is both non-terminating and a sink.
-    async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> Result<Messages>;
+    async fn transform<'a>(&'a mut self, requests_wrapper: Wrapper<'a>) -> Result<Messages>;
 
     /// This method should be should be implemented by your transform if it is required to process pushed messages (typically events
     /// or messages that your source is subscribed to. The wrapper object contains the queries/frames
@@ -495,14 +495,14 @@ pub trait Transform: Send {
     /// This method processes one pushed message before sending it in reverse on the chain back to the source.
     ///
     /// You can modify the messages in the wrapper struct to achieve your own designs. Your transform can
-    /// also modify the response from `message_wrapper.call_next_transform_pushed` if it needs to. As long as the message
+    /// also modify the response from `requests_wrapper.call_next_transform_pushed` if it needs to. As long as the message
     /// carries on through the chain, it will function correctly. You are able to add or remove messages as this method is not expecting
     /// request/response pairs.
     ///
     /// ## Invariants
     /// * _Non-terminating_ - Your `transform_pushed` method should not be terminating as the messages should get passed back to the source, where they will terminate.
-    async fn transform_pushed<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> Result<Messages> {
-        let response = message_wrapper.call_next_transform_pushed().await?;
+    async fn transform_pushed<'a>(&'a mut self, requests_wrapper: Wrapper<'a>) -> Result<Messages> {
+        let response = requests_wrapper.call_next_transform_pushed().await?;
         Ok(response)
     }
 

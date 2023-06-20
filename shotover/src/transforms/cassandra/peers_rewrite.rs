@@ -51,10 +51,10 @@ impl TransformBuilder for CassandraPeersRewrite {
 
 #[async_trait]
 impl Transform for CassandraPeersRewrite {
-    async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> Result<Messages> {
+    async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Messages> {
         // Find the indices of queries to system.peers & system.peers_v2
         // we need to know which columns in which CQL queries in which messages have system peers
-        let column_names: Vec<(usize, Vec<Identifier>)> = message_wrapper
+        let column_names: Vec<(usize, Vec<Identifier>)> = requests_wrapper
             .requests
             .iter_mut()
             .enumerate()
@@ -68,7 +68,7 @@ impl Transform for CassandraPeersRewrite {
             })
             .collect();
 
-        let mut response = message_wrapper.call_next_transform().await?;
+        let mut response = requests_wrapper.call_next_transform().await?;
 
         for (i, name_list) in column_names {
             rewrite_port(&mut response[i], &name_list, self.port);
@@ -79,9 +79,9 @@ impl Transform for CassandraPeersRewrite {
 
     async fn transform_pushed<'a>(
         &'a mut self,
-        mut message_wrapper: Wrapper<'a>,
+        mut requests_wrapper: Wrapper<'a>,
     ) -> Result<Messages> {
-        for message in &mut message_wrapper.requests {
+        for message in &mut requests_wrapper.requests {
             if let Some(Frame::Cassandra(frame)) = message.frame() {
                 if let Event(ServerEvent::StatusChange(StatusChange { addr, .. })) =
                     &mut frame.operation
@@ -92,7 +92,7 @@ impl Transform for CassandraPeersRewrite {
             }
         }
 
-        let response = message_wrapper.call_next_transform_pushed().await?;
+        let response = requests_wrapper.call_next_transform_pushed().await?;
         Ok(response)
     }
 }

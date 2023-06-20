@@ -119,7 +119,7 @@ pub struct KafkaSinkCluster {
 
 #[async_trait]
 impl Transform for KafkaSinkCluster {
-    async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> Result<Messages> {
+    async fn transform<'a>(&'a mut self, requests_wrapper: Wrapper<'a>) -> Result<Messages> {
         if self.outbound.is_none() {
             let codec = KafkaCodecBuilder::new(Direction::Sink);
             let tcp_stream = tcp::tcp_stream(
@@ -132,7 +132,7 @@ impl Transform for KafkaSinkCluster {
         }
 
         let outbound = self.outbound.as_mut().unwrap();
-        let responses = send_requests(message_wrapper.requests, outbound)?;
+        let responses = send_requests(requests_wrapper.requests, outbound)?;
 
         // TODO: since kafka will never send requests out of order I wonder if it would be faster to use an mpsc instead of a oneshot or maybe just directly run the sending/receiving here?
         let mut responses = if let Some(read_timeout) = self.read_timeout {

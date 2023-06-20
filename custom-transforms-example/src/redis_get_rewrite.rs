@@ -43,16 +43,16 @@ pub struct RedisGetRewrite {
 
 #[async_trait]
 impl Transform for RedisGetRewrite {
-    async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> Result<Messages> {
+    async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Messages> {
         let mut get_indices = vec![];
-        for (i, message) in message_wrapper.requests.iter_mut().enumerate() {
+        for (i, message) in requests_wrapper.requests.iter_mut().enumerate() {
             if let Some(frame) = message.frame() {
                 if is_get(frame) {
                     get_indices.push(i);
                 }
             }
         }
-        let mut responses = message_wrapper.call_next_transform().await?;
+        let mut responses = requests_wrapper.call_next_transform().await?;
 
         for i in get_indices {
             if let Some(frame) = responses[i].frame() {

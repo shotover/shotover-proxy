@@ -41,8 +41,8 @@ impl TransformBuilder for QueryTypeFilter {
 
 #[async_trait]
 impl Transform for QueryTypeFilter {
-    async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> Result<Messages> {
-        let removed_indexes: Result<Vec<(usize, Message)>> = message_wrapper
+    async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Messages> {
+        let removed_indexes: Result<Vec<(usize, Message)>> = requests_wrapper
             .requests
             .iter_mut()
             .enumerate()
@@ -65,12 +65,12 @@ impl Transform for QueryTypeFilter {
         let removed_indexes = removed_indexes?;
 
         for (i, _) in removed_indexes.iter().rev() {
-            message_wrapper.requests.remove(*i);
+            requests_wrapper.requests.remove(*i);
         }
 
         let mut shown_error = SHOWN_ERROR.load(Ordering::Relaxed);
 
-        message_wrapper
+        requests_wrapper
             .call_next_transform()
             .await
             .map(|mut messages| {
@@ -124,9 +124,9 @@ mod test {
             })
             .collect();
 
-        let mut message_wrapper = Wrapper::new(messages);
-        message_wrapper.reset(&mut chain);
-        let result = filter_transform.transform(message_wrapper).await.unwrap();
+        let mut requests_wrapper = Wrapper::new(messages);
+        requests_wrapper.reset(&mut chain);
+        let result = filter_transform.transform(requests_wrapper).await.unwrap();
 
         assert_eq!(result.len(), 26);
 
