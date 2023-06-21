@@ -44,21 +44,21 @@ impl Sampler {
 
 #[async_trait]
 impl Transform for Sampler {
-    async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> Result<Messages> {
+    async fn transform<'a>(&'a mut self, requests_wrapper: Wrapper<'a>) -> Result<Messages> {
         let chance = thread_rng_n(self.denominator);
         if chance < self.numerator {
-            let sample = message_wrapper.clone();
+            let sample = requests_wrapper.clone();
             let (sample, downstream) = tokio::join!(
                 self.sample_chain
                     .process_request(sample, self.get_name().to_string()),
-                message_wrapper.call_next_transform()
+                requests_wrapper.call_next_transform()
             );
             if sample.is_err() {
                 warn!("Could not sample request {:?}", sample);
             }
             downstream
         } else {
-            message_wrapper.call_next_transform().await
+            requests_wrapper.call_next_transform().await
         }
     }
 }

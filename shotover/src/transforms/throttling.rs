@@ -62,17 +62,17 @@ impl TransformBuilder for RequestThrottling {
 
 #[async_trait]
 impl Transform for RequestThrottling {
-    async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> Result<Messages> {
-        // extract throttled messages from the message_wrapper
-        let throttled_messages: Vec<(Message, usize)> = (0..message_wrapper.messages.len())
+    async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Messages> {
+        // extract throttled messages from the requests_wrapper
+        let throttled_messages: Vec<(Message, usize)> = (0..requests_wrapper.requests.len())
             .rev()
             .filter_map(|i| {
                 if self
                     .limiter
-                    .check_n(message_wrapper.messages[i].cell_count().ok()?)
+                    .check_n(requests_wrapper.requests[i].cell_count().ok()?)
                     .is_err()
                 {
-                    let message = message_wrapper.messages.remove(i);
+                    let message = requests_wrapper.requests.remove(i);
                     Some((message, i))
                 } else {
                     None
@@ -81,9 +81,9 @@ impl Transform for RequestThrottling {
             .collect();
 
         // if every message got backpressured we can skip this
-        let mut responses = if !message_wrapper.messages.is_empty() {
+        let mut responses = if !requests_wrapper.requests.is_empty() {
             // send allowed messages to Cassandra
-            message_wrapper.call_next_transform().await?
+            requests_wrapper.call_next_transform().await?
         } else {
             vec![]
         };

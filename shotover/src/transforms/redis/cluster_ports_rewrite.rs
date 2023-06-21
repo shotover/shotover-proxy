@@ -45,12 +45,12 @@ impl RedisClusterPortsRewrite {
 
 #[async_trait]
 impl Transform for RedisClusterPortsRewrite {
-    async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> Result<Messages> {
+    async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Messages> {
         // Find the indices of cluster slot messages
         let mut cluster_slots_indices = vec![];
         let mut cluster_nodes_indices = vec![];
 
-        for (i, message) in message_wrapper.messages.iter_mut().enumerate() {
+        for (i, message) in requests_wrapper.requests.iter_mut().enumerate() {
             if let Some(frame) = message.frame() {
                 if is_cluster_slots(frame) {
                     cluster_slots_indices.push(i);
@@ -62,7 +62,7 @@ impl Transform for RedisClusterPortsRewrite {
             }
         }
 
-        let mut response = message_wrapper.call_next_transform().await?;
+        let mut response = requests_wrapper.call_next_transform().await?;
 
         // Rewrite the ports in the cluster slots responses
         for i in cluster_slots_indices {

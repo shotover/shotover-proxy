@@ -92,7 +92,7 @@ impl BufferedChain {
             None => {
                 self.send_handle
                     .send(BufferedChainMessages::new(
-                        wrapper.messages,
+                        wrapper.requests,
                         wrapper.local_addr,
                         wrapper.flush,
                         one_tx,
@@ -104,7 +104,7 @@ impl BufferedChain {
                 self.send_handle
                     .send_timeout(
                         BufferedChainMessages::new(
-                            wrapper.messages,
+                            wrapper.requests,
                             wrapper.local_addr,
                             wrapper.flush,
                             one_tx,
@@ -134,7 +134,7 @@ impl BufferedChain {
                 None => {
                     self.send_handle
                         .send(BufferedChainMessages::new_with_no_return(
-                            wrapper.messages,
+                            wrapper.requests,
                             wrapper.local_addr,
                         ))
                         .map_err(|e| anyhow!("Couldn't send message to wrapped chain {:?}", e))
@@ -144,7 +144,7 @@ impl BufferedChain {
                     self.send_handle
                         .send_timeout(
                             BufferedChainMessages::new_with_no_return(
-                                wrapper.messages,
+                                wrapper.requests,
                                 wrapper.local_addr,
                             ),
                             Duration::from_micros(timeout),

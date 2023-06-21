@@ -181,13 +181,13 @@ fn unwrap_response(message: &mut Message) -> Result<()> {
 
 #[async_trait]
 impl Transform for RedisTimestampTagger {
-    async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> Result<Messages> {
+    async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Messages> {
         // TODO: This is wrong. We need to keep track of tagged_success per message
         let mut tagged_success = true;
         // TODO: This is wrong. We need more robust handling of transactions
         let mut exec_block = false;
 
-        for message in message_wrapper.messages.iter_mut() {
+        for message in requests_wrapper.requests.iter_mut() {
             if let Some(Frame::Redis(frame)) = message.frame() {
                 if let RedisFrame::Array(array) = frame {
                     if array
@@ -211,7 +211,7 @@ impl Transform for RedisTimestampTagger {
             }
         }
 
-        let mut response = message_wrapper.call_next_transform().await;
+        let mut response = requests_wrapper.call_next_transform().await;
         debug!("tagging transform got {:?}", response);
         if let Ok(messages) = &mut response {
             if tagged_success || exec_block {

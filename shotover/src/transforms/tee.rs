@@ -142,13 +142,13 @@ impl TransformConfig for TeeConfig {
 
 #[async_trait]
 impl Transform for Tee {
-    async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> Result<Messages> {
+    async fn transform<'a>(&'a mut self, requests_wrapper: Wrapper<'a>) -> Result<Messages> {
         match &mut self.behavior {
             ConsistencyBehavior::Ignore => {
                 let (tee_result, chain_result) = tokio::join!(
                     self.tx
-                        .process_request_no_return(message_wrapper.clone(), self.timeout_micros),
-                    message_wrapper.call_next_transform()
+                        .process_request_no_return(requests_wrapper.clone(), self.timeout_micros),
+                    requests_wrapper.call_next_transform()
                 );
                 if let Err(e) = tee_result {
                     self.dropped_messages.increment(1);
@@ -159,8 +159,8 @@ impl Transform for Tee {
             ConsistencyBehavior::FailOnMismatch => {
                 let (tee_result, chain_result) = tokio::join!(
                     self.tx
-                        .process_request(message_wrapper.clone(), self.timeout_micros),
-                    message_wrapper.call_next_transform()
+                        .process_request(requests_wrapper.clone(), self.timeout_micros),
+                    requests_wrapper.call_next_transform()
                 );
                 let tee_response = tee_result?;
                 let mut chain_response = chain_result?;
@@ -174,11 +174,11 @@ impl Transform for Tee {
                 Ok(chain_response)
             }
             ConsistencyBehavior::SubchainOnMismatch(mismatch_chain) => {
-                let failed_message = message_wrapper.clone();
+                let failed_message = requests_wrapper.clone();
                 let (tee_result, chain_result) = tokio::join!(
                     self.tx
-                        .process_request(message_wrapper.clone(), self.timeout_micros),
-                    message_wrapper.call_next_transform()
+                        .process_request(requests_wrapper.clone(), self.timeout_micros),
+                    requests_wrapper.call_next_transform()
                 );
 
                 let tee_response = tee_result?;

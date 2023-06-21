@@ -102,7 +102,7 @@ pub struct KafkaSinkSingle {
 
 #[async_trait]
 impl Transform for KafkaSinkSingle {
-    async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> Result<Messages> {
+    async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Messages> {
         if self.outbound.is_none() {
             let codec = KafkaCodecBuilder::new(Direction::Sink);
             let tcp_stream = tcp::tcp_stream(self.connect_timeout, &self.address).await?;
@@ -111,7 +111,7 @@ impl Transform for KafkaSinkSingle {
         }
 
         // Rewrite requests to use kafkas port instead of shotovers port
-        for request in &mut message_wrapper.messages {
+        for request in &mut requests_wrapper.requests {
             if let Some(Frame::Kafka(KafkaFrame::Request {
                 body: RequestBody::LeaderAndIsr(leader_and_isr),
                 ..
@@ -125,7 +125,7 @@ impl Transform for KafkaSinkSingle {
         }
 
         let outbound = self.outbound.as_mut().unwrap();
-        let responses = send_requests(message_wrapper.messages, outbound)?;
+        let responses = send_requests(requests_wrapper.requests, outbound)?;
 
         // TODO: since kafka will never send requests out of order I wonder if it would be faster to use an mpsc instead of a oneshot or maybe just directly run the sending/receiving here?
         let mut responses = if let Some(read_timeout) = self.read_timeout {
@@ -136,7 +136,7 @@ impl Transform for KafkaSinkSingle {
 
         // Rewrite responses to use shotovers port instead of kafkas port
         for response in &mut responses {
-            let port = message_wrapper.local_addr.port() as i32;
+            let port = requests_wrapper.local_addr.port() as i32;
             match response.frame() {
                 Some(Frame::Kafka(KafkaFrame::Response {
                     body: ResponseBody::FindCoordinator(find_coordinator),
