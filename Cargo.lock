@@ -704,7 +704,7 @@ dependencies = [
 [[package]]
 name = "cql-ws"
 version = "0.1.0"
-source = "git+https://github.com/conorbros/cql-ws#66200c46d7d470713315f878afbbf6f440c92966"
+source = "git+https://github.com/conorbros/cql-ws#75531528d7614ec53cd22371364995193960825c"
 dependencies = [
  "cassandra-protocol",
  "futures-util",

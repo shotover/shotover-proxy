@@ -4,6 +4,7 @@ use crate::tls::{AcceptError, TlsAcceptor};
 use crate::transforms::chain::{TransformChain, TransformChainBuilder};
 use crate::transforms::Wrapper;
 use anyhow::{anyhow, Context, Result};
+use bytes::BytesMut;
 use futures::future::join_all;
 use futures::{SinkExt, StreamExt};
 use metrics::{register_gauge, Gauge};
@@ -266,38 +267,123 @@ fn spawn_websocket_read_write_tasks<C: CodecBuilder + 'static>(
     ws_stream: WebSocketStream<TcpStream>,
     in_tx: UnboundedSender<Messages>,
     mut out_rx: UnboundedReceiver<Messages>,
-    _out_tx: UnboundedSender<Messages>,
+    out_tx: UnboundedSender<Messages>,
 ) {
-    let (mut write, mut read) = ws_stream.split();
+    let (mut writer, mut reader) = ws_stream.split();
 
     let (mut decoder, mut encoder) = codec.build();
 
     // read task
     tokio::spawn(async move {
         loop {
-            while let Some(msg) = read.next().await {
-                tracing::info!("Received a message from: {:?}", msg);
-                let msg = msg.unwrap();
-                let message = decoder
-                    .decode(&mut bytes::BytesMut::from(msg.into_data().as_slice()))
-                    .unwrap()
-                    .unwrap();
-                in_tx.send(message).unwrap();
+            tokio::select! {
+                result = reader.next() => {
+                    if let Some(ws_message) = result {
+                        match ws_message {
+                            Ok(ws_message) => {
+                                let message = decoder.decode(&mut BytesMut::from(ws_message.into_data().as_slice()));
+                                match message {
+                                    Ok(Some(message)) => {
+                                        if in_tx.send(message).is_err() {
+                                            // main task has shutdown down, this task is no longer needed
+                                            return;
+                                        }
+                                    }
+                                    Ok(None) => {
+                                        // websocket client has closed the connection
+                                        return;
+                                    }
+                                    Err(CodecReadError::RespondAndThenCloseConnection(messages)) => {
+                                        if let Err(err) = out_tx.send(messages) {
+                                            error!("Failed to send RespondAndThenCloseConnection message: {:?}", err);
+                                        }
+                                        return;
+                                    }
+                                    Err(CodecReadError::Parser(err)) => {
+                                        warn!("failed to decode message: {:?}", err);
+                                        return;
+                                    }
+                                    Err(CodecReadError::Io(err)) => { // TODO
+                                        // I suspect (but have not confirmed) that UnexpectedEof occurs here when the ssl client
+                                        // does not send "close notify" before terminating the connection.
+                                        // We shouldnt report that as a warning because its common for clients to do
+                                        // that for performance reasons.
+                                        if !matches!(err.kind(), ErrorKind::UnexpectedEof) {
+                                            warn!("failed to receive message on tcp stream: {:?}", err);
+                                        }
+                                        return;
+                                    }
+                                }
+                            }
+                            Err(err) => panic!("{err}") // TODO
+                        }
+                    } else {
+                        return;
+                    }
+                }
+                _ = in_tx.closed() => {
+                    // main task has shutdown down, this task is no longer needed
+                    return;
+                }
             }
         }
-    });
+    }
+    .in_current_span(),
+    );
 
     // write task
-    tokio::spawn(async move {
-        loop {
-            while let Some(msg) = out_rx.recv().await {
-                let mut bytes = bytes::BytesMut::new();
-                encoder.encode(msg, &mut bytes).unwrap();
-                let message = WsMessage::binary(bytes);
-                write.send(message).await.unwrap();
+    tokio::spawn(
+        async move {
+            loop {
+                if let Some(message) = out_rx.recv().await {
+                    let mut bytes = BytesMut::new();
+                    match encoder.encode(message, &mut bytes) {
+                        Err(err) => {
+                            error!("failed to encode message destined for client: {err:?}")
+                        }
+                        Ok(_) => {
+                            let message = WsMessage::binary(bytes);
+                            match writer.send(message).await {
+                                Ok(_) => {}
+                                Err(err) => {
+                                    panic!("{err}"); // TODO
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    // Main task has ended.
+                    // First flush out any remaining messages.
+                    // Then end the task thus closing the connection by dropping the write half
+                    while let Ok(message) = out_rx.try_recv() {
+                        let mut bytes = BytesMut::new();
+                        match encoder.encode(message, &mut bytes) {
+                            Err(err) => {
+                                error!("failed to encode message destined for client: {err:?}")
+                            }
+                            Ok(_) => {
+                                let message = WsMessage::binary(bytes);
+                                match writer.send(message).await {
+                                    Ok(_) => {}
+                                    Err(err) => {
+                                        panic!("{err}"); // TODO
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    break;
+                }
+            }
+            match writer.send(WsMessage::Close(None)).await {
+                Ok(_) => {}
+                Err(err) => {
+                    panic!("{err}"); // TODO
+                }
             }
         }
-    });
+        .in_current_span(),
+    );
 }
 
 fn spawn_read_write_tasks<
@@ -324,7 +410,8 @@ fn spawn_read_write_tasks<
     // 3. The writer task detects that the last out_tx is dropped by out_rx returning None and terminates
     //
     // client closes connection:
-    // 1. The reader task detects that the client has closed the connection via reader returning None and terminates, dropping in_tx and the first out_tx
+    // 1. The reader task detects that the client has closed the connection via reader returning None and terminates,
+    // dropping in_tx and the first out_tx
     // 2. The main task detects that in_tx is dropped by in_rx returning None and terminates, dropping the last out_tx
     // 3. The writer task detects that the last out_tx is dropped by out_rx returning None and terminates
     // The writer task could also close early by detecting that the client has closed the connection via writer returning BrokenPipe
@@ -354,8 +441,10 @@ fn spawn_read_write_tasks<
                                     return;
                                 }
                                 Err(CodecReadError::Io(err)) => {
-                                    // I suspect (but have not confirmed) that UnexpectedEof occurs here when the ssl client does not send "close notify" before terminating the connection.
-                                    // We shouldnt report that as a warning because its common for clients to do that for performance reasons.
+                                    // I suspect (but have not confirmed) that UnexpectedEof occurs here when the ssl client 
+                                    // does not send "close notify" before terminating the connection.
+                                    // We shouldnt report that as a warning because its common for clients to do 
+                                    // that for performance reasons.
                                     if !matches!(err.kind(), ErrorKind::UnexpectedEof) {
                                         warn!("failed to receive message on tcp stream: {:?}", err);
                                     }
@@ -558,7 +647,8 @@ impl<C: CodecBuilder + 'static> Handler<C> {
                 // Avoid allocating for reverse chains as we dont make use of this value in that case
                 vec![]
             } else {
-                // This clone should be cheap as cloning a Message that has never had `.frame()` called should result in no new allocations.
+                // This clone should be cheap as cloning a Message that has never had `.frame()`
+                // called should result in no new allocations.
                 messages.clone()
             };
 
@@ -583,7 +673,8 @@ impl<C: CodecBuilder + 'static> Handler<C> {
                 {
                     Ok(x) => x,
                     Err(err) => {
-                        // An internal error occured and we need to terminate the connection because we can no longer make any gaurantees about the state its in.
+                        // An internal error occured and we need to terminate the connection because we can no 
+                        // longer make any gaurantees about the state its in.
                         // However before we do that we need to return errors for all the messages in this batch for two reasons:
                         // * Poorly programmed clients may hang forever waiting for a response
                         // * We want to give the user a hint as to what went wrong

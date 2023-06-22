@@ -927,9 +927,7 @@ async fn passthrough_websockets() {
     .await;
 
     let mut session = cql_ws::Session::new("ws://0.0.0.0:9042").await;
-
     let rows = session.query("SELECT bootstrapped FROM system.local").await;
-
     assert_eq!(rows, vec![vec![CassandraType::Varchar("COMPLETED".into())]]);
 
     shotover.shutdown_and_then_consume_events(&[]).await;
