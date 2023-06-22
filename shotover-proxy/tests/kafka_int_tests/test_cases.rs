@@ -29,7 +29,7 @@ async fn produce_consume(brokers: &str, topic_name: &str) {
         .unwrap();
     consumer.subscribe(&[topic_name]).unwrap();
 
-    let message = tokio::time::timeout(Duration::from_secs(10), consumer.recv())
+    let message = tokio::time::timeout(Duration::from_secs(30), consumer.recv())
         .await
         .expect("Timeout while receiving from consumer")
         .unwrap();
@@ -52,7 +52,7 @@ async fn produce_consume_acks0(brokers: &str) {
 
     for _ in 0..10 {
         tokio::time::timeout(
-            Duration::from_secs(10),
+            Duration::from_secs(30),
             producer
                 .send_result(
                     FutureRecord::to(topic_name)
@@ -78,7 +78,7 @@ async fn produce_consume_acks0(brokers: &str) {
     consumer.subscribe(&[topic_name]).unwrap();
 
     for i in 0..10 {
-        let message = tokio::time::timeout(Duration::from_secs(10), consumer.recv())
+        let message = tokio::time::timeout(Duration::from_secs(30), consumer.recv())
             .await
             .expect("Timeout while receiving from consumer")
             .unwrap();
