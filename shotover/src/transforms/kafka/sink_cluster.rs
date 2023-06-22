@@ -1,16 +1,19 @@
 use crate::codec::{kafka::KafkaCodecBuilder, CodecBuilder, Direction};
-use crate::frame::kafka::{strbytes, KafkaFrame, ResponseBody};
+use crate::frame::kafka::{strbytes, KafkaFrame, RequestBody, ResponseBody};
 use crate::frame::Frame;
-use crate::message::Messages;
+use crate::message::{Message, Messages};
 use crate::tcp;
-use crate::transforms::kafka::common::send_requests;
 use crate::transforms::util::cluster_connection_pool::{spawn_read_write_tasks, Connection};
-use crate::transforms::util::Response;
+use crate::transforms::util::{Request, Response};
 use crate::transforms::{Transform, TransformBuilder, Transforms, Wrapper};
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use kafka_protocol::protocol::StrBytes;
+use rand::rngs::SmallRng;
+use rand::seq::SliceRandom;
+use rand::SeedableRng;
 use serde::Deserialize;
+use std::collections::HashMap;
 use std::hash::Hasher;
 use std::net::SocketAddr;
 use std::time::Duration;
@@ -27,6 +30,8 @@ pub struct KafkaSinkClusterConfig {
 
 #[cfg(feature = "alpha-transforms")]
 use crate::transforms::TransformConfig;
+
+use super::common::produce_channel;
 
 #[cfg(feature = "alpha-transforms")]
 #[typetag::deserialize(name = "KafkaSinkCluster")]
@@ -84,17 +89,19 @@ impl KafkaSinkClusterBuilder {
 impl TransformBuilder for KafkaSinkClusterBuilder {
     fn build(&self) -> Transforms {
         Transforms::KafkaSinkCluster(KafkaSinkCluster {
-            outbound: None,
             first_contact_points: self.first_contact_points.clone(),
             shotover_nodes: self.shotover_nodes.clone(),
             pushed_messages_tx: None,
             connect_timeout: self.connect_timeout,
             read_timeout: self.read_timeout,
+            nodes: vec![],
+            topics: HashMap::new(),
+            rng: SmallRng::from_rng(rand::thread_rng()).unwrap(),
         })
     }
 
     fn get_name(&self) -> &'static str {
-        "KafkaClusterSingle"
+        "KafkaClusterSink"
     }
 
     fn is_terminating(&self) -> bool {
@@ -102,37 +109,40 @@ impl TransformBuilder for KafkaSinkClusterBuilder {
     }
 }
 
-#[derive(Clone)]
-struct KafkaAddress {
-    host: StrBytes,
-    port: i32,
-}
-
 pub struct KafkaSinkCluster {
     first_contact_points: Vec<String>,
     shotover_nodes: Vec<KafkaAddress>,
-    outbound: Option<Connection>,
     pushed_messages_tx: Option<mpsc::UnboundedSender<Messages>>,
     connect_timeout: Duration,
     read_timeout: Option<Duration>,
+    nodes: Vec<KafkaNode>,
+    topics: HashMap<StrBytes, Topic>,
+    rng: SmallRng,
 }
 
 #[async_trait]
 impl Transform for KafkaSinkCluster {
     async fn transform<'a>(&'a mut self, requests_wrapper: Wrapper<'a>) -> Result<Messages> {
-        if self.outbound.is_none() {
-            let codec = KafkaCodecBuilder::new(Direction::Sink);
-            let tcp_stream = tcp::tcp_stream(
-                self.connect_timeout,
-                self.first_contact_points.first().unwrap(),
-            )
-            .await?;
-            let (rx, tx) = tcp_stream.into_split();
-            self.outbound = Some(spawn_read_write_tasks(&codec, rx, tx));
+        if self.nodes.is_empty() {
+            self.nodes = self
+                .first_contact_points
+                .iter()
+                .map(|address| {
+                    let address = address.parse().unwrap();
+                    KafkaNode {
+                        connection: None,
+                        address,
+                        kafka_address: KafkaAddress {
+                            host: strbytes(&address.ip().to_string()),
+                            port: address.port() as i32,
+                        },
+                        broker_id: -1,
+                    }
+                })
+                .collect();
         }
 
-        let outbound = self.outbound.as_mut().unwrap();
-        let responses = send_requests(requests_wrapper.requests, outbound)?;
+        let responses = self.send_requests(requests_wrapper.requests).await?;
 
         // TODO: since kafka will never send requests out of order I wonder if it would be faster to use an mpsc instead of a oneshot or maybe just directly run the sending/receiving here?
         let mut responses = if let Some(read_timeout) = self.read_timeout {
@@ -171,11 +181,55 @@ impl Transform for KafkaSinkCluster {
                     ..
                 })) => {
                     for broker in &mut metadata.brokers {
+                        let mut found = false;
+                        for node in &mut self.nodes {
+                            if broker.1.host == node.kafka_address.host
+                                && broker.1.port == node.kafka_address.port
+                            {
+                                found = true;
+                                node.broker_id = **broker.0;
+                            }
+                        }
+                        if !found {
+                            let host = broker.1.host.clone();
+                            let port = broker.1.port;
+                            self.nodes.push(KafkaNode {
+                                broker_id: **broker.0,
+                                address: format!("{host}:{port}").parse().map_err(|_| {
+                                    anyhow!(
+                                        "Failed to parse address from kafka message: {host}:{port}"
+                                    )
+                                })?,
+                                kafka_address: KafkaAddress { host, port },
+                                connection: None,
+                            });
+                        }
                         rewrite_address(
                             &self.shotover_nodes,
                             &mut broker.1.host,
                             &mut broker.1.port,
                         )
+                    }
+
+                    for topic in &metadata.topics {
+                        self.topics.insert(
+                            topic.0.clone().0,
+                            Topic {
+                                partitions: topic
+                                    .1
+                                    .partitions
+                                    .iter()
+                                    .map(|partition| Partition {
+                                        leader_id: *partition.leader_id,
+                                        _replica_nodes: partition
+                                            .replica_nodes
+                                            .iter()
+                                            .map(|x| x.0)
+                                            .collect(),
+                                    })
+                                    .collect(),
+                            },
+                        );
                     }
                     response.invalidate_cache();
                 }
@@ -204,6 +258,84 @@ impl Transform for KafkaSinkCluster {
     }
 }
 
+impl KafkaSinkCluster {
+    async fn send_requests(
+        &mut self,
+        requests: Vec<Message>,
+    ) -> Result<Vec<oneshot::Receiver<Response>>> {
+        let mut results = Vec::with_capacity(requests.len());
+
+        for mut message in requests {
+            match message.frame() {
+                Some(Frame::Kafka(KafkaFrame::Request {
+                    body: RequestBody::Produce(produce),
+                    ..
+                })) => {
+                    let mut connection = None;
+                    // assume that all topics in this message have the same routing requirements
+                    let (topic_name, topic_data) = produce
+                        .topic_data
+                        .iter()
+                        .next()
+                        .ok_or_else(|| anyhow!("No topics in produce message"))?;
+                    if let Some(topic) = self.topics.get(&topic_name.0) {
+                        // assume that all partitions in this topic have the same routing requirements
+                        let partition = &topic.partitions[topic_data
+                            .partition_data
+                            .first()
+                            .ok_or_else(|| anyhow!("No partitions in topic"))?
+                            .index
+                            as usize];
+                        for node in &mut self.nodes {
+                            if node.broker_id == partition.leader_id {
+                                connection =
+                                    Some(node.get_connection(self.connect_timeout).await?.clone());
+                            }
+                        }
+                    }
+                    let connection = match connection {
+                        Some(connection) => connection,
+                        None => self
+                            .nodes
+                            .choose_mut(&mut self.rng)
+                            .unwrap()
+                            .get_connection(self.connect_timeout)
+                            .await?
+                            .clone(),
+                    };
+
+                    let (return_chan, rx) = produce_channel(produce);
+
+                    connection
+                        .send(Request {
+                            message,
+                            return_chan,
+                        })
+                        .map_err(|_| anyhow!("Failed to send"))?;
+                    results.push(rx);
+                }
+                _ => {
+                    let connection = self
+                        .nodes
+                        .choose_mut(&mut self.rng)
+                        .unwrap()
+                        .get_connection(self.connect_timeout)
+                        .await?;
+                    let (tx, rx) = oneshot::channel();
+                    connection
+                        .send(Request {
+                            message,
+                            return_chan: Some(tx),
+                        })
+                        .map_err(|_| anyhow!("Failed to send"))?;
+                    results.push(rx);
+                }
+            }
+        }
+        Ok(results)
+    }
+}
+
 async fn read_responses(responses: Vec<oneshot::Receiver<Response>>) -> Result<Messages> {
     let mut result = Vec::with_capacity(responses.len());
     for response in responses {
@@ -228,4 +360,38 @@ fn rewrite_address(shotover_nodes: &[KafkaAddress], host: &mut StrBytes, port: &
         *host = shotover_node.host.clone();
         *port = shotover_node.port;
     }
+}
+
+struct KafkaNode {
+    broker_id: i32,
+    address: SocketAddr,
+    // Same address as `address` the duplication makes it fast to compare against addresses in kafka messages.
+    kafka_address: KafkaAddress,
+    connection: Option<Connection>,
+}
+
+impl KafkaNode {
+    async fn get_connection(&mut self, connect_timeout: Duration) -> Result<&Connection> {
+        if self.connection.is_none() {
+            let codec = KafkaCodecBuilder::new(Direction::Sink);
+            let tcp_stream = tcp::tcp_stream(connect_timeout, &self.address).await?;
+            let (rx, tx) = tcp_stream.into_split();
+            self.connection = Some(spawn_read_write_tasks(&codec, rx, tx));
+        }
+        Ok(self.connection.as_ref().unwrap())
+    }
+}
+
+struct Topic {
+    partitions: Vec<Partition>,
+}
+struct Partition {
+    leader_id: i32,
+    _replica_nodes: Vec<i32>,
+}
+
+#[derive(Clone)]
+struct KafkaAddress {
+    host: StrBytes,
+    port: i32,
 }

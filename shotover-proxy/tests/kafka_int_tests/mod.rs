@@ -75,6 +75,7 @@ async fn cluster_single_shotover() {
     .start()
     .await;
 
+    test_cases::produce_only("127.0.0.1:9192").await;
     // disabled until routing is implemented
     //test_cases::basic("127.0.0.1:9192").await;
 
@@ -103,6 +104,7 @@ async fn cluster_multi_shotover() {
         );
     }
 
+    test_cases::produce_only("127.0.0.1:9192").await;
     // disabled until routing is implemented
     //test_cases::basic("127.0.0.1:9192").await;
 

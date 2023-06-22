@@ -1,13 +1,13 @@
 use crate::codec::{kafka::KafkaCodecBuilder, CodecBuilder, Direction};
 use crate::frame::kafka::{KafkaFrame, RequestBody, ResponseBody};
 use crate::frame::Frame;
-use crate::message::Messages;
+use crate::message::{Message, Messages};
 use crate::tcp;
-use crate::transforms::kafka::common::send_requests;
+use crate::transforms::kafka::common::produce_channel;
 use crate::transforms::util::cluster_connection_pool::{spawn_read_write_tasks, Connection};
-use crate::transforms::util::Response;
+use crate::transforms::util::{Request, Response};
 use crate::transforms::{Transform, TransformBuilder, Transforms, Wrapper};
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use serde::Deserialize;
 use std::time::Duration;
@@ -124,8 +124,7 @@ impl Transform for KafkaSinkSingle {
             }
         }
 
-        let outbound = self.outbound.as_mut().unwrap();
-        let responses = send_requests(requests_wrapper.requests, outbound)?;
+        let responses = self.send_requests(requests_wrapper.requests)?;
 
         // TODO: since kafka will never send requests out of order I wonder if it would be faster to use an mpsc instead of a oneshot or maybe just directly run the sending/receiving here?
         let mut responses = if let Some(read_timeout) = self.read_timeout {
@@ -179,6 +178,37 @@ impl Transform for KafkaSinkSingle {
 
     fn set_pushed_messages_tx(&mut self, pushed_messages_tx: mpsc::UnboundedSender<Messages>) {
         self.pushed_messages_tx = Some(pushed_messages_tx);
+    }
+}
+
+impl KafkaSinkSingle {
+    pub fn send_requests(
+        &self,
+        messages: Vec<Message>,
+    ) -> Result<Vec<oneshot::Receiver<Response>>> {
+        let outbound = self.outbound.as_ref().unwrap();
+        messages
+            .into_iter()
+            .map(|mut message| {
+                let (return_chan, rx) = if let Some(Frame::Kafka(KafkaFrame::Request {
+                    body: RequestBody::Produce(produce),
+                    ..
+                })) = message.frame()
+                {
+                    produce_channel(produce)
+                } else {
+                    let (tx, rx) = oneshot::channel();
+                    (Some(tx), rx)
+                };
+                outbound
+                    .send(Request {
+                        message,
+                        return_chan,
+                    })
+                    .map(|_| rx)
+                    .map_err(|_| anyhow!("Failed to send"))
+            })
+            .collect()
     }
 }
 
