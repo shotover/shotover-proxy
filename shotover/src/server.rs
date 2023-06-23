@@ -270,7 +270,6 @@ fn spawn_websocket_read_write_tasks<C: CodecBuilder + 'static>(
     out_tx: UnboundedSender<Messages>,
 ) {
     let (mut writer, mut reader) = ws_stream.split();
-
     let (mut decoder, mut encoder) = codec.build();
 
     // read task
@@ -280,8 +279,8 @@ fn spawn_websocket_read_write_tasks<C: CodecBuilder + 'static>(
                 result = reader.next() => {
                     if let Some(ws_message) = result {
                         match ws_message {
-                            Ok(ws_message) => {
-                                let message = decoder.decode(&mut BytesMut::from(ws_message.into_data().as_slice()));
+                            Ok(WsMessage::Binary(ws_message_data)) => {
+                                let message = decoder.decode(&mut BytesMut::from(ws_message_data.as_slice()));
                                 match message {
                                     Ok(Some(message)) => {
                                         if in_tx.send(message).is_err() {
@@ -294,26 +293,29 @@ fn spawn_websocket_read_write_tasks<C: CodecBuilder + 'static>(
                                         return;
                                     }
                                     Err(CodecReadError::RespondAndThenCloseConnection(messages)) => {
-                                        if let Err(err) = out_tx.send(messages) {
+                                        if let Err(err) = out_tx.send(messages) { // TODO we need
+                                                                                  // to send a
+                                                                                  // close message
+                                                                                  // to the client
                                             error!("Failed to send RespondAndThenCloseConnection message: {:?}", err);
                                         }
                                         return;
                                     }
-                                    Err(CodecReadError::Parser(err)) => {
+                                    Err(CodecReadError::Parser(err)) => { // TODO we need to send a
+                                                                          // close message to the
+                                                                          // client, protocol error
                                         warn!("failed to decode message: {:?}", err);
                                         return;
                                     }
-                                    Err(CodecReadError::Io(err)) => { // TODO
-                                        // I suspect (but have not confirmed) that UnexpectedEof occurs here when the ssl client
-                                        // does not send "close notify" before terminating the connection.
-                                        // We shouldnt report that as a warning because its common for clients to do
-                                        // that for performance reasons.
-                                        if !matches!(err.kind(), ErrorKind::UnexpectedEof) {
-                                            warn!("failed to receive message on tcp stream: {:?}", err);
-                                        }
-                                        return;
+                                    Err(CodecReadError::Io(_err)) => {
+                                        unreachable!("CodecReadError::Io should not occur because we are reading from a newly created BytesMut")
                                     }
                                 }
+                            }
+                            Ok(_ws_message) => {
+                                // TODO we need to tell the client about a protocol error
+
+                                todo!();
                             }
                             Err(err) => panic!("{err}") // TODO
                         }
