@@ -1,5 +1,6 @@
 use crate::codec::{CodecBuilder, CodecReadError, CodecWriteError};
 use crate::message::Messages;
+use crate::sources::Transport;
 use crate::tls::{AcceptError, TlsAcceptor};
 use crate::transforms::chain::{TransformChain, TransformChainBuilder};
 use crate::transforms::Wrapper;
@@ -67,7 +68,7 @@ pub struct TcpCodecListener<C: CodecBuilder> {
 
     connection_handles: Vec<JoinHandle<()>>,
 
-    websocket: bool,
+    transport: Transport,
 }
 
 impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
@@ -82,7 +83,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
         trigger_shutdown_rx: watch::Receiver<bool>,
         tls: Option<TlsAcceptor>,
         timeout: Option<u64>,
-        websocket: bool,
+        transport: Transport,
     ) -> Result<Self> {
         let available_connections_gauge =
             register_gauge!("shotover_available_connections", "source" => source_name.clone());
@@ -104,7 +105,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
             available_connections_gauge,
             timeout,
             connection_handles: vec![],
-            websocket,
+            transport,
         })
     }
 
@@ -149,7 +150,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                 id = self.connection_count,
                 source = self.source_name.as_str(),
             );
-            let websocket = self.websocket;
+            let transport = self.transport;
             async {
                 // Accept a new socket. This will attempt to perform error handling.
                 // The `accept` method internally attempts to recover errors, so an
@@ -179,7 +180,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                 self.connection_handles.push(tokio::spawn(
                     async move {
                         // Process the connection. If an error is encountered, log it.
-                        if let Err(err) = handler.run(stream, websocket).await {
+                        if let Err(err) = handler.run(stream, transport).await {
                             error!(
                                 "{:?}",
                                 err.context("connection was unexpectedly terminated")
@@ -526,7 +527,7 @@ impl<C: CodecBuilder + 'static> Handler<C> {
     ///
     /// When the shutdown signal is received, the connection is processed until
     /// it reaches a safe state, at which point it is terminated.
-    pub async fn run(mut self, stream: TcpStream, websocket: bool) -> Result<()> {
+    pub async fn run(mut self, stream: TcpStream, transport: Transport) -> Result<()> {
         stream.set_nodelay(true)?;
 
         let client_details = stream
@@ -542,29 +543,48 @@ impl<C: CodecBuilder + 'static> Handler<C> {
 
         let codec_builder = self.codec.clone();
 
-        if websocket {
-            let ws_stream = tokio_tungstenite::accept_async(stream)
-                .await
-                .expect("Error during the websocket handshake occurred");
+        match transport {
+            Transport::WebSocket => {
+                let ws_stream = tokio_tungstenite::accept_async(stream)
+                    .await
+                    .expect("Error during the websocket handshake occurred");
 
-            spawn_websocket_read_write_tasks(
-                codec_builder,
-                ws_stream,
-                in_tx,
-                out_rx,
-                out_tx.clone(),
-            );
-        } else if let Some(tls) = &self.tls {
-            let tls_stream = match tls.accept(stream).await {
-                Ok(x) => x,
-                Err(AcceptError::Disconnected) => return Ok(()),
-                Err(AcceptError::Failure(err)) => return Err(err),
-            };
-            let (rx, tx) = tokio::io::split(tls_stream);
-            spawn_read_write_tasks(self.codec.clone(), rx, tx, in_tx, out_rx, out_tx.clone());
-        } else {
-            let (rx, tx) = stream.into_split();
-            spawn_read_write_tasks(self.codec.clone(), rx, tx, in_tx, out_rx, out_tx.clone());
+                spawn_websocket_read_write_tasks(
+                    codec_builder,
+                    ws_stream,
+                    in_tx,
+                    out_rx,
+                    out_tx.clone(),
+                );
+            }
+            Transport::Tcp => {
+                if let Some(tls) = &self.tls {
+                    let tls_stream = match tls.accept(stream).await {
+                        Ok(x) => x,
+                        Err(AcceptError::Disconnected) => return Ok(()),
+                        Err(AcceptError::Failure(err)) => return Err(err),
+                    };
+                    let (rx, tx) = tokio::io::split(tls_stream);
+                    spawn_read_write_tasks(
+                        self.codec.clone(),
+                        rx,
+                        tx,
+                        in_tx,
+                        out_rx,
+                        out_tx.clone(),
+                    );
+                } else {
+                    let (rx, tx) = stream.into_split();
+                    spawn_read_write_tasks(
+                        self.codec.clone(),
+                        rx,
+                        tx,
+                        in_tx,
+                        out_rx,
+                        out_tx.clone(),
+                    );
+                };
+            }
         };
 
         let result = self

@@ -1,7 +1,7 @@
 use crate::codec::Direction;
 use crate::codec::{cassandra::CassandraCodecBuilder, CodecBuilder};
 use crate::server::TcpCodecListener;
-use crate::sources::Source;
+use crate::sources::{Source, Transport};
 use crate::tls::{TlsAcceptor, TlsAcceptorConfig};
 use crate::transforms::chain::TransformChainBuilder;
 use anyhow::Result;
@@ -18,7 +18,7 @@ pub struct CassandraConfig {
     pub hard_connection_limit: Option<bool>,
     pub tls: Option<TlsAcceptorConfig>,
     pub timeout: Option<u64>,
-    pub websocket: Option<bool>,
+    pub transport: Option<Transport>,
 }
 
 impl CassandraConfig {
@@ -36,7 +36,7 @@ impl CassandraConfig {
                 self.hard_connection_limit,
                 self.tls.clone(),
                 self.timeout,
-                self.websocket,
+                self.transport,
             )
             .await?,
         )])
@@ -60,7 +60,7 @@ impl CassandraSource {
         hard_connection_limit: Option<bool>,
         tls: Option<TlsAcceptorConfig>,
         timeout: Option<u64>,
-        websocket: Option<bool>,
+        transport: Option<Transport>,
     ) -> Result<CassandraSource> {
         let name = "CassandraSource";
 
@@ -76,7 +76,7 @@ impl CassandraSource {
             trigger_shutdown_rx.clone(),
             tls.map(TlsAcceptor::new).transpose()?,
             timeout,
-            websocket.unwrap_or(false),
+            transport.unwrap_or(Transport::Tcp),
         )
         .await?;
 
