@@ -280,11 +280,12 @@ fn spawn_websocket_read_write_tasks<C: CodecBuilder + 'static>(
                     if let Some(ws_message) = result {
                         match ws_message {
                             Ok(WsMessage::Binary(ws_message_data)) => {
+                                // Entire message is reallocated and copied here due to incompatibility between tokio codecs and tungstenite.
                                 let message = decoder.decode(&mut BytesMut::from(ws_message_data.as_slice()));
                                 match message {
                                     Ok(Some(message)) => {
                                         if in_tx.send(message).is_err() {
-                                            // main task has shutdown down, this task is no longer needed
+                                            // main task has shutdown, this task is no longer needed
                                             return;
                                         }
                                     }
