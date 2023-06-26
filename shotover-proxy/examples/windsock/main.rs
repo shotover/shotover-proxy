@@ -29,6 +29,43 @@ fn main() {
     )
     .unwrap();
 
+    let cassandra_benches = itertools::iproduct!(
+        [CassandraDb::Cassandra],
+        [Topology::Single, Topology::Cluster3],
+        [Shotover::None, Shotover::Standard],
+        [Compression::None, Compression::Lz4],
+        [Operation::ReadI64, Operation::WriteBlob],
+        [
+            CassandraProtocol::V3,
+            CassandraProtocol::V4,
+            CassandraProtocol::V5
+        ],
+        [CassandraDriver::Scylla, CassandraDriver::CdrsTokio]
+    )
+    .filter_map(
+        |(cassandra, topology, shotover, compression, operation, protocol, driver)| {
+            if driver == CassandraDriver::Scylla && protocol != CassandraProtocol::V4 {
+                return None;
+            }
+
+            if driver == CassandraDriver::CdrsTokio
+                && (operation != Operation::ReadI64 || topology != Topology::Single)
+            {
+                return None;
+            }
+
+            Some(Box::new(CassandraBench::new(
+                cassandra,
+                topology,
+                shotover,
+                compression,
+                operation,
+                protocol,
+                driver,
+            )) as Box<dyn Bench>)
+        },
+    );
+
     let kafka_benches = itertools::iproduct!(
         [
             Shotover::None,
@@ -56,84 +93,26 @@ fn main() {
     Windsock::new(
         vec![
             Box::new(CassandraBench::new(
-                CassandraDb::Cassandra,
+                CassandraDb::Mocked,
                 Topology::Single,
                 Shotover::None,
                 Compression::None,
                 Operation::ReadI64,
+                CassandraProtocol::V4,
+                CassandraDriver::Scylla,
             )) as Box<dyn Bench>,
             Box::new(CassandraBench::new(
-                CassandraDb::Cassandra,
-                Topology::Single,
-                Shotover::None,
-                Compression::None,
-                Operation::WriteBlob,
-            )),
-            Box::new(CassandraBench::new(
-                CassandraDb::Cassandra,
-                Topology::Single,
-                Shotover::None,
-                Compression::Lz4,
-                Operation::ReadI64,
-            )),
-            Box::new(CassandraBench::new(
-                CassandraDb::Cassandra,
-                Topology::Single,
-                Shotover::Standard,
-                Compression::None,
-                Operation::ReadI64,
-            )),
-            Box::new(CassandraBench::new(
-                CassandraDb::Cassandra,
-                Topology::Single,
-                Shotover::Standard,
-                Compression::Lz4,
-                Operation::ReadI64,
-            )),
-            Box::new(CassandraBench::new(
-                CassandraDb::Cassandra,
-                Topology::Cluster3,
-                Shotover::None,
-                Compression::None,
-                Operation::ReadI64,
-            )),
-            Box::new(CassandraBench::new(
-                CassandraDb::Cassandra,
-                Topology::Cluster3,
-                Shotover::None,
-                Compression::Lz4,
-                Operation::ReadI64,
-            )),
-            Box::new(CassandraBench::new(
-                CassandraDb::Cassandra,
-                Topology::Cluster3,
-                Shotover::Standard,
-                Compression::None,
-                Operation::ReadI64,
-            )),
-            Box::new(CassandraBench::new(
-                CassandraDb::Cassandra,
-                Topology::Cluster3,
-                Shotover::Standard,
-                Compression::Lz4,
-                Operation::ReadI64,
-            )),
-            Box::new(CassandraBench::new(
-                CassandraDb::Mocked,
-                Topology::Single,
-                Shotover::None,
-                Compression::None,
-                Operation::ReadI64,
-            )),
-            Box::new(CassandraBench::new(
                 CassandraDb::Mocked,
                 Topology::Single,
                 Shotover::Standard,
                 Compression::None,
                 Operation::ReadI64,
+                CassandraProtocol::V4,
+                CassandraDriver::Scylla,
             )),
         ]
         .into_iter()
+        .chain(cassandra_benches)
         .chain(kafka_benches)
         .chain(redis_benches)
         .collect(),

@@ -1,9 +1,25 @@
 use crate::{common::Shotover, profilers::ProfilerRunner};
 use async_trait::async_trait;
+use cdrs_tokio::{
+    cluster::{
+        session::{
+            Session as CdrsTokioSession, SessionBuilder as CdrsTokioSessionBuilder,
+            TcpSessionBuilder,
+        },
+        NodeTcpConfigBuilder, TcpConnectionManager,
+    },
+    compression::Compression as CdrsCompression,
+    frame::Version,
+    load_balancing::RoundRobinLoadBalancingStrategy,
+    query::{PreparedQuery as CdrsPrepared, QueryParamsBuilder, QueryValues},
+    statement::StatementParams,
+    transport::TransportTcp,
+};
 use rand::prelude::*;
 use scylla::{
-    prepared_statement::PreparedStatement, transport::Compression as ScyllaCompression, Session,
-    SessionBuilder,
+    prepared_statement::PreparedStatement as ScyllaPrepared,
+    transport::Compression as ScyllaCompression, Session as ScyllaSession,
+    SessionBuilder as ScyllaSessionBuilder,
 };
 use std::{
     collections::HashMap,
@@ -20,11 +36,13 @@ use windsock::{Bench, BenchTask, Profiling, Report};
 
 const ROW_COUNT: usize = 1000;
 
+#[derive(Clone)]
 pub enum Compression {
     None,
     Lz4,
 }
 
+#[derive(Clone)]
 pub enum CassandraDb {
     Cassandra,
     Mocked,
@@ -35,6 +53,7 @@ enum CassandraDbInstance {
     Mocked(MockHandle),
 }
 
+#[derive(Clone, PartialEq)]
 pub enum Topology {
     Single,
     Cluster3,
@@ -49,48 +68,39 @@ struct CoreCount {
     cassandra: usize,
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub enum Operation {
     ReadI64,
     WriteBlob,
 }
 
 impl Operation {
-    async fn prepare(&self, session: &Arc<Session>, db: &CassandraDb) {
+    async fn prepare(&self, session: &Arc<CassandraSession>, db: &CassandraDb) {
         if let CassandraDb::Cassandra = db {
-            session.query("CREATE KEYSPACE IF NOT EXISTS ks WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 }", ()).await.unwrap();
-            session.await_schema_agreement().await.unwrap();
-            session
-                .query("DROP TABLE IF EXISTS ks.bench", ())
-                .await
-                .unwrap();
-            session.await_schema_agreement().await.unwrap();
+            session.query("CREATE KEYSPACE IF NOT EXISTS ks WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 }").await;
+            session.await_schema_agreement().await;
+            session.query("DROP TABLE IF EXISTS ks.bench").await;
+            session.await_schema_agreement().await;
 
             match self {
                 Operation::ReadI64 => {
                     session
-                        .query("CREATE TABLE ks.bench(id bigint PRIMARY KEY)", ())
-                        .await
-                        .unwrap();
-                    session.await_schema_agreement().await.unwrap();
+                        .query("CREATE TABLE ks.bench(id bigint PRIMARY KEY)")
+                        .await;
+                    session.await_schema_agreement().await;
                     tokio::time::sleep(Duration::from_secs(1)).await; //TODO: this should not be needed >:[
 
                     for i in 0..ROW_COUNT {
                         session
-                            .query("INSERT INTO ks.bench(id) VALUES (:id)", (i as i64,))
-                            .await
-                            .unwrap();
+                            .query(&format!("INSERT INTO ks.bench(id) VALUES ({})", i))
+                            .await;
                     }
                 }
                 Operation::WriteBlob => {
                     session
-                        .query(
-                            "CREATE TABLE ks.bench(id bigint PRIMARY KEY, data BLOB)",
-                            (),
-                        )
-                        .await
-                        .unwrap();
-                    session.await_schema_agreement().await.unwrap();
+                        .query("CREATE TABLE ks.bench(id bigint PRIMARY KEY, data BLOB)")
+                        .await;
+                    session.await_schema_agreement().await;
                     tokio::time::sleep(Duration::from_secs(1)).await; //TODO: this should not be needed >:[
                 }
             }
@@ -99,20 +109,22 @@ impl Operation {
 
     async fn run(
         &self,
-        session: &Arc<Session>,
+        session: &Arc<CassandraSession>,
         reporter: UnboundedSender<Report>,
         operations_per_second: Option<u64>,
         runtime_seconds: u32,
     ) {
         let bench_query = match self {
-            Operation::ReadI64 => session
-                .prepare("SELECT * FROM ks.bench WHERE id = :id")
-                .await
-                .unwrap(),
-            Operation::WriteBlob => session
-                .prepare("INSERT INTO ks.bench (id, data) VALUES (:id, :data)")
-                .await
-                .unwrap(),
+            Operation::ReadI64 => {
+                session
+                    .prepare("SELECT * FROM ks.bench WHERE id = :id")
+                    .await
+            }
+            Operation::WriteBlob => {
+                session
+                    .prepare("INSERT INTO ks.bench (id, data) VALUES (:id, :data)")
+                    .await
+            }
         };
 
         let tasks = BenchTaskCassandra {
@@ -145,12 +157,171 @@ impl Operation {
     }
 }
 
+#[derive(Clone)]
+pub enum PreparedStatement {
+    Scylla(ScyllaPrepared),
+    Cdrs(CdrsPrepared),
+}
+
+impl PreparedStatement {
+    fn as_scylla(&self) -> &ScyllaPrepared {
+        match self {
+            Self::Scylla(p) => p,
+            _ => panic!("Not Scylla"),
+        }
+    }
+
+    fn as_cdrs(&self) -> &CdrsPrepared {
+        match self {
+            Self::Cdrs(p) => p,
+            _ => panic!("Not Cdrs"),
+        }
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub enum CassandraProtocol {
+    V3,
+    V4,
+    V5,
+}
+
+#[derive(Copy, Clone, PartialEq)]
+pub enum CassandraDriver {
+    Scylla,
+    CdrsTokio,
+}
+
+pub enum CassandraSession {
+    Scylla(ScyllaSession),
+    CdrsTokio(
+        CdrsTokioSession<
+            TransportTcp,
+            TcpConnectionManager,
+            RoundRobinLoadBalancingStrategy<TransportTcp, TcpConnectionManager>,
+        >,
+    ),
+}
+
+impl CassandraSession {
+    async fn query(&self, query: &str) {
+        match self {
+            Self::Scylla(session) => {
+                session.query(query, ()).await.unwrap();
+            }
+            Self::CdrsTokio(session) => {
+                session.query(query).await.unwrap();
+            }
+        }
+    }
+
+    async fn prepare(&self, query: &str) -> PreparedStatement {
+        match self {
+            Self::Scylla(session) => {
+                PreparedStatement::Scylla(session.prepare(query).await.unwrap())
+            }
+            Self::CdrsTokio(session) => {
+                PreparedStatement::Cdrs(session.prepare(query).await.unwrap())
+            }
+        }
+    }
+
+    async fn execute(&self, prepared_statement: &PreparedStatement, value: i64) {
+        match self {
+            Self::Scylla(session) => {
+                session
+                    .execute(prepared_statement.as_scylla(), (value,))
+                    .await
+                    .unwrap();
+            }
+            Self::CdrsTokio(session) => {
+                let query_params = QueryParamsBuilder::new()
+                    .with_values(QueryValues::SimpleValues(vec![value.into()]))
+                    .build();
+
+                let params = StatementParams {
+                    query_params,
+                    is_idempotent: false,
+                    keyspace: None,
+                    token: None,
+                    routing_key: None,
+                    tracing: true,
+                    warnings: false,
+                    speculative_execution_policy: None,
+                    retry_policy: None,
+                    beta_protocol: false,
+                };
+
+                session
+                    .exec_with_params(prepared_statement.as_cdrs(), &params)
+                    .await
+                    .unwrap();
+            }
+        }
+    }
+
+    async fn execute_blob(
+        &self,
+        prepared_statement: &PreparedStatement,
+        value: i64,
+        blob: [u8; 16],
+    ) {
+        match self {
+            Self::Scylla(session) => {
+                session
+                    .execute(prepared_statement.as_scylla(), (value, blob))
+                    .await
+                    .unwrap();
+            }
+            Self::CdrsTokio(session) => {
+                let query_params = QueryParamsBuilder::new()
+                    .with_values(QueryValues::SimpleValues(vec![
+                        value.into(),
+                        blob.to_vec().into(),
+                    ]))
+                    .build();
+
+                let params = StatementParams {
+                    query_params,
+                    is_idempotent: false,
+                    keyspace: None,
+                    token: None,
+                    routing_key: None,
+                    tracing: true,
+                    warnings: false,
+                    speculative_execution_policy: None,
+                    retry_policy: None,
+                    beta_protocol: false,
+                };
+
+                session
+                    .exec_with_params(prepared_statement.as_cdrs(), &params)
+                    .await
+                    .unwrap();
+            }
+        }
+    }
+
+    async fn await_schema_agreement(&self) {
+        match self {
+            Self::Scylla(session) => {
+                session.await_schema_agreement().await.unwrap();
+            }
+            Self::CdrsTokio(_session) => {
+                tokio::time::sleep(Duration::from_secs(1)).await;
+            }
+        }
+    }
+}
+
 pub struct CassandraBench {
     db: CassandraDb,
     topology: Topology,
     shotover: Shotover,
     compression: Compression,
     operation: Operation,
+    protocol: CassandraProtocol,
+    driver: CassandraDriver,
 }
 
 impl CassandraBench {
@@ -160,6 +331,8 @@ impl CassandraBench {
         shotover: Shotover,
         compression: Compression,
         operation: Operation,
+        protocol: CassandraProtocol,
+        driver: CassandraDriver,
     ) -> Self {
         CassandraBench {
             db,
@@ -167,6 +340,8 @@ impl CassandraBench {
             shotover,
             compression,
             operation,
+            protocol,
+            driver,
         }
     }
 
@@ -211,6 +386,21 @@ impl Bench for CassandraBench {
                 match self.compression {
                     Compression::None => "none".to_owned(),
                     Compression::Lz4 => "lz4".to_owned(),
+                },
+            ),
+            (
+                "protocol".to_owned(),
+                match self.protocol {
+                    CassandraProtocol::V3 => "v3".to_owned(),
+                    CassandraProtocol::V4 => "v4".to_owned(),
+                    CassandraProtocol::V5 => "v5".to_owned(),
+                },
+            ),
+            (
+                "driver".to_owned(),
+                match self.driver {
+                    CassandraDriver::Scylla => "scylla".to_owned(),
+                    CassandraDriver::CdrsTokio => "cdrs-tokio".to_owned(),
                 },
             ),
         ]
@@ -275,18 +465,50 @@ impl Bench for CassandraBench {
             };
             profiler.run(&shotover);
 
-            let session = Arc::new(
-                SessionBuilder::new()
-                    .known_nodes([address])
-                    .user("cassandra", "cassandra")
-                    .compression(match self.compression {
-                        Compression::None => None,
-                        Compression::Lz4 => Some(ScyllaCompression::Lz4),
-                    })
-                    .build()
-                    .await
-                    .unwrap(),
-            );
+            let session = match (self.protocol, self.driver) {
+                (CassandraProtocol::V4, CassandraDriver::Scylla) => {
+                    Arc::new(CassandraSession::Scylla(
+                        ScyllaSessionBuilder::new()
+                            .known_nodes([address])
+                            .user("cassandra", "cassandra")
+                            .compression(match self.compression {
+                                Compression::None => None,
+                                Compression::Lz4 => Some(ScyllaCompression::Lz4),
+                            })
+                            .build()
+                            .await
+                            .unwrap(),
+                    ))
+                }
+                (_, CassandraDriver::Scylla) => {
+                    panic!("Must use CassandraProtocol::V4 with CassandraDriver:Scylla");
+                }
+                (_, CassandraDriver::CdrsTokio) => {
+                    let cluster_config = NodeTcpConfigBuilder::new()
+                        .with_contact_point(address.into())
+                        .with_version(match self.protocol {
+                            CassandraProtocol::V3 => Version::V3,
+                            CassandraProtocol::V4 => Version::V4,
+                            CassandraProtocol::V5 => Version::V5,
+                        })
+                        .build()
+                        .await
+                        .unwrap();
+                    Arc::new(CassandraSession::CdrsTokio(
+                        TcpSessionBuilder::new(
+                            RoundRobinLoadBalancingStrategy::new(),
+                            cluster_config,
+                        )
+                        .with_compression(match self.compression {
+                            Compression::None => CdrsCompression::None,
+                            Compression::Lz4 => CdrsCompression::Lz4,
+                        })
+                        .build()
+                        .await
+                        .unwrap(),
+                    ))
+                }
+            };
 
             self.operation.prepare(&session, &self.db).await;
 
@@ -303,7 +525,7 @@ impl Bench for CassandraBench {
 
 #[derive(Clone)]
 struct BenchTaskCassandra {
-    session: Arc<Session>,
+    session: Arc<CassandraSession>,
     query: PreparedStatement,
     operation: Operation,
 }
@@ -314,10 +536,7 @@ impl BenchTask for BenchTaskCassandra {
         let i = rand::random::<u32>() % ROW_COUNT as u32;
         match self.operation {
             Operation::ReadI64 => {
-                self.session
-                    .execute(&self.query, (i as i64,))
-                    .await
-                    .unwrap();
+                self.session.execute(&self.query, i as i64).await;
             }
             Operation::WriteBlob => {
                 let blob = {
@@ -325,10 +544,7 @@ impl BenchTask for BenchTaskCassandra {
                     rng.gen::<[u8; 16]>()
                 };
 
-                self.session
-                    .execute(&self.query, (i as i64, blob))
-                    .await
-                    .unwrap();
+                self.session.execute_blob(&self.query, i as i64, blob).await;
             }
         }
     }
