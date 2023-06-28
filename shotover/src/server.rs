@@ -445,9 +445,9 @@ fn spawn_read_write_tasks<
                                     return;
                                 }
                                 Err(CodecReadError::Io(err)) => {
-                                    // I suspect (but have not confirmed) that UnexpectedEof occurs here when the ssl client 
+                                    // I suspect (but have not confirmed) that UnexpectedEof occurs here when the ssl client
                                     // does not send "close notify" before terminating the connection.
-                                    // We shouldnt report that as a warning because its common for clients to do 
+                                    // We shouldnt report that as a warning because its common for clients to do
                                     // that for performance reasons.
                                     if !matches!(err.kind(), ErrorKind::UnexpectedEof) {
                                         warn!("failed to receive message on tcp stream: {:?}", err);
@@ -696,7 +696,7 @@ impl<C: CodecBuilder + 'static> Handler<C> {
                 {
                     Ok(x) => x,
                     Err(err) => {
-                        // An internal error occured and we need to terminate the connection because we can no 
+                        // An internal error occured and we need to terminate the connection because we can no
                         // longer make any gaurantees about the state its in.
                         // However before we do that we need to return errors for all the messages in this batch for two reasons:
                         // * Poorly programmed clients may hang forever waiting for a response
