@@ -279,7 +279,8 @@ fn spawn_read_write_tasks<
     // 3. The writer task detects that the last out_tx is dropped by out_rx returning None and terminates
     //
     // client closes connection:
-    // 1. The reader task detects that the client has closed the connection via reader returning None and terminates, dropping in_tx and the first out_tx
+    // 1. The reader task detects that the client has closed the connection via reader returning None and terminates,
+    // dropping in_tx and the first out_tx
     // 2. The main task detects that in_tx is dropped by in_rx returning None and terminates, dropping the last out_tx
     // 3. The writer task detects that the last out_tx is dropped by out_rx returning None and terminates
     // The writer task could also close early by detecting that the client has closed the connection via writer returning BrokenPipe
@@ -309,8 +310,10 @@ fn spawn_read_write_tasks<
                                     return;
                                 }
                                 Err(CodecReadError::Io(err)) => {
-                                    // I suspect (but have not confirmed) that UnexpectedEof occurs here when the ssl client does not send "close notify" before terminating the connection.
-                                    // We shouldnt report that as a warning because its common for clients to do that for performance reasons.
+                                    // I suspect (but have not confirmed) that UnexpectedEof occurs here when the ssl client
+                                    // does not send "close notify" before terminating the connection.
+                                    // We shouldnt report that as a warning because its common for clients to do
+                                    // that for performance reasons.
                                     if !matches!(err.kind(), ErrorKind::UnexpectedEof) {
                                         warn!("failed to receive message on tcp stream: {:?}", err);
                                     }
@@ -499,7 +502,8 @@ impl<C: CodecBuilder + 'static> Handler<C> {
                 // Avoid allocating for reverse chains as we dont make use of this value in that case
                 vec![]
             } else {
-                // This clone should be cheap as cloning a Message that has never had `.frame()` called should result in no new allocations.
+                // This clone should be cheap as cloning a Message that has never had `.frame()`
+                // called should result in no new allocations.
                 messages.clone()
             };
 
@@ -524,7 +528,8 @@ impl<C: CodecBuilder + 'static> Handler<C> {
                 {
                     Ok(x) => x,
                     Err(err) => {
-                        // An internal error occured and we need to terminate the connection because we can no longer make any gaurantees about the state its in.
+                        // An internal error occured and we need to terminate the connection because we can no
+                        // longer make any gaurantees about the state its in.
                         // However before we do that we need to return errors for all the messages in this batch for two reasons:
                         // * Poorly programmed clients may hang forever waiting for a response
                         // * We want to give the user a hint as to what went wrong
