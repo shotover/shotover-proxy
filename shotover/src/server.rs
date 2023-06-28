@@ -295,17 +295,14 @@ fn spawn_websocket_read_write_tasks<C: CodecBuilder + 'static>(
                                         return;
                                     }
                                     Err(CodecReadError::RespondAndThenCloseConnection(messages)) => {
-                                        if let Err(err) = out_tx.send(messages) { // TODO we need
-                                                                                  // to send a
-                                                                                  // close message
-                                                                                  // to the client
+                                        if let Err(err) = out_tx.send(messages) {
+                                            // TODO we need to send a close message to the client
                                             error!("Failed to send RespondAndThenCloseConnection message: {:?}", err);
                                         }
                                         return;
                                     }
-                                    Err(CodecReadError::Parser(err)) => { // TODO we need to send a
-                                                                          // close message to the
-                                                                          // client, protocol error
+                                    Err(CodecReadError::Parser(err)) => {
+                                        // TODO we need to send a close message to the client, protocol error
                                         warn!("failed to decode message: {:?}", err);
                                         return;
                                     }
@@ -329,7 +326,7 @@ fn spawn_websocket_read_write_tasks<C: CodecBuilder + 'static>(
                     }
                 }
                 _ = in_tx.closed() => {
-                    // main task has shutdown down, this task is no longer needed
+                    // main task has shutdown, this task is no longer needed
                     return;
                 }
             }
@@ -346,7 +343,8 @@ fn spawn_websocket_read_write_tasks<C: CodecBuilder + 'static>(
                     let mut bytes = BytesMut::new();
                     match encoder.encode(message, &mut bytes) {
                         Err(err) => {
-                            error!("failed to encode message destined for client: {err:?}")
+                            error!("failed to encode message destined for client: {err:?}");
+                            return;
                         }
                         Ok(_) => {
                             let message = WsMessage::binary(bytes);
@@ -435,7 +433,7 @@ fn spawn_read_write_tasks<
                             match message {
                                 Ok(messages) => {
                                     if in_tx.send(messages).is_err() {
-                                        // main task has shutdown down, this task is no longer needed
+                                        // main task has shutdown, this task is no longer needed
                                         return;
                                     }
                                 }
@@ -466,7 +464,7 @@ fn spawn_read_write_tasks<
                         }
                     }
                     _ = in_tx.closed() => {
-                        // main task has shutdown down, this task is no longer needed
+                        // main task has shutdown, this task is no longer needed
                         return;
                     }
                 }
