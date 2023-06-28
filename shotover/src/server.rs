@@ -295,7 +295,7 @@ fn spawn_read_write_tasks<
                             match message {
                                 Ok(messages) => {
                                     if in_tx.send(messages).is_err() {
-                                        // main task has shutdown down, this task is no longer needed
+                                        // main task has shutdown, this task is no longer needed
                                         return;
                                     }
                                 }
@@ -326,7 +326,7 @@ fn spawn_read_write_tasks<
                         }
                     }
                     _ = in_tx.closed() => {
-                        // main task has shutdown down, this task is no longer needed
+                        // main task has shutdown, this task is no longer needed
                         return;
                     }
                 }
