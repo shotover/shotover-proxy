@@ -124,22 +124,18 @@ pub struct KafkaSinkCluster {
 impl Transform for KafkaSinkCluster {
     async fn transform<'a>(&'a mut self, requests_wrapper: Wrapper<'a>) -> Result<Messages> {
         if self.nodes.is_empty() {
-            self.nodes = self
+            let nodes: Result<Vec<KafkaNode>> = self
                 .first_contact_points
                 .iter()
                 .map(|address| {
-                    let address = address.parse().unwrap();
-                    KafkaNode {
+                    Ok(KafkaNode {
                         connection: None,
-                        address,
-                        kafka_address: KafkaAddress {
-                            host: strbytes(&address.ip().to_string()),
-                            port: address.port() as i32,
-                        },
+                        kafka_address: KafkaAddress::from_str(address)?,
                         broker_id: -1,
-                    }
+                    })
                 })
                 .collect();
+            self.nodes = nodes?;
         }
 
         let responses = self.send_requests(requests_wrapper.requests).await?;
@@ -195,11 +191,6 @@ impl Transform for KafkaSinkCluster {
                             let port = broker.1.port;
                             self.nodes.push(KafkaNode {
                                 broker_id: **broker.0,
-                                address: format!("{host}:{port}").parse().map_err(|_| {
-                                    anyhow!(
-                                        "Failed to parse address from kafka message: {host}:{port}"
-                                    )
-                                })?,
                                 kafka_address: KafkaAddress { host, port },
                                 connection: None,
                             });
@@ -364,8 +355,6 @@ fn rewrite_address(shotover_nodes: &[KafkaAddress], host: &mut StrBytes, port: &
 
 struct KafkaNode {
     broker_id: i32,
-    address: SocketAddr,
-    // Same address as `address` the duplication makes it fast to compare against addresses in kafka messages.
     kafka_address: KafkaAddress,
     connection: Option<Connection>,
 }
@@ -374,7 +363,14 @@ impl KafkaNode {
     async fn get_connection(&mut self, connect_timeout: Duration) -> Result<&Connection> {
         if self.connection.is_none() {
             let codec = KafkaCodecBuilder::new(Direction::Sink);
-            let tcp_stream = tcp::tcp_stream(connect_timeout, &self.address).await?;
+            let tcp_stream = tcp::tcp_stream(
+                connect_timeout,
+                (
+                    self.kafka_address.host.to_string(),
+                    self.kafka_address.port as u16,
+                ),
+            )
+            .await?;
             let (rx, tx) = tcp_stream.into_split();
             self.connection = Some(spawn_read_write_tasks(&codec, rx, tx));
         }
@@ -394,4 +390,22 @@ struct Partition {
 struct KafkaAddress {
     host: StrBytes,
     port: i32,
+}
+
+impl KafkaAddress {
+    fn from_str(address: &str) -> Result<Self> {
+        let mut address_iter = address.split(':');
+        Ok(KafkaAddress {
+            host: strbytes(
+                address_iter
+                    .next()
+                    .ok_or_else(|| anyhow!("Address must include ':' seperator"))?,
+            ),
+            port: address_iter
+                .next()
+                .ok_or_else(|| anyhow!("Address must include port after ':'"))?
+                .parse()
+                .map_err(|_| anyhow!("Failed to parse address port as integer"))?,
+        })
+    }
 }
