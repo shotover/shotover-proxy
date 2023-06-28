@@ -316,10 +316,13 @@ fn spawn_websocket_read_write_tasks<C: CodecBuilder + 'static>(
                             }
                             Ok(_ws_message) => {
                                 // TODO we need to tell the client about a protocol error
-
                                 todo!();
                             }
-                            Err(err) => panic!("{err}") // TODO
+                            Err(err) => {
+                                // TODO
+                                error!("{err}");
+                                return;
+                            }
                         }
                     } else {
                         return;
@@ -350,7 +353,9 @@ fn spawn_websocket_read_write_tasks<C: CodecBuilder + 'static>(
                             match writer.send(message).await {
                                 Ok(_) => {}
                                 Err(err) => {
-                                    panic!("{err}"); // TODO
+                                    // TODO
+                                    error!("{err}");
+                                    return;
                                 }
                             }
                         }
