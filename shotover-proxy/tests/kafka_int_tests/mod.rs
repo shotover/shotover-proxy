@@ -42,29 +42,6 @@ async fn passthrough_encode() {
     shotover.shutdown_and_then_consume_events(&[]).await;
 }
 
-// This test is a hack so that we can send messages through KafkaSinkCluster before we implement routing.
-// As soon as we have implemented routing such that the other cluster tests can send messages this test should be deleted.
-#[tokio::test]
-#[serial]
-async fn cluster_fake() {
-    let _docker_compose =
-        docker_compose("tests/test-configs/kafka/cluster-fake/docker-compose.yaml");
-    let shotover = ShotoverProcessBuilder::new_with_topology(
-        "tests/test-configs/kafka/cluster-fake/topology.yaml",
-    )
-    .start()
-    .await;
-
-    test_cases::basic("127.0.0.1:9192").await;
-
-    tokio::time::timeout(
-        Duration::from_secs(10),
-        shotover.shutdown_and_then_consume_events(&[]),
-    )
-    .await
-    .expect("Shotover did not shutdown within 10s");
-}
-
 #[tokio::test]
 #[serial]
 async fn cluster_single_shotover() {
@@ -75,9 +52,7 @@ async fn cluster_single_shotover() {
     .start()
     .await;
 
-    test_cases::produce_only("127.0.0.1:9192").await;
-    // disabled until routing is implemented
-    //test_cases::basic("127.0.0.1:9192").await;
+    test_cases::basic("127.0.0.1:9192").await;
 
     tokio::time::timeout(
         Duration::from_secs(10),

@@ -8,16 +8,18 @@ use crate::transforms::util::{Request, Response};
 use crate::transforms::{Transform, TransformBuilder, Transforms, Wrapper};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
+use dashmap::DashMap;
 use kafka_protocol::protocol::StrBytes;
 use rand::rngs::SmallRng;
-use rand::seq::SliceRandom;
+use rand::seq::{IteratorRandom, SliceRandom};
 use rand::SeedableRng;
 use serde::Deserialize;
-use std::collections::HashMap;
 use std::hash::Hasher;
 use std::net::SocketAddr;
+use std::sync::atomic::{AtomicI32, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot, RwLock};
 use tokio::time::timeout;
 
 #[derive(Deserialize, Debug)]
@@ -54,6 +56,9 @@ pub struct KafkaSinkClusterBuilder {
     shotover_nodes: Vec<KafkaAddress>,
     connect_timeout: Duration,
     read_timeout: Option<Duration>,
+    coordinator_broker_id: Arc<AtomicI32>,
+    topics: Arc<DashMap<StrBytes, Topic>>,
+    nodes_shared: Arc<RwLock<Vec<KafkaNode>>>,
 }
 
 impl KafkaSinkClusterBuilder {
@@ -82,6 +87,9 @@ impl KafkaSinkClusterBuilder {
             shotover_nodes,
             connect_timeout: Duration::from_millis(connect_timeout_ms),
             read_timeout: receive_timeout,
+            coordinator_broker_id: Arc::new(AtomicI32::new(-1)),
+            topics: Arc::new(DashMap::new()),
+            nodes_shared: Arc::new(RwLock::new(vec![])),
         }
     }
 }
@@ -95,7 +103,9 @@ impl TransformBuilder for KafkaSinkClusterBuilder {
             connect_timeout: self.connect_timeout,
             read_timeout: self.read_timeout,
             nodes: vec![],
-            topics: HashMap::new(),
+            nodes_shared: self.nodes_shared.clone(),
+            coordinator_broker_id: self.coordinator_broker_id.clone(),
+            topics: self.topics.clone(),
             rng: SmallRng::from_rng(rand::thread_rng()).unwrap(),
         })
     }
@@ -116,7 +126,9 @@ pub struct KafkaSinkCluster {
     connect_timeout: Duration,
     read_timeout: Option<Duration>,
     nodes: Vec<KafkaNode>,
-    topics: HashMap<StrBytes, Topic>,
+    nodes_shared: Arc<RwLock<Vec<KafkaNode>>>,
+    coordinator_broker_id: Arc<AtomicI32>,
+    topics: Arc<DashMap<StrBytes, Topic>>,
     rng: SmallRng,
 }
 
@@ -137,6 +149,18 @@ impl Transform for KafkaSinkCluster {
                 .collect();
             self.nodes = nodes?;
         }
+        for shared_node in self.nodes_shared.read().await.iter() {
+            let mut found = false;
+            for node in &mut self.nodes {
+                if shared_node.kafka_address == node.kafka_address {
+                    found = true;
+                    node.broker_id = shared_node.broker_id;
+                }
+            }
+            if !found {
+                self.nodes.push(shared_node.clone())
+            }
+        }
 
         let responses = self.send_requests(requests_wrapper.requests).await?;
 
@@ -156,6 +180,8 @@ impl Transform for KafkaSinkCluster {
                     ..
                 })) => {
                     if *version <= 3 {
+                        self.coordinator_broker_id
+                            .store(find_coordinator.node_id.0, Ordering::Relaxed);
                         rewrite_address(
                             &self.shotover_nodes,
                             &mut find_coordinator.host,
@@ -163,6 +189,8 @@ impl Transform for KafkaSinkCluster {
                         )
                     } else {
                         for coordinator in &mut find_coordinator.coordinators {
+                            self.coordinator_broker_id
+                                .store(coordinator.node_id.0, Ordering::Relaxed);
                             rewrite_address(
                                 &self.shotover_nodes,
                                 &mut coordinator.host,
@@ -176,30 +204,26 @@ impl Transform for KafkaSinkCluster {
                     body: ResponseBody::Metadata(metadata),
                     ..
                 })) => {
-                    for broker in &mut metadata.brokers {
-                        let mut found = false;
-                        for node in &mut self.nodes {
-                            if broker.1.host == node.kafka_address.host
-                                && broker.1.port == node.kafka_address.port
-                            {
-                                found = true;
-                                node.broker_id = **broker.0;
+                    for (id, broker) in &mut metadata.brokers {
+                        {
+                            let new = self
+                                .nodes_shared
+                                .read()
+                                .await
+                                .iter()
+                                .all(|node| node.broker_id != **id);
+                            if new {
+                                let host = broker.host.clone();
+                                let port = broker.port;
+                                let node = KafkaNode {
+                                    broker_id: **id,
+                                    kafka_address: KafkaAddress { host, port },
+                                    connection: None,
+                                };
+                                self.nodes_shared.write().await.push(node);
                             }
                         }
-                        if !found {
-                            let host = broker.1.host.clone();
-                            let port = broker.1.port;
-                            self.nodes.push(KafkaNode {
-                                broker_id: **broker.0,
-                                kafka_address: KafkaAddress { host, port },
-                                connection: None,
-                            });
-                        }
-                        rewrite_address(
-                            &self.shotover_nodes,
-                            &mut broker.1.host,
-                            &mut broker.1.port,
-                        )
+                        rewrite_address(&self.shotover_nodes, &mut broker.host, &mut broker.port)
                     }
 
                     for topic in &metadata.topics {
@@ -212,7 +236,7 @@ impl Transform for KafkaSinkCluster {
                                     .iter()
                                     .map(|partition| Partition {
                                         leader_id: *partition.leader_id,
-                                        _replica_nodes: partition
+                                        replica_nodes: partition
                                             .replica_nodes
                                             .iter()
                                             .map(|x| x.0)
@@ -258,6 +282,7 @@ impl KafkaSinkCluster {
 
         for mut message in requests {
             match message.frame() {
+                // route to partition leader
                 Some(Frame::Kafka(KafkaFrame::Request {
                     body: RequestBody::Produce(produce),
                     ..
@@ -305,6 +330,89 @@ impl KafkaSinkCluster {
                         .map_err(|_| anyhow!("Failed to send"))?;
                     results.push(rx);
                 }
+
+                // route to random partition replica
+                Some(Frame::Kafka(KafkaFrame::Request {
+                    body: RequestBody::Fetch(fetch),
+                    ..
+                })) => {
+                    // assume that all topics in this message have the same routing requirements
+                    let topic = fetch
+                        .topics
+                        .first()
+                        .ok_or_else(|| anyhow!("No topics in produce message"))?;
+                    let connection = if let Some(topic_meta) = self.topics.get(&topic.topic.0) {
+                        // assume that all partitions in this topic have the same routing requirements
+                        let partition = &topic_meta.partitions[topic
+                            .partitions
+                            .first()
+                            .ok_or_else(|| anyhow!("No partitions in topic"))?
+                            .partition
+                            as usize];
+                        self.nodes
+                            .iter_mut()
+                            .filter(|node| partition.replica_nodes.contains(&node.broker_id))
+                            .choose(&mut self.rng)
+                            .unwrap()
+                            .get_connection(self.connect_timeout)
+                            .await?
+                            .clone()
+                    } else {
+                        self.nodes
+                            .choose_mut(&mut self.rng)
+                            .unwrap()
+                            .get_connection(self.connect_timeout)
+                            .await?
+                            .clone()
+                    };
+
+                    let (tx, rx) = oneshot::channel();
+                    connection
+                        .send(Request {
+                            message,
+                            return_chan: Some(tx),
+                        })
+                        .map_err(|_| anyhow!("Failed to send"))?;
+                    results.push(rx);
+                }
+
+                // route to coordinator
+                Some(Frame::Kafka(KafkaFrame::Request {
+                    body:
+                        RequestBody::JoinGroup(_)
+                        | RequestBody::OffsetFetch(_)
+                        | RequestBody::Heartbeat(_)
+                        | RequestBody::SyncGroup(_),
+                    ..
+                })) => {
+                    let mut connection = None;
+                    for node in &mut self.nodes {
+                        if node.broker_id == self.coordinator_broker_id.load(Ordering::Relaxed) {
+                            connection =
+                                Some(node.get_connection(self.connect_timeout).await?.clone());
+                        }
+                    }
+                    let connection = match connection {
+                        Some(connection) => connection,
+                        None => self
+                            .nodes
+                            .choose_mut(&mut self.rng)
+                            .unwrap()
+                            .get_connection(self.connect_timeout)
+                            .await?
+                            .clone(),
+                    };
+                    let (tx, rx) = oneshot::channel();
+                    connection
+                        .send(Request {
+                            message,
+                            return_chan: Some(tx),
+                        })
+                        .map_err(|_| anyhow!("Failed to send"))?;
+                    results.push(rx);
+                }
+
+                // route to random node
                 _ => {
                     let connection = self
                         .nodes
@@ -353,6 +461,7 @@ fn rewrite_address(shotover_nodes: &[KafkaAddress], host: &mut StrBytes, port: &
     }
 }
 
+#[derive(Clone)]
 struct KafkaNode {
     broker_id: i32,
     kafka_address: KafkaAddress,
@@ -383,10 +492,10 @@ struct Topic {
 }
 struct Partition {
     leader_id: i32,
-    _replica_nodes: Vec<i32>,
+    replica_nodes: Vec<i32>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 struct KafkaAddress {
     host: StrBytes,
     port: i32,
