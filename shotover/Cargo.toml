@@ -92,3 +92,4 @@ rustls-pemfile = "1.0.2"
 rustls-webpki = "0.100.1"
 string = "0.3.0"
 xxhash-rust = { version = "0.8.6", features = ["xxh3"] }
+dashmap = "5.4.0"
