@@ -47,6 +47,7 @@ tracing-appender = "0.2.0"
 fred = { version = "6.3.0", features = ["enable-rustls"] }
 rustls-pemfile = "1.0.2"
 windsock = { path = "../windsock" }
+cql-ws = { git = "https://github.com/conorbros/cql-ws" }
 
 [[bench]]
 name = "benches"

@@ -11,6 +11,12 @@ pub mod cassandra;
 pub mod kafka;
 pub mod redis;
 
+#[derive(Deserialize, Debug, Copy, Clone)]
+pub enum Transport {
+    Tcp,
+    WebSocket,
+}
+
 #[derive(Debug)]
 pub enum Source {
     Cassandra(CassandraSource),
