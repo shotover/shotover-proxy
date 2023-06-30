@@ -11,10 +11,10 @@ pub mod cassandra;
 pub mod kafka;
 pub mod redis;
 
-#[derive(Deserialize, Debug, Copy, Clone)]
+#[derive(Deserialize, Debug, Clone)]
 pub enum Transport {
     Tcp,
-    WebSocket,
+    WebSocket(#[serde(skip)] String),
 }
 
 #[derive(Debug)]

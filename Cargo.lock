@@ -704,12 +704,15 @@ dependencies = [
 [[package]]
 name = "cql-ws"
 version = "0.1.0"
-source = "git+https://github.com/conorbros/cql-ws#22ef6bf087b7bee9864432cf44a928f4c6df717a"
+source = "git+https://github.com/conorbros/cql-ws#fd1b3f3b97c40f49edc4a09fb2508a816ac6c57d"
 dependencies = [
  "cassandra-protocol",
  "futures-util",
+ "http",
+ "rustls",
+ "rustls-pemfile",
  "tokio",
- "tokio-tungstenite",
+ "tokio-tungstenite 0.19.0",
 ]
 
 [[package]]
@@ -980,6 +983,12 @@ dependencies = [
  "once_cell",
  "parking_lot_core",
 ]
+
+[[package]]
+name = "data-encoding"
+version = "2.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c2e66c9d817f1720209181c316d28635c050fa304f9c79e47a520882661b7308"
 
 [[package]]
 name = "derivative"
@@ -3369,7 +3378,7 @@ dependencies = [
  "tokio-openssl",
  "tokio-rustls",
  "tokio-stream",
- "tokio-tungstenite",
+ "tokio-tungstenite 0.18.0",
  "tokio-util",
  "tracing",
  "tracing-appender",
@@ -3856,7 +3865,21 @@ dependencies = [
  "futures-util",
  "log",
  "tokio",
- "tungstenite",
+ "tungstenite 0.18.0",
+]
+
+[[package]]
+name = "tokio-tungstenite"
+version = "0.19.0"
+source = "git+https://github.com/conorbros/tokio-tungstenite#909b1ca04e02dfd0c7cdd1ff3eda19f6be7dbb12"
+dependencies = [
+ "futures-util",
+ "log",
+ "rustls",
+ "rustls-native-certs",
+ "tokio",
+ "tokio-rustls",
+ "tungstenite 0.19.0",
 ]
 
 [[package]]
@@ -4022,6 +4045,25 @@ dependencies = [
  "httparse",
  "log",
  "rand",
+ "sha1",
+ "thiserror",
+ "url",
+ "utf-8",
+]
+
+[[package]]
+name = "tungstenite"
+version = "0.19.0"
+source = "git+https://github.com/conorbros/tungstenite-rs#a2ec84b8223f0c0f3ece7a08803cf92aa2420065"
+dependencies = [
+ "byteorder",
+ "bytes",
+ "data-encoding",
+ "http",
+ "httparse",
+ "log",
+ "rand",
+ "rustls",
  "sha1",
  "thiserror",
  "url",

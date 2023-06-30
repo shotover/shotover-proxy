@@ -20,7 +20,13 @@ use tokio::task::JoinHandle;
 use tokio::time;
 use tokio::time::timeout;
 use tokio::time::Duration;
-use tokio_tungstenite::{tungstenite::protocol::Message as WsMessage, WebSocketStream};
+use tokio_tungstenite::{
+    tungstenite::{
+        handshake::server::{Request, Response},
+        protocol::Message as WsMessage,
+    },
+    WebSocketStream,
+};
 use tokio_util::codec::{Decoder, Encoder, FramedRead, FramedWrite};
 use tracing::Instrument;
 use tracing::{debug, error, warn};
@@ -150,7 +156,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                 id = self.connection_count,
                 source = self.source_name.as_str(),
             );
-            let transport = self.transport;
+            let transport = self.transport.clone();
             async {
                 // Accept a new socket. This will attempt to perform error handling.
                 // The `accept` method internally attempts to recover errors, so an
@@ -180,7 +186,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                 self.connection_handles.push(tokio::spawn(
                     async move {
                         // Process the connection. If an error is encountered, log it.
-                        if let Err(err) = handler.run(stream, transport).await {
+                        if let Err(err) = handler.run(stream, transport.clone()).await {
                             error!(
                                 "{:?}",
                                 err.context("connection was unexpectedly terminated")
@@ -547,8 +553,16 @@ impl<C: CodecBuilder + 'static> Handler<C> {
         let codec_builder = self.codec.clone();
 
         match transport {
-            Transport::WebSocket => {
-                let ws_stream = tokio_tungstenite::accept_async(stream)
+            Transport::WebSocket(subprotocol) => {
+                let callback = |_request: &Request, mut response: Response| {
+                    let response_headers = response.headers_mut();
+
+                    response_headers.append("Sec-WebSocket-Protocol", subprotocol.parse().unwrap());
+
+                    Ok(response)
+                };
+
+                let ws_stream = tokio_tungstenite::accept_hdr_async(stream, callback)
                     .await
                     .expect("Error during the websocket handshake occurred");
 
