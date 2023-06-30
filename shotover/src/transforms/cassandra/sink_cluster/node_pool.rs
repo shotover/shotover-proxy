@@ -6,11 +6,12 @@ use crate::transforms::cassandra::connection::CassandraConnection;
 use anyhow::{anyhow, Context, Error, Result};
 use cassandra_protocol::frame::message_execute::BodyReqExecuteOwned;
 use cassandra_protocol::types::CBytesShort;
+use dashmap::DashMap;
 use metrics::{register_counter, Counter};
 use rand::prelude::*;
 use std::sync::Arc;
 use std::{collections::HashMap, net::SocketAddr};
-use tokio::sync::{watch, RwLock};
+use tokio::sync::watch;
 
 #[derive(Debug, Clone)]
 pub struct PreparedMetadata {
@@ -44,14 +45,14 @@ pub struct KeyspaceMetadata {
 // Values in the builder are shared between transform instances that come from the same transform in the topology.yaml
 #[derive(Clone)]
 pub struct NodePoolBuilder {
-    prepared_metadata: Arc<RwLock<HashMap<CBytesShort, Arc<PreparedMetadata>>>>,
+    prepared_metadata: Arc<DashMap<CBytesShort, PreparedMetadata>>,
     out_of_rack_requests: Counter,
 }
 
 impl NodePoolBuilder {
     pub fn new(chain_name: String) -> Self {
         Self {
-            prepared_metadata: Arc::new(RwLock::new(HashMap::new())),
+            prepared_metadata: Arc::new(DashMap::new()),
             out_of_rack_requests: register_counter!("shotover_out_of_rack_requests_count", "chain" => chain_name, "transform" => "CassandraSinkCluster"),
         }
     }
@@ -68,7 +69,7 @@ impl NodePoolBuilder {
 }
 
 pub struct NodePool {
-    prepared_metadata: Arc<RwLock<HashMap<CBytesShort, Arc<PreparedMetadata>>>>,
+    prepared_metadata: Arc<DashMap<CBytesShort, PreparedMetadata>>,
     keyspace_metadata: HashMap<String, KeyspaceMetadata>,
     token_map: TokenRing,
     nodes: Vec<CassandraNode>,
@@ -121,8 +122,7 @@ impl NodePool {
     }
 
     pub async fn add_prepared_result(&mut self, id: CBytesShort, metadata: PreparedMetadata) {
-        let mut write_lock = self.prepared_metadata.write().await;
-        write_lock.insert(id, Arc::new(metadata));
+        self.prepared_metadata.insert(id, metadata);
     }
 
     pub async fn get_random_node_in_dc_rack(
@@ -187,8 +187,7 @@ impl NodePool {
         rng: &mut SmallRng,
     ) -> Result<Vec<&mut CassandraNode>, GetReplicaErr> {
         let metadata = {
-            let read_lock = self.prepared_metadata.read().await;
-            read_lock
+            self.prepared_metadata
                 .get(&execute.id)
                 .ok_or(GetReplicaErr::NoPreparedMetadata)?
                 .clone()
