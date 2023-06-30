@@ -269,9 +269,12 @@ pub struct Handler<C: CodecBuilder> {
     _permit: OwnedSemaphorePermit,
 }
 
-fn spawn_websocket_read_write_tasks<C: CodecBuilder + 'static>(
+fn spawn_websocket_read_write_tasks<
+    S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+    C: CodecBuilder + 'static,
+>(
     codec: C,
-    ws_stream: WebSocketStream<TcpStream>,
+    ws_stream: WebSocketStream<S>,
     in_tx: UnboundedSender<Messages>,
     mut out_rx: UnboundedReceiver<Messages>,
     out_tx: UnboundedSender<Messages>,
@@ -570,14 +573,37 @@ impl<C: CodecBuilder + 'static> Handler<C> {
                 let ws_stream = tokio_tungstenite::accept_hdr_async(stream, callback)
                     .await
                     .expect("Error during the websocket handshake occurred");
+                if let Some(tls) = &self.tls {
+                    let tls_stream = match tls.accept(stream).await {
+                        Ok(x) => x,
+                        Err(AcceptError::Disconnected) => return Ok(()),
+                        Err(AcceptError::Failure(err)) => return Err(err),
+                    };
 
-                spawn_websocket_read_write_tasks(
-                    codec_builder,
-                    ws_stream,
-                    in_tx,
-                    out_rx,
-                    out_tx.clone(),
-                );
+                    let ws_stream = tokio_tungstenite::accept_async(tls_stream)
+                        .await
+                        .expect("Error during the websocket handshake occurred");
+
+                    spawn_websocket_read_write_tasks(
+                        codec_builder,
+                        ws_stream,
+                        in_tx,
+                        out_rx,
+                        out_tx.clone(),
+                    );
+                } else {
+                    let ws_stream = tokio_tungstenite::accept_async(stream)
+                        .await
+                        .expect("Error during the websocket handshake occurred");
+
+                    spawn_websocket_read_write_tasks(
+                        codec_builder,
+                        ws_stream,
+                        in_tx,
+                        out_rx,
+                        out_tx.clone(),
+                    );
+                };
             }
             Transport::Tcp => {
                 if let Some(tls) = &self.tls {
