@@ -18,7 +18,7 @@ use test_helpers::{
     shotover_process::{Count, EventMatcher, Level, ShotoverProcessBuilder},
 };
 use tokio::sync::mpsc::UnboundedSender;
-use windsock::{Bench, BenchTask, Profiling, Report};
+use windsock::{Bench, BenchParameters, BenchTask, Profiling, Report};
 
 #[derive(Clone, Copy)]
 pub enum RedisOperation {
@@ -101,14 +101,21 @@ impl Bench for RedisBench {
         2
     }
 
-    async fn run(
+    async fn orchestrate_cloud(
         &self,
+        _running_in_release: bool,
+        _profiling: Profiling,
+        _bench_parameters: BenchParameters,
+    ) -> Result<()> {
+        todo!()
+    }
+
+    async fn orchestrate_local(
+        &self,
+        _running_in_release: bool,
         profiling: Profiling,
-        _local: bool,
-        runtime_seconds: u32,
-        operations_per_second: Option<u64>,
-        reporter: UnboundedSender<Report>,
-    ) {
+        parameters: BenchParameters,
+    ) -> Result<()> {
         test_helpers::cert::generate_redis_test_certs();
 
         // rediss:// url is not needed to enable TLS because we overwrite the TLS config later on
@@ -149,6 +156,30 @@ impl Bench for RedisBench {
         };
         profiler.run(&shotover);
 
+        self.execute_run(address, &parameters).await;
+
+        if let Some(shotover) = shotover {
+            shotover
+                .shutdown_and_then_consume_events(&[EventMatcher::new()
+                    .with_level(Level::Error)
+                    .with_message("encountered error in redis stream: Io(Kind(UnexpectedEof))")
+                    .with_target("shotover::transforms::redis::sink_single")
+                    .with_count(Count::Any)])
+                .await;
+        }
+
+        Ok(())
+    }
+
+    async fn run_bencher(
+        &self,
+        resources: &str,
+        parameters: BenchParameters,
+        reporter: UnboundedSender<Report>,
+    ) {
+        // only one string field so we just directly store the value in resources
+        let address = resources;
+
         let mut config = RedisConfig::from_url(address).unwrap();
         if let Encryption::Tls = self.encryption {
             let private_key = load_private_key("tests/test-configs/redis-tls/certs/localhost.key");
@@ -178,7 +209,7 @@ impl Bench for RedisBench {
             client: client.clone(),
             operation: self.operation,
         }
-        .spawn_tasks(reporter.clone(), operations_per_second)
+        .spawn_tasks(reporter.clone(), parameters.operations_per_second)
         .await;
 
         // warm up and then start
@@ -186,7 +217,7 @@ impl Bench for RedisBench {
         reporter.send(Report::Start).unwrap();
         let start = Instant::now();
 
-        for _ in 0..runtime_seconds {
+        for _ in 0..parameters.runtime_seconds {
             let second = Instant::now();
             tokio::time::sleep(Duration::from_secs(1)).await;
             reporter
@@ -203,16 +234,6 @@ impl Bench for RedisBench {
 
         client.quit().await.unwrap();
         shutdown_handle.await.unwrap().unwrap();
-
-        if let Some(shotover) = shotover {
-            shotover
-                .shutdown_and_then_consume_events(&[EventMatcher::new()
-                    .with_level(Level::Error)
-                    .with_message("encountered error in redis stream: Io(Kind(UnexpectedEof))")
-                    .with_target("shotover::transforms::redis::sink_single")
-                    .with_count(Count::Any)])
-                .await;
-        }
     }
 }
 

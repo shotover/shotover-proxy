@@ -4,7 +4,7 @@ mod data;
 mod filter;
 mod report;
 mod tables;
-pub use bench::{Bench, BenchTask, Profiling};
+pub use bench::{Bench, BenchParameters, BenchTask, Profiling};
 pub use report::Report;
 
 use anyhow::{anyhow, Result};
@@ -80,67 +80,102 @@ impl Windsock {
             for bench in &self.benches {
                 println!("{}", bench.tags.get_name());
             }
-        } else if let Some(name) = &args.name {
-            ReportArchive::clear_last_run();
-            match self.benches.iter_mut().find(|x| &x.tags.get_name() == name) {
-                Some(bench) => {
-                    if args
-                        .profilers
-                        .iter()
-                        .all(|x| bench.supported_profilers.contains(x))
-                    {
-                        run_bench(bench, &args, running_in_release)
-                    } else {
-                        return Err(anyhow!("Specified bench {name:?} was requested to run with the profilers {:?} but it only supports the profilers {:?}", args.profilers, bench.supported_profilers));
-                    }
-                }
-                None => {
-                    return Err(anyhow!("Specified bench {name:?} does not exist."));
-                }
-            }
+        } else if let Some(internal_run) = &args.internal_run {
+            self.internal_run(&args, internal_run, running_in_release)?;
+        } else if let Some(name) = args.name.clone() {
+            create_runtime(None).block_on(self.run_named_bench(args, name, running_in_release))?;
         } else {
-            ReportArchive::clear_last_run();
-            let filter = match args
-                .filter
-                .as_ref()
-                .map(|x| Filter::from_query(x.as_ref()))
-                .transpose()
-            {
-                Ok(filter) => filter,
-                Err(err) => {
-                    return Err(anyhow!(
-                        "Failed to parse FILTER {:?}\n{}",
-                        args.filter.unwrap(),
-                        err
-                    ))
-                }
-            };
-            for bench in &mut self.benches {
-                if filter
-                    .as_ref()
-                    .map(|x| {
-                        x.matches(&bench.tags)
-                            && args
-                                .profilers
-                                .iter()
-                                .all(|x| bench.supported_profilers.contains(x))
-                    })
-                    .unwrap_or(true)
-                {
-                    run_bench(bench, &args, running_in_release)
-                }
-            }
+            create_runtime(None).block_on(self.run_filtered_benches(args, running_in_release))?;
         }
 
         Ok(())
     }
-}
 
-fn run_bench(bench: &mut BenchState, args: &Args, running_in_release: bool) {
-    let runtime = create_runtime(bench.cores_required());
-    runtime.block_on(async {
-        bench.run(args, running_in_release).await;
-    });
+    fn internal_run(
+        &mut self,
+        args: &Args,
+        internal_run: &str,
+        running_in_release: bool,
+    ) -> Result<()> {
+        let (name, resources) = internal_run.split_at(internal_run.find(' ').unwrap() + 1);
+        let name = name.trim();
+        match self.benches.iter_mut().find(|x| x.tags.get_name() == name) {
+            Some(bench) => {
+                if args
+                    .profilers
+                    .iter()
+                    .all(|x| bench.supported_profilers.contains(x))
+                {
+                    create_runtime(bench.cores_required()).block_on(async {
+                        bench.run(args, running_in_release, resources).await;
+                    });
+                    Ok(())
+                } else {
+                    Err(anyhow!("Specified bench {name:?} was requested to run with the profilers {:?} but it only supports the profilers {:?}", args.profilers, bench.supported_profilers))
+                }
+            }
+            None => Err(anyhow!("Specified bench {name:?} does not exist.")),
+        }
+    }
+
+    async fn run_named_bench(
+        &mut self,
+        args: Args,
+        name: String,
+        running_in_release: bool,
+    ) -> Result<()> {
+        ReportArchive::clear_last_run();
+        match self.benches.iter_mut().find(|x| x.tags.get_name() == name) {
+            Some(bench) => {
+                if args
+                    .profilers
+                    .iter()
+                    .all(|x| bench.supported_profilers.contains(x))
+                {
+                    bench.orchestrate(&args, running_in_release).await;
+                    Ok(())
+                } else {
+                    Err(anyhow!("Specified bench {name:?} was requested to run with the profilers {:?} but it only supports the profilers {:?}", args.profilers, bench.supported_profilers))
+                }
+            }
+            None => Err(anyhow!("Specified bench {name:?} does not exist.")),
+        }
+    }
+
+    async fn run_filtered_benches(&mut self, args: Args, running_in_release: bool) -> Result<()> {
+        ReportArchive::clear_last_run();
+        let filter = match args
+            .filter
+            .as_ref()
+            .map(|x| Filter::from_query(x.as_ref()))
+            .transpose()
+        {
+            Ok(filter) => filter,
+            Err(err) => {
+                return Err(anyhow!(
+                    "Failed to parse FILTER {:?}\n{}",
+                    args.filter.unwrap(),
+                    err
+                ))
+            }
+        };
+        for bench in &mut self.benches {
+            if filter
+                .as_ref()
+                .map(|x| {
+                    x.matches(&bench.tags)
+                        && args
+                            .profilers
+                            .iter()
+                            .all(|x| bench.supported_profilers.contains(x))
+                })
+                .unwrap_or(true)
+            {
+                bench.orchestrate(&args, running_in_release).await;
+            }
+        }
+        Ok(())
+    }
 }
 
 fn create_runtime(worker_threads: Option<usize>) -> Runtime {

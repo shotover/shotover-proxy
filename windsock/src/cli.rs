@@ -66,4 +66,8 @@ pub struct Args {
     /// Prevent release mode safety check from triggering to allow running in debug mode
     #[clap(long)]
     pub disable_release_safety_check: bool,
+
+    /// Not for human use. Call this from your bench orchestration method to launch your bencher.
+    #[clap(long)]
+    pub internal_run: Option<String>,
 }

@@ -1,4 +1,5 @@
 use crate::{common::Shotover, profilers::ProfilerRunner};
+use anyhow::Result;
 use async_trait::async_trait;
 use cdrs_tokio::{
     cluster::{
@@ -32,7 +33,7 @@ use test_helpers::{
     shotover_process::ShotoverProcessBuilder,
 };
 use tokio::sync::mpsc::UnboundedSender;
-use windsock::{Bench, BenchTask, Profiling, Report};
+use windsock::{Bench, BenchParameters, BenchTask, Profiling, Report};
 
 const ROW_COUNT: usize = 1000;
 
@@ -111,8 +112,7 @@ impl Operation {
         &self,
         session: &Arc<CassandraSession>,
         reporter: UnboundedSender<Report>,
-        operations_per_second: Option<u64>,
-        runtime_seconds: u32,
+        parameters: BenchParameters,
     ) {
         let bench_query = match self {
             Operation::ReadI64 => {
@@ -132,7 +132,7 @@ impl Operation {
             query: bench_query,
             operation: self.clone(),
         }
-        .spawn_tasks(reporter.clone(), operations_per_second)
+        .spawn_tasks(reporter.clone(), parameters.operations_per_second)
         .await;
 
         // warm up and then start
@@ -140,7 +140,7 @@ impl Operation {
         reporter.send(Report::Start).unwrap();
         let start = Instant::now();
 
-        for _ in 0..runtime_seconds {
+        for _ in 0..parameters.runtime_seconds {
             let second = Instant::now();
             tokio::time::sleep(Duration::from_secs(1)).await;
             reporter
@@ -416,14 +416,21 @@ impl Bench for CassandraBench {
         self.core_count().bench
     }
 
-    async fn run(
+    async fn orchestrate_cloud(
         &self,
+        _running_in_release: bool,
+        _profiling: Profiling,
+        _bench_parameters: BenchParameters,
+    ) -> Result<()> {
+        todo!()
+    }
+
+    async fn orchestrate_local(
+        &self,
+        _running_in_release: bool,
         profiling: Profiling,
-        _local: bool,
-        runtime_seconds: u32,
-        operations_per_second: Option<u64>,
-        reporter: UnboundedSender<Report>,
-    ) {
+        parameters: BenchParameters,
+    ) -> Result<()> {
         let core_count = self.core_count();
 
         let address = match (&self.topology, &self.shotover) {
@@ -437,68 +444,79 @@ impl Bench for CassandraBench {
             Topology::Single => "tests/test-configs/cassandra-passthrough",
             Topology::Cluster3 => "tests/test-configs/cassandra-cluster-v4",
         };
-        {
-            let _db_instance = match (&self.db, &self.topology) {
-                (CassandraDb::Cassandra, _) => CassandraDbInstance::Compose(docker_compose(
-                    &format!("{config_dir}/docker-compose.yaml"),
-                )),
-                (CassandraDb::Mocked, Topology::Single) => CassandraDbInstance::Mocked(
-                    test_helpers::mock_cassandra::start(core_count.cassandra, 9043),
-                ),
-                (CassandraDb::Mocked, Topology::Cluster3) => {
-                    panic!("Mocked cassandra database does not provide a clustered mode")
-                }
-            };
-            let mut profiler = ProfilerRunner::new(profiling);
-            let shotover = match self.shotover {
-                Shotover::Standard => Some(
-                    ShotoverProcessBuilder::new_with_topology(&format!(
-                        "{config_dir}/topology.yaml"
-                    ))
+
+        let _db_instance = match (&self.db, &self.topology) {
+            (CassandraDb::Cassandra, _) => CassandraDbInstance::Compose(docker_compose(&format!(
+                "{config_dir}/docker-compose.yaml"
+            ))),
+            (CassandraDb::Mocked, Topology::Single) => CassandraDbInstance::Mocked(
+                test_helpers::mock_cassandra::start(core_count.cassandra, 9043),
+            ),
+            (CassandraDb::Mocked, Topology::Cluster3) => {
+                panic!("Mocked cassandra database does not provide a clustered mode")
+            }
+        };
+        let mut profiler = ProfilerRunner::new(profiling);
+        let shotover = match self.shotover {
+            Shotover::Standard => Some(
+                ShotoverProcessBuilder::new_with_topology(&format!("{config_dir}/topology.yaml"))
                     .with_cores(core_count.shotover as u32)
                     .with_profile(profiler.shotover_profile())
                     .start()
                     .await,
-                ),
-                Shotover::None => None,
-                Shotover::ForcedMessageParsed => todo!(),
-            };
-            profiler.run(&shotover);
+            ),
+            Shotover::None => None,
+            Shotover::ForcedMessageParsed => todo!(),
+        };
+        profiler.run(&shotover);
 
-            let session = match (self.protocol, self.driver) {
-                (CassandraProtocol::V4, CassandraDriver::Scylla) => {
-                    Arc::new(CassandraSession::Scylla(
-                        ScyllaSessionBuilder::new()
-                            .known_nodes([address])
-                            .user("cassandra", "cassandra")
-                            .compression(match self.compression {
-                                Compression::None => None,
-                                Compression::Lz4 => Some(ScyllaCompression::Lz4),
-                            })
-                            .build()
-                            .await
-                            .unwrap(),
-                    ))
-                }
-                (_, CassandraDriver::Scylla) => {
-                    panic!("Must use CassandraProtocol::V4 with CassandraDriver:Scylla");
-                }
-                (_, CassandraDriver::CdrsTokio) => {
-                    let cluster_config = NodeTcpConfigBuilder::new()
-                        .with_contact_point(address.into())
-                        .with_version(match self.protocol {
-                            CassandraProtocol::V3 => Version::V3,
-                            CassandraProtocol::V4 => Version::V4,
-                            CassandraProtocol::V5 => Version::V5,
-                        })
-                        .build()
-                        .await
-                        .unwrap();
-                    Arc::new(CassandraSession::CdrsTokio(
-                        TcpSessionBuilder::new(
-                            RoundRobinLoadBalancingStrategy::new(),
-                            cluster_config,
-                        )
+        self.execute_run(address, &parameters).await;
+
+        if let Some(shotover) = shotover {
+            shotover.shutdown_and_then_consume_events(&[]).await;
+        }
+
+        Ok(())
+    }
+
+    async fn run_bencher(
+        &self,
+        resources: &str,
+        parameters: BenchParameters,
+        reporter: UnboundedSender<Report>,
+    ) {
+        // only one string field so we just directly store the value in resources
+        let address = resources;
+
+        let session = match (self.protocol, self.driver) {
+            (CassandraProtocol::V4, CassandraDriver::Scylla) => Arc::new(CassandraSession::Scylla(
+                ScyllaSessionBuilder::new()
+                    .known_nodes([address])
+                    .user("cassandra", "cassandra")
+                    .compression(match self.compression {
+                        Compression::None => None,
+                        Compression::Lz4 => Some(ScyllaCompression::Lz4),
+                    })
+                    .build()
+                    .await
+                    .unwrap(),
+            )),
+            (_, CassandraDriver::Scylla) => {
+                panic!("Must use CassandraProtocol::V4 with CassandraDriver:Scylla");
+            }
+            (_, CassandraDriver::CdrsTokio) => {
+                let cluster_config = NodeTcpConfigBuilder::new()
+                    .with_contact_point(address.into())
+                    .with_version(match self.protocol {
+                        CassandraProtocol::V3 => Version::V3,
+                        CassandraProtocol::V4 => Version::V4,
+                        CassandraProtocol::V5 => Version::V5,
+                    })
+                    .build()
+                    .await
+                    .unwrap();
+                Arc::new(CassandraSession::CdrsTokio(
+                    TcpSessionBuilder::new(RoundRobinLoadBalancingStrategy::new(), cluster_config)
                         .with_compression(match self.compression {
                             Compression::None => CdrsCompression::None,
                             Compression::Lz4 => CdrsCompression::Lz4,
@@ -506,20 +524,13 @@ impl Bench for CassandraBench {
                         .build()
                         .await
                         .unwrap(),
-                    ))
-                }
-            };
-
-            self.operation.prepare(&session, &self.db).await;
-
-            self.operation
-                .run(&session, reporter, operations_per_second, runtime_seconds)
-                .await;
-
-            if let Some(shotover) = shotover {
-                shotover.shutdown_and_then_consume_events(&[]).await;
+                ))
             }
-        }
+        };
+
+        self.operation.prepare(&session, &self.db).await;
+
+        self.operation.run(&session, reporter, parameters).await;
     }
 }
 

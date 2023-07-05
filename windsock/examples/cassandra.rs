@@ -1,3 +1,4 @@
+use anyhow::Result;
 use async_trait::async_trait;
 use docker_compose_runner::{DockerCompose, Image};
 use scylla::SessionBuilder;
@@ -9,7 +10,7 @@ use std::{
     time::{Duration, Instant},
 };
 use tokio::sync::mpsc::UnboundedSender;
-use windsock::{Bench, BenchTask, Profiling, Report, Windsock};
+use windsock::{Bench, BenchParameters, BenchTask, Profiling, Report, Windsock};
 
 fn main() {
     set_working_dir();
@@ -53,20 +54,35 @@ impl Bench for CassandraBench {
         .collect()
     }
 
-    async fn run(
+    async fn orchestrate_cloud(
         &self,
+        _running_in_release: bool,
         _profiling: Profiling,
-        local: bool,
-        runtime_seconds: u32,
-        operations_per_second: Option<u64>,
+        _bench_parameters: BenchParameters,
+    ) -> Result<()> {
+        todo!()
+    }
+
+    async fn orchestrate_local(
+        &self,
+        _running_in_release: bool,
+        _profiling: Profiling,
+        parameters: BenchParameters,
+    ) -> Result<()> {
+        let _docker_compose = docker_compose("examples/cassandra-docker-compose.yaml");
+        let address = "127.0.0.1:9042";
+
+        self.execute_run(address, &parameters).await;
+
+        Ok(())
+    }
+
+    async fn run_bencher(
+        &self,
+        _resources: &str,
+        parameters: BenchParameters,
         reporter: UnboundedSender<Report>,
     ) {
-        let _docker_compose = if local {
-            docker_compose("examples/cassandra-docker-compose.yaml")
-        } else {
-            todo!("create instances on real infrastructure that reflects production use, that might mean spinning up instances on AWS or deploying and using physical infrastructure")
-        };
-
         let session = Arc::new(
             SessionBuilder::new()
                 .known_nodes(["172.16.1.2:9042"])
@@ -78,13 +94,13 @@ impl Bench for CassandraBench {
         );
 
         let tasks = BenchTaskCassandra { session }
-            .spawn_tasks(reporter.clone(), operations_per_second)
+            .spawn_tasks(reporter.clone(), parameters.operations_per_second)
             .await;
 
         let start = Instant::now();
         reporter.send(Report::Start).unwrap();
 
-        for _ in 0..runtime_seconds {
+        for _ in 0..parameters.runtime_seconds {
             let second = Instant::now();
             tokio::time::sleep(Duration::from_secs(1)).await;
             reporter
