@@ -20,7 +20,13 @@ use tokio::task::JoinHandle;
 use tokio::time;
 use tokio::time::timeout;
 use tokio::time::Duration;
-use tokio_tungstenite::{tungstenite::protocol::Message as WsMessage, WebSocketStream};
+use tokio_tungstenite::{
+    tungstenite::{
+        handshake::server::{Request, Response},
+        protocol::Message as WsMessage,
+    },
+    WebSocketStream,
+};
 use tokio_util::codec::{Decoder, Encoder, FramedRead, FramedWrite};
 use tracing::Instrument;
 use tracing::{debug, error, warn};
@@ -548,7 +554,20 @@ impl<C: CodecBuilder + 'static> Handler<C> {
 
         match transport {
             Transport::WebSocket => {
-                let ws_stream = tokio_tungstenite::accept_async(stream)
+                let websocket_subprotocol = codec_builder.websocket_subprotocol();
+
+                let callback = |_request: &Request, mut response: Response| {
+                    let response_headers = response.headers_mut();
+
+                    response_headers.append(
+                        "Sec-WebSocket-Protocol",
+                        websocket_subprotocol.parse().unwrap(),
+                    );
+
+                    Ok(response)
+                };
+
+                let ws_stream = tokio_tungstenite::accept_hdr_async(stream, callback)
                     .await
                     .expect("Error during the websocket handshake occurred");
 
