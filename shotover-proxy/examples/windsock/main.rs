@@ -116,6 +116,7 @@ fn main() {
         .chain(kafka_benches)
         .chain(redis_benches)
         .collect(),
+        None,
         &["release"],
     )
     .run();

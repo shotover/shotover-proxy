@@ -19,6 +19,7 @@ fn main() {
             Box::new(CassandraBench::new(Some(Compression::Lz4))),
             Box::new(CassandraBench::new(None)),
         ],
+        None,
         &["release"],
     )
     .run();

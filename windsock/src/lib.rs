@@ -1,9 +1,11 @@
 mod bench;
 mod cli;
+pub mod cloud;
 mod data;
 mod filter;
 mod report;
 mod tables;
+
 pub use bench::{Bench, BenchParameters, BenchTask, Profiling};
 pub use report::Report;
 
@@ -11,6 +13,7 @@ use anyhow::{anyhow, Result};
 use bench::BenchState;
 use clap::Parser;
 use cli::Args;
+use cloud::{Cloud, NoCloud};
 use filter::Filter;
 use report::ReportArchive;
 use std::process::exit;
@@ -18,6 +21,7 @@ use tokio::runtime::Runtime;
 
 pub struct Windsock {
     benches: Vec<BenchState>,
+    cloud: Box<dyn Cloud>,
     running_in_release: bool,
 }
 
@@ -27,7 +31,11 @@ impl Windsock {
     /// e.g. the database handle can be put behind a mutex and only resetup when actually neccessary
     ///
     /// `release_profiles` specifies which cargo profiles Windsock will run under, if a different profile is used windsock will refuse to run.
-    pub fn new(benches: Vec<Box<dyn Bench>>, release_profiles: &[&str]) -> Self {
+    pub fn new(
+        benches: Vec<Box<dyn Bench>>,
+        cloud: Option<Box<dyn Cloud>>,
+        release_profiles: &[&str],
+    ) -> Self {
         let running_in_release = release_profiles.contains(&env!("PROFILE"));
 
         Windsock {
@@ -35,6 +43,7 @@ impl Windsock {
                 .into_iter()
                 .map(|bench| BenchState::new(bench))
                 .collect(),
+            cloud: cloud.unwrap_or(Box::new(NoCloud)),
             running_in_release,
         }
     }
@@ -58,8 +67,10 @@ impl Windsock {
         if !args.disable_release_safety_check && !running_in_release {
             panic!("Windsock was not run with a configured release profile, maybe try running with the `--release` flag. Failing that check the release profiles provided in `Windsock::new(..)`.");
         }
-
-        if let Some(compare_by_name) = &args.compare_by_name {
+        if args.cleanup_cloud_resources {
+            let rt = create_runtime(None);
+            rt.block_on(self.cloud.cleanup_resources());
+        } else if let Some(compare_by_name) = &args.compare_by_name {
             tables::compare_by_name(compare_by_name)?;
         } else if let Some(compare_by_name) = &args.results_by_name {
             tables::results_by_name(compare_by_name)?;

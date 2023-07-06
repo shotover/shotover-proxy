@@ -36,6 +36,11 @@ pub struct Args {
     #[clap(long)]
     pub generate_webpage: bool,
 
+    /// Windsock will automatically cleanup cloud resources after benches have been run.
+    /// However this command exists to force cleanup in case windsock panicked before automatic cleanup could occur.
+    #[clap(long)]
+    pub cleanup_cloud_resources: bool,
+
     /// Display results from the last benchmark run by: comparing various benches against a specific base bench
     /// The first bench name listed becomes the base bench
     /// --compare_by_name "base_name other_name1 other_name2"
