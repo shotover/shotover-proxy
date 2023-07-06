@@ -926,7 +926,7 @@ async fn passthrough_websockets() {
     .start()
     .await;
 
-    let mut session = cql_ws::Session::new("ws://0.0.0.0:9042", false).await;
+    let mut session = cql_ws::Session::new("ws://0.0.0.0:9042").await;
     let rows = session.query("SELECT bootstrapped FROM system.local").await;
     assert_eq!(rows, vec![vec![CassandraType::Varchar("COMPLETED".into())]]);
 
@@ -945,7 +945,7 @@ async fn encode_websockets() {
     .start()
     .await;
 
-    let mut session = cql_ws::Session::new("ws://0.0.0.0:9042", false).await;
+    let mut session = cql_ws::Session::new("ws://0.0.0.0:9042").await;
     let rows = session.query("SELECT bootstrapped FROM system.local").await;
     assert_eq!(rows, vec![vec![CassandraType::Varchar("COMPLETED".into())]]);
 
@@ -968,7 +968,7 @@ async fn passthrough_tls_websockets() {
 
     let ca_cert = "tests/test-configs/docker-images/cassandra-tls-4.0.6/certs/localhost_CA.crt";
 
-    let mut session = cql_ws::Session::new_tls("wss://0.0.0.0:9042", ca_cert, false).await;
+    let mut session = cql_ws::Session::new_tls("wss://0.0.0.0:9042", ca_cert).await;
     let rows = session.query("SELECT bootstrapped FROM system.local").await;
     assert_eq!(rows, vec![vec![CassandraType::Varchar("COMPLETED".into())]]);
 
