@@ -269,16 +269,20 @@ pub struct Handler<C: CodecBuilder> {
     _permit: OwnedSemaphorePermit,
 }
 
-fn spawn_websocket_read_write_tasks<
+async fn spawn_websocket_read_write_tasks<
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
     C: CodecBuilder + 'static,
 >(
     codec: C,
-    ws_stream: WebSocketStream<S>,
+    stream: S,
     in_tx: UnboundedSender<Messages>,
     mut out_rx: UnboundedReceiver<Messages>,
     out_tx: UnboundedSender<Messages>,
 ) {
+    let ws_stream = tokio_tungstenite::accept_async(stream)
+        .await
+        .expect("Error during the websocket handshake occurred");
+
     let (mut writer, mut reader) = ws_stream.split();
     let (mut decoder, mut encoder) = codec.build();
 
@@ -579,30 +583,23 @@ impl<C: CodecBuilder + 'static> Handler<C> {
                         Err(AcceptError::Disconnected) => return Ok(()),
                         Err(AcceptError::Failure(err)) => return Err(err),
                     };
-
-                    let ws_stream = tokio_tungstenite::accept_async(tls_stream)
-                        .await
-                        .expect("Error during the websocket handshake occurred");
-
                     spawn_websocket_read_write_tasks(
                         codec_builder,
-                        ws_stream,
+                        tls_stream,
                         in_tx,
                         out_rx,
                         out_tx.clone(),
-                    );
+                    )
+                    .await;
                 } else {
-                    let ws_stream = tokio_tungstenite::accept_async(stream)
-                        .await
-                        .expect("Error during the websocket handshake occurred");
-
                     spawn_websocket_read_write_tasks(
                         codec_builder,
-                        ws_stream,
+                        stream,
                         in_tx,
                         out_rx,
                         out_tx.clone(),
-                    );
+                    )
+                    .await;
                 };
             }
             Transport::Tcp => {
