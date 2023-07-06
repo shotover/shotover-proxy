@@ -1,4 +1,5 @@
-use crate::common::Shotover;
+use crate::aws::{Ec2InstanceWithDocker, Ec2InstanceWithShotover};
+use crate::common::{rewritten_file, Shotover};
 use crate::profilers::ProfilerRunner;
 use anyhow::Result;
 use async_trait::async_trait;
@@ -7,6 +8,7 @@ use rdkafka::config::ClientConfig;
 use rdkafka::consumer::{Consumer, StreamConsumer};
 use rdkafka::producer::{FutureProducer, FutureRecord};
 use rdkafka::util::Timeout;
+use std::path::Path;
 use std::sync::Arc;
 use std::{collections::HashMap, time::Duration};
 use test_helpers::{docker_compose::docker_compose, shotover_process::ShotoverProcessBuilder};
@@ -63,9 +65,38 @@ impl Bench for KafkaBench {
         &self,
         _running_in_release: bool,
         _profiling: Profiling,
-        _bench_parameters: BenchParameters,
+        parameters: BenchParameters,
     ) -> Result<()> {
-        todo!()
+        let aws = crate::aws::WindsockAws::get().await;
+
+        let (kafka_instance, bench_instance, shotover_instance) = futures::join!(
+            aws.create_docker_instance(),
+            aws.create_bencher_instance(),
+            aws.create_shotover_instance()
+        );
+
+        let kafka_ip = kafka_instance.instance.private_ip().to_string();
+        let shotover_ip = shotover_instance.instance.private_ip().to_string();
+
+        let (_, running_shotover) = futures::join!(
+            run_aws_kafka(kafka_instance.clone()),
+            run_aws_shotover(shotover_instance.clone(), self.shotover, kafka_ip.clone())
+        );
+
+        let destination_ip = if running_shotover.is_some() {
+            shotover_ip
+        } else {
+            kafka_ip
+        };
+
+        bench_instance
+            .run_bencher(&self.run_args(&destination_ip, &parameters), &self.name())
+            .await;
+
+        if let Some(running_shotover) = running_shotover {
+            running_shotover.shutdown().await;
+        }
+        Ok(())
     }
 
     async fn orchestrate_local(
@@ -112,7 +143,6 @@ impl Bench for KafkaBench {
         Ok(())
     }
 
-    /// Perform benchmarking utilizing the resources arg to learn ip addresses of cloud resources that have been already setup.
     async fn run_bencher(
         &self,
         resources: &str,
@@ -177,6 +207,48 @@ impl Bench for KafkaBench {
             task.await.unwrap();
         }
     }
+}
+
+async fn run_aws_shotover(
+    instance: Arc<Ec2InstanceWithShotover>,
+    shotover: Shotover,
+    kafka_ip: String,
+) -> Option<crate::aws::RunningShotover> {
+    let config_dir = "tests/test-configs/kafka/bench";
+    let ip = instance.instance.private_ip().to_string();
+    match shotover {
+        Shotover::Standard | Shotover::ForcedMessageParsed => {
+            let encoded = match shotover {
+                Shotover::Standard => "",
+                Shotover::ForcedMessageParsed => "-encode",
+                Shotover::None => unreachable!(),
+            };
+            let topology = rewritten_file(
+                Path::new(&format!("{config_dir}/topology{encoded}-cloud.yaml")),
+                &[("HOST_ADDRESS", &ip), ("KAFKA_ADDRESS", &kafka_ip)],
+            )
+            .await;
+            Some(instance.run_shotover(&topology).await)
+        }
+        Shotover::None => None,
+    }
+}
+
+async fn run_aws_kafka(instance: Arc<Ec2InstanceWithDocker>) {
+    let ip = instance.instance.private_ip().to_string();
+    instance
+        .run_container(
+            "bitnami/kafka:3.4.0-debian-11-r22",
+            &[
+                ("ALLOW_PLAINTEXT_LISTENER".to_owned(), "yes".to_owned()),
+                (
+                    "KAFKA_CFG_ADVERTISED_LISTENERS".to_owned(),
+                    format!("PLAINTEXT://{ip}:9092"),
+                ),
+                ("KAFKA_HEAP_OPTS".to_owned(), "-Xmx512M -Xms512M".to_owned()),
+            ],
+        )
+        .await;
 }
 
 #[derive(Clone)]

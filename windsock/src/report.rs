@@ -80,7 +80,7 @@ impl Percentile {
 type Percentiles = [Duration; Percentile::COUNT];
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub(crate) struct ReportArchive {
+pub struct ReportArchive {
     pub(crate) running_in_release: bool,
     pub(crate) tags: Tags,
     pub(crate) operations_report: Option<OperationsReport>,
@@ -196,7 +196,9 @@ impl ReportArchive {
     }
 
     pub fn last_run_path() -> PathBuf {
-        windsock_path().join("last_run")
+        let path = windsock_path().join("last_run");
+        std::fs::create_dir_all(&path).unwrap();
+        path
     }
 
     pub fn baseline_path() -> PathBuf {
