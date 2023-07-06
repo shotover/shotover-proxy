@@ -1,6 +1,7 @@
 use crate::cli::Args;
 use crate::report::{report_builder, Report, ReportArchive};
 use crate::tables::ReportColumn;
+use anyhow::Result;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -27,17 +28,9 @@ impl BenchState {
         }
     }
 
-    pub async fn run(&mut self, args: &Args, running_in_release: bool) {
+    pub async fn orchestrate(&mut self, args: &Args, running_in_release: bool) {
         let name = self.tags.get_name();
         println!("Running {:?}", name);
-
-        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-        let process = tokio::spawn(report_builder(
-            self.tags.clone(),
-            rx,
-            args.operations_per_second,
-            running_in_release,
-        ));
 
         let profilers_to_use = args.profilers.clone();
         let results_path = if !profilers_to_use.is_empty() {
@@ -51,23 +44,37 @@ impl BenchState {
         };
 
         self.bench
-            .run(
+            .orchestrate_local(
+                running_in_release,
                 Profiling {
                     results_path,
                     profilers_to_use,
                 },
-                true,
-                args.bench_length_seconds.unwrap_or(15),
-                args.operations_per_second,
-                tx,
+                BenchParameters::from_args(args),
             )
-            .await;
-        let report = process.await.unwrap();
+            .await
+            .unwrap();
 
         crate::tables::display_results_table(&[ReportColumn {
             baseline: ReportArchive::load_baseline(&name).unwrap(),
-            current: report,
+            current: ReportArchive::load(&name).unwrap(),
         }]);
+    }
+
+    pub async fn run(&mut self, args: &Args, running_in_release: bool, resources: &str) {
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        let process = tokio::spawn(report_builder(
+            self.tags.clone(),
+            rx,
+            args.operations_per_second,
+            running_in_release,
+        ));
+
+        self.bench
+            .run_bencher(resources, BenchParameters::from_args(args), tx)
+            .await;
+
+        process.await.unwrap();
     }
 
     // TODO: will return None when running in non-local setup
@@ -93,16 +100,88 @@ pub trait Bench {
         1
     }
 
-    /// Runs the benchmark.
-    /// Setup, benching and teardown all take place in here.
-    async fn run(
+    /// Windsock will call this method to orchestrate the bench in cloud mode.
+    /// It must setup cloud resources to run the bench in a cloud and then start the bench returning the results on conclusion
+    async fn orchestrate_cloud(
         &self,
+        running_in_release: bool,
         profiling: Profiling,
-        local: bool,
-        runtime_seconds: u32,
-        operations_per_second: Option<u64>,
+        bench_parameters: BenchParameters,
+    ) -> Result<()>;
+
+    /// Windsock will call this method to orchestrate the bench in local mode.
+    /// It must setup local resources to run the bench locally and then start the bench returning the results on conclusion
+    async fn orchestrate_local(
+        &self,
+        running_in_release: bool,
+        profiling: Profiling,
+        bench_parameters: BenchParameters,
+    ) -> Result<()>;
+
+    /// Windsock will call this method to run the bencher.
+    /// But the implementation of `orchestrate_local` or `orchestrate_cloud` must run the bencher through windsock in some way.
+    /// This will be:
+    /// * In the case of `orchestrate_cloud`, the windsock binary must be uploaded to a cloud VM and `windsock --internal-run` executed there.
+    /// * In the case of `orchestrate_local`, call `Bench::execute_run` to indirectly call this method by executing another instance of the windsock executable.
+    ///
+    /// The `resources` arg is a string that is passed in from the argument to `--internal-run` or at a higher level the argument to `Bench::execute_run`.
+    /// Use this string to instruct the bencher where to find the resources it needs. e.g. the IP address of the DB to benchmark.
+    /// To pass in multiple resources it is recommended to use a serialization method such as `serde-json`.
+    async fn run_bencher(
+        &self,
+        resources: &str,
+        bench_parameters: BenchParameters,
         reporter: UnboundedSender<Report>,
     );
+
+    /// Call within `Bench::orchestrate_local` to call `Bench::run`
+    async fn execute_run(&self, resources: &str, bench_parameters: &BenchParameters) {
+        let runtime_seconds = bench_parameters.runtime_seconds.to_string();
+        let ops = bench_parameters
+            .operations_per_second
+            .map(|x| x.to_string());
+
+        let internal_run = format!("{} {}", self.name(), resources);
+        let mut args = vec![
+            "--bench-length-seconds",
+            &runtime_seconds,
+            "--internal-run",
+            &internal_run,
+        ];
+        if let Some(ops) = &ops {
+            args.push("--operations-per-second");
+            args.push(ops);
+        };
+
+        let output = tokio::process::Command::new(std::env::current_exe().unwrap().as_os_str())
+            .args(&args)
+            .output()
+            .await
+            .unwrap();
+        if !output.status.success() {
+            let stdout = String::from_utf8(output.stdout).unwrap();
+            let stderr = String::from_utf8(output.stderr).unwrap();
+            panic!("Bench run failed:\nstdout:\n{stdout}\nstderr:\n{stderr}")
+        }
+    }
+
+    fn name(&self) -> String {
+        Tags(self.tags()).get_name()
+    }
+}
+
+pub struct BenchParameters {
+    pub runtime_seconds: u32,
+    pub operations_per_second: Option<u64>,
+}
+
+impl BenchParameters {
+    fn from_args(args: &Args) -> Self {
+        BenchParameters {
+            runtime_seconds: args.bench_length_seconds.unwrap_or(15),
+            operations_per_second: args.operations_per_second,
+        }
+    }
 }
 
 pub struct Profiling {
