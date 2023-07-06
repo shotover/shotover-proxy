@@ -1,0 +1,26 @@
+[package]
+name = "aws-throwaway"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+aws-sdk-ec2 = "0.28.0"
+aws-sdk-iam = "0.28.0"
+aws-config = "0.55.3"
+async-trait.workspace = true
+uuid.workspace = true
+tokio.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+russh = "0.37.1"
+russh-keys = "0.37.1"
+base64 = "0.21.2"
+ssh-key = { version = "0.5.1", features = ["ed25519"] }
+
+[dev-dependencies]
+tracing-subscriber.workspace = true
+tracing-appender = "0.2.0"
+clap = { version = "4.0.4", features = ["cargo", "derive"] }
