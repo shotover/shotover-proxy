@@ -1,5 +1,6 @@
 use crate::common::Shotover;
 use crate::profilers::ProfilerRunner;
+use anyhow::Result;
 use async_trait::async_trait;
 use futures::StreamExt;
 use rdkafka::config::ClientConfig;
@@ -10,7 +11,7 @@ use std::sync::Arc;
 use std::{collections::HashMap, time::Duration};
 use test_helpers::{docker_compose::docker_compose, shotover_process::ShotoverProcessBuilder};
 use tokio::{sync::mpsc::UnboundedSender, task::JoinHandle, time::Instant};
-use windsock::{Bench, Profiling, Report};
+use windsock::{Bench, BenchParameters, Profiling, Report};
 
 pub struct KafkaBench {
     shotover: Shotover,
@@ -58,14 +59,21 @@ impl Bench for KafkaBench {
         ProfilerRunner::supported_profilers(self.shotover)
     }
 
-    async fn run(
+    async fn orchestrate_cloud(
         &self,
+        _running_in_release: bool,
+        _profiling: Profiling,
+        _bench_parameters: BenchParameters,
+    ) -> Result<()> {
+        todo!()
+    }
+
+    async fn orchestrate_local(
+        &self,
+        _running_in_release: bool,
         profiling: Profiling,
-        _local: bool,
-        runtime_seconds: u32,
-        operations_per_second: Option<u64>,
-        reporter: UnboundedSender<Report>,
-    ) {
+        parameters: BenchParameters,
+    ) -> Result<()> {
         let config_dir = "tests/test-configs/kafka/bench";
         let _compose = docker_compose(&format!("{}/docker-compose.yaml", config_dir));
 
@@ -88,15 +96,34 @@ impl Bench for KafkaBench {
             ),
         };
 
-        profiler.run(&shotover);
-
-        let brokers = match self.shotover {
+        let broker_address = match self.shotover {
             Shotover::ForcedMessageParsed | Shotover::Standard => "127.0.0.1:9192",
             Shotover::None => "127.0.0.1:9092",
         };
 
+        profiler.run(&shotover);
+
+        self.execute_run(broker_address, &parameters).await;
+
+        if let Some(shotover) = shotover {
+            shotover.shutdown_and_then_consume_events(&[]).await;
+        }
+
+        Ok(())
+    }
+
+    /// Perform benchmarking utilizing the resources arg to learn ip addresses of cloud resources that have been already setup.
+    async fn run_bencher(
+        &self,
+        resources: &str,
+        parameters: BenchParameters,
+        reporter: UnboundedSender<Report>,
+    ) {
+        // only one string field so we just directly store the value in resources
+        let broker_address = resources;
+
         let producer: FutureProducer = ClientConfig::new()
-            .set("bootstrap.servers", brokers)
+            .set("bootstrap.servers", broker_address)
             .set("message.timeout.ms", "5000")
             .create()
             .unwrap();
@@ -113,7 +140,7 @@ impl Bench for KafkaBench {
         producer.produce_one().await;
 
         let consumer: StreamConsumer = ClientConfig::new()
-            .set("bootstrap.servers", brokers)
+            .set("bootstrap.servers", broker_address)
             .set("group.id", "some_group")
             .set("session.timeout.ms", "6000")
             .set("enable.auto.commit", "false")
@@ -129,13 +156,13 @@ impl Bench for KafkaBench {
         reporter.send(Report::Start).unwrap();
         tasks.extend(
             producer
-                .spawn_tasks(reporter.clone(), operations_per_second)
+                .spawn_tasks(reporter.clone(), parameters.operations_per_second)
                 .await,
         );
 
         let start = Instant::now();
 
-        for _ in 0..runtime_seconds {
+        for _ in 0..parameters.runtime_seconds {
             let second = Instant::now();
             tokio::time::sleep(Duration::from_secs(1)).await;
             reporter
@@ -148,10 +175,6 @@ impl Bench for KafkaBench {
         // make sure the tasks complete before we drop the database they are connecting to
         for task in tasks {
             task.await.unwrap();
-        }
-
-        if let Some(shotover) = shotover {
-            shotover.shutdown_and_then_consume_events(&[]).await;
         }
     }
 }
