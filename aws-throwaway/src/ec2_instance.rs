@@ -7,6 +7,7 @@ use crate::ssh::SshConnection;
 pub struct Ec2Instance {
     public_ip: IpAddr,
     private_ip: IpAddr,
+    client_private_key: String,
     ssh: SshConnection,
 }
 
@@ -17,6 +18,10 @@ impl Ec2Instance {
 
     pub fn private_ip(&self) -> IpAddr {
         self.private_ip
+    }
+
+    pub fn client_private_key(&self) -> &str {
+        &self.client_private_key
     }
 
     pub fn ssh(&self) -> &SshConnection {
@@ -69,6 +74,7 @@ impl Ec2Instance {
                                 ssh,
                                 public_ip,
                                 private_ip,
+                                client_private_key: client_private_key.to_owned(),
                             };
                         }
                     };

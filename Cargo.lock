@@ -570,6 +570,7 @@ dependencies = [
  "aws-sdk-ec2",
  "aws-sdk-iam",
  "base64 0.21.2",
+ "clap",
  "russh",
  "russh-keys",
  "ssh-key",
