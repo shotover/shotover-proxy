@@ -128,6 +128,10 @@ impl CodecBuilder for CassandraCodecBuilder {
             CassandraEncoder::new(version, compression, self.direction, handshake_complete),
         )
     }
+
+    fn websocket_subprotocol(&self) -> &'static str {
+        "cql"
+    }
 }
 
 #[derive(Clone)]

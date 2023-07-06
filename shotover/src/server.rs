@@ -156,7 +156,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                 id = self.connection_count,
                 source = self.source_name.as_str(),
             );
-            let transport = self.transport.clone();
+            let transport = self.transport;
             async {
                 // Accept a new socket. This will attempt to perform error handling.
                 // The `accept` method internally attempts to recover errors, so an
@@ -186,7 +186,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                 self.connection_handles.push(tokio::spawn(
                     async move {
                         // Process the connection. If an error is encountered, log it.
-                        if let Err(err) = handler.run(stream, transport.clone()).await {
+                        if let Err(err) = handler.run(stream, transport).await {
                             error!(
                                 "{:?}",
                                 err.context("connection was unexpectedly terminated")
@@ -553,11 +553,16 @@ impl<C: CodecBuilder + 'static> Handler<C> {
         let codec_builder = self.codec.clone();
 
         match transport {
-            Transport::WebSocket(subprotocol) => {
+            Transport::WebSocket => {
+                let websocket_subprotocol = codec_builder.websocket_subprotocol();
+
                 let callback = |_request: &Request, mut response: Response| {
                     let response_headers = response.headers_mut();
 
-                    response_headers.append("Sec-WebSocket-Protocol", subprotocol.parse().unwrap());
+                    response_headers.append(
+                        "Sec-WebSocket-Protocol",
+                        websocket_subprotocol.parse().unwrap(),
+                    );
 
                     Ok(response)
                 };

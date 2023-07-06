@@ -36,10 +36,7 @@ impl CassandraConfig {
                 self.hard_connection_limit,
                 self.tls.clone(),
                 self.timeout,
-                match &self.transport {
-                    Some(Transport::WebSocket(_)) => Some(Transport::WebSocket("cql".into())),
-                    transport => transport.clone(),
-                },
+                self.transport,
             )
             .await?,
         )])

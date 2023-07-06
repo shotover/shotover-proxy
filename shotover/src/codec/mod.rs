@@ -101,4 +101,6 @@ pub trait CodecBuilder: Clone + Send {
     fn build(&self) -> (Self::Decoder, Self::Encoder);
 
     fn new(direction: Direction) -> Self;
+
+    fn websocket_subprotocol(&self) -> &'static str;
 }
