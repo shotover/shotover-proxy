@@ -15,7 +15,7 @@ console = "0.15.5"
 copy_dir = "0.1.2"
 docker-compose-runner = "0.1.0"
 serde = { workspace = true, features = ["derive"] }
-strum = { version = "0.24.1", features = ["derive"] }
+strum = { version = "0.25.0", features = ["derive"] }
 tokio.workspace = true
 
 [dev-dependencies]

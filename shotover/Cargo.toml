@@ -25,7 +25,7 @@ governor = { version = "0.5.0", default-features = false, features = ["std", "ji
 nonzero_ext = "0.3.0"
 version-compare = "0.1"
 rand = { features = ["small_rng"], workspace = true }
-lz4_flex = "0.10.0"
+lz4_flex = "0.11.0"
 clap.workspace = true
 itertools.workspace = true
 rand_distr.workspace = true
@@ -40,7 +40,7 @@ hex.workspace = true
 hex-literal.workspace = true
 async-trait.workspace = true
 typetag.workspace = true
-tokio-tungstenite = "0.18.0"
+tokio-tungstenite = "0.19.0"
 
 # Error handling
 thiserror = "1.0"
@@ -56,7 +56,7 @@ serde_yaml.workspace = true
 bincode.workspace = true
 num = { version = "0.4.0", features = ["serde"] }
 uuid.workspace = true
-bigdecimal = {version ="0.3.0", features = ["serde"] }
+bigdecimal = {version = "0.4.0", features = ["serde"] }
 base64 = "0.21.0"
 
 #Observability
@@ -77,7 +77,7 @@ ordered-float = { version = "3.0.0", features = ["serde"] }
 #Crypto
 rusoto_kms = "0.48.0"
 rusoto_signature = "0.48.0"
-strum_macros = "0.24"
+strum_macros = "0.25"
 chacha20poly1305 = { version = "0.10.0", features = ["std"] }
 generic-array = { version = "0.14", features = ["serde"] }
 kafka-protocol = "0.6.0"
@@ -89,7 +89,7 @@ kafka-protocol = "0.6.0"
 rustls = { version = "0.21.0", features = ["dangerous_configuration"] }
 tokio-rustls = "0.24"
 rustls-pemfile = "1.0.2"
-rustls-webpki = "0.100.1"
+rustls-webpki = "0.101.1"
 string = "0.3.0"
 xxhash-rust = { version = "0.8.6", features = ["xxh3"] }
 dashmap = "5.4.0"
