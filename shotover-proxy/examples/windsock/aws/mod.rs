@@ -45,7 +45,7 @@ impl WindsockAws {
         }
 
         let instance = Arc::new(Ec2InstanceWithBencher {
-            instance: self.aws.create_ec2_instance(InstanceType::T2Micro).await,
+            instance: self.aws.create_ec2_instance(InstanceType::T2Micro, 8).await,
         });
         instance
             .instance
@@ -66,7 +66,11 @@ impl WindsockAws {
                 return instance.clone();
             }
         }
-        let instance = self.aws.create_ec2_instance(InstanceType::T2Micro).await;
+        let instance = self
+            .aws
+            // databases will need more storage than the shotover or bencher instances
+            .create_ec2_instance(InstanceType::T2Micro, 40)
+            .await;
         instance
         .ssh()
             .shell(
@@ -94,7 +98,7 @@ curl -sSL https://get.docker.com/ | sudo sh"#,
         }
 
         let instance = Arc::new(Ec2InstanceWithShotover {
-            instance: self.aws.create_ec2_instance(InstanceType::T2Micro).await,
+            instance: self.aws.create_ec2_instance(InstanceType::T2Micro, 8).await,
         });
 
         // PROFILE is set in build.rs from PROFILE listed in https://doc.rust-lang.org/cargo/reference/environment-variables.html#environment-variables-cargo-sets-for-build-scripts
