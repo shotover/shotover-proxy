@@ -1176,12 +1176,15 @@ dependencies = [
 [[package]]
 name = "cql-ws"
 version = "0.1.0"
-source = "git+https://github.com/conorbros/cql-ws#22ef6bf087b7bee9864432cf44a928f4c6df717a"
+source = "git+https://github.com/conorbros/cql-ws#4eba0f5171e9b85964be98cc8ba8b763cdc48b12"
 dependencies = [
  "cassandra-protocol",
  "futures-util",
+ "http",
+ "rustls 0.21.2",
+ "rustls-pemfile",
  "tokio",
- "tokio-tungstenite",
+ "tokio-tungstenite 0.19.0",
 ]
 
 [[package]]
@@ -4372,7 +4375,7 @@ dependencies = [
  "tokio-openssl",
  "tokio-rustls 0.24.1",
  "tokio-stream",
- "tokio-tungstenite",
+ "tokio-tungstenite 0.18.0",
  "tokio-util",
  "tracing",
  "tracing-appender",
@@ -4922,7 +4925,21 @@ dependencies = [
  "futures-util",
  "log",
  "tokio",
- "tungstenite",
+ "tungstenite 0.18.0",
+]
+
+[[package]]
+name = "tokio-tungstenite"
+version = "0.19.0"
+source = "git+https://github.com/conorbros/tokio-tungstenite#909b1ca04e02dfd0c7cdd1ff3eda19f6be7dbb12"
+dependencies = [
+ "futures-util",
+ "log",
+ "rustls 0.21.2",
+ "rustls-native-certs",
+ "tokio",
+ "tokio-rustls 0.24.1",
+ "tungstenite 0.19.0",
 ]
 
 [[package]]
@@ -5111,6 +5128,25 @@ dependencies = [
  "httparse",
  "log",
  "rand 0.8.5",
+ "sha1",
+ "thiserror",
+ "url",
+ "utf-8",
+]
+
+[[package]]
+name = "tungstenite"
+version = "0.19.0"
+source = "git+https://github.com/conorbros/tungstenite-rs#a2ec84b8223f0c0f3ece7a08803cf92aa2420065"
+dependencies = [
+ "byteorder",
+ "bytes",
+ "data-encoding",
+ "http",
+ "httparse",
+ "log",
+ "rand 0.8.5",
+ "rustls 0.21.2",
  "sha1",
  "thiserror",
  "url",
