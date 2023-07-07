@@ -43,17 +43,31 @@ impl BenchState {
             PathBuf::new()
         };
 
-        self.bench
-            .orchestrate_local(
-                running_in_release,
-                Profiling {
-                    results_path,
-                    profilers_to_use,
-                },
-                BenchParameters::from_args(args),
-            )
-            .await
-            .unwrap();
+        if args.cloud {
+            self.bench
+                .orchestrate_cloud(
+                    running_in_release,
+                    Profiling {
+                        results_path,
+                        profilers_to_use,
+                    },
+                    BenchParameters::from_args(args),
+                )
+                .await
+                .unwrap();
+        } else {
+            self.bench
+                .orchestrate_local(
+                    running_in_release,
+                    Profiling {
+                        results_path,
+                        profilers_to_use,
+                    },
+                    BenchParameters::from_args(args),
+                )
+                .await
+                .unwrap();
+        }
 
         crate::tables::display_results_table(&[ReportColumn {
             baseline: ReportArchive::load_baseline(&name).unwrap(),
@@ -136,25 +150,9 @@ pub trait Bench {
 
     /// Call within `Bench::orchestrate_local` to call `Bench::run`
     async fn execute_run(&self, resources: &str, bench_parameters: &BenchParameters) {
-        let runtime_seconds = bench_parameters.runtime_seconds.to_string();
-        let ops = bench_parameters
-            .operations_per_second
-            .map(|x| x.to_string());
-
         let internal_run = format!("{} {}", self.name(), resources);
-        let mut args = vec![
-            "--bench-length-seconds",
-            &runtime_seconds,
-            "--internal-run",
-            &internal_run,
-        ];
-        if let Some(ops) = &ops {
-            args.push("--operations-per-second");
-            args.push(ops);
-        };
-
         let output = tokio::process::Command::new(std::env::current_exe().unwrap().as_os_str())
-            .args(&args)
+            .args(run_args_vec(internal_run, bench_parameters))
             .output()
             .await
             .unwrap();
@@ -165,9 +163,32 @@ pub trait Bench {
         }
     }
 
+    /// Call within `Bench::orchestrate_cloud` to determine how to invoke the uploaded windsock executable
+    fn run_args(&self, resources: &str, bench_parameters: &BenchParameters) -> String {
+        let internal_run = format!("\"{} {}\"", self.name(), resources);
+        run_args_vec(internal_run, bench_parameters).join(" ")
+    }
+
     fn name(&self) -> String {
         Tags(self.tags()).get_name()
     }
+}
+
+fn run_args_vec(internal_run: String, bench_parameters: &BenchParameters) -> Vec<String> {
+    let mut args = vec![];
+
+    args.push("--bench-length-seconds".to_owned());
+    args.push(bench_parameters.runtime_seconds.to_string());
+
+    if let Some(ops) = bench_parameters.operations_per_second {
+        args.push("--operations-per-second".to_owned());
+        args.push(ops.to_string());
+    };
+
+    args.push("--internal-run".to_owned());
+    args.push(internal_run);
+
+    args
 }
 
 pub struct BenchParameters {

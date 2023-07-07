@@ -36,6 +36,11 @@ pub struct Args {
     #[clap(long)]
     pub generate_webpage: bool,
 
+    /// By default windsock will run benches on your local machine.
+    /// Set this flag to have windsock run the benches in your configured cloud.
+    #[clap(long)]
+    pub cloud: bool,
+
     /// Windsock will automatically cleanup cloud resources after benches have been run.
     /// However this command exists to force cleanup in case windsock panicked before automatic cleanup could occur.
     #[clap(long)]
