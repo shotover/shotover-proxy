@@ -20,12 +20,9 @@ use tokio::task::JoinHandle;
 use tokio::time;
 use tokio::time::timeout;
 use tokio::time::Duration;
-use tokio_tungstenite::{
-    tungstenite::{
-        handshake::server::{Request, Response},
-        protocol::Message as WsMessage,
-    },
-    WebSocketStream,
+use tokio_tungstenite::tungstenite::{
+    handshake::server::{Request, Response},
+    protocol::Message as WsMessage,
 };
 use tokio_util::codec::{Decoder, Encoder, FramedRead, FramedWrite};
 use tracing::Instrument;
@@ -269,13 +266,32 @@ pub struct Handler<C: CodecBuilder> {
     _permit: OwnedSemaphorePermit,
 }
 
-fn spawn_websocket_read_write_tasks<C: CodecBuilder + 'static>(
+async fn spawn_websocket_read_write_tasks<
+    S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+    C: CodecBuilder + 'static,
+>(
     codec: C,
-    ws_stream: WebSocketStream<TcpStream>,
+    stream: S,
     in_tx: UnboundedSender<Messages>,
     mut out_rx: UnboundedReceiver<Messages>,
     out_tx: UnboundedSender<Messages>,
+    websocket_subprotocol: &str,
 ) {
+    let callback = |_request: &Request, mut response: Response| {
+        let response_headers = response.headers_mut();
+
+        response_headers.append(
+            "Sec-WebSocket-Protocol",
+            websocket_subprotocol.parse().unwrap(),
+        );
+
+        Ok(response)
+    };
+
+    let ws_stream = tokio_tungstenite::accept_hdr_async(stream, callback)
+        .await
+        .expect("Error during the websocket handshake occurred");
+
     let (mut writer, mut reader) = ws_stream.split();
     let (mut decoder, mut encoder) = codec.build();
 
@@ -287,7 +303,8 @@ fn spawn_websocket_read_write_tasks<C: CodecBuilder + 'static>(
                     if let Some(ws_message) = result {
                         match ws_message {
                             Ok(WsMessage::Binary(ws_message_data)) => {
-                                // Entire message is reallocated and copied here due to incompatibility between tokio codecs and tungstenite.
+                                // Entire message is reallocated and copied here due to 
+                                // incompatibility between tokio codecs and tungstenite.
                                 let message = decoder.decode(&mut BytesMut::from(ws_message_data.as_slice()));
                                 match message {
                                     Ok(Some(message)) => {
@@ -556,28 +573,32 @@ impl<C: CodecBuilder + 'static> Handler<C> {
             Transport::WebSocket => {
                 let websocket_subprotocol = codec_builder.websocket_subprotocol();
 
-                let callback = |_request: &Request, mut response: Response| {
-                    let response_headers = response.headers_mut();
-
-                    response_headers.append(
-                        "Sec-WebSocket-Protocol",
-                        websocket_subprotocol.parse().unwrap(),
-                    );
-
-                    Ok(response)
+                if let Some(tls) = &self.tls {
+                    let tls_stream = match tls.accept(stream).await {
+                        Ok(x) => x,
+                        Err(AcceptError::Disconnected) => return Ok(()),
+                        Err(AcceptError::Failure(err)) => return Err(err),
+                    };
+                    spawn_websocket_read_write_tasks(
+                        codec_builder,
+                        tls_stream,
+                        in_tx,
+                        out_rx,
+                        out_tx.clone(),
+                        websocket_subprotocol,
+                    )
+                    .await;
+                } else {
+                    spawn_websocket_read_write_tasks(
+                        codec_builder,
+                        stream,
+                        in_tx,
+                        out_rx,
+                        out_tx.clone(),
+                        websocket_subprotocol,
+                    )
+                    .await;
                 };
-
-                let ws_stream = tokio_tungstenite::accept_hdr_async(stream, callback)
-                    .await
-                    .expect("Error during the websocket handshake occurred");
-
-                spawn_websocket_read_write_tasks(
-                    codec_builder,
-                    ws_stream,
-                    in_tx,
-                    out_rx,
-                    out_tx.clone(),
-                );
             }
             Transport::Tcp => {
                 if let Some(tls) = &self.tls {
