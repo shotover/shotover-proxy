@@ -44,8 +44,11 @@ rand_distr.workspace = true
 async-trait.workspace = true
 tracing-subscriber.workspace = true
 tracing-appender = "0.2.0"
+async-once-cell = "0.5.2"
 fred = { version = "6.3.0", features = ["enable-rustls"] }
+tokio-bin-process = "0.2.0"
 rustls-pemfile = "1.0.2"
+aws-throwaway = { path = "../aws-throwaway"}
 windsock = { path = "../windsock" }
 cql-ws = { git = "https://github.com/conorbros/cql-ws" }
 

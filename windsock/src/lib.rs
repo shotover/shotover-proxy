@@ -7,7 +7,7 @@ mod report;
 mod tables;
 
 pub use bench::{Bench, BenchParameters, BenchTask, Profiling};
-pub use report::Report;
+pub use report::{Report, ReportArchive};
 
 use anyhow::{anyhow, Result};
 use bench::BenchState;
@@ -15,7 +15,6 @@ use clap::Parser;
 use cli::Args;
 use cloud::{Cloud, NoCloud};
 use filter::Filter;
-use report::ReportArchive;
 use std::process::exit;
 use tokio::runtime::Runtime;
 
@@ -136,6 +135,7 @@ impl Windsock {
         running_in_release: bool,
     ) -> Result<()> {
         ReportArchive::clear_last_run();
+
         match self.benches.iter_mut().find(|x| x.tags.get_name() == name) {
             Some(bench) => {
                 if args
@@ -144,17 +144,22 @@ impl Windsock {
                     .all(|x| bench.supported_profilers.contains(x))
                 {
                     bench.orchestrate(&args, running_in_release).await;
-                    Ok(())
                 } else {
-                    Err(anyhow!("Specified bench {name:?} was requested to run with the profilers {:?} but it only supports the profilers {:?}", args.profilers, bench.supported_profilers))
+                    return Err(anyhow!("Specified bench {name:?} was requested to run with the profilers {:?} but it only supports the profilers {:?}", args.profilers, bench.supported_profilers));
                 }
             }
-            None => Err(anyhow!("Specified bench {name:?} does not exist.")),
+            None => return Err(anyhow!("Specified bench {name:?} does not exist.")),
         }
+
+        if args.cloud {
+            self.cloud.cleanup_resources().await;
+        }
+        Ok(())
     }
 
     async fn run_filtered_benches(&mut self, args: Args, running_in_release: bool) -> Result<()> {
         ReportArchive::clear_last_run();
+
         let filter = match args
             .filter
             .as_ref()
@@ -184,6 +189,10 @@ impl Windsock {
             {
                 bench.orchestrate(&args, running_in_release).await;
             }
+        }
+
+        if args.cloud {
+            self.cloud.cleanup_resources().await;
         }
         Ok(())
     }

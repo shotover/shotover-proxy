@@ -27,7 +27,7 @@ pub fn new_moto() -> DockerCompose {
     docker_compose("tests/transforms/docker-compose-moto.yaml")
 }
 
-fn get_image_waiters() -> &'static [Image] {
+pub fn get_image_waiters() -> &'static [Image] {
     &[
         Image {
             name: "motoserver/moto",

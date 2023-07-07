@@ -1,3 +1,4 @@
+mod aws;
 mod cassandra;
 mod common;
 mod kafka;
@@ -21,13 +22,15 @@ fn main() {
 
     // The benches and tests automatically set the working directory to CARGO_MANIFEST_DIR.
     // We need to do the same as the DockerCompose + ShotoverProcess types rely on this.
-    std::env::set_current_dir(
-        Path::new(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .unwrap()
-            .join("shotover-proxy"),
-    )
-    .unwrap();
+    if Path::new(env!("CARGO_MANIFEST_DIR")).exists() {
+        std::env::set_current_dir(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .parent()
+                .unwrap()
+                .join("shotover-proxy"),
+        )
+        .unwrap();
+    }
 
     let cassandra_benches = itertools::iproduct!(
         [CassandraDb::Cassandra],
@@ -116,7 +119,7 @@ fn main() {
         .chain(kafka_benches)
         .chain(redis_benches)
         .collect(),
-        None,
+        Some(aws::cloud::AwsCloud::new_boxed()),
         &["release"],
     )
     .run();
