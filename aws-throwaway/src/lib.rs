@@ -264,8 +264,12 @@ impl Aws {
             .key_name(&self.keyname)
             .user_data(base64::engine::general_purpose::STANDARD.encode(format!(
                 r#"#!/bin/bash
+sudo systemctl stop ssh
 echo "{}" > /etc/ssh/ssh_host_ed25519_key.pub
 echo "{}" > /etc/ssh/ssh_host_ed25519_key
+
+echo "ClientAliveInterval 30" >> /etc/ssh/sshd_config
+sudo systemctl start ssh
             "#,
                 self.host_public_key, self.host_private_key
             )))

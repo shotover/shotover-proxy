@@ -5,6 +5,7 @@ pub mod cloud;
 use async_once_cell::OnceCell;
 use aws_throwaway::{ec2_instance::Ec2Instance, Aws, InstanceType};
 use std::fmt::Write;
+use std::time::Duration;
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
@@ -45,7 +46,10 @@ impl WindsockAws {
         }
 
         let instance = Arc::new(Ec2InstanceWithBencher {
-            instance: self.aws.create_ec2_instance(InstanceType::T2Micro, 8).await,
+            instance: self
+                .aws
+                .create_ec2_instance(InstanceType::M6aLarge, 8)
+                .await,
         });
         instance
             .instance
@@ -69,7 +73,7 @@ impl WindsockAws {
         let instance = self
             .aws
             // databases will need more storage than the shotover or bencher instances
-            .create_ec2_instance(InstanceType::T2Micro, 40)
+            .create_ec2_instance(InstanceType::M6aLarge, 40)
             .await;
         instance
         .ssh()
@@ -98,7 +102,10 @@ curl -sSL https://get.docker.com/ | sudo sh"#,
         }
 
         let instance = Arc::new(Ec2InstanceWithShotover {
-            instance: self.aws.create_ec2_instance(InstanceType::T2Micro, 8).await,
+            instance: self
+                .aws
+                .create_ec2_instance(InstanceType::M6aLarge, 8)
+                .await,
         });
 
         // PROFILE is set in build.rs from PROFILE listed in https://doc.rust-lang.org/cargo/reference/environment-variables.html#environment-variables-cargo-sets-for-build-scripts
@@ -196,18 +203,23 @@ sudo docker system prune -af"#,
             });
         let mut logs = String::new();
         loop {
-            match receiver.recv().await {
-                Some(line) => {
+            match tokio::time::timeout(Duration::from_secs(120), receiver.recv()).await {
+                Ok(Some(line)) => {
                     writeln!(logs, "{}", line).unwrap();
                     if line.contains(image_waiter.log_regex_to_wait_for) {
                         return;
                     }
                 }
-                None => panic!(
-                    "Docker container of image {:?} shutdown before {:?} occurred in the logs. Docker logs:\n{logs}",
+                Ok(None) => panic!(
+                    "Docker container of image {:?} shutdown before {:?} occurred in the logs.\nDocker logs:\n{logs}",
                     image,
                     image_waiter.log_regex_to_wait_for
                 ),
+                Err(_) => panic!(
+                    "Docker container of image {:?} timed out after 2mins waiting for {:?} in the logs.\nDocker logs:\n{logs}",
+                    image,
+                    image_waiter.log_regex_to_wait_for
+                )
             }
         }
     }
