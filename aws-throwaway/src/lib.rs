@@ -5,7 +5,9 @@ pub use aws_sdk_ec2::types::InstanceType;
 
 use aws_config::meta::region::RegionProviderChain;
 use aws_config::SdkConfig;
-use aws_sdk_ec2::types::{KeyType, ResourceType, Tag, TagSpecification};
+use aws_sdk_ec2::types::{
+    BlockDeviceMapping, EbsBlockDevice, KeyType, ResourceType, Tag, TagSpecification, VolumeType,
+};
 use aws_sdk_ec2::{config::Region, types::Filter};
 use base64::Engine;
 use ec2_instance::Ec2Instance;
@@ -238,13 +240,26 @@ impl Aws {
         }
     }
 
-    pub async fn create_ec2_instance(&self, instance_type: InstanceType) -> Ec2Instance {
+    pub async fn create_ec2_instance(
+        &self,
+        instance_type: InstanceType,
+        storage_gb: u32,
+    ) -> Ec2Instance {
         let result = self
             .client
             .run_instances()
             .instance_type(instance_type.clone())
             .min_count(1)
             .max_count(1)
+            .block_device_mappings(
+                BlockDeviceMapping::builder().device_name("/dev/sda1").ebs(
+                    EbsBlockDevice::builder()
+                        .delete_on_termination(true)
+                        .volume_size(storage_gb as i32)
+                        .volume_type(VolumeType::Gp2)
+                        .build()
+                ).build()
+            )
             .security_groups(&self.security_group)
             .key_name(&self.keyname)
             .user_data(base64::engine::general_purpose::STANDARD.encode(format!(

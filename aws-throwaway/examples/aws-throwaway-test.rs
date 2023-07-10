@@ -11,7 +11,7 @@ async fn main() {
         .init();
 
     let aws = Aws::new().await;
-    let instance = aws.create_ec2_instance(InstanceType::T2Micro).await;
+    let instance = aws.create_ec2_instance(InstanceType::T2Micro, 8).await;
 
     instance
         .ssh()
