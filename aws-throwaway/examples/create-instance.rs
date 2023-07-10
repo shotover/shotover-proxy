@@ -20,7 +20,7 @@ async fn main() {
 
         let aws = Aws::new().await;
         let instance_type = InstanceType::from_str(&instance_type).unwrap();
-        let instance = aws.create_ec2_instance(instance_type).await;
+        let instance = aws.create_ec2_instance(instance_type, 20).await;
 
         let result = instance.ssh().shell("lsb_release -a").await;
         println!("Created instance running:\n{}", result.stdout);
