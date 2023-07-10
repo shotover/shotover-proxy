@@ -10,7 +10,12 @@ use crate::transforms::{Transform, TransformBuilder, Transforms, Wrapper};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use dashmap::DashMap;
-use kafka_protocol::protocol::StrBytes;
+use kafka_protocol::messages::metadata_request::MetadataRequestTopic;
+use kafka_protocol::messages::{
+    ApiKey, FindCoordinatorRequest, GroupId, HeartbeatRequest, JoinGroupRequest, MetadataRequest,
+    MetadataResponse, OffsetFetchRequest, RequestHeader, SyncGroupRequest, TopicName,
+};
+use kafka_protocol::protocol::{Builder, StrBytes};
 use rand::rngs::SmallRng;
 use rand::seq::{IteratorRandom, SliceRandom};
 use rand::SeedableRng;
@@ -21,6 +26,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{mpsc, oneshot, RwLock};
 use tokio::time::timeout;
+use uuid::Uuid;
 
 #[derive(Deserialize, Debug)]
 pub struct KafkaSinkClusterConfig {
@@ -147,18 +153,8 @@ impl Transform for KafkaSinkCluster {
                 .collect();
             self.nodes = nodes?;
         }
-        for shared_node in self.nodes_shared.read().await.iter() {
-            let mut found = false;
-            for node in &mut self.nodes {
-                if shared_node.kafka_address == node.kafka_address {
-                    found = true;
-                    node.broker_id = shared_node.broker_id;
-                }
-            }
-            if !found {
-                self.nodes.push(shared_node.clone())
-            }
-        }
+
+        self.update_local_nodes().await;
 
         let mut find_coordinator_requests = vec![];
         for (index, request) in requests_wrapper.requests.iter_mut().enumerate() {
@@ -186,11 +182,183 @@ impl Transform for KafkaSinkCluster {
 }
 
 impl KafkaSinkCluster {
+    fn store_topic(&self, topics: &mut Vec<StrBytes>, topic: TopicName) {
+        if self.topics.get(&topic.0).is_none() && !topics.contains(&topic.0) {
+            topics.push(topic.0);
+        }
+    }
+
+    fn store_group(&self, groups: &mut Vec<StrBytes>, group_id: GroupId) {
+        if self.coordinator_broker_id.get(&group_id.0).is_none() && !groups.contains(&group_id.0) {
+            groups.push(group_id.0);
+        }
+    }
+
+    async fn update_local_nodes(&mut self) {
+        for shared_node in self.nodes_shared.read().await.iter() {
+            let mut found = false;
+            for node in &mut self.nodes {
+                if shared_node.kafka_address == node.kafka_address {
+                    found = true;
+                    node.broker_id = shared_node.broker_id;
+                }
+            }
+            if !found {
+                self.nodes.push(shared_node.clone())
+            }
+        }
+    }
+
     async fn send_requests(
         &mut self,
-        requests: Vec<Message>,
+        mut requests: Vec<Message>,
     ) -> Result<Vec<oneshot::Receiver<Response>>> {
         let mut results = Vec::with_capacity(requests.len());
+        let mut topics = vec![];
+        let mut groups = vec![];
+        for request in &mut requests {
+            match request.frame() {
+                Some(Frame::Kafka(KafkaFrame::Request {
+                    body: RequestBody::Produce(produce),
+                    ..
+                })) => {
+                    for (name, _) in &produce.topic_data {
+                        self.store_topic(&mut topics, name.clone());
+                    }
+                }
+                Some(Frame::Kafka(KafkaFrame::Request {
+                    body: RequestBody::Fetch(fetch),
+                    ..
+                })) => {
+                    for topic in &fetch.topics {
+                        self.store_topic(&mut topics, topic.topic.clone());
+                    }
+                }
+                Some(Frame::Kafka(KafkaFrame::Request {
+                    body:
+                        RequestBody::Heartbeat(HeartbeatRequest { group_id, .. })
+                        | RequestBody::SyncGroup(SyncGroupRequest { group_id, .. })
+                        | RequestBody::OffsetFetch(OffsetFetchRequest { group_id, .. })
+                        | RequestBody::JoinGroup(JoinGroupRequest { group_id, .. }),
+                    ..
+                })) => {
+                    self.store_group(&mut groups, group_id.clone());
+                }
+                _ => {}
+            }
+        }
+
+        for group in groups {
+            let request = Message::from_frame(Frame::Kafka(KafkaFrame::Request {
+                header: RequestHeader::builder()
+                    .request_api_key(ApiKey::FindCoordinatorKey as i16)
+                    .request_api_version(2)
+                    .correlation_id(0)
+                    .client_id(None)
+                    .unknown_tagged_fields(Default::default())
+                    .build()
+                    .unwrap(),
+                body: RequestBody::FindCoordinator(
+                    FindCoordinatorRequest::builder()
+                        .coordinator_keys(vec![])
+                        .key_type(0)
+                        .key(group.clone())
+                        .unknown_tagged_fields(Default::default())
+                        .build()
+                        .unwrap(),
+                ),
+            }));
+
+            let connection = self
+                .nodes
+                .choose_mut(&mut self.rng)
+                .unwrap()
+                .get_connection(self.connect_timeout)
+                .await?;
+            let (tx, rx) = oneshot::channel();
+            connection
+                .send(Request {
+                    message: request,
+                    return_chan: Some(tx),
+                })
+                .map_err(|_| anyhow!("Failed to send"))?;
+            let mut response = rx.await.unwrap().response.unwrap();
+            match response.frame() {
+                Some(Frame::Kafka(KafkaFrame::Response {
+                    body: ResponseBody::FindCoordinator(coordinator),
+                    ..
+                })) => {
+                    self.coordinator_broker_id
+                        .insert(group, coordinator.node_id.0);
+                }
+                other => {
+                    return Err(anyhow!(
+                        "Unexpected message returned to metadata request {other:?}"
+                    ))
+                }
+            }
+        }
+
+        if !topics.is_empty() {
+            let request = Message::from_frame(Frame::Kafka(KafkaFrame::Request {
+                header: RequestHeader::builder()
+                    .request_api_key(ApiKey::MetadataKey as i16)
+                    .request_api_version(4)
+                    .correlation_id(0)
+                    .client_id(None)
+                    .unknown_tagged_fields(Default::default())
+                    .build()
+                    .unwrap(),
+                body: RequestBody::Metadata(
+                    MetadataRequest::builder()
+                        .topics(Some(
+                            topics
+                                .into_iter()
+                                .map(|name| {
+                                    MetadataRequestTopic::builder()
+                                        .name(Some(TopicName(name)))
+                                        .topic_id(Uuid::nil())
+                                        .unknown_tagged_fields(Default::default())
+                                        .build()
+                                        .unwrap()
+                                })
+                                .collect(),
+                        ))
+                        .allow_auto_topic_creation(false)
+                        .include_cluster_authorized_operations(false)
+                        .include_topic_authorized_operations(false)
+                        .unknown_tagged_fields(Default::default())
+                        .build()
+                        .unwrap(),
+                ),
+            }));
+
+            let connection = self
+                .nodes
+                .choose_mut(&mut self.rng)
+                .unwrap()
+                .get_connection(self.connect_timeout)
+                .await?;
+            let (tx, rx) = oneshot::channel();
+            connection
+                .send(Request {
+                    message: request,
+                    return_chan: Some(tx),
+                })
+                .map_err(|_| anyhow!("Failed to send"))?;
+            let mut response = rx.await.unwrap().response.unwrap();
+            match response.frame() {
+                Some(Frame::Kafka(KafkaFrame::Response {
+                    body: ResponseBody::Metadata(metadata),
+                    ..
+                })) => self.process_metadata(metadata).await,
+                other => {
+                    return Err(anyhow!(
+                        "Unexpected message returned to metadata request {other:?}"
+                    ))
+                }
+            }
+        }
 
         for mut message in requests {
             match message.frame() {
@@ -223,13 +391,15 @@ impl KafkaSinkCluster {
                     }
                     let connection = match connection {
                         Some(connection) => connection,
-                        None => self
-                            .nodes
-                            .choose_mut(&mut self.rng)
-                            .unwrap()
-                            .get_connection(self.connect_timeout)
-                            .await?
-                            .clone(),
+                        None => {
+                            tracing::warn!("no known partition leader for {topic_name:?}, routing message to a random node so that a NOT_LEADER_OR_FOLLOWER or similar error is returned to the client");
+                            self.nodes
+                                .choose_mut(&mut self.rng)
+                                .unwrap()
+                                .get_connection(self.connect_timeout)
+                                .await?
+                                .clone()
+                        }
                     };
 
                     let (return_chan, rx) = produce_channel(produce);
@@ -270,6 +440,8 @@ impl KafkaSinkCluster {
                             .await?
                             .clone()
                     } else {
+                        let topic = &topic.topic;
+                        tracing::warn!("no known partition replica for {topic:?}, routing message to a random node so that a NOT_LEADER_OR_FOLLOWER or similar error is returned to the client");
                         self.nodes
                             .choose_mut(&mut self.rng)
                             .unwrap()
@@ -340,7 +512,7 @@ impl KafkaSinkCluster {
     }
 
     async fn receive_responses(
-        &self,
+        &mut self,
         find_coordinator_requests: &[FindCoordinator],
         responses: Vec<oneshot::Receiver<Response>>,
     ) -> Result<Vec<Message>> {
@@ -350,6 +522,8 @@ impl KafkaSinkCluster {
         } else {
             read_responses(responses).await
         }?;
+
+        // TODO: Handle errors like NOT_COORDINATOR by removing element from self.topics and self.coordinator_broker_id
 
         // Rewrite responses to use shotovers port instead of kafkas port
         for (i, response) in responses.iter_mut().enumerate() {
@@ -393,47 +567,10 @@ impl KafkaSinkCluster {
                     body: ResponseBody::Metadata(metadata),
                     ..
                 })) => {
-                    for (id, broker) in &mut metadata.brokers {
-                        {
-                            let new = self
-                                .nodes_shared
-                                .read()
-                                .await
-                                .iter()
-                                .all(|node| node.broker_id != **id);
-                            if new {
-                                let host = broker.host.clone();
-                                let port = broker.port;
-                                let node = KafkaNode {
-                                    broker_id: **id,
-                                    kafka_address: KafkaAddress { host, port },
-                                    connection: None,
-                                };
-                                self.nodes_shared.write().await.push(node);
-                            }
-                        }
-                        rewrite_address(&self.shotover_nodes, &mut broker.host, &mut broker.port)
-                    }
+                    self.process_metadata(metadata).await;
 
-                    for topic in &metadata.topics {
-                        self.topics.insert(
-                            topic.0.clone().0,
-                            Topic {
-                                partitions: topic
-                                    .1
-                                    .partitions
-                                    .iter()
-                                    .map(|partition| Partition {
-                                        leader_id: *partition.leader_id,
-                                        replica_nodes: partition
-                                            .replica_nodes
-                                            .iter()
-                                            .map(|x| x.0)
-                                            .collect(),
-                                    })
-                                    .collect(),
-                            },
-                        );
+                    for (_, broker) in &mut metadata.brokers {
+                        rewrite_address(&self.shotover_nodes, &mut broker.host, &mut broker.port)
                     }
                     response.invalidate_cache();
                 }
@@ -472,13 +609,15 @@ impl KafkaSinkCluster {
         }
         let connection = match connection {
             Some(connection) => connection,
-            None => self
-                .nodes
-                .choose_mut(&mut self.rng)
-                .unwrap()
-                .get_connection(self.connect_timeout)
-                .await?
-                .clone(),
+            None => {
+                tracing::warn!("no known coordinator for {group_name:?}, routing message to a random node so that a NOT_COORDINATOR or similar error is returned to the client");
+                self.nodes
+                    .choose_mut(&mut self.rng)
+                    .unwrap()
+                    .get_connection(self.connect_timeout)
+                    .await?
+                    .clone()
+            }
         };
         let (tx, rx) = oneshot::channel();
         connection
@@ -488,6 +627,46 @@ impl KafkaSinkCluster {
             })
             .map_err(|_| anyhow!("Failed to send"))?;
         Ok(rx)
+    }
+
+    async fn process_metadata(&mut self, metadata: &MetadataResponse) {
+        for (id, broker) in &metadata.brokers {
+            let new = self
+                .nodes_shared
+                .read()
+                .await
+                .iter()
+                .all(|node| node.broker_id != **id);
+            if new {
+                let host = broker.host.clone();
+                let port = broker.port;
+                let node = KafkaNode {
+                    broker_id: **id,
+                    kafka_address: KafkaAddress { host, port },
+                    connection: None,
+                };
+                self.nodes_shared.write().await.push(node);
+
+                self.update_local_nodes().await;
+            }
+        }
+
+        for topic in &metadata.topics {
+            self.topics.insert(
+                topic.0.clone().0,
+                Topic {
+                    partitions: topic
+                        .1
+                        .partitions
+                        .iter()
+                        .map(|partition| Partition {
+                            leader_id: *partition.leader_id,
+                            replica_nodes: partition.replica_nodes.iter().map(|x| x.0).collect(),
+                        })
+                        .collect(),
+                },
+            );
+        }
     }
 }
 
