@@ -14,7 +14,7 @@ services:
     networks:
       cluster_subnet:
         ipv4_address: 172.16.1.2
-    image: &image bitnami/redis-cluster:6.0-debian-10
+    image: &image bitnami/redis-cluster:6.2.12-debian-11-r26
     volumes:
       - &keys ../redis-tls/certs:/usr/local/etc/redis/certs
 
