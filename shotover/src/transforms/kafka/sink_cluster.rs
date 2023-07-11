@@ -1,3 +1,4 @@
+use super::common::produce_channel;
 use crate::codec::{kafka::KafkaCodecBuilder, CodecBuilder, Direction};
 use crate::frame::kafka::{strbytes, KafkaFrame, RequestBody, ResponseBody};
 use crate::frame::Frame;
@@ -32,8 +33,6 @@ pub struct KafkaSinkClusterConfig {
 
 #[cfg(feature = "alpha-transforms")]
 use crate::transforms::TransformConfig;
-
-use super::common::produce_channel;
 
 #[cfg(feature = "alpha-transforms")]
 #[typetag::deserialize(name = "KafkaSinkCluster")]
@@ -111,7 +110,7 @@ impl TransformBuilder for KafkaSinkClusterBuilder {
     }
 
     fn get_name(&self) -> &'static str {
-        "KafkaClusterSink"
+        "KafkaSinkCluster"
     }
 
     fn is_terminating(&self) -> bool {
@@ -163,109 +162,7 @@ impl Transform for KafkaSinkCluster {
         }
 
         let responses = self.send_requests(requests_wrapper.requests).await?;
-
-        // TODO: since kafka will never send requests out of order I wonder if it would be faster to use an mpsc instead of a oneshot or maybe just directly run the sending/receiving here?
-        let mut responses = if let Some(read_timeout) = self.read_timeout {
-            timeout(read_timeout, read_responses(responses)).await?
-        } else {
-            read_responses(responses).await
-        }?;
-
-        // Rewrite responses to use shotovers port instead of kafkas port
-        for response in &mut responses {
-            match response.frame() {
-                Some(Frame::Kafka(KafkaFrame::Response {
-                    body: ResponseBody::FindCoordinator(find_coordinator),
-                    version,
-                    ..
-                })) => {
-                    if *version <= 3 {
-                        self.coordinator_broker_id
-                            .store(find_coordinator.node_id.0, Ordering::Relaxed);
-                        rewrite_address(
-                            &self.shotover_nodes,
-                            &mut find_coordinator.host,
-                            &mut find_coordinator.port,
-                        )
-                    } else {
-                        for coordinator in &mut find_coordinator.coordinators {
-                            self.coordinator_broker_id
-                                .store(coordinator.node_id.0, Ordering::Relaxed);
-                            rewrite_address(
-                                &self.shotover_nodes,
-                                &mut coordinator.host,
-                                &mut coordinator.port,
-                            )
-                        }
-                    }
-                    response.invalidate_cache();
-                }
-                Some(Frame::Kafka(KafkaFrame::Response {
-                    body: ResponseBody::Metadata(metadata),
-                    ..
-                })) => {
-                    for (id, broker) in &mut metadata.brokers {
-                        {
-                            let new = self
-                                .nodes_shared
-                                .read()
-                                .await
-                                .iter()
-                                .all(|node| node.broker_id != **id);
-                            if new {
-                                let host = broker.host.clone();
-                                let port = broker.port;
-                                let node = KafkaNode {
-                                    broker_id: **id,
-                                    kafka_address: KafkaAddress { host, port },
-                                    connection: None,
-                                };
-                                self.nodes_shared.write().await.push(node);
-                            }
-                        }
-                        rewrite_address(&self.shotover_nodes, &mut broker.host, &mut broker.port)
-                    }
-
-                    for topic in &metadata.topics {
-                        self.topics.insert(
-                            topic.0.clone().0,
-                            Topic {
-                                partitions: topic
-                                    .1
-                                    .partitions
-                                    .iter()
-                                    .map(|partition| Partition {
-                                        leader_id: *partition.leader_id,
-                                        replica_nodes: partition
-                                            .replica_nodes
-                                            .iter()
-                                            .map(|x| x.0)
-                                            .collect(),
-                                    })
-                                    .collect(),
-                            },
-                        );
-                    }
-                    response.invalidate_cache();
-                }
-                Some(Frame::Kafka(KafkaFrame::Response {
-                    body: ResponseBody::DescribeCluster(describe_cluster),
-                    ..
-                })) => {
-                    for broker in &mut describe_cluster.brokers {
-                        rewrite_address(
-                            &self.shotover_nodes,
-                            &mut broker.1.host,
-                            &mut broker.1.port,
-                        )
-                    }
-                    response.invalidate_cache();
-                }
-                _ => {}
-            }
-        }
-
-        Ok(responses)
+        self.receive_responses(responses).await
     }
 
     fn set_pushed_messages_tx(&mut self, pushed_messages_tx: mpsc::UnboundedSender<Messages>) {
@@ -432,6 +329,114 @@ impl KafkaSinkCluster {
             }
         }
         Ok(results)
+    }
+
+    async fn receive_responses(
+        &self,
+        responses: Vec<oneshot::Receiver<Response>>,
+    ) -> Result<Vec<Message>> {
+        // TODO: since kafka will never send requests out of order I wonder if it would be faster to use an mpsc instead of a oneshot or maybe just directly run the sending/receiving here?
+        let mut responses = if let Some(read_timeout) = self.read_timeout {
+            timeout(read_timeout, read_responses(responses)).await?
+        } else {
+            read_responses(responses).await
+        }?;
+
+        // Rewrite responses to use shotovers port instead of kafkas port
+        for response in &mut responses {
+            match response.frame() {
+                Some(Frame::Kafka(KafkaFrame::Response {
+                    body: ResponseBody::FindCoordinator(find_coordinator),
+                    version,
+                    ..
+                })) => {
+                    if *version <= 3 {
+                        self.coordinator_broker_id
+                            .store(find_coordinator.node_id.0, Ordering::Relaxed);
+                        rewrite_address(
+                            &self.shotover_nodes,
+                            &mut find_coordinator.host,
+                            &mut find_coordinator.port,
+                        )
+                    } else {
+                        for coordinator in &mut find_coordinator.coordinators {
+                            self.coordinator_broker_id
+                                .store(coordinator.node_id.0, Ordering::Relaxed);
+                            rewrite_address(
+                                &self.shotover_nodes,
+                                &mut coordinator.host,
+                                &mut coordinator.port,
+                            )
+                        }
+                    }
+                    response.invalidate_cache();
+                }
+                Some(Frame::Kafka(KafkaFrame::Response {
+                    body: ResponseBody::Metadata(metadata),
+                    ..
+                })) => {
+                    for (id, broker) in &mut metadata.brokers {
+                        {
+                            let new = self
+                                .nodes_shared
+                                .read()
+                                .await
+                                .iter()
+                                .all(|node| node.broker_id != **id);
+                            if new {
+                                let host = broker.host.clone();
+                                let port = broker.port;
+                                let node = KafkaNode {
+                                    broker_id: **id,
+                                    kafka_address: KafkaAddress { host, port },
+                                    connection: None,
+                                };
+                                self.nodes_shared.write().await.push(node);
+                            }
+                        }
+                        rewrite_address(&self.shotover_nodes, &mut broker.host, &mut broker.port)
+                    }
+
+                    for topic in &metadata.topics {
+                        self.topics.insert(
+                            topic.0.clone().0,
+                            Topic {
+                                partitions: topic
+                                    .1
+                                    .partitions
+                                    .iter()
+                                    .map(|partition| Partition {
+                                        leader_id: *partition.leader_id,
+                                        replica_nodes: partition
+                                            .replica_nodes
+                                            .iter()
+                                            .map(|x| x.0)
+                                            .collect(),
+                                    })
+                                    .collect(),
+                            },
+                        );
+                    }
+                    response.invalidate_cache();
+                }
+                Some(Frame::Kafka(KafkaFrame::Response {
+                    body: ResponseBody::DescribeCluster(describe_cluster),
+                    ..
+                })) => {
+                    for broker in &mut describe_cluster.brokers {
+                        rewrite_address(
+                            &self.shotover_nodes,
+                            &mut broker.1.host,
+                            &mut broker.1.port,
+                        )
+                    }
+                    response.invalidate_cache();
+                }
+                _ => {}
+            }
+        }
+
+        Ok(responses)
     }
 }
 

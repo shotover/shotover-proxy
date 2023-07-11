@@ -26,15 +26,8 @@ async fn main() {
         println!("Created instance running:\n{}", result.stdout);
 
         println!(
-            "Run the following to ssh into it:
-```
-chmod 700 key 2> /dev/null || true
-echo '{}' > key
-chmod 400 key
-ssh -i key ubuntu@{}
-```",
-            instance.client_private_key(),
-            instance.public_ip()
+            "Run the following to ssh into it:\n{}",
+            instance.ssh_instructions()
         );
     } else {
         println!("Need to specify either --cleanup or --instance-type")
