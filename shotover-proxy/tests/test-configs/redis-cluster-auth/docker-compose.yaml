@@ -1,7 +1,7 @@
 version: '3.3'
 services:
   redis-node-0:
-    image: &image bitnami/redis-cluster:6.0-debian-10
+    image: &image bitnami/redis-cluster:6.2.12-debian-11-r26
     ports:
       - "2230:6379"
     environment:
