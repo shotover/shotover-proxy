@@ -13,7 +13,7 @@ services:
     networks:
       cluster_subnet:
         ipv4_address: 172.16.1.2
-    image: &image bitnami/redis-cluster:6.0-debian-10
+    image: &image bitnami/redis-cluster:6.2.12-debian-11-r26
     environment:
       &environment
       - 'ALLOW_EMPTY_PASSWORD=yes'
@@ -58,7 +58,7 @@ services:
     networks:
       cluster_subnet:
         ipv4_address: 172.16.1.8
-    image: bitnami/redis-cluster:6.0-debian-10
+    image: *image
     depends_on:
       - redis-node-0
       - redis-node-1
