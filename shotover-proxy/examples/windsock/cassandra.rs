@@ -1,4 +1,8 @@
-use crate::{common::Shotover, profilers::ProfilerRunner};
+use crate::{
+    aws::{Ec2InstanceWithDocker, Ec2InstanceWithShotover, RunningShotover},
+    common::{rewritten_file, Shotover},
+    profilers::ProfilerRunner,
+};
 use anyhow::Result;
 use async_trait::async_trait;
 use cdrs_tokio::{
@@ -16,6 +20,7 @@ use cdrs_tokio::{
     statement::StatementParams,
     transport::TransportTcp,
 };
+use itertools::Itertools;
 use rand::prelude::*;
 use scylla::{
     prepared_statement::PreparedStatement as ScyllaPrepared,
@@ -24,6 +29,8 @@ use scylla::{
 };
 use std::{
     collections::HashMap,
+    net::IpAddr,
+    path::Path,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -136,7 +143,7 @@ impl Operation {
         .await;
 
         // warm up and then start
-        tokio::time::sleep(Duration::from_secs(1)).await;
+        tokio::time::sleep(Duration::from_secs(15)).await;
         reporter.send(Report::Start).unwrap();
         let start = Instant::now();
 
@@ -420,9 +427,59 @@ impl Bench for CassandraBench {
         &self,
         _running_in_release: bool,
         _profiling: Profiling,
-        _bench_parameters: BenchParameters,
+        parameters: BenchParameters,
     ) -> Result<()> {
-        todo!()
+        let aws = crate::aws::WindsockAws::get().await;
+
+        let (
+            cassandra_instance1,
+            cassandra_instance2,
+            cassandra_instance3,
+            bench_instance,
+            shotover_instance,
+        ) = futures::join!(
+            aws.create_docker_instance(),
+            aws.create_docker_instance(),
+            aws.create_docker_instance(),
+            aws.create_bencher_instance(),
+            aws.create_shotover_instance()
+        );
+
+        let cassandra_ip = cassandra_instance1.instance.private_ip().to_string();
+        let shotover_ip = shotover_instance.instance.private_ip().to_string();
+
+        let node_ips = vec![
+            cassandra_instance1.instance.private_ip(),
+            cassandra_instance2.instance.private_ip(),
+            cassandra_instance3.instance.private_ip(),
+        ];
+        let (_, _, _, running_shotover) = futures::join!(
+            run_aws_cassandra(cassandra_instance1, &node_ips),
+            run_aws_cassandra(cassandra_instance2, &node_ips),
+            run_aws_cassandra(cassandra_instance3, &node_ips),
+            run_aws_shotover(
+                shotover_instance.clone(),
+                self.shotover,
+                cassandra_ip.clone(),
+                self.topology.clone(),
+            )
+        );
+
+        let destination_ip = if running_shotover.is_some() {
+            shotover_ip
+        } else {
+            cassandra_ip
+        };
+        let destination = format!("{destination_ip}:9042");
+
+        bench_instance
+            .run_bencher(&self.run_args(&destination, &parameters), &self.name())
+            .await;
+
+        if let Some(running_shotover) = running_shotover {
+            running_shotover.shutdown().await;
+        }
+        Ok(())
     }
 
     async fn orchestrate_local(
@@ -532,6 +589,63 @@ impl Bench for CassandraBench {
 
         self.operation.run(&session, reporter, parameters).await;
     }
+}
+
+async fn run_aws_shotover(
+    instance: Arc<Ec2InstanceWithShotover>,
+    shotover: Shotover,
+    cassandra_ip: String,
+    topology: Topology,
+) -> Option<RunningShotover> {
+    let config_dir = "tests/test-configs/cassandra/bench";
+    let ip = instance.instance.private_ip().to_string();
+    match shotover {
+        Shotover::Standard | Shotover::ForcedMessageParsed => {
+            let encoded = match shotover {
+                Shotover::Standard => "",
+                Shotover::ForcedMessageParsed => "-encode",
+                Shotover::None => unreachable!(),
+            };
+            let clustered = match topology {
+                Topology::Single => "",
+                Topology::Cluster3 => "-cluster",
+            };
+            let topology = rewritten_file(
+                Path::new(&format!(
+                    "{config_dir}/topology{clustered}{encoded}-cloud.yaml"
+                )),
+                &[("HOST_ADDRESS", &ip), ("CASSANDRA_ADDRESS", &cassandra_ip)],
+            )
+            .await;
+            Some(instance.run_shotover(&topology).await)
+        }
+        Shotover::None => None,
+    }
+}
+
+async fn run_aws_cassandra(instance: Arc<Ec2InstanceWithDocker>, node_address: &[IpAddr]) {
+    let _ip = instance.instance.private_ip().to_string();
+    instance
+        .run_container(
+            "bitnami/cassandra:4.0.6",
+            &[
+                (
+                    "CASSANDRA_SEEDS".to_owned(),
+                    node_address.iter().map(|x| x.to_string()).join(","),
+                ),
+                (
+                    "CASSANDRA_ENDPOINT_SNITCH".to_owned(),
+                    "GossipingPropertyFileSnitch".to_owned(),
+                ),
+                (
+                    "CASSANDRA_CLUSTER_NAME".to_owned(),
+                    "TestCluster".to_owned(),
+                ),
+                ("CASSANDRA_DC".to_owned(), "dc1".to_owned()),
+                ("CASSANDRA_RACK".to_owned(), "rack1".to_owned()),
+            ],
+        )
+        .await;
 }
 
 #[derive(Clone)]
