@@ -1,14 +1,15 @@
+use crate::shotover_process;
 use basic_driver_tests::*;
 use redis::aio::Connection;
 use redis::Commands;
 use serial_test::serial;
-use shotover_process::ShotoverProcessBuilder;
+
 use std::path::Path;
 use std::thread::sleep;
 use std::time::Duration;
 use test_helpers::connection::redis_connection;
 use test_helpers::docker_compose::docker_compose;
-use test_helpers::shotover_process::{self, Count, EventMatcher, Level};
+use test_helpers::shotover_process::{Count, EventMatcher, Level};
 
 pub mod assert;
 pub mod basic_driver_tests;
@@ -27,13 +28,11 @@ Caused by:
 
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
-async fn passthrough() {
+async fn passthrough_standard() {
     let _compose = docker_compose("tests/test-configs/redis-passthrough/docker-compose.yaml");
-    let shotover = ShotoverProcessBuilder::new_with_topology(
-        "tests/test-configs/redis-passthrough/topology.yaml",
-    )
-    .start()
-    .await;
+    let shotover = shotover_process("tests/test-configs/redis-passthrough/topology.yaml")
+        .start()
+        .await;
     let connection = || redis_connection::new_async("127.0.0.1", 6379);
     let mut flusher =
         Flusher::new_single_connection(redis_connection::new_async("127.0.0.1", 6379).await).await;
@@ -48,11 +47,9 @@ async fn passthrough() {
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn passthrough_redis_down() {
-    let shotover = ShotoverProcessBuilder::new_with_topology(
-        "tests/test-configs/redis-passthrough/topology.yaml",
-    )
-    .start()
-    .await;
+    let shotover = shotover_process("tests/test-configs/redis-passthrough/topology.yaml")
+        .start()
+        .await;
     let mut connection = redis_connection::new_async("127.0.0.1", 6379).await;
 
     test_trigger_transform_failure_driver(&mut connection).await;
@@ -86,11 +83,10 @@ async fn tls_cluster_sink() {
     test_helpers::cert::generate_redis_test_certs();
 
     let _compose = docker_compose("tests/test-configs/redis-cluster-tls/docker-compose.yaml");
-    let shotover = ShotoverProcessBuilder::new_with_topology(
-        "tests/test-configs/redis-cluster-tls/topology-no-source-encryption.yaml",
-    )
-    .start()
-    .await;
+    let shotover =
+        shotover_process("tests/test-configs/redis-cluster-tls/topology-no-source-encryption.yaml")
+            .start()
+            .await;
 
     let mut connection = redis_connection::new_async("127.0.0.1", 6379).await;
     let mut flusher = Flusher::new_cluster_tls().await;
@@ -108,10 +104,9 @@ async fn tls_source_and_tls_single_sink() {
 
     {
         let _compose = docker_compose("tests/test-configs/redis-tls/docker-compose.yaml");
-        let shotover =
-            ShotoverProcessBuilder::new_with_topology("tests/test-configs/redis-tls/topology.yaml")
-                .start()
-                .await;
+        let shotover = shotover_process("tests/test-configs/redis-tls/topology.yaml")
+            .start()
+            .await;
 
         let connection = || redis_connection::new_async_tls("127.0.0.1", 6379);
         let mut flusher = Flusher::new_single_connection(
@@ -128,11 +123,10 @@ async fn tls_source_and_tls_single_sink() {
     {
         let _compose =
             docker_compose("tests/test-configs/redis-tls-no-client-auth/docker-compose.yaml");
-        let shotover = ShotoverProcessBuilder::new_with_topology(
-            "tests/test-configs/redis-tls-no-client-auth/topology.yaml",
-        )
-        .start()
-        .await;
+        let shotover =
+            shotover_process("tests/test-configs/redis-tls-no-client-auth/topology.yaml")
+                .start()
+                .await;
 
         let mut connection = redis_connection::new_async_tls("127.0.0.1", 6379).await;
         test_cluster_basics(&mut connection).await;
@@ -146,11 +140,10 @@ async fn tls_source_and_tls_single_sink() {
     {
         let _compose =
             docker_compose("tests/test-configs/redis-tls-no-verify-hostname/docker-compose.yaml");
-        let shotover = ShotoverProcessBuilder::new_with_topology(
-            "tests/test-configs/redis-tls-no-verify-hostname/topology.yaml",
-        )
-        .start()
-        .await;
+        let shotover =
+            shotover_process("tests/test-configs/redis-tls-no-verify-hostname/topology.yaml")
+                .start()
+                .await;
 
         let mut connection = redis_connection::new_async_tls("127.0.0.1", 6379).await;
         test_cluster_basics(&mut connection).await;
@@ -163,11 +156,9 @@ async fn tls_source_and_tls_single_sink() {
 async fn cluster_ports_rewrite() {
     let _compose =
         docker_compose("tests/test-configs/redis-cluster-ports-rewrite/docker-compose.yaml");
-    let shotover = ShotoverProcessBuilder::new_with_topology(
-        "tests/test-configs/redis-cluster-ports-rewrite/topology.yaml",
-    )
-    .start()
-    .await;
+    let shotover = shotover_process("tests/test-configs/redis-cluster-ports-rewrite/topology.yaml")
+        .start()
+        .await;
 
     let mut connection = redis_connection::new_async("127.0.0.1", 6380).await;
     let mut flusher =
@@ -185,10 +176,9 @@ async fn cluster_ports_rewrite() {
 #[serial]
 async fn multi() {
     let _compose = docker_compose("tests/test-configs/redis-multi/docker-compose.yaml");
-    let shotover =
-        ShotoverProcessBuilder::new_with_topology("tests/test-configs/redis-multi/topology.yaml")
-            .start()
-            .await;
+    let shotover = shotover_process("tests/test-configs/redis-multi/topology.yaml")
+        .start()
+        .await;
     let mut connection = redis_connection::new_async("127.0.0.1", 6379).await;
     let mut flusher =
         Flusher::new_single_connection(redis_connection::new_async("127.0.0.1", 6379).await).await;
@@ -214,11 +204,9 @@ Caused by:
 #[serial]
 async fn cluster_auth() {
     let _compose = docker_compose("tests/test-configs/redis-cluster-auth/docker-compose.yaml");
-    let shotover = ShotoverProcessBuilder::new_with_topology(
-        "tests/test-configs/redis-cluster-auth/topology.yaml",
-    )
-    .start()
-    .await;
+    let shotover = shotover_process("tests/test-configs/redis-cluster-auth/topology.yaml")
+        .start()
+        .await;
     let mut connection = redis_connection::new_async("127.0.0.1", 6379).await;
 
     test_auth(&mut connection).await;
@@ -232,11 +220,9 @@ async fn cluster_auth() {
 #[serial]
 async fn cluster_hiding() {
     let _compose = docker_compose("tests/test-configs/redis-cluster-hiding/docker-compose.yaml");
-    let shotover = ShotoverProcessBuilder::new_with_topology(
-        "tests/test-configs/redis-cluster-hiding/topology.yaml",
-    )
-    .start()
-    .await;
+    let shotover = shotover_process("tests/test-configs/redis-cluster-hiding/topology.yaml")
+        .start()
+        .await;
 
     let mut connection = redis_connection::new_async("127.0.0.1", 6379).await;
     let connection = &mut connection;
@@ -253,11 +239,9 @@ async fn cluster_hiding() {
 #[serial]
 async fn cluster_handling() {
     let _compose = docker_compose("tests/test-configs/redis-cluster-handling/docker-compose.yaml");
-    let shotover = ShotoverProcessBuilder::new_with_topology(
-        "tests/test-configs/redis-cluster-handling/topology.yaml",
-    )
-    .start()
-    .await;
+    let shotover = shotover_process("tests/test-configs/redis-cluster-handling/topology.yaml")
+        .start()
+        .await;
 
     let mut connection = redis_connection::new_async("127.0.0.1", 6379).await;
     let connection = &mut connection;
@@ -292,11 +276,9 @@ async fn cluster_dr() {
 
     // test coalesce sends messages on shotover shutdown
     {
-        let shotover = ShotoverProcessBuilder::new_with_topology(
-            "tests/test-configs/redis-cluster-dr/topology.yaml",
-        )
-        .start()
-        .await;
+        let shotover = shotover_process("tests/test-configs/redis-cluster-dr/topology.yaml")
+            .start()
+            .await;
         let mut connection = redis_connection::new_async("127.0.0.1", 6379).await;
         redis::cmd("AUTH")
             .arg("default")
@@ -328,11 +310,9 @@ async fn cluster_dr() {
         358
     );
 
-    let shotover = ShotoverProcessBuilder::new_with_topology(
-        "tests/test-configs/redis-cluster-dr/topology.yaml",
-    )
-    .start()
-    .await;
+    let shotover = shotover_process("tests/test-configs/redis-cluster-dr/topology.yaml")
+        .start()
+        .await;
 
     async fn new_connection() -> Connection {
         let mut connection = redis_connection::new_async("127.0.0.1", 6379).await;
