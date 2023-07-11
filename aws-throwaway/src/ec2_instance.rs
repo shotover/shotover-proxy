@@ -28,6 +28,20 @@ impl Ec2Instance {
         &self.ssh
     }
 
+    pub fn ssh_instructions(&self) -> String {
+        format!(
+            r#"
+```
+chmod 700 key 2> /dev/null || true
+echo '{}' > key
+chmod 400 key
+TERM=xterm ssh -i key ubuntu@{}
+```"#,
+            self.client_private_key(),
+            self.public_ip()
+        )
+    }
+
     pub(crate) async fn new(
         public_ip: IpAddr,
         private_ip: IpAddr,
