@@ -79,8 +79,8 @@ impl Bench for KafkaBench {
         let shotover_ip = shotover_instance.instance.private_ip().to_string();
 
         let (_, running_shotover) = futures::join!(
-            run_aws_kafka(kafka_instance.clone()),
-            run_aws_shotover(shotover_instance.clone(), self.shotover, kafka_ip.clone())
+            run_aws_kafka(kafka_instance),
+            run_aws_shotover(shotover_instance, self.shotover, kafka_ip.clone())
         );
 
         let destination_ip = if running_shotover.is_some() {

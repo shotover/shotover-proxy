@@ -296,7 +296,7 @@ fn check_results<T: Display>(
 
     match exit_status {
         Some(status) => {
-            if status == 1 {
+            if status != 0 {
                 panic!("{task} failed with exit code {status}\n{output}")
             }
         }
