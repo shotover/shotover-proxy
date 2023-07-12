@@ -4,6 +4,7 @@ pub mod cloud;
 
 use async_once_cell::OnceCell;
 use aws_throwaway::{ec2_instance::Ec2Instance, Aws, InstanceType};
+use regex::Regex;
 use std::fmt::Write;
 use std::time::Duration;
 use std::{
@@ -202,11 +203,12 @@ sudo docker system prune -af"#,
                 panic!("The image {image:?} is not configured in get_image_waiters")
             });
         let mut logs = String::new();
+        let regex = Regex::new(image_waiter.log_regex_to_wait_for).unwrap();
         loop {
             match tokio::time::timeout(Duration::from_secs(120), receiver.recv()).await {
                 Ok(Some(line)) => {
                     writeln!(logs, "{}", line).unwrap();
-                    if line.contains(image_waiter.log_regex_to_wait_for) {
+                    if regex.is_match(&line) {
                         return;
                     }
                 }
