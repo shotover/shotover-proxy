@@ -20,6 +20,7 @@ use crate::transforms::null::NullSink;
 use crate::transforms::parallel_map::ParallelMap;
 use crate::transforms::protect::Protect;
 use crate::transforms::query_counter::QueryCounter;
+use crate::transforms::raw::RawSinkSingle;
 use crate::transforms::redis::cache::SimpleRedisCache;
 use crate::transforms::redis::cluster_ports_rewrite::RedisClusterPortsRewrite;
 use crate::transforms::redis::sink_cluster::RedisSinkCluster;
@@ -55,6 +56,7 @@ pub mod null;
 pub mod parallel_map;
 pub mod protect;
 pub mod query_counter;
+pub mod raw;
 pub mod redis;
 pub mod sampler;
 pub mod tee;
@@ -114,6 +116,7 @@ pub enum Transforms {
     QueryCounter(QueryCounter),
     RequestThrottling(RequestThrottling),
     Custom(Box<dyn Transform>),
+    RawSinkSingle(RawSinkSingle),
 }
 
 impl Debug for Transforms {
@@ -151,6 +154,7 @@ impl Transforms {
             Transforms::QueryTypeFilter(s) => s.transform(requests_wrapper).await,
             Transforms::QueryCounter(s) => s.transform(requests_wrapper).await,
             Transforms::RequestThrottling(s) => s.transform(requests_wrapper).await,
+            Transforms::RawSinkSingle(r) => r.transform(requests_wrapper).await,
             Transforms::Custom(s) => s.transform(requests_wrapper).await,
         }
     }
@@ -185,6 +189,7 @@ impl Transforms {
             Transforms::QueryTypeFilter(s) => s.transform_pushed(requests_wrapper).await,
             Transforms::QueryCounter(s) => s.transform_pushed(requests_wrapper).await,
             Transforms::RequestThrottling(s) => s.transform_pushed(requests_wrapper).await,
+            Transforms::RawSinkSingle(r) => r.transform_pushed(requests_wrapper).await,
             Transforms::Custom(s) => s.transform_pushed(requests_wrapper).await,
         }
     }
@@ -223,6 +228,7 @@ impl Transforms {
             Transforms::DebugReturner(d) => d.set_pushed_messages_tx(pushed_messages_tx),
             Transforms::DebugRandomDelay(d) => d.set_pushed_messages_tx(pushed_messages_tx),
             Transforms::RequestThrottling(d) => d.set_pushed_messages_tx(pushed_messages_tx),
+            Transforms::RawSinkSingle(r) => r.set_pushed_messages_tx(pushed_messages_tx),
             Transforms::Custom(d) => d.set_pushed_messages_tx(pushed_messages_tx),
         }
     }

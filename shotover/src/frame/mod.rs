@@ -19,6 +19,7 @@ pub enum MessageType {
     Cassandra,
     Kafka,
     Dummy,
+    Raw,
 }
 
 impl From<&ProtocolType> for MessageType {
@@ -27,6 +28,7 @@ impl From<&ProtocolType> for MessageType {
             ProtocolType::Cassandra { .. } => Self::Cassandra,
             ProtocolType::Redis => Self::Redis,
             ProtocolType::Kafka { .. } => Self::Kafka,
+            ProtocolType::Raw { .. } => Self::Raw,
         }
     }
 }
@@ -42,6 +44,7 @@ impl Frame {
                 request_header: None,
             },
             Frame::Dummy => CodecState::Dummy,
+            Frame::Raw(_) => CodecState::Raw,
         }
     }
 }
@@ -51,6 +54,7 @@ pub enum Frame {
     Cassandra(CassandraFrame),
     Redis(RedisFrame),
     Kafka(KafkaFrame),
+    Raw(Bytes),
     /// Represents a message that has must exist due to shotovers requirement that every request has a corresponding response.
     /// It exists purely to keep transform invariants and codecs will completely ignore this frame when they receive it
     Dummy,
@@ -72,6 +76,7 @@ impl Frame {
             MessageType::Kafka => {
                 KafkaFrame::from_bytes(bytes, codec_state.as_kafka()).map(Frame::Kafka)
             }
+            MessageType::Raw => Ok(Frame::Raw(bytes)),
             MessageType::Dummy => Ok(Frame::Dummy),
         }
     }
@@ -81,6 +86,7 @@ impl Frame {
             Frame::Redis(_) => "Redis",
             Frame::Cassandra(_) => "Cassandra",
             Frame::Kafka(_) => "Kafka",
+            Frame::Raw(_) => "Raw",
             Frame::Dummy => "Dummy",
         }
     }
@@ -90,6 +96,7 @@ impl Frame {
             Frame::Cassandra(_) => MessageType::Cassandra,
             Frame::Redis(_) => MessageType::Redis,
             Frame::Kafka(_) => MessageType::Kafka,
+            Frame::Raw(_) => MessageType::Raw,
             Frame::Dummy => MessageType::Dummy,
         }
     }
@@ -133,14 +140,25 @@ impl Frame {
             )),
         }
     }
+
+    pub fn into_raw(self) -> Result<Bytes> {
+        match self {
+            Frame::Raw(bytes) => Ok(bytes),
+            frame => Err(anyhow!(
+                "Expected raw frame but received {} frame",
+                frame.name()
+            )),
+        }
+    }
 }
 
 impl Display for Frame {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         match self {
             Frame::Cassandra(frame) => write!(f, "Cassandra {}", frame),
-            Frame::Redis(frame) => write!(f, "Redis {:?})", frame),
-            Frame::Kafka(frame) => write!(f, "Kafka {})", frame),
+            Frame::Redis(frame) => write!(f, "Redis {:?}", frame),
+            Frame::Kafka(frame) => write!(f, "Kafka {}", frame),
+            Frame::Raw(frame) => write!(f, "Raw {:?}", frame),
             Frame::Dummy => write!(f, "Shotover internal dummy message"),
         }
     }

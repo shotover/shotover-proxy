@@ -1,0 +1,12 @@
+---
+sources:
+  cassandra_prod:
+    Raw:
+      listen_addr: "127.0.0.1:8080"
+chain_config:
+  main_chain:
+    - RawSinkSingle:
+        remote_address: "127.0.0.1:9000"
+        connect_timeout_ms: 3000
+source_to_chain_mapping:
+  cassandra_prod: main_chain

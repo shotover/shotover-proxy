@@ -8,6 +8,7 @@ use tokio_util::codec::{Decoder, Encoder};
 
 pub mod cassandra;
 pub mod kafka;
+pub mod raw;
 pub mod redis;
 
 #[derive(Eq, PartialEq, Copy, Clone)]
@@ -34,6 +35,7 @@ pub enum CodecState {
     Kafka {
         request_header: Option<RequestHeader>,
     },
+    Raw,
     Dummy,
 }
 

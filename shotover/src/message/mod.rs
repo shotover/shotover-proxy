@@ -32,6 +32,7 @@ pub enum ProtocolType {
     Kafka {
         request_header: Option<RequestHeader>,
     },
+    Raw,
 }
 
 impl From<&ProtocolType> for CodecState {
@@ -44,6 +45,7 @@ impl From<&ProtocolType> for CodecState {
             ProtocolType::Kafka { request_header } => Self::Kafka {
                 request_header: *request_header,
             },
+            ProtocolType::Raw => Self::Raw,
         }
     }
 }
@@ -209,12 +211,14 @@ impl Message {
                 MessageType::Redis => nonzero!(1u32),
                 MessageType::Cassandra => cassandra::raw_frame::cell_count(bytes)?,
                 MessageType::Kafka => todo!(),
+                MessageType::Raw => todo!(),
                 MessageType::Dummy => nonzero!(1u32),
             },
             MessageInner::Modified { frame } | MessageInner::Parsed { frame, .. } => match frame {
                 Frame::Cassandra(frame) => frame.cell_count()?,
                 Frame::Redis(_) => nonzero!(1u32),
                 Frame::Kafka(_) => todo!(),
+                Frame::Raw(_) => todo!(),
                 Frame::Dummy => nonzero!(1u32),
             },
         })
@@ -238,6 +242,7 @@ impl Message {
             Some(Frame::Cassandra(cassandra)) => cassandra.get_query_type(),
             Some(Frame::Redis(redis)) => redis_query_type(redis), // free-standing function as we cant define methods on RedisFrame
             Some(Frame::Kafka(_)) => todo!(),
+            Some(Frame::Raw(_)) => todo!(),
             Some(Frame::Dummy) => todo!(),
             None => QueryType::ReadWrite,
         }
@@ -287,12 +292,14 @@ impl Message {
                 }
                 MessageType::Redis => Ok(Metadata::Redis),
                 MessageType::Kafka => Ok(Metadata::Kafka),
+                MessageType::Raw => Err(anyhow!("raw has no metadata")),
                 MessageType::Dummy => Err(anyhow!("dummy has no metadata")),
             },
             MessageInner::Parsed { frame, .. } | MessageInner::Modified { frame } => match frame {
                 Frame::Cassandra(frame) => Ok(Metadata::Cassandra(frame.metadata())),
                 Frame::Kafka(_) => Ok(Metadata::Kafka),
                 Frame::Redis(_) => Ok(Metadata::Redis),
+                Frame::Raw(_) => Err(anyhow!("raw has no metadata")),
                 Frame::Dummy => Err(anyhow!("dummy has no metadata")),
             },
         }
@@ -347,6 +354,7 @@ impl Message {
                     Frame::Cassandra(cassandra) => Some(cassandra.stream_id),
                     Frame::Redis(_) => None,
                     Frame::Kafka(_) => None,
+                    Frame::Raw(_) => None,
                     Frame::Dummy => None,
                 }
             }
