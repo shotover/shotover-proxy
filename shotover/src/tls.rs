@@ -174,12 +174,12 @@ impl TlsConnector {
         let config = match (private_key, certs, tls_config.verify_hostname) {
             (Some(private_key), Some(certs), true) => config_builder
                 .with_root_certificates(root_cert_store)
-                .with_single_cert(certs, private_key)?,
+                .with_client_auth_cert(certs, private_key)?,
             (Some(private_key), Some(certs), false) => config_builder
                 .with_custom_certificate_verifier(Arc::new(SkipVerifyHostName::new(
                     root_cert_store,
                 )))
-                .with_single_cert(certs, private_key)?,
+                .with_client_auth_cert(certs, private_key)?,
             (None, None, true) => config_builder
                 .with_root_certificates(root_cert_store)
                 .with_no_client_auth(),
