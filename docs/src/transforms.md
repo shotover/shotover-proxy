@@ -174,6 +174,10 @@ No cluster discovery or routing occurs with this transform.
   # This field is optional, if not provided, timeout will never occur.
   # When a timeout occurs the connection to the client is immediately closed.
   # read_timeout: 60
+
+  # Transport option, either TCP, being the standard Cassandra protocol or use the Cassandra protocol over WebSockets, with a compatible
+  # driver. TCP will be used as default if this field is left blank.
+  # transport: WebSocket
 ```
 
 This transfrom emits a metrics [counter](user-guide/observability.md#counter) named `failed_requests` and the labels `transform` defined as `CassandraSinkSingle` and `chain` as the name of the chain that this transform is in.
