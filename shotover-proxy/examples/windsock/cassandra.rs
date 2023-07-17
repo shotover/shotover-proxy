@@ -624,7 +624,6 @@ async fn run_aws_shotover(
 }
 
 async fn run_aws_cassandra(instance: Arc<Ec2InstanceWithDocker>, node_address: &[IpAddr]) {
-    let _ip = instance.instance.private_ip().to_string();
     instance
         .run_container(
             "bitnami/cassandra:4.0.6",

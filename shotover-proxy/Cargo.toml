@@ -50,6 +50,7 @@ tokio-bin-process = "0.2.0"
 rustls-pemfile = "1.0.2"
 aws-throwaway = { path = "../aws-throwaway"}
 windsock = { path = "../windsock" }
+regex = "1.7.0"
 cql-ws = { git = "https://github.com/conorbros/cql-ws" }
 
 [[bench]]
