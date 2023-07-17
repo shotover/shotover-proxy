@@ -1,5 +1,5 @@
 use docker_compose_runner::*;
-use std::{env, path::Path};
+use std::env;
 use tracing_subscriber::fmt::TestWriter;
 
 pub use docker_compose_runner::DockerCompose;
@@ -104,8 +104,6 @@ fn build_images(service_to_image: &[&str]) {
     if service_to_image
         .iter()
         .any(|x| *x == "shotover-int-tests/cassandra-tls:4.0.6")
-        && Path::new("tests/test-configs/docker-images/cassandra-tls-4.0.6/certs/keystore.p12")
-            .exists()
     {
         crate::run_command(
             "docker",
