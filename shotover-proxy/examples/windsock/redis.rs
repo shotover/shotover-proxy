@@ -234,7 +234,7 @@ impl Bench for RedisBench {
                     .with_root_certificates(load_ca(
                         "tests/test-configs/redis-tls/certs/localhost_CA.crt",
                     ))
-                    .with_single_cert(certs, private_key)
+                    .with_client_auth_cert(certs, private_key)
                     .unwrap()
                     .into(),
             );
