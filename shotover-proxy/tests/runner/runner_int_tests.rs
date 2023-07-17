@@ -1,10 +1,11 @@
+use crate::shotover_process;
 use serial_test::serial;
-use test_helpers::shotover_process::{Count, EventMatcher, Level, ShotoverProcessBuilder};
+use test_helpers::shotover_process::{Count, EventMatcher, Level};
 
 #[tokio::test]
 #[serial]
 async fn test_early_shutdown_cassandra_source() {
-    ShotoverProcessBuilder::new_with_topology("tests/test-configs/null-cassandra/topology.yaml")
+    shotover_process("tests/test-configs/null-cassandra/topology.yaml")
         .start()
         .await
         .shutdown_and_then_consume_events(&[])
@@ -16,11 +17,9 @@ async fn test_early_shutdown_cassandra_source() {
 async fn test_shotover_responds_sigterm() {
     // Ensure it isnt reliant on timing
     for _ in 0..1000 {
-        let shotover_process = ShotoverProcessBuilder::new_with_topology(
-            "tests/test-configs/null-redis/topology.yaml",
-        )
-        .start()
-        .await;
+        let shotover_process = shotover_process("tests/test-configs/null-redis/topology.yaml")
+            .start()
+            .await;
         shotover_process.signal(nix::sys::signal::Signal::SIGTERM);
 
         let events = shotover_process.consume_remaining_events(&[]).await;
@@ -36,10 +35,9 @@ async fn test_shotover_responds_sigterm() {
 #[tokio::test]
 #[serial]
 async fn test_shotover_responds_sigint() {
-    let shotover_process =
-        ShotoverProcessBuilder::new_with_topology("tests/test-configs/null-redis/topology.yaml")
-            .start()
-            .await;
+    let shotover_process = shotover_process("tests/test-configs/null-redis/topology.yaml")
+        .start()
+        .await;
     shotover_process.signal(nix::sys::signal::Signal::SIGINT);
 
     let events = shotover_process.consume_remaining_events(&[]).await;
@@ -54,7 +52,7 @@ async fn test_shotover_responds_sigint() {
 #[tokio::test]
 #[serial]
 async fn test_shotover_shutdown_when_invalid_topology_non_terminating_last() {
-    ShotoverProcessBuilder::new_with_topology(
+    shotover_process(
         "tests/test-configs/invalid_non_terminating_last.yaml",
     )
     .assert_fails_to_start(&[EventMatcher::new()
@@ -73,7 +71,7 @@ Caused by:
 #[tokio::test]
 #[serial]
 async fn test_shotover_shutdown_when_invalid_topology_terminating_not_last() {
-    ShotoverProcessBuilder::new_with_topology(
+    shotover_process(
         "tests/test-configs/invalid_terminating_not_last.yaml",
     )
     .assert_fails_to_start(&[EventMatcher::new()
@@ -92,7 +90,7 @@ Caused by:
 #[tokio::test]
 #[serial]
 async fn test_shotover_shutdown_when_topology_invalid_topology_subchains() {
-    ShotoverProcessBuilder::new_with_topology(
+    shotover_process(
         "tests/test-configs/invalid_subchains.yaml",
     ).assert_fails_to_start(
         &[
