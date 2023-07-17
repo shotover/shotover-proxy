@@ -39,7 +39,7 @@ sources:
   
   # The configured name of the source
   my_named_redis_source:
-    # The source type and any configuration needed for it
+    # The source and any configuration needed for it
     # This will generally include a listen address and port
     Redis:
       listen_addr: "127.0.0.1:6379"
@@ -47,7 +47,7 @@ sources:
   # The configured name of the source
   my_cassandra_prod:
 
-    # The source type and any configuration needed for it
+    # The sources and any configuration needed for it
     # This will generally include a listen address and port
     Cassandra:
       listen_addr: "127.0.0.1:9042"

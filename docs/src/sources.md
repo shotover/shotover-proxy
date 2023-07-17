@@ -1,6 +1,6 @@
-# Source Types
+# Sources
 
-| Source Type                         | Implementation Status |
+| Source                              | Implementation Status |
 |-------------------------------------|-----------------------|
 |[Cassandra](#cassandra)              |Alpha                  |
 |[Redis](#redis)                      |Beta                   |
