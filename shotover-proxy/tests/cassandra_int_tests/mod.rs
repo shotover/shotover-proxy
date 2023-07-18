@@ -115,7 +115,7 @@ async fn source_tls_and_single_tls(#[case] driver: CassandraDriver) {
         .start()
         .await;
 
-    let ca_cert = "tests/test-configs/docker-images/cassandra-tls-4.0.6/certs/localhost_CA.crt";
+    let ca_cert = "tests/test-configs/cassandra-tls/certs/localhost_CA.crt";
 
     {
         // Run a quick test straight to Cassandra to check our assumptions that Shotover and Cassandra TLS are behaving exactly the same
@@ -295,7 +295,7 @@ async fn cluster_multi_rack(#[case] driver: CassandraDriver) {
 #[serial]
 async fn source_tls_and_cluster_tls(#[case] driver: CassandraDriver) {
     test_helpers::cert::generate_cassandra_test_certs();
-    let ca_cert = "tests/test-configs/docker-images/cassandra-tls-4.0.6/certs/localhost_CA.crt";
+    let ca_cert = "tests/test-configs/cassandra-tls/certs/localhost_CA.crt";
 
     let _compose = docker_compose("tests/test-configs/cassandra-cluster-tls/docker-compose.yaml");
     {
@@ -942,7 +942,7 @@ async fn passthrough_tls_websockets() {
             .start()
             .await;
 
-    let ca_cert = "tests/test-configs/docker-images/cassandra-tls-4.0.6/certs/localhost_CA.crt";
+    let ca_cert = "tests/test-configs/cassandra-tls/certs/localhost_CA.crt";
 
     let mut session = cql_ws::Session::new_tls("wss://0.0.0.0:9042", ca_cert).await;
     let rows = session.query("SELECT bootstrapped FROM system.local").await;

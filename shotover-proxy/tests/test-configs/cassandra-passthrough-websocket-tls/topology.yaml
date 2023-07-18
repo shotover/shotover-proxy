@@ -5,17 +5,17 @@ sources:
       listen_addr: "127.0.0.1:9042"
       transport: WebSocket
       tls:
-        certificate_path: "tests/test-configs/docker-images/cassandra-tls-4.0.6/certs/localhost.crt"
-        private_key_path: "tests/test-configs/docker-images/cassandra-tls-4.0.6/certs/localhost.key"
+        certificate_path: "tests/test-configs/cassandra-tls/certs/localhost.crt"
+        private_key_path: "tests/test-configs/cassandra-tls/certs/localhost.key"
 chain_config:
   main_chain:
     - CassandraSinkSingle:
         remote_address: "127.0.0.1:9043"
         connect_timeout_ms: 3000
         tls:
-          certificate_authority_path: "tests/test-configs/docker-images/cassandra-tls-4.0.6/certs/localhost_CA.crt"
-          certificate_path: "tests/test-configs/docker-images/cassandra-tls-4.0.6/certs/localhost.crt"
-          private_key_path: "tests/test-configs/docker-images/cassandra-tls-4.0.6/certs/localhost.key"
+          certificate_authority_path: "tests/test-configs/cassandra-tls/certs/localhost_CA.crt"
+          certificate_path: "tests/test-configs/cassandra-tls/certs/localhost.crt"
+          private_key_path: "tests/test-configs/cassandra-tls/certs/localhost.key"
           verify_hostname: false
 source_to_chain_mapping:
   cassandra_prod: main_chain
