@@ -1,3 +1,4 @@
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 use uuid::Uuid;
 
@@ -8,6 +9,7 @@ pub use tokio_bin_process::BinProcess;
 
 pub struct ShotoverProcessBuilder {
     topology_path: String,
+    bin_path: Option<PathBuf>,
     log_name: Option<String>,
     cores: Option<String>,
     profile: Option<String>,
@@ -18,11 +20,17 @@ impl ShotoverProcessBuilder {
     pub fn new_with_topology(topology_path: &str) -> Self {
         Self {
             topology_path: topology_path.to_owned(),
+            bin_path: None,
             log_name: None,
             cores: None,
             profile: None,
             observability_port: None,
         }
+    }
+
+    pub fn with_bin(mut self, bin_path: &Path) -> Self {
+        self.bin_path = Some(bin_path.to_owned());
+        self
     }
 
     pub fn with_log_name(mut self, log_name: &str) -> Self {
@@ -68,13 +76,20 @@ observability_interface: "127.0.0.1:{observability_port}"
         };
         args.extend(["-c", &config_path]);
 
-        let mut shotover = BinProcess::start_crate_name(
-            "shotover-proxy",
-            self.log_name.as_deref().unwrap_or("shotover"),
-            &args,
-            self.profile.as_deref(),
-        )
-        .await;
+        let log_name = self.log_name.as_deref().unwrap_or("shotover");
+
+        let mut shotover = match &self.bin_path {
+            Some(bin_path) => BinProcess::start_binary(bin_path, log_name, &args).await,
+            None => {
+                BinProcess::start_crate_name(
+                    "shotover-proxy",
+                    log_name,
+                    &args,
+                    self.profile.as_deref(),
+                )
+                .await
+            }
+        };
 
         tokio::time::timeout(
             Duration::from_secs(30),
