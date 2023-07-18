@@ -34,8 +34,13 @@ Cassandra:
   # Timeout in seconds after which to terminate an idle connection. This field is optional, if not provided, idle connections will never be terminated.
   # timeout: 60
 
-  # Transport option, either TCP, being the standard Cassandra protocol or use the Cassandra protocol over WebSockets, with a compatible
-  # driver. TCP will be used as default if this field is left blank.
+  # The transport that cassandra communication will occur over.
+  # TCP is the only Cassandra protocol conforming transport.
+  transport: Tcp
+  
+  # alternatively:
+  #
+  # Use the Cassandra protocol over WebSockets using a Shotover compatible driver.
   # transport: WebSocket
 ```
 
