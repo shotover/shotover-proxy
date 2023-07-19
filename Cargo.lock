@@ -569,6 +569,8 @@ dependencies = [
 [[package]]
 name = "aws-throwaway"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9ae7c585d17af2f92f38daf7c01969dfdf9be19257e4c2eb097aec71b21c4c5c"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -576,16 +578,11 @@ dependencies = [
  "aws-sdk-ec2",
  "aws-sdk-iam",
  "base64 0.21.2",
- "clap",
  "russh",
  "russh-keys",
- "rustyline",
- "shellfish",
  "ssh-key",
  "tokio",
  "tracing",
- "tracing-appender",
- "tracing-subscriber",
  "uuid",
 ]
 
@@ -1661,6 +1658,19 @@ dependencies = [
  "serde_yaml",
  "subprocess",
  "tracing",
+]
+
+[[package]]
+name = "ec2-cargo"
+version = "0.1.0"
+dependencies = [
+ "aws-throwaway",
+ "clap",
+ "rustyline",
+ "shellfish",
+ "tokio",
+ "tracing-appender",
+ "tracing-subscriber",
 ]
 
 [[package]]
