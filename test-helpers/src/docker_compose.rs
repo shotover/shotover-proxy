@@ -67,6 +67,10 @@ pub fn get_image_waiters() -> &'static [Image] {
             name: "bitnami/kafka:3.4.0-debian-11-r22",
             log_regex_to_wait_for: r"Kafka Server started",
         },
+        Image {
+            name: "opensearchproject/opensearch:latest",
+            log_regex_to_wait_for: r"Node '(?s)(.*)' initialized",
+        },
     ]
 }
 
