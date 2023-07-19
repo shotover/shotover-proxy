@@ -68,8 +68,9 @@ pub fn generate_test_certs_with_sans(path: &Path, sans: Vec<SanType>) {
 }
 
 pub fn generate_cassandra_test_certs() {
-    let path = Path::new("tests/test-configs/docker-images/cassandra-tls-4.0.6/certs");
+    let path = Path::new("tests/test-configs/cassandra-tls/certs");
     generate_test_certs(path);
+    std::fs::remove_file(path.join("keystore.p12")).ok();
     run_command(
         "openssl",
         &[
