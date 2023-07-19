@@ -30,6 +30,9 @@ services:
       &volumes
       - type: tmpfs
         target: /var/lib/cassandra
+      - type: bind
+        source: "../cassandra-tls/certs/keystore.p12"
+        target: "/etc/cassandra/certs/keystore.p12"
     command: &command cassandra -f -Dcassandra.initial_token="$$CASSANDRA_INITIAL_TOKENS"
 
   cassandra-two:

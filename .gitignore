@@ -3,12 +3,7 @@
 *.gz
 /.vscode
 /shotover-proxy/tests/test-configs/redis-tls/certs
-/shotover-proxy/tests/test-configs/docker-images/cassandra-tls-4.0.6/certs/*.jks
-/shotover-proxy/tests/test-configs/docker-images/cassandra-tls-4.0.6/certs/*.p12
-/shotover-proxy/tests/test-configs/docker-images/cassandra-tls-4.0.6/certs/*.key
-/shotover-proxy/tests/test-configs/docker-images/cassandra-tls-4.0.6/certs/*.srl
-/shotover-proxy/tests/test-configs/docker-images/cassandra-tls-4.0.6/certs/*.csr
-/shotover-proxy/tests/test-configs/docker-images/cassandra-tls-4.0.6/certs/*.crt
+/shotover-proxy/tests/test-configs/cassandra-tls/certs
 .workspace.code-workspace
 **/.DS_Store
 /.project
