@@ -1,15 +1,22 @@
-use crate::{common::Shotover, profilers::ProfilerRunner};
+use crate::{
+    aws::{Ec2InstanceWithDocker, Ec2InstanceWithShotover, RunningShotover, WindsockAws},
+    common::{rewritten_file, Shotover},
+    profilers::ProfilerRunner,
+};
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use fred::{
     prelude::*,
     rustls::{Certificate, ClientConfig, PrivateKey, RootCertStore},
 };
+use itertools::Itertools;
 use rustls_pemfile::{certs, Item};
 use std::{
     collections::HashMap,
     fs::File,
     io::BufReader,
+    net::IpAddr,
+    path::Path,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -105,9 +112,46 @@ impl Bench for RedisBench {
         &self,
         _running_in_release: bool,
         _profiling: Profiling,
-        _bench_parameters: BenchParameters,
+        parameters: BenchParameters,
     ) -> Result<()> {
-        todo!()
+        let aws = WindsockAws::get().await;
+
+        let (redis_instances, bench_instance, shotover_instance) = futures::join!(
+            RedisCluster::create(aws, self.topology),
+            aws.create_bencher_instance(),
+            aws.create_shotover_instance()
+        );
+
+        let redis_ip = redis_instances.private_ips()[0].to_string();
+        let shotover_ip = shotover_instance.instance.private_ip().to_string();
+
+        redis_instances.run(self.encryption).await;
+        // unlike other sinks, redis cluster sink needs the redis instance to be already up
+        let running_shotover = run_aws_shotover(
+            shotover_instance.clone(),
+            self.shotover,
+            redis_ip.clone(),
+            self.topology,
+        )
+        .await;
+
+        let destination_ip = if running_shotover.is_some() {
+            format!("redis://{shotover_ip}")
+        } else {
+            match self.topology {
+                RedisTopology::Single => format!("redis://{redis_ip}"),
+                RedisTopology::Cluster3 => format!("redis-cluster://{redis_ip}"),
+            }
+        };
+
+        bench_instance
+            .run_bencher(&self.run_args(&destination_ip, &parameters), &self.name())
+            .await;
+
+        if let Some(running_shotover) = running_shotover {
+            running_shotover.shutdown().await;
+        }
+        Ok(())
     }
 
     async fn orchestrate_local(
@@ -190,7 +234,7 @@ impl Bench for RedisBench {
                     .with_root_certificates(load_ca(
                         "tests/test-configs/redis-tls/certs/localhost_CA.crt",
                     ))
-                    .with_single_cert(certs, private_key)
+                    .with_client_auth_cert(certs, private_key)
                     .unwrap()
                     .into(),
             );
@@ -302,6 +346,130 @@ impl BenchTask for BenchTaskRedis {
             RedisOperation::Get => {
                 let result: u32 = self.client.get("foo").await.unwrap();
                 assert_eq!(result, 42);
+            }
+        }
+    }
+}
+
+async fn run_aws_shotover(
+    instance: Arc<Ec2InstanceWithShotover>,
+    shotover: Shotover,
+    redis_ip: String,
+    topology: RedisTopology,
+) -> Option<RunningShotover> {
+    let config_dir = "tests/test-configs/redis/bench";
+    let ip = instance.instance.private_ip().to_string();
+    match shotover {
+        Shotover::Standard | Shotover::ForcedMessageParsed => {
+            let clustered = match topology {
+                RedisTopology::Single => "",
+                RedisTopology::Cluster3 => "-cluster",
+            };
+            let encoded = match shotover {
+                Shotover::Standard => "",
+                Shotover::ForcedMessageParsed => "-encode",
+                Shotover::None => unreachable!(),
+            };
+            let topology = rewritten_file(
+                Path::new(&format!(
+                    "{config_dir}/topology{clustered}{encoded}-cloud.yaml"
+                )),
+                &[("HOST_ADDRESS", &ip), ("REDIS_ADDRESS", &redis_ip)],
+            )
+            .await;
+            Some(instance.run_shotover(&topology).await)
+        }
+        Shotover::None => None,
+    }
+}
+
+enum RedisCluster {
+    Single(Arc<Ec2InstanceWithDocker>),
+    Cluster3 {
+        instances: [Arc<Ec2InstanceWithDocker>; 6],
+        cluster_creator: Arc<Ec2InstanceWithDocker>,
+    },
+}
+
+impl RedisCluster {
+    async fn create(aws: &'static WindsockAws, topology: RedisTopology) -> Self {
+        match topology {
+            RedisTopology::Single => RedisCluster::Single(aws.create_docker_instance().await),
+            RedisTopology::Cluster3 => RedisCluster::Cluster3 {
+                instances: [
+                    aws.create_docker_instance().await,
+                    aws.create_docker_instance().await,
+                    aws.create_docker_instance().await,
+                    aws.create_docker_instance().await,
+                    aws.create_docker_instance().await,
+                    aws.create_docker_instance().await,
+                ],
+                cluster_creator: aws.create_docker_instance().await,
+            },
+        }
+    }
+
+    async fn run(&self, encryption: Encryption) {
+        match self {
+            RedisCluster::Single(instance) => match encryption {
+                Encryption::None => instance.run_container("library/redis:5.0.9", &[]).await,
+                Encryption::Tls => todo!(),
+            },
+            RedisCluster::Cluster3 {
+                instances,
+                cluster_creator,
+            } => {
+                if let Encryption::Tls = encryption {
+                    todo!()
+                }
+                let mut wait_for = vec![];
+                for instance in instances {
+                    let node_addresses = self.private_ips();
+                    let instance = instance.clone();
+                    wait_for.push(tokio::spawn(async move {
+                        instance
+                            .run_container(
+                                "bitnami/redis-cluster:6.2.12-debian-11-r26",
+                                &[
+                                    ("ALLOW_EMPTY_PASSWORD".to_owned(), "yes".to_owned()),
+                                    (
+                                        "REDIS_NODES".to_owned(),
+                                        node_addresses.iter().map(|x| x.to_string()).join(" "),
+                                    ),
+                                ],
+                            )
+                            .await
+                    }));
+                }
+
+                let node_addresses = self.private_ips();
+                cluster_creator
+                    .run_container(
+                        "bitnami/redis-cluster:6.2.12-debian-11-r26",
+                        &[
+                            ("ALLOW_EMPTY_PASSWORD".to_owned(), "yes".to_owned()),
+                            (
+                                "REDIS_NODES".to_owned(),
+                                node_addresses.iter().map(|x| x.to_string()).join(" "),
+                            ),
+                            ("REDIS_CLUSTER_REPLICAS".to_owned(), "1".to_owned()),
+                            ("REDIS_CLUSTER_CREATOR".to_owned(), "yes".to_owned()),
+                        ],
+                    )
+                    .await;
+
+                for wait_for in wait_for {
+                    wait_for.await.unwrap();
+                }
+            }
+        }
+    }
+
+    fn private_ips(&self) -> Vec<IpAddr> {
+        match self {
+            RedisCluster::Single(instance) => vec![instance.instance.private_ip()],
+            RedisCluster::Cluster3 { instances, .. } => {
+                instances.iter().map(|x| x.instance.private_ip()).collect()
             }
         }
     }

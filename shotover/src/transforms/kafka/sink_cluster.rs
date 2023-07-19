@@ -17,7 +17,6 @@ use rand::SeedableRng;
 use serde::Deserialize;
 use std::hash::Hasher;
 use std::net::SocketAddr;
-use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{mpsc, oneshot, RwLock};
@@ -55,7 +54,7 @@ pub struct KafkaSinkClusterBuilder {
     shotover_nodes: Vec<KafkaAddress>,
     connect_timeout: Duration,
     read_timeout: Option<Duration>,
-    coordinator_broker_id: Arc<AtomicI32>,
+    coordinator_broker_id: Arc<DashMap<StrBytes, i32>>,
     topics: Arc<DashMap<StrBytes, Topic>>,
     nodes_shared: Arc<RwLock<Vec<KafkaNode>>>,
 }
@@ -86,7 +85,7 @@ impl KafkaSinkClusterBuilder {
             shotover_nodes,
             connect_timeout: Duration::from_millis(connect_timeout_ms),
             read_timeout: receive_timeout,
-            coordinator_broker_id: Arc::new(AtomicI32::new(-1)),
+            coordinator_broker_id: Arc::new(DashMap::new()),
             topics: Arc::new(DashMap::new()),
             nodes_shared: Arc::new(RwLock::new(vec![])),
         }
@@ -126,14 +125,14 @@ pub struct KafkaSinkCluster {
     read_timeout: Option<Duration>,
     nodes: Vec<KafkaNode>,
     nodes_shared: Arc<RwLock<Vec<KafkaNode>>>,
-    coordinator_broker_id: Arc<AtomicI32>,
+    coordinator_broker_id: Arc<DashMap<StrBytes, i32>>,
     topics: Arc<DashMap<StrBytes, Topic>>,
     rng: SmallRng,
 }
 
 #[async_trait]
 impl Transform for KafkaSinkCluster {
-    async fn transform<'a>(&'a mut self, requests_wrapper: Wrapper<'a>) -> Result<Messages> {
+    async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Messages> {
         if self.nodes.is_empty() {
             let nodes: Result<Vec<KafkaNode>> = self
                 .first_contact_points
@@ -161,8 +160,24 @@ impl Transform for KafkaSinkCluster {
             }
         }
 
+        let mut find_coordinator_requests = vec![];
+        for (index, request) in requests_wrapper.requests.iter_mut().enumerate() {
+            if let Some(Frame::Kafka(KafkaFrame::Request {
+                body: RequestBody::FindCoordinator(find_coordinator),
+                ..
+            })) = request.frame()
+            {
+                find_coordinator_requests.push(FindCoordinator {
+                    index,
+                    key: find_coordinator.key.clone(),
+                    key_type: find_coordinator.key_type,
+                });
+            }
+        }
+
         let responses = self.send_requests(requests_wrapper.requests).await?;
-        self.receive_responses(responses).await
+        self.receive_responses(&find_coordinator_requests, responses)
+            .await
     }
 
     fn set_pushed_messages_tx(&mut self, pushed_messages_tx: mpsc::UnboundedSender<Messages>) {
@@ -273,40 +288,33 @@ impl KafkaSinkCluster {
                     results.push(rx);
                 }
 
-                // route to coordinator
                 Some(Frame::Kafka(KafkaFrame::Request {
-                    body:
-                        RequestBody::JoinGroup(_)
-                        | RequestBody::OffsetFetch(_)
-                        | RequestBody::Heartbeat(_)
-                        | RequestBody::SyncGroup(_),
+                    body: RequestBody::Heartbeat(heartbeat),
                     ..
                 })) => {
-                    let mut connection = None;
-                    for node in &mut self.nodes {
-                        if node.broker_id == self.coordinator_broker_id.load(Ordering::Relaxed) {
-                            connection =
-                                Some(node.get_connection(self.connect_timeout).await?.clone());
-                        }
-                    }
-                    let connection = match connection {
-                        Some(connection) => connection,
-                        None => self
-                            .nodes
-                            .choose_mut(&mut self.rng)
-                            .unwrap()
-                            .get_connection(self.connect_timeout)
-                            .await?
-                            .clone(),
-                    };
-                    let (tx, rx) = oneshot::channel();
-                    connection
-                        .send(Request {
-                            message,
-                            return_chan: Some(tx),
-                        })
-                        .map_err(|_| anyhow!("Failed to send"))?;
-                    results.push(rx);
+                    let group_id = heartbeat.group_id.0.clone();
+                    results.push(self.route_to_coordinator(message, group_id).await?);
+                }
+                Some(Frame::Kafka(KafkaFrame::Request {
+                    body: RequestBody::SyncGroup(sync_group),
+                    ..
+                })) => {
+                    let group_id = sync_group.group_id.0.clone();
+                    results.push(self.route_to_coordinator(message, group_id).await?);
+                }
+                Some(Frame::Kafka(KafkaFrame::Request {
+                    body: RequestBody::OffsetFetch(offset_fetch),
+                    ..
+                })) => {
+                    let group_id = offset_fetch.group_id.0.clone();
+                    results.push(self.route_to_coordinator(message, group_id).await?);
+                }
+                Some(Frame::Kafka(KafkaFrame::Request {
+                    body: RequestBody::JoinGroup(join_group),
+                    ..
+                })) => {
+                    let group_id = join_group.group_id.0.clone();
+                    results.push(self.route_to_coordinator(message, group_id).await?);
                 }
 
                 // route to random node
@@ -333,6 +341,7 @@ impl KafkaSinkCluster {
 
     async fn receive_responses(
         &self,
+        find_coordinator_requests: &[FindCoordinator],
         responses: Vec<oneshot::Receiver<Response>>,
     ) -> Result<Vec<Message>> {
         // TODO: since kafka will never send requests out of order I wonder if it would be faster to use an mpsc instead of a oneshot or maybe just directly run the sending/receiving here?
@@ -343,16 +352,23 @@ impl KafkaSinkCluster {
         }?;
 
         // Rewrite responses to use shotovers port instead of kafkas port
-        for response in &mut responses {
+        for (i, response) in responses.iter_mut().enumerate() {
             match response.frame() {
                 Some(Frame::Kafka(KafkaFrame::Response {
                     body: ResponseBody::FindCoordinator(find_coordinator),
                     version,
                     ..
                 })) => {
+                    let request = find_coordinator_requests
+                        .iter()
+                        .find(|x| x.index == i)
+                        .ok_or_else(|| anyhow!("Received find_coordinator but not requested"))?;
+
                     if *version <= 3 {
-                        self.coordinator_broker_id
-                            .store(find_coordinator.node_id.0, Ordering::Relaxed);
+                        if request.key_type == 0 {
+                            self.coordinator_broker_id
+                                .insert(request.key.clone(), find_coordinator.node_id.0);
+                        }
                         rewrite_address(
                             &self.shotover_nodes,
                             &mut find_coordinator.host,
@@ -360,8 +376,10 @@ impl KafkaSinkCluster {
                         )
                     } else {
                         for coordinator in &mut find_coordinator.coordinators {
-                            self.coordinator_broker_id
-                                .store(coordinator.node_id.0, Ordering::Relaxed);
+                            if request.key_type == 0 {
+                                self.coordinator_broker_id
+                                    .insert(coordinator.key.clone(), find_coordinator.node_id.0);
+                            }
                             rewrite_address(
                                 &self.shotover_nodes,
                                 &mut coordinator.host,
@@ -437,6 +455,39 @@ impl KafkaSinkCluster {
         }
 
         Ok(responses)
+    }
+
+    async fn route_to_coordinator(
+        &mut self,
+        message: Message,
+        group_name: StrBytes,
+    ) -> Result<oneshot::Receiver<Response>> {
+        let mut connection = None;
+        for node in &mut self.nodes {
+            if let Some(broker_id) = self.coordinator_broker_id.get(&group_name) {
+                if node.broker_id == *broker_id {
+                    connection = Some(node.get_connection(self.connect_timeout).await?.clone());
+                }
+            }
+        }
+        let connection = match connection {
+            Some(connection) => connection,
+            None => self
+                .nodes
+                .choose_mut(&mut self.rng)
+                .unwrap()
+                .get_connection(self.connect_timeout)
+                .await?
+                .clone(),
+        };
+        let (tx, rx) = oneshot::channel();
+        connection
+            .send(Request {
+                message,
+                return_chan: Some(tx),
+            })
+            .map_err(|_| anyhow!("Failed to send"))?;
+        Ok(rx)
     }
 }
 
@@ -522,4 +573,10 @@ impl KafkaAddress {
                 .map_err(|_| anyhow!("Failed to parse address port as integer"))?,
         })
     }
+}
+
+struct FindCoordinator {
+    index: usize,
+    key: StrBytes,
+    key_type: i8,
 }
