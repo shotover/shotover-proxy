@@ -7,7 +7,7 @@
   - [Concepts](./user-guide/concepts.md)
   - [Configuration](./user-guide/configuration.md)
   - [Observability](./user-guide/observability.md)
-- [Source Types](./source-types.md)
+- [Sources](./sources.md)
 - [Transforms](./transforms.md)
 - [Examples]()
   - [Redis Cluster]()

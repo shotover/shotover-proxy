@@ -1,6 +1,6 @@
-# Source Types
+# Sources
 
-| Source Type                         | Implementation Status |
+| Source                              | Implementation Status |
 |-------------------------------------|-----------------------|
 |[Cassandra](#cassandra)              |Alpha                  |
 |[Redis](#redis)                      |Beta                   |
@@ -33,6 +33,15 @@ Cassandra:
  
   # Timeout in seconds after which to terminate an idle connection. This field is optional, if not provided, idle connections will never be terminated.
   # timeout: 60
+
+  # The transport that cassandra communication will occur over.
+  # TCP is the only Cassandra protocol conforming transport.
+  transport: Tcp
+  
+  # alternatively:
+  #
+  # Use the Cassandra protocol over WebSockets using a Shotover compatible driver.
+  # transport: WebSocket
 ```
 
 ## Redis

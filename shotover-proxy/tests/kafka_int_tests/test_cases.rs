@@ -91,26 +91,6 @@ async fn produce_consume_acks0(brokers: &str) {
     }
 }
 
-pub async fn produce_only(brokers: &str) {
-    let producer: FutureProducer = ClientConfig::new()
-        .set("bootstrap.servers", brokers)
-        .set("message.timeout.ms", "5000")
-        .create()
-        .unwrap();
-
-    let delivery_status = producer
-        .send_result(
-            FutureRecord::to("test_produce")
-                .payload("Message")
-                .key("Key"),
-        )
-        .unwrap()
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(delivery_status, (0, 0));
-}
-
 pub async fn basic(address: &str) {
     produce_consume(address, "foo").await;
     produce_consume_acks0(address).await;

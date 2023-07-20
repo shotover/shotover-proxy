@@ -1,0 +1,17 @@
+[package]
+name = "ec2-cargo"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "A tool for running cargo commands in an EC2 instance"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+tokio.workspace = true
+clap.workspace = true
+tracing-subscriber.workspace = true
+aws-throwaway.workspace = true
+tracing-appender.workspace = true
+shellfish = { version = "0.8.0", features = ["async"] }
+rustyline = "11.0.0"
