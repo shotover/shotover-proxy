@@ -8,8 +8,8 @@ use shotover::codec::cassandra::CassandraCodecBuilder;
 use shotover::codec::{CodecBuilder, Direction};
 use shotover::frame::cassandra::{parse_statement_single, Tracing};
 use shotover::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame};
+use shotover::message::value::{IntSize, MessageValue};
 use shotover::message::Message;
-use shotover::message_value::{IntSize, MessageValue};
 use tokio_util::codec::Encoder;
 
 fn criterion_benchmark(c: &mut Criterion) {
