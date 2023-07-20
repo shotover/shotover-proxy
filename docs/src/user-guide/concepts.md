@@ -1,6 +1,6 @@
 # Core Concepts
 
-Shotover has a small number of core concepts or components that make up the bulk of it's architecture. Once understood, quite complex behaviour and environments can be managed with Shotover Proxy.
+Shotover has a small number of core concepts or components that make up the bulk of it's architecture. Once understood, quite complex behaviour and environments can be managed with Shotover.
 
 ## Source
 
@@ -8,7 +8,7 @@ A source is the main component that listens for traffic from your application an
 
 ## Transform
 
-Transforms are where Shotover does the bulk of it's work. A transform is a single unit of operation that does something to the database request that's in flight. This may be logging it, modifying it, sending it to an external system or anything else you can think of. Transforms can either be terminating (pass messages on to subsequent transforms on the chain) or non-terminating (return a response without calling the rest of the chain). Transforms that send messages to external systems are called sinks. 
+Transforms are where Shotover does the bulk of it's work. A transform is a single unit of operation that does something to the database request that is in flight. This may be logging it, modifying it, sending it to an external system or anything else you can think of. Transforms can either be terminating (pass messages on to subsequent transforms on the chain) or non-terminating (return a response without calling the rest of the chain). Transforms that send messages to external systems are called sinks. 
 
 ## Transform Chain
 
