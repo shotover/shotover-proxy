@@ -82,9 +82,7 @@ async fn cluster_multi_shotover() {
         );
     }
 
-    test_cases::produce_only("127.0.0.1:9192").await;
-    // disabled until routing is implemented
-    //test_cases::basic("127.0.0.1:9192").await;
+    test_cases::basic("127.0.0.1:9192").await;
 
     for shotover in shotovers {
         tokio::time::timeout(
