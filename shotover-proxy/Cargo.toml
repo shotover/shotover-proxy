@@ -11,7 +11,7 @@ license = "Apache-2.0"
 shotover = { path = "../shotover" }
 
 [dev-dependencies]
-scylla = "0.8.1"
+scylla.workspace = true
 anyhow.workspace = true
 tokio.workspace = true
 tracing.workspace = true
