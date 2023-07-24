@@ -22,6 +22,9 @@ On Ubuntu you can install them via `sudo apt-get install cmake gcc g++ libssl-de
 #### Docker
 
 While not required for building Shotover, installing `docker` and `docker-compose` will allow you to run Shotover's integration tests and also build the static libc version of Shotover.
+This setup script might work for you: `curl -sSL https://get.docker.com/ | sudo sh`
+Do not use the rootless install as many of our tests rely on the user created bridge networks having their interface exposed to the host, which rootless install does not support.
+Instead add your user to the docker group: `usermod -aG docker $USER`
 
 ## Building Shotover
 

@@ -58,8 +58,17 @@ do
 done
 sudo apt-get install -y cmake pkg-config g++ libssl-dev librdkafka-dev uidmap
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+
 curl -sSL https://get.docker.com/ | sudo sh
-dockerd-rootless-setuptool.sh install
+
+# silly hack to let us run root docker without having to relogin for a group change to take affect
+sudo mv /bin/docker /bin/docker1
+echo '#!/bin/bash
+sudo /bin/docker1 "$@"
+' | sudo dd of=/bin/docker
+sudo chmod +x /bin/docker
+
+# hack to work around docker-compose command not being present on this machine
 echo '#!/bin/bash
 docker compose "$@"
 ' | sudo dd of=/bin/docker-compose
