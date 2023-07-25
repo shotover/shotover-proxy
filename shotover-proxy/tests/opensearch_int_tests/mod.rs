@@ -13,7 +13,6 @@ use opensearch::{
 };
 use serde_json::{json, Value};
 use test_helpers::docker_compose::docker_compose;
-use test_helpers::run_command;
 
 pub async fn index_documents(client: &OpenSearch) -> Response {
     let index = "posts";
@@ -47,13 +46,6 @@ pub async fn index_documents(client: &OpenSearch) -> Response {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn passthrough_standard() {
-    // This setting changes the maximum number of memory map areas a process may have.
-    // OpenSearch requires vm.max_map_count to be set higher to run.
-    // This command sets it temporarily higher (for the length of the user session), it is reset after rebooting.
-    if &run_command("sysctl", &["vm.max_map_count"]).unwrap() != "vm.max_map_count = 262144\n" {
-        run_command("sudo", &["sysctl", "-w", "vm.max_map_count=262144"]).unwrap();
-    };
-
     let _compose = docker_compose("tests/test-configs/opensearch-passthrough/docker-compose.yaml");
 
     let url = Url::parse("https://localhost:9200").unwrap();

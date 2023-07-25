@@ -68,7 +68,7 @@ pub fn get_image_waiters() -> &'static [Image] {
             log_regex_to_wait_for: r"Kafka Server started",
         },
         Image {
-            name: "opensearchproject/opensearch:latest",
+            name: "opensearchproject/opensearch:2.9.0",
             log_regex_to_wait_for: r"Node '(?s)(.*)' initialized",
         },
     ]
