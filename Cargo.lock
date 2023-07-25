@@ -4535,7 +4535,6 @@ dependencies = [
  "redis",
  "redis-protocol",
  "regex",
- "reqwest",
  "rstest",
  "rustls-pemfile",
  "scylla",
