@@ -1,4 +1,4 @@
-use crate::message::value::{serialize_len, serialize_with_length_prefix, MessageValue};
+use crate::frame::value::{serialize_len, serialize_with_length_prefix, MessageValue};
 use crate::message::QueryType;
 use anyhow::{anyhow, Result};
 use bytes::Bytes;

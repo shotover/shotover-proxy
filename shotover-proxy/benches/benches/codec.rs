@@ -6,9 +6,11 @@ use cassandra_protocol::frame::Version;
 use criterion::{black_box, criterion_group, BatchSize, Criterion};
 use shotover::codec::cassandra::CassandraCodecBuilder;
 use shotover::codec::{CodecBuilder, Direction};
-use shotover::frame::cassandra::{parse_statement_single, Tracing};
-use shotover::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame};
-use shotover::message::value::{IntSize, MessageValue};
+use shotover::frame::{
+    cassandra::{parse_statement_single, Tracing},
+    value::{IntSize, MessageValue},
+    CassandraFrame, CassandraOperation, CassandraResult, Frame,
+};
 use shotover::message::Message;
 use tokio_util::codec::Encoder;
 

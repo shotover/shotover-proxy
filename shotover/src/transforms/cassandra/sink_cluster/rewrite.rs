@@ -1,9 +1,11 @@
 use super::node::ConnectionFactory;
 use super::node_pool::NodePool;
 use super::ShotoverNode;
-use crate::frame::cassandra::{parse_statement_single, Tracing};
+use crate::frame::{
+    cassandra::{parse_statement_single, Tracing},
+    value::{IntSize, MessageValue},
+};
 use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame};
-use crate::message::value::{IntSize, MessageValue};
 use crate::message::{Message, Messages};
 use anyhow::{anyhow, Result};
 use cassandra_protocol::frame::message_result::BodyResResultPrepared;

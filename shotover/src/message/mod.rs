@@ -17,8 +17,6 @@ use nonzero_ext::nonzero;
 use serde::Deserialize;
 use std::num::NonZeroU32;
 
-pub mod value;
-
 pub enum Metadata {
     Cassandra(CassandraMetadata),
     Redis,
