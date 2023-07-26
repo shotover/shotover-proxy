@@ -203,6 +203,53 @@ impl KafkaFrame {
         })
     }
 
+    pub fn bytes_len(&self) -> Result<usize> {
+        Ok(match &self {
+            KafkaFrame::Request { header, body } => {
+                let header_version = ApiKey::try_from(header.request_api_key)
+                    .map_err(|_| anyhow!("unknown api key {}", header.request_api_key))?
+                    .request_header_version(header.request_api_version);
+
+                let version = header.request_api_version;
+                4 + header.compute_size(header_version)?
+                    + match body {
+                        RequestBody::Produce(x) => compute_size(x, version)?,
+                        RequestBody::Fetch(x) => compute_size(x, version)?,
+                        RequestBody::OffsetFetch(x) => compute_size(x, version)?,
+                        RequestBody::ListOffsets(x) => compute_size(x, version)?,
+                        RequestBody::JoinGroup(x) => compute_size(x, version)?,
+                        RequestBody::SyncGroup(x) => compute_size(x, version)?,
+                        RequestBody::Metadata(x) => compute_size(x, version)?,
+                        RequestBody::FindCoordinator(x) => compute_size(x, version)?,
+                        RequestBody::LeaderAndIsr(x) => compute_size(x, version)?,
+                        RequestBody::Heartbeat(x) => compute_size(x, version)?,
+                        RequestBody::Unknown { message, .. } => message.len(),
+                    }
+            }
+            KafkaFrame::Response {
+                version,
+                header,
+                body,
+            } => {
+                let version = *version;
+                4 + header.compute_size(body.header_version(version))?
+                    + match body {
+                        ResponseBody::Produce(x) => compute_size(x, version)?,
+                        ResponseBody::FindCoordinator(x) => compute_size(x, version)?,
+                        ResponseBody::Fetch(x) => compute_size(x, version)?,
+                        ResponseBody::OffsetFetch(x) => compute_size(x, version)?,
+                        ResponseBody::ListOffsets(x) => compute_size(x, version)?,
+                        ResponseBody::JoinGroup(x) => compute_size(x, version)?,
+                        ResponseBody::SyncGroup(x) => compute_size(x, version)?,
+                        ResponseBody::Metadata(x) => compute_size(x, version)?,
+                        ResponseBody::DescribeCluster(x) => compute_size(x, version)?,
+                        ResponseBody::Heartbeat(x) => compute_size(x, version)?,
+                        ResponseBody::Unknown { message, .. } => message.len(),
+                    }
+            }
+        })
+    }
+
     pub fn encode(self, bytes: &mut BytesMut) -> Result<()> {
         // write dummy length
         let length_start = bytes.len();
@@ -263,19 +310,33 @@ impl KafkaFrame {
 }
 
 fn decode<T: Decodable>(bytes: &mut Bytes, version: i16) -> Result<T> {
-    T::decode(bytes, version).context(format!(
-        "Failed to decode {} v{} body",
-        std::any::type_name::<T>(),
-        version
-    ))
+    T::decode(bytes, version).with_context(|| {
+        format!(
+            "Failed to decode {} v{} body",
+            std::any::type_name::<T>(),
+            version
+        )
+    })
 }
 
 fn encode<T: Encodable>(encodable: T, bytes: &mut BytesMut, version: i16) -> Result<()> {
-    encodable.encode(bytes, version).context(format!(
-        "Failed to encode {} v{} body",
-        std::any::type_name::<T>(),
-        version
-    ))
+    encodable.encode(bytes, version).with_context(|| {
+        format!(
+            "Failed to encode {} v{} body",
+            std::any::type_name::<T>(),
+            version
+        )
+    })
+}
+
+fn compute_size<T: Encodable>(encodable: &T, version: i16) -> Result<usize> {
+    encodable.compute_size(version).with_context(|| {
+        format!(
+            "Failed to encode {} v{} body",
+            std::any::type_name::<T>(),
+            version
+        )
+    })
 }
 
 /// This function is a helper to workaround a really degenerate rust compiler case.

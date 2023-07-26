@@ -77,6 +77,17 @@ impl Frame {
         }
     }
 
+    /// Return the amount of bytes needed to hold the frame when encoded into bytes.
+    /// It is ok for protocols to return more than they need, but they should never return less as that will require at least one reallocation during encoding
+    pub fn bytes_len(&self) -> Result<usize> {
+        match self {
+            Frame::Redis(_) => unimplemented!(),
+            Frame::Cassandra(_) => unimplemented!(),
+            Frame::Kafka(kafka) => kafka.bytes_len(),
+            Frame::Dummy => Ok(0),
+        }
+    }
+
     pub fn name(&self) -> &'static str {
         match self {
             Frame::Redis(_) => "Redis",

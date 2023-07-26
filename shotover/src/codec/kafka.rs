@@ -135,18 +135,26 @@ impl KafkaEncoder {
 impl Encoder<Messages> for KafkaEncoder {
     type Error = CodecWriteError;
 
-    fn encode(&mut self, item: Messages, dst: &mut BytesMut) -> Result<(), Self::Error> {
-        item.into_iter().try_for_each(|m| {
+    fn encode(&mut self, messages: Messages, dst: &mut BytesMut) -> Result<(), Self::Error> {
+        let mut to_reserve = 0;
+        for message in &messages {
+            to_reserve += message.bytes_len().map_err(CodecWriteError::Encoder)?;
+        }
+        dst.reserve(to_reserve);
+        let expected_len = dst.len() + to_reserve;
+
+        for m in messages {
             let start = dst.len();
             m.ensure_message_type(MessageType::Kafka)
                 .map_err(CodecWriteError::Encoder)?;
-            let result = match m.into_encodable() {
-                Encodable::Bytes(bytes) => {
-                    dst.extend_from_slice(&bytes);
-                    Ok(())
-                }
-                Encodable::Frame(frame) => frame.into_kafka().unwrap().encode(dst),
-            };
+            match m.into_encodable() {
+                Encodable::Bytes(bytes) => dst.extend_from_slice(&bytes),
+                Encodable::Frame(frame) => frame
+                    .into_kafka()
+                    .unwrap()
+                    .encode(dst)
+                    .map_err(CodecWriteError::Encoder)?,
+            }
 
             if let Some(tx) = self.request_header_tx.as_ref() {
                 let api_key = i16::from_be_bytes(dst[start + 4..start + 6].try_into().unwrap());
@@ -161,7 +169,10 @@ impl Encoder<Messages> for KafkaEncoder {
                 self.direction,
                 pretty_hex::pretty_hex(&&dst[start..])
             );
-            result.map_err(CodecWriteError::Encoder)
-        })
+        }
+
+        debug_assert_eq!(expected_len, dst.len());
+
+        Ok(())
     }
 }

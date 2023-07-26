@@ -184,6 +184,14 @@ impl Message {
         }
     }
 
+    pub fn bytes_len(&self) -> Result<usize> {
+        match self.inner.as_ref().unwrap() {
+            MessageInner::RawBytes { bytes, .. } => Ok(bytes.len()),
+            MessageInner::Parsed { bytes, .. } => Ok(bytes.len()),
+            MessageInner::Modified { frame } => frame.bytes_len(),
+        }
+    }
+
     pub fn into_encodable(self) -> Encodable {
         match self.inner.unwrap() {
             MessageInner::RawBytes { bytes, .. } => Encodable::Bytes(bytes),
