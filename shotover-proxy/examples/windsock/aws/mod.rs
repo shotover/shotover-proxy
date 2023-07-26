@@ -13,8 +13,7 @@ use std::{
 };
 use test_helpers::docker_compose::get_image_waiters;
 use tokio::sync::RwLock;
-use tokio_bin_process::event::{Event, Level};
-use windsock::ReportArchive;
+use windsock::{Profiling, ReportArchive};
 
 static AWS: OnceCell<WindsockAws> = OnceCell::new();
 
@@ -104,7 +103,7 @@ curl -sSL https://get.docker.com/ | sudo sh"#,
         instance
     }
 
-    pub async fn create_shotover_instance(&self) -> Arc<Ec2InstanceWithShotover> {
+    pub async fn create_shotover_instance(&self, profile: &str) -> Arc<Ec2InstanceWithShotover> {
         if let Some(instance) = &*self.shotover_instance.read().await {
             if Arc::strong_count(instance) != 1 {
                 panic!("Only one shotover instance can be held at once, make sure you drop the previous instance before calling this method again.")
@@ -128,12 +127,6 @@ sudo apt-get install -y sysstat"#,
             )
             .await;
 
-        // PROFILE is set in build.rs from PROFILE listed in https://doc.rust-lang.org/cargo/reference/environment-variables.html#environment-variables-cargo-sets-for-build-scripts
-        let profile = if env!("PROFILE") == "release" {
-            "release"
-        } else {
-            "dev"
-        };
         let output = tokio::process::Command::new(env!("CARGO"))
             .args(["build", "--all-features", "--profile", profile])
             .output()
@@ -154,6 +147,9 @@ sudo apt-get install -y sysstat"#,
                     .unwrap()
                     .parent()
                     .unwrap()
+                    .parent()
+                    .unwrap()
+                    .join(profile)
                     .join("shotover-proxy"),
                 Path::new("shotover-bin"),
             )
@@ -164,6 +160,12 @@ sudo apt-get install -y sysstat"#,
             .push_file(Path::new("config/config.yaml"), Path::new("config.yaml"))
             .await;
         *self.shotover_instance.write().await = Some(instance.clone());
+
+        instance
+            .instance
+            .ssh()
+            .push_file(&std::env::current_exe().unwrap(), Path::new("windsock"))
+            .await;
 
         instance
     }
@@ -268,37 +270,36 @@ pub struct Ec2InstanceWithShotover {
 }
 
 impl Ec2InstanceWithShotover {
-    pub async fn run_shotover(self: Arc<Self>, topology: &str) -> RunningShotover {
+    pub async fn run_shotover(
+        self: Arc<Self>,
+        bench_name: String,
+        profiling: Profiling,
+        topology: &str,
+    ) -> RunningShotover {
         self.instance
             .ssh()
             .push_file_from_bytes(topology.as_bytes(), Path::new("topology.yaml"))
             .await;
 
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let cloned_self = self.clone();
         tokio::task::spawn(async move {
-            let mut receiver = self
-            .instance
-            .ssh()
-            // TODO: invoke current_exe --harnessed-startup shotover --name $benchname --profilers $profilers
-            .shell_stdout_lines(r#"
-killall -w shotover-bin > /dev/null || true
-RUST_BACKTRACE=1 ./shotover-bin --config-file config.yaml --topology-file topology.yaml --log-format json"#)
-            .await;
+            let profilers = profiling.profile_arg();
+            let mut receiver = cloned_self.instance.ssh().shell_stdout_lines(&format!(
+                r#"
+killall -w windsock 2> /dev/null || true
+killall -w shotover-bin 2> /dev/null || true
+#RUST_BACKTRACE=1 ./shotover-bin --config-file config.yaml --topology-file topology.yaml --log-format json
+./windsock --internal-run-service "{bench_name} ." --profilers "{profilers}"
+"#
+                )).await;
             loop {
                 tokio::select! {
                     line = receiver.recv() => {
                         match line {
                             Some(line) => {
-                                let event = Event::from_json_str(&line).unwrap();
-                                if let Level::Warn = event.level {
-                                    tracing::error!("shotover warn:\n    {event}");
-                                }
-                                if let Level::Error = event.level {
-                                    tracing::error!("shotover error:\n    {event}");
-                                }
-                                if tx.send(event).is_err() {
-                                    return
-                                }
+                                println!("{line}");
+                                tx.send(line).ok();
                             }
                             None => return,
                         }
@@ -312,34 +313,48 @@ RUST_BACKTRACE=1 ./shotover-bin --config-file config.yaml --topology-file topolo
 
         // wait for shotover to startup
         loop {
-            let event = rx
+            let line = rx
                 .recv()
                 .await
                 .expect("Shotover shutdown before indicating that it had started");
-            if let Level::Warn | Level::Error = event.level {
-                panic!("Received error/warn event from shotover:\n     {event}")
-            }
-            if event.fields.message == "Shotover is now accepting inbound connections" {
+            if line.contains("Shotover is now accepting inbound connections") {
                 break;
             }
         }
-        RunningShotover { rx }
+        RunningShotover { rx, shotover: self }
     }
 }
 
 pub struct RunningShotover {
-    rx: tokio::sync::mpsc::UnboundedReceiver<Event>,
+    shotover: Arc<Ec2InstanceWithShotover>,
+    rx: tokio::sync::mpsc::UnboundedReceiver<String>,
 }
 
 impl RunningShotover {
-    pub async fn shutdown(mut self) {
+    pub async fn shutdown(mut self, bench_name: String) {
+        // TODO: instead bubble up failure exit code from windsock as error
         while let Ok(event) = self.rx.try_recv() {
-            if let Level::Warn | Level::Error = event.level {
+            if event.contains("ERROR") || event.contains("WARN") {
                 panic!("Received error/warn event from shotover:\n     {event}")
             }
         }
 
         // dropping rx instructs the task to shutdown causing shotover to be terminated
-        std::mem::drop(self.rx)
+        self.rx.close();
+
+        // wait for shotover to shutdown
+        while self.rx.recv().await.is_some() {}
+
+        // TODO: This should pull the entire contents of the folder,
+        // but aws-throwaway does not support that yet,
+        // so for now we just hardcode it to the flamegraph.svg as that is the only profiler we currently support
+        let source = Path::new("profiler_results")
+            .join(&bench_name)
+            .join("flamegraph.svg");
+        let dest = windsock::data::windsock_path()
+            .join("profiler_results")
+            .join(bench_name)
+            .join("flamegraph.svg");
+        self.shotover.instance.ssh().pull_file(&source, &dest).await;
     }
 }

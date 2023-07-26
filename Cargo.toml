@@ -3,7 +3,8 @@ members = ["windsock", "shotover", "shotover-proxy", "test-helpers", "custom-tra
 
 # https://deterministic.space/high-performance-rust.html
 [profile.release]
-lto = "fat"
+#lto = "fat"
+lto = false
 codegen-units = 1
 
 [profile.bench]

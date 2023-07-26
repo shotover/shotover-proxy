@@ -1,7 +1,7 @@
 mod bench;
 mod cli;
 pub mod cloud;
-mod data;
+pub mod data;
 mod filter;
 mod report;
 mod tables;
@@ -60,7 +60,11 @@ impl Windsock {
     }
 
     fn run_inner(mut self) -> Result<()> {
-        let args = cli::Args::parse();
+        let mut args = cli::Args::parse();
+        // allow setting no profilers via `--profilers ""`
+        if args.profilers == [""] {
+            args.profilers.clear();
+        }
 
         let running_in_release = self.running_in_release;
         if args.cleanup_cloud_resources {
@@ -87,8 +91,10 @@ impl Windsock {
             for bench in &self.benches {
                 println!("{}", bench.tags.get_name());
             }
-        } else if let Some(internal_run) = &args.internal_run {
-            self.internal_run(&args, internal_run, running_in_release)?;
+        } else if let Some(internal_run) = &args.internal_run_bencher {
+            self.internal_run_bencher(&args, internal_run, running_in_release)?;
+        } else if let Some(internal_run) = &args.internal_run_service {
+            self.internal_run_service(&args, internal_run, running_in_release)?;
         } else if let Some(name) = args.name.clone() {
             create_runtime(None).block_on(self.run_named_bench(args, name, running_in_release))?;
         } else {
@@ -98,13 +104,13 @@ impl Windsock {
         Ok(())
     }
 
-    fn internal_run(
+    fn internal_run_bencher(
         &mut self,
         args: &Args,
-        internal_run: &str,
+        internal_run_arg: &str,
         running_in_release: bool,
     ) -> Result<()> {
-        let (name, resources) = internal_run.split_at(internal_run.find(' ').unwrap() + 1);
+        let (name, resources) = internal_run_arg.split_at(internal_run_arg.find(' ').unwrap() + 1);
         let name = name.trim();
         match self.benches.iter_mut().find(|x| x.tags.get_name() == name) {
             Some(bench) => {
@@ -114,7 +120,34 @@ impl Windsock {
                     .all(|x| bench.supported_profilers.contains(x))
                 {
                     create_runtime(bench.cores_required()).block_on(async {
-                        bench.run(args, running_in_release, resources).await;
+                        bench.run_bencher(args, running_in_release, resources).await;
+                    });
+                    Ok(())
+                } else {
+                    Err(anyhow!("Specified bench {name:?} was requested to run with the profilers {:?} but it only supports the profilers {:?}", args.profilers, bench.supported_profilers))
+                }
+            }
+            None => Err(anyhow!("Specified bench {name:?} does not exist.")),
+        }
+    }
+
+    fn internal_run_service(
+        &mut self,
+        args: &Args,
+        internal_run_arg: &str,
+        running_in_release: bool,
+    ) -> Result<()> {
+        let (name, resources) = internal_run_arg.split_at(internal_run_arg.find(' ').unwrap() + 1);
+        let name = name.trim();
+        match self.benches.iter_mut().find(|x| x.tags.get_name() == name) {
+            Some(bench) => {
+                if args
+                    .profilers
+                    .iter()
+                    .all(|x| bench.supported_profilers.contains(x))
+                {
+                    create_runtime(bench.cores_required()).block_on(async {
+                        bench.run_service(args, running_in_release, resources).await;
                     });
                     Ok(())
                 } else {

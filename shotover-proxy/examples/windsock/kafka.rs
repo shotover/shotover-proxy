@@ -1,6 +1,6 @@
 use crate::aws::{Ec2InstanceWithDocker, Ec2InstanceWithShotover};
 use crate::common::{rewritten_file, Shotover};
-use crate::profilers::{self, CloudProfilerRunner, ProfilerRunner};
+use crate::profilers::{self, ProfilerRunner};
 use anyhow::Result;
 use async_trait::async_trait;
 use aws_throwaway::ec2_instance::Ec2Instance;
@@ -13,6 +13,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::{collections::HashMap, time::Duration};
 use test_helpers::{docker_compose::docker_compose, shotover_process::ShotoverProcessBuilder};
+use tokio::sync::oneshot;
 use tokio::{sync::mpsc::UnboundedSender, task::JoinHandle, time::Instant};
 use windsock::{Bench, BenchParameters, Profiling, Report};
 
@@ -70,10 +71,11 @@ impl Bench for KafkaBench {
     ) -> Result<()> {
         let aws = crate::aws::WindsockAws::get().await;
 
+        let profiler = ProfilerRunner::new(self.name(), profiling.clone());
         let (kafka_instance, bench_instance, shotover_instance) = futures::join!(
             aws.create_docker_instance(),
             aws.create_bencher_instance(),
-            aws.create_shotover_instance()
+            aws.create_shotover_instance(profiler.shotover_profile().unwrap_or("release"))
         );
 
         let mut profiler_instances: HashMap<String, &Ec2Instance> = [
@@ -84,15 +86,19 @@ impl Bench for KafkaBench {
         if let Shotover::ForcedMessageParsed | Shotover::Standard = self.shotover {
             profiler_instances.insert("shotover".to_owned(), &shotover_instance.instance);
         }
-        let mut profiler =
-            CloudProfilerRunner::new(self.name(), profiling, profiler_instances).await;
 
         let kafka_ip = kafka_instance.instance.private_ip().to_string();
         let shotover_ip = shotover_instance.instance.private_ip().to_string();
 
         let (_, running_shotover) = futures::join!(
             run_aws_kafka(kafka_instance),
-            run_aws_shotover(shotover_instance, self.shotover, kafka_ip.clone())
+            run_aws_shotover(
+                self.name(),
+                profiling,
+                shotover_instance.clone(),
+                self.shotover,
+                kafka_ip.clone()
+            )
         );
 
         let destination_ip = if running_shotover.is_some() {
@@ -102,13 +108,14 @@ impl Bench for KafkaBench {
         };
 
         bench_instance
-            .run_bencher(&self.run_args(&destination_ip, &parameters), &self.name())
+            .run_bencher(
+                &self.run_bencher_args(&destination_ip, &parameters),
+                &self.name(),
+            )
             .await;
 
-        profiler.finish();
-
         if let Some(running_shotover) = running_shotover {
-            running_shotover.shutdown().await;
+            running_shotover.shutdown(self.name()).await;
         }
         Ok(())
     }
@@ -122,23 +129,35 @@ impl Bench for KafkaBench {
         let config_dir = "tests/test-configs/kafka/bench";
         let _compose = docker_compose(&format!("{}/docker-compose.yaml", config_dir));
 
-        let mut profiler = ProfilerRunner::new(self.name(), profiling);
-        let shotover = match self.shotover {
-            Shotover::Standard => Some(
-                ShotoverProcessBuilder::new_with_topology(&format!("{config_dir}/topology.yaml"))
-                    .with_profile(profiler.shotover_profile())
-                    .start()
+        let shotover = if let Shotover::Standard | Shotover::ForcedMessageParsed = self.shotover {
+            let topology_path = match self.shotover {
+                Shotover::Standard => format!("{config_dir}/topology.yaml"),
+                Shotover::None => unreachable!(),
+                Shotover::ForcedMessageParsed => format!("{config_dir}/topology-encode.yaml"),
+            };
+
+            let target = Path::new("../target"); // TODO
+
+            let shotover_setup_path = target.join("windsock_shotover_setup");
+            std::fs::create_dir_all(&shotover_setup_path).unwrap();
+            std::fs::copy(topology_path, shotover_setup_path.join("topology.yaml")).unwrap();
+            std::fs::copy(
+                target
+                    .join(
+                        ProfilerRunner::new(self.name(), profiling.clone())
+                            .shotover_profile()
+                            .unwrap_or("release"),
+                    )
+                    .join("shotover-proxy"),
+                shotover_setup_path.join("shotover-bin"),
+            )
+            .unwrap();
+            Some(
+                self.execute_run_service(shotover_setup_path.to_str().unwrap(), profiling)
                     .await,
-            ),
-            Shotover::None => None,
-            Shotover::ForcedMessageParsed => Some(
-                ShotoverProcessBuilder::new_with_topology(&format!(
-                    "{config_dir}/topology-encode.yaml"
-                ))
-                .with_profile(profiler.shotover_profile())
-                .start()
-                .await,
-            ),
+            )
+        } else {
+            None
         };
 
         let broker_address = match self.shotover {
@@ -146,12 +165,10 @@ impl Bench for KafkaBench {
             Shotover::None => "127.0.0.1:9092",
         };
 
-        profiler.run(&shotover);
-
-        self.execute_run(broker_address, &parameters).await;
+        self.execute_run_bencher(broker_address, &parameters).await;
 
         if let Some(shotover) = shotover {
-            shotover.shutdown_and_then_consume_events(&[]).await;
+            shotover.finish().await;
         }
 
         Ok(())
@@ -221,9 +238,38 @@ impl Bench for KafkaBench {
             task.await.unwrap();
         }
     }
+
+    async fn run_service(
+        &self,
+        resources: &str,
+        _running_in_release: bool,
+        profiling: Profiling,
+        shutdown: oneshot::Receiver<()>,
+    ) {
+        let path = Path::new(resources);
+        let mut profiler = ProfilerRunner::new(self.name(), profiling);
+        let shotover = Some(
+            ShotoverProcessBuilder::new_with_topology(
+                path.join("topology.yaml").as_os_str().to_str().unwrap(),
+            )
+            .with_observability_port(9001)
+            .with_bin(&path.join("shotover-bin"))
+            .with_profile(profiler.shotover_profile())
+            .start()
+            .await,
+        );
+        profiler.run(&shotover);
+        shutdown.await.ok();
+
+        if let Some(shotover) = shotover {
+            shotover.shutdown_and_then_consume_events(&[]).await;
+        }
+    }
 }
 
 async fn run_aws_shotover(
+    bench_name: String,
+    profiling: Profiling,
     instance: Arc<Ec2InstanceWithShotover>,
     shotover: Shotover,
     kafka_ip: String,
@@ -242,7 +288,11 @@ async fn run_aws_shotover(
                 &[("HOST_ADDRESS", &ip), ("KAFKA_ADDRESS", &kafka_ip)],
             )
             .await;
-            Some(instance.run_shotover(&topology).await)
+            Some(
+                instance
+                    .run_shotover(bench_name, profiling, &topology)
+                    .await,
+            )
         }
         Shotover::None => None,
     }

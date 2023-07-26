@@ -3,12 +3,17 @@ use crate::report::{report_builder, Report, ReportArchive};
 use crate::tables::ReportColumn;
 use anyhow::Result;
 use async_trait::async_trait;
+use nix::sys::signal::Signal;
+use nix::unistd::Pid;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
+use tokio::process::Child;
+use tokio::signal::unix::{signal, SignalKind};
 use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
 pub struct BenchState {
@@ -75,7 +80,7 @@ impl BenchState {
         }]);
     }
 
-    pub async fn run(&mut self, args: &Args, running_in_release: bool, resources: &str) {
+    pub async fn run_bencher(&mut self, args: &Args, running_in_release: bool, resources: &str) {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
         let process = tokio::spawn(report_builder(
             self.tags.clone(),
@@ -89,6 +94,41 @@ impl BenchState {
             .await;
 
         process.await.unwrap();
+    }
+
+    pub async fn run_service(&mut self, args: &Args, running_in_release: bool, resources: &str) {
+        let name = self.tags.get_name();
+        let profilers_to_use = args.profilers.clone();
+        let results_path = if !profilers_to_use.is_empty() {
+            let path = crate::data::windsock_path()
+                .join("profiler_results")
+                .join(&name);
+            std::fs::create_dir_all(&path).unwrap();
+            path
+        } else {
+            PathBuf::new()
+        };
+        let profiling = Profiling {
+            results_path,
+            profilers_to_use,
+        };
+
+        let (shutdown_tx, shutdown_rx) = oneshot::channel();
+        // We need to immediately register these signals outside of the tokio task.
+        // Otherwise if we included signal creation in the below spawned task we would be at the mercy of whenever tokio decides to start running the task.
+        let mut interrupt = signal(SignalKind::interrupt()).unwrap();
+        let mut terminate = signal(SignalKind::terminate()).unwrap();
+        tokio::task::spawn(async move {
+            tokio::select! {
+                _ = interrupt.recv() => {}
+                _ = terminate.recv() => {}
+            };
+
+            shutdown_tx.send(()).unwrap();
+        });
+        self.bench
+            .run_service(resources, running_in_release, profiling, shutdown_rx)
+            .await;
     }
 
     // TODO: will return None when running in non-local setup
@@ -135,7 +175,7 @@ pub trait Bench {
     /// Windsock will call this method to run the bencher.
     /// But the implementation of `orchestrate_local` or `orchestrate_cloud` must run the bencher through windsock in some way.
     /// This will be:
-    /// * In the case of `orchestrate_cloud`, the windsock binary must be uploaded to a cloud VM and `windsock --internal-run` executed there.
+    /// * In the case of `orchestrate_cloud`, the windsock binary must be uploaded to a cloud VM and `windsock --internal-run-bencher` executed there.
     /// * In the case of `orchestrate_local`, call `Bench::execute_run` to indirectly call this method by executing another instance of the windsock executable.
     ///
     /// The `resources` arg is a string that is passed in from the argument to `--internal-run` or at a higher level the argument to `Bench::execute_run`.
@@ -148,11 +188,28 @@ pub trait Bench {
         reporter: UnboundedSender<Report>,
     );
 
-    /// Call within `Bench::orchestrate_local` to call `Bench::run`
-    async fn execute_run(&self, resources: &str, bench_parameters: &BenchParameters) {
+    /// Windsock will call this method to run a service.
+    /// But the implementation of `orchestrate_local` or `orchestrate_cloud` must run the service through windsock in some way.
+    /// This will be:
+    /// * In the case of `orchestrate_cloud`, the windsock binary must be uploaded to a cloud VM and `windsock --internal-run-service` executed there.
+    /// * In the case of `orchestrate_local`, call `Bench::execute_run` to indirectly call this method by executing another instance of the windsock executable.
+    ///
+    /// The `resources` arg is a string that is passed in from the argument to `--internal-run` or at a higher level the argument to `Bench::execute_run`.
+    /// Use this string to instruct the bencher where to find the resources it needs. e.g. which service to run, the IP address of another service
+    /// To pass in multiple resources it is recommended to use a serialization method such as `serde-json`.
+    async fn run_service(
+        &self,
+        resources: &str,
+        running_in_release: bool,
+        profiling: Profiling,
+        shutdown: oneshot::Receiver<()>,
+    );
+
+    /// Call within `Bench::orchestrate_local` to call `Bench::run_bencher`
+    async fn execute_run_bencher(&self, resources: &str, bench_parameters: &BenchParameters) {
         let internal_run = format!("{} {}", self.name(), resources);
         let output = tokio::process::Command::new(std::env::current_exe().unwrap().as_os_str())
-            .args(run_args_vec(internal_run, bench_parameters))
+            .args(run_bencher_args_vec(internal_run, bench_parameters))
             .output()
             .await
             .unwrap();
@@ -163,10 +220,30 @@ pub trait Bench {
         }
     }
 
+    /// Call within `Bench::orchestrate_local` to call `Bench::run_service`
+    async fn execute_run_service(&self, resources: &str, profiling: Profiling) -> RunServiceResult {
+        let internal_run = format!("{} {}", self.name(), resources);
+        let child = tokio::process::Command::new(std::env::current_exe().unwrap().as_os_str())
+            .args([
+                "--disable-release-safety-check",
+                "--internal-run-service",
+                &internal_run,
+                "--profilers",
+                &profiling.profile_arg(),
+            ])
+            .kill_on_drop(true)
+            .spawn()
+            .unwrap();
+        // TODO: Oh no, how do we block until the service is up??
+        // probably absorb the logic from Ec2InstanceWithShotover::run_shotover
+
+        RunServiceResult { child }
+    }
+
     /// Call within `Bench::orchestrate_cloud` to determine how to invoke the uploaded windsock executable
-    fn run_args(&self, resources: &str, bench_parameters: &BenchParameters) -> String {
+    fn run_bencher_args(&self, resources: &str, bench_parameters: &BenchParameters) -> String {
         let internal_run = format!("\"{} {}\"", self.name(), resources);
-        run_args_vec(internal_run, bench_parameters).join(" ")
+        run_bencher_args_vec(internal_run, bench_parameters).join(" ")
     }
 
     fn name(&self) -> String {
@@ -174,8 +251,27 @@ pub trait Bench {
     }
 }
 
-fn run_args_vec(internal_run: String, bench_parameters: &BenchParameters) -> Vec<String> {
+pub struct RunServiceResult {
+    child: Child,
+}
+
+impl RunServiceResult {
+    pub async fn finish(self) {
+        let pid = Pid::from_raw(self.child.id().unwrap() as i32);
+        nix::sys::signal::kill(pid, Signal::SIGTERM).unwrap();
+
+        let output = self.child.wait_with_output().await.unwrap();
+        if !output.status.success() {
+            let stdout = String::from_utf8(output.stdout).unwrap();
+            let stderr = String::from_utf8(output.stderr).unwrap();
+            panic!("service run failed:\nstdout:\n{stdout}\nstderr:\n{stderr}")
+        }
+    }
+}
+
+fn run_bencher_args_vec(internal_run: String, bench_parameters: &BenchParameters) -> Vec<String> {
     let mut args = vec![];
+
     args.push("--bench-length-seconds".to_owned());
     args.push(bench_parameters.runtime_seconds.to_string());
 
@@ -184,7 +280,7 @@ fn run_args_vec(internal_run: String, bench_parameters: &BenchParameters) -> Vec
         args.push(ops.to_string());
     };
 
-    args.push("--internal-run".to_owned());
+    args.push("--internal-run-bencher".to_owned());
     args.push(internal_run);
 
     args
@@ -204,9 +300,16 @@ impl BenchParameters {
     }
 }
 
+#[derive(Clone)]
 pub struct Profiling {
     pub results_path: PathBuf,
     pub profilers_to_use: Vec<String>,
+}
+
+impl Profiling {
+    pub fn profile_arg(&self) -> String {
+        self.profilers_to_use.join(" ")
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

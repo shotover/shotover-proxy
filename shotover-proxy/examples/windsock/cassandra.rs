@@ -1,7 +1,7 @@
 use crate::{
     aws::{Ec2InstanceWithDocker, Ec2InstanceWithShotover, RunningShotover},
     common::{rewritten_file, Shotover},
-    profilers::{self, CloudProfilerRunner, ProfilerRunner},
+    profilers::{self, ProfilerRunner},
 };
 use anyhow::Result;
 use async_trait::async_trait;
@@ -39,7 +39,7 @@ use test_helpers::{
     mock_cassandra::MockHandle,
     shotover_process::ShotoverProcessBuilder,
 };
-use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::{mpsc::UnboundedSender, oneshot};
 use windsock::{Bench, BenchParameters, BenchTask, Profiling, Report};
 
 const ROW_COUNT: usize = 1000;
@@ -446,7 +446,7 @@ impl Bench for CassandraBench {
             aws.create_docker_instance(),
             aws.create_docker_instance(),
             aws.create_bencher_instance(),
-            aws.create_shotover_instance()
+            aws.create_shotover_instance("release")
         );
 
         let cassandra_ip = cassandra_instance1.instance.private_ip().to_string();
@@ -467,8 +467,6 @@ impl Bench for CassandraBench {
                 profiler_instances.insert("cassandra".to_owned(), &cassandra_instance1.instance);
             }
         }
-        let mut profiler =
-            CloudProfilerRunner::new(self.name(), profiling, profiler_instances).await;
 
         let cassandra_nodes = vec![
             AwsNodeInfo {
@@ -488,6 +486,8 @@ impl Bench for CassandraBench {
         let (_, running_shotover) = futures::join!(
             run_aws_cassandra(cassandra_nodes, self.topology.clone()),
             run_aws_shotover(
+                self.name(),
+                profiling,
                 shotover_instance.clone(),
                 self.shotover,
                 cassandra_ip.clone(),
@@ -503,13 +503,14 @@ impl Bench for CassandraBench {
         let destination = format!("{destination_ip}:9042");
 
         bench_instance
-            .run_bencher(&self.run_args(&destination, &parameters), &self.name())
+            .run_bencher(
+                &self.run_bencher_args(&destination, &parameters),
+                &self.name(),
+            )
             .await;
 
-        profiler.finish();
-
         if let Some(running_shotover) = running_shotover {
-            running_shotover.shutdown().await;
+            running_shotover.shutdown(self.name()).await;
         }
         Ok(())
     }
@@ -559,7 +560,7 @@ impl Bench for CassandraBench {
         };
         profiler.run(&shotover);
 
-        self.execute_run(address, &parameters).await;
+        self.execute_run_bencher(address, &parameters).await;
 
         if let Some(shotover) = shotover {
             shotover.shutdown_and_then_consume_events(&[]).await;
@@ -621,9 +622,20 @@ impl Bench for CassandraBench {
 
         self.operation.run(&session, reporter, parameters).await;
     }
+
+    async fn run_service(
+        &self,
+        _resources: &str,
+        _running_in_release: bool,
+        _profiling: Profiling,
+        _shutdown: oneshot::Receiver<()>,
+    ) {
+    }
 }
 
 async fn run_aws_shotover(
+    bench_name: String,
+    profiling: Profiling,
     instance: Arc<Ec2InstanceWithShotover>,
     shotover: Shotover,
     cassandra_ip: String,
@@ -649,7 +661,11 @@ async fn run_aws_shotover(
                 &[("HOST_ADDRESS", &ip), ("CASSANDRA_ADDRESS", &cassandra_ip)],
             )
             .await;
-            Some(instance.run_shotover(&topology).await)
+            Some(
+                instance
+                    .run_shotover(bench_name, profiling, &topology)
+                    .await,
+            )
         }
         Shotover::None => None,
     }

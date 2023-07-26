@@ -1,7 +1,7 @@
 use crate::{
     aws::{Ec2InstanceWithDocker, Ec2InstanceWithShotover, RunningShotover, WindsockAws},
     common::{rewritten_file, Shotover},
-    profilers::{self, CloudProfilerRunner, ProfilerRunner},
+    profilers::{self, ProfilerRunner},
 };
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
@@ -25,7 +25,7 @@ use test_helpers::{
     docker_compose::docker_compose,
     shotover_process::{Count, EventMatcher, Level, ShotoverProcessBuilder},
 };
-use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::{mpsc::UnboundedSender, oneshot};
 use windsock::{Bench, BenchParameters, BenchTask, Profiling, Report};
 
 #[derive(Clone, Copy)]
@@ -120,7 +120,7 @@ impl Bench for RedisBench {
         let (redis_instances, bench_instance, shotover_instance) = futures::join!(
             RedisCluster::create(aws, self.topology),
             aws.create_bencher_instance(),
-            aws.create_shotover_instance()
+            aws.create_shotover_instance("release")
         );
 
         let mut profiler_instances: HashMap<String, &Ec2Instance> =
@@ -138,8 +138,6 @@ impl Bench for RedisBench {
                 profiler_instances.insert("redis".to_owned(), &instance.instance);
             }
         }
-        let mut profiler =
-            CloudProfilerRunner::new(self.name(), profiling, profiler_instances).await;
 
         let redis_ip = redis_instances.private_ips()[0].to_string();
         let shotover_ip = shotover_instance.instance.private_ip().to_string();
@@ -147,6 +145,8 @@ impl Bench for RedisBench {
         redis_instances.run(self.encryption).await;
         // unlike other sinks, redis cluster sink needs the redis instance to be already up
         let running_shotover = run_aws_shotover(
+            self.name(),
+            profiling,
             shotover_instance.clone(),
             self.shotover,
             redis_ip.clone(),
@@ -164,13 +164,14 @@ impl Bench for RedisBench {
         };
 
         bench_instance
-            .run_bencher(&self.run_args(&destination_ip, &parameters), &self.name())
+            .run_bencher(
+                &self.run_bencher_args(&destination_ip, &parameters),
+                &self.name(),
+            )
             .await;
 
-        profiler.finish();
-
         if let Some(running_shotover) = running_shotover {
-            running_shotover.shutdown().await;
+            running_shotover.shutdown(self.name()).await;
         }
         Ok(())
     }
@@ -221,7 +222,7 @@ impl Bench for RedisBench {
         };
         profiler.run(&shotover);
 
-        self.execute_run(address, &parameters).await;
+        self.execute_run_bencher(address, &parameters).await;
 
         if let Some(shotover) = shotover {
             shotover
@@ -299,6 +300,15 @@ impl Bench for RedisBench {
 
         client.quit().await.unwrap();
         shutdown_handle.await.unwrap().unwrap();
+    }
+
+    async fn run_service(
+        &self,
+        _resources: &str,
+        _running_in_release: bool,
+        _profiling: Profiling,
+        _shutdown: oneshot::Receiver<()>,
+    ) {
     }
 }
 
@@ -378,6 +388,8 @@ impl BenchTask for BenchTaskRedis {
 }
 
 async fn run_aws_shotover(
+    bench_name: String,
+    profiling: Profiling,
     instance: Arc<Ec2InstanceWithShotover>,
     shotover: Shotover,
     redis_ip: String,
@@ -403,7 +415,11 @@ async fn run_aws_shotover(
                 &[("HOST_ADDRESS", &ip), ("REDIS_ADDRESS", &redis_ip)],
             )
             .await;
-            Some(instance.run_shotover(&topology).await)
+            Some(
+                instance
+                    .run_shotover(bench_name, profiling, &topology)
+                    .await,
+            )
         }
         Shotover::None => None,
     }

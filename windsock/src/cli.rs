@@ -109,5 +109,9 @@ pub struct Args {
 
     /// Not for human use. Call this from your bench orchestration method to launch your bencher.
     #[clap(long, verbatim_doc_comment)]
-    pub internal_run: Option<String>,
+    pub internal_run_bencher: Option<String>,
+
+    /// Not for human use. Call this from your bench orchestration method to launch your service.
+    #[clap(long, verbatim_doc_comment)]
+    pub internal_run_service: Option<String>,
 }

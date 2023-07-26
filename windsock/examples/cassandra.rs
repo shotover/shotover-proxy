@@ -10,6 +10,7 @@ use std::{
     time::{Duration, Instant},
 };
 use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::oneshot;
 use windsock::{Bench, BenchParameters, BenchTask, Profiling, Report, Windsock};
 
 fn main() {
@@ -73,7 +74,7 @@ impl Bench for CassandraBench {
         let _docker_compose = docker_compose("examples/cassandra-docker-compose.yaml");
         let address = "127.0.0.1:9042";
 
-        self.execute_run(address, &parameters).await;
+        self.execute_run_bencher(address, &parameters).await;
 
         Ok(())
     }
@@ -115,6 +116,15 @@ impl Bench for CassandraBench {
         for task in tasks {
             task.await.unwrap();
         }
+    }
+
+    async fn run_service(
+        &self,
+        _resources: &str,
+        _running_in_release: bool,
+        _profiling: Profiling,
+        _shutdown: oneshot::Receiver<()>,
+    ) {
     }
 }
 
