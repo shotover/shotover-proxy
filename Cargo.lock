@@ -2135,9 +2135,9 @@ checksum = "d2fabcfbdc87f4758337ca535fb41a6d701b65693ce38287d856d1674551ec9b"
 
 [[package]]
 name = "governor"
-version = "0.5.1"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c390a940a5d157878dd057c78680a33ce3415bcd05b4799509ea44210914b4d5"
+checksum = "821239e5672ff23e2a7060901fa622950bbd80b649cdaadd78d1c1767ed14eb4"
 dependencies = [
  "cfg-if",
  "futures",
@@ -2145,7 +2145,7 @@ dependencies = [
  "no-std-compat",
  "nonzero_ext",
  "parking_lot",
- "quanta 0.9.3",
+ "quanta",
  "rand 0.8.5",
  "smallvec",
 ]
@@ -2638,15 +2638,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "mach"
-version = "0.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b823e83b2affd8f40a9ee8c29dbc56404c1e34cd2710921f2801e2cf29527afa"
-dependencies = [
- "libc",
-]
-
-[[package]]
 name = "mach2"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2728,7 +2719,7 @@ dependencies = [
  "ipnet",
  "metrics",
  "metrics-util",
- "quanta 0.11.1",
+ "quanta",
  "thiserror",
  "tokio",
  "tracing",
@@ -2756,7 +2747,7 @@ dependencies = [
  "hashbrown 0.13.2",
  "metrics",
  "num_cpus",
- "quanta 0.11.1",
+ "quanta",
  "sketches-ddsketch",
 ]
 

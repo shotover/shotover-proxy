@@ -67,15 +67,20 @@ impl Transform for RequestThrottling {
         let throttled_messages: Vec<(Message, usize)> = (0..requests_wrapper.requests.len())
             .rev()
             .filter_map(|i| {
-                if self
+                match self
                     .limiter
                     .check_n(requests_wrapper.requests[i].cell_count().ok()?)
-                    .is_err()
                 {
-                    let message = requests_wrapper.requests.remove(i);
-                    Some((message, i))
-                } else {
-                    None
+                    Ok(Ok(())) => None,
+                    Ok(Err(_)) => {
+                        let message = requests_wrapper.requests.remove(i);
+                        Some((message, i))
+                    }
+                    Err(e) => {
+                        tracing::info!("{e}");
+                        let message = requests_wrapper.requests.remove(i);
+                        Some((message, i))
+                    }
                 }
             })
             .collect();
