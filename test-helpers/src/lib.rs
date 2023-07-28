@@ -17,7 +17,7 @@ use subprocess::{Exec, Redirection};
 /// # Arguments
 /// * `command` - The system command to run
 /// * `args` - An array of command line arguments for the command
-pub fn run_command(command: &str, args: &[&str]) -> Result<String> {
+pub(crate) fn run_command(command: &str, args: &[&str]) -> Result<String> {
     tracing::trace!("executing {}", command);
     let data = Exec::cmd(command)
         .args(args)

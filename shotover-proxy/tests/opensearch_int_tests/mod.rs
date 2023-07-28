@@ -23,25 +23,23 @@ pub async fn index_documents(client: &OpenSearch) -> Response {
         .await
         .unwrap();
 
-    if exists_response.status_code() == StatusCode::NOT_FOUND {
-        let mut body: Vec<BulkOperation<_>> = vec![];
-        for i in 1..=10 {
-            let op = BulkOperation::index(json!({"title":"OpenSearch"}))
-                .id(i.to_string())
-                .into();
-            body.push(op);
-        }
+    assert_eq!(exists_response.status_code(), StatusCode::NOT_FOUND);
 
-        client
-            .bulk(BulkParts::Index(index))
-            .body(body)
-            .refresh(Refresh::WaitFor)
-            .send()
-            .await
-            .unwrap()
-    } else {
-        exists_response
+    let mut body: Vec<BulkOperation<_>> = vec![];
+    for i in 1..=10 {
+        let op = BulkOperation::index(json!({"title":"OpenSearch"}))
+            .id(i.to_string())
+            .into();
+        body.push(op);
     }
+
+    client
+        .bulk(BulkParts::Index(index))
+        .body(body)
+        .refresh(Refresh::WaitFor)
+        .send()
+        .await
+        .unwrap()
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -57,7 +55,8 @@ async fn passthrough_standard() {
         .unwrap();
     let client = OpenSearch::new(transport);
 
-    let _ = index_documents(&client).await;
+    index_documents(&client).await;
+
     let response = client
         .search(SearchParts::None)
         .body(json!({
@@ -70,25 +69,21 @@ async fn passthrough_standard() {
         .await
         .unwrap();
 
-    let expected_url = {
-        let addr = "https://localhost:9200/";
-        let mut url = Url::parse(addr).unwrap();
-        url.set_username("").unwrap();
-        url.set_password(None).unwrap();
-        url.join("_search?allow_no_indices=true").unwrap()
-    };
-
-    if let Some(c) = response.content_length() {
-        assert!(c > 0)
-    };
-
-    assert_eq!(response.url(), &expected_url);
+    assert!(response.content_length().unwrap() > 0);
+    assert_eq!(
+        response.url(),
+        &Url::parse("https://localhost:9200/_search?allow_no_indices=true").unwrap()
+    );
     assert_eq!(response.status_code(), StatusCode::OK);
     assert_eq!(response.method(), opensearch::http::Method::Post);
-    let debug = format!("{:?}", &response);
-    assert!(debug.contains("method"));
-    assert!(debug.contains("status_code"));
-    assert!(debug.contains("headers"));
+
     let response_body = response.json::<Value>().await.unwrap();
     assert!(response_body["took"].as_i64().is_some());
+    assert_eq!(
+        response_body["hits"].as_object().unwrap()["hits"]
+            .as_array()
+            .unwrap()
+            .len(),
+        10
+    );
 }
