@@ -196,6 +196,15 @@ fn base(reports: &[ReportColumn], table_type: &str) {
                 )
             })
         }));
+        rows.push(Row::measurements(reports, "Total Errors", |report| {
+            report.operations_report.as_ref().map(|report| {
+                (
+                    report.total_errors as f64,
+                    report.total_errors.to_string(),
+                    Goal::SmallerIsBetter,
+                )
+            })
+        }));
         rows.push(Row::measurements(
             reports,
             "Target Opns Per Sec",
@@ -203,11 +212,11 @@ fn base(reports: &[ReportColumn], table_type: &str) {
                 report.operations_report.as_ref().map(|report| {
                     (
                         report
-                            .requested_ops
+                            .requested_operations_per_second
                             .map(|x| x as f64)
                             .unwrap_or(f64::INFINITY),
                         report
-                            .requested_ops
+                            .requested_operations_per_second
                             .map(|x| x.to_string())
                             .unwrap_or("MAX".to_owned()),
                         Goal::BiggerIsBetter,
@@ -218,9 +227,18 @@ fn base(reports: &[ReportColumn], table_type: &str) {
         rows.push(Row::measurements(reports, "Opns Per Sec", |report| {
             report.operations_report.as_ref().map(|report| {
                 (
-                    report.total_ops as f64,
-                    format!("{:.0}", report.total_ops),
+                    report.total_operations_per_second as f64,
+                    format!("{:.0}", report.total_operations_per_second),
                     Goal::BiggerIsBetter,
+                )
+            })
+        }));
+        rows.push(Row::measurements(reports, "Errors Per Sec", |report| {
+            report.operations_report.as_ref().map(|report| {
+                (
+                    report.total_errors_per_second as f64,
+                    format!("{:.0}", report.total_errors_per_second),
+                    Goal::SmallerIsBetter,
                 )
             })
         }));
@@ -283,6 +301,19 @@ fn base(reports: &[ReportColumn], table_type: &str) {
                 )
             })
         }));
+        rows.push(Row::measurements(
+            reports,
+            "Errors Total Produce",
+            |report| {
+                report.pubsub_report.as_ref().map(|report| {
+                    (
+                        report.total_produce_error as f64,
+                        report.total_produce_error.to_string(),
+                        Goal::SmallerIsBetter,
+                    )
+                })
+            },
+        ));
         rows.push(Row::measurements(reports, "Total Consume", |report| {
             report.pubsub_report.as_ref().map(|report| {
                 (
@@ -292,6 +323,19 @@ fn base(reports: &[ReportColumn], table_type: &str) {
                 )
             })
         }));
+        rows.push(Row::measurements(
+            reports,
+            "Errors Total Consume",
+            |report| {
+                report.pubsub_report.as_ref().map(|report| {
+                    (
+                        report.total_consume_error as f64,
+                        report.total_consume_error.to_string(),
+                        Goal::SmallerIsBetter,
+                    )
+                })
+            },
+        ));
         rows.push(Row::measurements(reports, "Total Backlog", |report| {
             report.pubsub_report.as_ref().map(|report| {
                 (
@@ -330,6 +374,19 @@ fn base(reports: &[ReportColumn], table_type: &str) {
                 )
             })
         }));
+        rows.push(Row::measurements(
+            reports,
+            "Errors Produce Per Sec",
+            |report| {
+                report.pubsub_report.as_ref().map(|report| {
+                    (
+                        report.produce_errors_per_second as f64,
+                        format!("{:.0}", report.produce_errors_per_second),
+                        Goal::SmallerIsBetter,
+                    )
+                })
+            },
+        ));
         rows.push(Row::measurements(reports, "Consume Per Sec", |report| {
             report.pubsub_report.as_ref().map(|report| {
                 (
@@ -339,6 +396,19 @@ fn base(reports: &[ReportColumn], table_type: &str) {
                 )
             })
         }));
+        rows.push(Row::measurements(
+            reports,
+            "Errors Consume Per Sec",
+            |report| {
+                report.pubsub_report.as_ref().map(|report| {
+                    (
+                        report.consume_errors_per_second as f64,
+                        format!("{:.0}", report.consume_errors_per_second),
+                        Goal::SmallerIsBetter,
+                    )
+                })
+            },
+        ));
 
         rows.push(Row::measurements(reports, "Produce Time Mean", |report| {
             report.pubsub_report.as_ref().map(|report| {
@@ -550,6 +620,53 @@ fn base(reports: &[ReportColumn], table_type: &str) {
                 println!()
             }
         }
+    }
+
+    for report in reports {
+        if !report.current.error_messages.is_empty() {
+            let error = format!(
+                "Bench encountered errors: {}",
+                report.current.tags.get_name()
+            );
+            println!("{}", style(error).red().bold());
+            for (i, message) in report.current.error_messages.iter().enumerate() {
+                let line = format!("    {i}.  {message}");
+                println!("{}", line);
+            }
+        }
+
+        if let Some(baseline) = &report.baseline {
+            if !baseline.error_messages.is_empty() {
+                let error = format!(
+                    "Bench baseline encountered errors: {}",
+                    report.current.tags.get_name()
+                );
+                println!("{}", style(error).red().bold());
+                for (i, message) in report.current.error_messages.iter().enumerate() {
+                    let line = format!("    {i}.  {message}");
+                    println!("{}", line);
+                }
+            }
+        }
+    }
+
+    let errors_found = reports.iter().any(|x| {
+        !x.current.error_messages.is_empty()
+            || x.baseline
+                .as_ref()
+                .map(|x| !x.error_messages.is_empty())
+                .unwrap_or(false)
+    });
+    let not_running_in_release_found = reports.iter().any(|x| {
+        !x.current.running_in_release
+            || x.baseline
+                .as_ref()
+                .map(|x| !x.error_messages.is_empty())
+                .unwrap_or(false)
+    });
+    if errors_found && not_running_in_release_found {
+        // ensure these two sections are kept apart
+        println!();
     }
 
     for report in reports {

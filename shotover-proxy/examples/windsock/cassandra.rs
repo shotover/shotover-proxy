@@ -233,14 +233,17 @@ impl CassandraSession {
         }
     }
 
-    async fn execute(&self, prepared_statement: &PreparedStatement, value: i64) {
+    async fn execute(
+        &self,
+        prepared_statement: &PreparedStatement,
+        value: i64,
+    ) -> Result<(), String> {
         match self {
-            Self::Scylla(session) => {
-                session
-                    .execute(prepared_statement.as_scylla(), (value,))
-                    .await
-                    .unwrap();
-            }
+            Self::Scylla(session) => session
+                .execute(prepared_statement.as_scylla(), (value,))
+                .await
+                .map_err(|err| format!("{err:?}"))
+                .map(|_| ()),
             Self::CdrsTokio(session) => {
                 let query_params = QueryParamsBuilder::new()
                     .with_values(QueryValues::SimpleValues(vec![value.into()]))
@@ -262,7 +265,8 @@ impl CassandraSession {
                 session
                     .exec_with_params(prepared_statement.as_cdrs(), &params)
                     .await
-                    .unwrap();
+                    .map_err(|err| format!("{err:?}"))
+                    .map(|_| ())
             }
         }
     }
@@ -272,14 +276,13 @@ impl CassandraSession {
         prepared_statement: &PreparedStatement,
         value: i64,
         blob: [u8; 16],
-    ) {
+    ) -> Result<(), String> {
         match self {
-            Self::Scylla(session) => {
-                session
-                    .execute(prepared_statement.as_scylla(), (value, blob))
-                    .await
-                    .unwrap();
-            }
+            Self::Scylla(session) => session
+                .execute(prepared_statement.as_scylla(), (value, blob))
+                .await
+                .map_err(|err| format!("{err:?}"))
+                .map(|_| ()),
             Self::CdrsTokio(session) => {
                 let query_params = QueryParamsBuilder::new()
                     .with_values(QueryValues::SimpleValues(vec![
@@ -304,7 +307,8 @@ impl CassandraSession {
                 session
                     .exec_with_params(prepared_statement.as_cdrs(), &params)
                     .await
-                    .unwrap();
+                    .map_err(|err| format!("{err:?}"))
+                    .map(|_| ())
             }
         }
     }
@@ -656,19 +660,17 @@ struct BenchTaskCassandra {
 
 #[async_trait]
 impl BenchTask for BenchTaskCassandra {
-    async fn run_one_operation(&self) {
+    async fn run_one_operation(&self) -> Result<(), String> {
         let i = rand::random::<u32>() % ROW_COUNT as u32;
         match self.operation {
-            Operation::ReadI64 => {
-                self.session.execute(&self.query, i as i64).await;
-            }
+            Operation::ReadI64 => self.session.execute(&self.query, i as i64).await,
             Operation::WriteBlob => {
                 let blob = {
                     let mut rng = rand::thread_rng();
                     rng.gen::<[u8; 16]>()
                 };
 
-                self.session.execute_blob(&self.query, i as i64, blob).await;
+                self.session.execute_blob(&self.query, i as i64, blob).await
             }
         }
     }

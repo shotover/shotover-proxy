@@ -334,20 +334,25 @@ struct BenchTaskRedis {
 
 #[async_trait]
 impl BenchTask for BenchTaskRedis {
-    async fn run_one_operation(&self) {
+    async fn run_one_operation(&self) -> Result<(), String> {
         match self.operation {
             RedisOperation::Set => {
                 let _: () = self
                     .client
                     .set("foo", "bar", None, None, false)
                     .await
-                    .unwrap();
+                    .map_err(|err| format!("{err}"))?;
             }
             RedisOperation::Get => {
-                let result: u32 = self.client.get("foo").await.unwrap();
+                let result: u32 = self
+                    .client
+                    .get("foo")
+                    .await
+                    .map_err(|err| format!("{err}"))?;
                 assert_eq!(result, 42);
             }
         }
+        Ok(())
     }
 }
 
