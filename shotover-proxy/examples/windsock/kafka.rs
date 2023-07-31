@@ -167,7 +167,7 @@ impl Bench for KafkaBench {
         let producer = BenchTaskProducerKafka { producer, message };
 
         // ensure topic exists
-        producer.produce_one().await;
+        producer.produce_one().await.unwrap();
 
         let consumer: StreamConsumer = ClientConfig::new()
             .set("bootstrap.servers", broker_address)
@@ -259,7 +259,7 @@ struct BenchTaskProducerKafka {
 
 #[async_trait]
 impl BenchTaskProducer for BenchTaskProducerKafka {
-    async fn produce_one(&self) {
+    async fn produce_one(&self) -> Result<(), String> {
         self.producer
             .send(
                 FutureRecord::to("topic_foo")
@@ -269,16 +269,21 @@ impl BenchTaskProducer for BenchTaskProducerKafka {
             )
             .await
             // Take just the error, ignoring the message contents because large messages result in unreadable noise in the logs.
-            .map_err(|e| e.0)
-            .unwrap();
+            .map_err(|e| format!("{:?}", e.0))
+            .map(|_| ())
     }
 }
 
 async fn consume(consumer: &StreamConsumer, reporter: UnboundedSender<Report>) {
     let mut stream = consumer.stream();
     loop {
-        stream.next().await.unwrap().unwrap();
-        if reporter.send(Report::ConsumeCompleted).is_err() {
+        let report = match stream.next().await.unwrap() {
+            Ok(_) => Report::ConsumeCompleted,
+            Err(err) => Report::ConsumeErrored {
+                message: format!("{err:?}"),
+            },
+        };
+        if reporter.send(report).is_err() {
             // Errors indicate the reporter has closed so we should end the bench
             return;
         }
@@ -306,7 +311,7 @@ fn spawn_consumer_tasks(
 
 #[async_trait]
 pub trait BenchTaskProducer: Clone + Send + Sync + 'static {
-    async fn produce_one(&self);
+    async fn produce_one(&self) -> Result<(), String>;
 
     async fn spawn_tasks(
         self,
@@ -332,8 +337,14 @@ pub trait BenchTaskProducer: Clone + Send + Sync + 'static {
 
                     let operation_start = Instant::now();
                     tokio::select!(
-                        _ = task.produce_one() => {
-                            let report = Report::ProduceCompletedIn(operation_start.elapsed());
+                        result = task.produce_one() => {
+                            let report = match result {
+                                Ok(()) => Report::ProduceCompletedIn(operation_start.elapsed()),
+                                Err(message) => Report::ProduceErrored {
+                                    completed_in: operation_start.elapsed(),
+                                    message,
+                                },
+                            };
                             if reporter.send(report).is_err() {
                                 // Errors indicate the reporter has closed so we should end the bench
                                 return;
