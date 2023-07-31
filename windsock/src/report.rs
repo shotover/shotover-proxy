@@ -9,8 +9,19 @@ use tokio::sync::mpsc::UnboundedReceiver;
 pub enum Report {
     Start,
     QueryCompletedIn(Duration),
+    QueryErrored {
+        completed_in: Duration,
+        message: String,
+    },
     ProduceCompletedIn(Duration),
+    ProduceErrored {
+        completed_in: Duration,
+        message: String,
+    },
     ConsumeCompleted,
+    ConsumeErrored {
+        message: String,
+    },
     SecondPassed(Duration),
     /// contains the time that the test ran for
     FinishedIn(Duration),
@@ -85,13 +96,16 @@ pub struct ReportArchive {
     pub(crate) tags: Tags,
     pub(crate) operations_report: Option<OperationsReport>,
     pub(crate) pubsub_report: Option<PubSubReport>,
+    pub(crate) error_messages: Vec<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub(crate) struct OperationsReport {
     pub(crate) total: u64,
-    pub(crate) requested_ops: Option<u64>,
-    pub(crate) total_ops: u32,
+    pub(crate) total_errors: u64,
+    pub(crate) requested_operations_per_second: Option<u64>,
+    pub(crate) total_operations_per_second: u32,
+    pub(crate) total_errors_per_second: u32,
     pub(crate) mean_time: Duration,
     pub(crate) time_percentiles: Percentiles,
     pub(crate) total_each_second: Vec<u64>,
@@ -100,16 +114,30 @@ pub(crate) struct OperationsReport {
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub(crate) struct PubSubReport {
     pub(crate) total_produce: u64,
+    pub(crate) total_produce_error: u64,
     pub(crate) total_consume: u64,
+    pub(crate) total_consume_error: u64,
     pub(crate) total_backlog: i64,
     pub(crate) requested_produce_per_second: Option<u64>,
     pub(crate) produce_per_second: u32,
+    pub(crate) produce_errors_per_second: u32,
     pub(crate) consume_per_second: u32,
+    pub(crate) consume_errors_per_second: u32,
     pub(crate) produce_mean_time: Duration,
     pub(crate) produce_time_percentiles: Percentiles,
     pub(crate) produce_each_second: Vec<u64>,
     pub(crate) consume_each_second: Vec<u64>,
     pub(crate) backlog_each_second: Vec<i64>,
+}
+
+fn error_message_insertion(messages: &mut Vec<String>, new_message: String) {
+    if !messages.contains(&new_message) {
+        if messages.len() <= 5 {
+            messages.push(new_message);
+        } else if messages.len() == 6 {
+            messages.push("more than 5 unique error messages encountered, most likely they are actually small variants of the the same error. Only the first 5 error messages have been logged".to_owned());
+        }
+    }
 }
 
 impl ReportArchive {
@@ -220,6 +248,7 @@ pub(crate) async fn report_builder(
     let mut produce_times = vec![];
     let mut total_operation_time = Duration::from_secs(0);
     let mut total_produce_time = Duration::from_secs(0);
+    let mut error_messages = vec![];
 
     while let Some(report) = rx.recv().await {
         match report {
@@ -238,6 +267,17 @@ pub(crate) async fn report_builder(
                     }
                 }
             }
+            Report::QueryErrored {
+                completed_in,
+                message,
+            } => {
+                let report = operations_report.get_or_insert_with(OperationsReport::default);
+                if started {
+                    error_message_insertion(&mut error_messages, message);
+                    report.total_errors += 1;
+                    total_operation_time += completed_in;
+                }
+            }
             Report::ProduceCompletedIn(duration) => {
                 let report = pubsub_report.get_or_insert_with(PubSubReport::default);
                 if started {
@@ -251,6 +291,17 @@ pub(crate) async fn report_builder(
                     }
                 }
             }
+            Report::ProduceErrored {
+                completed_in,
+                message,
+            } => {
+                let report = pubsub_report.get_or_insert_with(PubSubReport::default);
+                if started {
+                    error_message_insertion(&mut error_messages, message);
+                    report.total_produce_error += 1;
+                    total_produce_time += completed_in;
+                }
+            }
             Report::ConsumeCompleted => {
                 let report = pubsub_report.get_or_insert_with(PubSubReport::default);
                 if started {
@@ -260,6 +311,13 @@ pub(crate) async fn report_builder(
                         Some(last) => *last += 1,
                         None => report.consume_each_second.push(0),
                     }
+                }
+            }
+            Report::ConsumeErrored { message } => {
+                let report = pubsub_report.get_or_insert_with(PubSubReport::default);
+                if started {
+                    error_message_insertion(&mut error_messages, message);
+                    report.total_consume_error += 1;
                 }
             }
             Report::SecondPassed(duration) => {
@@ -293,9 +351,10 @@ pub(crate) async fn report_builder(
     };
 
     if let Some(report) = operations_report.as_mut() {
-        report.requested_ops = requested_ops;
+        report.requested_operations_per_second = requested_ops;
         report.mean_time = mean_time(&operation_times, total_operation_time);
-        report.total_ops = calculate_ops(report.total, finished_in);
+        report.total_operations_per_second = calculate_ops(report.total, finished_in);
+        report.total_errors_per_second = calculate_ops(report.total_errors, finished_in);
         report.time_percentiles = calculate_percentiles(operation_times);
 
         // This is not a complete result so discard it.
@@ -306,7 +365,9 @@ pub(crate) async fn report_builder(
         report.requested_produce_per_second = requested_ops;
         report.produce_mean_time = mean_time(&produce_times, total_produce_time);
         report.produce_per_second = calculate_ops(report.total_produce, finished_in);
+        report.produce_errors_per_second = calculate_ops(report.total_produce_error, finished_in);
         report.consume_per_second = calculate_ops(report.total_consume, finished_in);
+        report.consume_errors_per_second = calculate_ops(report.total_consume_error, finished_in);
         report.produce_time_percentiles = calculate_percentiles(produce_times);
 
         // This is not a complete result so discard it.
@@ -318,6 +379,7 @@ pub(crate) async fn report_builder(
         running_in_release,
         tags,
         pubsub_report,
+        error_messages,
         operations_report,
     };
     archive.save();
