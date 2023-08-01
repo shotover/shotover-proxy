@@ -56,6 +56,33 @@ impl ShotoverProcessBuilder {
     }
 
     pub async fn start(&self) -> BinProcess {
+        let mut shotover = self.start_inner().await;
+
+        tokio::time::timeout(
+            Duration::from_secs(30),
+            shotover.wait_for(
+                &EventMatcher::new()
+                    .with_level(Level::Info)
+                    .with_message("Shotover is now accepting inbound connections"),
+            ),
+        )
+        .await
+        .unwrap();
+
+        shotover
+    }
+
+    pub async fn assert_fails_to_start(
+        &self,
+        expected_errors_and_warnings: &[EventMatcher],
+    ) -> Events {
+        self.start_inner()
+            .await
+            .consume_remaining_events_expect_failure(expected_errors_and_warnings)
+            .await
+    }
+
+    async fn start_inner(&self) -> BinProcess {
         let mut args = vec!["-t", &self.topology_path, "--log-format", "json"];
         if let Some(cores) = &self.cores {
             args.extend(["--core-threads", cores]);
@@ -78,7 +105,7 @@ observability_interface: "127.0.0.1:{observability_port}"
 
         let log_name = self.log_name.as_deref().unwrap_or("shotover");
 
-        let mut shotover = match &self.bin_path {
+        match &self.bin_path {
             Some(bin_path) => BinProcess::start_binary(bin_path, log_name, &args).await,
             None => {
                 BinProcess::start_crate_name(
@@ -89,34 +116,6 @@ observability_interface: "127.0.0.1:{observability_port}"
                 )
                 .await
             }
-        };
-
-        tokio::time::timeout(
-            Duration::from_secs(30),
-            shotover.wait_for(
-                &EventMatcher::new()
-                    .with_level(Level::Info)
-                    .with_message("Shotover is now accepting inbound connections"),
-            ),
-        )
-        .await
-        .unwrap();
-
-        shotover
-    }
-
-    pub async fn assert_fails_to_start(
-        &self,
-        expected_errors_and_warnings: &[EventMatcher],
-    ) -> Events {
-        BinProcess::start_crate_name(
-            "shotover-proxy",
-            "shotover",
-            &["-t", &self.topology_path, "--log-format", "json"],
-            None,
-        )
-        .await
-        .consume_remaining_events_expect_failure(expected_errors_and_warnings)
-        .await
+        }
     }
 }
