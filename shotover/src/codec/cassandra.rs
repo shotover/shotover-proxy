@@ -1,5 +1,4 @@
-use super::{CodecWriteError, Direction};
-use crate::codec::{CodecBuilder, CodecReadError};
+use super::{CodecBuilder, CodecReadError, CodecWriteError, Direction};
 use crate::frame::cassandra::{CassandraMetadata, CassandraOperation, Tracing};
 use crate::frame::{CassandraFrame, Frame, MessageType};
 use crate::message::{Encodable, Message, Messages, Metadata};

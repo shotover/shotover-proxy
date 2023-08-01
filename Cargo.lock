@@ -214,6 +214,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "atoi"
+version = "2.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f28d99ec8bfea296261ca1af174f24225171fea9664ba9003cbebee704810528"
+dependencies = [
+ "num-traits",
+]
+
+[[package]]
 name = "atomic"
 version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4444,6 +4453,7 @@ dependencies = [
  "anyhow",
  "async-recursion",
  "async-trait",
+ "atoi",
  "atomic_enum",
  "aws-config",
  "aws-sdk-kms",
@@ -4470,6 +4480,8 @@ dependencies = [
  "halfbrown",
  "hex",
  "hex-literal",
+ "http",
+ "httparse",
  "hyper",
  "itertools 0.10.5",
  "kafka-protocol",

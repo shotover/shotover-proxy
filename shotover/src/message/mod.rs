@@ -21,6 +21,7 @@ pub enum Metadata {
     Cassandra(CassandraMetadata),
     Redis,
     Kafka,
+    OpenSearch,
 }
 
 #[derive(PartialEq)]
@@ -32,6 +33,7 @@ pub enum ProtocolType {
     Kafka {
         request_header: Option<RequestHeader>,
     },
+    OpenSearch,
 }
 
 impl From<&ProtocolType> for CodecState {
@@ -44,6 +46,7 @@ impl From<&ProtocolType> for CodecState {
             ProtocolType::Kafka { request_header } => Self::Kafka {
                 request_header: *request_header,
             },
+            ProtocolType::OpenSearch => Self::OpenSearch,
         }
     }
 }
@@ -210,12 +213,14 @@ impl Message {
                 MessageType::Cassandra => cassandra::raw_frame::cell_count(bytes)?,
                 MessageType::Kafka => todo!(),
                 MessageType::Dummy => nonzero!(1u32),
+                MessageType::OpenSearch => todo!(),
             },
             MessageInner::Modified { frame } | MessageInner::Parsed { frame, .. } => match frame {
                 Frame::Cassandra(frame) => frame.cell_count()?,
                 Frame::Redis(_) => nonzero!(1u32),
                 Frame::Kafka(_) => todo!(),
                 Frame::Dummy => nonzero!(1u32),
+                Frame::OpenSearch(_) => todo!(),
             },
         })
     }
@@ -239,6 +244,7 @@ impl Message {
             Some(Frame::Redis(redis)) => redis_query_type(redis), // free-standing function as we cant define methods on RedisFrame
             Some(Frame::Kafka(_)) => todo!(),
             Some(Frame::Dummy) => todo!(),
+            Some(Frame::OpenSearch(_)) => todo!(),
             None => QueryType::ReadWrite,
         }
     }
@@ -272,6 +278,7 @@ impl Message {
             Metadata::Kafka => return Err(anyhow!(error).context(
                 "A generic error cannot be formed because the kafka protocol does not support it",
             )),
+            Metadata::OpenSearch => unimplemented!()
         }))
     }
 
@@ -287,13 +294,15 @@ impl Message {
                 }
                 MessageType::Redis => Ok(Metadata::Redis),
                 MessageType::Kafka => Ok(Metadata::Kafka),
-                MessageType::Dummy => Err(anyhow!("dummy has no metadata")),
+                MessageType::Dummy => Err(anyhow!("Dummy has no metadata")),
+                MessageType::OpenSearch => Err(anyhow!("OpenSearch has no metadata")),
             },
             MessageInner::Parsed { frame, .. } | MessageInner::Modified { frame } => match frame {
                 Frame::Cassandra(frame) => Ok(Metadata::Cassandra(frame.metadata())),
                 Frame::Kafka(_) => Ok(Metadata::Kafka),
                 Frame::Redis(_) => Ok(Metadata::Redis),
                 Frame::Dummy => Err(anyhow!("dummy has no metadata")),
+                Frame::OpenSearch(_) => todo!(),
             },
         }
     }
@@ -319,6 +328,7 @@ impl Message {
             }
             Metadata::Redis => unimplemented!(),
             Metadata::Kafka => unimplemented!(),
+            Metadata::OpenSearch => unimplemented!(),
         });
 
         Ok(())
@@ -348,6 +358,7 @@ impl Message {
                     Frame::Redis(_) => None,
                     Frame::Kafka(_) => None,
                     Frame::Dummy => None,
+                    Frame::OpenSearch(_) => None,
                 }
             }
             None => None,
