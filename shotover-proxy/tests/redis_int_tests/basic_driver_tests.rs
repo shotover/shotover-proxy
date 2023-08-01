@@ -1274,7 +1274,7 @@ pub async fn test_trigger_transform_failure_driver(connection: &mut Connection) 
             .await
             .unwrap_err()
             .to_string(),
-        "An error was signalled by the server: Internal shotover (or custom transform) bug: Chain failed to send and/or receive messages, the connection will now be closed.  Caused by:     0: RedisSinkSingle transform failed     1: Failed to connect to destination \"127.0.0.1:1111\"     2: Connection refused (os error 111)".to_string()
+        "An error was signalled by the server - ResponseError: Internal shotover (or custom transform) bug: Chain failed to send and/or receive messages, the connection will now be closed.  Caused by:     0: RedisSinkSingle transform failed     1: Failed to connect to destination \"127.0.0.1:1111\"     2: Connection refused (os error 111)".to_string()
     );
 }
 
