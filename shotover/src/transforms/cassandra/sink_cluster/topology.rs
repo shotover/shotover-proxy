@@ -1,10 +1,12 @@
 use super::node::{CassandraNode, ConnectionFactory};
 use super::node_pool::KeyspaceMetadata;
 use super::KeyspaceChanTx;
-use crate::frame::cassandra::{parse_statement_single, Tracing};
-use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame};
+use crate::frame::{
+    cassandra::{parse_statement_single, Tracing},
+    value::MessageValue,
+    CassandraFrame, CassandraOperation, CassandraResult, Frame,
+};
 use crate::message::Message;
-use crate::message_value::MessageValue;
 use crate::transforms::cassandra::connection::CassandraConnection;
 use anyhow::{anyhow, Result};
 use cassandra_protocol::events::{ServerEvent, SimpleServerEvent};
