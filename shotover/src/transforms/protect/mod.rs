@@ -1,6 +1,7 @@
-use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame};
+use crate::frame::{
+    value::MessageValue, CassandraFrame, CassandraOperation, CassandraResult, Frame,
+};
 use crate::message::Messages;
-use crate::message_value::MessageValue;
 use crate::transforms::protect::key_management::KeyManager;
 pub use crate::transforms::protect::key_management::KeyManagerConfig;
 use crate::transforms::{Transform, TransformBuilder, Transforms, Wrapper};
