@@ -28,6 +28,7 @@ mod batch_statements;
 mod cache;
 mod cluster;
 mod collections;
+mod cqlsh;
 mod functions;
 mod keyspace;
 mod native_types;
@@ -75,6 +76,11 @@ async fn passthrough_standard(#[case] driver: CassandraDriver) {
     let connection = || CassandraConnectionBuilder::new("127.0.0.1", 9042, driver).build();
 
     standard_test_suite(&connection, driver).await;
+
+    // It would be too needlessly expensive for cqlsh to have its own entire test case, so instead we just latch onto the cdrs-tokio test case
+    if driver == CassandraDriver::CdrsTokio {
+        cqlsh::check_basic_cqlsh("127.0.0.1", 9042, None).await;
+    }
 
     shotover.shutdown_and_then_consume_events(&[]).await;
 }
@@ -138,6 +144,11 @@ async fn source_tls_and_single_tls(#[case] driver: CassandraDriver) {
     };
 
     standard_test_suite(&connection, driver).await;
+
+    // It would be too needlessly expensive for cqlsh to have its own entire test case, so instead we just latch onto the cdrs-tokio test case
+    if driver == CassandraDriver::CdrsTokio {
+        cqlsh::check_basic_cqlsh("127.0.0.1", 9042, Some(ca_cert)).await;
+    }
 
     shotover.shutdown_and_then_consume_events(&[]).await;
 }
