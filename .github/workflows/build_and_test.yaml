@@ -16,29 +16,20 @@ env:
   RUST_BACKTRACE: 1
 
 jobs:
-  build_and_test:
+  build_check_and_upload:
     strategy:
+      fail-fast: false
       matrix:
         include:
-          - name: Ubuntu 20.04 - Release - cassandra_int_tests
+          - name: Build Release
             runner: ubuntu-20.04
             cargo_flags: --release
-            test_flags: cassandra_int_tests
+            profile: release
 
-          - name: Ubuntu 20.04 - Release
-            runner: ubuntu-20.04
-            cargo_flags: --release
-            test_flags: --skip cassandra_int_tests
-
-          - name: Ubuntu 20.04 - Debug - cassandra_int_tests
+          - name: Build Debug
             runner: ubuntu-20.04
             cargo_flags:
-            test_flags: cassandra_int_tests
-
-          - name: Ubuntu 20.04 - Debug
-            runner: ubuntu-20.04
-            cargo_flags:
-            test_flags: --skip cassandra_int_tests
+            profile: debug
 
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
@@ -59,6 +50,8 @@ jobs:
         key: ubuntu-20.04-packages
     - name: Install ubuntu packages
       run: shotover-proxy/build/install_ubuntu_packages.sh
+    - name: Install nextest
+      uses: taiki-e/install-action@nextest
     - name: Install cargo-hack
       run: cargo install cargo-hack --version 0.5.8
     - name: Check `cargo fmt` was run
@@ -68,8 +61,55 @@ jobs:
       # * clippy also reports rustc warnings and errors
       # * clippy --all-targets causes clippy to run against tests and examples which it doesnt do by default.
       run: cargo hack --feature-powerset clippy --all-targets --locked ${{ matrix.cargo_flags }} -- -D warnings
-    - name: Ensure that tests pass
-      run: cargo test ${{ matrix.cargo_flags }} --all-features -- --include-ignored --show-output --nocapture ${{ matrix.test_flags }}
+    - name: Build tests
+      run: |
+        cargo test --doc ${{ matrix.cargo_flags }} --all-features -- --show-output --nocapture
+        cargo nextest archive --archive-file nextest-${{ matrix.profile }}.tar.zst ${{ matrix.cargo_flags }} --all-features
+    - name: Upload built tests to workflow
+      uses: actions/upload-artifact@v3
+      with:
+        name: nextest-${{ matrix.profile }}
+        path: nextest-${{ matrix.profile }}.tar.zst
+    - name: Cleanup archive
+      run: rm nextest-${{ matrix.profile }}.tar.zst
+    - name: Ensure that tests did not create or modify any files that arent .gitignore'd
+      run: |
+        if [ -n "$(git status --porcelain)" ]; then
+          git status
+          exit 1
+        fi
+
+  run_tests_partitioned:
+    strategy:
+      fail-fast: false
+      matrix:
+        partition: [1, 2, 3, 4]
+        profile: ["release", "debug"]
+    name: Test ${{ matrix.profile}} ${{ matrix.partition }}/4
+    runs-on: ubuntu-20.04
+    needs: build_check_and_upload
+    steps:
+    - uses: actions/checkout@v3
+    - name: cache custom ubuntu packages
+      uses: actions/cache@v3
+      with:
+        path: shotover-proxy/build/packages
+        key: ubuntu-20.04-packages
+    - name: Install ubuntu packages
+      run: shotover-proxy/build/install_ubuntu_packages.sh
+    - name: Install nextest
+      uses: taiki-e/install-action@nextest
+    - run: mkdir -p ~/.cargo/bin
+    - name: Download archive
+      uses: actions/download-artifact@v3
+      with:
+        name: nextest-${{ matrix.profile }}
+    - name: Run tests
+      run: |
+        ~/.cargo/bin/cargo-nextest nextest run --archive-file nextest-${{ matrix.profile }}.tar.zst \
+          --partition count:${{ matrix.partition }}/4 --extract-to . --run-ignored all
+    - name: Cleanup archive
+      run: rm nextest-${{ matrix.profile }}.tar.zst
     - name: Ensure that tests did not create or modify any files that arent .gitignore'd
       run: |
         if [ -n "$(git status --porcelain)" ]; then
