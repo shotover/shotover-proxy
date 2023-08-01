@@ -76,8 +76,8 @@ impl Transform for RequestThrottling {
                         let message = requests_wrapper.requests.remove(i);
                         Some((message, i))
                     }
-                    Err(e) => {
-                        tracing::info!("{e}");
+                    Err(_) => {
+                        tracing::warn!("A message was received that could never have been successfully delivered since it contains more sub messages than can ever be allowed through via the `RequestThrottling` transforms `max_requests_per_second` configuration.");
                         let message = requests_wrapper.requests.remove(i);
                         Some((message, i))
                     }
