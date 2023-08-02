@@ -17,7 +17,6 @@ tokio.workspace = true
 tracing.workspace = true
 clap.workspace = true
 criterion = { version = "0.5.0", features = ["async_tokio"] }
-serial_test = "2.0.0"
 rstest = "0.18.0"
 cassandra-cpp = { version = "2.0.0" }
 test-helpers = { path = "../test-helpers" }

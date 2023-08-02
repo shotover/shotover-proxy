@@ -1,12 +1,10 @@
 use crate::redis_int_tests::assert::assert_ok;
 use crate::shotover_process;
-use serial_test::serial;
 use test_helpers::connection::redis_connection;
 use test_helpers::docker_compose::docker_compose;
 
 #[cfg(feature = "alpha-transforms")]
 #[tokio::test(flavor = "multi_thread")]
-#[serial]
 async fn log_to_file() {
     let _compose = docker_compose("tests/test-configs/log-to-file/docker-compose.yaml");
     let shotover = shotover_process("tests/test-configs/log-to-file/topology.yaml")

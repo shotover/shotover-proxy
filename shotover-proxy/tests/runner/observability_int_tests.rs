@@ -1,10 +1,8 @@
 use crate::shotover_process;
-use serial_test::serial;
 use test_helpers::connection::redis_connection;
 use test_helpers::metrics::{assert_metrics_has_keys, assert_metrics_key_value};
 
 #[tokio::test(flavor = "multi_thread")]
-#[serial]
 async fn test_metrics() {
     let shotover = shotover_process("tests/test-configs/null-redis/topology.yaml")
         .start()
