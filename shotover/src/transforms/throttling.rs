@@ -71,11 +71,14 @@ impl Transform for RequestThrottling {
                     .limiter
                     .check_n(requests_wrapper.requests[i].cell_count().ok()?)
                 {
+                    // occurs if all cells can be accommodated and 
                     Ok(Ok(())) => None,
+                    // occurs if not all cells can be accommodated.
                     Ok(Err(_)) => {
                         let message = requests_wrapper.requests.remove(i);
                         Some((message, i))
                     }
+                    // occurs when the batch can never go through, meaning the rate limiter's quota's burst size is too low for the given number of cells to be ever allowed through
                     Err(_) => {
                         tracing::warn!("A message was received that could never have been successfully delivered since it contains more sub messages than can ever be allowed through via the `RequestThrottling` transforms `max_requests_per_second` configuration.");
                         let message = requests_wrapper.requests.remove(i);
