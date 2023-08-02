@@ -1,10 +1,12 @@
 use super::node::{CassandraNode, ConnectionFactory};
 use super::node_pool::KeyspaceMetadata;
 use super::KeyspaceChanTx;
-use crate::frame::cassandra::{parse_statement_single, Tracing};
-use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame};
+use crate::frame::{
+    cassandra::{parse_statement_single, Tracing},
+    value::GenericValue,
+    CassandraFrame, CassandraOperation, CassandraResult, Frame,
+};
 use crate::message::Message;
-use crate::message_value::MessageValue;
 use crate::transforms::cassandra::connection::CassandraConnection;
 use anyhow::{anyhow, Result};
 use cassandra_protocol::events::{ServerEvent, SimpleServerEvent};
@@ -280,25 +282,25 @@ mod system_keyspaces {
     }
 
     pub fn build_keyspace(
-        mut row: Vec<MessageValue>,
+        mut row: Vec<GenericValue>,
         data_center: &str,
     ) -> Result<(String, KeyspaceMetadata)> {
-        let metadata = if let Some(MessageValue::Map(mut replication_strategy)) = row.pop() {
+        let metadata = if let Some(GenericValue::Map(mut replication_strategy)) = row.pop() {
             let strategy_name: String = match replication_strategy
-                .remove(&MessageValue::Varchar("class".into()))
+                .remove(&GenericValue::Varchar("class".into()))
                 .ok_or_else(|| anyhow!("replication strategy map should have a 'class' field",))?
             {
-                MessageValue::Varchar(name) => name,
+                GenericValue::Varchar(name) => name,
                 _ => return Err(anyhow!("'class' field should be a varchar")),
             };
 
             match strategy_name.as_str() {
                 "org.apache.cassandra.locator.SimpleStrategy" | "SimpleStrategy" => {
                     let rf_str: String =
-                        match replication_strategy.remove(&MessageValue::Varchar("replication_factor".into())).ok_or_else(||
+                        match replication_strategy.remove(&GenericValue::Varchar("replication_factor".into())).ok_or_else(||
                          anyhow!("SimpleStrategy in replication strategy map does not have a replication factor")
                         )?{
-                            MessageValue::Varchar(rf) => rf,
+                            GenericValue::Varchar(rf) => rf,
                             _ => return Err(anyhow!("SimpleStrategy replication factor should be a varchar "))
                         };
 
@@ -311,9 +313,9 @@ mod system_keyspaces {
                 "org.apache.cassandra.locator.NetworkTopologyStrategy"
                 | "NetworkTopologyStrategy" => {
                     let data_center_rf = match replication_strategy
-                        .remove(&MessageValue::Varchar(data_center.into()))
+                        .remove(&GenericValue::Varchar(data_center.into()))
                     {
-                        Some(MessageValue::Varchar(rf_str)) => {
+                        Some(GenericValue::Varchar(rf_str)) => {
                             usize::from_str(&rf_str).map_err(|_| {
                                 anyhow!("Could not parse replication factor as an integer",)
                             })?
@@ -346,7 +348,7 @@ mod system_keyspaces {
             return Err(anyhow!("replication strategy should be a map"));
         };
 
-        let name = if let Some(MessageValue::Varchar(name)) = row.pop() {
+        let name = if let Some(GenericValue::Varchar(name)) = row.pop() {
             name
         } else {
             return Err(anyhow!("system_schema_keyspaces.name should be a varchar"));
@@ -393,7 +395,7 @@ mod system_local {
                 CassandraOperation::Result(CassandraResult::Rows { rows, .. }) => rows
                     .iter_mut()
                     .filter(|row| {
-                        if let Some(MessageValue::Varchar(data_center)) = row.last() {
+                        if let Some(GenericValue::Varchar(data_center)) = row.last() {
                             data_center == config_data_center
                         } else {
                             false
@@ -402,16 +404,16 @@ mod system_local {
                     .map(|row| {
                         let _data_center = row.pop();
 
-                        let host_id = if let Some(MessageValue::Uuid(host_id)) = row.pop() {
+                        let host_id = if let Some(GenericValue::Uuid(host_id)) = row.pop() {
                             host_id
                         } else {
                             return Err(anyhow!("system.local.host_id not a uuid"));
                         };
 
-                        let tokens = if let Some(MessageValue::List(mut list)) = row.pop() {
+                        let tokens = if let Some(GenericValue::List(mut list)) = row.pop() {
                             list.drain(..)
                                 .map::<Result<Murmur3Token>, _>(|x| match x {
-                                    MessageValue::Varchar(a) => Ok(a.try_into()?),
+                                    GenericValue::Varchar(a) => Ok(a.try_into()?),
                                     _ => Err(anyhow!("system.local.tokens value not a varchar")),
                                 })
                                 .collect::<Result<Vec<Murmur3Token>>>()?
@@ -419,7 +421,7 @@ mod system_local {
                             return Err(anyhow!("system.local.tokens not a list"));
                         };
 
-                        let rack = if let Some(MessageValue::Varchar(value)) = row.pop() {
+                        let rack = if let Some(GenericValue::Varchar(value)) = row.pop() {
                             value
                         } else {
                             return Err(anyhow!("system.local.rack not a varchar"));
@@ -503,7 +505,7 @@ mod system_peers {
                 CassandraOperation::Result(CassandraResult::Rows { rows, .. }) => rows
                     .iter_mut()
                     .filter(|row| {
-                        if let Some(MessageValue::Varchar(data_center)) = row.last() {
+                        if let Some(GenericValue::Varchar(data_center)) = row.last() {
                             data_center == config_data_center
                         } else {
                             false
@@ -516,16 +518,16 @@ mod system_peers {
 
                         let _data_center = row.pop();
 
-                        let host_id = if let Some(MessageValue::Uuid(host_id)) = row.pop() {
+                        let host_id = if let Some(GenericValue::Uuid(host_id)) = row.pop() {
                             host_id
                         } else {
                             return Err(anyhow!("system.peers(v2).host_id not a uuid"));
                         };
 
-                        let tokens = if let Some(MessageValue::List(list)) = row.pop() {
+                        let tokens = if let Some(GenericValue::List(list)) = row.pop() {
                             list.into_iter()
                                 .map::<Result<Murmur3Token>, _>(|x| match x {
-                                    MessageValue::Varchar(a) => Ok(a.try_into()?),
+                                    GenericValue::Varchar(a) => Ok(a.try_into()?),
                                     _ => {
                                         Err(anyhow!("system.peers(v2).tokens value not a varchar"))
                                     }
@@ -535,20 +537,20 @@ mod system_peers {
                             return Err(anyhow!("system.peers(v2).tokens not a list"));
                         };
 
-                        let rack = if let Some(MessageValue::Varchar(value)) = row.pop() {
+                        let rack = if let Some(GenericValue::Varchar(value)) = row.pop() {
                             value
                         } else {
                             return Err(anyhow!("system.peers(v2).rack not a varchar"));
                         };
 
-                        let ip = if let Some(MessageValue::Inet(value)) = row.pop() {
+                        let ip = if let Some(GenericValue::Inet(value)) = row.pop() {
                             value
                         } else {
                             return Err(anyhow!("system.peers(v2).native_address not an inet"));
                         };
 
                         let port = if let Some(message_value) = row.pop() {
-                            if let MessageValue::Integer(value, _) = message_value {
+                            if let GenericValue::Integer(value, _) = message_value {
                                 value
                             } else {
                                 return Err(anyhow!("system.peers(v2).port is not an integer"));
@@ -587,16 +589,16 @@ mod test_system_keyspaces {
     #[test]
     fn test_simple() {
         let row = vec![
-            MessageValue::Varchar("test".into()),
-            MessageValue::Map(
+            GenericValue::Varchar("test".into()),
+            GenericValue::Map(
                 vec![
                     (
-                        MessageValue::Varchar("class".into()),
-                        MessageValue::Varchar("org.apache.cassandra.locator.SimpleStrategy".into()),
+                        GenericValue::Varchar("class".into()),
+                        GenericValue::Varchar("org.apache.cassandra.locator.SimpleStrategy".into()),
                     ),
                     (
-                        MessageValue::Varchar("replication_factor".into()),
-                        MessageValue::Varchar("2".into()),
+                        GenericValue::Varchar("replication_factor".into()),
+                        GenericValue::Varchar("2".into()),
                     ),
                 ]
                 .into_iter()
@@ -619,18 +621,18 @@ mod test_system_keyspaces {
     #[test]
     fn test_network() {
         let row = vec![
-            MessageValue::Varchar("test".into()),
-            MessageValue::Map(
+            GenericValue::Varchar("test".into()),
+            GenericValue::Map(
                 vec![
                     (
-                        MessageValue::Varchar("class".into()),
-                        MessageValue::Varchar(
+                        GenericValue::Varchar("class".into()),
+                        GenericValue::Varchar(
                             "org.apache.cassandra.locator.NetworkTopologyStrategy".into(),
                         ),
                     ),
                     (
-                        MessageValue::Varchar("dc1".into()),
-                        MessageValue::Varchar("3".into()),
+                        GenericValue::Varchar("dc1".into()),
+                        GenericValue::Varchar("3".into()),
                     ),
                 ]
                 .into_iter()

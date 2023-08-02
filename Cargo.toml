@@ -1,12 +1,5 @@
 [workspace]
-members = [
-    "windsock",
-    "shotover",
-    "shotover-proxy",
-    "test-helpers",
-    "custom-transforms-example",
-    "ec2-cargo",
-]
+members = ["windsock", "shotover", "shotover-proxy", "test-helpers", "custom-transforms-example", "ec2-cargo"]
 
 # https://deterministic.space/high-performance-rust.html
 [profile.release]
@@ -25,6 +18,7 @@ debug = true
 codegen-units = 1
 
 [workspace.dependencies]
+scylla = { version = "0.9.0", features = ["ssl"] }
 bytes = "1.0.0"
 tokio = { version = "1.25.0", features = ["full", "macros"] }
 tokio-util = { version = "0.7.7" }

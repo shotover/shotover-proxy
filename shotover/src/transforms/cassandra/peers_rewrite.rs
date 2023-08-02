@@ -1,6 +1,8 @@
-use crate::frame::{CassandraOperation, CassandraResult, Frame};
+use crate::frame::{
+    value::{GenericValue, IntSize},
+    CassandraOperation, CassandraResult, Frame,
+};
 use crate::message::{Message, Messages};
-use crate::message_value::{IntSize, MessageValue};
 use crate::transforms::cassandra::peers_rewrite::CassandraOperation::Event;
 use crate::transforms::{Transform, TransformBuilder, TransformConfig, Transforms, Wrapper};
 use anyhow::Result;
@@ -134,7 +136,7 @@ fn rewrite_port(message: &mut Message, column_names: &[Identifier], new_port: u1
             for (i, col) in metadata.col_specs.iter().enumerate() {
                 if column_names.contains(&Identifier::parse(&col.name)) {
                     for row in rows.iter_mut() {
-                        row[i] = MessageValue::Integer(new_port as i64, IntSize::I32);
+                        row[i] = GenericValue::Integer(new_port as i64, IntSize::I32);
                     }
                 }
             }
@@ -179,7 +181,7 @@ mod test {
         }))
     }
 
-    fn create_response_message(col_specs: &[ColSpec], rows: Vec<Vec<MessageValue>>) -> Message {
+    fn create_response_message(col_specs: &[ColSpec], rows: Vec<Vec<GenericValue>>) -> Message {
         Message::from_frame(Frame::Cassandra(CassandraFrame {
             version: Version::V4,
             stream_id: 0,
@@ -257,16 +259,16 @@ mod test {
         let mut message = create_response_message(
             &col_spec,
             vec![
-                vec![MessageValue::Integer(9042, IntSize::I32)],
-                vec![MessageValue::Integer(9042, IntSize::I32)],
+                vec![GenericValue::Integer(9042, IntSize::I32)],
+                vec![GenericValue::Integer(9042, IntSize::I32)],
             ],
         );
 
         let expected = create_response_message(
             &col_spec,
             vec![
-                vec![MessageValue::Integer(9043, IntSize::I32)],
-                vec![MessageValue::Integer(9043, IntSize::I32)],
+                vec![GenericValue::Integer(9043, IntSize::I32)],
+                vec![GenericValue::Integer(9043, IntSize::I32)],
             ],
         );
 
@@ -289,16 +291,16 @@ mod test {
         let mut original = create_response_message(
             &col_spec,
             vec![
-                vec![MessageValue::Inet("127.0.0.1".parse().unwrap())],
-                vec![MessageValue::Inet("10.123.56.1".parse().unwrap())],
+                vec![GenericValue::Inet("127.0.0.1".parse().unwrap())],
+                vec![GenericValue::Inet("10.123.56.1".parse().unwrap())],
             ],
         );
 
         let expected = create_response_message(
             &col_spec,
             vec![
-                vec![MessageValue::Inet("127.0.0.1".parse().unwrap())],
-                vec![MessageValue::Inet("10.123.56.1".parse().unwrap())],
+                vec![GenericValue::Inet("127.0.0.1".parse().unwrap())],
+                vec![GenericValue::Inet("10.123.56.1".parse().unwrap())],
             ],
         );
 
@@ -347,14 +349,14 @@ mod test {
             &col_spec,
             vec![
                 vec![
-                    MessageValue::Integer(9042, IntSize::I32),
-                    MessageValue::Strings("Hello".into()),
-                    MessageValue::Integer(9042, IntSize::I32),
+                    GenericValue::Integer(9042, IntSize::I32),
+                    GenericValue::Strings("Hello".into()),
+                    GenericValue::Integer(9042, IntSize::I32),
                 ],
                 vec![
-                    MessageValue::Integer(9042, IntSize::I32),
-                    MessageValue::Strings("World".into()),
-                    MessageValue::Integer(9042, IntSize::I32),
+                    GenericValue::Integer(9042, IntSize::I32),
+                    GenericValue::Strings("World".into()),
+                    GenericValue::Integer(9042, IntSize::I32),
                 ],
             ],
         );
@@ -363,14 +365,14 @@ mod test {
             &col_spec,
             vec![
                 vec![
-                    MessageValue::Integer(9043, IntSize::I32),
-                    MessageValue::Strings("Hello".into()),
-                    MessageValue::Integer(9043, IntSize::I32),
+                    GenericValue::Integer(9043, IntSize::I32),
+                    GenericValue::Strings("Hello".into()),
+                    GenericValue::Integer(9043, IntSize::I32),
                 ],
                 vec![
-                    MessageValue::Integer(9043, IntSize::I32),
-                    MessageValue::Strings("World".into()),
-                    MessageValue::Integer(9043, IntSize::I32),
+                    GenericValue::Integer(9043, IntSize::I32),
+                    GenericValue::Strings("World".into()),
+                    GenericValue::Integer(9043, IntSize::I32),
                 ],
             ],
         );

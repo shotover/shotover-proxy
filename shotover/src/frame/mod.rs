@@ -12,6 +12,7 @@ use std::fmt::{Display, Formatter, Result as FmtResult};
 pub mod cassandra;
 pub mod kafka;
 pub mod redis;
+pub mod value;
 
 #[derive(PartialEq, Debug, Clone, Copy)]
 pub enum MessageType {

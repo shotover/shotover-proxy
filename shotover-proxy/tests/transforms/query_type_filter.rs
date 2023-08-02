@@ -22,7 +22,7 @@ async fn test_query_type_filter() {
             .unwrap_err()
             .to_string();
         assert_eq!(
-            "An error was signalled by the server: Message was filtered out by shotover",
+            "An error was signalled by the server - ResponseError: Message was filtered out by shotover",
             result
         );
 
@@ -55,7 +55,7 @@ async fn test_query_type_filter() {
             .to_string();
 
         assert_eq!(
-            "An error was signalled by the server: Message was filtered out by shotover",
+            "An error was signalled by the server - ResponseError: Message was filtered out by shotover",
             result
         );
 

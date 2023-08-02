@@ -1,0 +1,11 @@
+[profile.default]
+fail-fast = false
+slow-timeout = { period = '5m', terminate-after = 2 }
+
+# Overwrites profile.default when the filter matches
+[[profile.default.overrides]]
+filter = 'package(shotover-proxy) | package(custom-transforms-example)'
+test-group = 'integration-tests'
+
+[test-groups]
+integration-tests = { max-threads = 1 }

@@ -96,8 +96,8 @@ struct BenchTaskCassandra {
 
 #[async_trait]
 impl BenchTask for BenchTaskCassandra {
-    async fn run_one_operation(&self) {
-        self.session.query("SELECT * FROM table").await.unwrap();
+    async fn run_one_operation(&self) -> Result<(), String> {
+        self.session.query("SELECT * FROM table").await
     }
 }
 ```

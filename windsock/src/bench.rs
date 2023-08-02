@@ -176,6 +176,7 @@ pub trait Bench {
 
 fn run_args_vec(internal_run: String, bench_parameters: &BenchParameters) -> Vec<String> {
     let mut args = vec![];
+    args.push("--disable-release-safety-check".to_owned());
 
     args.push("--bench-length-seconds".to_owned());
     args.push(bench_parameters.runtime_seconds.to_string());
@@ -278,7 +279,7 @@ impl Tags {
 ///  3. call spawn_tasks on an instance of BenchTask, it will clone your BenchTask instance once for each task it generates
 #[async_trait]
 pub trait BenchTask: Clone + Send + Sync + 'static {
-    async fn run_one_operation(&self);
+    async fn run_one_operation(&self) -> Result<(), String>;
 
     async fn spawn_tasks(
         &self,
@@ -306,8 +307,13 @@ pub trait BenchTask: Clone + Send + Sync + 'static {
                     }
 
                     let operation_start = Instant::now();
-                    task.run_one_operation().await;
-                    let report = Report::QueryCompletedIn(operation_start.elapsed());
+                    let report = match task.run_one_operation().await {
+                        Ok(()) => Report::QueryCompletedIn(operation_start.elapsed()),
+                        Err(message) => Report::QueryErrored {
+                            completed_in: operation_start.elapsed(),
+                            message,
+                        },
+                    };
                     if reporter.send(report).is_err() {
                         // The benchmark has completed and the reporter no longer wants to receive reports so just shutdown
                         return;

@@ -1,10 +1,12 @@
 use super::node::ConnectionFactory;
 use super::node_pool::NodePool;
 use super::ShotoverNode;
-use crate::frame::cassandra::{parse_statement_single, Tracing};
+use crate::frame::{
+    cassandra::{parse_statement_single, Tracing},
+    value::{GenericValue, IntSize},
+};
 use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame};
 use crate::message::{Message, Messages};
-use crate::message_value::{IntSize, MessageValue};
 use anyhow::{anyhow, Result};
 use cassandra_protocol::frame::message_result::BodyResResultPrepared;
 use cassandra_protocol::frame::Version;
@@ -448,40 +450,40 @@ impl MessageRewriter {
                             .iter()
                             .map(|colspec| {
                                 if colspec.name == data_center_alias {
-                                    MessageValue::Varchar(shotover_peer.data_center.clone())
+                                    GenericValue::Varchar(shotover_peer.data_center.clone())
                                 } else if colspec.name == rack_alias {
-                                    MessageValue::Varchar(shotover_peer.rack.clone())
+                                    GenericValue::Varchar(shotover_peer.rack.clone())
                                 } else if colspec.name == host_id_alias {
-                                    MessageValue::Uuid(shotover_peer.host_id)
+                                    GenericValue::Uuid(shotover_peer.host_id)
                                 } else if colspec.name == preferred_ip_alias
                                     || colspec.name == preferred_port_alias
                                 {
-                                    MessageValue::Null
+                                    GenericValue::Null
                                 } else if colspec.name == native_address_alias {
-                                    MessageValue::Inet(shotover_peer.address.ip())
+                                    GenericValue::Inet(shotover_peer.address.ip())
                                 } else if colspec.name == native_port_alias {
-                                    MessageValue::Integer(
+                                    GenericValue::Integer(
                                         shotover_peer.address.port() as i64,
                                         IntSize::I32,
                                     )
                                 } else if colspec.name == peer_alias
                                     || colspec.name == rpc_address_alias
                                 {
-                                    MessageValue::Inet(shotover_peer.address.ip())
+                                    GenericValue::Inet(shotover_peer.address.ip())
                                 } else if colspec.name == peer_port_alias {
-                                    MessageValue::Integer(7000, IntSize::I32)
+                                    GenericValue::Integer(7000, IntSize::I32)
                                 } else if colspec.name == release_version_alias {
-                                    MessageValue::Varchar(release_version.clone())
+                                    GenericValue::Varchar(release_version.clone())
                                 } else if colspec.name == tokens_alias {
-                                    MessageValue::List(tokens.clone())
+                                    GenericValue::List(tokens.clone())
                                 } else if colspec.name == schema_version_alias {
-                                    MessageValue::Uuid(schema_version.unwrap_or_else(Uuid::new_v4))
+                                    GenericValue::Uuid(schema_version.unwrap_or_else(Uuid::new_v4))
                                 } else {
                                     tracing::warn!(
                                         "Unknown column name in system.peers/system.peers_v2: {}",
                                         colspec.name
                                     );
-                                    MessageValue::Null
+                                    GenericValue::Null
                                 }
                             })
                             .collect()
@@ -564,7 +566,7 @@ impl MessageRewriter {
                 for row in rows {
                     for (col, col_meta) in row.iter_mut().zip(metadata.col_specs.iter()) {
                         if col_meta.name == release_version_alias {
-                            if let MessageValue::Varchar(release_version) = col {
+                            if let GenericValue::Varchar(release_version) = col {
                                 for peer in &peers {
                                     if let Ok(Cmp::Lt) = version_compare::compare(
                                         &peer.release_version,
@@ -575,14 +577,14 @@ impl MessageRewriter {
                                 }
                             }
                         } else if col_meta.name == tokens_alias {
-                            if let MessageValue::List(tokens) = col {
+                            if let GenericValue::List(tokens) = col {
                                 for peer in &peers {
                                     tokens.extend(peer.tokens.iter().cloned());
                                 }
                                 tokens.sort();
                             }
                         } else if col_meta.name == schema_version_alias {
-                            if let MessageValue::Uuid(schema_version) = col {
+                            if let GenericValue::Uuid(schema_version) = col {
                                 for peer in &peers {
                                     if schema_version != &peer.schema_version {
                                         *schema_version = Uuid::new_v4();
@@ -593,21 +595,21 @@ impl MessageRewriter {
                         } else if col_meta.name == broadcast_address_alias
                             || col_meta.name == listen_address_alias
                         {
-                            if let MessageValue::Inet(address) = col {
+                            if let GenericValue::Inet(address) = col {
                                 *address = self.local_shotover_node.address.ip();
                             }
                         } else if col_meta.name == host_id_alias {
-                            if let MessageValue::Uuid(host_id) = col {
+                            if let GenericValue::Uuid(host_id) = col {
                                 *host_id = self.local_shotover_node.host_id;
                             }
                         } else if col_meta.name == rpc_address_alias {
-                            if let MessageValue::Inet(address) = col {
+                            if let GenericValue::Inet(address) = col {
                                 if address != &IpAddr::V4(Ipv4Addr::UNSPECIFIED) {
                                     *address = self.local_shotover_node.address.ip()
                                 }
                             }
                         } else if col_meta.name == rpc_port_alias {
-                            if let MessageValue::Integer(rpc_port, _) = col {
+                            if let GenericValue::Integer(rpc_port, _) = col {
                                 *rpc_port = self.local_shotover_node.address.port() as i64;
                             }
                         }
@@ -697,7 +699,7 @@ impl RewriteTableTy {
 }
 
 struct NodeInfo {
-    tokens: Vec<MessageValue>,
+    tokens: Vec<GenericValue>,
     schema_version: Uuid,
     release_version: String,
     rack: String,
@@ -724,7 +726,7 @@ fn parse_system_nodes(mut response: Message) -> Result<Vec<NodeInfo>, MessagePar
                         )));
                     }
 
-                    let release_version = if let Some(MessageValue::Varchar(value)) = row.pop() {
+                    let release_version = if let Some(GenericValue::Varchar(value)) = row.pop() {
                         value
                     } else {
                         return Err(MessageParseError::ParseFailure(anyhow!(
@@ -732,7 +734,7 @@ fn parse_system_nodes(mut response: Message) -> Result<Vec<NodeInfo>, MessagePar
                         )));
                     };
 
-                    let tokens = if let Some(MessageValue::List(value)) = row.pop() {
+                    let tokens = if let Some(GenericValue::List(value)) = row.pop() {
                         value
                     } else {
                         return Err(MessageParseError::ParseFailure(anyhow!(
@@ -740,7 +742,7 @@ fn parse_system_nodes(mut response: Message) -> Result<Vec<NodeInfo>, MessagePar
                         )));
                     };
 
-                    let schema_version = if let Some(MessageValue::Uuid(value)) = row.pop() {
+                    let schema_version = if let Some(GenericValue::Uuid(value)) = row.pop() {
                         value
                     } else {
                         return Err(MessageParseError::ParseFailure(anyhow!(
@@ -748,14 +750,14 @@ fn parse_system_nodes(mut response: Message) -> Result<Vec<NodeInfo>, MessagePar
                         )));
                     };
 
-                    let data_center = if let Some(MessageValue::Varchar(value)) = row.pop() {
+                    let data_center = if let Some(GenericValue::Varchar(value)) = row.pop() {
                         value
                     } else {
                         return Err(MessageParseError::ParseFailure(anyhow!(
                             "data_center not a varchar"
                         )));
                     };
-                    let rack = if let Some(MessageValue::Varchar(value)) = row.pop() {
+                    let rack = if let Some(GenericValue::Varchar(value)) = row.pop() {
                         value
                     } else {
                         return Err(MessageParseError::ParseFailure(anyhow!(
