@@ -77,6 +77,15 @@ docker compose "$@"
 sudo chmod +x /bin/docker-compose
 
 echo "export RUST_BACKTRACE=1" >> .profile
+echo "export CARGO_TERM_COLOR=always" >> .profile
+echo 'source "$HOME/.cargo/env"' >> .profile
+
+source .profile
+if [ "$(uname -m)" = "aarch64" ]; then
+    curl -LsSf https://get.nexte.st/latest/linux-arm | tar zxf - -C ${CARGO_HOME:-~/.cargo}/bin
+else
+    curl -LsSf https://get.nexte.st/latest/linux | tar zxf - -C ${CARGO_HOME:-~/.cargo}/bin
+fi
 "#).await;
     while let Some(line) = receiver.recv().await {
         println!("{}", line)
@@ -123,8 +132,9 @@ async fn test(state: &mut State, mut args: Vec<String>) -> Result<(), Box<dyn Er
         .ssh()
         .shell_stdout_lines(&format!(
             r#"
+source .profile
 cd shotover
-RUST_BACKTRACE=1 ~/.cargo/bin/cargo test --color always {} 2>&1
+cargo nextest run {} 2>&1
 "#,
             args
         ))
