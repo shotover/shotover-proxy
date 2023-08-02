@@ -1,5 +1,5 @@
 use crate::frame::{
-    value::MessageValue, CassandraFrame, CassandraOperation, CassandraResult, Frame,
+    value::GenericValue, CassandraFrame, CassandraOperation, CassandraResult, Frame,
 };
 use crate::message::Messages;
 use crate::transforms::protect::key_management::KeyManager;
@@ -140,7 +140,7 @@ impl Protect {
     async fn decrypt_results(
         &self,
         statement: &CassandraStatement,
-        rows: &mut Vec<Vec<MessageValue>>,
+        rows: &mut Vec<Vec<GenericValue>>,
     ) -> Result<bool> {
         let mut invalidate_cache = false;
         if let CassandraStatement::Select(select) = &statement {
