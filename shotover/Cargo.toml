@@ -21,7 +21,7 @@ bytes-utils = "0.1.1"
 derivative = "2.1.1"
 cached = "0.44"
 async-recursion = "1.0"
-governor = { version = "0.5.0", default-features = false, features = ["std", "jitter", "quanta"] }
+governor = { version = "0.6", default-features = false, features = ["std", "jitter", "quanta"] }
 nonzero_ext = "0.3.0"
 version-compare = "0.1"
 rand = { features = ["small_rng"], workspace = true }
