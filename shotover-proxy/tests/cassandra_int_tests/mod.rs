@@ -655,7 +655,14 @@ async fn request_throttling(#[case] driver: CassandraDriver) {
 
     tokio::time::sleep(std::time::Duration::from_secs(1)).await; // sleep to reset the window
 
-    shotover.shutdown_and_then_consume_events(&[]).await;
+    let event_watcher_message = r#"A message was received that could never have been successfully delivered since it contains more sub messages than can ever be allowed through via the `RequestThrottling` transforms `max_requests_per_second` configuration."#;
+
+    shotover
+        .shutdown_and_then_consume_events(&[EventMatcher::new()
+            .with_level(Level::Warn)
+            .with_target("shotover::transforms::throttling")
+            .with_message(event_watcher_message)])
+        .await;
 }
 
 #[cfg(feature = "alpha-transforms")]
