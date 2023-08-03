@@ -2,7 +2,6 @@ use crate::shotover_process;
 use basic_driver_tests::*;
 use redis::aio::Connection;
 use redis::Commands;
-use serial_test::serial;
 
 use std::path::Path;
 use std::thread::sleep;
@@ -27,7 +26,6 @@ Caused by:
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[serial]
 async fn passthrough_standard() {
     let _compose = docker_compose("tests/test-configs/redis-passthrough/docker-compose.yaml");
     let shotover = shotover_process("tests/test-configs/redis-passthrough/topology.yaml")
@@ -45,7 +43,6 @@ async fn passthrough_standard() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[serial]
 async fn passthrough_redis_down() {
     let shotover = shotover_process("tests/test-configs/redis-passthrough/topology.yaml")
         .start()
@@ -78,7 +75,6 @@ Caused by:
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[serial]
 async fn tls_cluster_sink() {
     test_helpers::cert::generate_redis_test_certs();
 
@@ -98,7 +94,6 @@ async fn tls_cluster_sink() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[serial]
 async fn tls_source_and_tls_single_sink() {
     test_helpers::cert::generate_redis_test_certs();
 
@@ -152,7 +147,6 @@ async fn tls_source_and_tls_single_sink() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[serial]
 async fn cluster_ports_rewrite() {
     let _compose =
         docker_compose("tests/test-configs/redis-cluster-ports-rewrite/docker-compose.yaml");
@@ -173,7 +167,6 @@ async fn cluster_ports_rewrite() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[serial]
 async fn multi() {
     let _compose = docker_compose("tests/test-configs/redis-multi/docker-compose.yaml");
     let shotover = shotover_process("tests/test-configs/redis-multi/topology.yaml")
@@ -201,7 +194,6 @@ Caused by:
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[serial]
 async fn cluster_auth() {
     let _compose = docker_compose("tests/test-configs/redis-cluster-auth/docker-compose.yaml");
     let shotover = shotover_process("tests/test-configs/redis-cluster-auth/topology.yaml")
@@ -217,7 +209,6 @@ async fn cluster_auth() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[serial]
 async fn cluster_hiding() {
     let _compose = docker_compose("tests/test-configs/redis-cluster-hiding/docker-compose.yaml");
     let shotover = shotover_process("tests/test-configs/redis-cluster-hiding/topology.yaml")
@@ -236,7 +227,6 @@ async fn cluster_hiding() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[serial]
 async fn cluster_handling() {
     let _compose = docker_compose("tests/test-configs/redis-cluster-handling/docker-compose.yaml");
     let shotover = shotover_process("tests/test-configs/redis-cluster-handling/topology.yaml")
@@ -256,7 +246,6 @@ async fn cluster_handling() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[serial]
 async fn cluster_dr() {
     let _compose = docker_compose("tests/test-configs/redis-cluster-dr/docker-compose.yaml");
 

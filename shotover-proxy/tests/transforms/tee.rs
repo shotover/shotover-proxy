@@ -1,10 +1,8 @@
 use crate::shotover_process;
-use serial_test::serial;
 use test_helpers::connection::redis_connection;
 use test_helpers::docker_compose::docker_compose;
 
 #[tokio::test(flavor = "multi_thread")]
-#[serial]
 async fn test_ignore_matches() {
     let shotover = shotover_process("tests/test-configs/tee/ignore.yaml")
         .start()
@@ -24,7 +22,6 @@ async fn test_ignore_matches() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[serial]
 async fn test_ignore_with_mismatch() {
     let shotover = shotover_process("tests/test-configs/tee/ignore_with_mismatch.yaml")
         .start()
@@ -44,7 +41,6 @@ async fn test_ignore_with_mismatch() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[serial]
 async fn test_fail_matches() {
     let shotover = shotover_process("tests/test-configs/tee/fail.yaml")
         .start()
@@ -64,7 +60,6 @@ async fn test_fail_matches() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[serial]
 async fn test_fail_with_mismatch() {
     let shotover = shotover_process("tests/test-configs/tee/fail_with_mismatch.yaml")
         .start()
@@ -86,7 +81,6 @@ async fn test_fail_with_mismatch() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[serial]
 async fn test_subchain_matches() {
     let _compose = docker_compose("tests/test-configs/redis-passthrough/docker-compose.yaml");
     let shotover = shotover_process("tests/test-configs/tee/subchain.yaml")
@@ -122,7 +116,6 @@ async fn test_subchain_matches() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[serial]
 async fn test_subchain_with_mismatch() {
     let _compose = docker_compose("tests/test-configs/redis-passthrough/docker-compose.yaml");
     let shotover = shotover_process("tests/test-configs/tee/subchain_with_mismatch.yaml")
