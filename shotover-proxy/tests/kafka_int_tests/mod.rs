@@ -1,8 +1,6 @@
 #[cfg(feature = "alpha-transforms")]
 use crate::shotover_process;
 #[cfg(feature = "alpha-transforms")]
-use serial_test::serial;
-#[cfg(feature = "alpha-transforms")]
 use std::time::Duration;
 #[cfg(feature = "alpha-transforms")]
 use test_helpers::docker_compose::docker_compose;
@@ -12,7 +10,6 @@ mod test_cases;
 
 #[cfg(feature = "alpha-transforms")]
 #[tokio::test]
-#[serial]
 async fn passthrough_standard() {
     let _docker_compose =
         docker_compose("tests/test-configs/kafka/passthrough/docker-compose.yaml");
@@ -32,7 +29,6 @@ async fn passthrough_standard() {
 
 #[cfg(feature = "alpha-transforms")]
 #[tokio::test]
-#[serial]
 async fn passthrough_encode() {
     let _docker_compose =
         docker_compose("tests/test-configs/kafka/passthrough/docker-compose.yaml");
@@ -47,7 +43,6 @@ async fn passthrough_encode() {
 
 #[cfg(feature = "alpha-transforms")]
 #[tokio::test]
-#[serial]
 async fn cluster_single_shotover() {
     let _docker_compose = docker_compose("tests/test-configs/kafka/cluster/docker-compose.yaml");
     let shotover = shotover_process("tests/test-configs/kafka/cluster/topology-single.yaml")
@@ -66,7 +61,6 @@ async fn cluster_single_shotover() {
 
 #[cfg(feature = "alpha-transforms")]
 #[tokio::test]
-#[serial]
 async fn cluster_multi_shotover() {
     let _docker_compose = docker_compose("tests/test-configs/kafka/cluster/docker-compose.yaml");
     let mut shotovers = vec![];
