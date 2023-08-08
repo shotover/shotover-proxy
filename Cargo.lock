@@ -4202,8 +4202,7 @@ dependencies = [
 [[package]]
 name = "scylla"
 version = "0.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7b9aa2b618718b5d4873926cecb99fe181a3b8c52b4983e2b20d6d833bfa9c1b"
+source = "git+https://github.com/scylladb/scylla-rust-driver/#e1fa6ff346cd14663fc1a0e483b68045885ec306"
 dependencies = [
  "arc-swap",
  "async-trait",
@@ -4238,8 +4237,7 @@ dependencies = [
 [[package]]
 name = "scylla-cql"
 version = "0.0.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "048bdf0be96308ec0f5aeed2847bb2270f53355425b3afd67e64efc99d70b3e3"
+source = "git+https://github.com/scylladb/scylla-rust-driver/#e1fa6ff346cd14663fc1a0e483b68045885ec306"
 dependencies = [
  "async-trait",
  "bigdecimal 0.2.2",
@@ -4259,12 +4257,11 @@ dependencies = [
 [[package]]
 name = "scylla-macros"
 version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "32d777dadbf7163d1524ea4f5a095146298d263a686febb96d022cf46d06df32"
+source = "git+https://github.com/scylladb/scylla-rust-driver/#e1fa6ff346cd14663fc1a0e483b68045885ec306"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 1.0.109",
+ "syn 2.0.28",
 ]
 
 [[package]]
