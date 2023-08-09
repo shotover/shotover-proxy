@@ -55,6 +55,15 @@ impl WindsockAws {
         instance
             .instance
             .ssh()
+            .shell(
+                r#"
+sudo apt-get update
+sudo apt-get install -y sysstat"#,
+            )
+            .await;
+        instance
+            .instance
+            .ssh()
             .push_file(
                 std::env::current_exe().unwrap().as_ref(),
                 Path::new("windsock"),
@@ -85,6 +94,7 @@ until sudo apt-get update -qq
 do
   sleep 1
 done
+sudo apt-get install -y sysstat
 curl -sSL https://get.docker.com/ | sudo sh"#,
             )
             .await;
@@ -108,6 +118,15 @@ curl -sSL https://get.docker.com/ | sudo sh"#,
                 .create_ec2_instance(InstanceType::M6aLarge, 8)
                 .await,
         });
+        instance
+            .instance
+            .ssh()
+            .shell(
+                r#"
+sudo apt-get update
+sudo apt-get install -y sysstat"#,
+            )
+            .await;
 
         // PROFILE is set in build.rs from PROFILE listed in https://doc.rust-lang.org/cargo/reference/environment-variables.html#environment-variables-cargo-sets-for-build-scripts
         let profile = if env!("PROFILE") == "release" {
