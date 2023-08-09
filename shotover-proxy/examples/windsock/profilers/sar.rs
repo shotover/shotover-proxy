@@ -8,15 +8,90 @@ use tokio::{
     process::Command,
     sync::mpsc::{unbounded_channel, UnboundedReceiver},
 };
+use windsock::{Goal, Metric, ReportArchive};
 
 /// Reads the bench archive for `bench_name` from disk.
 /// Inserts the passed sar metrics for `instance_name`.
 /// Then writes the resulting archive back to disk
-pub fn insert_sar_results_to_bench_archive(bench_name: &str, instance_name: &str, sar: ParsedSar) {
-    // TODO: Insert to archive instead of dumping to stdout
-    println!("sys_monitor results for {bench_name} - {instance_name}");
-    println!("started at: {}", sar.started_at);
-    println!("{:#?}", sar.named_values);
+pub fn insert_sar_results_to_bench_archive(
+    bench_name: &str,
+    instance_name: &str,
+    mut sar: ParsedSar,
+) {
+    let mut report = ReportArchive::load(bench_name).unwrap();
+
+    // The bench will start after sar has started so we need to throw away all sar metrics that were recorded before the bench started.
+    let time_diff = report.bench_started_at - sar.started_at;
+    let inital_values_to_discard = time_diff.as_seconds_f32().round() as usize;
+    for values in sar.named_values.values_mut() {
+        values.drain(0..inital_values_to_discard);
+    }
+
+    // use short names so we can keep each call on one line.
+    let p = instance_name;
+    let s = &sar;
+    report.metrics.extend([
+        metric(s, p, "CPU User", "%", "%user", Goal::SmallerIsBetter),
+        metric(s, p, "CPU System", "%", "%system", Goal::SmallerIsBetter),
+        metric(s, p, "CPU Nice", "%", "%nice", Goal::SmallerIsBetter),
+        metric(s, p, "CPU IO Wait", "%", "%iowait", Goal::SmallerIsBetter),
+        metric(s, p, "CPU Steal", "%", "%steal", Goal::SmallerIsBetter),
+        metric(s, p, "CPU Idle", "%", "%idle", Goal::BiggerIsBetter),
+        metric_with_formatter(
+            s,
+            p,
+            "Memory Used",
+            |value| {
+                // sar calls this a KB (kilobyte) but its actually a KiB (kibibyte)
+                let value_kib: f32 = value.parse().unwrap();
+                let value_mib = value_kib / 1024.0;
+                format!("{} MiB", value_mib)
+            },
+            "kbmemused",
+            Goal::SmallerIsBetter,
+        ),
+    ]);
+
+    report.save();
+}
+
+/// Shortcut for common metric formatting case
+fn metric(
+    sar: &ParsedSar,
+    prefix: &str,
+    name: &str,
+    unit: &str,
+    sar_name: &str,
+    goal: Goal,
+) -> Metric {
+    metric_with_formatter(sar, prefix, name, |x| format!("{x}{unit}"), sar_name, goal)
+}
+
+/// Take a sars metric and transform it into a metric that can be stored in a bench archive
+fn metric_with_formatter<F: Fn(&str) -> String>(
+    sar: &ParsedSar,
+    prefix: &str,
+    name: &str,
+    value_formatter: F,
+    sar_name: &str,
+    goal: Goal,
+) -> Metric {
+    let name = if prefix.is_empty() {
+        name.to_owned()
+    } else {
+        format!("{prefix} - {name}")
+    };
+    Metric::EachSecond {
+        name,
+        values: sar
+            .named_values
+            .get(sar_name)
+            .ok_or_else(|| format!("No key {} in {:?}", sar_name, sar.named_values))
+            .unwrap()
+            .iter()
+            .map(|x| (x.parse().unwrap(), value_formatter(x), goal))
+            .collect(),
+    }
 }
 
 /// parse lines of output from the sar command which looks like:

@@ -7,7 +7,8 @@ mod report;
 mod tables;
 
 pub use bench::{Bench, BenchParameters, BenchTask, Profiling};
-pub use report::{Report, ReportArchive};
+pub use report::{Metric, Report, ReportArchive};
+pub use tables::Goal;
 
 use anyhow::{anyhow, Result};
 use bench::BenchState;

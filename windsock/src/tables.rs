@@ -1,10 +1,12 @@
 use crate::{
     bench::Tags,
     filter::Filter,
-    report::{Percentile, ReportArchive},
+    report::{MetricIdentifier, Percentile, ReportArchive},
+    Metric,
 };
 use anyhow::{Context, Result};
 use console::{pad_str, pad_str_with, style, Alignment};
+use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, time::Duration};
 use strum::IntoEnumIterator;
 
@@ -503,6 +505,63 @@ fn base(reports: &[ReportColumn], table_type: &str) {
         }
     }
 
+    let mut metrics_to_display = vec![];
+    for report in reports {
+        for metric in &report.current.metrics {
+            if !metrics_to_display.contains(&metric.identifier()) {
+                metrics_to_display.push(metric.identifier())
+            }
+        }
+    }
+    for metric_identifier in metrics_to_display {
+        match &metric_identifier {
+            MetricIdentifier::Total { name } => {
+                rows.push(Row::measurements(reports, name, |report| {
+                    report
+                        .metrics
+                        .iter()
+                        .find(|metric| metric.identifier() == metric_identifier)
+                        .map(|metric| match metric {
+                            Metric::EachSecond { .. } => unreachable!(),
+                            Metric::Total {
+                                compare,
+                                value,
+                                goal,
+                                ..
+                            } => (*compare, value.to_owned(), *goal),
+                        })
+                }));
+            }
+            MetricIdentifier::EachSecond { name } => {
+                rows.push(Row::Heading(format!("{name} Each Second")));
+                for i in 0..reports
+                    .iter()
+                    .map(|x| {
+                        x.current
+                            .metrics
+                            .iter()
+                            .find(|x| x.identifier() == metric_identifier)
+                            .map(|metric| metric.len())
+                            .unwrap_or(0)
+                    })
+                    .max()
+                    .unwrap()
+                {
+                    rows.push(Row::measurements(reports, &i.to_string(), |report| {
+                        report
+                            .metrics
+                            .iter()
+                            .find(|x| x.identifier() == metric_identifier)
+                            .and_then(|metric| match metric {
+                                Metric::Total { .. } => unreachable!(),
+                                Metric::EachSecond { values, .. } => values.get(i).cloned(),
+                            })
+                    }));
+                }
+            }
+        }
+    }
+
     // the width of the legend column
     let legend_width: usize = rows
         .iter()
@@ -514,7 +573,7 @@ fn base(reports: &[ReportColumn], table_type: &str) {
         })
         .max()
         .unwrap_or(10);
-    // the width of the comparison compoenent of each column
+    // the width of the comparison component of each column
     let comparison_widths: Vec<usize> = reports
         .iter()
         .enumerate()
@@ -712,7 +771,8 @@ struct Measurement {
     color: Color,
 }
 
-enum Goal {
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+pub enum Goal {
     BiggerIsBetter,
     SmallerIsBetter,
 }
