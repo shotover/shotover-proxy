@@ -302,7 +302,7 @@ impl Message {
                 Frame::Kafka(_) => Ok(Metadata::Kafka),
                 Frame::Redis(_) => Ok(Metadata::Redis),
                 Frame::Dummy => Err(anyhow!("dummy has no metadata")),
-                Frame::OpenSearch(_) => todo!(),
+                Frame::OpenSearch(_) => Err(anyhow!("OpenSearch has no metadata")),
             },
         }
     }

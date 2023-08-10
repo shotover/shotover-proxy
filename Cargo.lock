@@ -1519,16 +1519,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "darling"
-version = "0.20.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0209d94da627ab5605dcccf08bb18afa5009cfbef48d8a8b7d7bdbc79be25c5e"
-dependencies = [
- "darling_core 0.20.3",
- "darling_macro 0.20.3",
-]
-
-[[package]]
 name = "darling_core"
 version = "0.14.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1557,20 +1547,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "darling_core"
-version = "0.20.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "177e3443818124b357d8e76f53be906d60937f0d3a90773a664fa63fa253e621"
-dependencies = [
- "fnv",
- "ident_case",
- "proc-macro2",
- "quote",
- "strsim",
- "syn 2.0.25",
-]
-
-[[package]]
 name = "darling_macro"
 version = "0.14.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1590,17 +1566,6 @@ dependencies = [
  "darling_core 0.20.3",
  "quote",
  "syn 2.0.29",
-]
-
-[[package]]
-name = "darling_macro"
-version = "0.20.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "836a9bbc7ad63342d6d6e7b815ccab164bc77a2d95d84bc3117a8c0d5c98e2d5"
-dependencies = [
- "darling_core 0.20.3",
- "quote",
- "syn 2.0.25",
 ]
 
 [[package]]
@@ -1755,6 +1720,18 @@ name = "docker-compose-runner"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f9b25dd136b29813ea84b16d2ff9c48fdd727a6a6f3fcf736523bb5d946c41e7"
+dependencies = [
+ "anyhow",
+ "regex",
+ "serde_yaml",
+ "subprocess",
+ "tracing",
+]
+
+[[package]]
+name = "docker-compose-runner"
+version = "0.1.0"
+source = "git+https://github.com/conorbros/docker-compose-runner#f1f0ba28eae736d62978c0b785b59ce94e6aa104"
 dependencies = [
  "anyhow",
  "regex",
@@ -4837,7 +4814,7 @@ dependencies = [
  "cassandra-cpp",
  "cassandra-protocol",
  "cdrs-tokio",
- "docker-compose-runner",
+ "docker-compose-runner 0.1.0 (git+https://github.com/conorbros/docker-compose-runner)",
  "inferno",
  "itertools 0.10.5",
  "openssl",
@@ -5757,7 +5734,7 @@ dependencies = [
  "clap",
  "console",
  "copy_dir",
- "docker-compose-runner",
+ "docker-compose-runner 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "scylla",
  "serde",
  "strum 0.25.0",

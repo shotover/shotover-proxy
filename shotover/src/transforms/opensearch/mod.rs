@@ -1,12 +1,25 @@
-use crate::tls::{TlsConnector, TlsConnectorConfig};
+use crate::codec::{
+    opensearch::{OpenSearchCodecBuilder, OpenSearchDecoder, OpenSearchEncoder},
+    CodecBuilder, Direction,
+};
+use crate::message::Message;
+use crate::tcp;
+use crate::tls::{AsyncStream, TlsConnector, TlsConnectorConfig};
 use crate::transforms::{
     Messages, Transform, TransformBuilder, TransformConfig, Transforms, Wrapper,
 };
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use async_trait::async_trait;
-use metrics::{register_counter, Counter};
+use futures::{FutureExt, SinkExt, StreamExt};
 use serde::Deserialize;
+use std::pin::Pin;
 use std::time::Duration;
+use tokio::io::{ReadHalf, WriteHalf};
+use tokio::sync::mpsc;
+use tokio_util::codec::{FramedRead, FramedWrite};
+use tracing::{trace, Instrument};
+
+type PinStream = Pin<Box<dyn AsyncStream + Send + Sync>>;
 
 #[derive(Deserialize, Debug)]
 pub struct OpenSearchSinkConfig {
@@ -34,7 +47,6 @@ impl TransformConfig for OpenSearchSinkConfig {
 pub struct OpenSearchSinkBuilder {
     address: String,
     tls: Option<TlsConnector>,
-    failed_requests: Counter,
     connect_timeout: Duration,
 }
 
@@ -42,16 +54,14 @@ impl OpenSearchSinkBuilder {
     pub fn new(
         address: String,
         tls: Option<TlsConnector>,
-        chain_name: String,
+        _chain_name: String,
         connect_timeout_ms: u64,
     ) -> Self {
-        let failed_requests = register_counter!("failed_requests", "chain" => chain_name, "transform" => "OpenSearchSink");
         let connect_timeout = Duration::from_millis(connect_timeout_ms);
 
         Self {
             address,
             tls,
-            failed_requests,
             connect_timeout,
         }
     }
@@ -62,8 +72,9 @@ impl TransformBuilder for OpenSearchSinkBuilder {
         Transforms::OpenSearchSink(OpenSearchSink {
             address: self.address.clone(),
             tls: self.tls.clone(),
-            failed_requests: self.failed_requests.clone(),
             connect_timeout: self.connect_timeout,
+            codec_builder: OpenSearchCodecBuilder::new(Direction::Sink),
+            connection: None,
         })
     }
 
@@ -79,14 +90,111 @@ impl TransformBuilder for OpenSearchSinkBuilder {
 pub struct OpenSearchSink {
     address: String,
     tls: Option<TlsConnector>,
-    failed_requests: Counter,
+    connection: Option<Connection>,
     connect_timeout: Duration,
+    codec_builder: OpenSearchCodecBuilder,
 }
 
 #[async_trait]
 impl Transform for OpenSearchSink {
     async fn transform<'a>(&'a mut self, requests_wrapper: Wrapper<'a>) -> Result<Messages> {
-        tracing::info!("{:?}", requests_wrapper);
-        todo!();
+        // Return immediately if we have no messages.
+        // If we tried to send no messages we would block forever waiting for a reply that will never come.
+        if requests_wrapper.requests.is_empty() {
+            return Ok(requests_wrapper.requests);
+        }
+
+        if self.connection.is_none() {
+            trace!("creating outbound connection {:?}", self.address);
+
+            let generic_stream = if let Some(tls) = self.tls.as_mut() {
+                let tls_stream = tls
+                    .connect(self.connect_timeout, self.address.clone())
+                    .await?;
+                Box::pin(tls_stream) as Pin<Box<dyn AsyncStream + Send + Sync>>
+            } else {
+                let tcp_stream =
+                    tcp::tcp_stream(self.connect_timeout, self.address.clone()).await?;
+                Box::pin(tcp_stream) as Pin<Box<dyn AsyncStream + Send + Sync>>
+            };
+
+            let (decoder, encoder) = self.codec_builder.build();
+            let (stream_rx, stream_tx) = tokio::io::split(generic_stream);
+            let outbound_tx = FramedWrite::new(stream_tx, encoder);
+            let outbound_rx = FramedRead::new(stream_rx, decoder);
+            let (response_messages_tx, response_messages_rx) = mpsc::unbounded_channel();
+
+            tokio::spawn(
+                server_response_processing_task(outbound_rx, response_messages_tx)
+                    .in_current_span(),
+            );
+            self.connection = Some(Connection {
+                response_messages_rx,
+                outbound_tx,
+            })
+        }
+
+        let connection = self.connection.as_mut().unwrap();
+
+        let messages_len = requests_wrapper.requests.len();
+
+        let mut result = Vec::with_capacity(messages_len);
+        for message in requests_wrapper.requests {
+            connection
+                .outbound_tx
+                .send(vec![message])
+                .await
+                .map_err(|err| {
+                    anyhow!("Failed to send messages to OpenSearch destination: {err:?}")
+                })?;
+
+            let message = connection
+                .response_messages_rx
+                .recv()
+                .await
+                .ok_or_else(|| anyhow!("Failed to receive message because OpenSearchSink response processing task is dead"))?;
+            result.push(message);
+        }
+
+        Ok(result)
+    }
+}
+
+struct Connection {
+    outbound_tx: FramedWrite<WriteHalf<PinStream>, OpenSearchEncoder>,
+    response_messages_rx: mpsc::UnboundedReceiver<Message>,
+}
+
+async fn server_response_processing_task(
+    mut outbound_rx: FramedRead<ReadHalf<PinStream>, OpenSearchDecoder>,
+    response_messages_tx: mpsc::UnboundedSender<Message>,
+) {
+    loop {
+        tokio::select! {
+            responses = outbound_rx.next().fuse() => {
+                match responses {
+                    Some(Ok(messages)) => {
+                        for message in messages {
+                            if let Err(mpsc::error::SendError(_)) = response_messages_tx.send(message) {
+                                // RawSinkSingle dropped after a message was received from server,
+                                // request processor task shutting down
+                                return;
+                            }
+                        }
+                    }
+                    Some(Err(err)) => {
+                        tracing::error!("encountered error in OpenSearchSink stream: {err:?}");
+                        return;
+                    }
+                    None => {
+                        return;
+                    }
+                }
+            },
+            _ = response_messages_tx.closed() => {
+                // sink stream ended, shutdown the response processing task
+                return;
+            },
+        }
     }
 }

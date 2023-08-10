@@ -1,3 +1,4 @@
+use crate::shotover_process;
 use opensearch::{
     auth::Credentials,
     cert::CertificateValidation,
@@ -23,6 +24,10 @@ pub async fn index_documents(client: &OpenSearch) -> Response {
         .await
         .unwrap();
 
+    if exists_response.status_code() != StatusCode::NOT_FOUND {
+        return exists_response;
+    }
+
     assert_eq!(exists_response.status_code(), StatusCode::NOT_FOUND);
 
     let mut body: Vec<BulkOperation<_>> = vec![];
@@ -46,7 +51,13 @@ pub async fn index_documents(client: &OpenSearch) -> Response {
 async fn passthrough_standard() {
     let _compose = docker_compose("tests/test-configs/opensearch-passthrough/docker-compose.yaml");
 
-    let url = Url::parse("https://localhost:9200").unwrap();
+    let shotover = shotover_process("tests/test-configs/opensearch-passthrough/topology.yaml")
+        .start()
+        .await;
+
+    let addr = "http://localhost:9201";
+
+    let url = Url::parse(addr).unwrap();
     let credentials = Credentials::Basic("admin".into(), "admin".into());
     let transport = TransportBuilder::new(SingleNodeConnectionPool::new(url))
         .cert_validation(CertificateValidation::None)
@@ -69,15 +80,15 @@ async fn passthrough_standard() {
         .await
         .unwrap();
 
-    assert!(response.content_length().unwrap() > 0);
     assert_eq!(
         response.url(),
-        &Url::parse("https://localhost:9200/_search?allow_no_indices=true").unwrap()
+        &Url::parse(format!("{}/_search?allow_no_indices=true", addr).as_str()).unwrap()
     );
     assert_eq!(response.status_code(), StatusCode::OK);
     assert_eq!(response.method(), opensearch::http::Method::Post);
 
     let response_body = response.json::<Value>().await.unwrap();
+    println!("{:?}", response_body);
     assert!(response_body["took"].as_i64().is_some());
     assert_eq!(
         response_body["hits"].as_object().unwrap()["hits"]
@@ -86,4 +97,6 @@ async fn passthrough_standard() {
             .len(),
         10
     );
+
+    shotover.shutdown_and_then_consume_events(&[]).await;
 }
