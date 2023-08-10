@@ -142,6 +142,7 @@ fn get_image_waiters() -> &'static [Image] {
     &[Image {
         name: "bitnami/cassandra:4.0.6",
         log_regex_to_wait_for: r"Startup complete",
+        timeout: 120,
     }]
 }
 
