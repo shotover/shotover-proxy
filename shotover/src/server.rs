@@ -1,9 +1,11 @@
 use crate::codec::{CodecBuilder, CodecReadError, CodecWriteError};
 use crate::message::Messages;
+use crate::sources::Transport;
 use crate::tls::{AcceptError, TlsAcceptor};
 use crate::transforms::chain::{TransformChain, TransformChainBuilder};
 use crate::transforms::Wrapper;
 use anyhow::{anyhow, Context, Result};
+use bytes::BytesMut;
 use futures::future::join_all;
 use futures::{SinkExt, StreamExt};
 use metrics::{register_gauge, Gauge};
@@ -18,7 +20,11 @@ use tokio::task::JoinHandle;
 use tokio::time;
 use tokio::time::timeout;
 use tokio::time::Duration;
-use tokio_util::codec::{FramedRead, FramedWrite};
+use tokio_tungstenite::tungstenite::{
+    handshake::server::{Request, Response},
+    protocol::Message as WsMessage,
+};
+use tokio_util::codec::{Decoder, Encoder, FramedRead, FramedWrite};
 use tracing::Instrument;
 use tracing::{debug, error, warn};
 
@@ -64,6 +70,8 @@ pub struct TcpCodecListener<C: CodecBuilder> {
     timeout: Option<u64>,
 
     connection_handles: Vec<JoinHandle<()>>,
+
+    transport: Transport,
 }
 
 impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
@@ -78,6 +86,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
         trigger_shutdown_rx: watch::Receiver<bool>,
         tls: Option<TlsAcceptor>,
         timeout: Option<u64>,
+        transport: Transport,
     ) -> Result<Self> {
         let available_connections_gauge =
             register_gauge!("shotover_available_connections", "source" => source_name.clone());
@@ -99,6 +108,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
             available_connections_gauge,
             timeout,
             connection_handles: vec![],
+            transport,
         })
     }
 
@@ -143,6 +153,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                 id = self.connection_count,
                 source = self.source_name.as_str(),
             );
+            let transport = self.transport;
             async {
                 // Accept a new socket. This will attempt to perform error handling.
                 // The `accept` method internally attempts to recover errors, so an
@@ -172,7 +183,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                 self.connection_handles.push(tokio::spawn(
                     async move {
                         // Process the connection. If an error is encountered, log it.
-                        if let Err(err) = handler.run(stream).await {
+                        if let Err(err) = handler.run(stream, transport).await {
                             error!(
                                 "{:?}",
                                 err.context("connection was unexpectedly terminated")
@@ -255,6 +266,156 @@ pub struct Handler<C: CodecBuilder> {
     _permit: OwnedSemaphorePermit,
 }
 
+async fn spawn_websocket_read_write_tasks<
+    S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+    C: CodecBuilder + 'static,
+>(
+    codec: C,
+    stream: S,
+    in_tx: UnboundedSender<Messages>,
+    mut out_rx: UnboundedReceiver<Messages>,
+    out_tx: UnboundedSender<Messages>,
+    websocket_subprotocol: &str,
+) {
+    let callback = |_request: &Request, mut response: Response| {
+        let response_headers = response.headers_mut();
+
+        response_headers.append(
+            "Sec-WebSocket-Protocol",
+            websocket_subprotocol.parse().unwrap(),
+        );
+
+        Ok(response)
+    };
+
+    let ws_stream = tokio_tungstenite::accept_hdr_async(stream, callback)
+        .await
+        .expect("Error during the websocket handshake occurred");
+
+    let (mut writer, mut reader) = ws_stream.split();
+    let (mut decoder, mut encoder) = codec.build();
+
+    // read task
+    tokio::spawn(async move {
+        loop {
+            tokio::select! {
+                result = reader.next() => {
+                    if let Some(ws_message) = result {
+                        match ws_message {
+                            Ok(WsMessage::Binary(ws_message_data)) => {
+                                // Entire message is reallocated and copied here due to 
+                                // incompatibility between tokio codecs and tungstenite.
+                                let message = decoder.decode(&mut BytesMut::from(ws_message_data.as_slice()));
+                                match message {
+                                    Ok(Some(message)) => {
+                                        if in_tx.send(message).is_err() {
+                                            // main task has shutdown, this task is no longer needed
+                                            return;
+                                        }
+                                    }
+                                    Ok(None) => {
+                                        // websocket client has closed the connection
+                                        return;
+                                    }
+                                    Err(CodecReadError::RespondAndThenCloseConnection(messages)) => {
+                                        if let Err(err) = out_tx.send(messages) {
+                                            // TODO we need to send a close message to the client
+                                            error!("Failed to send RespondAndThenCloseConnection message: {:?}", err);
+                                        }
+                                        return;
+                                    }
+                                    Err(CodecReadError::Parser(err)) => {
+                                        // TODO we need to send a close message to the client, protocol error
+                                        warn!("failed to decode message: {:?}", err);
+                                        return;
+                                    }
+                                    Err(CodecReadError::Io(_err)) => {
+                                        unreachable!("CodecReadError::Io should not occur because we are reading from a newly created BytesMut")
+                                    }
+                                }
+                            }
+                            Ok(_ws_message) => {
+                                // TODO we need to tell the client about a protocol error
+                                todo!();
+                            }
+                            Err(err) => {
+                                // TODO
+                                error!("{err}");
+                                return;
+                            }
+                        }
+                    } else {
+                        return;
+                    }
+                }
+                _ = in_tx.closed() => {
+                    // main task has shutdown, this task is no longer needed
+                    return;
+                }
+            }
+        }
+    }
+    .in_current_span(),
+    );
+
+    // write task
+    tokio::spawn(
+        async move {
+            loop {
+                if let Some(message) = out_rx.recv().await {
+                    let mut bytes = BytesMut::new();
+                    match encoder.encode(message, &mut bytes) {
+                        Err(err) => {
+                            error!("failed to encode message destined for client: {err:?}");
+                            return;
+                        }
+                        Ok(_) => {
+                            let message = WsMessage::binary(bytes);
+                            match writer.send(message).await {
+                                Ok(_) => {}
+                                Err(err) => {
+                                    // TODO
+                                    error!("{err}");
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    // Main task has ended.
+                    // First flush out any remaining messages.
+                    // Then end the task thus closing the connection by dropping the write half
+                    while let Ok(message) = out_rx.try_recv() {
+                        let mut bytes = BytesMut::new();
+                        match encoder.encode(message, &mut bytes) {
+                            Err(err) => {
+                                error!("failed to encode message destined for client: {err:?}")
+                            }
+                            Ok(_) => {
+                                let message = WsMessage::binary(bytes);
+                                match writer.send(message).await {
+                                    Ok(_) => {}
+                                    Err(err) => {
+                                        panic!("{err}"); // TODO
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    break;
+                }
+            }
+            match writer.send(WsMessage::Close(None)).await {
+                Ok(_) => {}
+                Err(err) => {
+                    panic!("{err}"); // TODO
+                }
+            }
+        }
+        .in_current_span(),
+    );
+}
+
 fn spawn_read_write_tasks<
     C: CodecBuilder + 'static,
     R: AsyncRead + Unpin + Send + 'static,
@@ -279,7 +440,8 @@ fn spawn_read_write_tasks<
     // 3. The writer task detects that the last out_tx is dropped by out_rx returning None and terminates
     //
     // client closes connection:
-    // 1. The reader task detects that the client has closed the connection via reader returning None and terminates, dropping in_tx and the first out_tx
+    // 1. The reader task detects that the client has closed the connection via reader returning None and terminates,
+    // dropping in_tx and the first out_tx
     // 2. The main task detects that in_tx is dropped by in_rx returning None and terminates, dropping the last out_tx
     // 3. The writer task detects that the last out_tx is dropped by out_rx returning None and terminates
     // The writer task could also close early by detecting that the client has closed the connection via writer returning BrokenPipe
@@ -294,7 +456,7 @@ fn spawn_read_write_tasks<
                             match message {
                                 Ok(messages) => {
                                     if in_tx.send(messages).is_err() {
-                                        // main task has shutdown down, this task is no longer needed
+                                        // main task has shutdown, this task is no longer needed
                                         return;
                                     }
                                 }
@@ -309,8 +471,10 @@ fn spawn_read_write_tasks<
                                     return;
                                 }
                                 Err(CodecReadError::Io(err)) => {
-                                    // I suspect (but have not confirmed) that UnexpectedEof occurs here when the ssl client does not send "close notify" before terminating the connection.
-                                    // We shouldnt report that as a warning because its common for clients to do that for performance reasons.
+                                    // I suspect (but have not confirmed) that UnexpectedEof occurs here when the ssl client
+                                    // does not send "close notify" before terminating the connection.
+                                    // We shouldnt report that as a warning because its common for clients to do
+                                    // that for performance reasons.
                                     if !matches!(err.kind(), ErrorKind::UnexpectedEof) {
                                         warn!("failed to receive message on tcp stream: {:?}", err);
                                     }
@@ -323,7 +487,7 @@ fn spawn_read_write_tasks<
                         }
                     }
                     _ = in_tx.closed() => {
-                        // main task has shutdown down, this task is no longer needed
+                        // main task has shutdown, this task is no longer needed
                         return;
                     }
                 }
@@ -389,7 +553,7 @@ impl<C: CodecBuilder + 'static> Handler<C> {
     ///
     /// When the shutdown signal is received, the connection is processed until
     /// it reaches a safe state, at which point it is terminated.
-    pub async fn run(mut self, stream: TcpStream) -> Result<()> {
+    pub async fn run(mut self, stream: TcpStream, transport: Transport) -> Result<()> {
         stream.set_nodelay(true)?;
 
         let client_details = stream
@@ -403,17 +567,67 @@ impl<C: CodecBuilder + 'static> Handler<C> {
 
         let local_addr = stream.local_addr()?;
 
-        if let Some(tls) = &self.tls {
-            let tls_stream = match tls.accept(stream).await {
-                Ok(x) => x,
-                Err(AcceptError::Disconnected) => return Ok(()),
-                Err(AcceptError::Failure(err)) => return Err(err),
-            };
-            let (rx, tx) = tokio::io::split(tls_stream);
-            spawn_read_write_tasks(self.codec.clone(), rx, tx, in_tx, out_rx, out_tx.clone());
-        } else {
-            let (rx, tx) = stream.into_split();
-            spawn_read_write_tasks(self.codec.clone(), rx, tx, in_tx, out_rx, out_tx.clone());
+        let codec_builder = self.codec.clone();
+
+        match transport {
+            Transport::WebSocket => {
+                let websocket_subprotocol = codec_builder.websocket_subprotocol();
+
+                if let Some(tls) = &self.tls {
+                    let tls_stream = match tls.accept(stream).await {
+                        Ok(x) => x,
+                        Err(AcceptError::Disconnected) => return Ok(()),
+                        Err(AcceptError::Failure(err)) => return Err(err),
+                    };
+                    spawn_websocket_read_write_tasks(
+                        codec_builder,
+                        tls_stream,
+                        in_tx,
+                        out_rx,
+                        out_tx.clone(),
+                        websocket_subprotocol,
+                    )
+                    .await;
+                } else {
+                    spawn_websocket_read_write_tasks(
+                        codec_builder,
+                        stream,
+                        in_tx,
+                        out_rx,
+                        out_tx.clone(),
+                        websocket_subprotocol,
+                    )
+                    .await;
+                };
+            }
+            Transport::Tcp => {
+                if let Some(tls) = &self.tls {
+                    let tls_stream = match tls.accept(stream).await {
+                        Ok(x) => x,
+                        Err(AcceptError::Disconnected) => return Ok(()),
+                        Err(AcceptError::Failure(err)) => return Err(err),
+                    };
+                    let (rx, tx) = tokio::io::split(tls_stream);
+                    spawn_read_write_tasks(
+                        self.codec.clone(),
+                        rx,
+                        tx,
+                        in_tx,
+                        out_rx,
+                        out_tx.clone(),
+                    );
+                } else {
+                    let (rx, tx) = stream.into_split();
+                    spawn_read_write_tasks(
+                        self.codec.clone(),
+                        rx,
+                        tx,
+                        in_tx,
+                        out_rx,
+                        out_tx.clone(),
+                    );
+                };
+            }
         };
 
         let result = self
@@ -499,7 +713,8 @@ impl<C: CodecBuilder + 'static> Handler<C> {
                 // Avoid allocating for reverse chains as we dont make use of this value in that case
                 vec![]
             } else {
-                // This clone should be cheap as cloning a Message that has never had `.frame()` called should result in no new allocations.
+                // This clone should be cheap as cloning a Message that has never had `.frame()`
+                // called should result in no new allocations.
                 messages.clone()
             };
 
@@ -524,7 +739,8 @@ impl<C: CodecBuilder + 'static> Handler<C> {
                 {
                     Ok(x) => x,
                     Err(err) => {
-                        // An internal error occured and we need to terminate the connection because we can no longer make any gaurantees about the state its in.
+                        // An internal error occured and we need to terminate the connection because we can no
+                        // longer make any gaurantees about the state its in.
                         // However before we do that we need to return errors for all the messages in this batch for two reasons:
                         // * Poorly programmed clients may hang forever waiting for a response
                         // * We want to give the user a hint as to what went wrong

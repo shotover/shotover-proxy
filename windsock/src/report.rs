@@ -1,4 +1,4 @@
-use crate::bench::Tags;
+use crate::{bench::Tags, data::windsock_path};
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use std::{io::ErrorKind, path::PathBuf, time::Duration};
@@ -9,8 +9,19 @@ use tokio::sync::mpsc::UnboundedReceiver;
 pub enum Report {
     Start,
     QueryCompletedIn(Duration),
+    QueryErrored {
+        completed_in: Duration,
+        message: String,
+    },
     ProduceCompletedIn(Duration),
+    ProduceErrored {
+        completed_in: Duration,
+        message: String,
+    },
     ConsumeCompleted,
+    ConsumeErrored {
+        message: String,
+    },
     SecondPassed(Duration),
     /// contains the time that the test ran for
     FinishedIn(Duration),
@@ -79,32 +90,39 @@ impl Percentile {
 
 type Percentiles = [Duration; Percentile::COUNT];
 
-#[derive(Debug, Serialize, Deserialize)]
-pub(crate) struct ReportArchive {
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ReportArchive {
     pub(crate) running_in_release: bool,
     pub(crate) tags: Tags,
     pub(crate) operations_report: Option<OperationsReport>,
     pub(crate) pubsub_report: Option<PubSubReport>,
+    pub(crate) error_messages: Vec<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub(crate) struct OperationsReport {
     pub(crate) total: u64,
-    pub(crate) requested_ops: Option<u64>,
-    pub(crate) total_ops: u32,
+    pub(crate) total_errors: u64,
+    pub(crate) requested_operations_per_second: Option<u64>,
+    pub(crate) total_operations_per_second: u32,
+    pub(crate) total_errors_per_second: u32,
     pub(crate) mean_time: Duration,
     pub(crate) time_percentiles: Percentiles,
     pub(crate) total_each_second: Vec<u64>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub(crate) struct PubSubReport {
     pub(crate) total_produce: u64,
+    pub(crate) total_produce_error: u64,
     pub(crate) total_consume: u64,
+    pub(crate) total_consume_error: u64,
     pub(crate) total_backlog: i64,
     pub(crate) requested_produce_per_second: Option<u64>,
     pub(crate) produce_per_second: u32,
+    pub(crate) produce_errors_per_second: u32,
     pub(crate) consume_per_second: u32,
+    pub(crate) consume_errors_per_second: u32,
     pub(crate) produce_mean_time: Duration,
     pub(crate) produce_time_percentiles: Percentiles,
     pub(crate) produce_each_second: Vec<u64>,
@@ -112,30 +130,40 @@ pub(crate) struct PubSubReport {
     pub(crate) backlog_each_second: Vec<i64>,
 }
 
+fn error_message_insertion(messages: &mut Vec<String>, new_message: String) {
+    if !messages.contains(&new_message) {
+        if messages.len() <= 5 {
+            messages.push(new_message);
+        } else if messages.len() == 6 {
+            messages.push("more than 5 unique error messages encountered, most likely they are actually small variants of the the same error. Only the first 5 error messages have been logged".to_owned());
+        }
+    }
+}
+
 impl ReportArchive {
     fn path(&self) -> PathBuf {
         Self::last_run_path().join(self.tags.get_name())
     }
 
-    pub fn load(path: &str) -> Result<Self> {
-        match std::fs::read(Self::last_run_path().join(path)) {
+    pub fn load(name: &str) -> Result<Self> {
+        match std::fs::read(Self::last_run_path().join(name)) {
             Ok(bytes) => bincode::deserialize(&bytes).map_err(|e|
                 anyhow!(e).context("The bench archive from the previous run is not a valid archive, maybe the format changed since the last run")
             ),
-            Err(err) if err.kind() == ErrorKind::NotFound => Err(anyhow!("The bench {path:?} does not exist or was not run in the previous run")),
-            Err(err) => Err(anyhow!("The bench {path:?} encountered a file read error {err:?}"))
+            Err(err) if err.kind() == ErrorKind::NotFound => Err(anyhow!("The bench {name:?} does not exist or was not run in the previous run")),
+            Err(err) => Err(anyhow!("The bench {name:?} encountered a file read error {err:?}"))
         }
     }
 
-    pub fn load_baseline(path: &str) -> Result<Option<Self>> {
-        match std::fs::read(Self::baseline_path().join(path)) {
+    pub fn load_baseline(name: &str) -> Result<Option<Self>> {
+        match std::fs::read(Self::baseline_path().join(name)) {
             Ok(bytes) => bincode::deserialize(&bytes)
                 .map_err(|e|
                     anyhow!(e).context("The bench archive from the baseline is not a valid archive, maybe the format changed since the baseline was set")
                 )
                 .map(Some),
             Err(err) if err.kind() == ErrorKind::NotFound => Ok(None),
-            Err(err) => Err(anyhow!("The bench {path:?} encountered a file read error {err:?}"))
+            Err(err) => Err(anyhow!("The bench {name:?} encountered a file read error {err:?}"))
         }
     }
 
@@ -196,25 +224,14 @@ impl ReportArchive {
     }
 
     pub fn last_run_path() -> PathBuf {
-        windsock_path().join("last_run")
+        let path = windsock_path().join("last_run");
+        std::fs::create_dir_all(&path).unwrap();
+        path
     }
 
     pub fn baseline_path() -> PathBuf {
         windsock_path().join("baseline")
     }
-}
-
-pub fn windsock_path() -> PathBuf {
-    // If we are run via cargo (we are in a target directory) use the target directory for storage.
-    // Otherwise just fallback to the current working directory.
-    let mut path = std::env::current_exe().unwrap();
-    while path.pop() {
-        if path.file_name().map(|x| x == "target").unwrap_or(false) {
-            return path.join("windsock_data");
-        }
-    }
-
-    PathBuf::from("windsock_data")
 }
 
 pub(crate) async fn report_builder(
@@ -231,6 +248,7 @@ pub(crate) async fn report_builder(
     let mut produce_times = vec![];
     let mut total_operation_time = Duration::from_secs(0);
     let mut total_produce_time = Duration::from_secs(0);
+    let mut error_messages = vec![];
 
     while let Some(report) = rx.recv().await {
         match report {
@@ -249,6 +267,17 @@ pub(crate) async fn report_builder(
                     }
                 }
             }
+            Report::QueryErrored {
+                completed_in,
+                message,
+            } => {
+                let report = operations_report.get_or_insert_with(OperationsReport::default);
+                if started {
+                    error_message_insertion(&mut error_messages, message);
+                    report.total_errors += 1;
+                    total_operation_time += completed_in;
+                }
+            }
             Report::ProduceCompletedIn(duration) => {
                 let report = pubsub_report.get_or_insert_with(PubSubReport::default);
                 if started {
@@ -262,6 +291,17 @@ pub(crate) async fn report_builder(
                     }
                 }
             }
+            Report::ProduceErrored {
+                completed_in,
+                message,
+            } => {
+                let report = pubsub_report.get_or_insert_with(PubSubReport::default);
+                if started {
+                    error_message_insertion(&mut error_messages, message);
+                    report.total_produce_error += 1;
+                    total_produce_time += completed_in;
+                }
+            }
             Report::ConsumeCompleted => {
                 let report = pubsub_report.get_or_insert_with(PubSubReport::default);
                 if started {
@@ -271,6 +311,13 @@ pub(crate) async fn report_builder(
                         Some(last) => *last += 1,
                         None => report.consume_each_second.push(0),
                     }
+                }
+            }
+            Report::ConsumeErrored { message } => {
+                let report = pubsub_report.get_or_insert_with(PubSubReport::default);
+                if started {
+                    error_message_insertion(&mut error_messages, message);
+                    report.total_consume_error += 1;
                 }
             }
             Report::SecondPassed(duration) => {
@@ -304,9 +351,10 @@ pub(crate) async fn report_builder(
     };
 
     if let Some(report) = operations_report.as_mut() {
-        report.requested_ops = requested_ops;
+        report.requested_operations_per_second = requested_ops;
         report.mean_time = mean_time(&operation_times, total_operation_time);
-        report.total_ops = calculate_ops(report.total, finished_in);
+        report.total_operations_per_second = calculate_ops(report.total, finished_in);
+        report.total_errors_per_second = calculate_ops(report.total_errors, finished_in);
         report.time_percentiles = calculate_percentiles(operation_times);
 
         // This is not a complete result so discard it.
@@ -317,7 +365,9 @@ pub(crate) async fn report_builder(
         report.requested_produce_per_second = requested_ops;
         report.produce_mean_time = mean_time(&produce_times, total_produce_time);
         report.produce_per_second = calculate_ops(report.total_produce, finished_in);
+        report.produce_errors_per_second = calculate_ops(report.total_produce_error, finished_in);
         report.consume_per_second = calculate_ops(report.total_consume, finished_in);
+        report.consume_errors_per_second = calculate_ops(report.total_consume_error, finished_in);
         report.produce_time_percentiles = calculate_percentiles(produce_times);
 
         // This is not a complete result so discard it.
@@ -329,6 +379,7 @@ pub(crate) async fn report_builder(
         running_in_release,
         tags,
         pubsub_report,
+        error_messages,
         operations_report,
     };
     archive.save();

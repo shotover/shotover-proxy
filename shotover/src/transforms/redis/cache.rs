@@ -322,15 +322,15 @@ impl SimpleRedisCache {
     /// calls the next transform and process the result for caching.
     async fn execute_upstream_and_write_to_cache<'a>(
         &mut self,
-        mut message_wrapper: Wrapper<'a>,
+        mut requests_wrapper: Wrapper<'a>,
     ) -> Result<Messages> {
-        let local_addr = message_wrapper.local_addr;
-        let mut request_messages: Vec<_> = message_wrapper
-            .messages
+        let local_addr = requests_wrapper.local_addr;
+        let mut request_messages: Vec<_> = requests_wrapper
+            .requests
             .iter_mut()
             .map(|message| message.frame().cloned())
             .collect();
-        let mut response_messages = message_wrapper.call_next_transform().await?;
+        let mut response_messages = requests_wrapper.call_next_transform().await?;
 
         let mut cache_messages = vec![];
         for (request, response) in request_messages
@@ -567,9 +567,9 @@ fn build_redis_key_from_cql3(
 
 #[async_trait]
 impl Transform for SimpleRedisCache {
-    async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> Result<Messages> {
+    async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Messages> {
         let cache_responses = self
-            .read_from_cache(&mut message_wrapper.messages, message_wrapper.local_addr)
+            .read_from_cache(&mut requests_wrapper.requests, requests_wrapper.local_addr)
             .await
             .unwrap_or_else(|err| {
                 error!("Failed to fetch from cache: {err:?}");
@@ -578,11 +578,11 @@ impl Transform for SimpleRedisCache {
 
         // remove requests we succesfully got back a cached response for
         for (_, cache_index) in cache_responses.iter().rev() {
-            message_wrapper.messages.remove(*cache_index);
+            requests_wrapper.requests.remove(*cache_index);
         }
 
         let mut responses = self
-            .execute_upstream_and_write_to_cache(message_wrapper)
+            .execute_upstream_and_write_to_cache(requests_wrapper)
             .await?;
 
         // mix cached response in with our non cached responses

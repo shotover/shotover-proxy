@@ -181,9 +181,9 @@ enum Resolver {
 
 #[async_trait]
 impl Transform for TuneableConsistentencyScatter {
-    async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> Result<Messages> {
-        let consistency: Vec<_> = message_wrapper
-            .messages
+    async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Messages> {
+        let consistency: Vec<_> = requests_wrapper
+            .requests
             .iter_mut()
             .map(|m| match get_upper_command_name(m).as_slice() {
                 b"DBSIZE" => Consistency {
@@ -217,7 +217,7 @@ impl Transform for TuneableConsistentencyScatter {
 
         //TODO: FuturesUnordered does bias to polling the first submitted task - this will bias all requests
         for chain in self.route_map.iter_mut() {
-            rec_fu.push(chain.process_request(message_wrapper.clone(), None));
+            rec_fu.push(chain.process_request(requests_wrapper.clone(), None));
         }
 
         let mut results = Vec::new();
@@ -234,7 +234,7 @@ impl Transform for TuneableConsistentencyScatter {
         drop(rec_fu);
 
         Ok(if results.len() < max_required_successes as usize {
-            let mut messages = message_wrapper.messages;
+            let mut messages = requests_wrapper.requests;
             for message in &mut messages {
                 *message = message.to_error_response("Not enough responses".into())?
             }

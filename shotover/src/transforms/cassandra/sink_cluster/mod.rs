@@ -715,15 +715,15 @@ fn is_use_statement_successful(response: Option<Result<Response>>) -> bool {
 
 #[async_trait]
 impl Transform for CassandraSinkCluster {
-    async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> Result<Messages> {
-        self.send_message(message_wrapper.messages).await
+    async fn transform<'a>(&'a mut self, requests_wrapper: Wrapper<'a>) -> Result<Messages> {
+        self.send_message(requests_wrapper.requests).await
     }
 
     async fn transform_pushed<'a>(
         &'a mut self,
-        mut message_wrapper: Wrapper<'a>,
+        mut requests_wrapper: Wrapper<'a>,
     ) -> Result<Messages> {
-        message_wrapper.messages.retain_mut(|message| {
+        requests_wrapper.requests.retain_mut(|message| {
             if let Some(Frame::Cassandra(CassandraFrame {
                 operation: CassandraOperation::Event(event),
                 ..
@@ -739,7 +739,7 @@ impl Transform for CassandraSinkCluster {
                 true
             }
         });
-        message_wrapper.call_next_transform_pushed().await
+        requests_wrapper.call_next_transform_pushed().await
     }
 
     fn set_pushed_messages_tx(&mut self, pushed_messages_tx: mpsc::UnboundedSender<Messages>) {

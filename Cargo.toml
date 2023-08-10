@@ -1,11 +1,5 @@
 [workspace]
-members = [
-    "windsock",
-    "shotover",
-    "shotover-proxy",
-    "test-helpers",
-    "custom-transforms-example",
-]
+members = ["windsock", "shotover", "shotover-proxy", "test-helpers", "custom-transforms-example", "ec2-cargo"]
 
 # https://deterministic.space/high-performance-rust.html
 [profile.release]
@@ -16,7 +10,15 @@ codegen-units = 1
 lto = "fat"
 codegen-units = 1
 
+# used for e.g. generating flamegraphs
+[profile.profiling]
+inherits = "release"
+lto = false
+debug = true
+codegen-units = 1
+
 [workspace.dependencies]
+scylla = { version = "0.9.0", features = ["ssl"] }
 bytes = "1.0.0"
 tokio = { version = "1.25.0", features = ["full", "macros"] }
 tokio-util = { version = "0.7.7" }
@@ -33,6 +35,7 @@ cdrs-tokio = "8.0"
 cassandra-protocol = "3.0"
 tracing = "0.1.15"
 tracing-subscriber = { version = "0.3.1", features = ["env-filter", "json"] }
+tracing-appender = "0.2.0"
 nix = "0.26.0"
 serde_json = "1.0"
 rcgen = "0.10.0"
@@ -49,3 +52,4 @@ rand_distr = "0.4.1"
 clap = { version = "4.0.4", features = ["cargo", "derive"] }
 async-trait = "0.1.30"
 typetag = "0.2.5"
+aws-throwaway = "0.1.0"

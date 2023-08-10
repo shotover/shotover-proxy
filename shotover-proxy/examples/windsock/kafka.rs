@@ -1,23 +1,26 @@
-use crate::common::Shotover;
+use crate::aws::{Ec2InstanceWithDocker, Ec2InstanceWithShotover};
+use crate::common::{rewritten_file, Shotover};
+use crate::profilers::ProfilerRunner;
+use anyhow::Result;
 use async_trait::async_trait;
 use futures::StreamExt;
 use rdkafka::config::ClientConfig;
 use rdkafka::consumer::{Consumer, StreamConsumer};
 use rdkafka::producer::{FutureProducer, FutureRecord};
 use rdkafka::util::Timeout;
+use std::path::Path;
 use std::sync::Arc;
 use std::{collections::HashMap, time::Duration};
-use test_helpers::{
-    docker_compose::docker_compose, flamegraph::Perf, shotover_process::ShotoverProcessBuilder,
-};
+use test_helpers::{docker_compose::docker_compose, shotover_process::ShotoverProcessBuilder};
 use tokio::{sync::mpsc::UnboundedSender, task::JoinHandle, time::Instant};
-use windsock::{Bench, Report};
+use windsock::{Bench, BenchParameters, Profiling, Report};
 
 pub struct KafkaBench {
     shotover: Shotover,
     message_size: Size,
 }
 
+#[derive(Clone)]
 pub enum Size {
     B1,
     KB1,
@@ -54,20 +57,62 @@ impl Bench for KafkaBench {
         .collect()
     }
 
-    async fn run(
+    fn supported_profilers(&self) -> Vec<String> {
+        ProfilerRunner::supported_profilers(self.shotover)
+    }
+
+    async fn orchestrate_cloud(
         &self,
-        flamegraph: bool,
-        _local: bool,
-        runtime_seconds: u32,
-        operations_per_second: Option<u64>,
-        reporter: UnboundedSender<Report>,
-    ) {
+        _running_in_release: bool,
+        _profiling: Profiling,
+        parameters: BenchParameters,
+    ) -> Result<()> {
+        let aws = crate::aws::WindsockAws::get().await;
+
+        let (kafka_instance, bench_instance, shotover_instance) = futures::join!(
+            aws.create_docker_instance(),
+            aws.create_bencher_instance(),
+            aws.create_shotover_instance()
+        );
+
+        let kafka_ip = kafka_instance.instance.private_ip().to_string();
+        let shotover_ip = shotover_instance.instance.private_ip().to_string();
+
+        let (_, running_shotover) = futures::join!(
+            run_aws_kafka(kafka_instance),
+            run_aws_shotover(shotover_instance, self.shotover, kafka_ip.clone())
+        );
+
+        let destination_ip = if running_shotover.is_some() {
+            shotover_ip
+        } else {
+            kafka_ip
+        };
+
+        bench_instance
+            .run_bencher(&self.run_args(&destination_ip, &parameters), &self.name())
+            .await;
+
+        if let Some(running_shotover) = running_shotover {
+            running_shotover.shutdown().await;
+        }
+        Ok(())
+    }
+
+    async fn orchestrate_local(
+        &self,
+        _running_in_release: bool,
+        profiling: Profiling,
+        parameters: BenchParameters,
+    ) -> Result<()> {
         let config_dir = "tests/test-configs/kafka/bench";
         let _compose = docker_compose(&format!("{}/docker-compose.yaml", config_dir));
 
+        let mut profiler = ProfilerRunner::new(profiling);
         let shotover = match self.shotover {
             Shotover::Standard => Some(
                 ShotoverProcessBuilder::new_with_topology(&format!("{config_dir}/topology.yaml"))
+                    .with_profile(profiler.shotover_profile())
                     .start()
                     .await,
             ),
@@ -76,28 +121,39 @@ impl Bench for KafkaBench {
                 ShotoverProcessBuilder::new_with_topology(&format!(
                     "{config_dir}/topology-encode.yaml"
                 ))
+                .with_profile(profiler.shotover_profile())
                 .start()
                 .await,
             ),
         };
 
-        let perf = if flamegraph {
-            if let Some(shotover) = &shotover {
-                Some(Perf::new(shotover.child.as_ref().unwrap().id().unwrap()))
-            } else {
-                todo!()
-            }
-        } else {
-            None
-        };
-
-        let brokers = match self.shotover {
+        let broker_address = match self.shotover {
             Shotover::ForcedMessageParsed | Shotover::Standard => "127.0.0.1:9192",
             Shotover::None => "127.0.0.1:9092",
         };
 
+        profiler.run(&shotover);
+
+        self.execute_run(broker_address, &parameters).await;
+
+        if let Some(shotover) = shotover {
+            shotover.shutdown_and_then_consume_events(&[]).await;
+        }
+
+        Ok(())
+    }
+
+    async fn run_bencher(
+        &self,
+        resources: &str,
+        parameters: BenchParameters,
+        reporter: UnboundedSender<Report>,
+    ) {
+        // only one string field so we just directly store the value in resources
+        let broker_address = resources;
+
         let producer: FutureProducer = ClientConfig::new()
-            .set("bootstrap.servers", brokers)
+            .set("bootstrap.servers", broker_address)
             .set("message.timeout.ms", "5000")
             .create()
             .unwrap();
@@ -111,10 +167,10 @@ impl Bench for KafkaBench {
         let producer = BenchTaskProducerKafka { producer, message };
 
         // ensure topic exists
-        producer.produce_one().await;
+        producer.produce_one().await.unwrap();
 
         let consumer: StreamConsumer = ClientConfig::new()
-            .set("bootstrap.servers", brokers)
+            .set("bootstrap.servers", broker_address)
             .set("group.id", "some_group")
             .set("session.timeout.ms", "6000")
             .set("enable.auto.commit", "false")
@@ -130,13 +186,13 @@ impl Bench for KafkaBench {
         reporter.send(Report::Start).unwrap();
         tasks.extend(
             producer
-                .spawn_tasks(reporter.clone(), operations_per_second)
+                .spawn_tasks(reporter.clone(), parameters.operations_per_second)
                 .await,
         );
 
         let start = Instant::now();
 
-        for _ in 0..runtime_seconds {
+        for _ in 0..parameters.runtime_seconds {
             let second = Instant::now();
             tokio::time::sleep(Duration::from_secs(1)).await;
             reporter
@@ -150,15 +206,49 @@ impl Bench for KafkaBench {
         for task in tasks {
             task.await.unwrap();
         }
-
-        if let Some(shotover) = shotover {
-            shotover.shutdown_and_then_consume_events(&[]).await;
-        }
-
-        if let Some(perf) = perf {
-            perf.flamegraph();
-        }
     }
+}
+
+async fn run_aws_shotover(
+    instance: Arc<Ec2InstanceWithShotover>,
+    shotover: Shotover,
+    kafka_ip: String,
+) -> Option<crate::aws::RunningShotover> {
+    let config_dir = "tests/test-configs/kafka/bench";
+    let ip = instance.instance.private_ip().to_string();
+    match shotover {
+        Shotover::Standard | Shotover::ForcedMessageParsed => {
+            let encoded = match shotover {
+                Shotover::Standard => "",
+                Shotover::ForcedMessageParsed => "-encode",
+                Shotover::None => unreachable!(),
+            };
+            let topology = rewritten_file(
+                Path::new(&format!("{config_dir}/topology{encoded}-cloud.yaml")),
+                &[("HOST_ADDRESS", &ip), ("KAFKA_ADDRESS", &kafka_ip)],
+            )
+            .await;
+            Some(instance.run_shotover(&topology).await)
+        }
+        Shotover::None => None,
+    }
+}
+
+async fn run_aws_kafka(instance: Arc<Ec2InstanceWithDocker>) {
+    let ip = instance.instance.private_ip().to_string();
+    instance
+        .run_container(
+            "bitnami/kafka:3.4.0-debian-11-r22",
+            &[
+                ("ALLOW_PLAINTEXT_LISTENER".to_owned(), "yes".to_owned()),
+                (
+                    "KAFKA_CFG_ADVERTISED_LISTENERS".to_owned(),
+                    format!("PLAINTEXT://{ip}:9092"),
+                ),
+                ("KAFKA_HEAP_OPTS".to_owned(), "-Xmx512M -Xms512M".to_owned()),
+            ],
+        )
+        .await;
 }
 
 #[derive(Clone)]
@@ -169,7 +259,7 @@ struct BenchTaskProducerKafka {
 
 #[async_trait]
 impl BenchTaskProducer for BenchTaskProducerKafka {
-    async fn produce_one(&self) {
+    async fn produce_one(&self) -> Result<(), String> {
         self.producer
             .send(
                 FutureRecord::to("topic_foo")
@@ -179,16 +269,21 @@ impl BenchTaskProducer for BenchTaskProducerKafka {
             )
             .await
             // Take just the error, ignoring the message contents because large messages result in unreadable noise in the logs.
-            .map_err(|e| e.0)
-            .unwrap();
+            .map_err(|e| format!("{:?}", e.0))
+            .map(|_| ())
     }
 }
 
 async fn consume(consumer: &StreamConsumer, reporter: UnboundedSender<Report>) {
     let mut stream = consumer.stream();
     loop {
-        stream.next().await.unwrap().unwrap();
-        if reporter.send(Report::ConsumeCompleted).is_err() {
+        let report = match stream.next().await.unwrap() {
+            Ok(_) => Report::ConsumeCompleted,
+            Err(err) => Report::ConsumeErrored {
+                message: format!("{err:?}"),
+            },
+        };
+        if reporter.send(report).is_err() {
             // Errors indicate the reporter has closed so we should end the bench
             return;
         }
@@ -216,7 +311,7 @@ fn spawn_consumer_tasks(
 
 #[async_trait]
 pub trait BenchTaskProducer: Clone + Send + Sync + 'static {
-    async fn produce_one(&self);
+    async fn produce_one(&self) -> Result<(), String>;
 
     async fn spawn_tasks(
         self,
@@ -242,8 +337,14 @@ pub trait BenchTaskProducer: Clone + Send + Sync + 'static {
 
                     let operation_start = Instant::now();
                     tokio::select!(
-                        _ = task.produce_one() => {
-                            let report = Report::ProduceCompletedIn(operation_start.elapsed());
+                        result = task.produce_one() => {
+                            let report = match result {
+                                Ok(()) => Report::ProduceCompletedIn(operation_start.elapsed()),
+                                Err(message) => Report::ProduceErrored {
+                                    completed_in: operation_start.elapsed(),
+                                    message,
+                                },
+                            };
                             if reporter.send(report).is_err() {
                                 // Errors indicate the reporter has closed so we should end the bench
                                 return;

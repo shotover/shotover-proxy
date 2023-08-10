@@ -1,6 +1,6 @@
 # Contributing to Shotover
 
-This guide contains tips and tricks for working on Shotover Proxy itself.
+This guide contains tips and tricks for working on Shotover itself.
 
 ## Configuring the Environment
 
@@ -22,6 +22,9 @@ On Ubuntu you can install them via `sudo apt-get install cmake gcc g++ libssl-de
 #### Docker
 
 While not required for building Shotover, installing `docker` and `docker-compose` will allow you to run Shotover's integration tests and also build the static libc version of Shotover.
+This setup script might work for you: `curl -sSL https://get.docker.com/ | sudo sh`
+Do not use the rootless install as many of our tests rely on the user created bridge networks having their interface exposed to the host, which rootless install does not support.
+Instead add your user to the docker group: `usermod -aG docker $USER`
 
 ## Building Shotover
 
@@ -44,7 +47,11 @@ So to install the driver on ubuntu just run the script at `shotover-proxy/build/
 
 ### Run Shotover tests
 
-Run `cargo test`, refer to the [cargo test documentation](https://doc.rust-lang.org/cargo/commands/cargo-test.html) for more information.
+Shotover's tests suite must be run via [nextest](https://nexte.st) as we rely on its configuration to avoid running incompatible integration tests concurrently.
+To use nextest:
+
+1. Install nextest: `cargo install nextest`
+2. Then run the tests: `cargo nextest run`
 
 The tests rely on configuration in `tests/test-configs/`, so if for example, you wanted to manually setup the services for the redis-passthrough test, you could run these commands in the `shotover-proxy` directory:
 
@@ -58,4 +65,4 @@ Before submitting a PR you can run the following to ensure it will pass CI:
 * Run `cargo fmt`
 * Run `cargo clippy` - Ensure you haven't introduced any warnings.
 * Run `cargo build --all-targets` - Ensure everything still builds and you haven't introduced any warnings.
-* Run `cargo test` - All tests pass.
+* Run `cargo nextest run --all-features` - All tests pass.

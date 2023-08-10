@@ -54,11 +54,11 @@ impl TransformBuilder for DebugReturner {
 
 #[async_trait]
 impl Transform for DebugReturner {
-    async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> Result<Messages> {
+    async fn transform<'a>(&'a mut self, requests_wrapper: Wrapper<'a>) -> Result<Messages> {
         match &self.response {
             Response::Message(message) => Ok(message.clone()),
-            Response::Redis(string) => Ok(message_wrapper
-                .messages
+            Response::Redis(string) => Ok(requests_wrapper
+                .requests
                 .iter()
                 .map(|_| {
                     Message::from_frame(Frame::Redis(RedisFrame::BulkString(

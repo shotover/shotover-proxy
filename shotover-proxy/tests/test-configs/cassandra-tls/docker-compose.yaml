@@ -1,7 +1,7 @@
 version: "3.3"
 services:
   cassandra-one:
-    image: shotover-int-tests/cassandra-tls:4.0.6
+    image: shotover/cassandra-test:4.0.6-r1
     ports:
       - "9042:9042"
     environment:
@@ -11,4 +11,6 @@ services:
     volumes:
       - type: tmpfs
         target: /var/lib/cassandra
-    command: cassandra -f -Dcassandra.skip_wait_for_gossip_to_settle=0 -Dcassandra.initial_token=0
+      - type: bind
+        source: "./certs/keystore.p12"
+        target: "/etc/cassandra/certs/keystore.p12"

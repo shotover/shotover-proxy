@@ -3,6 +3,7 @@ use crate::frame::kafka::{KafkaFrame, RequestBody, ResponseBody};
 use crate::frame::Frame;
 use crate::message::{Message, Messages};
 use crate::tcp;
+use crate::transforms::kafka::common::produce_channel;
 use crate::transforms::util::cluster_connection_pool::{spawn_read_write_tasks, Connection};
 use crate::transforms::util::{Request, Response};
 use crate::transforms::{Transform, TransformBuilder, Transforms, Wrapper};
@@ -38,7 +39,6 @@ impl TransformConfig for KafkaSinkSingleConfig {
     }
 }
 
-#[derive(Clone)]
 pub struct KafkaSinkSingleBuilder {
     // contains address and port
     address: String,
@@ -102,7 +102,7 @@ pub struct KafkaSinkSingle {
 
 #[async_trait]
 impl Transform for KafkaSinkSingle {
-    async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> Result<Messages> {
+    async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Messages> {
         if self.outbound.is_none() {
             let codec = KafkaCodecBuilder::new(Direction::Sink);
             let tcp_stream = tcp::tcp_stream(self.connect_timeout, &self.address).await?;
@@ -111,7 +111,7 @@ impl Transform for KafkaSinkSingle {
         }
 
         // Rewrite requests to use kafkas port instead of shotovers port
-        for request in &mut message_wrapper.messages {
+        for request in &mut requests_wrapper.requests {
             if let Some(Frame::Kafka(KafkaFrame::Request {
                 body: RequestBody::LeaderAndIsr(leader_and_isr),
                 ..
@@ -124,42 +124,7 @@ impl Transform for KafkaSinkSingle {
             }
         }
 
-        let outbound = self.outbound.as_mut().unwrap();
-        let responses: Result<Vec<_>> = message_wrapper
-            .messages
-            .into_iter()
-            .map(|mut message| {
-                let acks0 = if let Some(Frame::Kafka(KafkaFrame::Request {
-                    body: RequestBody::Produce(produce),
-                    ..
-                })) = message.frame()
-                {
-                    produce.acks == 0
-                } else {
-                    false
-                };
-
-                let (tx, rx) = oneshot::channel();
-                let return_chan = if acks0 {
-                    tx.send(Response {
-                        original: Message::from_frame(Frame::Dummy),
-                        response: Ok(Message::from_frame(Frame::Dummy)),
-                    })
-                    .unwrap();
-                    None
-                } else {
-                    Some(tx)
-                };
-                outbound
-                    .send(Request {
-                        message,
-                        return_chan,
-                    })
-                    .map(|_| rx)
-                    .map_err(|_| anyhow!("Failed to send"))
-            })
-            .collect();
-        let responses = responses?;
+        let responses = self.send_requests(requests_wrapper.requests)?;
 
         // TODO: since kafka will never send requests out of order I wonder if it would be faster to use an mpsc instead of a oneshot or maybe just directly run the sending/receiving here?
         let mut responses = if let Some(read_timeout) = self.read_timeout {
@@ -170,7 +135,7 @@ impl Transform for KafkaSinkSingle {
 
         // Rewrite responses to use shotovers port instead of kafkas port
         for response in &mut responses {
-            let port = message_wrapper.local_addr.port() as i32;
+            let port = requests_wrapper.local_addr.port() as i32;
             match response.frame() {
                 Some(Frame::Kafka(KafkaFrame::Response {
                     body: ResponseBody::FindCoordinator(find_coordinator),
@@ -213,6 +178,37 @@ impl Transform for KafkaSinkSingle {
 
     fn set_pushed_messages_tx(&mut self, pushed_messages_tx: mpsc::UnboundedSender<Messages>) {
         self.pushed_messages_tx = Some(pushed_messages_tx);
+    }
+}
+
+impl KafkaSinkSingle {
+    pub fn send_requests(
+        &self,
+        messages: Vec<Message>,
+    ) -> Result<Vec<oneshot::Receiver<Response>>> {
+        let outbound = self.outbound.as_ref().unwrap();
+        messages
+            .into_iter()
+            .map(|mut message| {
+                let (return_chan, rx) = if let Some(Frame::Kafka(KafkaFrame::Request {
+                    body: RequestBody::Produce(produce),
+                    ..
+                })) = message.frame()
+                {
+                    produce_channel(produce)
+                } else {
+                    let (tx, rx) = oneshot::channel();
+                    (Some(tx), rx)
+                };
+                outbound
+                    .send(Request {
+                        message,
+                        return_chan,
+                    })
+                    .map(|_| rx)
+                    .map_err(|_| anyhow!("Failed to send"))
+            })
+            .collect()
     }
 }
 

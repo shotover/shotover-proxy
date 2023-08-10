@@ -949,7 +949,7 @@ impl TransformBuilder for RedisSinkCluster {
 
 #[async_trait]
 impl Transform for RedisSinkCluster {
-    async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> Result<Messages> {
+    async fn transform<'a>(&'a mut self, requests_wrapper: Wrapper<'a>) -> Result<Messages> {
         if self.rebuild_connections {
             if let Err(err) = self.build_connections(self.token.clone()).await {
                 tracing::warn!("Error when rebuilding connections {err:?}");
@@ -958,7 +958,7 @@ impl Transform for RedisSinkCluster {
 
         let mut responses = FuturesOrdered::new();
 
-        for message in message_wrapper.messages {
+        for message in requests_wrapper.requests {
             responses.push_back(match self.dispatch_message(message).await {
                 Ok(response) => response,
                 Err(e) => short_circuit(RedisFrame::Error(format!("ERR {e}").into())).unwrap(),

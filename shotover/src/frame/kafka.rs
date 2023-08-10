@@ -2,11 +2,13 @@ use crate::codec::kafka::RequestHeader as CodecRequestHeader;
 use anyhow::{anyhow, Context, Result};
 use bytes::{BufMut, Bytes, BytesMut};
 use kafka_protocol::messages::{
-    ApiKey, DescribeClusterResponse, FetchResponse, FindCoordinatorRequest,
-    FindCoordinatorResponse, LeaderAndIsrRequest, MetadataResponse, ProduceRequest,
-    ProduceResponse, RequestHeader, ResponseHeader,
+    ApiKey, DescribeClusterResponse, FetchRequest, FetchResponse, FindCoordinatorRequest,
+    FindCoordinatorResponse, HeartbeatRequest, HeartbeatResponse, JoinGroupRequest,
+    JoinGroupResponse, LeaderAndIsrRequest, ListOffsetsRequest, ListOffsetsResponse,
+    MetadataRequest, MetadataResponse, OffsetFetchRequest, OffsetFetchResponse, ProduceRequest,
+    ProduceResponse, RequestHeader, ResponseHeader, SyncGroupRequest, SyncGroupResponse,
 };
-use kafka_protocol::protocol::{Decodable, Encodable, HeaderVersion};
+use kafka_protocol::protocol::{Decodable, Encodable, HeaderVersion, StrBytes};
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
 #[derive(Debug, PartialEq, Clone)]
@@ -70,8 +72,15 @@ impl Display for KafkaFrame {
 #[derive(Debug, PartialEq, Clone)]
 pub enum RequestBody {
     Produce(ProduceRequest),
+    Fetch(FetchRequest),
+    OffsetFetch(OffsetFetchRequest),
+    ListOffsets(ListOffsetsRequest),
+    JoinGroup(JoinGroupRequest),
+    SyncGroup(SyncGroupRequest),
+    Metadata(MetadataRequest),
     FindCoordinator(FindCoordinatorRequest),
     LeaderAndIsr(LeaderAndIsrRequest),
+    Heartbeat(HeartbeatRequest),
     Unknown { api_key: ApiKey, message: Bytes },
 }
 
@@ -80,8 +89,13 @@ pub enum ResponseBody {
     Produce(ProduceResponse),
     FindCoordinator(FindCoordinatorResponse),
     Fetch(FetchResponse),
+    OffsetFetch(OffsetFetchResponse),
+    ListOffsets(ListOffsetsResponse),
+    JoinGroup(JoinGroupResponse),
+    SyncGroup(SyncGroupResponse),
     Metadata(MetadataResponse),
     DescribeCluster(DescribeClusterResponse),
+    Heartbeat(HeartbeatResponse),
     Unknown { api_key: ApiKey, message: Bytes },
 }
 
@@ -91,8 +105,13 @@ impl ResponseBody {
             ResponseBody::Produce(_) => ProduceResponse::header_version(version),
             ResponseBody::FindCoordinator(_) => FindCoordinatorResponse::header_version(version),
             ResponseBody::Fetch(_) => FetchResponse::header_version(version),
+            ResponseBody::OffsetFetch(_) => OffsetFetchResponse::header_version(version),
+            ResponseBody::ListOffsets(_) => ListOffsetsResponse::header_version(version),
+            ResponseBody::JoinGroup(_) => JoinGroupResponse::header_version(version),
+            ResponseBody::SyncGroup(_) => SyncGroupResponse::header_version(version),
             ResponseBody::Metadata(_) => MetadataResponse::header_version(version),
             ResponseBody::DescribeCluster(_) => DescribeClusterResponse::header_version(version),
+            ResponseBody::Heartbeat(_) => HeartbeatResponse::header_version(version),
             ResponseBody::Unknown { api_key, .. } => api_key.response_header_version(version),
         }
     }
@@ -126,10 +145,17 @@ impl KafkaFrame {
         let version = header.request_api_version;
         let body = match api_key {
             ApiKey::ProduceKey => RequestBody::Produce(decode(&mut bytes, version)?),
+            ApiKey::FetchKey => RequestBody::Fetch(decode(&mut bytes, version)?),
+            ApiKey::OffsetFetchKey => RequestBody::OffsetFetch(decode(&mut bytes, version)?),
+            ApiKey::ListOffsetsKey => RequestBody::ListOffsets(decode(&mut bytes, version)?),
+            ApiKey::JoinGroupKey => RequestBody::JoinGroup(decode(&mut bytes, version)?),
+            ApiKey::SyncGroupKey => RequestBody::SyncGroup(decode(&mut bytes, version)?),
+            ApiKey::MetadataKey => RequestBody::Metadata(decode(&mut bytes, version)?),
             ApiKey::FindCoordinatorKey => {
                 RequestBody::FindCoordinator(decode(&mut bytes, version)?)
             }
             ApiKey::LeaderAndIsrKey => RequestBody::LeaderAndIsr(decode(&mut bytes, version)?),
+            ApiKey::HeartbeatKey => RequestBody::Heartbeat(decode(&mut bytes, version)?),
             api_key => RequestBody::Unknown {
                 api_key,
                 message: bytes,
@@ -155,10 +181,15 @@ impl KafkaFrame {
                 ResponseBody::FindCoordinator(decode(&mut bytes, version)?)
             }
             ApiKey::FetchKey => ResponseBody::Fetch(decode(&mut bytes, version)?),
+            ApiKey::OffsetFetchKey => ResponseBody::OffsetFetch(decode(&mut bytes, version)?),
+            ApiKey::ListOffsetsKey => ResponseBody::ListOffsets(decode(&mut bytes, version)?),
+            ApiKey::JoinGroupKey => ResponseBody::JoinGroup(decode(&mut bytes, version)?),
+            ApiKey::SyncGroupKey => ResponseBody::SyncGroup(decode(&mut bytes, version)?),
             ApiKey::MetadataKey => ResponseBody::Metadata(decode(&mut bytes, version)?),
             ApiKey::DescribeClusterKey => {
                 ResponseBody::DescribeCluster(decode(&mut bytes, version)?)
             }
+            ApiKey::HeartbeatKey => ResponseBody::Heartbeat(decode(&mut bytes, version)?),
             api_key => ResponseBody::Unknown {
                 api_key,
                 message: bytes,
@@ -189,8 +220,15 @@ impl KafkaFrame {
                 let version = header.request_api_version;
                 match body {
                     RequestBody::Produce(x) => encode(x, bytes, version)?,
+                    RequestBody::Fetch(x) => encode(x, bytes, version)?,
+                    RequestBody::OffsetFetch(x) => encode(x, bytes, version)?,
+                    RequestBody::ListOffsets(x) => encode(x, bytes, version)?,
+                    RequestBody::JoinGroup(x) => encode(x, bytes, version)?,
+                    RequestBody::SyncGroup(x) => encode(x, bytes, version)?,
+                    RequestBody::Metadata(x) => encode(x, bytes, version)?,
                     RequestBody::FindCoordinator(x) => encode(x, bytes, version)?,
                     RequestBody::LeaderAndIsr(x) => encode(x, bytes, version)?,
+                    RequestBody::Heartbeat(x) => encode(x, bytes, version)?,
                     RequestBody::Unknown { message, .. } => bytes.extend_from_slice(&message),
                 }
             }
@@ -204,8 +242,13 @@ impl KafkaFrame {
                     ResponseBody::Produce(x) => encode(x, bytes, version)?,
                     ResponseBody::FindCoordinator(x) => encode(x, bytes, version)?,
                     ResponseBody::Fetch(x) => encode(x, bytes, version)?,
+                    ResponseBody::OffsetFetch(x) => encode(x, bytes, version)?,
+                    ResponseBody::ListOffsets(x) => encode(x, bytes, version)?,
+                    ResponseBody::JoinGroup(x) => encode(x, bytes, version)?,
+                    ResponseBody::SyncGroup(x) => encode(x, bytes, version)?,
                     ResponseBody::Metadata(x) => encode(x, bytes, version)?,
                     ResponseBody::DescribeCluster(x) => encode(x, bytes, version)?,
+                    ResponseBody::Heartbeat(x) => encode(x, bytes, version)?,
                     ResponseBody::Unknown { message, .. } => bytes.extend_from_slice(&message),
                 }
             }
@@ -233,4 +276,16 @@ fn encode<T: Encodable>(encodable: T, bytes: &mut BytesMut, version: i16) -> Res
         std::any::type_name::<T>(),
         version
     ))
+}
+
+/// This function is a helper to workaround a really degenerate rust compiler case.
+/// The problem is that the string crate defines a TryFrom which collides with the stdlib TryFrom
+/// and then naming the correct TryFrom becomes really annoying.
+pub fn strbytes(str: &str) -> StrBytes {
+    <StrBytes as string::TryFrom<Bytes>>::try_from(Bytes::copy_from_slice(str.as_bytes())).unwrap()
+}
+
+/// Allocationless version of kafka_strbytes
+pub fn strbytes_static(str: &'static str) -> StrBytes {
+    <StrBytes as string::TryFrom<Bytes>>::try_from(Bytes::from(str)).unwrap()
 }

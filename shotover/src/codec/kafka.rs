@@ -44,6 +44,10 @@ impl CodecBuilder for KafkaCodecBuilder {
             KafkaEncoder::new(tx, self.direction),
         )
     }
+
+    fn websocket_subprotocol(&self) -> &'static str {
+        "kafka"
+    }
 }
 
 pub struct KafkaDecoder {

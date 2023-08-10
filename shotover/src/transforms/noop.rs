@@ -20,7 +20,7 @@ impl Default for NoOp {
 
 #[async_trait]
 impl Transform for NoOp {
-    async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> Result<Messages> {
-        message_wrapper.call_next_transform().await
+    async fn transform<'a>(&'a mut self, requests_wrapper: Wrapper<'a>) -> Result<Messages> {
+        requests_wrapper.call_next_transform().await
     }
 }

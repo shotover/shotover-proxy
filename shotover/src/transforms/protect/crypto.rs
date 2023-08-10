@@ -1,4 +1,4 @@
-use crate::message_value::MessageValue;
+use crate::frame::value::GenericValue;
 use crate::transforms::protect::key_management::KeyManager;
 use anyhow::{anyhow, bail, Result};
 use chacha20poly1305::aead::rand_core::RngCore;
@@ -20,7 +20,7 @@ pub async fn encrypt(
     key_management: &KeyManager,
     key_id: &str,
 ) -> Result<Operand> {
-    let value = MessageValue::from(value);
+    let value = GenericValue::from(value);
 
     let sym_key = key_management.cached_get_key(key_id, None, None).await?;
 
@@ -45,12 +45,12 @@ pub async fn encrypt(
 }
 
 pub async fn decrypt(
-    value: &MessageValue,
+    value: &GenericValue,
     key_management: &KeyManager,
     key_id: &str,
-) -> Result<MessageValue> {
+) -> Result<GenericValue> {
     let bytes = match value {
-        MessageValue::Bytes(bytes) => bytes,
+        GenericValue::Bytes(bytes) => bytes,
         _ => bail!("expected varchar to decrypt but was {:?}", value),
     };
     let protected: Protected = bincode::deserialize(bytes)?;

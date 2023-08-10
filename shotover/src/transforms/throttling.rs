@@ -62,28 +62,36 @@ impl TransformBuilder for RequestThrottling {
 
 #[async_trait]
 impl Transform for RequestThrottling {
-    async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> Result<Messages> {
-        // extract throttled messages from the message_wrapper
-        let throttled_messages: Vec<(Message, usize)> = (0..message_wrapper.messages.len())
+    async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Messages> {
+        // extract throttled messages from the requests_wrapper
+        let throttled_messages: Vec<(Message, usize)> = (0..requests_wrapper.requests.len())
             .rev()
             .filter_map(|i| {
-                if self
+                match self
                     .limiter
-                    .check_n(message_wrapper.messages[i].cell_count().ok()?)
-                    .is_err()
+                    .check_n(requests_wrapper.requests[i].cell_count().ok()?)
                 {
-                    let message = message_wrapper.messages.remove(i);
-                    Some((message, i))
-                } else {
-                    None
+                    // occurs if all cells can be accommodated and 
+                    Ok(Ok(())) => None,
+                    // occurs if not all cells can be accommodated.
+                    Ok(Err(_)) => {
+                        let message = requests_wrapper.requests.remove(i);
+                        Some((message, i))
+                    }
+                    // occurs when the batch can never go through, meaning the rate limiter's quota's burst size is too low for the given number of cells to be ever allowed through
+                    Err(_) => {
+                        tracing::warn!("A message was received that could never have been successfully delivered since it contains more sub messages than can ever be allowed through via the `RequestThrottling` transforms `max_requests_per_second` configuration.");
+                        let message = requests_wrapper.requests.remove(i);
+                        Some((message, i))
+                    }
                 }
             })
             .collect();
 
         // if every message got backpressured we can skip this
-        let mut responses = if !message_wrapper.messages.is_empty() {
+        let mut responses = if !requests_wrapper.requests.is_empty() {
             // send allowed messages to Cassandra
-            message_wrapper.call_next_transform().await?
+            requests_wrapper.call_next_transform().await?
         } else {
             vec![]
         };

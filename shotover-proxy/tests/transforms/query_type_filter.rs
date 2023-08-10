@@ -1,15 +1,11 @@
-use serial_test::serial;
+use crate::shotover_process;
 use test_helpers::connection::redis_connection;
-use test_helpers::shotover_process::ShotoverProcessBuilder;
 
 #[tokio::test(flavor = "multi_thread")]
-#[serial]
 async fn test_query_type_filter() {
-    let shotover = ShotoverProcessBuilder::new_with_topology(
-        "tests/test-configs/query_type_filter/simple.yaml",
-    )
-    .start()
-    .await;
+    let shotover = shotover_process("tests/test-configs/query_type_filter/simple.yaml")
+        .start()
+        .await;
 
     let mut connection = redis_connection::new_async("127.0.0.1", 6379).await;
 
@@ -24,7 +20,7 @@ async fn test_query_type_filter() {
             .unwrap_err()
             .to_string();
         assert_eq!(
-            "An error was signalled by the server: Message was filtered out by shotover",
+            "An error was signalled by the server - ResponseError: Message was filtered out by shotover",
             result
         );
 
@@ -57,7 +53,7 @@ async fn test_query_type_filter() {
             .to_string();
 
         assert_eq!(
-            "An error was signalled by the server: Message was filtered out by shotover",
+            "An error was signalled by the server - ResponseError: Message was filtered out by shotover",
             result
         );
 

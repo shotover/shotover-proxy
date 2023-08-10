@@ -1,5 +1,5 @@
+use crate::frame::value::{serialize_len, serialize_with_length_prefix, GenericValue};
 use crate::message::QueryType;
-use crate::message_value::{serialize_len, serialize_with_length_prefix, MessageValue};
 use anyhow::{anyhow, Result};
 use bytes::Bytes;
 use cassandra_protocol::compression::Compression;
@@ -226,9 +226,9 @@ impl CassandraFrame {
                                         .map(|row| {
                                             row.into_iter()
                                                 .map(|row_content| match row_content.into_bytes() {
-                                                    None => MessageValue::Null,
+                                                    None => GenericValue::Null,
                                                     Some(value) => {
-                                                        MessageValue::Bytes(value.into())
+                                                        GenericValue::Bytes(value.into())
                                                     }
                                                 })
                                                 .collect()
@@ -242,7 +242,7 @@ impl CassandraFrame {
                                                 .enumerate()
                                                 .map(|(i, row_content)| {
                                                     let col_spec = &rows.metadata.col_specs[i];
-                                                    MessageValue::build_value_from_cstar_col_type(
+                                                    GenericValue::build_value_from_cstar_col_type(
                                                         frame.version,
                                                         col_spec,
                                                         &row_content,
@@ -756,7 +756,7 @@ pub fn to_cassandra_type(operand: &Operand) -> CassandraType {
 pub enum CassandraResult {
     // values are boxed so that Void takes minimal stack space
     Rows {
-        rows: Vec<Vec<MessageValue>>,
+        rows: Vec<Vec<GenericValue>>,
         metadata: Box<RowsMetadata>,
     },
     SetKeyspace(Box<BodyResResultSetKeyspace>),

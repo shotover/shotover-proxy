@@ -27,6 +27,10 @@ impl CodecBuilder for RedisCodecBuilder {
             RedisEncoder::new(self.direction),
         )
     }
+
+    fn websocket_subprotocol(&self) -> &'static str {
+        "redis"
+    }
 }
 
 pub struct RedisEncoder {

@@ -1,6 +1,6 @@
 use crate::codec::{kafka::KafkaCodecBuilder, CodecBuilder, Direction};
 use crate::server::TcpCodecListener;
-use crate::sources::Source;
+use crate::sources::{Source, Transport};
 use crate::tls::{TlsAcceptor, TlsAcceptorConfig};
 use crate::transforms::chain::TransformChainBuilder;
 use anyhow::Result;
@@ -71,6 +71,7 @@ impl KafkaSource {
             trigger_shutdown_rx.clone(),
             tls.map(TlsAcceptor::new).transpose()?,
             timeout,
+            Transport::Tcp,
         )
         .await?;
 
