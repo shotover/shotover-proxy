@@ -124,10 +124,8 @@ impl NodePool {
         nodes.shuffle(rng);
         get_accessible_node(connection_factory, nodes)
             .await
-            .map_err(|err| {
-                err.context(format!(
-                    "Failed to open a connection to any nodes in the rack {rack:?}"
-                ))
+            .with_context(|| {
+                format!("Failed to open a connection to any nodes in the rack {rack:?}")
             })
     }
 

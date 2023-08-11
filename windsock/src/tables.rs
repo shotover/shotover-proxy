@@ -3,7 +3,7 @@ use crate::{
     filter::Filter,
     report::{Percentile, ReportArchive},
 };
-use anyhow::Result;
+use anyhow::{Context, Result};
 use console::{pad_str, pad_str_with, style, Alignment};
 use std::{collections::HashSet, time::Duration};
 use strum::IntoEnumIterator;
@@ -52,7 +52,7 @@ pub fn results_by_name(names: &str) -> Result<()> {
 
 pub fn baseline_compare_by_tags(arg: &str) -> Result<()> {
     let filter = Filter::from_query(arg)
-        .map_err(|e| e.context(format!("Failed to parse tag filter from {:?}", arg)))?;
+        .with_context(|| format!("Failed to parse tag filter from {:?}", arg))?;
     let archives: Result<Vec<ReportColumn>> = ReportArchive::reports_in_last_run()
         .iter()
         .filter(|name| filter.matches(&Tags::from_name(name)))
@@ -72,7 +72,7 @@ pub fn compare_by_tags(arg: &str) -> Result<()> {
     let tag_args = tag_args.join(" ");
 
     let filter = Filter::from_query(&tag_args)
-        .map_err(|e| e.context(format!("Failed to parse tag filter from {:?}", tag_args)))?;
+        .with_context(|| format!("Failed to parse tag filter from {:?}", tag_args))?;
     let archives: Result<Vec<ReportColumn>> = ReportArchive::reports_in_last_run()
         .iter()
         .filter(|name| **name != base_name && filter.matches(&Tags::from_name(name)))
@@ -100,7 +100,7 @@ pub fn compare_by_tags(arg: &str) -> Result<()> {
 
 pub fn results_by_tags(arg: &str) -> Result<()> {
     let filter = Filter::from_query(arg)
-        .map_err(|e| e.context(format!("Failed to parse tag filter from {:?}", arg)))?;
+        .with_context(|| format!("Failed to parse tag filter from {:?}", arg))?;
     let archives: Result<Vec<ReportColumn>> = ReportArchive::reports_in_last_run()
         .iter()
         .filter(|name| filter.matches(&Tags::from_name(name)))
