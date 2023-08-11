@@ -1,6 +1,6 @@
 use crate::message::{Encodable, Message};
 use crate::transforms::{Transform, TransformBuilder, Transforms, Wrapper};
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use async_trait::async_trait;
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
@@ -97,9 +97,9 @@ async fn log_message(message: &Message, path: &Path) -> Result<()> {
     info!("Logged message to {:?}", path);
     match message.clone().into_encodable() {
         Encodable::Bytes(bytes) => {
-            tokio::fs::write(path, bytes).await.map_err(|e| {
-                anyhow!(e).context(format!("failed to write message to disk at {path:?}"))
-            })?;
+            tokio::fs::write(path, bytes)
+                .await
+                .with_context(|| format!("failed to write message to disk at {path:?}"))?;
         }
         Encodable::Frame(_) => {
             error!("Failed to log message because it was a frame. Ensure this Transform is the first transform in the main chain to ensure it only receives unmodified messages.")
