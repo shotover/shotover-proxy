@@ -52,4 +52,4 @@ rand_distr = "0.4.1"
 clap = { version = "4.0.4", features = ["cargo", "derive"] }
 async-trait = "0.1.30"
 typetag = "0.2.5"
-aws-throwaway = "0.1.0"
+aws-throwaway = "0.1.1"
