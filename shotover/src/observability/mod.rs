@@ -1,5 +1,5 @@
 use crate::runner::ReloadHandle;
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use bytes::Bytes;
 use hyper::{
     service::{make_service_fn, service_fn},
@@ -104,7 +104,7 @@ impl LogFilterHttpExporter {
 
         let address = self.address;
         Server::try_bind(&address)
-            .map_err(|e| anyhow!(e).context(format!("Failed to bind to {}", address)))?
+            .with_context(|| format!("Failed to bind to {}", address))?
             .serve(make_svc)
             .await
             .map_err(|e| anyhow!(e))

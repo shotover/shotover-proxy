@@ -1,4 +1,4 @@
-use anyhow::anyhow;
+use anyhow::Context;
 use openssl::ssl::{SslConnector, SslFiletype, SslMethod};
 use redis::aio::AsyncStream;
 use redis::Client;
@@ -13,9 +13,7 @@ pub fn new(port: u16) -> redis::Connection {
     let connection = Client::open((address, port))
         .unwrap()
         .get_connection()
-        .map_err(|e| {
-            anyhow!(e).context(format!("Failed to create redis connection to port {port}"))
-        })
+        .with_context(|| format!("Failed to create redis connection to port {port}"))
         .unwrap();
     connection
         .set_read_timeout(Some(Duration::from_secs(10)))
@@ -27,11 +25,7 @@ pub async fn new_async(address: &str, port: u16) -> redis::aio::Connection {
     let stream = Box::pin(
         tokio::net::TcpStream::connect((address, port))
             .await
-            .map_err(|e| {
-                anyhow!(e).context(format!(
-                    "Failed to create async redis connection to port {port}"
-                ))
-            })
+            .with_context(|| format!("Failed to create async redis connection to port {port}"))
             .unwrap(),
     );
     new_async_inner(Box::pin(stream) as Pin<Box<dyn AsyncStream + Send + Sync>>).await

@@ -263,19 +263,23 @@ impl KafkaFrame {
 }
 
 fn decode<T: Decodable>(bytes: &mut Bytes, version: i16) -> Result<T> {
-    T::decode(bytes, version).context(format!(
-        "Failed to decode {} v{} body",
-        std::any::type_name::<T>(),
-        version
-    ))
+    T::decode(bytes, version).with_context(|| {
+        format!(
+            "Failed to decode {} v{} body",
+            std::any::type_name::<T>(),
+            version
+        )
+    })
 }
 
 fn encode<T: Encodable>(encodable: T, bytes: &mut BytesMut, version: i16) -> Result<()> {
-    encodable.encode(bytes, version).context(format!(
-        "Failed to encode {} v{} body",
-        std::any::type_name::<T>(),
-        version
-    ))
+    encodable.encode(bytes, version).with_context(|| {
+        format!(
+            "Failed to encode {} v{} body",
+            std::any::type_name::<T>(),
+            version
+        )
+    })
 }
 
 /// This function is a helper to workaround a really degenerate rust compiler case.
