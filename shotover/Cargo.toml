@@ -93,3 +93,10 @@ rustls-webpki = "0.101.1"
 string = "0.3.0"
 xxhash-rust = { version = "0.8.6", features = ["xxh3"] }
 dashmap = "5.4.0"
+
+[dev-dependencies]
+criterion = { version = "0.5.0", features = ["async_tokio"] }
+
+[[bench]]
+name = "benches"
+harness = false
