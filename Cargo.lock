@@ -1696,6 +1696,7 @@ name = "ec2-cargo"
 version = "0.1.0"
 dependencies = [
  "aws-throwaway",
+ "cargo_metadata",
  "clap",
  "rustyline",
  "shellfish",

@@ -1,4 +1,5 @@
 use aws_throwaway::{ec2_instance::Ec2Instance, Aws, InstanceType};
+use cargo_metadata::{Metadata, MetadataCommand};
 use clap::Parser;
 use rustyline::DefaultEditor;
 use shellfish::{async_fn, handler::DefaultAsyncHandler, Command, Shell};
@@ -7,7 +8,7 @@ use tracing_subscriber::EnvFilter;
 
 /// Spins up an EC2 instance and then presents a shell from which you can run `cargo test` on the ec2 instance.
 ///
-/// TODO: Every time the shell runs a cargo command, any local changes to the repo are reuploaded to the ec2 instance.
+/// Every time the shell runs a cargo command, any local changes to the repo are reuploaded to the ec2 instance.
 ///
 /// When the shell is exited all created EC2 instances are destroyed.
 #[derive(Parser, Clone)]
@@ -30,6 +31,7 @@ async fn main() {
         .with_writer(non_blocking)
         .init();
 
+    let cargo_meta = MetadataCommand::new().exec().unwrap();
     let args = Args::parse();
     if args.cleanup {
         Aws::cleanup_resources_static().await;
@@ -74,8 +76,16 @@ docker compose "$@"
 ' | sudo dd of=/bin/docker-compose
 sudo chmod +x /bin/docker-compose
 
-git clone https://github.com/shotover/shotover-proxy
 echo "export RUST_BACKTRACE=1" >> .profile
+echo "export CARGO_TERM_COLOR=always" >> .profile
+echo 'source "$HOME/.cargo/env"' >> .profile
+
+source .profile
+if [ "$(uname -m)" = "aarch64" ]; then
+    curl -LsSf https://get.nexte.st/latest/linux-arm | tar zxf - -C ${CARGO_HOME:-~/.cargo}/bin
+else
+    curl -LsSf https://get.nexte.st/latest/linux | tar zxf - -C ${CARGO_HOME:-~/.cargo}/bin
+fi
 "#).await;
     while let Some(line) = receiver.recv().await {
         println!("{}", line)
@@ -84,7 +94,10 @@ echo "export RUST_BACKTRACE=1" >> .profile
     println!("Finished creating instance.");
 
     let mut shell = Shell::new_with_async_handler(
-        State { instance },
+        State {
+            cargo_meta,
+            instance,
+        },
         "ec2-cargo$ ",
         DefaultAsyncHandler::default(),
         DefaultEditor::new().unwrap(),
@@ -111,6 +124,7 @@ echo "export RUST_BACKTRACE=1" >> .profile
 }
 
 async fn test(state: &mut State, mut args: Vec<String>) -> Result<(), Box<dyn Error>> {
+    rsync_shotover(state).await;
     args.remove(0);
     let args = args.join(" ");
     let mut receiver = state
@@ -118,8 +132,9 @@ async fn test(state: &mut State, mut args: Vec<String>) -> Result<(), Box<dyn Er
         .ssh()
         .shell_stdout_lines(&format!(
             r#"
-cd shotover-proxy
-RUST_BACKTRACE=1 ~/.cargo/bin/cargo test --color always {} 2>&1
+source .profile
+cd shotover
+cargo nextest run {} 2>&1
 "#,
             args
         ))
@@ -129,6 +144,57 @@ RUST_BACKTRACE=1 ~/.cargo/bin/cargo test --color always {} 2>&1
     }
 
     Ok(())
+}
+
+async fn rsync_shotover(state: &State) {
+    let instance = &state.instance;
+    let target_dir = &state.cargo_meta.target_directory;
+    let project_root_dir = &state.cargo_meta.workspace_root;
+
+    let key_path = target_dir.join("ec2-cargo-privatekey");
+    tokio::fs::remove_file(&key_path).await.ok();
+    tokio::fs::write(&key_path, instance.client_private_key())
+        .await
+        .unwrap();
+    let output = tokio::process::Command::new("chmod")
+        .args(&["400".to_owned(), format!("{}", key_path)])
+        .output()
+        .await
+        .unwrap();
+    if !output.status.success() {
+        let stdout = String::from_utf8(output.stdout).unwrap();
+        let stderr = String::from_utf8(output.stderr).unwrap();
+        panic!("chmod failed:\nstdout:\n{stdout}\nstderr:\n{stderr}")
+    }
+
+    let known_hosts_path = target_dir.join("ec2-cargo-known_hosts");
+    tokio::fs::write(&known_hosts_path, instance.openssh_known_hosts_line())
+        .await
+        .unwrap();
+
+    let address = instance.public_ip();
+    let output = tokio::process::Command::new("rsync")
+        .args(&[
+            "--delete".to_owned(),
+            "--exclude".to_owned(),
+            "target".to_owned(),
+            "-e".to_owned(),
+            format!(
+                "ssh -i {} -o 'UserKnownHostsFile {}'",
+                key_path, known_hosts_path
+            ),
+            "-ra".to_owned(),
+            format!("{}/", project_root_dir), // trailing slash means copy the contents of the directory instead of the directory itself
+            format!("ubuntu@{address}:/home/ubuntu/shotover"),
+        ])
+        .output()
+        .await
+        .unwrap();
+    if !output.status.success() {
+        let stdout = String::from_utf8(output.stdout).unwrap();
+        let stderr = String::from_utf8(output.stderr).unwrap();
+        panic!("rsync failed:\nstdout:\n{stdout}\nstderr:\n{stderr}")
+    }
 }
 
 fn ssh_instructions(state: &mut State, mut _args: Vec<String>) -> Result<(), Box<dyn Error>> {
@@ -141,5 +207,6 @@ fn ssh_instructions(state: &mut State, mut _args: Vec<String>) -> Result<(), Box
 }
 
 struct State {
+    cargo_meta: Metadata,
     instance: Ec2Instance,
 }
