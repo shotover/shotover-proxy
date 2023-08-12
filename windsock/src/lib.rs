@@ -63,9 +63,6 @@ impl Windsock {
         let args = cli::Args::parse();
 
         let running_in_release = self.running_in_release;
-        if !args.disable_release_safety_check && !running_in_release {
-            panic!("Windsock was not run with a configured release profile, maybe try running with the `--release` flag. Failing that check the release profiles provided in `Windsock::new(..)`.");
-        }
         if args.cleanup_cloud_resources {
             let rt = create_runtime(None);
             rt.block_on(self.cloud.cleanup_resources());
