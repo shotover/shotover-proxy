@@ -176,8 +176,6 @@ pub trait Bench {
 
 fn run_args_vec(internal_run: String, bench_parameters: &BenchParameters) -> Vec<String> {
     let mut args = vec![];
-    args.push("--disable-release-safety-check".to_owned());
-
     args.push("--bench-length-seconds".to_owned());
     args.push(bench_parameters.runtime_seconds.to_string());
 

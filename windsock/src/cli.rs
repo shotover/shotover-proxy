@@ -107,10 +107,6 @@ pub struct Args {
     #[clap(long, verbatim_doc_comment)]
     pub baseline_compare_by_tags: Option<String>,
 
-    /// Prevent release mode safety check from triggering to allow running in debug mode
-    #[clap(long, verbatim_doc_comment)]
-    pub disable_release_safety_check: bool,
-
     /// Not for human use. Call this from your bench orchestration method to launch your bencher.
     #[clap(long, verbatim_doc_comment)]
     pub internal_run: Option<String>,
