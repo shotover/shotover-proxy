@@ -1696,6 +1696,7 @@ name = "ec2-cargo"
 version = "0.1.0"
 dependencies = [
  "aws-throwaway",
+ "cargo_metadata",
  "clap",
  "rustyline",
  "shellfish",
@@ -4479,7 +4480,7 @@ checksum = "43b2853a4d09f215c24cc5489c992ce46052d359b5109343cbafbf26bc62f8a3"
 
 [[package]]
 name = "shotover"
-version = "0.1.10"
+version = "0.1.11"
 dependencies = [
  "anyhow",
  "async-recursion",
@@ -4498,6 +4499,7 @@ dependencies = [
  "clap",
  "cql3-parser",
  "crc16",
+ "criterion",
  "csv",
  "dashmap",
  "derivative",
@@ -4563,7 +4565,6 @@ dependencies = [
  "chacha20poly1305",
  "clap",
  "cql-ws",
- "criterion",
  "csv",
  "fred",
  "futures",

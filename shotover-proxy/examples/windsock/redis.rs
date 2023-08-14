@@ -304,7 +304,7 @@ impl Bench for RedisBench {
 
 fn load_certs(path: &str) -> Vec<Certificate> {
     load_certs_inner(path)
-        .map_err(|err| anyhow!(err).context(format!("Failed to read certs at {path:?}")))
+        .with_context(|| format!("Failed to read certs at {path:?}"))
         .unwrap()
 }
 fn load_certs_inner(path: &str) -> Result<Vec<Certificate>> {
@@ -315,7 +315,7 @@ fn load_certs_inner(path: &str) -> Result<Vec<Certificate>> {
 
 fn load_private_key(path: &str) -> PrivateKey {
     load_private_key_inner(path)
-        .map_err(|err| anyhow!(err).context(format!("Failed to read private key at {path:?}")))
+        .with_context(|| format!("Failed to read private key at {path:?}"))
         .unwrap()
 }
 fn load_private_key_inner(path: &str) -> Result<PrivateKey> {
@@ -331,7 +331,7 @@ fn load_private_key_inner(path: &str) -> Result<PrivateKey> {
 
 fn load_ca(path: &str) -> RootCertStore {
     load_ca_inner(path)
-        .map_err(|e| e.context(format!("Failed to load CA at {path:?}")))
+        .with_context(|| format!("Failed to load CA at {path:?}"))
         .unwrap()
 }
 fn load_ca_inner(path: &str) -> Result<RootCertStore> {
