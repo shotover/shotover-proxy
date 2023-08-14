@@ -1,8 +1,9 @@
 use crate::aws::{Ec2InstanceWithDocker, Ec2InstanceWithShotover};
 use crate::common::{rewritten_file, Shotover};
-use crate::profilers::ProfilerRunner;
+use crate::profilers::{self, CloudProfilerRunner, ProfilerRunner};
 use anyhow::Result;
 use async_trait::async_trait;
+use aws_throwaway::ec2_instance::Ec2Instance;
 use futures::StreamExt;
 use rdkafka::config::ClientConfig;
 use rdkafka::consumer::{Consumer, StreamConsumer};
@@ -58,13 +59,13 @@ impl Bench for KafkaBench {
     }
 
     fn supported_profilers(&self) -> Vec<String> {
-        ProfilerRunner::supported_profilers(self.shotover)
+        profilers::supported_profilers(self.shotover)
     }
 
     async fn orchestrate_cloud(
         &self,
         _running_in_release: bool,
-        _profiling: Profiling,
+        profiling: Profiling,
         parameters: BenchParameters,
     ) -> Result<()> {
         let aws = crate::aws::WindsockAws::get().await;
@@ -74,6 +75,17 @@ impl Bench for KafkaBench {
             aws.create_bencher_instance(),
             aws.create_shotover_instance()
         );
+
+        let mut profiler_instances: HashMap<String, &Ec2Instance> = [
+            ("bencher".to_owned(), &bench_instance.instance),
+            ("kafka".to_owned(), &kafka_instance.instance),
+        ]
+        .into();
+        if let Shotover::ForcedMessageParsed | Shotover::Standard = self.shotover {
+            profiler_instances.insert("shotover".to_owned(), &shotover_instance.instance);
+        }
+        let mut profiler =
+            CloudProfilerRunner::new(self.name(), profiling, profiler_instances).await;
 
         let kafka_ip = kafka_instance.instance.private_ip().to_string();
         let shotover_ip = shotover_instance.instance.private_ip().to_string();
@@ -93,6 +105,8 @@ impl Bench for KafkaBench {
             .run_bencher(&self.run_args(&destination_ip, &parameters), &self.name())
             .await;
 
+        profiler.finish();
+
         if let Some(running_shotover) = running_shotover {
             running_shotover.shutdown().await;
         }
@@ -108,7 +122,7 @@ impl Bench for KafkaBench {
         let config_dir = "tests/test-configs/kafka/bench";
         let _compose = docker_compose(&format!("{}/docker-compose.yaml", config_dir));
 
-        let mut profiler = ProfilerRunner::new(profiling);
+        let mut profiler = ProfilerRunner::new(self.name(), profiling);
         let shotover = match self.shotover {
             Shotover::Standard => Some(
                 ShotoverProcessBuilder::new_with_topology(&format!("{config_dir}/topology.yaml"))

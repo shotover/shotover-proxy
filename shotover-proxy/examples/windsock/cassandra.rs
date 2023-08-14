@@ -1,10 +1,11 @@
 use crate::{
     aws::{Ec2InstanceWithDocker, Ec2InstanceWithShotover, RunningShotover},
     common::{rewritten_file, Shotover},
-    profilers::ProfilerRunner,
+    profilers::{self, CloudProfilerRunner, ProfilerRunner},
 };
 use anyhow::Result;
 use async_trait::async_trait;
+use aws_throwaway::ec2_instance::Ec2Instance;
 use cdrs_tokio::{
     cluster::{
         session::{
@@ -419,7 +420,7 @@ impl Bench for CassandraBench {
     }
 
     fn supported_profilers(&self) -> Vec<String> {
-        ProfilerRunner::supported_profilers(self.shotover)
+        profilers::supported_profilers(self.shotover)
     }
 
     fn cores_required(&self) -> usize {
@@ -429,7 +430,7 @@ impl Bench for CassandraBench {
     async fn orchestrate_cloud(
         &self,
         _running_in_release: bool,
-        _profiling: Profiling,
+        profiling: Profiling,
         parameters: BenchParameters,
     ) -> Result<()> {
         let aws = crate::aws::WindsockAws::get().await;
@@ -450,6 +451,24 @@ impl Bench for CassandraBench {
 
         let cassandra_ip = cassandra_instance1.instance.private_ip().to_string();
         let shotover_ip = shotover_instance.instance.private_ip().to_string();
+
+        let mut profiler_instances: HashMap<String, &Ec2Instance> =
+            [("bencher".to_owned(), &bench_instance.instance)].into();
+        if let Shotover::ForcedMessageParsed | Shotover::Standard = self.shotover {
+            profiler_instances.insert("shotover".to_owned(), &shotover_instance.instance);
+        }
+        match self.topology {
+            Topology::Cluster3 => {
+                profiler_instances.insert("cassandra1".to_owned(), &cassandra_instance1.instance);
+                profiler_instances.insert("cassandra2".to_owned(), &cassandra_instance2.instance);
+                profiler_instances.insert("cassandra3".to_owned(), &cassandra_instance3.instance);
+            }
+            Topology::Single => {
+                profiler_instances.insert("cassandra".to_owned(), &cassandra_instance1.instance);
+            }
+        }
+        let mut profiler =
+            CloudProfilerRunner::new(self.name(), profiling, profiler_instances).await;
 
         let cassandra_nodes = vec![
             AwsNodeInfo {
@@ -486,6 +505,8 @@ impl Bench for CassandraBench {
         bench_instance
             .run_bencher(&self.run_args(&destination, &parameters), &self.name())
             .await;
+
+        profiler.finish();
 
         if let Some(running_shotover) = running_shotover {
             running_shotover.shutdown().await;
@@ -524,7 +545,7 @@ impl Bench for CassandraBench {
                 panic!("Mocked cassandra database does not provide a clustered mode")
             }
         };
-        let mut profiler = ProfilerRunner::new(profiling);
+        let mut profiler = ProfilerRunner::new(self.name(), profiling);
         let shotover = match self.shotover {
             Shotover::Standard => Some(
                 ShotoverProcessBuilder::new_with_topology(&format!("{config_dir}/topology.yaml"))
