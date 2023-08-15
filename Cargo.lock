@@ -1674,8 +1674,9 @@ dependencies = [
 
 [[package]]
 name = "docker-compose-runner"
-version = "0.1.0"
-source = "git+https://github.com/conorbros/docker-compose-runner#f1f0ba28eae736d62978c0b785b59ce94e6aa104"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f9b25dd136b29813ea84b16d2ff9c48fdd727a6a6f3fcf736523bb5d946c41e7"
 dependencies = [
  "anyhow",
  "regex",
@@ -1695,6 +1696,7 @@ name = "ec2-cargo"
 version = "0.1.0"
 dependencies = [
  "aws-throwaway",
+ "cargo_metadata",
  "clap",
  "rustyline",
  "shellfish",
@@ -4478,7 +4480,7 @@ checksum = "43b2853a4d09f215c24cc5489c992ce46052d359b5109343cbafbf26bc62f8a3"
 
 [[package]]
 name = "shotover"
-version = "0.1.10"
+version = "0.1.11"
 dependencies = [
  "anyhow",
  "async-recursion",
@@ -4497,6 +4499,7 @@ dependencies = [
  "clap",
  "cql3-parser",
  "crc16",
+ "criterion",
  "csv",
  "dashmap",
  "derivative",
@@ -4562,7 +4565,6 @@ dependencies = [
  "chacha20poly1305",
  "clap",
  "cql-ws",
- "criterion",
  "csv",
  "fred",
  "futures",
@@ -4584,6 +4586,7 @@ dependencies = [
  "serde_json",
  "shotover",
  "test-helpers",
+ "time 0.3.25",
  "tokio",
  "tokio-bin-process",
  "tokio-util",

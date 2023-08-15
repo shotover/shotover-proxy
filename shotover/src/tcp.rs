@@ -1,6 +1,6 @@
 //! Use to establish a TCP connection to a DB in a sink transform
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use std::time::Duration;
 use tokio::{
     net::{TcpStream, ToSocketAddrs},
@@ -18,7 +18,5 @@ pub async fn tcp_stream<A: ToSocketAddrs + std::fmt::Debug>(
                 "destination {destination:?} did not respond to connection attempt within {connect_timeout:?}"
             )
         })?
-        .map_err(|e| {
-            anyhow!(e).context(format!("Failed to connect to destination {destination:?}"))
-        })
+        .with_context(|| format!("Failed to connect to destination {destination:?}"))
 }

@@ -17,13 +17,12 @@ pub struct Topology {
 
 impl Topology {
     pub fn from_file(filepath: &str) -> Result<Topology> {
-        let file = std::fs::File::open(filepath).map_err(|err| {
-            anyhow!(err).context(format!("Couldn't open the topology file {}", filepath))
-        })?;
+        let file = std::fs::File::open(filepath)
+            .with_context(|| format!("Couldn't open the topology file {}", filepath))?;
 
         let deserializer = serde_yaml::Deserializer::from_reader(file);
         serde_yaml::with::singleton_map_recursive::deserialize(deserializer)
-            .context(format!("Failed to parse topology file {}", filepath))
+            .with_context(|| format!("Failed to parse topology file {}", filepath))
     }
 
     async fn build_chains(&self) -> Result<HashMap<String, Option<TransformChainBuilder>>> {
@@ -79,8 +78,8 @@ impl Topology {
                         &mut source_config
                             .get_source(chain, trigger_shutdown_rx.clone())
                             .await
-                            .map_err(|e| {
-                                e.context(format!("Failed to initialize source {source_name}"))
+                            .with_context(|| {
+                                format!("Failed to initialize source {source_name}")
                             })?,
                     );
                 } else {

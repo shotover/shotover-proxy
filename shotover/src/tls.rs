@@ -74,27 +74,25 @@ impl TlsAcceptor {
     pub fn new(tls_config: TlsAcceptorConfig) -> Result<TlsAcceptor> {
         let client_cert_verifier =
             if let Some(path) = tls_config.certificate_authority_path.as_ref() {
-                let root_cert_store = load_ca(path).map_err(|err| {
-                    anyhow!(err).context(format!(
-                        "Failed to read file {path} configured at 'certificate_authority_path'"
-                    ))
+                let root_cert_store = load_ca(path).with_context(|| {
+                    format!("Failed to read file {path} configured at 'certificate_authority_path'")
                 })?;
                 AllowAnyAuthenticatedClient::new(root_cert_store).boxed()
             } else {
                 NoClientAuth::boxed()
             };
 
-        let private_key = load_private_key(&tls_config.private_key_path).map_err(|err| {
-            anyhow!(err).context(format!(
+        let private_key = load_private_key(&tls_config.private_key_path).with_context(|| {
+            format!(
                 "Failed to read file {} configured at 'private_key_path",
                 tls_config.private_key_path,
-            ))
+            )
         })?;
-        let certs = load_certs(&tls_config.certificate_path).map_err(|err| {
-            anyhow!(err).context(format!(
+        let certs = load_certs(&tls_config.certificate_path).with_context(|| {
+            format!(
                 "Failed to read file {} configured at 'certificate_path'",
                 tls_config.private_key_path,
-            ))
+            )
         })?;
 
         let config = rustls::ServerConfig::builder()
@@ -140,21 +138,20 @@ pub struct TlsConnector {
 
 impl TlsConnector {
     pub fn new(tls_config: TlsConnectorConfig) -> Result<TlsConnector> {
-        let root_cert_store = load_ca(&tls_config.certificate_authority_path).map_err(|err| {
-            anyhow!(err).context(format!(
-                "Failed to read file {} configured at 'certificate_authority_path'",
-                tls_config.certificate_authority_path,
-            ))
-        })?;
+        let root_cert_store =
+            load_ca(&tls_config.certificate_authority_path).with_context(|| {
+                format!(
+                    "Failed to read file {} configured at 'certificate_authority_path'",
+                    tls_config.certificate_authority_path,
+                )
+            })?;
 
         let private_key = tls_config
             .private_key_path
             .as_ref()
             .map(|path| {
-                load_private_key(path).map_err(|err| {
-                    anyhow!(err).context(format!(
-                        "Failed to read file {path} configured at 'private_key_path",
-                    ))
+                load_private_key(path).with_context(|| {
+                    format!("Failed to read file {path} configured at 'private_key_path",)
                 })
             })
             .transpose()?;
@@ -162,10 +159,8 @@ impl TlsConnector {
             .certificate_path
             .as_ref()
             .map(|path| {
-                load_certs(path).map_err(|err| {
-                    anyhow!(err).context(format!(
-                        "Failed to read file {path} configured at 'certificate_path'",
-                    ))
+                load_certs(path).with_context(|| {
+                    format!("Failed to read file {path} configured at 'certificate_path'",)
                 })
             })
             .transpose()?;

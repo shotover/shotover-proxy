@@ -1,10 +1,11 @@
 use crate::{
     aws::{Ec2InstanceWithDocker, Ec2InstanceWithShotover, RunningShotover, WindsockAws},
     common::{rewritten_file, Shotover},
-    profilers::ProfilerRunner,
+    profilers::{self, CloudProfilerRunner, ProfilerRunner},
 };
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
+use aws_throwaway::ec2_instance::Ec2Instance;
 use fred::{
     prelude::*,
     rustls::{Certificate, ClientConfig, PrivateKey, RootCertStore},
@@ -101,7 +102,7 @@ impl Bench for RedisBench {
     }
 
     fn supported_profilers(&self) -> Vec<String> {
-        ProfilerRunner::supported_profilers(self.shotover)
+        profilers::supported_profilers(self.shotover)
     }
 
     fn cores_required(&self) -> usize {
@@ -111,7 +112,7 @@ impl Bench for RedisBench {
     async fn orchestrate_cloud(
         &self,
         _running_in_release: bool,
-        _profiling: Profiling,
+        profiling: Profiling,
         parameters: BenchParameters,
     ) -> Result<()> {
         let aws = WindsockAws::get().await;
@@ -121,6 +122,24 @@ impl Bench for RedisBench {
             aws.create_bencher_instance(),
             aws.create_shotover_instance()
         );
+
+        let mut profiler_instances: HashMap<String, &Ec2Instance> =
+            [("bencher".to_owned(), &bench_instance.instance)].into();
+        if let Shotover::ForcedMessageParsed | Shotover::Standard = self.shotover {
+            profiler_instances.insert("shotover".to_owned(), &shotover_instance.instance);
+        }
+        match &redis_instances {
+            RedisCluster::Cluster3 { instances, .. } => {
+                for (i, instance) in instances.iter().enumerate() {
+                    profiler_instances.insert(format!("redis{i}"), &instance.instance);
+                }
+            }
+            RedisCluster::Single(instance) => {
+                profiler_instances.insert("redis".to_owned(), &instance.instance);
+            }
+        }
+        let mut profiler =
+            CloudProfilerRunner::new(self.name(), profiling, profiler_instances).await;
 
         let redis_ip = redis_instances.private_ips()[0].to_string();
         let shotover_ip = shotover_instance.instance.private_ip().to_string();
@@ -147,6 +166,8 @@ impl Bench for RedisBench {
         bench_instance
             .run_bencher(&self.run_args(&destination_ip, &parameters), &self.name())
             .await;
+
+        profiler.finish();
 
         if let Some(running_shotover) = running_shotover {
             running_shotover.shutdown().await;
@@ -180,7 +201,7 @@ impl Bench for RedisBench {
             (RedisTopology::Cluster3, Encryption::Tls) => "tests/test-configs/redis-cluster-tls",
         };
         let _compose = docker_compose(&format!("{config_dir}/docker-compose.yaml"));
-        let mut profiler = ProfilerRunner::new(profiling);
+        let mut profiler = ProfilerRunner::new(self.name(), profiling);
         let shotover = match self.shotover {
             Shotover::Standard => Some(
                 ShotoverProcessBuilder::new_with_topology(&format!("{config_dir}/topology.yaml"))
@@ -283,7 +304,7 @@ impl Bench for RedisBench {
 
 fn load_certs(path: &str) -> Vec<Certificate> {
     load_certs_inner(path)
-        .map_err(|err| anyhow!(err).context(format!("Failed to read certs at {path:?}")))
+        .with_context(|| format!("Failed to read certs at {path:?}"))
         .unwrap()
 }
 fn load_certs_inner(path: &str) -> Result<Vec<Certificate>> {
@@ -294,7 +315,7 @@ fn load_certs_inner(path: &str) -> Result<Vec<Certificate>> {
 
 fn load_private_key(path: &str) -> PrivateKey {
     load_private_key_inner(path)
-        .map_err(|err| anyhow!(err).context(format!("Failed to read private key at {path:?}")))
+        .with_context(|| format!("Failed to read private key at {path:?}"))
         .unwrap()
 }
 fn load_private_key_inner(path: &str) -> Result<PrivateKey> {
@@ -310,7 +331,7 @@ fn load_private_key_inner(path: &str) -> Result<PrivateKey> {
 
 fn load_ca(path: &str) -> RootCertStore {
     load_ca_inner(path)
-        .map_err(|e| e.context(format!("Failed to load CA at {path:?}")))
+        .with_context(|| format!("Failed to load CA at {path:?}"))
         .unwrap()
 }
 fn load_ca_inner(path: &str) -> Result<RootCertStore> {
