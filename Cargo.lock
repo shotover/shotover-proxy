@@ -271,7 +271,7 @@ dependencies = [
  "http",
  "hyper",
  "ring",
- "time 0.3.24",
+ "time 0.3.25",
  "tokio",
  "tower",
  "tracing",
@@ -460,7 +460,7 @@ dependencies = [
  "percent-encoding",
  "regex",
  "sha2 0.10.7",
- "time 0.3.24",
+ "time 0.3.25",
  "tracing",
 ]
 
@@ -567,7 +567,7 @@ dependencies = [
  "itoa",
  "num-integer",
  "ryu",
- "time 0.3.24",
+ "time 0.3.25",
 ]
 
 [[package]]
@@ -929,7 +929,7 @@ dependencies = [
  "num",
  "snap",
  "thiserror",
- "time 0.3.24",
+ "time 0.3.25",
  "uuid",
 ]
 
@@ -1548,9 +1548,9 @@ dependencies = [
 
 [[package]]
 name = "deranged"
-version = "0.3.6"
+version = "0.3.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8810e7e2cf385b1e9b50d68264908ec367ba642c96d02edfe61c39e88e2a3c01"
+checksum = "7684a49fb1af197853ef7b2ee694bc1f5b4179556f1e5710e1760c5db6f5e929"
 dependencies = [
  "serde",
 ]
@@ -3601,7 +3601,7 @@ checksum = "ffbe84efe2f38dea12e9bfc1f65377fdf03e53a18cb3b995faedf7934c7e785b"
 dependencies = [
  "pem",
  "ring",
- "time 0.3.24",
+ "time 0.3.25",
  "yasna",
 ]
 
@@ -4369,7 +4369,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_with_macros",
- "time 0.3.24",
+ "time 0.3.25",
 ]
 
 [[package]]
@@ -4551,7 +4551,7 @@ dependencies = [
 
 [[package]]
 name = "shotover-proxy"
-version = "0.1.10"
+version = "0.1.11"
 dependencies = [
  "anyhow",
  "async-once-cell",
@@ -4586,6 +4586,7 @@ dependencies = [
  "serde_json",
  "shotover",
  "test-helpers",
+ "time 0.3.25",
  "tokio",
  "tokio-bin-process",
  "tokio-util",
@@ -4919,9 +4920,9 @@ dependencies = [
 
 [[package]]
 name = "time"
-version = "0.3.24"
+version = "0.3.25"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b79eabcd964882a646b3584543ccabeae7869e9ac32a46f6f22b7a5bd405308b"
+checksum = "b0fdd63d58b18d663fbdf70e049f00a22c8e42be082203be7f26589213cd75ea"
 dependencies = [
  "deranged",
  "itoa",
@@ -5191,7 +5192,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "09d48f71a791638519505cefafe162606f706c25592e4bde4d97600c0195312e"
 dependencies = [
  "crossbeam-channel",
- "time 0.3.24",
+ "time 0.3.25",
  "tracing-subscriber",
 ]
 
@@ -5855,7 +5856,7 @@ checksum = "e17bb3549cc1321ae1296b9cdc2698e2b6cb1992adfa19a8c72e5b7a738f44cd"
 dependencies = [
  "bit-vec",
  "num-bigint 0.4.3",
- "time 0.3.24",
+ "time 0.3.25",
 ]
 
 [[package]]
