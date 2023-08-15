@@ -18,6 +18,7 @@ pub enum KeyManager {
 }
 
 #[derive(Deserialize, Debug, Clone)]
+#[serde(deny_unknown_fields)]
 pub enum KeyManagerConfig {
     AWSKms {
         region: String,

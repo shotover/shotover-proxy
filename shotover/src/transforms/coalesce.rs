@@ -14,6 +14,7 @@ pub struct Coalesce {
 }
 
 #[derive(Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
 pub struct CoalesceConfig {
     pub flush_when_buffered_message_count: Option<usize>,
     pub flush_when_millis_since_last_flush: Option<u128>,

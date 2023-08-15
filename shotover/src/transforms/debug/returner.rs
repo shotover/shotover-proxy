@@ -6,6 +6,7 @@ use async_trait::async_trait;
 use serde::Deserialize;
 
 #[derive(Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
 pub struct DebugReturnerConfig {
     #[serde(flatten)]
     response: Response,
@@ -20,6 +21,7 @@ impl TransformConfig for DebugReturnerConfig {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub enum Response {
     #[serde(skip)]
     Message(Messages),

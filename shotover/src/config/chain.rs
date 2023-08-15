@@ -7,6 +7,7 @@ use std::fmt::{self, Debug};
 use std::iter;
 
 #[derive(Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
 pub struct TransformChainConfig(
     #[serde(rename = "TransformChain", deserialize_with = "vec_transform_config")]
     pub  Vec<Box<dyn TransformConfig>>,
