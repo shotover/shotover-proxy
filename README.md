@@ -2,7 +2,8 @@
   <img width="400px" alt="Shotover logo" src="docs/src/logo.png">
 </p>
 
-[![Rust](https://github.com/shotover/shotover-proxy/workflows/Rust/badge.svg)](https://github.com/shotover/shotover-proxy/actions?query=workflow%3ARust)
+[![Crates.io](https://img.shields.io/crates/v/shotover.svg)](https://crates.io/crates/shotover)
+[![Docs](https://docs.rs/shotover/badge.svg)](https://docs.rs/shotover)
 [![dependency status](https://deps.rs/repo/github/shotover/shotover-proxy/status.svg)](https://deps.rs/repo/github/shotover/shotover-proxy)
 
 ## Documentation
