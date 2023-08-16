@@ -9,6 +9,7 @@ use tokio::sync::watch;
 use tracing::info;
 
 #[derive(Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
 pub struct Topology {
     pub sources: HashMap<String, SourceConfig>,
     pub chain_config: HashMap<String, TransformChainConfig>,

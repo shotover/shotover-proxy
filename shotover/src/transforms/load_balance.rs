@@ -10,6 +10,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 #[derive(Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
 pub struct ConnectionBalanceAndPoolConfig {
     pub name: String,
     pub max_connections: usize,

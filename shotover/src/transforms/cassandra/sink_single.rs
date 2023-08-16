@@ -16,6 +16,7 @@ use tokio::sync::{mpsc, oneshot};
 use tracing::trace;
 
 #[derive(Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
 pub struct CassandraSinkSingleConfig {
     #[serde(rename = "remote_address")]
     pub address: String,

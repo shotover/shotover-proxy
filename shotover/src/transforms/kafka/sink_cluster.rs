@@ -30,6 +30,7 @@ use tokio::time::timeout;
 use uuid::Uuid;
 
 #[derive(Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
 pub struct KafkaSinkClusterConfig {
     pub first_contact_points: Vec<String>,
     pub shotover_nodes: Vec<String>,
