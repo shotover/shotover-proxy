@@ -5,6 +5,7 @@ use test_helpers::connection::cassandra::{
 };
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Protected {
     _cipher: Vec<u8>,
     _nonce: Nonce,

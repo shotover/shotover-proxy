@@ -9,6 +9,7 @@ use std::sync::Arc;
 use tracing::{error, info};
 
 #[derive(Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
 pub struct DebugLogToFileConfig;
 
 #[cfg(feature = "alpha-transforms")]

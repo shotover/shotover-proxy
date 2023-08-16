@@ -19,6 +19,7 @@ use tokio_rustls::server::TlsStream as TlsStreamServer;
 use tokio_rustls::{TlsAcceptor as RustlsAcceptor, TlsConnector as RustlsConnector};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct TlsAcceptorConfig {
     /// Path to the certificate authority in PEM format
     pub certificate_authority_path: Option<String>,
@@ -120,6 +121,7 @@ impl TlsAcceptor {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct TlsConnectorConfig {
     /// Path to the certificate authority in PEM format
     pub certificate_authority_path: String,

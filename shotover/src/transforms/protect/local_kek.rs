@@ -13,6 +13,7 @@ pub struct LocalKeyManagement {
 }
 
 #[derive(Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct DEKStructure {
     pub nonce: Nonce,
     pub key: Vec<u8>,

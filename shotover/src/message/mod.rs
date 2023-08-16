@@ -426,6 +426,7 @@ pub enum Encodable {
 }
 
 #[derive(PartialEq, Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub enum QueryType {
     Read,
     Write,

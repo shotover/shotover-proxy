@@ -6,6 +6,7 @@ use serde::Deserialize;
 use tracing::info;
 
 #[derive(Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
 pub struct DebugPrinterConfig;
 
 #[typetag::deserialize(name = "DebugPrinter")]

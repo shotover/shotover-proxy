@@ -14,6 +14,7 @@ use cql3_parser::select::SelectElement;
 use serde::Deserialize;
 
 #[derive(Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
 pub struct CassandraPeersRewriteConfig {
     pub port: u16,
 }

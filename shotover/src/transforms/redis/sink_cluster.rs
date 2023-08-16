@@ -37,6 +37,7 @@ const SLOT_SIZE: usize = 16384;
 type ChannelMap = HashMap<String, Vec<UnboundedSender<Request>>>;
 
 #[derive(Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
 pub struct RedisSinkClusterConfig {
     pub first_contact_points: Vec<String>,
     pub direct_destination: Option<String>,

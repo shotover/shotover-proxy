@@ -12,6 +12,7 @@ pub mod kafka;
 pub mod redis;
 
 #[derive(Deserialize, Debug, Clone, Copy)]
+#[serde(deny_unknown_fields)]
 pub enum Transport {
     Tcp,
     WebSocket,
@@ -35,6 +36,7 @@ impl Source {
 }
 
 #[derive(Deserialize, Debug, Clone)]
+#[serde(deny_unknown_fields)]
 pub enum SourceConfig {
     Cassandra(CassandraConfig),
     Redis(RedisConfig),

@@ -15,6 +15,7 @@ pub struct QueryTypeFilter {
 }
 
 #[derive(Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
 pub struct QueryTypeFilterConfig {
     pub filter: QueryType,
 }
