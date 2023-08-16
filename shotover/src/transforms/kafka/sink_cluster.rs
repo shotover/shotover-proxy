@@ -149,7 +149,7 @@ impl Transform for KafkaSinkCluster {
                     Ok(KafkaNode {
                         connection: None,
                         kafka_address: KafkaAddress::from_str(address)?,
-                        broker_id: -1,
+                        broker_id: BrokerId(-1),
                     })
                 })
                 .collect();
@@ -252,8 +252,10 @@ impl KafkaSinkCluster {
         }
 
         for group in groups {
-            let coordinator = self.find_coordinator_of_group(group.clone()).await?;
-            self.group_to_coordinator_broker.insert(group, coordinator);
+            let node = self.find_coordinator_of_group(group.clone()).await?;
+            self.group_to_coordinator_broker
+                .insert(group, node.broker_id);
+            self.add_node_if_new(node).await;
         }
 
         if !topics.is_empty() {
@@ -422,7 +424,7 @@ impl KafkaSinkCluster {
         Ok(results)
     }
 
-    async fn find_coordinator_of_group(&mut self, group: GroupId) -> Result<BrokerId> {
+    async fn find_coordinator_of_group(&mut self, group: GroupId) -> Result<KafkaNode> {
         let request = Message::from_frame(Frame::Kafka(KafkaFrame::Request {
             header: RequestHeader::builder()
                 .request_api_key(ApiKey::FindCoordinatorKey as i16)
@@ -461,12 +463,20 @@ impl KafkaSinkCluster {
             Some(Frame::Kafka(KafkaFrame::Response {
                 body: ResponseBody::FindCoordinator(coordinator),
                 ..
-            })) => Ok(coordinator.node_id),
+            })) => Ok(KafkaNode {
+                broker_id: coordinator.node_id,
+                kafka_address: KafkaAddress {
+                    host: coordinator.host.clone(),
+                    port: coordinator.port,
+                },
+                connection: None,
+            }),
             other => Err(anyhow!(
                 "Unexpected message returned to metadata request {other:?}"
             )),
         }
     }
+
     async fn get_metadata_of_topics(&mut self, topics: Vec<TopicName>) -> Result<Message> {
         let request = Message::from_frame(Frame::Kafka(KafkaFrame::Request {
             header: RequestHeader::builder()
@@ -639,24 +649,15 @@ impl KafkaSinkCluster {
 
     async fn process_metadata(&mut self, metadata: &MetadataResponse) {
         for (id, broker) in &metadata.brokers {
-            let new = self
-                .nodes_shared
-                .read()
-                .await
-                .iter()
-                .all(|node| node.broker_id != **id);
-            if new {
-                let host = broker.host.clone();
-                let port = broker.port;
-                let node = KafkaNode {
-                    broker_id: **id,
-                    kafka_address: KafkaAddress { host, port },
-                    connection: None,
-                };
-                self.nodes_shared.write().await.push(node);
-
-                self.update_local_nodes().await;
-            }
+            let node = KafkaNode {
+                broker_id: *id,
+                kafka_address: KafkaAddress {
+                    host: broker.host.clone(),
+                    port: broker.port,
+                },
+                connection: None,
+            };
+            self.add_node_if_new(node).await;
         }
 
         for topic in &metadata.topics {
@@ -674,6 +675,20 @@ impl KafkaSinkCluster {
                         .collect(),
                 },
             );
+        }
+    }
+
+    async fn add_node_if_new(&mut self, new_node: KafkaNode) {
+        let new = self
+            .nodes_shared
+            .read()
+            .await
+            .iter()
+            .all(|node| node.broker_id != new_node.broker_id);
+        if new {
+            self.nodes_shared.write().await.push(new_node);
+
+            self.update_local_nodes().await;
         }
     }
 }
@@ -706,7 +721,7 @@ fn rewrite_address(shotover_nodes: &[KafkaAddress], host: &mut StrBytes, port: &
 
 #[derive(Clone)]
 struct KafkaNode {
-    broker_id: i32,
+    broker_id: BrokerId,
     kafka_address: KafkaAddress,
     connection: Option<Connection>,
 }
