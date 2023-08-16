@@ -277,7 +277,7 @@ pub async fn test_topology_task(ca_path: Option<&str>, cassandra_port: Option<u3
     }
 }
 
-pub async fn test_node_going_down(compose: &DockerCompose, driver: CassandraDriver) {
+pub async fn test_node_going_down(compose: &mut DockerCompose, driver: CassandraDriver) {
     let mut connection_shotover = CassandraConnectionBuilder::new("127.0.0.1", 9042, driver)
         .build()
         .await;
