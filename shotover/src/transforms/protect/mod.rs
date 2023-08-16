@@ -21,6 +21,7 @@ mod local_kek;
 mod pkcs_11;
 
 #[derive(Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
 pub struct ProtectConfig {
     pub keyspace_table_columns: HashMap<String, HashMap<String, Vec<String>>>,
     pub key_manager: KeyManagerConfig,

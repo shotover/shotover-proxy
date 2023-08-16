@@ -32,40 +32,49 @@ pub fn get_image_waiters() -> &'static [Image] {
         Image {
             name: "motoserver/moto",
             log_regex_to_wait_for: r"Press CTRL\+C to quit",
+            timeout: 120,
         },
         Image {
             name: "library/redis:5.0.9",
             log_regex_to_wait_for: r"Ready to accept connections",
+            timeout: 120,
         },
         Image {
             name: "library/redis:6.2.5",
             log_regex_to_wait_for: r"Ready to accept connections",
+            timeout: 120,
         },
         Image {
             name: "bitnami/redis-cluster:6.2.12-debian-11-r26",
             //`Cluster state changed` is created by the node services
             //`Cluster correctly created` is created by the init service
             log_regex_to_wait_for: r"Cluster state changed|Cluster correctly created",
+            timeout: 120,
         },
         Image {
             name: "bitnami/cassandra:4.0.6",
             log_regex_to_wait_for: r"Startup complete",
+            timeout: 120,
         },
         Image {
             name: "shotover/cassandra-test:4.0.6-r1",
             log_regex_to_wait_for: r"Startup complet",
+            timeout: 120,
         },
         Image {
             name: "shotover/cassandra-test:3.11.13-r1",
             log_regex_to_wait_for: r"Startup complete",
+            timeout: 120,
         },
         Image {
             name: "bitnami/kafka:3.4.0-debian-11-r22",
             log_regex_to_wait_for: r"Kafka Server started",
+            timeout: 120,
         },
         Image {
             name: "opensearchproject/opensearch:2.9.0",
             log_regex_to_wait_for: r"Node '(?s)(.*)' initialized",
+            timeout: 120,
         },
     ]
 }

@@ -12,6 +12,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::{debug, trace};
 
 #[derive(Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
 pub struct RedisTimestampTaggerConfig;
 
 #[typetag::deserialize(name = "RedisTimestampTagger")]

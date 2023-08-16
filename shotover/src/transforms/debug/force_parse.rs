@@ -15,6 +15,7 @@ use serde::Deserialize;
 /// Messages that pass through this transform will be parsed.
 /// Must be individually enabled at the request or response level.
 #[derive(Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
 pub struct DebugForceParseConfig {
     pub parse_requests: bool,
     pub parse_responses: bool,
@@ -37,6 +38,7 @@ impl TransformConfig for DebugForceParseConfig {
 /// Messages that pass through this transform will be parsed and then reencoded.
 /// Must be individually enabled at the request or response level.
 #[derive(Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
 pub struct DebugForceEncodeConfig {
     pub encode_requests: bool,
     pub encode_responses: bool,

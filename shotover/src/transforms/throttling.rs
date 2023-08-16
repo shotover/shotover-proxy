@@ -16,6 +16,7 @@ use std::sync::Arc;
 use super::Transforms;
 
 #[derive(Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
 pub struct RequestThrottlingConfig {
     pub max_requests_per_second: NonZeroU32,
 }

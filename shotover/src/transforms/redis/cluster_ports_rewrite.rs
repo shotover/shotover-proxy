@@ -8,6 +8,7 @@ use bytes::{BufMut, Bytes, BytesMut};
 use serde::Deserialize;
 
 #[derive(Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
 pub struct RedisClusterPortsRewriteConfig {
     pub new_port: u16,
 }

@@ -102,6 +102,7 @@ pub enum ConsistencyBehavior {
 }
 
 #[derive(Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
 pub struct TeeConfig {
     pub behavior: Option<ConsistencyBehaviorConfig>,
     pub timeout_micros: Option<u64>,
@@ -110,6 +111,7 @@ pub struct TeeConfig {
 }
 
 #[derive(Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
 pub enum ConsistencyBehaviorConfig {
     Ignore,
     FailOnMismatch,
