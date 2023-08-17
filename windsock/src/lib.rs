@@ -3,6 +3,7 @@ mod cli;
 pub mod cloud;
 mod data;
 mod filter;
+mod list;
 mod report;
 mod tables;
 
@@ -84,10 +85,11 @@ impl Windsock {
             ReportArchive::clear_baseline();
             println!("Baseline cleared");
         } else if args.list {
-            println!("Benches:");
-            for bench in &self.benches {
-                println!("{}", bench.tags.get_name());
-            }
+            list::list(&args, &self.benches);
+        } else if args.nextest_run_by_name() {
+            create_runtime(None).block_on(self.run_nextest(args, running_in_release))?;
+        } else if let Some(err) = args.nextest_invalid_args() {
+            return Err(err);
         } else if let Some(internal_run) = &args.internal_run {
             self.internal_run(&args, internal_run, running_in_release)?;
         } else if let Some(name) = args.name.clone() {
@@ -126,6 +128,15 @@ impl Windsock {
         }
     }
 
+    async fn run_nextest(&mut self, mut args: Args, running_in_release: bool) -> Result<()> {
+        // This is not a real bench we are just testing that it works,
+        // so set some really minimal runtime values
+        args.bench_length_seconds = Some(2);
+        args.operations_per_second = Some(100);
+
+        let name = args.filter.as_ref().unwrap().clone();
+        self.run_named_bench(args, name, running_in_release).await
+    }
     async fn run_named_bench(
         &mut self,
         args: Args,
