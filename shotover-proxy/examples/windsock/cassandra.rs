@@ -40,6 +40,7 @@ use test_helpers::{
     shotover_process::ShotoverProcessBuilder,
 };
 use tokio::sync::mpsc::UnboundedSender;
+use tokio_bin_process::bin_path;
 use windsock::{Bench, BenchParameters, BenchTask, Profiling, Report};
 
 const ROW_COUNT: usize = 1000;
@@ -549,8 +550,9 @@ impl Bench for CassandraBench {
         let shotover = match self.shotover {
             Shotover::Standard => Some(
                 ShotoverProcessBuilder::new_with_topology(&format!("{config_dir}/topology.yaml"))
-                    .with_cores(core_count.shotover as u32)
+                    .with_bin(bin_path!("shotover-proxy"))
                     .with_profile(profiler.shotover_profile())
+                    .with_cores(core_count.shotover as u32)
                     .start()
                     .await,
             ),

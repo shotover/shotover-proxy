@@ -4,6 +4,7 @@ mod common;
 mod kafka;
 mod profilers;
 mod redis;
+mod shotover;
 
 use crate::cassandra::*;
 use crate::common::*;
