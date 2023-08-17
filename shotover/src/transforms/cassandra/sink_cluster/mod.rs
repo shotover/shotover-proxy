@@ -48,6 +48,7 @@ const SYSTEM_KEYSPACES: [IdentifierRef<'static>; 3] = [
 ];
 
 #[derive(Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
 pub struct CassandraSinkClusterConfig {
     /// contact points must be within the specified data_center and rack.
     /// If this is not followed, shotover's invariants will still be upheld but shotover will communicate with a
@@ -181,6 +182,7 @@ impl TransformBuilder for CassandraSinkClusterBuilder {
 }
 
 #[derive(Deserialize, Debug, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct ShotoverNode {
     pub address: SocketAddr,
     pub data_center: String,

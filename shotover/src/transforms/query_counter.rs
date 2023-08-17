@@ -14,6 +14,7 @@ pub struct QueryCounter {
 }
 
 #[derive(Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
 pub struct QueryCounterConfig {
     pub name: String,
 }

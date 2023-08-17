@@ -64,6 +64,7 @@ where
 }
 
 #[derive(Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
 pub struct ParallelMapConfig {
     pub parallelism: u32,
     pub chain: TransformChainConfig,

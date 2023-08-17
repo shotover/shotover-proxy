@@ -5,6 +5,7 @@ pub mod chain;
 pub mod topology;
 
 #[derive(Deserialize, Debug, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct Config {
     pub main_log_level: String,
     pub observability_interface: String,
