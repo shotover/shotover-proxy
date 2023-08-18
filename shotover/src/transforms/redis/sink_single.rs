@@ -21,6 +21,7 @@ use tokio_util::codec::{FramedRead, FramedWrite};
 use tracing::Instrument;
 
 #[derive(Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
 pub struct RedisSinkSingleConfig {
     #[serde(rename = "remote_address")]
     pub address: String,

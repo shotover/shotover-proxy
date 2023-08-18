@@ -12,6 +12,7 @@ use tokio::task::JoinHandle;
 use tracing::{error, info};
 
 #[derive(Deserialize, Debug, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct CassandraConfig {
     pub listen_addr: String,
     pub connection_limit: Option<usize>,

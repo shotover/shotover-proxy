@@ -12,6 +12,7 @@ use std::collections::HashMap;
 use tracing::{error, warn};
 
 #[derive(Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
 pub struct TuneableConsistencyScatterConfig {
     pub route_map: HashMap<String, TransformChainConfig>,
     pub write_consistency: i32,
