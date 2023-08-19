@@ -1,8 +1,9 @@
-use crate::{bench::Tags, data::windsock_path};
+use crate::{bench::Tags, data::windsock_path, Goal};
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use std::{io::ErrorKind, path::PathBuf, time::Duration};
 use strum::{EnumCount, EnumIter, IntoEnumIterator};
+use time::OffsetDateTime;
 use tokio::sync::mpsc::UnboundedReceiver;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -94,8 +95,10 @@ type Percentiles = [Duration; Percentile::COUNT];
 pub struct ReportArchive {
     pub(crate) running_in_release: bool,
     pub(crate) tags: Tags,
+    pub bench_started_at: OffsetDateTime,
     pub(crate) operations_report: Option<OperationsReport>,
     pub(crate) pubsub_report: Option<PubSubReport>,
+    pub metrics: Vec<Metric>,
     pub(crate) error_messages: Vec<String>,
 }
 
@@ -128,6 +131,47 @@ pub(crate) struct PubSubReport {
     pub(crate) produce_each_second: Vec<u64>,
     pub(crate) consume_each_second: Vec<u64>,
     pub(crate) backlog_each_second: Vec<i64>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum Metric {
+    Total {
+        name: String,
+        compare: f64,
+        value: String,
+        goal: Goal,
+    },
+    EachSecond {
+        name: String,
+        values: Vec<(f64, String, Goal)>,
+    },
+}
+
+impl Metric {
+    pub(crate) fn identifier(&self) -> MetricIdentifier {
+        match self {
+            Metric::Total { name, .. } => MetricIdentifier::Total {
+                name: name.to_owned(),
+            },
+            Metric::EachSecond { name, .. } => MetricIdentifier::EachSecond {
+                name: name.to_owned(),
+            },
+        }
+    }
+
+    #[allow(clippy::len_without_is_empty)]
+    pub(crate) fn len(&self) -> usize {
+        match self {
+            Metric::Total { .. } => 1,
+            Metric::EachSecond { values, .. } => values.len(),
+        }
+    }
+}
+
+#[derive(PartialEq)]
+pub enum MetricIdentifier {
+    Total { name: String },
+    EachSecond { name: String },
 }
 
 fn error_message_insertion(messages: &mut Vec<String>, new_message: String) {
@@ -187,7 +231,7 @@ impl ReportArchive {
         reports
     }
 
-    fn save(&self) {
+    pub fn save(&self) {
         let path = self.path();
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(&path, bincode::serialize(self).unwrap())
@@ -241,7 +285,7 @@ pub(crate) async fn report_builder(
     running_in_release: bool,
 ) -> ReportArchive {
     let mut finished_in = None;
-    let mut started = false;
+    let mut started = None;
     let mut pubsub_report = None;
     let mut operations_report = None;
     let mut operation_times = vec![];
@@ -253,11 +297,11 @@ pub(crate) async fn report_builder(
     while let Some(report) = rx.recv().await {
         match report {
             Report::Start => {
-                started = true;
+                started = Some(OffsetDateTime::now_utc());
             }
             Report::QueryCompletedIn(duration) => {
                 let report = operations_report.get_or_insert_with(OperationsReport::default);
-                if started {
+                if started.is_some() {
                     report.total += 1;
                     total_operation_time += duration;
                     operation_times.push(duration);
@@ -272,7 +316,7 @@ pub(crate) async fn report_builder(
                 message,
             } => {
                 let report = operations_report.get_or_insert_with(OperationsReport::default);
-                if started {
+                if started.is_some() {
                     error_message_insertion(&mut error_messages, message);
                     report.total_errors += 1;
                     total_operation_time += completed_in;
@@ -280,7 +324,7 @@ pub(crate) async fn report_builder(
             }
             Report::ProduceCompletedIn(duration) => {
                 let report = pubsub_report.get_or_insert_with(PubSubReport::default);
-                if started {
+                if started.is_some() {
                     report.total_backlog += 1;
                     report.total_produce += 1;
                     total_produce_time += duration;
@@ -296,7 +340,7 @@ pub(crate) async fn report_builder(
                 message,
             } => {
                 let report = pubsub_report.get_or_insert_with(PubSubReport::default);
-                if started {
+                if started.is_some() {
                     error_message_insertion(&mut error_messages, message);
                     report.total_produce_error += 1;
                     total_produce_time += completed_in;
@@ -304,7 +348,7 @@ pub(crate) async fn report_builder(
             }
             Report::ConsumeCompleted => {
                 let report = pubsub_report.get_or_insert_with(PubSubReport::default);
-                if started {
+                if started.is_some() {
                     report.total_backlog -= 1;
                     report.total_consume += 1;
                     match report.consume_each_second.last_mut() {
@@ -315,7 +359,7 @@ pub(crate) async fn report_builder(
             }
             Report::ConsumeErrored { message } => {
                 let report = pubsub_report.get_or_insert_with(PubSubReport::default);
-                if started {
+                if started.is_some() {
                     error_message_insertion(&mut error_messages, message);
                     report.total_consume_error += 1;
                 }
@@ -335,7 +379,7 @@ pub(crate) async fn report_builder(
                 }
             }
             Report::FinishedIn(duration) => {
-                if !started {
+                if started.is_none() {
                     panic!("The bench never returned Report::Start")
                 }
                 finished_in = Some(duration);
@@ -376,11 +420,13 @@ pub(crate) async fn report_builder(
     }
 
     let archive = ReportArchive {
+        bench_started_at: started.unwrap(),
         running_in_release,
         tags,
         pubsub_report,
         error_messages,
         operations_report,
+        metrics: vec![],
     };
     archive.save();
     archive

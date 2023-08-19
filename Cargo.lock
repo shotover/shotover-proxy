@@ -5802,6 +5802,7 @@ dependencies = [
  "scylla",
  "serde",
  "strum 0.25.0",
+ "time 0.3.25",
  "tokio",
 ]
 
