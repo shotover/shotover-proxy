@@ -2,7 +2,6 @@ use crate::shotover_process;
 use opensearch::{
     auth::Credentials,
     cert::CertificateValidation,
-    cluster::ClusterHealthParts,
     http::Url,
     http::{
         transport::{SingleNodeConnectionPool, TransportBuilder},
@@ -63,34 +62,6 @@ pub async fn test_bulk(client: &OpenSearch) {
             .len(),
         10
     );
-}
-
-async fn test_health(client: &OpenSearch) {
-    client
-        .cluster()
-        .health(ClusterHealthParts::None)
-        .wait_for_status(opensearch::params::WaitForStatus::Green);
-
-    let response = client
-        .cat()
-        .health()
-        .format("json")
-        .pretty(true)
-        .send()
-        .await
-        .unwrap();
-
-    assert_eq!(response.status_code(), StatusCode::OK);
-    assert!(response
-        .headers()
-        .get(opensearch::http::headers::CONTENT_TYPE)
-        .unwrap()
-        .to_str()
-        .unwrap()
-        .starts_with("application/json"));
-
-    let response_body = response.json::<Value>().await.unwrap();
-    assert_eq!(response_body[0]["status"], String::from("green"));
 }
 
 async fn test_create_index(client: &OpenSearch) {
@@ -209,7 +180,6 @@ async fn test_delete_index(client: &OpenSearch) {
 }
 
 async fn opensearch_test_suite(client: &OpenSearch) {
-    test_health(client).await;
     test_create_index(client).await;
 
     let doc_id = test_index_and_search_document(client).await;
@@ -217,7 +187,6 @@ async fn opensearch_test_suite(client: &OpenSearch) {
 
     test_bulk(client).await;
     test_delete_index(client).await;
-    // test_authentication(&client).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]

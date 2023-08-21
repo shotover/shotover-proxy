@@ -4,7 +4,7 @@ use crate::codec::{
 };
 use crate::message::Message;
 use crate::tcp;
-use crate::tls::{AsyncStream, TlsConnector, TlsConnectorConfig};
+use crate::tls::AsyncStream;
 use crate::transforms::{
     Messages, Transform, TransformBuilder, TransformConfig, Transforms, Wrapper,
 };
@@ -25,7 +25,6 @@ type PinStream = Pin<Box<dyn AsyncStream + Send + Sync>>;
 pub struct OpenSearchSinkConfig {
     #[serde(rename = "remote_address")]
     address: String,
-    tls: Option<TlsConnectorConfig>,
     connect_timeout_ms: u64,
 }
 
@@ -33,10 +32,8 @@ pub struct OpenSearchSinkConfig {
 #[async_trait(?Send)]
 impl TransformConfig for OpenSearchSinkConfig {
     async fn get_builder(&self, chain_name: String) -> Result<Box<dyn TransformBuilder>> {
-        let tls = self.tls.clone().map(TlsConnector::new).transpose()?;
         Ok(Box::new(OpenSearchSinkBuilder::new(
             self.address.clone(),
-            tls,
             chain_name,
             self.connect_timeout_ms,
         )))
@@ -46,22 +43,15 @@ impl TransformConfig for OpenSearchSinkConfig {
 #[derive(Clone)]
 pub struct OpenSearchSinkBuilder {
     address: String,
-    tls: Option<TlsConnector>,
     connect_timeout: Duration,
 }
 
 impl OpenSearchSinkBuilder {
-    pub fn new(
-        address: String,
-        tls: Option<TlsConnector>,
-        _chain_name: String,
-        connect_timeout_ms: u64,
-    ) -> Self {
+    pub fn new(address: String, _chain_name: String, connect_timeout_ms: u64) -> Self {
         let connect_timeout = Duration::from_millis(connect_timeout_ms);
 
         Self {
             address,
-            tls,
             connect_timeout,
         }
     }
@@ -71,7 +61,6 @@ impl TransformBuilder for OpenSearchSinkBuilder {
     fn build(&self) -> Transforms {
         Transforms::OpenSearchSink(OpenSearchSink {
             address: self.address.clone(),
-            tls: self.tls.clone(),
             connect_timeout: self.connect_timeout,
             codec_builder: OpenSearchCodecBuilder::new(Direction::Sink),
             connection: None,
@@ -89,7 +78,6 @@ impl TransformBuilder for OpenSearchSinkBuilder {
 
 pub struct OpenSearchSink {
     address: String,
-    tls: Option<TlsConnector>,
     connection: Option<Connection>,
     connect_timeout: Duration,
     codec_builder: OpenSearchCodecBuilder,
@@ -107,19 +95,11 @@ impl Transform for OpenSearchSink {
         if self.connection.is_none() {
             trace!("creating outbound connection {:?}", self.address);
 
-            let generic_stream = if let Some(tls) = self.tls.as_mut() {
-                let tls_stream = tls
-                    .connect(self.connect_timeout, self.address.clone())
-                    .await?;
-                Box::pin(tls_stream) as Pin<Box<dyn AsyncStream + Send + Sync>>
-            } else {
-                let tcp_stream =
-                    tcp::tcp_stream(self.connect_timeout, self.address.clone()).await?;
-                Box::pin(tcp_stream) as Pin<Box<dyn AsyncStream + Send + Sync>>
-            };
+            let tcp_stream = tcp::tcp_stream(self.connect_timeout, self.address.clone()).await?;
+            let stream = Box::pin(tcp_stream) as Pin<Box<dyn AsyncStream + Send + Sync>>;
 
             let (decoder, encoder) = self.codec_builder.build();
-            let (stream_rx, stream_tx) = tokio::io::split(generic_stream);
+            let (stream_rx, stream_tx) = tokio::io::split(stream);
             let outbound_tx = FramedWrite::new(stream_tx, encoder);
             let outbound_rx = FramedRead::new(stream_rx, decoder);
             let (response_messages_tx, response_messages_rx) = mpsc::unbounded_channel();

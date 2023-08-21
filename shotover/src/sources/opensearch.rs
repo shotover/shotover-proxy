@@ -1,7 +1,6 @@
 use crate::codec::{opensearch::OpenSearchCodecBuilder, CodecBuilder, Direction};
 use crate::server::TcpCodecListener;
 use crate::sources::{Source, Transport};
-use crate::tls::{TlsAcceptor, TlsAcceptorConfig};
 use crate::transforms::chain::TransformChainBuilder;
 use anyhow::Result;
 use serde::Deserialize;
@@ -15,7 +14,6 @@ pub struct OpenSearchConfig {
     pub listen_addr: String,
     pub connection_limit: Option<usize>,
     pub hard_connection_limit: Option<bool>,
-    pub tls: Option<TlsAcceptorConfig>,
     pub timeout: Option<u64>,
 }
 
@@ -32,7 +30,6 @@ impl OpenSearchConfig {
                 trigger_shutdown_rx,
                 self.connection_limit,
                 self.hard_connection_limit,
-                self.tls.clone(),
                 self.timeout,
             )
             .await?,
@@ -54,7 +51,6 @@ impl OpenSearchSource {
         mut trigger_shutdown_rx: watch::Receiver<bool>,
         connection_limit: Option<usize>,
         hard_connection_limit: Option<bool>,
-        tls: Option<TlsAcceptorConfig>,
         timeout: Option<u64>,
     ) -> Result<Self> {
         let name = "OpenSearchSource";
@@ -69,7 +65,7 @@ impl OpenSearchSource {
             OpenSearchCodecBuilder::new(Direction::Source),
             Arc::new(Semaphore::new(connection_limit.unwrap_or(512))),
             trigger_shutdown_rx.clone(),
-            tls.map(TlsAcceptor::new).transpose()?,
+            None,
             timeout,
             Transport::Tcp,
         )

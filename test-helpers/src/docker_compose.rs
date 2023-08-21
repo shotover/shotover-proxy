@@ -57,11 +57,6 @@ pub fn get_image_waiters() -> &'static [Image] {
             timeout: 120,
         },
         Image {
-            name: "shotover-int-tests/cassandra:4.0.6",
-            log_regex_to_wait_for: r"Startup complete",
-            timeout: 120,
-        },
-        Image {
             name: "shotover/cassandra-test:4.0.6-r1",
             log_regex_to_wait_for: r"Startup complete",
             timeout: 120,
