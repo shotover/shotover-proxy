@@ -71,7 +71,7 @@ jobs:
     - name: Build tests
       run: |
         cargo test --doc ${{ matrix.cargo_flags }} --all-features -- --show-output --nocapture
-        cargo nextest archive --archive-file nextest-${{ matrix.profile }}.tar.zst ${{ matrix.cargo_flags }} --all-features
+        cargo nextest archive --archive-file nextest-${{ matrix.profile }}.tar.zst ${{ matrix.cargo_flags }} --all-features --all-targets
     - name: Upload built tests to workflow
       uses: actions/upload-artifact@v3
       with:

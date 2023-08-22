@@ -1,3 +1,4 @@
+use anyhow::{anyhow, Error};
 use clap::Parser;
 
 const ABOUT: &str = r#"Bench Names:
@@ -110,4 +111,51 @@ pub struct Args {
     /// Not for human use. Call this from your bench orchestration method to launch your bencher.
     #[clap(long, verbatim_doc_comment)]
     pub internal_run: Option<String>,
+
+    /// Not for human use. For nextest compatibility only.
+    #[clap(long, verbatim_doc_comment)]
+    format: Option<NextestFormat>,
+
+    /// Not for human use. For nextest compatibility only.
+    #[clap(long, verbatim_doc_comment)]
+    ignored: bool,
+
+    /// Not for human use. For nextest compatibility only.
+    #[clap(long, verbatim_doc_comment)]
+    exact: bool,
+
+    /// Not for human use. For nextest compatibility only.
+    #[clap(long, verbatim_doc_comment)]
+    nocapture: bool,
+}
+
+#[derive(clap::ValueEnum, Clone, Copy)]
+enum NextestFormat {
+    Terse,
+}
+
+impl Args {
+    pub fn nextest_list_all(&self) -> bool {
+        self.list && matches!(&self.format, Some(NextestFormat::Terse)) && !self.ignored
+    }
+
+    pub fn nextest_list_ignored(&self) -> bool {
+        self.list && matches!(&self.format, Some(NextestFormat::Terse)) && self.ignored
+    }
+
+    pub fn nextest_run_by_name(&self) -> bool {
+        self.nocapture && self.exact
+    }
+
+    pub fn nextest_invalid_args(&self) -> Option<Error> {
+        if self.format.is_some() && self.list {
+            Some(anyhow!("`--format` only exists for nextest compatibility and is not supported without `--list`"))
+        } else if self.nocapture && !self.exact {
+            Some(anyhow!("`--nocapture` only exists for nextest compatibility and is not supported without `--exact`"))
+        } else if self.exact && !self.nocapture {
+            Some(anyhow!("`--nocapture` only exists for nextest compatibility and is not supported without `--nocapture`"))
+        } else {
+            None
+        }
+    }
 }
