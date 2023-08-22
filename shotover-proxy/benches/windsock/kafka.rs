@@ -1,6 +1,7 @@
 use crate::aws::{Ec2InstanceWithDocker, Ec2InstanceWithShotover};
 use crate::common::{rewritten_file, Shotover};
 use crate::profilers::{self, CloudProfilerRunner, ProfilerRunner};
+use crate::shotover::shotover_process;
 use anyhow::Result;
 use async_trait::async_trait;
 use aws_throwaway::ec2_instance::Ec2Instance;
@@ -12,7 +13,7 @@ use rdkafka::util::Timeout;
 use std::path::Path;
 use std::sync::Arc;
 use std::{collections::HashMap, time::Duration};
-use test_helpers::{docker_compose::docker_compose, shotover_process::ShotoverProcessBuilder};
+use test_helpers::docker_compose::docker_compose;
 use tokio::{sync::mpsc::UnboundedSender, task::JoinHandle, time::Instant};
 use windsock::{Bench, BenchParameters, Profiling, Report};
 
@@ -124,20 +125,12 @@ impl Bench for KafkaBench {
 
         let mut profiler = ProfilerRunner::new(self.name(), profiling);
         let shotover = match self.shotover {
-            Shotover::Standard => Some(
-                ShotoverProcessBuilder::new_with_topology(&format!("{config_dir}/topology.yaml"))
-                    .with_profile(profiler.shotover_profile())
-                    .start()
-                    .await,
-            ),
+            Shotover::Standard => {
+                Some(shotover_process(&format!("{config_dir}/topology.yaml"), &profiler).await)
+            }
             Shotover::None => None,
             Shotover::ForcedMessageParsed => Some(
-                ShotoverProcessBuilder::new_with_topology(&format!(
-                    "{config_dir}/topology-encode.yaml"
-                ))
-                .with_profile(profiler.shotover_profile())
-                .start()
-                .await,
+                shotover_process(&format!("{config_dir}/topology-encode.yaml"), &profiler).await,
             ),
         };
 

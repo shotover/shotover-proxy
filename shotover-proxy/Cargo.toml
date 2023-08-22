@@ -58,3 +58,7 @@ time = { version = "0.3.25" }
 # Include WIP alpha transforms in the public API
 alpha-transforms = ["shotover/alpha-transforms"]
 cassandra-cpp-driver-tests = ["test-helpers/cassandra-cpp-driver-tests"]
+
+[[bench]]
+name = "windsock"
+harness = false

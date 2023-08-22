@@ -13,6 +13,7 @@ use std::{
 };
 use test_helpers::docker_compose::get_image_waiters;
 use tokio::sync::RwLock;
+use tokio_bin_process::bin_path;
 use tokio_bin_process::event::{Event, Level};
 use windsock::ReportArchive;
 
@@ -128,35 +129,11 @@ sudo apt-get install -y sysstat"#,
             )
             .await;
 
-        // PROFILE is set in build.rs from PROFILE listed in https://doc.rust-lang.org/cargo/reference/environment-variables.html#environment-variables-cargo-sets-for-build-scripts
-        let profile = if env!("PROFILE") == "release" {
-            "release"
-        } else {
-            "dev"
-        };
-        let output = tokio::process::Command::new(env!("CARGO"))
-            .args(["build", "--all-features", "--profile", profile])
-            .output()
-            .await
-            .unwrap();
-        if !output.status.success() {
-            let stdout = String::from_utf8(output.stdout).unwrap();
-            let stderr = String::from_utf8(output.stderr).unwrap();
-            panic!("Bench run failed:\nstdout:\n{stdout}\nstderr:\n{stderr}")
-        }
+        let local_shotover_path = bin_path!("shotover-proxy");
         instance
             .instance
             .ssh()
-            .push_file(
-                &std::env::current_exe()
-                    .unwrap()
-                    .parent()
-                    .unwrap()
-                    .parent()
-                    .unwrap()
-                    .join("shotover-proxy"),
-                Path::new("shotover-bin"),
-            )
+            .push_file(local_shotover_path, Path::new("shotover-bin"))
             .await;
         instance
             .instance

@@ -2,6 +2,7 @@ use crate::{
     aws::{Ec2InstanceWithDocker, Ec2InstanceWithShotover, RunningShotover, WindsockAws},
     common::{rewritten_file, Shotover},
     profilers::{self, CloudProfilerRunner, ProfilerRunner},
+    shotover::shotover_process,
 };
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
@@ -23,7 +24,7 @@ use std::{
 };
 use test_helpers::{
     docker_compose::docker_compose,
-    shotover_process::{Count, EventMatcher, Level, ShotoverProcessBuilder},
+    shotover_process::{Count, EventMatcher, Level},
 };
 use tokio::sync::mpsc::UnboundedSender;
 use windsock::{Bench, BenchParameters, BenchTask, Profiling, Report};
@@ -203,19 +204,11 @@ impl Bench for RedisBench {
         let _compose = docker_compose(&format!("{config_dir}/docker-compose.yaml"));
         let mut profiler = ProfilerRunner::new(self.name(), profiling);
         let shotover = match self.shotover {
-            Shotover::Standard => Some(
-                ShotoverProcessBuilder::new_with_topology(&format!("{config_dir}/topology.yaml"))
-                    .with_profile(profiler.shotover_profile())
-                    .start()
-                    .await,
-            ),
+            Shotover::Standard => {
+                Some(shotover_process(&format!("{config_dir}/topology.yaml"), &profiler).await)
+            }
             Shotover::ForcedMessageParsed => Some(
-                ShotoverProcessBuilder::new_with_topology(&format!(
-                    "{config_dir}/topology-encode.yaml"
-                ))
-                .with_profile(profiler.shotover_profile())
-                .start()
-                .await,
+                shotover_process(&format!("{config_dir}/topology-encode.yaml"), &profiler).await,
             ),
             Shotover::None => None,
         };

@@ -8,4 +8,5 @@ rustflags = [
 linker = "aarch64-linux-gnu-gcc"
 
 [alias]
-windsock = "run --release --example windsock --"
+windsock = "test --release --bench windsock --features alpha-transforms --"
+windsock-debug = "test --bench windsock --features alpha-transforms --"
