@@ -89,7 +89,7 @@ kafka-protocol = "0.6.0"
 rustls = { version = "0.21.0", features = ["dangerous_configuration"] }
 tokio-rustls = "0.24"
 rustls-pemfile = "1.0.2"
-rustls-webpki = "0.101.1"
+rustls-webpki = "0.101.4"
 string = "0.3.0"
 xxhash-rust = { version = "0.8.6", features = ["xxh3"] }
 dashmap = "5.4.0"
