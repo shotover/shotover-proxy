@@ -43,6 +43,13 @@ jobs:
         # Otherwise only the last build to finish would get saved to the cache.
         # We allow different test_flags to share a cache as they should have identical build outputs
         key: ${{ matrix.runner }} - ${{ matrix.cargo_flags }}
+        # this line means that only the main branch writes to the cache
+        # benefits:
+        # * prevents main branch caches from being evicted in favor of a PR cache
+        # * saves about 1min per workflow by skipping the actual cache write
+        # downsides:
+        # * PRs that update rust version or changes deps will be slow to iterate on due to changes not being cached.
+        save-if: ${{ github.ref == 'refs/head/main' }}
     - name: cache custom ubuntu packages
       uses: actions/cache@v3
       with:
@@ -83,9 +90,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        partition: [1, 2, 3, 4]
+        partition: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
         profile: ["release", "debug"]
-    name: Test ${{ matrix.profile}} ${{ matrix.partition }}/4
+    name: Test ${{ matrix.profile}} ${{ matrix.partition }}/15
     runs-on: ubuntu-20.04
     needs: build_check_and_upload
     steps:
@@ -107,7 +114,7 @@ jobs:
     - name: Run tests
       run: |
         ~/.cargo/bin/cargo-nextest nextest run --archive-file nextest-${{ matrix.profile }}.tar.zst \
-          --partition count:${{ matrix.partition }}/4 --extract-to . --run-ignored all
+          --partition count:${{ matrix.partition }}/15 --extract-to . --run-ignored all
     - name: Cleanup archive
       run: rm nextest-${{ matrix.profile }}.tar.zst
     - name: Ensure that tests did not create or modify any files that arent .gitignore'd
