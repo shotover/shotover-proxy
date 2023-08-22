@@ -170,6 +170,12 @@ async fn cluster_ports_rewrite() {
 async fn multi() {
     let _compose = docker_compose("tests/test-configs/redis-multi/docker-compose.yaml");
     let shotover = shotover_process("tests/test-configs/redis-multi/topology.yaml")
+        .expect_startup_events(vec![EventMatcher::new()
+            .with_level(Level::Warn)
+            .with_target("shotover::transforms::distributed::tuneable_consistency_scatter")
+            .with_message(
+                "Using this transform is considered unstable - Does not work with REDIS pipelines",
+            )])
         .start()
         .await;
     let mut connection = redis_connection::new_async("127.0.0.1", 6379).await;
