@@ -1,6 +1,6 @@
 //! This module provides abstractions for getting system usage from the unix command `sar`, on ubuntu it is contained within the package `sysstat`.
 
-use aws_throwaway::ec2_instance::Ec2Instance;
+use aws_throwaway::Ec2Instance;
 use std::{collections::HashMap, process::Stdio};
 use time::OffsetDateTime;
 use tokio::{

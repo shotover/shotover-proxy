@@ -5,7 +5,7 @@ use crate::{
 };
 use anyhow::Result;
 use async_trait::async_trait;
-use aws_throwaway::ec2_instance::Ec2Instance;
+use aws_throwaway::Ec2Instance;
 use cdrs_tokio::{
     cluster::{
         session::{

@@ -1,5 +1,5 @@
 use crate::common::Shotover;
-use aws_throwaway::ec2_instance::Ec2Instance;
+use aws_throwaway::Ec2Instance;
 use std::{collections::HashMap, path::PathBuf};
 use test_helpers::{flamegraph::Perf, shotover_process::BinProcess};
 use tokio::sync::mpsc::UnboundedReceiver;

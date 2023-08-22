@@ -1,4 +1,4 @@
-use aws_throwaway::{ec2_instance::Ec2Instance, Aws, InstanceType};
+use aws_throwaway::{Aws, CleanupResources, Ec2Instance, Ec2InstanceDefinition, InstanceType};
 use cargo_metadata::{Metadata, MetadataCommand};
 use clap::Parser;
 use rustyline::DefaultEditor;
@@ -34,14 +34,16 @@ async fn main() {
     let cargo_meta = MetadataCommand::new().exec().unwrap();
     let args = Args::parse();
     if args.cleanup {
-        Aws::cleanup_resources_static().await;
+        Aws::cleanup_resources_static(CleanupResources::AllResources).await;
         println!("All AWS throwaway resources have been deleted");
         return;
     }
 
-    let aws = Aws::new().await;
+    let aws = Aws::new(CleanupResources::AllResources).await;
     let instance_type = InstanceType::from(args.instance_type.as_str());
-    let instance = aws.create_ec2_instance(instance_type, 40).await;
+    let instance = aws
+        .create_ec2_instance(Ec2InstanceDefinition::new(instance_type).volume_size_gigabytes(40))
+        .await;
 
     println!(
         "If something goes wrong with setup you can ssh into the machine by:\n{}",
