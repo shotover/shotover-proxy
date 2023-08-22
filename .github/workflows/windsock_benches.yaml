@@ -22,6 +22,14 @@ jobs:
     steps:
     - uses: actions/checkout@v3
     - uses: Swatinem/rust-cache@v2
+      with:
+        # this line means that only the main branch writes to the cache
+        # benefits:
+        # * prevents main branch caches from being evicted in favor of a PR cache
+        # * saves about 1min per workflow by skipping the actual cache write
+        # downsides:
+        # * PRs that update rust version or changes deps will be slow to iterate on due to changes not being cached.
+        save-if: ${{ github.ref == 'refs/head/main' }}
     - name: Ensure that custom benches run
       run: |
         cargo windsock --bench-length-seconds 5 --operations-per-second 100

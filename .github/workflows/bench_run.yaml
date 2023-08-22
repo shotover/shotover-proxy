@@ -24,7 +24,7 @@ jobs:
         # PRs do not share caches, instead each PR initially pulls from the cache of the main branch for the first run.
         # This workflow does not run on main, so to make use of a cache before this workflow has completed once on a PR,
         # we need to manually recreate the key used by ubuntu-20.04 release builds.
-        shared-key: "ubuntu-20.04 - --release-build_and_test"
+        shared-key: "ubuntu-20.04 - --release-build_check_and_upload"
         save-if: false
     - name: cache custom ubuntu packages
       uses: actions/cache@v3
