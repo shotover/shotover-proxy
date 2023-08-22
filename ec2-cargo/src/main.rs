@@ -105,8 +105,15 @@ fi
     shell.commands.insert(
         "test",
         Command::new_async(
-            "Uploads changes and runs cargo test $args".to_owned(),
+            "Uploads changes and runs `cargo nextest run $args`".to_owned(),
             async_fn!(State, test),
+        ),
+    );
+    shell.commands.insert(
+        "windsock",
+        Command::new_async(
+            "Uploads changes and runs `cargo windsock $args`. Windsock results are downloaded to target/windsock_data".to_owned(),
+            async_fn!(State, windsock),
         ),
     );
     shell.commands.insert(
@@ -124,7 +131,7 @@ fi
 }
 
 async fn test(state: &mut State, mut args: Vec<String>) -> Result<(), Box<dyn Error>> {
-    rsync_shotover(state).await;
+    rsync_push_shotover(state).await;
     args.remove(0);
     let args = args.join(" ");
     let mut receiver = state
@@ -146,10 +153,68 @@ cargo nextest run {} 2>&1
     Ok(())
 }
 
-async fn rsync_shotover(state: &State) {
+async fn windsock(state: &mut State, mut args: Vec<String>) -> Result<(), Box<dyn Error>> {
+    rsync_push_shotover(state).await;
+    args.remove(0);
+    let args = args.join(" ");
+    let mut receiver = state
+        .instance
+        .ssh()
+        .shell_stdout_lines(&format!(
+            r#"
+source .profile
+cd shotover
+# ensure windsock_data exists so that fetching results still succeeds even if windsock never created the directory
+mkdir -p target/windsock_data
+cargo windsock {} 2>&1
+"#,
+            args
+        ))
+        .await;
+    while let Some(line) = receiver.recv().await {
+        println!("{}", line)
+    }
+
+    rsync_fetch_windsock_results(state).await;
+
+    Ok(())
+}
+
+async fn rsync_push_shotover(state: &State) {
+    let instance = &state.instance;
+    let project_root_dir = &state.cargo_meta.workspace_root;
+    let address = instance.public_ip();
+
+    rsync(
+        state,
+        vec![
+            "--exclude".to_owned(),
+            "target".to_owned(),
+            format!("{}/", project_root_dir), // trailing slash means copy the contents of the directory instead of the directory itself
+            format!("ubuntu@{address}:/home/ubuntu/shotover"),
+        ],
+    )
+    .await
+}
+
+async fn rsync_fetch_windsock_results(state: &State) {
+    let instance = &state.instance;
+    let windsock_dir = &state.cargo_meta.target_directory.join("windsock_data");
+    let address = instance.public_ip();
+
+    rsync(
+        state,
+        vec![
+            format!("ubuntu@{address}:/home/ubuntu/shotover/target/windsock_data/"), // trailing slash means copy the contents of the directory instead of the directory itself
+            windsock_dir.to_string(),
+        ],
+    )
+    .await
+}
+
+async fn rsync(state: &State, append_args: Vec<String>) {
     let instance = &state.instance;
     let target_dir = &state.cargo_meta.target_directory;
-    let project_root_dir = &state.cargo_meta.workspace_root;
 
     let key_path = target_dir.join("ec2-cargo-privatekey");
     tokio::fs::remove_file(&key_path).await.ok();
@@ -172,21 +237,19 @@ async fn rsync_shotover(state: &State) {
         .await
         .unwrap();
 
-    let address = instance.public_ip();
+    let mut args = vec![
+        "--delete".to_owned(),
+        "-e".to_owned(),
+        format!(
+            "ssh -i {} -o 'UserKnownHostsFile {}'",
+            key_path, known_hosts_path
+        ),
+        "-ra".to_owned(),
+    ];
+    args.extend(append_args);
+
     let output = tokio::process::Command::new("rsync")
-        .args(&[
-            "--delete".to_owned(),
-            "--exclude".to_owned(),
-            "target".to_owned(),
-            "-e".to_owned(),
-            format!(
-                "ssh -i {} -o 'UserKnownHostsFile {}'",
-                key_path, known_hosts_path
-            ),
-            "-ra".to_owned(),
-            format!("{}/", project_root_dir), // trailing slash means copy the contents of the directory instead of the directory itself
-            format!("ubuntu@{address}:/home/ubuntu/shotover"),
-        ])
+        .args(args)
         .output()
         .await
         .unwrap();
