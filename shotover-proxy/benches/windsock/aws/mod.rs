@@ -50,7 +50,7 @@ impl WindsockAws {
         let instance = Arc::new(Ec2InstanceWithBencher {
             instance: self
                 .aws
-                .create_ec2_instance(InstanceType::M6aLarge, 8)
+                .create_ec2_instance(get_compatible_instance_type(), 8)
                 .await,
         });
         instance
@@ -84,7 +84,7 @@ sudo apt-get install -y sysstat"#,
         let instance = self
             .aws
             // databases will need more storage than the shotover or bencher instances
-            .create_ec2_instance(InstanceType::M6aLarge, 40)
+            .create_ec2_instance(get_compatible_instance_type(), 40)
             .await;
         instance
         .ssh()
@@ -116,7 +116,7 @@ curl -sSL https://get.docker.com/ | sudo sh"#,
         let instance = Arc::new(Ec2InstanceWithShotover {
             instance: self
                 .aws
-                .create_ec2_instance(InstanceType::M6aLarge, 8)
+                .create_ec2_instance(get_compatible_instance_type(), 8)
                 .await,
         });
         instance
@@ -190,7 +190,7 @@ sudo docker system prune -af"#,
         let mut receiver = self
             .instance
             .ssh()
-            .shell_stdout_lines(&format!("sudo docker logs -f {container_id}"))
+            .shell_stdout_lines(&format!("sudo docker logs -f {container_id} 2>&1"))
             .await;
         let image_waiter = get_image_waiters()
             .iter()
@@ -220,6 +220,16 @@ sudo docker system prune -af"#,
                 )
             }
         }
+    }
+}
+
+fn get_compatible_instance_type() -> InstanceType {
+    if cfg!(target_arch = "x86_64") {
+        InstanceType::M6aLarge
+    } else if cfg!(target_arch = "aarch64") {
+        InstanceType::M6gLarge
+    } else {
+        panic!("target_arch not supported by AWS");
     }
 }
 
