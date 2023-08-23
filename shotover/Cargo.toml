@@ -39,8 +39,6 @@ hex-literal.workspace = true
 async-trait.workspace = true
 typetag.workspace = true
 tokio-tungstenite = "0.20.0"
-# We need to enable the openssl "vendor" feature for rusoto
-openssl.workspace = true
 
 # Error handling
 thiserror = "1.0"
@@ -75,8 +73,8 @@ crc16 = "0.4.0"
 ordered-float = { version = "3.0.0", features = ["serde"] }
 
 #Crypto
-rusoto_kms = "0.48.0"
-rusoto_signature = "0.48.0"
+aws-config = "0.56.0"
+aws-sdk-kms = "0.30"
 strum_macros = "0.25"
 chacha20poly1305 = { version = "0.10.0", features = ["std"] }
 generic-array = { version = "0.14", features = ["serde"] }
