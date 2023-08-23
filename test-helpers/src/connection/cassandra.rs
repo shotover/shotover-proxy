@@ -306,6 +306,9 @@ impl CassandraConnection {
                             .collect::<Vec<String>>(),
                     )
                     .user("cassandra", "cassandra")
+                    // We do not need to refresh metadata as there is nothing else fiddling with the topology or schema.
+                    // By default the metadata refreshes every 60s and that can cause performance issues so we disable it by using an absurdly high refresh interval
+                    .cluster_metadata_refresh_interval(Duration::from_secs(10000000000))
                     .compression(compression.map(|x| match x {
                         Compression::Snappy => scylla::transport::Compression::Snappy,
                         Compression::Lz4 => scylla::transport::Compression::Lz4,
