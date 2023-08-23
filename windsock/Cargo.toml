@@ -20,4 +20,4 @@ time = { version = "0.3.25", features = ["serde"] }
 tokio.workspace = true
 
 [dev-dependencies]
-scylla = { version = "0.9.0", features = ["ssl"] }
+scylla = { version = "0.9.0", features = ["ssl"], git = "https://github.com/scylladb/scylla-rust-driver/" }
