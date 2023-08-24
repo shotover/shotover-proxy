@@ -14,6 +14,7 @@ pub struct ShotoverProcessBuilder {
     cores: Option<String>,
     profile: Option<String>,
     observability_port: Option<u16>,
+    event_matchers: Vec<EventMatcher>,
 }
 
 impl ShotoverProcessBuilder {
@@ -25,6 +26,7 @@ impl ShotoverProcessBuilder {
             cores: None,
             profile: None,
             observability_port: None,
+            event_matchers: vec![],
         }
     }
 
@@ -55,6 +57,11 @@ impl ShotoverProcessBuilder {
         self
     }
 
+    pub fn expect_startup_events(mut self, matchers: Vec<EventMatcher>) -> Self {
+        self.event_matchers = matchers;
+        self
+    }
+
     pub async fn start(&self) -> BinProcess {
         let mut shotover = self.start_inner().await;
 
@@ -64,6 +71,7 @@ impl ShotoverProcessBuilder {
                 &EventMatcher::new()
                     .with_level(Level::Info)
                     .with_message("Shotover is now accepting inbound connections"),
+                &self.event_matchers,
             ),
         )
         .await
