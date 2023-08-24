@@ -49,6 +49,7 @@ async fn shotover_proxy(topology_path: &str) -> BinProcess {
             &EventMatcher::new()
                 .with_level(Level::Info)
                 .with_message("Shotover is now accepting inbound connections"),
+            &[],
         ),
     )
     .await

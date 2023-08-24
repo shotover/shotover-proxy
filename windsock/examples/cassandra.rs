@@ -87,6 +87,9 @@ impl Bench for CassandraBench {
         let session = Arc::new(
             SessionBuilder::new()
                 .known_nodes(["172.16.1.2:9042"])
+                // We do not need to refresh metadata as there is nothing else fiddling with the topology or schema.
+                // By default the metadata refreshes every 60s and that can cause performance issues so we disable it by using an absurdly high refresh interval
+                .cluster_metadata_refresh_interval(Duration::from_secs(10000000000))
                 .user("cassandra", "cassandra")
                 .compression(self.compression)
                 .build()

@@ -18,7 +18,7 @@ debug = true
 codegen-units = 1
 
 [workspace.dependencies]
-scylla = { version = "0.9.0", features = ["ssl"] }
+scylla = { version = "0.9.0", features = ["ssl"], git = "https://github.com/scylladb/scylla-rust-driver/" }
 bytes = "1.0.0"
 tokio = { version = "1.25.0", features = ["full", "macros"] }
 tokio-util = { version = "0.7.7" }
@@ -53,3 +53,4 @@ clap = { version = "4.0.4", features = ["cargo", "derive"] }
 async-trait = "0.1.30"
 typetag = "0.2.5"
 aws-throwaway = "0.1.1"
+tokio-bin-process = "0.3.0"

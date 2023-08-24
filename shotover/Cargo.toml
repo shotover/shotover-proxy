@@ -33,14 +33,14 @@ bytes.workspace = true
 futures.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
-tokio-openssl.workspace = true
-openssl.workspace = true
 csv.workspace = true
 hex.workspace = true
 hex-literal.workspace = true
 async-trait.workspace = true
 typetag.workspace = true
 tokio-tungstenite = "0.20.0"
+# We need to enable the openssl "vendor" feature for rusoto
+openssl.workspace = true
 
 # Error handling
 thiserror = "1.0"
@@ -89,7 +89,6 @@ kafka-protocol = "0.6.0"
 rustls = { version = "0.21.0", features = ["dangerous_configuration"] }
 tokio-rustls = "0.24"
 rustls-pemfile = "1.0.2"
-rustls-webpki = "0.101.1"
 string = "0.3.0"
 xxhash-rust = { version = "0.8.6", features = ["xxh3"] }
 dashmap = "5.4.0"
