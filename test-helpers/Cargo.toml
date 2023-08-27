@@ -33,5 +33,4 @@ serde_yaml.workspace = true
 anyhow.workspace = true
 rcgen.workspace = true
 docker-compose-runner = "0.2.0"
-#rdkafka = { version = "0.32", features = ["cmake-build"] }
-rdkafka = { branch = "updating_librdkafka_to_v2.1.1", git = "https://github.com/shotover/rust-rdkafka", features = ["cmake-build"], optional = true }
+rdkafka = { version = "0.34", features = ["cmake-build"], optional = true }
