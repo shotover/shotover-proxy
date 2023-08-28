@@ -1,26 +1,36 @@
 use anyhow::Result;
 use bytes::Bytes;
-use derivative::Derivative;
-use http::request::Parts as RequestParts;
-use http::response::Parts as ResponseParts;
-use std::sync::Arc;
+use http::{HeaderMap, Method, StatusCode, Uri, Version};
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
+pub struct ResponseParts {
+    pub status: StatusCode,
+    pub version: Version,
+    pub headers: HeaderMap,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct RequestParts {
+    pub method: Method,
+    pub uri: Uri,
+    pub version: Version,
+    pub headers: HeaderMap,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum HttpHead {
     Response(ResponseParts),
     Request(RequestParts),
 }
 
-#[derive(Debug, Clone, Derivative)]
-#[derivative(PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct OpenSearchFrame {
-    #[derivative(PartialEq = "ignore")]
-    pub headers: Arc<HttpHead>,
+    pub headers: HttpHead,
     pub body: Bytes,
 }
 
 impl OpenSearchFrame {
-    pub fn new(headers: Arc<HttpHead>, body: Bytes) -> Self {
+    pub fn new(headers: HttpHead, body: Bytes) -> Self {
         Self { headers, body }
     }
 

@@ -2,6 +2,7 @@ use crate::shotover_process;
 use opensearch::{
     auth::Credentials,
     cert::CertificateValidation,
+    http::response::Response,
     http::Url,
     http::{
         transport::{SingleNodeConnectionPool, TransportBuilder},
@@ -9,58 +10,87 @@ use opensearch::{
     },
     indices::{IndicesCreateParts, IndicesDeleteParts, IndicesExistsParts},
     params::Refresh,
-    BulkOperation, BulkParts, DeleteParts, IndexParts, OpenSearch, SearchParts,
+    BulkOperation, BulkParts, DeleteParts, Error, IndexParts, OpenSearch, SearchParts,
 };
 use serde_json::{json, Value};
 use test_helpers::docker_compose::docker_compose;
 
+async fn assert_ok_and_get_json(response: Result<Response, Error>) -> Value {
+    let response = response.unwrap();
+
+    let status = response.status_code();
+    let json = response.json::<Value>().await.unwrap();
+    if status != StatusCode::OK {
+        panic!("Opensearch query failed: {json:#?}");
+    }
+    json
+}
+
 pub async fn test_bulk(client: &OpenSearch) {
-    client
-        .indices()
-        .create(IndicesCreateParts::Index("posts"))
-        .send()
-        .await
-        .unwrap();
+    assert_ok_and_get_json(
+        client
+            .indices()
+            .create(IndicesCreateParts::Index("posts"))
+            .send()
+            .await,
+    )
+    .await;
 
     let mut body: Vec<BulkOperation<_>> = vec![];
-    for i in 1..=10 {
-        let op = BulkOperation::index(json!({"title":"OpenSearch"}))
+    for i in 0..10 {
+        let op = BulkOperation::index(json!({"title": "OpenSearch", "i": i}))
             .id(i.to_string())
             .into();
         body.push(op);
     }
 
-    client
-        .bulk(BulkParts::Index("posts"))
-        .body(body)
-        .refresh(Refresh::WaitFor)
-        .send()
-        .await
-        .unwrap();
+    assert_ok_and_get_json(
+        client
+            .bulk(BulkParts::Index("posts"))
+            .body(body)
+            .refresh(Refresh::WaitFor)
+            .send()
+            .await,
+    )
+    .await;
 
-    let response = client
-        .search(SearchParts::None)
-        .body(json!({
-            "query": {
-                "match_all": {}
-            }
-        }))
-        .allow_no_indices(true)
-        .send()
-        .await
-        .unwrap();
+    let results = assert_ok_and_get_json(
+        client
+            .search(SearchParts::None)
+            .body(json!({
+                "query": {
+                    "match_all": {}
+                },
+                "sort": [
+                    {
+                        "i": {
+                            "order": "asc"
+                        }
+                    }
+                ]
+            }))
+            .allow_no_indices(true)
+            .send()
+            .await,
+    )
+    .await;
 
-    assert_eq!(response.status_code(), StatusCode::OK);
-    assert_eq!(response.method(), opensearch::http::Method::Post);
-
-    let response_body = response.json::<Value>().await.unwrap();
-    assert!(response_body["took"].as_i64().is_some());
+    assert!(results["took"].is_i64());
+    let hits = results["hits"]["hits"].as_array().unwrap();
     assert_eq!(
-        response_body["hits"].as_object().unwrap()["hits"]
-            .as_array()
-            .unwrap()
-            .len(),
-        10
+        hits.iter().map(|x| &x["_source"]).collect::<Vec<_>>(),
+        vec!(
+            &json!({ "title": "OpenSearch", "i": 0 }),
+            &json!({ "title": "OpenSearch", "i": 1 }),
+            &json!({ "title": "OpenSearch", "i": 2 }),
+            &json!({ "title": "OpenSearch", "i": 3 }),
+            &json!({ "title": "OpenSearch", "i": 4 }),
+            &json!({ "title": "OpenSearch", "i": 5 }),
+            &json!({ "title": "OpenSearch", "i": 6 }),
+            &json!({ "title": "OpenSearch", "i": 7 }),
+            &json!({ "title": "OpenSearch", "i": 8 }),
+            &json!({ "title": "OpenSearch", "i": 9 }),
+        )
     );
 }
 
@@ -110,20 +140,16 @@ async fn test_index_and_search_document(client: &OpenSearch) -> String {
         .unwrap();
 
     let results = response.json::<Value>().await.unwrap();
-    assert!(results["took"].as_i64().is_some());
+    assert!(results["took"].is_i64());
+    let hits = results["hits"]["hits"].as_array().unwrap();
     assert_eq!(
-        results["hits"].as_object().unwrap()["hits"]
-            .as_array()
-            .unwrap()
-            .len(),
-        1
+        hits.iter().map(|x| &x["_source"]).collect::<Vec<_>>(),
+        vec!(&json!({
+            "name": "John",
+            "age": 30,
+        }))
     );
-    results["hits"].as_object().unwrap()["hits"]
-        .as_array()
-        .unwrap()[0]["_id"]
-        .as_str()
-        .unwrap()
-        .to_string()
+    hits[0]["_id"].as_str().unwrap().to_owned()
 }
 
 async fn test_delete_and_search_document(client: &OpenSearch, id: String) {

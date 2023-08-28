@@ -1,10 +1,12 @@
 use super::{CodecBuilder, CodecReadError, CodecWriteError, Direction};
-use crate::frame::{opensearch::HttpHead, Frame, MessageType, OpenSearchFrame};
+use crate::frame::{
+    opensearch::{HttpHead, RequestParts, ResponseParts},
+    Frame, MessageType, OpenSearchFrame,
+};
 use crate::message::{Encodable, Message, Messages};
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use bytes::{Buf, BytesMut};
 use http::{header, HeaderName, HeaderValue, Request, Response};
-use std::sync::Arc;
 use tokio_util::codec::{Decoder, Encoder};
 
 #[derive(Clone)]
@@ -37,6 +39,12 @@ pub struct OpenSearchDecoder {
     state: State,
 }
 
+struct DecodeResult {
+    body_start: usize,
+    http_headers: HttpHead,
+    content_length: usize,
+}
+
 impl OpenSearchDecoder {
     pub fn new(direction: Direction) -> Self {
         Self {
@@ -45,7 +53,7 @@ impl OpenSearchDecoder {
         }
     }
 
-    fn decode_request(&self, src: &mut BytesMut) -> Result<Option<(usize, HttpHead, usize)>> {
+    fn decode_request(&self, src: &mut BytesMut) -> Result<Option<DecodeResult>> {
         let mut headers = [httparse::EMPTY_HEADER; 16];
         let mut request = httparse::Request::new(&mut headers);
 
@@ -83,10 +91,19 @@ impl OpenSearchDecoder {
             None => 0, // TODO content length error
         };
         let (parts, _) = r.into_parts();
-        Ok(Some((body_start, HttpHead::Request(parts), content_length)))
+        Ok(Some(DecodeResult {
+            body_start,
+            http_headers: HttpHead::Request(RequestParts {
+                method: parts.method,
+                uri: parts.uri,
+                version: parts.version,
+                headers: parts.headers,
+            }),
+            content_length,
+        }))
     }
 
-    fn decode_response(&self, src: &mut BytesMut) -> Result<Option<(usize, HttpHead, usize)>> {
+    fn decode_response(&self, src: &mut BytesMut) -> Result<Option<DecodeResult>> {
         let mut headers = [httparse::EMPTY_HEADER; 16];
         let mut response = httparse::Response::new(&mut headers);
 
@@ -96,7 +113,12 @@ impl OpenSearchDecoder {
         };
         match response.version.unwrap() {
             1 => (),
-            _version => panic!("error!"), // TODO version error
+            version => {
+                return Err(anyhow!(
+                    "HTTP version: {} unsupported. Requires HTTP/1",
+                    version
+                ))
+            }
         }
 
         let mut builder = Response::builder().status(response.code.unwrap());
@@ -122,11 +144,15 @@ impl OpenSearchDecoder {
             None => 0, // TODO content length error
         };
         let (parts, _) = r.into_parts();
-        Ok(Some((
+        Ok(Some(DecodeResult {
             body_start,
-            HttpHead::Response(parts),
+            http_headers: HttpHead::Response(ResponseParts {
+                version: parts.version,
+                status: parts.status,
+                headers: parts.headers,
+            }),
             content_length,
-        )))
+        }))
     }
 }
 
@@ -154,30 +180,34 @@ impl Decoder for OpenSearchDecoder {
                         self.decode_response(src).unwrap() // TODO
                     };
 
-                    if let Some((body_start, parts, content_length)) = decode_result {
-                        self.state = State::ReadingBody(parts, content_length);
+                    if let Some(DecodeResult {
+                        body_start,
+                        http_headers,
+                        content_length,
+                    }) = decode_result
+                    {
+                        self.state = State::ReadingBody(http_headers, content_length);
                         src.advance(body_start);
                     } else {
                         return Ok(None);
                     };
                 }
-                State::ReadingBody(parts, content_length) => {
+                State::ReadingBody(http_headers, content_length) => {
                     if src.is_empty() {
                         // sometimes messages will have a content-length but no
                         // body ?
                         return Ok(Some(vec![Message::from_frame(Frame::OpenSearch(
-                            OpenSearchFrame::new(Arc::new(parts), bytes::Bytes::new()),
+                            OpenSearchFrame::new(http_headers, bytes::Bytes::new()),
                         ))]));
                     }
 
                     if src.len() < content_length {
-                        self.state = State::ReadingBody(parts, content_length);
                         return Ok(None);
                     }
 
                     let body = src.split_to(content_length).freeze();
                     return Ok(Some(vec![Message::from_frame(Frame::OpenSearch(
-                        OpenSearchFrame::new(Arc::new(parts), body),
+                        OpenSearchFrame::new(http_headers, body),
                     ))]));
                 }
             }
@@ -214,7 +244,7 @@ impl Encoder<Messages> for OpenSearchEncoder {
                 }
                 Encodable::Frame(frame) => {
                     let opensearch_frame = frame.into_opensearch().unwrap();
-                    match opensearch_frame.headers.as_ref() {
+                    match opensearch_frame.headers {
                         HttpHead::Request(request_parts) => {
                             dst.extend_from_slice(
                                 format!("{} ", request_parts.method.as_str()).as_bytes(),
@@ -247,15 +277,15 @@ impl Encoder<Messages> for OpenSearchEncoder {
                     dst.extend_from_slice(b"\r\n");
                     dst.extend_from_slice(&opensearch_frame.body);
 
-                    tracing::debug!(
-                        "{}: outgoing OpenSearch message:\n{}",
-                        self.direction,
-                        pretty_hex::pretty_hex(&&dst[start..])
-                    );
-
                     Ok(())
                 }
             };
+
+            tracing::debug!(
+                "{}: outgoing OpenSearch message:\n{}",
+                self.direction,
+                pretty_hex::pretty_hex(&&dst[start..])
+            );
 
             result.map_err(CodecWriteError::Encoder)
         })
