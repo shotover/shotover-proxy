@@ -1,5 +1,6 @@
 [workspace]
 members = ["windsock", "shotover", "shotover-proxy", "test-helpers", "custom-transforms-example", "ec2-cargo"]
+resolver = "2"
 
 # https://deterministic.space/high-performance-rust.html
 [profile.release]
