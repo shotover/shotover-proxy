@@ -49,7 +49,7 @@ jobs:
         # * saves about 1min per workflow by skipping the actual cache write
         # downsides:
         # * PRs that update rust version or changes deps will be slow to iterate on due to changes not being cached.
-        save-if: ${{ github.ref == 'refs/head/main' }}
+        save-if: ${{ github.ref == 'refs/heads/main' }}
     - name: cache custom ubuntu packages
       uses: actions/cache@v3
       with:
