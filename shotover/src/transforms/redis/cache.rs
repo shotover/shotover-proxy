@@ -189,7 +189,7 @@ impl SimpleRedisCache {
     ) -> Vec<(Message, usize)> {
         redis_responses
             .iter_mut()
-            .zip(redis_indices.into_iter())
+            .zip(redis_indices)
             .filter_map(|(redis_response, redis_index)| {
                 match redis_response.frame() {
                     Some(Frame::Redis(redis_frame)) => {

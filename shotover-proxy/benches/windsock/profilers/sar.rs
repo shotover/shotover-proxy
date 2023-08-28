@@ -114,7 +114,12 @@ pub fn parse_sar(rx: &mut UnboundedReceiver<String>) -> ParsedSar {
     let mut named_values = HashMap::new();
 
     // read date command
-    let Ok(started_at) = rx.try_recv() else { return ParsedSar { started_at: OffsetDateTime::UNIX_EPOCH, named_values: HashMap::new()}};
+    let Ok(started_at) = rx.try_recv() else {
+        return ParsedSar {
+            started_at: OffsetDateTime::UNIX_EPOCH,
+            named_values: HashMap::new(),
+        };
+    };
     let started_at =
         OffsetDateTime::from_unix_timestamp_nanos(started_at.parse().unwrap()).unwrap();
 
@@ -128,9 +133,24 @@ pub fn parse_sar(rx: &mut UnboundedReceiver<String>) -> ParsedSar {
 
     // keep reading until we exhaust the receiver
     loop {
-        let Ok(_blank_line) = rx.try_recv() else { return ParsedSar { started_at, named_values } };
-        let Ok(header) = rx.try_recv() else { return ParsedSar { started_at, named_values } };
-        let Ok(data) = rx.try_recv() else { return ParsedSar { started_at, named_values } };
+        let Ok(_blank_line) = rx.try_recv() else {
+            return ParsedSar {
+                started_at,
+                named_values,
+            };
+        };
+        let Ok(header) = rx.try_recv() else {
+            return ParsedSar {
+                started_at,
+                named_values,
+            };
+        };
+        let Ok(data) = rx.try_recv() else {
+            return ParsedSar {
+                started_at,
+                named_values,
+            };
+        };
         for (head, data) in header
             .split_whitespace()
             .zip(data.split_whitespace())
