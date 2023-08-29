@@ -3,10 +3,9 @@ use opensearch::{
     auth::Credentials,
     cert::CertificateValidation,
     http::response::Response,
-    http::Url,
     http::{
         transport::{SingleNodeConnectionPool, TransportBuilder},
-        StatusCode,
+        Method, StatusCode, Url,
     },
     indices::{IndicesCreateParts, IndicesDeleteParts, IndicesExistsParts},
     params::Refresh,
@@ -17,13 +16,20 @@ use test_helpers::docker_compose::docker_compose;
 
 async fn assert_ok_and_get_json(response: Result<Response, Error>) -> Value {
     let response = response.unwrap();
-
     let status = response.status_code();
-    let json = response.json::<Value>().await.unwrap();
-    if status != StatusCode::OK {
-        panic!("Opensearch query failed: {json:#?}");
+
+    if response.method() == Method::Head {
+        if status != StatusCode::OK {
+            panic!("Opensearch HEAD query returned status code {status}");
+        }
+        Value::Null
+    } else {
+        let json = response.json().await.unwrap();
+        if status != StatusCode::OK {
+            panic!("Opensearch query failed: {json:#?}");
+        }
+        json
     }
-    json
 }
 
 pub async fn test_bulk(client: &OpenSearch) {
@@ -177,14 +183,8 @@ async fn test_delete_and_search_document(client: &OpenSearch, id: String) {
         .unwrap();
 
     let results = response.json::<Value>().await.unwrap();
-    assert!(results["took"].as_i64().is_some());
-    assert_eq!(
-        results["hits"].as_object().unwrap()["hits"]
-            .as_array()
-            .unwrap()
-            .len(),
-        0
-    );
+    assert!(results["took"].is_i64());
+    assert_eq!(results["hits"]["hits"].as_array().unwrap().len(), 0);
 }
 
 async fn test_delete_index(client: &OpenSearch) {

@@ -57,13 +57,18 @@ impl OpenSearchDecoder {
         let mut headers = [httparse::EMPTY_HEADER; 16];
         let mut request = httparse::Request::new(&mut headers);
 
-        let body_start = match request.parse(src).unwrap() {
+        let body_start = match request.parse(src)? {
             httparse::Status::Complete(body_start) => body_start,
             httparse::Status::Partial => return Ok(None),
         };
         match request.version.unwrap() {
             1 => (),
-            _version => panic!("error!"), // TODO version error
+            version => {
+                return Err(anyhow!(
+                    "HTTP version: {} unsupported. Requires HTTP/1",
+                    version
+                ))
+            }
         }
 
         let mut builder = Request::builder()
@@ -86,9 +91,9 @@ impl OpenSearchDecoder {
         let content_length = match r.headers().get(header::CONTENT_LENGTH) {
             Some(content_length) => match atoi::atoi(content_length.as_bytes()) {
                 Some(content_length) => content_length,
-                None => panic!(), // TODO content length error
+                None => return Err(anyhow!("content-length header invalid")),
             },
-            None => 0, // TODO content length error
+            None => 0,
         };
         let (parts, _) = r.into_parts();
         Ok(Some(DecodeResult {
@@ -139,9 +144,9 @@ impl OpenSearchDecoder {
         let content_length = match r.headers().get(header::CONTENT_LENGTH) {
             Some(cl) => match atoi::atoi(cl.as_bytes()) {
                 Some(cl) => cl,
-                None => panic!(), // TODO content length error
+                None => return Err(anyhow!("content-length header invalid")),
             },
-            None => 0, // TODO content length error
+            None => 0,
         };
         let (parts, _) = r.into_parts();
         Ok(Some(DecodeResult {
@@ -175,9 +180,9 @@ impl Decoder for OpenSearchDecoder {
             match std::mem::replace(&mut self.state, State::ParsingResponse) {
                 State::ParsingResponse => {
                     let decode_result = if self.direction == Direction::Source {
-                        self.decode_request(src).unwrap() // TODO
+                        self.decode_request(src).map_err(CodecReadError::Parser)?
                     } else {
-                        self.decode_response(src).unwrap() // TODO
+                        self.decode_response(src).map_err(CodecReadError::Parser)?
                     };
 
                     if let Some(DecodeResult {

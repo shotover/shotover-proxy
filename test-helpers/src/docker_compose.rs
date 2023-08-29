@@ -67,11 +67,6 @@ pub fn get_image_waiters() -> &'static [Image] {
             timeout: 120,
         },
         Image {
-            name: "shotover-int-tests/cassandra:3.11.13",
-            log_regex_to_wait_for: r"Startup complete",
-            timeout: 120,
-        },
-        Image {
             name: "bitnami/kafka:3.4.0-debian-11-r22",
             log_regex_to_wait_for: r"Kafka Server started",
             timeout: 120,
