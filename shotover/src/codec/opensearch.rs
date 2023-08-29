@@ -6,7 +6,8 @@ use crate::frame::{
 use crate::message::{Encodable, Message, Messages};
 use anyhow::{anyhow, Result};
 use bytes::{Buf, BytesMut};
-use http::{header, HeaderName, HeaderValue, Request, Response};
+use http::{header, HeaderName, HeaderValue, Method, Request, Response};
+use std::sync::{Arc, Mutex};
 use tokio_util::codec::{Decoder, Encoder};
 
 #[derive(Clone)]
@@ -23,9 +24,11 @@ impl CodecBuilder for OpenSearchCodecBuilder {
     }
 
     fn build(&self) -> (OpenSearchDecoder, OpenSearchEncoder) {
+        let last_outgoing_method = Arc::new(Mutex::new(None));
+
         (
-            OpenSearchDecoder::new(self.direction),
-            OpenSearchEncoder::new(self.direction),
+            OpenSearchDecoder::new(self.direction, last_outgoing_method.clone()),
+            OpenSearchEncoder::new(self.direction, last_outgoing_method),
         )
     }
 
@@ -37,6 +40,7 @@ impl CodecBuilder for OpenSearchCodecBuilder {
 pub struct OpenSearchDecoder {
     direction: Direction,
     state: State,
+    last_outgoing_method: Arc<Mutex<Option<Method>>>,
 }
 
 struct DecodeResult {
@@ -46,10 +50,11 @@ struct DecodeResult {
 }
 
 impl OpenSearchDecoder {
-    pub fn new(direction: Direction) -> Self {
+    pub fn new(direction: Direction, last_outgoing_method: Arc<Mutex<Option<Method>>>) -> Self {
         Self {
             direction,
             state: State::ParsingResponse,
+            last_outgoing_method,
         }
     }
 
@@ -198,9 +203,7 @@ impl Decoder for OpenSearchDecoder {
                     };
                 }
                 State::ReadingBody(http_headers, content_length) => {
-                    if src.is_empty() {
-                        // sometimes messages will have a content-length but no
-                        // body ?
+                    if let Some(Method::HEAD) = *self.last_outgoing_method.lock().unwrap() {
                         return Ok(Some(vec![Message::from_frame(Frame::OpenSearch(
                             OpenSearchFrame::new(http_headers, bytes::Bytes::new()),
                         ))]));
@@ -222,11 +225,15 @@ impl Decoder for OpenSearchDecoder {
 
 pub struct OpenSearchEncoder {
     direction: Direction,
+    last_outgoing_method: Arc<Mutex<Option<Method>>>,
 }
 
 impl OpenSearchEncoder {
-    pub fn new(direction: Direction) -> Self {
-        Self { direction }
+    pub fn new(direction: Direction, last_outgoing_method: Arc<Mutex<Option<Method>>>) -> Self {
+        Self {
+            direction,
+            last_outgoing_method,
+        }
     }
 }
 
@@ -249,8 +256,14 @@ impl Encoder<Messages> for OpenSearchEncoder {
                 }
                 Encodable::Frame(frame) => {
                     let opensearch_frame = frame.into_opensearch().unwrap();
+
                     match opensearch_frame.headers {
                         HttpHead::Request(request_parts) => {
+                            self.last_outgoing_method
+                                .lock()
+                                .unwrap()
+                                .replace(request_parts.method.clone());
+
                             dst.extend_from_slice(
                                 format!("{} ", request_parts.method.as_str()).as_bytes(),
                             );
@@ -266,6 +279,8 @@ impl Encoder<Messages> for OpenSearchEncoder {
                             }
                         }
                         HttpHead::Response(response_parts) => {
+                            *self.last_outgoing_method.lock().unwrap() = None;
+
                             dst.extend_from_slice(b"HTTP/1.1 ");
                             dst.extend_from_slice(format!("{}", response_parts.status).as_bytes());
                             dst.extend_from_slice(b"\r\n");

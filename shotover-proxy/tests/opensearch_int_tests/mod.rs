@@ -25,8 +25,8 @@ async fn assert_ok_and_get_json(response: Result<Response, Error>) -> Value {
         Value::Null
     } else {
         let json = response.json().await.unwrap();
-        if status != StatusCode::OK {
-            panic!("Opensearch query failed: {json:#?}");
+        if status != StatusCode::OK && status != StatusCode::CREATED {
+            panic!("Opensearch query failed: {status:#?}\n{json:#?}");
         }
         json
     }
@@ -101,53 +101,58 @@ pub async fn test_bulk(client: &OpenSearch) {
 }
 
 async fn test_create_index(client: &OpenSearch) {
-    client
-        .indices()
-        .create(IndicesCreateParts::Index("test-index"))
-        .send()
-        .await
-        .unwrap();
+    assert_ok_and_get_json(
+        client
+            .indices()
+            .create(IndicesCreateParts::Index("test-index"))
+            .send()
+            .await,
+    )
+    .await;
 
-    let exists_response = client
-        .indices()
-        .exists(IndicesExistsParts::Index(&["test-index"]))
-        .send()
-        .await
-        .unwrap();
-
-    assert_eq!(exists_response.status_code(), StatusCode::OK);
+    assert_ok_and_get_json(
+        client
+            .indices()
+            .exists(IndicesExistsParts::Index(&["test-index"]))
+            .send()
+            .await,
+    )
+    .await;
 }
 
 async fn test_index_and_search_document(client: &OpenSearch) -> String {
-    client
-        .index(IndexParts::Index("test-index"))
-        .body(json!({
-            "name": "John",
-            "age": 30
-        }))
-        .refresh(Refresh::WaitFor)
-        .send()
-        .await
-        .unwrap();
+    assert_ok_and_get_json(
+        client
+            .index(IndexParts::Index("test-index"))
+            .body(json!({
+                "name": "John",
+                "age": 30
+            }))
+            .refresh(Refresh::WaitFor)
+            .send()
+            .await,
+    )
+    .await;
 
-    let response = client
-        .search(SearchParts::Index(&["test-index"]))
-        .from(0)
-        .size(10)
-        .body(json!({
-            "query": {
-                "match": {
-                    "name": "John",
+    let response = assert_ok_and_get_json(
+        client
+            .search(SearchParts::Index(&["test-index"]))
+            .from(0)
+            .size(10)
+            .body(json!({
+                "query": {
+                    "match": {
+                        "name": "John",
+                    }
                 }
-            }
-        }))
-        .send()
-        .await
-        .unwrap();
+            }))
+            .send()
+            .await,
+    )
+    .await;
 
-    let results = response.json::<Value>().await.unwrap();
-    assert!(results["took"].is_i64());
-    let hits = results["hits"]["hits"].as_array().unwrap();
+    assert!(response["took"].is_i64());
+    let hits = response["hits"]["hits"].as_array().unwrap();
     assert_eq!(
         hits.iter().map(|x| &x["_source"]).collect::<Vec<_>>(),
         vec!(&json!({
@@ -159,41 +164,47 @@ async fn test_index_and_search_document(client: &OpenSearch) -> String {
 }
 
 async fn test_delete_and_search_document(client: &OpenSearch, id: String) {
-    client
-        .delete(DeleteParts::IndexId("test-index", &id))
-        .refresh(Refresh::WaitFor)
-        .send()
-        .await
-        .unwrap();
+    assert_ok_and_get_json(
+        client
+            .delete(DeleteParts::IndexId("test-index", &id))
+            .refresh(Refresh::WaitFor)
+            .send()
+            .await,
+    )
+    .await;
 
-    let response = client
-        .search(SearchParts::Index(&["test-index"]))
-        .from(0)
-        .size(10)
-        .body(json!({
-            "query": {
-                "match": {
-                    "name": "John",
+    let response = assert_ok_and_get_json(
+        client
+            .search(SearchParts::Index(&["test-index"]))
+            .from(0)
+            .size(10)
+            .body(json!({
+                "query": {
+                    "match": {
+                        "name": "John",
+                    }
                 }
-            }
-        }))
-        .allow_no_indices(true)
-        .send()
-        .await
-        .unwrap();
+            }))
+            .allow_no_indices(true)
+            .send()
+            .await,
+    )
+    .await;
 
-    let results = response.json::<Value>().await.unwrap();
-    assert!(results["took"].is_i64());
-    assert_eq!(results["hits"]["hits"].as_array().unwrap().len(), 0);
+    // let results = response.json::<Value>().await.unwrap();
+    assert!(response["took"].is_i64());
+    assert_eq!(response["hits"]["hits"].as_array().unwrap().len(), 0);
 }
 
 async fn test_delete_index(client: &OpenSearch) {
-    client
-        .indices()
-        .delete(IndicesDeleteParts::Index(&["test-index"]))
-        .send()
-        .await
-        .unwrap();
+    assert_ok_and_get_json(
+        client
+            .indices()
+            .delete(IndicesDeleteParts::Index(&["test-index"]))
+            .send()
+            .await,
+    )
+    .await;
 
     let exists_response = client
         .indices()
