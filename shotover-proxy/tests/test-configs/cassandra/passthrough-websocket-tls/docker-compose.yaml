@@ -12,5 +12,5 @@ services:
       - type: tmpfs
         target: /var/lib/cassandra
       - type: bind
-        source: "../cassandra-tls/certs/keystore.p12"
+        source: "../tls/certs/keystore.p12"
         target: "/etc/cassandra/certs/keystore.p12"
