@@ -4,8 +4,8 @@ sources:
     Cassandra:
       listen_addr: "127.0.0.1:9042"
       tls:
-        certificate_path: "tests/test-configs/cassandra-tls/certs/localhost.crt"
-        private_key_path: "tests/test-configs/cassandra-tls/certs/localhost.key"
+        certificate_path: "tests/test-configs/cassandra/tls/certs/localhost.crt"
+        private_key_path: "tests/test-configs/cassandra/tls/certs/localhost.key"
 chain_config:
   main_chain:
     - CassandraSinkCluster:
@@ -18,9 +18,9 @@ chain_config:
             host_id: "2dd022d6-2937-4754-89d6-02d2933a8f7a"
         connect_timeout_ms: 3000
         tls:
-          certificate_authority_path: "tests/test-configs/cassandra-tls/certs/localhost_CA.crt"
-          certificate_path: "tests/test-configs/cassandra-tls/certs/localhost.crt"
-          private_key_path: "tests/test-configs/cassandra-tls/certs/localhost.key"
+          certificate_authority_path: "tests/test-configs/cassandra/tls/certs/localhost_CA.crt"
+          certificate_path: "tests/test-configs/cassandra/tls/certs/localhost.crt"
+          private_key_path: "tests/test-configs/cassandra/tls/certs/localhost.key"
           verify_hostname: false
 source_to_chain_mapping:
   cassandra_prod: main_chain
