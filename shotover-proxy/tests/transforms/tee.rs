@@ -82,7 +82,7 @@ async fn test_fail_with_mismatch() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_subchain_matches() {
-    let _compose = docker_compose("tests/test-configs/redis-passthrough/docker-compose.yaml");
+    let _compose = docker_compose("tests/test-configs/redis/passthrough/docker-compose.yaml");
     let shotover = shotover_process("tests/test-configs/tee/subchain.yaml")
         .start()
         .await;
@@ -117,7 +117,7 @@ async fn test_subchain_matches() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_subchain_with_mismatch() {
-    let _compose = docker_compose("tests/test-configs/redis-passthrough/docker-compose.yaml");
+    let _compose = docker_compose("tests/test-configs/redis/passthrough/docker-compose.yaml");
     let shotover = shotover_process("tests/test-configs/tee/subchain_with_mismatch.yaml")
         .start()
         .await;

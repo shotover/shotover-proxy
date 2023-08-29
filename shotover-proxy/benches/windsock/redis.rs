@@ -6,7 +6,7 @@ use crate::{
 };
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
-use aws_throwaway::ec2_instance::Ec2Instance;
+use aws_throwaway::Ec2Instance;
 use fred::{
     prelude::*,
     rustls::{Certificate, ClientConfig, PrivateKey, RootCertStore},
@@ -194,12 +194,12 @@ impl Bench for RedisBench {
             ) => "redis://127.0.0.1:6379",
         };
         let config_dir = match (self.topology, self.encryption) {
-            (RedisTopology::Single, Encryption::None) => "tests/test-configs/redis-passthrough",
+            (RedisTopology::Single, Encryption::None) => "tests/test-configs/redis/passthrough",
             (RedisTopology::Cluster3, Encryption::None) => {
-                "tests/test-configs/redis-cluster-hiding"
+                "tests/test-configs/redis/cluster-hiding"
             }
-            (RedisTopology::Single, Encryption::Tls) => "tests/test-configs/redis-tls",
-            (RedisTopology::Cluster3, Encryption::Tls) => "tests/test-configs/redis-cluster-tls",
+            (RedisTopology::Single, Encryption::Tls) => "tests/test-configs/redis/tls",
+            (RedisTopology::Cluster3, Encryption::Tls) => "tests/test-configs/redis/cluster-tls",
         };
         let _compose = docker_compose(&format!("{config_dir}/docker-compose.yaml"));
         let mut profiler = ProfilerRunner::new(self.name(), profiling);
@@ -240,13 +240,13 @@ impl Bench for RedisBench {
 
         let mut config = RedisConfig::from_url(address).unwrap();
         if let Encryption::Tls = self.encryption {
-            let private_key = load_private_key("tests/test-configs/redis-tls/certs/localhost.key");
-            let certs = load_certs("tests/test-configs/redis-tls/certs/localhost.crt");
+            let private_key = load_private_key("tests/test-configs/redis/tls/certs/localhost.key");
+            let certs = load_certs("tests/test-configs/redis/tls/certs/localhost.crt");
             config.tls = Some(
                 ClientConfig::builder()
                     .with_safe_defaults()
                     .with_root_certificates(load_ca(
-                        "tests/test-configs/redis-tls/certs/localhost_CA.crt",
+                        "tests/test-configs/redis/tls/certs/localhost_CA.crt",
                     ))
                     .with_client_auth_cert(certs, private_key)
                     .unwrap()

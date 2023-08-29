@@ -5,7 +5,7 @@ use crate::{
 };
 use anyhow::Result;
 use async_trait::async_trait;
-use aws_throwaway::ec2_instance::Ec2Instance;
+use aws_throwaway::Ec2Instance;
 use cdrs_tokio::{
     cluster::{
         session::{
@@ -531,8 +531,8 @@ impl Bench for CassandraBench {
             (_, Shotover::ForcedMessageParsed) => todo!(),
         };
         let config_dir = match &self.topology {
-            Topology::Single => "tests/test-configs/cassandra-passthrough",
-            Topology::Cluster3 => "tests/test-configs/cassandra-cluster-v4",
+            Topology::Single => "tests/test-configs/cassandra/passthrough",
+            Topology::Cluster3 => "tests/test-configs/cassandra/cluster-v4",
         };
 
         let _db_instance = match (&self.db, &self.topology) {

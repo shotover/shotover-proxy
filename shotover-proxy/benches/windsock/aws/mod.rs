@@ -3,7 +3,8 @@
 pub mod cloud;
 
 use async_once_cell::OnceCell;
-use aws_throwaway::{ec2_instance::Ec2Instance, Aws, InstanceType};
+use aws_throwaway::{Aws, Ec2Instance, InstanceType};
+use aws_throwaway::{CleanupResources, Ec2InstanceDefinition};
 use regex::Regex;
 use std::fmt::Write;
 use std::time::Duration;
@@ -16,6 +17,8 @@ use tokio::sync::RwLock;
 use tokio_bin_process::bin_path;
 use tokio_bin_process::event::{Event, Level};
 use windsock::ReportArchive;
+
+static AWS_THROWAWAY_TAG: &str = "windsock";
 
 static AWS: OnceCell<WindsockAws> = OnceCell::new();
 
@@ -33,7 +36,7 @@ impl WindsockAws {
                 shotover_instance: RwLock::new(None),
                 bencher_instance: RwLock::new(None),
                 docker_instances: RwLock::new(vec![]),
-                aws: Aws::new().await,
+                aws: Aws::new(CleanupResources::WithAppTag(AWS_THROWAWAY_TAG.to_owned())).await,
             }
         })
         .await
@@ -50,7 +53,10 @@ impl WindsockAws {
         let instance = Arc::new(Ec2InstanceWithBencher {
             instance: self
                 .aws
-                .create_ec2_instance(get_compatible_instance_type(), 8)
+                .create_ec2_instance(
+                    Ec2InstanceDefinition::new(get_compatible_instance_type())
+                        .volume_size_gigabytes(8),
+                )
                 .await,
         });
         instance
@@ -83,8 +89,11 @@ sudo apt-get install -y sysstat"#,
         }
         let instance = self
             .aws
-            // databases will need more storage than the shotover or bencher instances
-            .create_ec2_instance(get_compatible_instance_type(), 40)
+            .create_ec2_instance(
+                Ec2InstanceDefinition::new(get_compatible_instance_type())
+                    // databases will need more storage than the shotover or bencher instances
+                    .volume_size_gigabytes(40),
+            )
             .await;
         instance
         .ssh()
@@ -116,7 +125,10 @@ curl -sSL https://get.docker.com/ | sudo sh"#,
         let instance = Arc::new(Ec2InstanceWithShotover {
             instance: self
                 .aws
-                .create_ec2_instance(get_compatible_instance_type(), 8)
+                .create_ec2_instance(
+                    Ec2InstanceDefinition::new(get_compatible_instance_type())
+                        .volume_size_gigabytes(8),
+                )
                 .await,
         });
         instance
