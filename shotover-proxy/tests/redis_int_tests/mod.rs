@@ -132,18 +132,18 @@ async fn tls_source_and_tls_single_sink() {
     test_helpers::cert::generate_test_certs_with_bad_san(Path::new(
         "tests/test-configs/redis/tls/certs",
     ));
-    // {
-    //     let _compose =
-    //         docker_compose("tests/test-configs/redis/tls-no-verify-hostname/docker-compose.yaml");
-    //     let shotover =
-    //         shotover_process("tests/test-configs/redis/tls-no-verify-hostname/topology.yaml")
-    //             .start()
-    //             .await;
-    //
-    //     let mut connection = redis_connection::new_async_tls("127.0.0.1", 6379).await;
-    //     test_cluster_basics(&mut connection).await;
-    //     shotover.shutdown_and_then_consume_events(&[]).await;
-    // }
+    {
+        let _compose =
+            docker_compose("tests/test-configs/redis/tls-no-verify-hostname/docker-compose.yaml");
+        let shotover =
+            shotover_process("tests/test-configs/redis/tls-no-verify-hostname/topology.yaml")
+                .start()
+                .await;
+
+        let mut connection = redis_connection::new_async_tls("127.0.0.1", 6379).await;
+        test_cluster_basics(&mut connection).await;
+        shotover.shutdown_and_then_consume_events(&[]).await;
+    }
 }
 
 #[tokio::test(flavor = "multi_thread")]
