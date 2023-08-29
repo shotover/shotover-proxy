@@ -4,7 +4,7 @@ use crate::profilers::{self, CloudProfilerRunner, ProfilerRunner};
 use crate::shotover::shotover_process;
 use anyhow::Result;
 use async_trait::async_trait;
-use aws_throwaway::ec2_instance::Ec2Instance;
+use aws_throwaway::Ec2Instance;
 use futures::StreamExt;
 use rdkafka::config::ClientConfig;
 use rdkafka::consumer::{Consumer, StreamConsumer};
