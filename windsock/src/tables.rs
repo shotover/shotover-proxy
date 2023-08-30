@@ -141,6 +141,14 @@ pub(crate) fn display_results_table(reports: &[ReportColumn]) {
 }
 
 fn base(reports: &[ReportColumn], table_type: &str) {
+    // if the user has set CARGO_TERM_COLOR to force cargo to use colors then they probably want us to use colors too
+    if std::env::var("CARGO_TERM_COLOR")
+        .map(|x| x.to_lowercase() == "always")
+        .unwrap_or(false)
+    {
+        console::set_colors_enabled(true);
+    }
+
     let mut intersection = reports[0].current.tags.clone();
     for report in reports {
         intersection = intersection.intersection(&report.current.tags);
