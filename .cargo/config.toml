@@ -10,3 +10,4 @@ linker = "aarch64-linux-gnu-gcc"
 [alias]
 windsock = "test --release --bench windsock --features alpha-transforms --"
 windsock-debug = "test --bench windsock --features alpha-transforms --"
+windsock-cloud-docker = "run --package windsock-cloud-docker --"

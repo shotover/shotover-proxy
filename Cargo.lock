@@ -5719,6 +5719,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "windsock-cloud-docker"
+version = "0.1.0"
+dependencies = [
+ "test-helpers",
+]
+
+[[package]]
 name = "winnow"
 version = "0.5.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
