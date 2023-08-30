@@ -18,6 +18,8 @@ impl Samply {
         )
         .await;
         let output_file = results_path.join("samply.json");
+        let home = std::env::var("HOME").unwrap();
+
         // Run `sudo ls` so that we can get sudo to stop asking for password for a while.
         // It also lets us block until the user has entered the password, otherwise the rest of the test would continue before `perf` has started.
         // TODO: It would be more robust to get a single root prompt and then keep feeding commands into it.
@@ -28,7 +30,8 @@ impl Samply {
             run_command(
                 "sudo",
                 &[
-                    "samply",
+                    // specify the full path as CI has trouble finding it for some reason.
+                    &format!("{home}/.cargo/bin/samply"),
                     "record",
                     "-p",
                     &pid.to_string(),
@@ -58,7 +61,7 @@ async fn run_command(command: &str, args: &[&str]) -> String {
     let stdout = String::from_utf8(output.stdout).unwrap();
     let stderr = String::from_utf8(output.stderr).unwrap();
     if !output.status.success() {
-        panic!("Bench run failed:\nstdout:\n{stdout}\nstderr:\n{stderr}")
+        panic!("command {command} {args:?} failed:\nstdout:\n{stdout}\nstderr:\n{stderr}")
     }
     stdout
 }
