@@ -53,7 +53,7 @@ impl TransformConfig for ProtectConfig {
                     )
                 })
                 .collect(),
-            key_source: self.key_manager.build()?,
+            key_source: self.key_manager.build().await?,
             key_id: "XXXXXXX".to_string(),
         }))
     }

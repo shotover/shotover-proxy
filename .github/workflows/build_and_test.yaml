@@ -77,6 +77,15 @@ jobs:
       with:
         name: nextest-${{ matrix.profile }}
         path: nextest-${{ matrix.profile }}.tar.zst
+    - name: Report disk usage
+      run: |
+        df -h
+
+        echo -e "\ntarget dir usage:"
+        du -h $PWD/target
+
+        echo -e "\n.cargo dir usage:"
+        du -h ~/.cargo
     - name: Cleanup archive
       run: rm nextest-${{ matrix.profile }}.tar.zst
     - name: Ensure that tests did not create or modify any files that arent .gitignore'd

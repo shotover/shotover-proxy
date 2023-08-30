@@ -1,15 +1,16 @@
 use crate::transforms::protect::aws_kms::AWSKeyManagement;
 use crate::transforms::protect::local_kek::LocalKeyManagement;
 use anyhow::{anyhow, Result};
+use aws_config::meta::region::RegionProviderChain;
+use aws_config::SdkConfig;
+use aws_sdk_kms::config::Region;
+use aws_sdk_kms::Client as KmsClient;
 use base64::{engine::general_purpose, Engine as _};
 use bytes::Bytes;
 use cached::proc_macro::cached;
 use chacha20poly1305::Key;
-use rusoto_kms::KmsClient;
-use rusoto_signature::Region;
 use serde::Deserialize;
 use std::collections::HashMap;
-use std::str::FromStr;
 
 #[derive(Clone, Debug)]
 pub enum KeyManager {
@@ -25,7 +26,7 @@ pub enum KeyManagerConfig {
         cmk_id: String,
         encryption_context: Option<HashMap<String, String>>,
         key_spec: Option<String>,
-        number_of_bytes: Option<i64>,
+        number_of_bytes: Option<i32>,
         grant_tokens: Option<Vec<String>>,
         endpoint: Option<String>,
     },
@@ -35,8 +36,22 @@ pub enum KeyManagerConfig {
     },
 }
 
+async fn config(region: String, endpoint: Option<String>) -> SdkConfig {
+    let region_provider = RegionProviderChain::first_try(Region::new(region));
+    match endpoint {
+        Some(endpoint) => {
+            aws_config::from_env()
+                .region(region_provider)
+                .endpoint_url(endpoint)
+                .load()
+                .await
+        }
+        None => aws_config::from_env().region(region_provider).load().await,
+    }
+}
+
 impl KeyManagerConfig {
-    pub fn build(&self) -> Result<KeyManager> {
+    pub async fn build(&self) -> Result<KeyManager> {
         match self.clone() {
             KeyManagerConfig::AWSKms {
                 region,
@@ -47,16 +62,10 @@ impl KeyManagerConfig {
                 grant_tokens,
                 endpoint,
             } => Ok(KeyManager::AWSKms(AWSKeyManagement {
-                client: {
-                    let region_obj = match endpoint {
-                        Some(x) => Region::Custom {
-                            name: Region::from_str(&region)?.name().to_string(),
-                            endpoint: x,
-                        },
-                        _ => Region::from_str(&region)?,
-                    };
-                    KmsClient::new(region_obj)
-                },
+                // TODO: This client is being recreated for each connection.
+                // but doing so is quite expensive so we should share it between all connections
+                // fortunately doing so is quite easy since all methods are `&self`
+                client: KmsClient::new(&config(region, endpoint).await),
                 cmk_id,
                 encryption_context,
                 key_spec,
@@ -131,7 +140,7 @@ mod key_manager_tests {
             kek_id: "".into(),
         };
 
-        let _ = config.build().unwrap();
+        let _ = futures::executor::block_on(config.build()).unwrap();
     }
 
     #[test]
@@ -141,7 +150,7 @@ mod key_manager_tests {
             kek_id: "".into(),
         };
 
-        let result = config.build().unwrap_err();
+        let result = futures::executor::block_on(config.build()).unwrap_err();
         assert_eq!(result.to_string(), "Invalid key length".to_string());
     }
 
@@ -152,7 +161,7 @@ mod key_manager_tests {
             kek_id: "".into(),
         };
 
-        let result = config.build().unwrap_err();
+        let result = futures::executor::block_on(config.build()).unwrap_err();
         assert_eq!(
             result.to_string(),
             "Invalid byte 61, offset 43.".to_string()
