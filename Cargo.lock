@@ -4931,8 +4931,7 @@ dependencies = [
 [[package]]
 name = "tokio-bin-process"
 version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8fc341857366c329c8cdd4bf75a726560132ed68e8a193d9a69aab75b98a0e27"
+source = "git+https://github.com/rukai/tokio-bin-process?branch=build_only_required_binary#0969ff3c1b1b29272e2aea386433d31fc03a1417"
 dependencies = [
  "anyhow",
  "cargo_metadata",

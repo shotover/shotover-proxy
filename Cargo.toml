@@ -62,4 +62,5 @@ clap = { version = "4.0.4", features = ["cargo", "derive"] }
 async-trait = "0.1.30"
 typetag = "0.2.5"
 aws-throwaway = "0.2.0"
-tokio-bin-process = "0.3.0"
+#tokio-bin-process = "0.3.0"
+tokio-bin-process = { git = "https://github.com/rukai/tokio-bin-process", branch = "build_only_required_binary" }
