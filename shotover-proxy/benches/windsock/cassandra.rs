@@ -496,6 +496,8 @@ impl Bench for CassandraBench {
             )
         );
 
+        profiler.run(shotover_instance.clone()).await;
+
         let destination_ip = if running_shotover.is_some() {
             shotover_ip
         } else {
@@ -507,7 +509,7 @@ impl Bench for CassandraBench {
             .run_bencher(&self.run_args(&destination, &parameters), &self.name())
             .await;
 
-        profiler.finish();
+        profiler.finish().await;
 
         if let Some(running_shotover) = running_shotover {
             running_shotover.shutdown().await;

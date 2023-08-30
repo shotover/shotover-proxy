@@ -155,6 +155,8 @@ impl Bench for RedisBench {
         )
         .await;
 
+        profiler.run(shotover_instance.clone()).await;
+
         let destination_ip = if running_shotover.is_some() {
             format!("redis://{shotover_ip}")
         } else {
@@ -168,7 +170,7 @@ impl Bench for RedisBench {
             .run_bencher(&self.run_args(&destination_ip, &parameters), &self.name())
             .await;
 
-        profiler.finish();
+        profiler.finish().await;
 
         if let Some(running_shotover) = running_shotover {
             running_shotover.shutdown().await;

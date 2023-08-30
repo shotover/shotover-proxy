@@ -1,7 +1,7 @@
-use self::samply::Samply;
-use crate::common::Shotover;
+use self::samply::{Samply, SamplyCloud};
+use crate::{aws::Ec2InstanceWithShotover, common::Shotover};
 use aws_throwaway::Ec2Instance;
-use std::{collections::HashMap, path::PathBuf};
+use std::{collections::HashMap, path::PathBuf, sync::Arc};
 use test_helpers::{flamegraph::Perf, shotover_process::BinProcess};
 use tokio::sync::mpsc::UnboundedReceiver;
 use windsock::Profiling;
@@ -97,6 +97,9 @@ impl Drop for ProfilerRunner {
 pub struct CloudProfilerRunner {
     bench_name: String,
     monitor_instances: HashMap<String, UnboundedReceiver<String>>,
+    samply: Option<SamplyCloud>,
+    run_samply: bool,
+    results_path: PathBuf,
 }
 
 impl CloudProfilerRunner {
@@ -111,24 +114,41 @@ impl CloudProfilerRunner {
 
         let mut monitor_instances = HashMap::new();
         if run_sys_monitor {
-            for (name, instance) in instances {
-                monitor_instances.insert(name, sar::run_sar_remote(instance).await);
+            for (name, instance) in instances.iter() {
+                monitor_instances.insert(name.clone(), sar::run_sar_remote(instance).await);
             }
         }
+        let run_samply = profiling.profilers_to_use.contains(&"samply".to_owned());
 
         CloudProfilerRunner {
             bench_name,
             monitor_instances,
+            run_samply,
+            samply: None,
+            results_path: profiling.results_path,
         }
     }
 
-    pub fn finish(&mut self) {
+    /// Run profilers that are profiling shotover
+    pub async fn run(&mut self, instance: Arc<Ec2InstanceWithShotover>) {
+        self.samply = if self.run_samply {
+            Some(SamplyCloud::run(&self.bench_name, instance, self.results_path.clone()).await)
+        } else {
+            None
+        }
+    }
+
+    pub async fn finish(mut self) {
         for (name, instance_rx) in &mut self.monitor_instances {
             sar::insert_sar_results_to_bench_archive(
                 &self.bench_name,
                 name,
                 sar::parse_sar(instance_rx),
             );
+        }
+
+        if let Some(samply) = self.samply.take() {
+            samply.download_results().await;
         }
     }
 }
