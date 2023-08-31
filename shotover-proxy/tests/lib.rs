@@ -3,6 +3,7 @@ use tokio_bin_process::bin_path;
 
 mod cassandra_int_tests;
 mod kafka_int_tests;
+#[cfg(feature = "alpha-transforms")]
 mod opensearch_int_tests;
 mod redis_int_tests;
 mod runner;
