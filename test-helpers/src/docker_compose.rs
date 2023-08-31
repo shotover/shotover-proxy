@@ -73,7 +73,7 @@ pub fn get_image_waiters() -> &'static [Image] {
         },
         Image {
             name: "opensearchproject/opensearch:2.9.0",
-            log_regex_to_wait_for: r"Node '(?s)(.*)' initialized",
+            log_regex_to_wait_for: r"Node started",
             timeout: 120,
         },
     ]

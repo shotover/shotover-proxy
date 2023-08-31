@@ -40,7 +40,7 @@ fn main() {
 
     // copy in shotover project
     let root = std::env::current_dir().unwrap();
-    container_bash("rm -r /shotover-proxy");
+    container_bash("rm -rf /shotover-proxy");
     // TODO: This copy will be very expensive if the user doesnt have their target directory setup as a symlink
     // Maybe we should do something like:
     // 1. rsync to target/shotover-copy-for-docker with the target directory filtered out
@@ -50,7 +50,7 @@ fn main() {
         root.to_str().unwrap(),
         "windsock-cloud:/shotover-proxy",
     ]);
-    container_bash("rm -r /shotover-proxy/target");
+    container_bash("rm -rf /shotover-proxy/target");
 
     // run windsock
     let access_key_id = std::env::var("AWS_ACCESS_KEY_ID").unwrap();
@@ -60,6 +60,15 @@ fn main() {
 source "$HOME/.cargo/env";
 AWS_ACCESS_KEY_ID={access_key_id} AWS_SECRET_ACCESS_KEY={secret_access_key} CARGO_TERM_COLOR=always cargo test --target-dir /target --release --bench windsock --features alpha-transforms -- {args}"#
     ));
+
+    // extract windsock results
+    let local_windsock_data = root.join("target").join("windsock_data");
+    std::fs::remove_dir_all(&local_windsock_data).unwrap();
+    docker(&[
+        "cp",
+        "windsock-cloud:/target/windsock_data",
+        local_windsock_data.to_str().unwrap(),
+    ]);
 }
 
 pub fn docker(args: &[&str]) -> String {

@@ -8,6 +8,7 @@ use tokio_util::codec::{Decoder, Encoder};
 
 pub mod cassandra;
 pub mod kafka;
+pub mod opensearch;
 pub mod redis;
 
 #[derive(Eq, PartialEq, Copy, Clone)]
@@ -35,6 +36,7 @@ pub enum CodecState {
         request_header: Option<RequestHeader>,
     },
     Dummy,
+    OpenSearch,
 }
 
 impl CodecState {
