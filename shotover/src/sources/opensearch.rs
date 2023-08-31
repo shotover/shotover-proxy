@@ -1,8 +1,6 @@
-use crate::codec::Direction;
-use crate::codec::{cassandra::CassandraCodecBuilder, CodecBuilder};
+use crate::codec::{opensearch::OpenSearchCodecBuilder, CodecBuilder, Direction};
 use crate::server::TcpCodecListener;
 use crate::sources::{Source, Transport};
-use crate::tls::{TlsAcceptor, TlsAcceptorConfig};
 use crate::transforms::chain::TransformChainBuilder;
 use anyhow::Result;
 use serde::Deserialize;
@@ -12,32 +10,27 @@ use tokio::task::JoinHandle;
 use tracing::{error, info};
 
 #[derive(Deserialize, Debug, Clone)]
-#[serde(deny_unknown_fields)]
-pub struct CassandraConfig {
+pub struct OpenSearchConfig {
     pub listen_addr: String,
     pub connection_limit: Option<usize>,
     pub hard_connection_limit: Option<bool>,
-    pub tls: Option<TlsAcceptorConfig>,
     pub timeout: Option<u64>,
-    pub transport: Option<Transport>,
 }
 
-impl CassandraConfig {
+impl OpenSearchConfig {
     pub async fn get_source(
         &self,
         chain_builder: TransformChainBuilder,
         trigger_shutdown_rx: watch::Receiver<bool>,
     ) -> Result<Vec<Source>> {
-        Ok(vec![Source::Cassandra(
-            CassandraSource::new(
+        Ok(vec![Source::OpenSearch(
+            OpenSearchSource::new(
                 chain_builder,
                 self.listen_addr.clone(),
                 trigger_shutdown_rx,
                 self.connection_limit,
                 self.hard_connection_limit,
-                self.tls.clone(),
                 self.timeout,
-                self.transport,
             )
             .await?,
         )])
@@ -45,39 +38,36 @@ impl CassandraConfig {
 }
 
 #[derive(Debug)]
-pub struct CassandraSource {
+pub struct OpenSearchSource {
     pub name: &'static str,
     pub join_handle: JoinHandle<()>,
     pub listen_addr: String,
 }
 
-impl CassandraSource {
-    #![allow(clippy::too_many_arguments)]
+impl OpenSearchSource {
     pub async fn new(
         chain_builder: TransformChainBuilder,
         listen_addr: String,
         mut trigger_shutdown_rx: watch::Receiver<bool>,
         connection_limit: Option<usize>,
         hard_connection_limit: Option<bool>,
-        tls: Option<TlsAcceptorConfig>,
         timeout: Option<u64>,
-        transport: Option<Transport>,
     ) -> Result<Self> {
-        let name = "CassandraSource";
+        let name = "OpenSearchSource";
 
-        info!("Starting Cassandra source on [{}]", listen_addr);
+        info!("Starting OpenSearch source on [{}]", listen_addr);
 
         let mut listener = TcpCodecListener::new(
             chain_builder,
             name.to_string(),
             listen_addr.clone(),
             hard_connection_limit.unwrap_or(false),
-            CassandraCodecBuilder::new(Direction::Source),
+            OpenSearchCodecBuilder::new(Direction::Source),
             Arc::new(Semaphore::new(connection_limit.unwrap_or(512))),
             trigger_shutdown_rx.clone(),
-            tls.map(TlsAcceptor::new).transpose()?,
+            None,
             timeout,
-            transport.unwrap_or(Transport::Tcp),
+            Transport::Tcp,
         )
         .await?;
 

@@ -6,11 +6,13 @@ use bytes::Bytes;
 pub use cassandra::{CassandraFrame, CassandraOperation, CassandraResult};
 use cassandra_protocol::compression::Compression;
 use kafka::KafkaFrame;
+pub use opensearch::OpenSearchFrame;
 pub use redis_protocol::resp2::types::Frame as RedisFrame;
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
 pub mod cassandra;
 pub mod kafka;
+pub mod opensearch;
 pub mod redis;
 pub mod value;
 
@@ -20,6 +22,7 @@ pub enum MessageType {
     Cassandra,
     Kafka,
     Dummy,
+    OpenSearch,
 }
 
 impl From<&ProtocolType> for MessageType {
@@ -28,6 +31,7 @@ impl From<&ProtocolType> for MessageType {
             ProtocolType::Cassandra { .. } => Self::Cassandra,
             ProtocolType::Redis => Self::Redis,
             ProtocolType::Kafka { .. } => Self::Kafka,
+            ProtocolType::OpenSearch => Self::OpenSearch,
         }
     }
 }
@@ -43,6 +47,7 @@ impl Frame {
                 request_header: None,
             },
             Frame::Dummy => CodecState::Dummy,
+            Frame::OpenSearch(_) => CodecState::OpenSearch,
         }
     }
 }
@@ -55,6 +60,7 @@ pub enum Frame {
     /// Represents a message that has must exist due to shotovers requirement that every request has a corresponding response.
     /// It exists purely to keep transform invariants and codecs will completely ignore this frame when they receive it
     Dummy,
+    OpenSearch(OpenSearchFrame),
 }
 
 impl Frame {
@@ -74,6 +80,7 @@ impl Frame {
                 KafkaFrame::from_bytes(bytes, codec_state.as_kafka()).map(Frame::Kafka)
             }
             MessageType::Dummy => Ok(Frame::Dummy),
+            MessageType::OpenSearch => Ok(Frame::OpenSearch(OpenSearchFrame::from_bytes(&bytes)?)),
         }
     }
 
@@ -83,6 +90,7 @@ impl Frame {
             Frame::Cassandra(_) => "Cassandra",
             Frame::Kafka(_) => "Kafka",
             Frame::Dummy => "Dummy",
+            Frame::OpenSearch(_) => "OpenSearch",
         }
     }
 
@@ -92,6 +100,7 @@ impl Frame {
             Frame::Redis(_) => MessageType::Redis,
             Frame::Kafka(_) => MessageType::Kafka,
             Frame::Dummy => MessageType::Dummy,
+            Frame::OpenSearch(_) => MessageType::OpenSearch,
         }
     }
 
@@ -134,6 +143,16 @@ impl Frame {
             )),
         }
     }
+
+    pub fn into_opensearch(self) -> Result<OpenSearchFrame> {
+        match self {
+            Frame::OpenSearch(frame) => Ok(frame),
+            frame => Err(anyhow!(
+                "Expected opensearch frame but received {} frame",
+                frame.name()
+            )),
+        }
+    }
 }
 
 impl Display for Frame {
@@ -143,6 +162,7 @@ impl Display for Frame {
             Frame::Redis(frame) => write!(f, "Redis {:?})", frame),
             Frame::Kafka(frame) => write!(f, "Kafka {})", frame),
             Frame::Dummy => write!(f, "Shotover internal dummy message"),
+            Frame::OpenSearch(frame) => write!(f, "OpenSearch: {:?}", frame),
         }
     }
 }
