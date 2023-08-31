@@ -63,7 +63,7 @@ impl TransformBuilder for OpenSearchSinkSingleBuilder {
     }
 
     fn get_name(&self) -> &'static str {
-        "OpenSearchSink"
+        "OpenSearchSinkSingle"
     }
 
     fn is_terminating(&self) -> bool {
