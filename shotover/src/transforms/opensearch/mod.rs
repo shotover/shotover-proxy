@@ -17,17 +17,17 @@ use tokio::sync::oneshot;
 use tracing::trace;
 
 #[derive(Deserialize, Debug)]
-pub struct OpenSearchSinkConfig {
+pub struct OpenSearchSinkSingleConfig {
     #[serde(rename = "remote_address")]
     address: String,
     connect_timeout_ms: u64,
 }
 
-#[typetag::deserialize(name = "OpenSearchSink")]
+#[typetag::deserialize(name = "OpenSearchSinkSingle")]
 #[async_trait(?Send)]
-impl TransformConfig for OpenSearchSinkConfig {
+impl TransformConfig for OpenSearchSinkSingleConfig {
     async fn get_builder(&self, chain_name: String) -> Result<Box<dyn TransformBuilder>> {
-        Ok(Box::new(OpenSearchSinkBuilder::new(
+        Ok(Box::new(OpenSearchSinkSingleBuilder::new(
             self.address.clone(),
             chain_name,
             self.connect_timeout_ms,
@@ -36,12 +36,12 @@ impl TransformConfig for OpenSearchSinkConfig {
 }
 
 #[derive(Clone)]
-pub struct OpenSearchSinkBuilder {
+pub struct OpenSearchSinkSingleBuilder {
     address: String,
     connect_timeout: Duration,
 }
 
-impl OpenSearchSinkBuilder {
+impl OpenSearchSinkSingleBuilder {
     pub fn new(address: String, _chain_name: String, connect_timeout_ms: u64) -> Self {
         let connect_timeout = Duration::from_millis(connect_timeout_ms);
 
@@ -52,9 +52,9 @@ impl OpenSearchSinkBuilder {
     }
 }
 
-impl TransformBuilder for OpenSearchSinkBuilder {
+impl TransformBuilder for OpenSearchSinkSingleBuilder {
     fn build(&self) -> Transforms {
-        Transforms::OpenSearchSink(OpenSearchSink {
+        Transforms::OpenSearchSinkSingle(OpenSearchSinkSingle {
             address: self.address.clone(),
             connect_timeout: self.connect_timeout,
             codec_builder: OpenSearchCodecBuilder::new(Direction::Sink),
@@ -71,7 +71,7 @@ impl TransformBuilder for OpenSearchSinkBuilder {
     }
 }
 
-pub struct OpenSearchSink {
+pub struct OpenSearchSinkSingle {
     address: String,
     connection: Option<Connection>,
     connect_timeout: Duration,
@@ -79,7 +79,7 @@ pub struct OpenSearchSink {
 }
 
 #[async_trait]
-impl Transform for OpenSearchSink {
+impl Transform for OpenSearchSinkSingle {
     async fn transform<'a>(&'a mut self, requests_wrapper: Wrapper<'a>) -> Result<Messages> {
         // Return immediately if we have no messages.
         // If we tried to send no messages we would block forever waiting for a reply that will never come.
