@@ -60,6 +60,9 @@ impl Transform for QueryCounter {
                 Some(Frame::Dummy) => {
                     // Dummy does not count as a message
                 }
+                Some(Frame::OpenSearch(_)) => {
+                    todo!();
+                }
                 None => {
                     counter!("query_count", 1, "name" => self.counter_name.clone(), "query" => "unknown", "type" => "none")
                 }

@@ -182,7 +182,7 @@ impl Shotover {
         let mut runtime_builder = runtime::Builder::new_multi_thread();
         runtime_builder
             .enable_all()
-            .thread_name("Shotover-Proxy-Thread")
+            .thread_name("shotover-worker")
             .thread_stack_size(stack_size);
         if let Some(worker_threads) = worker_threads {
             runtime_builder.worker_threads(worker_threads);
