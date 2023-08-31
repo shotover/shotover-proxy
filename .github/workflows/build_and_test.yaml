@@ -57,10 +57,10 @@ jobs:
         key: ubuntu-20.04-packages
     - name: Install ubuntu packages
       run: shotover-proxy/build/install_ubuntu_packages.sh
-    - name: Install nextest
-      uses: taiki-e/install-action@nextest
-    - name: Install cargo-hack
-      run: cargo install cargo-hack --version 0.5.8
+    - name: Install cargo-hack and nextest
+      uses: taiki-e/install-action@v2
+      with:
+        tool: cargo-hack@0.6.4,nextest@0.9.57
     - name: Check `cargo fmt` was run
       run: cargo fmt --all -- --check
     - name: Ensure that all crates compile and have no warnings under every possible combination of features
@@ -114,7 +114,9 @@ jobs:
     - name: Install ubuntu packages
       run: shotover-proxy/build/install_ubuntu_packages.sh
     - name: Install nextest
-      uses: taiki-e/install-action@nextest
+      uses: taiki-e/install-action@v2
+      with:
+        tool: nextest@0.9.57
     - run: mkdir -p ~/.cargo/bin
     - name: Download archive
       uses: actions/download-artifact@v3
