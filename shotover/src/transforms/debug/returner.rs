@@ -26,7 +26,7 @@ pub enum Response {
     #[serde(skip)]
     Message(Messages),
     Redis(String),
-    Fail,
+    Fail(String),
 }
 
 #[derive(Debug, Clone)]
@@ -68,7 +68,7 @@ impl Transform for DebugReturner {
                     )))
                 })
                 .collect()),
-            Response::Fail => Err(anyhow!("Intentional Fail")),
+            Response::Fail(s) => Err(anyhow!(s.clone())),
         }
     }
 }
