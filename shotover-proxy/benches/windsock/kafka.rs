@@ -139,7 +139,7 @@ impl Bench for KafkaBench {
             Shotover::None => "127.0.0.1:9092",
         };
 
-        profiler.run(&shotover);
+        profiler.run(&shotover).await;
 
         self.execute_run(broker_address, &parameters).await;
 
