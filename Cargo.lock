@@ -1388,7 +1388,7 @@ dependencies = [
  "autocfg",
  "cfg-if",
  "crossbeam-utils",
- "memoffset 0.9.0",
+ "memoffset",
  "scopeguard",
 ]
 
@@ -2701,15 +2701,6 @@ checksum = "f478948fd84d9f8e86967bf432640e46adfb5a4bd4f14ef7e864ab38220534ae"
 
 [[package]]
 name = "memoffset"
-version = "0.7.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5de893c32cde5f383baa4c04c5d6dbdd735cfd4a794b0debdb2bb1b421da5ff4"
-dependencies = [
- "autocfg",
-]
-
-[[package]]
-name = "memoffset"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5a634b1c61a95585bd15607c6ab0c4e5b226e695ff2800ba0cdccddf208c406c"
@@ -2840,8 +2831,17 @@ dependencies = [
  "bitflags 1.3.2",
  "cfg-if",
  "libc",
- "memoffset 0.7.1",
- "pin-utils",
+]
+
+[[package]]
+name = "nix"
+version = "0.27.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2eb04e9c688eff1c89d72b407f168cf79bb9e867a9d3323ed6c01519eb9cc053"
+dependencies = [
+ "bitflags 2.4.0",
+ "cfg-if",
+ "libc",
 ]
 
 [[package]]
@@ -4104,7 +4104,7 @@ dependencies = [
  "libc",
  "log",
  "memchr",
- "nix",
+ "nix 0.26.4",
  "radix_trie",
  "scopeguard",
  "unicode-segmentation",
@@ -4504,7 +4504,7 @@ dependencies = [
  "hex-literal",
  "inferno",
  "itertools 0.10.5",
- "nix",
+ "nix 0.27.1",
  "opensearch",
  "rand 0.8.5",
  "rand_distr",
@@ -4930,14 +4930,15 @@ dependencies = [
 
 [[package]]
 name = "tokio-bin-process"
-version = "0.3.0"
-source = "git+https://github.com/rukai/tokio-bin-process?branch=build_only_required_binary#0969ff3c1b1b29272e2aea386433d31fc03a1417"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "65936e9fae86053f55710b806fa3b97d0d46f3182547e2961c166a3e924e1abf"
 dependencies = [
  "anyhow",
  "cargo_metadata",
  "chrono",
  "itertools 0.11.0",
- "nix",
+ "nix 0.27.1",
  "nu-ansi-term 0.49.0",
  "once_cell",
  "serde",
