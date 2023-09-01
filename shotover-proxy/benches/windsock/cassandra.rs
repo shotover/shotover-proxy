@@ -559,7 +559,7 @@ impl Bench for CassandraBench {
             Shotover::None => None,
             Shotover::ForcedMessageParsed => todo!(),
         };
-        profiler.run(&shotover);
+        profiler.run(&shotover).await;
 
         self.execute_run(address, &parameters).await;
 

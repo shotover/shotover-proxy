@@ -212,7 +212,7 @@ impl Bench for RedisBench {
             ),
             Shotover::None => None,
         };
-        profiler.run(&shotover);
+        profiler.run(&shotover).await;
 
         self.execute_run(address, &parameters).await;
 
