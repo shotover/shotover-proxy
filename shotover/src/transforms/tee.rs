@@ -6,7 +6,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use metrics::{register_counter, Counter};
 use serde::Deserialize;
-use tracing::trace;
+use tracing::{debug, trace};
 
 pub struct TeeBuilder {
     pub tx: TransformChainBuilder,
@@ -170,10 +170,22 @@ impl Transform for Tee {
                         .process_request(requests_wrapper.clone(), self.timeout_micros),
                     requests_wrapper.call_next_transform()
                 );
-                let tee_response = tee_result?;
+                let mut tee_response = tee_result?;
                 let mut chain_response = chain_result?;
 
                 if !chain_response.eq(&tee_response) {
+                    debug!(
+                        "Tee mismatch: \nchain response: {:?} \ntee response: {:?}",
+                        chain_response
+                            .iter_mut()
+                            .map(|m| m.to_high_level_string())
+                            .collect::<Vec<_>>(),
+                        tee_response
+                            .iter_mut()
+                            .map(|m| m.to_high_level_string())
+                            .collect::<Vec<_>>()
+                    );
+
                     for message in &mut chain_response {
                         *message = message.to_error_response(
                             "ERR The responses from the Tee subchain and down-chain did not match and behavior is set to fail on mismatch".into())?;
