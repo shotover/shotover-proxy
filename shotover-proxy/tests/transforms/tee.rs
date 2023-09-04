@@ -81,7 +81,9 @@ async fn test_log_with_mismatch() {
             .with_level(Level::Warn)
             .with_target("shotover::transforms::tee")
             .with_message(
-                r#"Tee mismatch: chain response: [Message { inner: Some(Modified { frame: Redis(BulkString(b"42")) }), meta_timestamp: None, codec_state: Redis }] tee response: [Message { inner: Some(Modified { frame: Redis(BulkString(b"41")) }), meta_timestamp: None, codec_state: Redis }]"#,
+                r#"Tee mismatch: 
+chain response: ["Redis BulkString(b\"42\"))"] 
+tee response: ["Redis BulkString(b\"41\"))"]"#,
             )])
         .await;
 }

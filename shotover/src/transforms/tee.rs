@@ -1,5 +1,6 @@
 use crate::config::chain::TransformChainConfig;
 use crate::message::Messages;
+// use itertools::Itertools;
 use crate::transforms::chain::{BufferedChain, TransformChainBuilder};
 use crate::transforms::{Transform, TransformBuilder, TransformConfig, Transforms, Wrapper};
 use anyhow::Result;
@@ -214,13 +215,20 @@ impl Transform for Tee {
                     requests_wrapper.call_next_transform()
                 );
 
-                let tee_response = tee_result?;
-                let chain_response = chain_result?;
+                let mut tee_response = tee_result?;
+                let mut chain_response = chain_result?;
 
                 if !chain_response.eq(&tee_response) {
                     warn!(
-                        "Tee mismatch: chain response: {:?} tee response: {:?}",
-                        chain_response, tee_response
+                        "Tee mismatch: \nchain response: {:?} \ntee response: {:?}",
+                        chain_response
+                            .iter_mut()
+                            .map(|m| m.to_high_level_string())
+                            .collect::<Vec<_>>(),
+                        tee_response
+                            .iter_mut()
+                            .map(|m| m.to_high_level_string())
+                            .collect::<Vec<_>>()
                     );
                 }
                 Ok(chain_response)
