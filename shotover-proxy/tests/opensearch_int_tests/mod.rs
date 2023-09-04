@@ -2,19 +2,28 @@ use crate::shotover_process;
 use opensearch::{
     auth::Credentials,
     cert::CertificateValidation,
+    cluster::ClusterHealthParts,
     http::{
         headers::{HeaderName, HeaderValue},
+        response::Response,
         response::Response,
         transport::{SingleNodeConnectionPool, TransportBuilder},
         Method, StatusCode, Url,
     },
     indices::{IndicesCreateParts, IndicesDeleteParts, IndicesExistsParts},
     nodes::NodesInfoParts,
+    indices::{IndicesCreateParts, IndicesDeleteParts, IndicesExistsParts, IndicesGetParts},
     params::Refresh,
+    params::WaitForStatus,
     BulkOperation, BulkParts, DeleteParts, Error, IndexParts, OpenSearch, SearchParts,
 };
 use serde_json::{json, Value};
 use test_helpers::docker_compose::docker_compose;
+// use tokio::{
+//     sync::oneshot,
+//     task::JoinHandle,
+//     time::{interval, Duration},
+// };
 
 async fn assert_ok_and_get_json(response: Result<Response, Error>) -> Value {
     let response = response.unwrap();
@@ -242,16 +251,7 @@ async fn opensearch_test_suite(client: &OpenSearch) {
     .await;
 }
 
-#[tokio::test(flavor = "multi_thread")]
-async fn passthrough_standard() {
-    let _compose = docker_compose("tests/test-configs/opensearch-passthrough/docker-compose.yaml");
-
-    let shotover = shotover_process("tests/test-configs/opensearch-passthrough/topology.yaml")
-        .start()
-        .await;
-
-    let addr = "http://localhost:9201";
-
+fn create_client(addr: &str) -> OpenSearch {
     let url = Url::parse(addr).unwrap();
     let credentials = Credentials::Basic("admin".into(), "admin".into());
     let transport = TransportBuilder::new(SingleNodeConnectionPool::new(url))
@@ -261,7 +261,167 @@ async fn passthrough_standard() {
         .unwrap();
     let client = OpenSearch::new(transport);
 
+    client
+        .cluster()
+        .health(ClusterHealthParts::None)
+        .wait_for_status(WaitForStatus::Green);
+
+    client
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn passthrough_standard() {
+    let _compose = docker_compose("tests/test-configs/opensearch-passthrough/docker-compose.yaml");
+
+    let shotover = shotover_process("tests/test-configs/opensearch-passthrough/topology.yaml")
+        .start()
+        .await;
+
+    let addr = "http://localhost:9201";
+    let client = create_client(addr);
+
     opensearch_test_suite(&client).await;
+
+    shotover.shutdown_and_then_consume_events(&[]).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn dual_write_basic() {
+    let _compose = docker_compose("tests/test-configs/opensearch-dual-write/docker-compose.yaml");
+
+    let addr1 = "http://localhost:9201";
+    let client1 = create_client(addr1);
+    let addr2 = "http://localhost:9202";
+    let client2 = create_client(addr2);
+
+    let shotover = shotover_process("tests/test-configs/opensearch-dual-write/topology.yaml")
+        .start()
+        .await;
+
+    let shotover_client = create_client("http://localhost:9200");
+
+    shotover_client
+        .indices()
+        .create(IndicesCreateParts::Index("test-index"))
+        .send()
+        .await
+        .unwrap();
+
+    let exists_response = shotover_client
+        .indices()
+        .exists(IndicesExistsParts::Index(&["test-index"]))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(exists_response.status_code(), StatusCode::OK);
+
+    shotover_client
+        .index(IndexParts::Index("test-index"))
+        .body(json!({
+            "name": "John",
+            "age": 30
+        }))
+        .refresh(Refresh::WaitFor)
+        .send()
+        .await
+        .unwrap();
+
+    for client in &[shotover_client, client1, client2] {
+        let response = client
+            .search(SearchParts::Index(&["test-index"]))
+            .from(0)
+            .size(10)
+            .body(json!({
+                "query": {
+                    "match": {
+                        "name": "John",
+                    }
+                }
+            }))
+            .send()
+            .await
+            .unwrap();
+
+        let results = response.json::<Value>().await.unwrap();
+        assert!(results["took"].as_i64().is_some());
+        assert_eq!(
+            results["hits"].as_object().unwrap()["hits"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+    }
+
+    shotover.shutdown_and_then_consume_events(&[]).await;
+}
+
+// async fn start_writer_thread(
+//     client: OpenSearch,
+//     mut shutdown_notification_rx: oneshot::Receiver<()>,
+// ) -> tokio::task::JoinHandle<()> {
+//     tokio::spawn(async move {
+//         let mut i = 0;
+//         let mut interval = interval(Duration::from_millis(100));
+//
+//         loop {
+//             tokio::select! {
+//                 _ = interval.tick() => {
+//                     // TODO send the message to opensearch
+//                 },
+//                 _ = &mut shutdown_notification_rx => {
+//                     println!("shutting down writer thread");
+//                     break;
+//                 }
+//             }
+//         }
+//     })
+// }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn dual_write() {
+    // let shotover_addr = "http://localhost:9200";
+    let source_addr = "http://localhost:9201";
+    // let target_addr = "http://localhost:9202";
+
+    let _compose = docker_compose("tests/test-configs/opensearch-dual-write/docker-compose.yaml");
+
+    let shotover = shotover_process("tests/test-configs/opensearch-dual-write/topology.yaml")
+        .start()
+        .await;
+
+    // let shotover_client = create_client(shotover_addr);
+    let source_client = create_client(source_addr);
+    // let target_client = create_client(target_addr);
+
+    // Create indexes in source cluster
+    assert_ok_and_get_json(
+        source_client
+            .indices()
+            .create(IndicesCreateParts::Index("test-index"))
+            .send()
+            .await,
+    )
+    .await;
+
+    // Get index info from source cluster and create in target cluster
+
+    let index_info = assert_ok_and_get_json(
+        source_client
+            .indices()
+            .get(IndicesGetParts::Index(&["test-index"]))
+            .send()
+            .await,
+    )
+    .await;
+
+    println!("{:?}", index_info);
+
+    // Begin dual writes and verify data ends up in both clusters
+    // Begin reindex operations
+    // Continue dual writing until reindex operation complete
+    // verify both clusters end up in the same state
 
     shotover.shutdown_and_then_consume_events(&[]).await;
 }

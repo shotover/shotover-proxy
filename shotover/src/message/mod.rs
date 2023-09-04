@@ -4,6 +4,7 @@ use crate::codec::kafka::RequestHeader;
 use crate::codec::CodecState;
 use crate::frame::cassandra::Tracing;
 use crate::frame::redis::redis_query_type;
+use crate::frame::OpenSearchFrame;
 use crate::frame::{
     cassandra,
     cassandra::{CassandraMetadata, CassandraOperation},
@@ -278,7 +279,7 @@ impl Message {
             Metadata::Kafka => return Err(anyhow!(error).context(
                 "A generic error cannot be formed because the kafka protocol does not support it",
             )),
-            Metadata::OpenSearch => unimplemented!()
+            Metadata::OpenSearch => Frame::OpenSearch(OpenSearchFrame::new_server_error_response()),
         }))
     }
 
@@ -295,14 +296,14 @@ impl Message {
                 MessageType::Redis => Ok(Metadata::Redis),
                 MessageType::Kafka => Ok(Metadata::Kafka),
                 MessageType::Dummy => Err(anyhow!("Dummy has no metadata")),
-                MessageType::OpenSearch => Err(anyhow!("OpenSearch has no metadata")),
+                MessageType::OpenSearch => Ok(Metadata::OpenSearch),
             },
             MessageInner::Parsed { frame, .. } | MessageInner::Modified { frame } => match frame {
                 Frame::Cassandra(frame) => Ok(Metadata::Cassandra(frame.metadata())),
                 Frame::Kafka(_) => Ok(Metadata::Kafka),
                 Frame::Redis(_) => Ok(Metadata::Redis),
                 Frame::Dummy => Err(anyhow!("dummy has no metadata")),
-                Frame::OpenSearch(_) => Err(anyhow!("OpenSearch has no metadata")),
+                Frame::OpenSearch(_) => Ok(Metadata::OpenSearch),
             },
         }
     }

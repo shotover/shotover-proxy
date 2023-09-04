@@ -93,6 +93,7 @@ string = "0.3.0"
 xxhash-rust = { version = "0.8.6", features = ["xxh3"] }
 dashmap = "5.4.0"
 atoi = "2.0.0"
+libflate = "2.0.0"
 
 [dev-dependencies]
 criterion = { version = "0.5.0", features = ["async_tokio"] }
