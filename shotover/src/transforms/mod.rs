@@ -17,6 +17,8 @@ use crate::transforms::kafka::sink_single::KafkaSinkSingle;
 use crate::transforms::load_balance::ConnectionBalanceAndPool;
 use crate::transforms::loopback::Loopback;
 use crate::transforms::null::NullSink;
+#[cfg(feature = "alpha-transforms")]
+use crate::transforms::opensearch::OpenSearchSinkSingle;
 use crate::transforms::parallel_map::ParallelMap;
 use crate::transforms::protect::Protect;
 use crate::transforms::query_counter::QueryCounter;
@@ -52,6 +54,8 @@ pub mod load_balance;
 pub mod loopback;
 pub mod noop;
 pub mod null;
+#[cfg(feature = "alpha-transforms")]
+pub mod opensearch;
 pub mod parallel_map;
 pub mod protect;
 pub mod query_counter;
@@ -114,6 +118,8 @@ pub enum Transforms {
     QueryCounter(QueryCounter),
     RequestThrottling(RequestThrottling),
     Custom(Box<dyn Transform>),
+    #[cfg(feature = "alpha-transforms")]
+    OpenSearchSinkSingle(OpenSearchSinkSingle),
 }
 
 impl Debug for Transforms {
@@ -152,6 +158,8 @@ impl Transforms {
             Transforms::QueryCounter(s) => s.transform(requests_wrapper).await,
             Transforms::RequestThrottling(s) => s.transform(requests_wrapper).await,
             Transforms::Custom(s) => s.transform(requests_wrapper).await,
+            #[cfg(feature = "alpha-transforms")]
+            Transforms::OpenSearchSinkSingle(s) => s.transform(requests_wrapper).await,
         }
     }
 
@@ -186,6 +194,8 @@ impl Transforms {
             Transforms::QueryCounter(s) => s.transform_pushed(requests_wrapper).await,
             Transforms::RequestThrottling(s) => s.transform_pushed(requests_wrapper).await,
             Transforms::Custom(s) => s.transform_pushed(requests_wrapper).await,
+            #[cfg(feature = "alpha-transforms")]
+            Transforms::OpenSearchSinkSingle(s) => s.transform_pushed(requests_wrapper).await,
         }
     }
 
@@ -224,6 +234,8 @@ impl Transforms {
             Transforms::DebugRandomDelay(d) => d.set_pushed_messages_tx(pushed_messages_tx),
             Transforms::RequestThrottling(d) => d.set_pushed_messages_tx(pushed_messages_tx),
             Transforms::Custom(d) => d.set_pushed_messages_tx(pushed_messages_tx),
+            #[cfg(feature = "alpha-transforms")]
+            Transforms::OpenSearchSinkSingle(s) => s.set_pushed_messages_tx(pushed_messages_tx),
         }
     }
 }
