@@ -17,7 +17,7 @@ tokio.workspace = true
 tracing.workspace = true
 clap.workspace = true
 rstest = "0.18.0"
-cassandra-cpp = { version = "2.0.0" }
+cassandra-cpp = { version = "2.0.0", default-features = false }
 test-helpers = { path = "../test-helpers" }
 #rdkafka = { version = "0.32", features = ["cmake-build"] }
 rdkafka = { branch = "updating_librdkafka_to_v2.1.1", git = "https://github.com/shotover/rust-rdkafka", features = ["cmake-build"] }

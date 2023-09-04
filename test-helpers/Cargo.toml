@@ -15,7 +15,7 @@ subprocess.workspace = true
 tokio-bin-process.workspace = true
 cdrs-tokio.workspace = true
 cassandra-protocol.workspace = true
-cassandra-cpp = { version = "2.0.0", optional = true }
+cassandra-cpp = { version = "2.0.0", default-features = false, features = ["log"], optional = true }
 scylla.workspace = true
 openssl.workspace = true
 bytes.workspace = true
