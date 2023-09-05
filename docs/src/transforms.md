@@ -525,7 +525,7 @@ The response from the down-chain transform is returned back up-chain but various
     # behavior: FailOnMismatch
     #
     # If the responses returned by the sub chain do not equal the responses returned by down-chain then log the mismatch at the warning level.
-    # behavior: LogOnMismatch
+    # behavior: LogWarningOnMismatch
     #
     # If the responses returned by the sub chain do not equal the responses returned by down-chain,
     # then the original message is also sent down the SubchainOnMismatch sub chain.
