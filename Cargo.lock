@@ -5727,7 +5727,7 @@ dependencies = [
 name = "windsock-cloud-docker"
 version = "0.1.0"
 dependencies = [
- "test-helpers",
+ "subprocess",
 ]
 
 [[package]]
