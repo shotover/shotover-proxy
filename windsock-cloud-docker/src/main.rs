@@ -1,7 +1,7 @@
 // A helper to run `windsock --cloud` within docker to workaround libc issues
 // It is not possible to use this helper to run windsock locally as that would involve running docker within docker
 
-use test_helpers::run_command;
+use subprocess::{Exec, Redirection};
 
 fn main() {
     let mut args = std::env::args();
@@ -72,7 +72,7 @@ AWS_ACCESS_KEY_ID={access_key_id} AWS_SECRET_ACCESS_KEY={secret_access_key} CARG
 }
 
 pub fn docker(args: &[&str]) -> String {
-    run_command("docker", args).unwrap()
+    run_command("docker", args)
 }
 
 pub fn container_bash(command: &str) {
@@ -91,5 +91,26 @@ pub fn run_command_to_stdout(command: &str, args: &[&str]) {
             command, args, status
         );
         std::process::exit(status.code().unwrap_or(1))
+    }
+}
+
+pub fn run_command(command: &str, args: &[&str]) -> String {
+    let data = Exec::cmd(command)
+        .args(args)
+        .stdout(Redirection::Pipe)
+        .stderr(Redirection::Merge)
+        .capture()
+        .unwrap();
+
+    if data.exit_status.success() {
+        data.stdout_str()
+    } else {
+        panic!(
+            "command {} {:?} exited with {:?} and output:\n{}",
+            command,
+            args,
+            data.exit_status,
+            data.stdout_str()
+        )
     }
 }

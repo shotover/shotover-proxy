@@ -4,6 +4,8 @@ use clap::Parser;
 use rustyline::DefaultEditor;
 use shellfish::{async_fn, handler::DefaultAsyncHandler, Command, Shell};
 use std::error::Error;
+use std::fs::Permissions;
+use std::os::unix::prelude::PermissionsExt;
 use tracing_subscriber::EnvFilter;
 
 /// Spins up an EC2 instance and then presents a shell from which you can run `cargo test` on the ec2 instance.
@@ -223,16 +225,7 @@ async fn rsync(state: &State, append_args: Vec<String>) {
     tokio::fs::write(&key_path, instance.client_private_key())
         .await
         .unwrap();
-    let output = tokio::process::Command::new("chmod")
-        .args(&["400".to_owned(), format!("{}", key_path)])
-        .output()
-        .await
-        .unwrap();
-    if !output.status.success() {
-        let stdout = String::from_utf8(output.stdout).unwrap();
-        let stderr = String::from_utf8(output.stderr).unwrap();
-        panic!("chmod failed:\nstdout:\n{stdout}\nstderr:\n{stderr}")
-    }
+    std::fs::set_permissions(&key_path, Permissions::from_mode(0o400)).unwrap();
 
     let known_hosts_path = target_dir.join("ec2-cargo-known_hosts");
     tokio::fs::write(&known_hosts_path, instance.openssh_known_hosts_line())
