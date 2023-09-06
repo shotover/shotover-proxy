@@ -6,14 +6,14 @@ use anyhow::Result;
 use async_trait::async_trait;
 use aws_throwaway::Ec2Instance;
 use futures::StreamExt;
-use rdkafka::config::ClientConfig;
-use rdkafka::consumer::{Consumer, StreamConsumer};
-use rdkafka::producer::{FutureProducer, FutureRecord};
-use rdkafka::util::Timeout;
 use std::path::Path;
 use std::sync::Arc;
 use std::{collections::HashMap, time::Duration};
 use test_helpers::docker_compose::docker_compose;
+use test_helpers::rdkafka::config::ClientConfig;
+use test_helpers::rdkafka::consumer::{Consumer, StreamConsumer};
+use test_helpers::rdkafka::producer::{FutureProducer, FutureRecord};
+use test_helpers::rdkafka::util::Timeout;
 use tokio::{sync::mpsc::UnboundedSender, task::JoinHandle, time::Instant};
 use windsock::{Bench, BenchParameters, Profiling, Report};
 

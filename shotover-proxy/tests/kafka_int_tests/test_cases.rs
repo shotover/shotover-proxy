@@ -1,8 +1,8 @@
-use rdkafka::config::ClientConfig;
-use rdkafka::consumer::{Consumer, StreamConsumer};
-use rdkafka::producer::{FutureProducer, FutureRecord};
-use rdkafka::Message;
 use std::time::Duration;
+use test_helpers::rdkafka::config::ClientConfig;
+use test_helpers::rdkafka::consumer::{Consumer, StreamConsumer};
+use test_helpers::rdkafka::producer::{FutureProducer, FutureRecord};
+use test_helpers::rdkafka::Message;
 
 async fn produce_consume(brokers: &str, topic_name: &str) {
     let producer: FutureProducer = ClientConfig::new()

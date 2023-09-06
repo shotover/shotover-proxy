@@ -1,6 +1,7 @@
 mod aws;
 mod cassandra;
 mod common;
+#[cfg(feature = "rdkafka-driver-tests")]
 mod kafka;
 mod profilers;
 mod redis;
@@ -8,6 +9,7 @@ mod shotover;
 
 use crate::cassandra::*;
 use crate::common::*;
+#[cfg(feature = "rdkafka-driver-tests")]
 use crate::kafka::*;
 use crate::redis::*;
 use std::path::Path;
@@ -69,7 +71,7 @@ fn main() {
             )) as Box<dyn Bench>)
         },
     );
-
+    #[cfg(feature = "rdkafka-driver-tests")]
     let kafka_benches = itertools::iproduct!(
         [
             Shotover::None,
@@ -79,6 +81,8 @@ fn main() {
         [Size::B1, Size::KB1, Size::KB100,]
     )
     .map(|(shotover, size)| Box::new(KafkaBench::new(shotover, size)) as Box<dyn Bench>);
+    #[cfg(not(feature = "rdkafka-driver-tests"))]
+    let kafka_benches = std::iter::empty();
 
     let redis_benches = itertools::iproduct!(
         [RedisTopology::Cluster3, RedisTopology::Single],
