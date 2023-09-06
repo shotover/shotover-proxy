@@ -19,8 +19,6 @@ clap.workspace = true
 rstest = "0.18.0"
 cassandra-cpp = { version = "2.0.0", default-features = false }
 test-helpers = { path = "../test-helpers" }
-#rdkafka = { version = "0.32", features = ["cmake-build"] }
-rdkafka = { branch = "updating_librdkafka_to_v2.1.1", git = "https://github.com/shotover/rust-rdkafka", features = ["cmake-build"] }
 redis.workspace = true
 chacha20poly1305.workspace = true
 serde.workspace = true
@@ -59,6 +57,7 @@ inferno = { version = "0.11.15", default-features = false, features = ["multithr
 # Include WIP alpha transforms in the public API
 alpha-transforms = ["shotover/alpha-transforms"]
 cassandra-cpp-driver-tests = ["test-helpers/cassandra-cpp-driver-tests"]
+rdkafka-driver-tests = ["test-helpers/rdkafka-driver-tests"]
 
 [[bench]]
 name = "windsock"

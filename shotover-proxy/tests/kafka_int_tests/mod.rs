@@ -1,14 +1,19 @@
 #[cfg(feature = "alpha-transforms")]
+#[cfg(feature = "rdkafka-driver-tests")]
 use crate::shotover_process;
 #[cfg(feature = "alpha-transforms")]
+#[cfg(feature = "rdkafka-driver-tests")]
 use std::time::Duration;
 #[cfg(feature = "alpha-transforms")]
+#[cfg(feature = "rdkafka-driver-tests")]
 use test_helpers::docker_compose::docker_compose;
 
 #[cfg(feature = "alpha-transforms")]
+#[cfg(feature = "rdkafka-driver-tests")]
 mod test_cases;
 
 #[cfg(feature = "alpha-transforms")]
+#[cfg(feature = "rdkafka-driver-tests")]
 #[tokio::test]
 async fn passthrough_standard() {
     let _docker_compose =
@@ -27,6 +32,7 @@ async fn passthrough_standard() {
     .expect("Shotover did not shutdown within 10s");
 }
 
+#[cfg(feature = "rdkafka-driver-tests")]
 #[cfg(feature = "alpha-transforms")]
 #[tokio::test]
 async fn passthrough_encode() {
@@ -41,6 +47,7 @@ async fn passthrough_encode() {
     shotover.shutdown_and_then_consume_events(&[]).await;
 }
 
+#[cfg(feature = "rdkafka-driver-tests")]
 #[cfg(feature = "alpha-transforms")]
 #[tokio::test]
 async fn cluster_single_shotover() {
@@ -59,6 +66,7 @@ async fn cluster_single_shotover() {
     .expect("Shotover did not shutdown within 10s");
 }
 
+#[cfg(feature = "rdkafka-driver-tests")]
 #[cfg(feature = "alpha-transforms")]
 #[tokio::test]
 async fn cluster_multi_shotover() {
