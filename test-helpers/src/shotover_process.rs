@@ -30,21 +30,27 @@ impl ShotoverProcessBuilder {
         }
     }
 
+    /// Hint that there is a precompiled shotover binary available.
+    /// This binary will be used unless a profile is specified.
     pub fn with_bin(mut self, bin_path: &Path) -> Self {
         self.bin_path = Some(bin_path.to_owned());
         self
     }
 
+    /// Prefix forwarded shotover logs with the provided string.
+    /// Use this when there are multiple shotover instances to give them a unique name in the logs.
     pub fn with_log_name(mut self, log_name: &str) -> Self {
         self.log_name = Some(log_name.to_owned());
         self
     }
 
+    /// Run shotover with the specified number of cores
     pub fn with_cores(mut self, cores: u32) -> Self {
         self.cores = Some(cores.to_string());
         self
     }
 
+    /// Force shotover to be compiled with the specified profile
     pub fn with_profile(mut self, profile: Option<&str>) -> Self {
         if let Some(profile) = profile {
             self.profile = Some(profile.to_string());
@@ -113,16 +119,14 @@ observability_interface: "127.0.0.1:{observability_port}"
 
         let log_name = self.log_name.as_deref().unwrap_or("shotover");
 
-        match &self.bin_path {
-            Some(bin_path) => BinProcess::start_binary(bin_path, log_name, &args).await,
-            None => {
-                BinProcess::start_crate_name(
-                    "shotover-proxy",
-                    log_name,
-                    &args,
-                    self.profile.as_deref(),
-                )
-                .await
+        match (&self.profile, &self.bin_path) {
+            (Some(profile), _) => {
+                BinProcess::start_binary_name("shotover-proxy", log_name, &args, Some(profile))
+                    .await
+            }
+            (None, Some(bin_path)) => BinProcess::start_binary(bin_path, log_name, &args).await,
+            (None, None) => {
+                BinProcess::start_binary_name("shotover-proxy", log_name, &args, None).await
             }
         }
     }
