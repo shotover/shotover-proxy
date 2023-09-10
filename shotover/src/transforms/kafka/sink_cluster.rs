@@ -10,6 +10,7 @@ use crate::transforms::{Transform, TransformBuilder, Transforms, Wrapper};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use dashmap::DashMap;
+use kafka_protocol::messages::find_coordinator_response::Coordinator;
 use kafka_protocol::messages::metadata_request::MetadataRequestTopic;
 use kafka_protocol::messages::{
     ApiKey, BrokerId, FindCoordinatorRequest, GroupId, HeartbeatRequest, JoinGroupRequest,
@@ -21,6 +22,7 @@ use rand::rngs::SmallRng;
 use rand::seq::{IteratorRandom, SliceRandom};
 use rand::SeedableRng;
 use serde::Deserialize;
+use std::collections::HashMap;
 use std::hash::Hasher;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -578,6 +580,7 @@ impl KafkaSinkCluster {
                                 &mut coordinator.port,
                             )
                         }
+                        deduplicate_coordinators(&mut find_coordinator.coordinators);
                     }
                     response.invalidate_cache();
                 }
@@ -588,8 +591,10 @@ impl KafkaSinkCluster {
                     self.process_metadata(metadata).await;
 
                     for (_, broker) in &mut metadata.brokers {
-                        rewrite_address(&self.shotover_nodes, &mut broker.host, &mut broker.port)
+                        rewrite_address(&self.shotover_nodes, &mut broker.host, &mut broker.port);
                     }
+                    deduplicate_metadata_brokers(metadata);
+
                     response.invalidate_cache();
                 }
                 Some(Frame::Kafka(KafkaFrame::Response {
@@ -716,6 +721,75 @@ fn rewrite_address(shotover_nodes: &[KafkaAddress], host: &mut StrBytes, port: &
             &shotover_nodes[hash_address(host, *port) as usize % shotover_nodes.len()];
         *host = shotover_node.host.clone();
         *port = shotover_node.port;
+    }
+}
+
+/// The rdkafka driver has been observed to get stuck when there are multiple brokers with identical host and port.
+/// This function deterministically rewrites metadata to avoid such duplication.
+fn deduplicate_metadata_brokers(metadata: &mut MetadataResponse) {
+    struct SeenBroker {
+        pub id: BrokerId,
+        pub address: KafkaAddress,
+    }
+    let mut seen: Vec<SeenBroker> = vec![];
+    let mut replacement_broker_id = HashMap::new();
+
+    // ensure deterministic results across shotover instances by first sorting the list of brokers by their broker id
+    metadata.brokers.sort_keys();
+
+    // populate replacement_broker_id.
+    // This is used both to determine which brokers to delete and which broker ids to use as a replacement for deleted brokers.
+    for (id, broker) in &mut metadata.brokers {
+        let address = KafkaAddress {
+            host: broker.host.clone(),
+            port: broker.port,
+        };
+        broker.rack = None;
+        if let Some(replacement) = seen.iter().find(|x| x.address == address) {
+            replacement_broker_id.insert(*id, replacement.id);
+        }
+        seen.push(SeenBroker { address, id: *id });
+    }
+
+    // remove brokers with duplicate addresses
+    for (original, _replacement) in replacement_broker_id.iter() {
+        metadata.brokers.remove(original);
+    }
+
+    // In the previous step some broker id's were removed but we might be referring to those id's elsewhere in the message.
+    // If there are any such cases fix them by changing the id to refer to the equivalent undeleted broker.
+    for (_, topic) in &mut metadata.topics {
+        for partition in &mut topic.partitions {
+            if let Some(id) = replacement_broker_id.get(&partition.leader_id) {
+                partition.leader_id = *id;
+            }
+            for replica_node in &mut partition.replica_nodes {
+                if let Some(id) = replacement_broker_id.get(replica_node) {
+                    *replica_node = *id
+                }
+            }
+        }
+    }
+}
+
+/// We havent observed any failures due to duplicates in findcoordinator messages like we have in metadata messages.
+/// But there might be similar issues lurking in other drivers so deduplicating seems reasonable.
+fn deduplicate_coordinators(coordinators: &mut Vec<Coordinator>) {
+    let mut seen = vec![];
+    let mut to_delete = vec![];
+    for (i, coordinator) in coordinators.iter().enumerate() {
+        let address = KafkaAddress {
+            host: coordinator.host.clone(),
+            port: coordinator.port,
+        };
+        if seen.contains(&address) {
+            to_delete.push(i)
+        }
+        seen.push(address);
+    }
+
+    for to_delete in to_delete.iter().rev() {
+        coordinators.remove(*to_delete);
     }
 }
 
