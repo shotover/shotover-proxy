@@ -12,7 +12,6 @@ use async_trait::async_trait;
 use dashmap::DashMap;
 use kafka_protocol::messages::find_coordinator_response::Coordinator;
 use kafka_protocol::messages::metadata_request::MetadataRequestTopic;
-use kafka_protocol::messages::metadata_response::MetadataResponseBroker;
 use kafka_protocol::messages::{
     ApiKey, BrokerId, FindCoordinatorRequest, GroupId, HeartbeatRequest, JoinGroupRequest,
     MetadataRequest, MetadataResponse, OffsetFetchRequest, RequestHeader, SyncGroupRequest,
@@ -728,10 +727,9 @@ fn rewrite_address(shotover_nodes: &[KafkaAddress], host: &mut StrBytes, port: &
 /// The rdkafka driver has been observed to get stuck when there are multiple brokers with identical host and port.
 /// This function deterministically rewrites metadata to avoid such duplication.
 fn deduplicate_metadata_brokers(metadata: &mut MetadataResponse) {
-    #[derive(Debug)]
     struct SeenBroker {
         pub id: BrokerId,
-        pub address: MetadataResponseBroker,
+        pub address: KafkaAddress,
     }
     let mut seen: Vec<SeenBroker> = vec![];
     let mut replacement_broker_id = HashMap::new();
@@ -742,14 +740,15 @@ fn deduplicate_metadata_brokers(metadata: &mut MetadataResponse) {
     // populate replacement_broker_id.
     // This is used both to determine which brokers to delete and which broker ids to use as a replacement for deleted brokers.
     for (id, broker) in &mut metadata.brokers {
+        let address = KafkaAddress {
+            host: broker.host.clone(),
+            port: broker.port,
+        };
         broker.rack = None;
-        if let Some(replacement) = seen.iter().find(|x| &x.address == broker) {
+        if let Some(replacement) = seen.iter().find(|x| x.address == address) {
             replacement_broker_id.insert(*id, replacement.id);
         }
-        seen.push(SeenBroker {
-            address: broker.clone(),
-            id: *id,
-        });
+        seen.push(SeenBroker { address, id: *id });
     }
 
     // remove brokers with duplicate addresses
