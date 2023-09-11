@@ -8,6 +8,8 @@ async fn produce_consume(brokers: &str, topic_name: &str) {
     let producer: FutureProducer = ClientConfig::new()
         .set("bootstrap.servers", brokers)
         .set("message.timeout.ms", "5000")
+        // internal driver debug logs are emitted to tokio tracing, assuming the appropriate filter is used by the tracing subscriber
+        .set("debug", "all")
         .create()
         .unwrap();
 
@@ -25,6 +27,7 @@ async fn produce_consume(brokers: &str, topic_name: &str) {
         .set("session.timeout.ms", "6000")
         .set("auto.offset.reset", "earliest")
         .set("enable.auto.commit", "false")
+        .set("debug", "all")
         .create()
         .unwrap();
     consumer.subscribe(&[topic_name]).unwrap();
@@ -47,6 +50,7 @@ async fn produce_consume_acks0(brokers: &str) {
         .set("bootstrap.servers", brokers)
         .set("message.timeout.ms", "5000")
         .set("acks", "0")
+        .set("debug", "all")
         .create()
         .unwrap();
 
@@ -73,6 +77,7 @@ async fn produce_consume_acks0(brokers: &str) {
         .set("session.timeout.ms", "6000")
         .set("auto.offset.reset", "earliest")
         .set("enable.auto.commit", "false")
+        .set("debug", "all")
         .create()
         .unwrap();
     consumer.subscribe(&[topic_name]).unwrap();
