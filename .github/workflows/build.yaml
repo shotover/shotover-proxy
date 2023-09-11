@@ -41,8 +41,10 @@ jobs:
         run: shotover-proxy/build/install_ubuntu_packages.sh
       - name: Install cargo-hack
         run: cargo install cargo-hack --version 0.5.8
+      - name: Ensure that dev tools compiles and has no warnings with no features enabled
+        run: cargo clippy --locked ${{ matrix.cargo_flags }} --all-targets -- -D warnings
       - name: Ensure that shotover-proxy compiles and has no warnings under every possible combination of features
         # some things to explicitly point out:
         # * clippy also reports rustc warnings and errors
-        # * clippy --all-targets is not run so we only build the shotover_proxy executable
-        run: cargo hack --feature-powerset clippy --locked ${{ matrix.cargo_flags }} -- -D warnings
+        # * clippy --all-targets is not run so we only build the shotover_proxy executable without the tests/benches
+        run: cargo hack --feature-powerset clippy --locked ${{ matrix.cargo_flags }} --package shotover-proxy -- -D warnings

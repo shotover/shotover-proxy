@@ -40,10 +40,7 @@ impl Windsock {
         let running_in_release = release_profiles.contains(&env!("PROFILE"));
 
         Windsock {
-            benches: benches
-                .into_iter()
-                .map(|bench| BenchState::new(bench))
-                .collect(),
+            benches: benches.into_iter().map(BenchState::new).collect(),
             cloud: cloud.unwrap_or(Box::new(NoCloud)),
             running_in_release,
         }

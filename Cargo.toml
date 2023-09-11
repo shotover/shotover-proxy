@@ -45,7 +45,7 @@ cassandra-protocol = "3.0"
 tracing = "0.1.15"
 tracing-subscriber = { version = "0.3.1", features = ["env-filter", "json"] }
 tracing-appender = "0.2.0"
-nix = "0.26.0"
+nix = { version = "0.27.0", features = ["signal"]}
 serde_json = "1.0"
 rcgen = "0.10.0"
 subprocess = "0.2.7"
@@ -62,4 +62,4 @@ clap = { version = "4.0.4", features = ["cargo", "derive"] }
 async-trait = "0.1.30"
 typetag = "0.2.5"
 aws-throwaway = "0.2.0"
-tokio-bin-process = "0.3.0"
+tokio-bin-process = "0.4.0"

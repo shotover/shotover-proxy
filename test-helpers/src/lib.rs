@@ -1,14 +1,15 @@
 pub mod cert;
 pub mod connection;
 pub mod docker_compose;
-pub mod flamegraph;
-pub mod lazy;
 pub mod metrics;
 pub mod mock_cassandra;
 pub mod shotover_process;
 
 use anyhow::{anyhow, Result};
 use subprocess::{Exec, Redirection};
+
+#[cfg(feature = "rdkafka-driver-tests")]
+pub use rdkafka;
 
 /// Runs a command and returns the output as a string.
 ///

@@ -1,11 +1,13 @@
 use self::samply::Samply;
 use crate::common::Shotover;
 use aws_throwaway::Ec2Instance;
+use perf_flamegraph::Perf;
 use std::{collections::HashMap, path::PathBuf};
-use test_helpers::{flamegraph::Perf, shotover_process::BinProcess};
+use test_helpers::shotover_process::BinProcess;
 use tokio::sync::mpsc::UnboundedReceiver;
 use windsock::Profiling;
 
+mod perf_flamegraph;
 mod samply;
 mod sar;
 

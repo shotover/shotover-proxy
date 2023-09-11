@@ -6,8 +6,6 @@ use std::io::{BufReader, BufWriter};
 use std::path::PathBuf;
 use std::process::{Child, Command};
 
-use crate::run_command;
-
 pub struct Perf {
     child: Child,
     path: PathBuf,
@@ -25,7 +23,7 @@ impl Perf {
         // It also lets us block until the user has entered the password, otherwise the rest of the test would continue before `perf` has started.
         // TODO: It would be more robust to get a single root prompt and then keep feeding commands into it.
         //       But that would require a bunch of work so its out of scope for now.
-        run_command("sudo", &["ls"]).unwrap();
+        test_helpers::run_command("sudo", &["ls"]).unwrap();
 
         let mut command = Command::new("sudo");
         command.args([
@@ -54,7 +52,7 @@ impl Perf {
     pub fn flamegraph(mut self) {
         self.child.wait().unwrap();
 
-        run_command(
+        test_helpers::run_command(
             "sudo",
             &[
                 "chown",
