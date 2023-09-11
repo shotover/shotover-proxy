@@ -47,14 +47,14 @@ backtrace = "0.3.66"
 backtrace-ext = "0.2"
 
 # Parsers
-cql3-parser = "0.3.2"
+cql3-parser = "0.4.0"
 serde.workspace = true
 serde_json.workspace = true
 serde_yaml.workspace = true
 bincode.workspace = true
 num = { version = "0.4.0", features = ["serde"] }
 uuid.workspace = true
-bigdecimal = {version = "0.4.0", features = ["serde"] }
+bigdecimal = { version = "0.4.0", features = ["serde"] }
 base64 = "0.21.0"
 httparse = "1.8.0"
 http = "0.2.9"
