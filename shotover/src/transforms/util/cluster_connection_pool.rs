@@ -13,6 +13,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use tokio::sync::oneshot;
 use tokio::sync::Mutex;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tokio_util::codec::{FramedRead, FramedWrite};
@@ -192,8 +193,8 @@ pub fn spawn_read_write_tasks<
     stream_rx: R,
     stream_tx: W,
 ) -> Connection {
-    let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel::<Request>();
-    let (return_tx, return_rx) = tokio::sync::mpsc::unbounded_channel::<Request>();
+    let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel();
+    let (return_tx, return_rx) = tokio::sync::mpsc::unbounded_channel();
     let (closed_tx, closed_rx) = tokio::sync::oneshot::channel();
 
     let (decoder, encoder) = codec.build();
@@ -231,23 +232,25 @@ pub fn spawn_read_write_tasks<
 async fn tx_process<C: EncoderHalf, W: AsyncWrite + Unpin + Send + 'static>(
     write: W,
     out_rx: UnboundedReceiver<Request>,
-    return_tx: UnboundedSender<Request>,
+    return_tx: UnboundedSender<ReturnChan>,
     codec: C,
 ) -> Result<(), CodecWriteError> {
     let writer = FramedWrite::new(write, codec);
     let rx_stream = UnboundedReceiverStream::new(out_rx).map(|x| {
-        let ret = Ok(vec![x.message.clone()]);
+        let ret = Ok(vec![x.message]);
         return_tx
-            .send(x)
+            .send(x.return_chan)
             .map_err(|err| CodecWriteError::Encoder(anyhow!(err)))?;
         ret
     });
     rx_stream.forward(writer).await
 }
 
+type ReturnChan = Option<oneshot::Sender<Response>>;
+
 async fn rx_process<C: DecoderHalf, R: AsyncRead + Unpin + Send + 'static>(
     read: R,
-    mut return_rx: UnboundedReceiver<Request>,
+    mut return_rx: UnboundedReceiver<ReturnChan>,
     codec: C,
 ) -> Result<()> {
     let mut reader = FramedRead::new(read, codec);
@@ -260,15 +263,9 @@ async fn rx_process<C: DecoderHalf, R: AsyncRead + Unpin + Send + 'static>(
             Ok(responses) => {
                 for response_message in responses {
                     loop {
-                        if let Some(Request {
-                            message: request_message,
-                            return_chan: Some(ret),
-                            ..
-                        }) = return_rx.recv().await
-                        {
+                        if let Some(Some(ret)) = return_rx.recv().await {
                             // If the receiver hangs up, just silently ignore
                             let _ = ret.send(Response {
-                                original: request_message,
                                 response: Ok(response_message),
                             });
                             break;

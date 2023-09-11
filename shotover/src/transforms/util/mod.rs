@@ -8,15 +8,17 @@ pub mod cluster_connection_pool;
 /// Represents a `Request` to a connection within Shotover
 #[derive(Debug)]
 pub struct Request {
-    pub message: Message, // Message to send upstream to connection
-    pub return_chan: Option<tokio::sync::oneshot::Sender<Response>>, // Channel to return the response to
+    // Message to send upstream to connection
+    pub message: Message,
+    // Channel to return the response to
+    pub return_chan: Option<tokio::sync::oneshot::Sender<Response>>,
 }
 
 /// Represents a `Response` to a `Request`
 #[derive(Debug)]
 pub struct Response {
-    pub original: Message,         // Original `Message` that this `Response` is to
-    pub response: Result<Message>, // Response to the original `Message`
+    // Response to the original `Message`
+    pub response: Result<Message>,
 }
 
 #[derive(thiserror::Error, Debug)]
