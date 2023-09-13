@@ -246,7 +246,6 @@ impl RedisSinkCluster {
                         .await;
 
                     Ok(Response {
-                        original: message,
                         response: Ok(Message::from_frame(Frame::Redis(response.unwrap()))),
                     })
                 }))
@@ -922,7 +921,6 @@ fn short_circuit(frame: RedisFrame) -> Result<ResponseFuture> {
 
     one_tx
         .send(Response {
-            original: Message::from_frame(Frame::Redis(RedisFrame::Null)),
             response: Ok(Message::from_frame(Frame::Redis(frame))),
         })
         .map_err(|_| anyhow!("Failed to send short circuited redis frame"))?;
@@ -959,6 +957,8 @@ impl Transform for RedisSinkCluster {
 
         let mut responses = FuturesOrdered::new();
 
+        let mut requests = requests_wrapper.requests.clone();
+        requests.reverse();
         for message in requests_wrapper.requests {
             responses.push_back(match self.dispatch_message(message).await {
                 Ok(response) => response,
@@ -970,10 +970,11 @@ impl Transform for RedisSinkCluster {
         let mut response_buffer = vec![];
 
         while let Some(s) = responses.next().await {
+            let original = requests.pop().unwrap();
+
             trace!("Got resp {:?}", s);
-            let Response { original, response } = s.or_else(|e| -> Result<Response> {
+            let Response { response } = s.or_else(|e| -> Result<Response> {
                 Ok(Response {
-                    original: Message::from_frame(Frame::Redis(RedisFrame::Null)),
                     response: Ok(Message::from_frame(Frame::Redis(RedisFrame::Error(
                         format!("ERR Could not route request - {e}").into(),
                     )))),
