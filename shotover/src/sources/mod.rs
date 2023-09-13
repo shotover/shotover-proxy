@@ -1,10 +1,12 @@
+//! Sources used to listen for connections and send/recieve with the client.
+
 use crate::sources::cassandra::{CassandraConfig, CassandraSource};
 use crate::sources::kafka::{KafkaConfig, KafkaSource};
 use crate::sources::opensearch::{OpenSearchConfig, OpenSearchSource};
 use crate::sources::redis::{RedisConfig, RedisSource};
 use crate::transforms::chain::TransformChainBuilder;
 use anyhow::Result;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
@@ -13,7 +15,7 @@ pub mod kafka;
 pub mod opensearch;
 pub mod redis;
 
-#[derive(Deserialize, Debug, Clone, Copy)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
 #[serde(deny_unknown_fields)]
 pub enum Transport {
     Tcp,
@@ -39,7 +41,7 @@ impl Source {
     }
 }
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(deny_unknown_fields)]
 pub enum SourceConfig {
     Cassandra(CassandraConfig),

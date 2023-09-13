@@ -2,13 +2,13 @@ use crate::message::Messages;
 use crate::transforms::{Transform, TransformBuilder, TransformConfig, Transforms, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct NullSinkConfig;
 
-#[typetag::deserialize(name = "NullSink")]
+#[typetag::serde(name = "NullSink")]
 #[async_trait(?Send)]
 impl TransformConfig for NullSinkConfig {
     async fn get_builder(&self, _chain_name: String) -> Result<Box<dyn TransformBuilder>> {

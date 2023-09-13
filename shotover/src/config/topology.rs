@@ -3,12 +3,12 @@ use crate::sources::{Source, SourceConfig};
 use crate::transforms::chain::TransformChainBuilder;
 use anyhow::{anyhow, Context, Result};
 use itertools::Itertools;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tokio::sync::watch;
 use tracing::info;
 
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct Topology {
     pub sources: HashMap<String, SourceConfig>,
@@ -17,6 +17,7 @@ pub struct Topology {
 }
 
 impl Topology {
+    /// Load the topology.yaml from the provided path into a Topology instance
     pub fn from_file(filepath: &str) -> Result<Topology> {
         let file = std::fs::File::open(filepath)
             .with_context(|| format!("Couldn't open the topology file {}", filepath))?;
@@ -24,6 +25,14 @@ impl Topology {
         let deserializer = serde_yaml::Deserializer::from_reader(file);
         serde_yaml::with::singleton_map_recursive::deserialize(deserializer)
             .with_context(|| format!("Failed to parse topology file {}", filepath))
+    }
+
+    /// Generate the yaml representation of this instance
+    pub fn serialize(&self) -> Result<String> {
+        let mut output = vec![];
+        let mut serializer = serde_yaml::Serializer::new(&mut output);
+        serde_yaml::with::singleton_map_recursive::serialize(self, &mut serializer)?;
+        Ok(String::from_utf8(output).unwrap())
     }
 
     async fn build_chains(&self) -> Result<HashMap<String, Option<TransformChainBuilder>>> {

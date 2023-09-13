@@ -9,12 +9,12 @@ use crate::transforms::util::{Request, Response};
 use crate::transforms::{Transform, TransformBuilder, Transforms, Wrapper};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tokio::sync::{mpsc, oneshot};
 use tokio::time::timeout;
 
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct KafkaSinkSingleConfig {
     #[serde(rename = "remote_address")]
@@ -27,7 +27,7 @@ pub struct KafkaSinkSingleConfig {
 use crate::transforms::TransformConfig;
 
 #[cfg(feature = "alpha-transforms")]
-#[typetag::deserialize(name = "KafkaSinkSingle")]
+#[typetag::serde(name = "KafkaSinkSingle")]
 #[async_trait(?Send)]
 impl TransformConfig for KafkaSinkSingleConfig {
     async fn get_builder(&self, chain_name: String) -> Result<Box<dyn TransformBuilder>> {

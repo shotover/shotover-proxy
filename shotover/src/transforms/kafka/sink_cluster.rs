@@ -21,7 +21,7 @@ use kafka_protocol::protocol::{Builder, StrBytes};
 use rand::rngs::SmallRng;
 use rand::seq::{IteratorRandom, SliceRandom};
 use rand::SeedableRng;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::hash::Hasher;
 use std::net::SocketAddr;
@@ -31,7 +31,7 @@ use tokio::sync::{mpsc, oneshot, RwLock};
 use tokio::time::timeout;
 use uuid::Uuid;
 
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct KafkaSinkClusterConfig {
     pub first_contact_points: Vec<String>,
@@ -44,7 +44,7 @@ pub struct KafkaSinkClusterConfig {
 use crate::transforms::TransformConfig;
 
 #[cfg(feature = "alpha-transforms")]
-#[typetag::deserialize(name = "KafkaSinkCluster")]
+#[typetag::serde(name = "KafkaSinkCluster")]
 #[async_trait(?Send)]
 impl TransformConfig for KafkaSinkClusterConfig {
     async fn get_builder(&self, chain_name: String) -> Result<Box<dyn TransformBuilder>> {

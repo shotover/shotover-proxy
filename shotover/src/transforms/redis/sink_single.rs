@@ -11,7 +11,7 @@ use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use futures::{FutureExt, SinkExt, StreamExt};
 use metrics::{register_counter, Counter};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 use std::pin::Pin;
 use std::time::Duration;
@@ -20,7 +20,7 @@ use tokio::sync::mpsc;
 use tokio_util::codec::{FramedRead, FramedWrite};
 use tracing::Instrument;
 
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct RedisSinkSingleConfig {
     #[serde(rename = "remote_address")]
@@ -29,7 +29,7 @@ pub struct RedisSinkSingleConfig {
     pub connect_timeout_ms: u64,
 }
 
-#[typetag::deserialize(name = "RedisSinkSingle")]
+#[typetag::serde(name = "RedisSinkSingle")]
 #[async_trait(?Send)]
 impl TransformConfig for RedisSinkSingleConfig {
     async fn get_builder(&self, chain_name: String) -> Result<Box<dyn TransformBuilder>> {

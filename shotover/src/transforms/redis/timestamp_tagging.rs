@@ -6,16 +6,16 @@ use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use bytes::Bytes;
 use itertools::Itertools;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::fmt::Write;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::{debug, trace};
 
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct RedisTimestampTaggerConfig;
 
-#[typetag::deserialize(name = "RedisTimestampTagger")]
+#[typetag::serde(name = "RedisTimestampTagger")]
 #[async_trait(?Send)]
 impl TransformConfig for RedisTimestampTaggerConfig {
     async fn get_builder(&self, _chain_name: String) -> Result<Box<dyn TransformBuilder>> {

@@ -7,13 +7,14 @@ use anyhow::Result;
 use async_trait::async_trait;
 use metrics::{counter, register_counter};
 use serde::Deserialize;
+use serde::Serialize;
 
 #[derive(Debug, Clone)]
 pub struct QueryCounter {
     counter_name: String,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct QueryCounterConfig {
     pub name: String,
@@ -93,7 +94,7 @@ fn get_redis_query_type(frame: &RedisFrame) -> Option<String> {
     None
 }
 
-#[typetag::deserialize(name = "QueryCounter")]
+#[typetag::serde(name = "QueryCounter")]
 #[async_trait(?Send)]
 impl TransformConfig for QueryCounterConfig {
     async fn get_builder(&self, _chain_name: String) -> Result<Box<dyn TransformBuilder>> {

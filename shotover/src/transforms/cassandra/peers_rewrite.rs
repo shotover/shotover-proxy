@@ -11,15 +11,15 @@ use cassandra_protocol::frame::events::{ServerEvent, StatusChange};
 use cql3_parser::cassandra_statement::CassandraStatement;
 use cql3_parser::common::{FQName, Identifier};
 use cql3_parser::select::SelectElement;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct CassandraPeersRewriteConfig {
     pub port: u16,
 }
 
-#[typetag::deserialize(name = "CassandraPeersRewrite")]
+#[typetag::serde(name = "CassandraPeersRewrite")]
 #[async_trait(?Send)]
 impl TransformConfig for CassandraPeersRewriteConfig {
     async fn get_builder(&self, _chain_name: String) -> Result<Box<dyn TransformBuilder>> {

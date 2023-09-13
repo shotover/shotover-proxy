@@ -32,13 +32,13 @@
 #![allow(clippy::needless_doctest_main)]
 
 pub mod codec;
-mod config;
+pub mod config;
 pub mod frame;
 pub mod message;
 mod observability;
 pub mod runner;
 mod server;
-mod sources;
+pub mod sources;
 pub mod tcp;
 pub mod tls;
 mod tracing_panic_handler;

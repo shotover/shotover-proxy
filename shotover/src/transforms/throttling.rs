@@ -9,19 +9,19 @@ use governor::{
     Quota, RateLimiter,
 };
 use nonzero_ext::nonzero;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::num::NonZeroU32;
 use std::sync::Arc;
 
 use super::Transforms;
 
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct RequestThrottlingConfig {
     pub max_requests_per_second: NonZeroU32,
 }
 
-#[typetag::deserialize(name = "RequestThrottling")]
+#[typetag::serde(name = "RequestThrottling")]
 #[async_trait(?Send)]
 impl TransformConfig for RequestThrottlingConfig {
     async fn get_builder(&self, _chain_name: String) -> Result<Box<dyn TransformBuilder>> {
