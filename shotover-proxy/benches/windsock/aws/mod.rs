@@ -186,8 +186,9 @@ sudo docker system prune -af"#,
         // start container
         let mut env_args = String::new();
         for (key, value) in envs {
-            // TODO: shell escape key and value
-            env_args.push_str(&format!(" -e \"{key}={value}\""))
+            let key_value =
+                String::from_utf8(shell_quote::bash::escape(format!("{key}={value}"))).unwrap();
+            env_args.push_str(&format!(" -e {key_value}"))
         }
         let output = self
             .instance
