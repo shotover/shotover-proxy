@@ -321,9 +321,7 @@ mod scatter_transform_tests {
         ))]);
 
         let ok_repeat = Box::new(DebugReturner::new(Response::Message(response.clone())));
-        let err_repeat = Box::new(DebugReturner::new(Response::Fail(
-            "intentional fail".into(),
-        )));
+        let err_repeat = Box::new(DebugReturner::new(Response::Fail));
 
         let mut two_of_three = HashMap::new();
         two_of_three.insert(
