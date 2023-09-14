@@ -53,7 +53,7 @@ impl SourceConfig {
         &self,
         chain_builder: TransformChainBuilder,
         trigger_shutdown_rx: watch::Receiver<bool>,
-    ) -> Result<Vec<Source>> {
+    ) -> Result<Source> {
         match self {
             SourceConfig::Cassandra(c) => c.get_source(chain_builder, trigger_shutdown_rx).await,
             SourceConfig::Redis(r) => r.get_source(chain_builder, trigger_shutdown_rx).await,

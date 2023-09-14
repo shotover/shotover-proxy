@@ -25,18 +25,19 @@ impl RedisConfig {
         &self,
         chain_builder: TransformChainBuilder,
         trigger_shutdown_rx: watch::Receiver<bool>,
-    ) -> Result<Vec<Source>> {
-        RedisSource::new(
-            chain_builder,
-            self.listen_addr.clone(),
-            trigger_shutdown_rx,
-            self.connection_limit,
-            self.hard_connection_limit,
-            self.tls.clone(),
-            self.timeout,
-        )
-        .await
-        .map(|x| vec![Source::Redis(x)])
+    ) -> Result<Source> {
+        Ok(Source::Redis(
+            RedisSource::new(
+                chain_builder,
+                self.listen_addr.clone(),
+                trigger_shutdown_rx,
+                self.connection_limit,
+                self.hard_connection_limit,
+                self.tls.clone(),
+                self.timeout,
+            )
+            .await?,
+        ))
     }
 }
 

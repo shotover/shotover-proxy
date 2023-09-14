@@ -22,8 +22,8 @@ impl OpenSearchConfig {
         &self,
         chain_builder: TransformChainBuilder,
         trigger_shutdown_rx: watch::Receiver<bool>,
-    ) -> Result<Vec<Source>> {
-        Ok(vec![Source::OpenSearch(
+    ) -> Result<Source> {
+        Ok(Source::OpenSearch(
             OpenSearchSource::new(
                 chain_builder,
                 self.listen_addr.clone(),
@@ -33,7 +33,7 @@ impl OpenSearchConfig {
                 self.timeout,
             )
             .await?,
-        )])
+        ))
     }
 }
 
