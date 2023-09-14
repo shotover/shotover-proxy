@@ -27,8 +27,8 @@ impl CassandraConfig {
         &self,
         chain_builder: TransformChainBuilder,
         trigger_shutdown_rx: watch::Receiver<bool>,
-    ) -> Result<Vec<Source>> {
-        Ok(vec![Source::Cassandra(
+    ) -> Result<Source> {
+        Ok(Source::Cassandra(
             CassandraSource::new(
                 chain_builder,
                 self.listen_addr.clone(),
@@ -40,7 +40,7 @@ impl CassandraConfig {
                 self.transport,
             )
             .await?,
-        )])
+        ))
     }
 }
 

@@ -75,8 +75,8 @@ impl Topology {
         for (source_name, chain_name) in &self.source_to_chain_mapping {
             if let Some(source_config) = self.sources.get(source_name.as_str()) {
                 if let Some(Some(chain)) = chains.remove(source_name.as_str()) {
-                    sources_list.append(
-                        &mut source_config
+                    sources_list.push(
+                        source_config
                             .get_source(chain, trigger_shutdown_rx.clone())
                             .await
                             .with_context(|| {
