@@ -1,6 +1,7 @@
 use crate::shotover_process;
 use test_helpers::connection::redis_connection;
 use test_helpers::docker_compose::docker_compose;
+use test_helpers::shotover_process::{EventMatcher, Level};
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_ignore_matches() {
@@ -38,6 +39,53 @@ async fn test_ignore_with_mismatch() {
 
     assert_eq!("42", result);
     shotover.shutdown_and_then_consume_events(&[]).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_log_matches() {
+    let shotover = shotover_process("tests/test-configs/tee/log.yaml")
+        .start()
+        .await;
+
+    let mut connection = redis_connection::new_async("127.0.0.1", 6379).await;
+
+    let result = redis::cmd("SET")
+        .arg("key")
+        .arg("myvalue")
+        .query_async::<_, String>(&mut connection)
+        .await
+        .unwrap();
+
+    assert_eq!("42", result);
+    shotover.shutdown_and_then_consume_events(&[]).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_log_with_mismatch() {
+    let shotover = shotover_process("tests/test-configs/tee/log_with_mismatch.yaml")
+        .start()
+        .await;
+
+    let mut connection = redis_connection::new_async("127.0.0.1", 6379).await;
+
+    let result = redis::cmd("SET")
+        .arg("key")
+        .arg("myvalue")
+        .query_async::<_, String>(&mut connection)
+        .await
+        .unwrap();
+
+    assert_eq!("42", result);
+    shotover
+        .shutdown_and_then_consume_events(&[EventMatcher::new()
+            .with_level(Level::Warn)
+            .with_target("shotover::transforms::tee")
+            .with_message(
+                r#"Tee mismatch: 
+chain response: ["Redis BulkString(b\"42\"))"] 
+tee response: ["Redis BulkString(b\"41\"))"]"#,
+            )])
+        .await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
