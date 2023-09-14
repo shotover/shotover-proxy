@@ -25,8 +25,8 @@ impl KafkaConfig {
         &self,
         chain_builder: TransformChainBuilder,
         trigger_shutdown_rx: watch::Receiver<bool>,
-    ) -> Result<Vec<Source>> {
-        Ok(vec![Source::Kafka(
+    ) -> Result<Source> {
+        Ok(Source::Kafka(
             KafkaSource::new(
                 chain_builder,
                 self.listen_addr.clone(),
@@ -37,7 +37,7 @@ impl KafkaConfig {
                 self.timeout,
             )
             .await?,
-        )])
+        ))
     }
 }
 
