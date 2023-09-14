@@ -6,7 +6,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use metrics::{register_counter, Counter};
 use serde::Deserialize;
-use tracing::{debug, trace};
+use tracing::{debug, trace, warn};
 
 pub struct TeeBuilder {
     pub tx: TransformChainBuilder,
@@ -18,6 +18,7 @@ pub struct TeeBuilder {
 
 pub enum ConsistencyBehaviorBuilder {
     Ignore,
+    LogWarningOnMismatch,
     FailOnMismatch,
     SubchainOnMismatch(TransformChainBuilder),
 }
@@ -47,6 +48,9 @@ impl TransformBuilder for TeeBuilder {
             tx: self.tx.build_buffered(self.buffer_size),
             behavior: match &self.behavior {
                 ConsistencyBehaviorBuilder::Ignore => ConsistencyBehavior::Ignore,
+                ConsistencyBehaviorBuilder::LogWarningOnMismatch => {
+                    ConsistencyBehavior::LogWarningOnMismatch
+                }
                 ConsistencyBehaviorBuilder::FailOnMismatch => ConsistencyBehavior::FailOnMismatch,
                 ConsistencyBehaviorBuilder::SubchainOnMismatch(chain) => {
                     ConsistencyBehavior::SubchainOnMismatch(chain.build_buffered(self.buffer_size))
@@ -97,6 +101,7 @@ pub struct Tee {
 
 pub enum ConsistencyBehavior {
     Ignore,
+    LogWarningOnMismatch,
     FailOnMismatch,
     SubchainOnMismatch(BufferedChain),
 }
@@ -114,6 +119,7 @@ pub struct TeeConfig {
 #[serde(deny_unknown_fields)]
 pub enum ConsistencyBehaviorConfig {
     Ignore,
+    LogWarningOnMismatch,
     FailOnMismatch,
     SubchainOnMismatch(TransformChainConfig),
 }
@@ -127,6 +133,9 @@ impl TransformConfig for TeeConfig {
             Some(ConsistencyBehaviorConfig::Ignore) => ConsistencyBehaviorBuilder::Ignore,
             Some(ConsistencyBehaviorConfig::FailOnMismatch) => {
                 ConsistencyBehaviorBuilder::FailOnMismatch
+            }
+            Some(ConsistencyBehaviorConfig::LogWarningOnMismatch) => {
+                ConsistencyBehaviorBuilder::LogWarningOnMismatch
             }
             Some(ConsistencyBehaviorConfig::SubchainOnMismatch(mismatch_chain)) => {
                 ConsistencyBehaviorBuilder::SubchainOnMismatch(
@@ -208,6 +217,31 @@ impl Transform for Tee {
                     mismatch_chain.process_request(failed_message, None).await?;
                 }
 
+                Ok(chain_response)
+            }
+            ConsistencyBehavior::LogWarningOnMismatch => {
+                let (tee_result, chain_result) = tokio::join!(
+                    self.tx
+                        .process_request(requests_wrapper.clone(), self.timeout_micros),
+                    requests_wrapper.call_next_transform()
+                );
+
+                let mut tee_response = tee_result?;
+                let mut chain_response = chain_result?;
+
+                if !chain_response.eq(&tee_response) {
+                    warn!(
+                        "Tee mismatch: \nchain response: {:?} \ntee response: {:?}",
+                        chain_response
+                            .iter_mut()
+                            .map(|m| m.to_high_level_string())
+                            .collect::<Vec<_>>(),
+                        tee_response
+                            .iter_mut()
+                            .map(|m| m.to_high_level_string())
+                            .collect::<Vec<_>>()
+                    );
+                }
                 Ok(chain_response)
             }
         }
