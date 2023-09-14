@@ -4314,6 +4314,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "shell-quote"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ab31b1e46a3f14300977ece8c355009deddc6c531de49d55951e795bbad42957"
+
+[[package]]
 name = "shellfish"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4434,6 +4440,7 @@ dependencies = [
  "scylla",
  "serde",
  "serde_json",
+ "shell-quote",
  "shotover",
  "test-helpers",
  "time",
@@ -5619,6 +5626,7 @@ dependencies = [
 name = "windsock-cloud-docker"
 version = "0.1.0"
 dependencies = [
+ "shell-quote",
  "subprocess",
 ]
 

@@ -6,7 +6,9 @@ use subprocess::{Exec, Redirection};
 fn main() {
     let mut args = std::env::args();
     args.next(); // skip binary name
-    let args: Vec<String> = args.collect();
+    let args: Vec<String> = args
+        .map(|x| String::from_utf8(shell_quote::bash::escape(x)).unwrap())
+        .collect();
     let args = args.join(" ");
 
     // ensure container is setup
