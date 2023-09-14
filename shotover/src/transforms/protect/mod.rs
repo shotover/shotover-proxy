@@ -4,7 +4,9 @@ use crate::frame::{
 use crate::message::Messages;
 use crate::transforms::protect::key_management::KeyManager;
 pub use crate::transforms::protect::key_management::KeyManagerConfig;
-use crate::transforms::{Transform, TransformBuilder, Transforms, Wrapper};
+use crate::transforms::{BodyTransformBuilder, Transform, Transforms, Wrapper};
+#[cfg(feature = "alpha-transforms")]
+use crate::transforms::{TransformBuilder, TransformConfig};
 use anyhow::Result;
 use async_trait::async_trait;
 use cql3_parser::cassandra_statement::CassandraStatement;
@@ -28,14 +30,11 @@ pub struct ProtectConfig {
 }
 
 #[cfg(feature = "alpha-transforms")]
-use crate::transforms::TransformConfig;
-
-#[cfg(feature = "alpha-transforms")]
 #[typetag::deserialize(name = "Protect")]
 #[async_trait(?Send)]
 impl TransformConfig for ProtectConfig {
-    async fn get_builder(&self, _chain_name: String) -> Result<Box<dyn TransformBuilder>> {
-        Ok(Box::new(Protect {
+    async fn get_builder(&self, _chain_name: String) -> Result<TransformBuilder> {
+        Ok(TransformBuilder::Body(Box::new(Protect {
             keyspace_table_columns: self
                 .keyspace_table_columns
                 .iter()
@@ -55,7 +54,7 @@ impl TransformConfig for ProtectConfig {
                 .collect(),
             key_source: self.key_manager.build().await?,
             key_id: "XXXXXXX".to_string(),
-        }))
+        })))
     }
 }
 
@@ -69,7 +68,7 @@ pub struct Protect {
     key_id: String,
 }
 
-impl TransformBuilder for Protect {
+impl BodyTransformBuilder for Protect {
     fn build(&self) -> Transforms {
         Transforms::Protect(Box::new(self.clone()))
     }

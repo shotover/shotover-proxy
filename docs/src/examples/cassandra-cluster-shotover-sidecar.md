@@ -54,19 +54,15 @@ First we will create our `topology.yaml` file to have a single Cassandra source.
 
 ```yaml
 ---
-sources:
-  cassandra_prod:
-    Cassandra:
-      listen_addr: "0.0.0.0:9043"
 chain_config:
   main_chain:
+    - CassandraSource:
+        listen_addr: "0.0.0.0:9043"
     - CassandraPeersRewrite:
         port: 9043
     - CassandraSinkSingle:
         remote_address: "127.0.0.1:9042"
         connect_timeout_ms: 3000
-source_to_chain_mapping:
-  cassandra_prod: main_chain
 ```
 
 Modify an existing `topology.yaml` or create a new one and place the above example as the file's contents.
@@ -133,12 +129,10 @@ The next section of this tutorial will cover adding rate limiting to your Cassan
 
 ```YAML
 ---
-sources:
-  cassandra_prod:
-    Cassandra:
-      listen_addr: "0.0.0.0:9043"
 chain_config:
   main_chain:
+    - CassandraSource:
+        listen_addr: "0.0.0.0:9043"
     - RequestThrottling:
         max_requests_per_second: 40000
     - CassandraPeersRewrite:
@@ -146,10 +140,6 @@ chain_config:
     - CassandraSinkSingle:
         remote_address: "127.0.0.1:9042"
         connect_timeout_ms: 3000
-named_topics:
-  testtopic: 5
-source_to_chain_mapping:
-  cassandra_prod: main_chain
 ```
 
 In this example we will set your `max_requests_per_second` to 40,000. This will allow a max of 40,000 queries per second to go through this Shotover instance, across all connections.

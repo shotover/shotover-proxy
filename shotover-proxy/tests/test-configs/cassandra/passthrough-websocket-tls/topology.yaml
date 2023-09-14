@@ -1,14 +1,12 @@
 ---
-sources:
-  cassandra_prod:
-    Cassandra:
-      listen_addr: "127.0.0.1:9042"
-      transport: WebSocket
-      tls:
-        certificate_path: "tests/test-configs/cassandra/tls/certs/localhost.crt"
-        private_key_path: "tests/test-configs/cassandra/tls/certs/localhost.key"
 chain_config:
   main_chain:
+    - CassandraSource:
+        listen_addr: "127.0.0.1:9042"
+        transport: WebSocket
+        tls:
+          certificate_path: "tests/test-configs/cassandra/tls/certs/localhost.crt"
+          private_key_path: "tests/test-configs/cassandra/tls/certs/localhost.key"
     - CassandraSinkSingle:
         remote_address: "127.0.0.1:9043"
         connect_timeout_ms: 3000
@@ -17,5 +15,3 @@ chain_config:
           certificate_path: "tests/test-configs/cassandra/tls/certs/localhost.crt"
           private_key_path: "tests/test-configs/cassandra/tls/certs/localhost.key"
           verify_hostname: false
-source_to_chain_mapping:
-  cassandra_prod: main_chain

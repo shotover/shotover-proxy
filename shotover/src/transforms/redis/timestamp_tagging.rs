@@ -1,7 +1,9 @@
 use crate::frame::redis::redis_query_type;
 use crate::frame::{Frame, RedisFrame};
 use crate::message::{Message, Messages, QueryType};
-use crate::transforms::{Transform, TransformBuilder, TransformConfig, Transforms, Wrapper};
+use crate::transforms::{
+    BodyTransformBuilder, Transform, TransformBuilder, TransformConfig, Transforms, Wrapper,
+};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -18,8 +20,8 @@ pub struct RedisTimestampTaggerConfig;
 #[typetag::deserialize(name = "RedisTimestampTagger")]
 #[async_trait(?Send)]
 impl TransformConfig for RedisTimestampTaggerConfig {
-    async fn get_builder(&self, _chain_name: String) -> Result<Box<dyn TransformBuilder>> {
-        Ok(Box::new(RedisTimestampTagger {}))
+    async fn get_builder(&self, _chain_name: String) -> Result<TransformBuilder> {
+        Ok(TransformBuilder::Body(Box::new(RedisTimestampTagger {})))
     }
 }
 
@@ -32,7 +34,7 @@ impl RedisTimestampTagger {
     }
 }
 
-impl TransformBuilder for RedisTimestampTagger {
+impl BodyTransformBuilder for RedisTimestampTagger {
     fn build(&self) -> Transforms {
         Transforms::RedisTimestampTagger(self.clone())
     }

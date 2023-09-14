@@ -2,7 +2,9 @@ use crate::config::chain::TransformChainConfig;
 use crate::frame::{Frame, RedisFrame};
 use crate::message::{Message, Messages, QueryType};
 use crate::transforms::chain::{BufferedChain, TransformChainBuilder};
-use crate::transforms::{Transform, TransformBuilder, TransformConfig, Transforms, Wrapper};
+use crate::transforms::{
+    BodyTransformBuilder, Transform, TransformBuilder, TransformConfig, Transforms, Wrapper,
+};
 use anyhow::Result;
 use async_trait::async_trait;
 use futures::stream::FuturesUnordered;
@@ -22,7 +24,7 @@ pub struct TuneableConsistencyScatterConfig {
 #[typetag::deserialize(name = "TuneableConsistencyScatter")]
 #[async_trait(?Send)]
 impl TransformConfig for TuneableConsistencyScatterConfig {
-    async fn get_builder(&self, _chain_name: String) -> Result<Box<dyn TransformBuilder>> {
+    async fn get_builder(&self, _chain_name: String) -> Result<TransformBuilder> {
         let mut route_map = Vec::with_capacity(self.route_map.len());
         warn!("Using this transform is considered unstable - Does not work with REDIS pipelines");
 
@@ -31,11 +33,13 @@ impl TransformConfig for TuneableConsistencyScatterConfig {
         }
         route_map.sort_by_key(|x| x.name.clone());
 
-        Ok(Box::new(TuneableConsistencyScatterBuilder {
-            route_map,
-            write_consistency: self.write_consistency,
-            read_consistency: self.read_consistency,
-        }))
+        Ok(TransformBuilder::Body(Box::new(
+            TuneableConsistencyScatterBuilder {
+                route_map,
+                write_consistency: self.write_consistency,
+                read_consistency: self.read_consistency,
+            },
+        )))
     }
 }
 
@@ -45,7 +49,7 @@ pub struct TuneableConsistencyScatterBuilder {
     read_consistency: i32,
 }
 
-impl TransformBuilder for TuneableConsistencyScatterBuilder {
+impl BodyTransformBuilder for TuneableConsistencyScatterBuilder {
     fn build(&self) -> Transforms {
         Transforms::TuneableConsistencyScatter(TuneableConsistentencyScatter {
             route_map: self
@@ -287,7 +291,7 @@ mod scatter_transform_tests {
         TuneableConsistencyScatterBuilder, TuneableConsistentencyScatter,
     };
     use crate::transforms::null::NullSink;
-    use crate::transforms::{TransformBuilder, Transforms, Wrapper};
+    use crate::transforms::{BodyTransformBuilder, Transforms, Wrapper};
     use bytes::Bytes;
     use std::collections::HashMap;
 

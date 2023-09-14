@@ -1,8 +1,8 @@
-use super::Transforms;
+use super::{TransformBuilder, Transforms};
 use crate::config::chain::TransformChainConfig;
 use crate::message::Messages;
 use crate::transforms::chain::{BufferedChain, TransformChainBuilder};
-use crate::transforms::{Transform, TransformBuilder, TransformConfig, Wrapper};
+use crate::transforms::{BodyTransformBuilder, Transform, TransformConfig, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
 use serde::Deserialize;
@@ -20,14 +20,16 @@ pub struct ConnectionBalanceAndPoolConfig {
 #[typetag::deserialize(name = "ConnectionBalanceAndPool")]
 #[async_trait(?Send)]
 impl TransformConfig for ConnectionBalanceAndPoolConfig {
-    async fn get_builder(&self, _chain_name: String) -> Result<Box<dyn TransformBuilder>> {
+    async fn get_builder(&self, _chain_name: String) -> Result<TransformBuilder> {
         let chain = Arc::new(self.chain.get_builder(self.name.clone()).await?);
 
-        Ok(Box::new(ConnectionBalanceAndPoolBuilder {
-            max_connections: self.max_connections,
-            all_connections: Arc::new(Mutex::new(Vec::with_capacity(self.max_connections))),
-            chain_to_clone: chain,
-        }))
+        Ok(TransformBuilder::Body(Box::new(
+            ConnectionBalanceAndPoolBuilder {
+                max_connections: self.max_connections,
+                all_connections: Arc::new(Mutex::new(Vec::with_capacity(self.max_connections))),
+                chain_to_clone: chain,
+            },
+        )))
     }
 }
 
@@ -38,7 +40,7 @@ pub struct ConnectionBalanceAndPoolBuilder {
     pub chain_to_clone: Arc<TransformChainBuilder>,
 }
 
-impl TransformBuilder for ConnectionBalanceAndPoolBuilder {
+impl BodyTransformBuilder for ConnectionBalanceAndPoolBuilder {
     fn build(&self) -> Transforms {
         Transforms::PoolConnections(ConnectionBalanceAndPool {
             active_connection: None,

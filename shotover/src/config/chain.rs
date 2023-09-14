@@ -1,5 +1,5 @@
 use crate::transforms::chain::TransformChainBuilder;
-use crate::transforms::{TransformBuilder, TransformConfig};
+use crate::transforms::{BodyTransformBuilder, SourceBuilder, TransformConfig};
 use anyhow::Result;
 use serde::de::{DeserializeSeed, Deserializer, MapAccess, SeqAccess, Visitor};
 use serde::Deserialize;
@@ -15,11 +15,56 @@ pub struct TransformChainConfig(
 
 impl TransformChainConfig {
     pub async fn get_builder(&self, name: String) -> Result<TransformChainBuilder> {
-        let mut transforms: Vec<Box<dyn TransformBuilder>> = Vec::new();
+        let mut transforms: Vec<Box<dyn BodyTransformBuilder>> = Vec::new();
         for tc in &self.0 {
-            transforms.push(tc.get_builder(name.clone()).await?)
+            transforms.push(tc.get_transform_builder(name.clone()).await?)
         }
         Ok(TransformChainBuilder::new(transforms, name))
+    }
+
+    pub(crate) async fn get_source_and_builder(
+        &self,
+        name: String,
+    ) -> Result<(Box<dyn SourceBuilder>, TransformChainBuilder), String> {
+        let mut transforms_iter = self.0.iter();
+        let Some(source) = transforms_iter.next() else {
+            return Err(format!("{name}:\n  The chain is empty, but it must contain at least a source transform and a terminating transform."));
+        };
+
+        let source = match source
+            .get_builder(name.clone())
+            .await
+            .map_err(|x| x.to_string())?
+        {
+            crate::transforms::TransformBuilder::Body(transform) => {
+                return Err(format!(
+                "{name}:\n  The chain starts with transform {} which is not a source transform.",
+                transform.get_name()
+            ))
+            }
+            crate::transforms::TransformBuilder::Source(source) => source,
+        };
+
+        let mut transforms: Vec<Box<dyn BodyTransformBuilder>> = Vec::new();
+        for transform in transforms_iter {
+            match transform.get_builder(name.clone()).await.map_err(|x| x.to_string())? {
+                crate::transforms::TransformBuilder::Body(transform) => transforms.push(transform),
+                crate::transforms::TransformBuilder::Source(bad_source) => return Err(format!(
+                    "{name}:\n  The chain contains source transform {} but there was already a source transform {}.",
+                    bad_source.get_name(),
+                    source.get_name()
+                )),
+            }
+        }
+
+        if transforms.is_empty() {
+            return Err(format!(
+                "{name}:\n  The chain contains only the source transform {} with no terminating transform.",
+                source.get_name()
+            ));
+        };
+
+        Ok((source, TransformChainBuilder::new(transforms, name)))
     }
 }
 

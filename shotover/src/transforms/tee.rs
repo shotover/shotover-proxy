@@ -1,12 +1,14 @@
 use crate::config::chain::TransformChainConfig;
 use crate::message::Messages;
 use crate::transforms::chain::{BufferedChain, TransformChainBuilder};
-use crate::transforms::{Transform, TransformBuilder, TransformConfig, Transforms, Wrapper};
+use crate::transforms::{BodyTransformBuilder, Transform, TransformConfig, Transforms, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
 use metrics::{register_counter, Counter};
 use serde::Deserialize;
 use tracing::{debug, trace, warn};
+
+use super::TransformBuilder;
 
 pub struct TeeBuilder {
     pub tx: TransformChainBuilder,
@@ -42,7 +44,7 @@ impl TeeBuilder {
     }
 }
 
-impl TransformBuilder for TeeBuilder {
+impl BodyTransformBuilder for TeeBuilder {
     fn build(&self) -> Transforms {
         Transforms::Tee(Tee {
             tx: self.tx.build_buffered(self.buffer_size),
@@ -127,7 +129,7 @@ pub enum ConsistencyBehaviorConfig {
 #[typetag::deserialize(name = "Tee")]
 #[async_trait(?Send)]
 impl TransformConfig for TeeConfig {
-    async fn get_builder(&self, _chain_name: String) -> Result<Box<dyn TransformBuilder>> {
+    async fn get_builder(&self, _chain_name: String) -> Result<TransformBuilder> {
         let buffer_size = self.buffer_size.unwrap_or(5);
         let behavior = match &self.behavior {
             Some(ConsistencyBehaviorConfig::Ignore) => ConsistencyBehaviorBuilder::Ignore,
@@ -148,12 +150,12 @@ impl TransformConfig for TeeConfig {
         };
         let tee_chain = self.chain.get_builder("tee_chain".to_string()).await?;
 
-        Ok(Box::new(TeeBuilder::new(
+        Ok(TransformBuilder::Body(Box::new(TeeBuilder::new(
             tee_chain,
             buffer_size,
             behavior,
             self.timeout_micros,
-        )))
+        ))))
     }
 }
 
@@ -262,7 +264,7 @@ mod tests {
             buffer_size: None,
         };
 
-        let transform = config.get_builder("".to_owned()).await.unwrap();
+        let transform = config.get_transform_builder("".to_owned()).await.unwrap();
         let result = transform.validate();
         assert_eq!(result, Vec::<String>::new());
     }
@@ -276,7 +278,7 @@ mod tests {
             buffer_size: None,
         };
 
-        let transform = config.get_builder("".to_owned()).await.unwrap();
+        let transform = config.get_transform_builder("".to_owned()).await.unwrap();
         let result = transform.validate().join("\n");
         let expected = r#"Tee:
   tee_chain:
@@ -292,7 +294,7 @@ mod tests {
             chain: TransformChainConfig(vec![Box::new(NullSinkConfig)]),
             buffer_size: None,
         };
-        let transform = config.get_builder("".to_owned()).await.unwrap();
+        let transform = config.get_transform_builder("".to_owned()).await.unwrap();
         let result = transform.validate();
         assert_eq!(result, Vec::<String>::new());
     }
@@ -305,7 +307,7 @@ mod tests {
             chain: TransformChainConfig(vec![Box::new(NullSinkConfig)]),
             buffer_size: None,
         };
-        let transform = config.get_builder("".to_owned()).await.unwrap();
+        let transform = config.get_transform_builder("".to_owned()).await.unwrap();
         let result = transform.validate();
         assert_eq!(result, Vec::<String>::new());
     }
@@ -321,7 +323,7 @@ mod tests {
             buffer_size: None,
         };
 
-        let transform = config.get_builder("".to_owned()).await.unwrap();
+        let transform = config.get_transform_builder("".to_owned()).await.unwrap();
         let result = transform.validate().join("\n");
         let expected = r#"Tee:
   mismatch_chain:
@@ -340,7 +342,7 @@ mod tests {
             buffer_size: None,
         };
 
-        let transform = config.get_builder("".to_owned()).await.unwrap();
+        let transform = config.get_transform_builder("".to_owned()).await.unwrap();
         let result = transform.validate();
         assert_eq!(result, Vec::<String>::new());
     }

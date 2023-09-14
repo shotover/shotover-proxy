@@ -1,10 +1,8 @@
 ---
-sources:
-  redis_prod:
-    Redis:
-      listen_addr: "HOST_ADDRESS:6379"
 chain_config:
   redis_chain:
+    - RedisSource:
+        listen_addr: "HOST_ADDRESS:6379"
     - DebugForceEncode:
         encode_requests: true
         encode_responses: true
@@ -12,5 +10,3 @@ chain_config:
         first_contact_points:
           - "REDIS_ADDRESS:6379"
         connect_timeout_ms: 3000
-source_to_chain_mapping:
-  redis_prod: redis_chain

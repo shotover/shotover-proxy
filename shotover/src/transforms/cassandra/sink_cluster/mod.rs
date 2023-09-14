@@ -5,7 +5,9 @@ use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame};
 use crate::message::{Message, Messages, Metadata};
 use crate::tls::{TlsConnector, TlsConnectorConfig};
 use crate::transforms::cassandra::connection::{CassandraConnection, Response, ResponseError};
-use crate::transforms::{Transform, TransformBuilder, TransformConfig, Transforms, Wrapper};
+use crate::transforms::{
+    BodyTransformBuilder, Transform, TransformBuilder, TransformConfig, Transforms, Wrapper,
+};
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use cassandra_protocol::events::ServerEvent;
@@ -64,7 +66,7 @@ pub struct CassandraSinkClusterConfig {
 #[typetag::deserialize(name = "CassandraSinkCluster")]
 #[async_trait(?Send)]
 impl TransformConfig for CassandraSinkClusterConfig {
-    async fn get_builder(&self, chain_name: String) -> Result<Box<dyn TransformBuilder>> {
+    async fn get_builder(&self, chain_name: String) -> Result<TransformBuilder> {
         let tls = self.tls.clone().map(TlsConnector::new).transpose()?;
         let mut shotover_nodes = self.shotover_nodes.clone();
         let index = self
@@ -79,14 +81,16 @@ impl TransformConfig for CassandraSinkClusterConfig {
             })?;
         let local_node = shotover_nodes.remove(index);
 
-        Ok(Box::new(CassandraSinkClusterBuilder::new(
-            self.first_contact_points.clone(),
-            shotover_nodes,
-            chain_name,
-            local_node,
-            tls,
-            self.connect_timeout_ms,
-            self.read_timeout,
+        Ok(TransformBuilder::Body(Box::new(
+            CassandraSinkClusterBuilder::new(
+                self.first_contact_points.clone(),
+                shotover_nodes,
+                chain_name,
+                local_node,
+                tls,
+                self.connect_timeout_ms,
+                self.read_timeout,
+            ),
         )))
     }
 }
@@ -150,7 +154,7 @@ impl CassandraSinkClusterBuilder {
     }
 }
 
-impl TransformBuilder for CassandraSinkClusterBuilder {
+impl BodyTransformBuilder for CassandraSinkClusterBuilder {
     fn build(&self) -> crate::transforms::Transforms {
         Transforms::CassandraSinkCluster(Box::new(CassandraSinkCluster {
             contact_points: self.contact_points.clone(),

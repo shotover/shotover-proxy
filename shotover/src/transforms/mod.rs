@@ -1,6 +1,8 @@
 //! Various types required for defining a transform
 
+use self::chain::TransformChainBuilder;
 use crate::message::Messages;
+use crate::sources::Source;
 use crate::transforms::cassandra::peers_rewrite::CassandraPeersRewrite;
 use crate::transforms::cassandra::sink_cluster::CassandraSinkCluster;
 use crate::transforms::cassandra::sink_single::CassandraSinkSingle;
@@ -40,7 +42,7 @@ use std::net::SocketAddr;
 use std::pin::Pin;
 use std::slice::IterMut;
 use strum_macros::IntoStaticStr;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 use tokio::time::Instant;
 
 pub mod cassandra;
@@ -65,7 +67,14 @@ pub mod tee;
 pub mod throttling;
 pub mod util;
 
-pub trait TransformBuilder: Send + Sync {
+/// Holds a transform builder of different types
+pub enum TransformBuilder {
+    Body(Box<dyn BodyTransformBuilder>),
+    Source(Box<dyn SourceBuilder>),
+}
+
+/// Transform builder used for non-source transforms
+pub trait BodyTransformBuilder: Send + Sync {
     fn build(&self) -> Transforms;
 
     fn get_name(&self) -> &'static str;
@@ -79,7 +88,23 @@ pub trait TransformBuilder: Send + Sync {
     }
 }
 
-impl Debug for dyn TransformBuilder {
+/// Transform builder used for source transforms
+#[async_trait(?Send)]
+pub trait SourceBuilder: Send + Sync {
+    async fn build(
+        &self,
+        chain_builder: TransformChainBuilder,
+        trigger_shutdown_rx: watch::Receiver<bool>,
+    ) -> Result<Source>;
+
+    fn get_name(&self) -> &'static str;
+
+    fn validate(&self) -> Vec<String> {
+        vec![]
+    }
+}
+
+impl Debug for dyn BodyTransformBuilder {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "Transform: {}", self.get_name())
     }
@@ -243,7 +268,16 @@ impl Transforms {
 #[typetag::deserialize]
 #[async_trait(?Send)]
 pub trait TransformConfig: Debug {
-    async fn get_builder(&self, chain_name: String) -> Result<Box<dyn TransformBuilder>>;
+    async fn get_builder(&self, chain_name: String) -> Result<TransformBuilder>;
+    async fn get_transform_builder(
+        &self,
+        chain_name: String,
+    ) -> Result<Box<dyn BodyTransformBuilder>> {
+        match self.get_builder(chain_name).await? {
+            TransformBuilder::Body(builder) => Ok(builder),
+            TransformBuilder::Source(_) => Err(anyhow!("Expected transform but found source")),
+        }
+    }
 }
 
 /// The [`Wrapper`] struct is passed into each transform and contains a list of mutable references to the

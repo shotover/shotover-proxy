@@ -4,7 +4,9 @@ use crate::server::TcpCodecListener;
 use crate::sources::{Source, Transport};
 use crate::tls::{TlsAcceptor, TlsAcceptorConfig};
 use crate::transforms::chain::TransformChainBuilder;
+use crate::transforms::{SourceBuilder, TransformBuilder, TransformConfig};
 use anyhow::Result;
+use async_trait::async_trait;
 use serde::Deserialize;
 use std::sync::Arc;
 use tokio::sync::{watch, Semaphore};
@@ -13,7 +15,7 @@ use tracing::{error, info};
 
 #[derive(Deserialize, Debug, Clone)]
 #[serde(deny_unknown_fields)]
-pub struct CassandraConfig {
+pub struct CassandraSourceConfig {
     pub listen_addr: String,
     pub connection_limit: Option<usize>,
     pub hard_connection_limit: Option<bool>,
@@ -22,8 +24,17 @@ pub struct CassandraConfig {
     pub transport: Option<Transport>,
 }
 
-impl CassandraConfig {
-    pub async fn get_source(
+#[typetag::deserialize(name = "CassandraSource")]
+#[async_trait(?Send)]
+impl TransformConfig for CassandraSourceConfig {
+    async fn get_builder(&self, _chain_name: String) -> Result<TransformBuilder> {
+        Ok(TransformBuilder::Source(Box::new(self.clone())))
+    }
+}
+
+#[async_trait(?Send)]
+impl SourceBuilder for CassandraSourceConfig {
+    async fn build(
         &self,
         chain_builder: TransformChainBuilder,
         trigger_shutdown_rx: watch::Receiver<bool>,
@@ -41,6 +52,10 @@ impl CassandraConfig {
             )
             .await?,
         ))
+    }
+
+    fn get_name(&self) -> &'static str {
+        "CassandraSource"
     }
 }
 

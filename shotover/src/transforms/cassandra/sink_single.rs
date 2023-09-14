@@ -4,7 +4,9 @@ use crate::frame::cassandra::CassandraMetadata;
 use crate::message::{Messages, Metadata};
 use crate::tls::{TlsConnector, TlsConnectorConfig};
 use crate::transforms::cassandra::connection::Response;
-use crate::transforms::{Transform, TransformBuilder, TransformConfig, Transforms, Wrapper};
+use crate::transforms::{
+    BodyTransformBuilder, Transform, TransformBuilder, TransformConfig, Transforms, Wrapper,
+};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use cassandra_protocol::frame::Version;
@@ -28,14 +30,16 @@ pub struct CassandraSinkSingleConfig {
 #[typetag::deserialize(name = "CassandraSinkSingle")]
 #[async_trait(?Send)]
 impl TransformConfig for CassandraSinkSingleConfig {
-    async fn get_builder(&self, chain_name: String) -> Result<Box<dyn TransformBuilder>> {
+    async fn get_builder(&self, chain_name: String) -> Result<TransformBuilder> {
         let tls = self.tls.clone().map(TlsConnector::new).transpose()?;
-        Ok(Box::new(CassandraSinkSingleBuilder::new(
-            self.address.clone(),
-            chain_name,
-            tls,
-            self.connect_timeout_ms,
-            self.read_timeout,
+        Ok(TransformBuilder::Body(Box::new(
+            CassandraSinkSingleBuilder::new(
+                self.address.clone(),
+                chain_name,
+                tls,
+                self.connect_timeout_ms,
+                self.read_timeout,
+            ),
         )))
     }
 }
@@ -75,7 +79,7 @@ impl CassandraSinkSingleBuilder {
     }
 }
 
-impl TransformBuilder for CassandraSinkSingleBuilder {
+impl BodyTransformBuilder for CassandraSinkSingleBuilder {
     fn build(&self) -> Transforms {
         Transforms::CassandraSinkSingle(CassandraSinkSingle {
             outbound: None,

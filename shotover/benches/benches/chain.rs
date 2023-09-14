@@ -181,7 +181,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                         // an absurdly large value is given so that all messages will pass through
                         max_requests_per_second: std::num::NonZeroU32::new(100_000_000).unwrap(),
                     }
-                    .get_builder("".to_owned()),
+                    .get_transform_builder("".to_owned()),
                 )
                 .unwrap(),
                 Box::<NullSink>::default(),
@@ -294,7 +294,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                             kek_id: "".to_string(),
                         },
                     }
-                    .get_builder("".to_owned()),
+                    .get_transform_builder("".to_owned()),
                 )
                 .unwrap(),
                 Box::<NullSink>::default(),

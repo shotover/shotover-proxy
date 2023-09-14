@@ -2,7 +2,9 @@ use crate::config::chain::TransformChainConfig;
 use crate::frame::{CassandraFrame, CassandraOperation, Frame, RedisFrame};
 use crate::message::{Message, Messages};
 use crate::transforms::chain::{TransformChain, TransformChainBuilder};
-use crate::transforms::{Transform, TransformBuilder, TransformConfig, Transforms, Wrapper};
+use crate::transforms::{
+    BodyTransformBuilder, Transform, TransformBuilder, TransformConfig, Transforms, Wrapper,
+};
 use anyhow::{bail, Result};
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -85,7 +87,7 @@ pub struct RedisConfig {
 #[typetag::deserialize(name = "RedisCache")]
 #[async_trait(?Send)]
 impl TransformConfig for RedisConfig {
-    async fn get_builder(&self, _chain_name: String) -> Result<Box<dyn TransformBuilder>> {
+    async fn get_builder(&self, _chain_name: String) -> Result<TransformBuilder> {
         let missed_requests = register_counter!("cache_miss");
 
         let caching_schema: HashMap<FQName, TableCacheSchema> = self
@@ -94,11 +96,11 @@ impl TransformConfig for RedisConfig {
             .map(|(k, v)| (FQName::parse(k), v.into()))
             .collect();
 
-        Ok(Box::new(SimpleRedisCacheBuilder {
+        Ok(TransformBuilder::Body(Box::new(SimpleRedisCacheBuilder {
             cache_chain: self.chain.get_builder("cache_chain".to_string()).await?,
             caching_schema,
             missed_requests,
-        }))
+        })))
     }
 }
 
@@ -108,7 +110,7 @@ pub struct SimpleRedisCacheBuilder {
     missed_requests: Counter,
 }
 
-impl TransformBuilder for SimpleRedisCacheBuilder {
+impl BodyTransformBuilder for SimpleRedisCacheBuilder {
     fn build(&self) -> Transforms {
         Transforms::RedisCache(SimpleRedisCache {
             cache_chain: self.cache_chain.build(),
@@ -605,7 +607,7 @@ mod test {
     use crate::transforms::redis::cache::{
         build_redis_key_from_cql3, HashAddress, SimpleRedisCacheBuilder, TableCacheSchema,
     };
-    use crate::transforms::TransformBuilder;
+    use crate::transforms::BodyTransformBuilder;
     use bytes::Bytes;
     use cql3_parser::common::Identifier;
     use metrics::register_counter;

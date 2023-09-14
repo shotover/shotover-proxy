@@ -1,5 +1,5 @@
 use crate::message::{Message, Messages};
-use crate::transforms::{Transform, TransformBuilder, TransformConfig, Wrapper};
+use crate::transforms::{BodyTransformBuilder, Transform, TransformConfig, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
 use governor::{
@@ -13,7 +13,7 @@ use serde::Deserialize;
 use std::num::NonZeroU32;
 use std::sync::Arc;
 
-use super::Transforms;
+use super::{TransformBuilder, Transforms};
 
 #[derive(Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
@@ -24,13 +24,13 @@ pub struct RequestThrottlingConfig {
 #[typetag::deserialize(name = "RequestThrottling")]
 #[async_trait(?Send)]
 impl TransformConfig for RequestThrottlingConfig {
-    async fn get_builder(&self, _chain_name: String) -> Result<Box<dyn TransformBuilder>> {
-        Ok(Box::new(RequestThrottling {
+    async fn get_builder(&self, _chain_name: String) -> Result<TransformBuilder> {
+        Ok(TransformBuilder::Body(Box::new(RequestThrottling {
             limiter: Arc::new(RateLimiter::direct(Quota::per_second(
                 self.max_requests_per_second,
             ))),
             max_requests_per_second: self.max_requests_per_second,
-        }))
+        })))
     }
 }
 
@@ -40,7 +40,7 @@ pub struct RequestThrottling {
     max_requests_per_second: NonZeroU32,
 }
 
-impl TransformBuilder for RequestThrottling {
+impl BodyTransformBuilder for RequestThrottling {
     fn build(&self) -> Transforms {
         Transforms::RequestThrottling(self.clone())
     }

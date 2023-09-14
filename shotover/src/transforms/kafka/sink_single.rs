@@ -6,7 +6,9 @@ use crate::tcp;
 use crate::transforms::kafka::common::produce_channel;
 use crate::transforms::util::cluster_connection_pool::{spawn_read_write_tasks, Connection};
 use crate::transforms::util::{Request, Response};
-use crate::transforms::{Transform, TransformBuilder, Transforms, Wrapper};
+use crate::transforms::{BodyTransformBuilder, Transform, Transforms, Wrapper};
+#[cfg(feature = "alpha-transforms")]
+use crate::transforms::{TransformBuilder, TransformConfig};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use serde::Deserialize;
@@ -24,18 +26,17 @@ pub struct KafkaSinkSingleConfig {
 }
 
 #[cfg(feature = "alpha-transforms")]
-use crate::transforms::TransformConfig;
-
-#[cfg(feature = "alpha-transforms")]
 #[typetag::deserialize(name = "KafkaSinkSingle")]
 #[async_trait(?Send)]
 impl TransformConfig for KafkaSinkSingleConfig {
-    async fn get_builder(&self, chain_name: String) -> Result<Box<dyn TransformBuilder>> {
-        Ok(Box::new(KafkaSinkSingleBuilder::new(
-            self.address.clone(),
-            chain_name,
-            self.connect_timeout_ms,
-            self.read_timeout,
+    async fn get_builder(&self, chain_name: String) -> Result<TransformBuilder> {
+        Ok(TransformBuilder::Body(Box::new(
+            KafkaSinkSingleBuilder::new(
+                self.address.clone(),
+                chain_name,
+                self.connect_timeout_ms,
+                self.read_timeout,
+            ),
         )))
     }
 }
@@ -71,7 +72,7 @@ impl KafkaSinkSingleBuilder {
     }
 }
 
-impl TransformBuilder for KafkaSinkSingleBuilder {
+impl BodyTransformBuilder for KafkaSinkSingleBuilder {
     fn build(&self) -> Transforms {
         Transforms::KafkaSinkSingle(KafkaSinkSingle {
             outbound: None,

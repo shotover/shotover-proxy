@@ -1,9 +1,11 @@
 use crate::message::Messages;
-use crate::transforms::{Transform, TransformBuilder, TransformConfig, Transforms, Wrapper};
+use crate::transforms::{BodyTransformBuilder, Transform, TransformConfig, Transforms, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
 use serde::Deserialize;
 use std::time::Instant;
+
+use super::TransformBuilder;
 
 #[derive(Debug, Clone)]
 pub struct Coalesce {
@@ -23,17 +25,17 @@ pub struct CoalesceConfig {
 #[typetag::deserialize(name = "Coalesce")]
 #[async_trait(?Send)]
 impl TransformConfig for CoalesceConfig {
-    async fn get_builder(&self, _chain_name: String) -> Result<Box<dyn TransformBuilder>> {
-        Ok(Box::new(Coalesce {
+    async fn get_builder(&self, _chain_name: String) -> Result<TransformBuilder> {
+        Ok(TransformBuilder::Body(Box::new(Coalesce {
             buffer: Vec::with_capacity(self.flush_when_buffered_message_count.unwrap_or(0)),
             flush_when_buffered_message_count: self.flush_when_buffered_message_count,
             flush_when_millis_since_last_flush: self.flush_when_millis_since_last_flush,
             last_write: Instant::now(),
-        }))
+        })))
     }
 }
 
-impl TransformBuilder for Coalesce {
+impl BodyTransformBuilder for Coalesce {
     fn build(&self) -> Transforms {
         Transforms::Coalesce(self.clone())
     }

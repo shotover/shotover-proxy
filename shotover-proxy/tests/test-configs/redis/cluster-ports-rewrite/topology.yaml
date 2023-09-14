@@ -1,14 +1,10 @@
 ---
-sources:
-  redis_prod:
-    Redis:
-      listen_addr: "127.0.0.1:6380"
 chain_config:
   redis_chain:
+    - RedisSource:
+        listen_addr: "127.0.0.1:6380"
     - RedisClusterPortsRewrite:
          new_port: 6380
     - RedisSinkCluster:
         first_contact_points: ["127.0.0.1:2220", "127.0.0.1:2221", "127.0.0.1:2222", "127.0.0.1:2223", "127.0.0.1:2224", "127.0.0.1:2225"]
         connect_timeout_ms: 3000
-source_to_chain_mapping:
-  redis_prod: redis_chain

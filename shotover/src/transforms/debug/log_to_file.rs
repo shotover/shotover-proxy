@@ -1,5 +1,7 @@
 use crate::message::{Encodable, Message};
-use crate::transforms::{Transform, TransformBuilder, Transforms, Wrapper};
+#[cfg(feature = "alpha-transforms")]
+use crate::transforms::TransformBuilder;
+use crate::transforms::{BodyTransformBuilder, Transform, Transforms, Wrapper};
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use serde::Deserialize;
@@ -16,13 +18,13 @@ pub struct DebugLogToFileConfig;
 #[typetag::deserialize(name = "DebugLogToFile")]
 #[async_trait(?Send)]
 impl crate::transforms::TransformConfig for DebugLogToFileConfig {
-    async fn get_builder(&self, _chain_name: String) -> Result<Box<dyn TransformBuilder>> {
+    async fn get_builder(&self, _chain_name: String) -> Result<TransformBuilder> {
         // This transform is used for debugging a specific run, so we clean out any logs left over from the previous run
         std::fs::remove_dir_all("message-log").ok();
 
-        Ok(Box::new(DebugLogToFileBuilder {
+        Ok(TransformBuilder::Body(Box::new(DebugLogToFileBuilder {
             connection_counter: Arc::new(AtomicU64::new(0)),
-        }))
+        })))
     }
 }
 
@@ -30,7 +32,7 @@ pub struct DebugLogToFileBuilder {
     connection_counter: Arc<AtomicU64>,
 }
 
-impl TransformBuilder for DebugLogToFileBuilder {
+impl BodyTransformBuilder for DebugLogToFileBuilder {
     fn build(&self) -> Transforms {
         self.connection_counter.fetch_add(1, Ordering::Relaxed);
         let connection_current = self.connection_counter.load(Ordering::Relaxed);

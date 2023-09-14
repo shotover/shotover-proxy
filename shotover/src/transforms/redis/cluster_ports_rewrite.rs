@@ -1,7 +1,8 @@
 use crate::frame::Frame;
 use crate::frame::RedisFrame;
 use crate::message::Messages;
-use crate::transforms::{Transform, TransformBuilder, TransformConfig, Transforms, Wrapper};
+use crate::transforms::TransformBuilder;
+use crate::transforms::{BodyTransformBuilder, Transform, TransformConfig, Transforms, Wrapper};
 use anyhow::{anyhow, bail, Context, Result};
 use async_trait::async_trait;
 use bytes::{BufMut, Bytes, BytesMut};
@@ -16,14 +17,14 @@ pub struct RedisClusterPortsRewriteConfig {
 #[typetag::deserialize(name = "RedisClusterPortsRewrite")]
 #[async_trait(?Send)]
 impl TransformConfig for RedisClusterPortsRewriteConfig {
-    async fn get_builder(&self, _chain_name: String) -> Result<Box<dyn TransformBuilder>> {
-        Ok(Box::new(RedisClusterPortsRewrite {
+    async fn get_builder(&self, _chain_name: String) -> Result<TransformBuilder> {
+        Ok(TransformBuilder::Body(Box::new(RedisClusterPortsRewrite {
             new_port: self.new_port,
-        }))
+        })))
     }
 }
 
-impl TransformBuilder for RedisClusterPortsRewrite {
+impl BodyTransformBuilder for RedisClusterPortsRewrite {
     fn build(&self) -> Transforms {
         Transforms::RedisClusterPortsRewrite(self.clone())
     }

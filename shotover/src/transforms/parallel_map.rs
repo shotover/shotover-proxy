@@ -1,7 +1,7 @@
 use crate::config::chain::TransformChainConfig;
 use crate::message::Messages;
 use crate::transforms::chain::{TransformChain, TransformChainBuilder};
-use crate::transforms::{Transform, TransformBuilder, TransformConfig, Transforms, Wrapper};
+use crate::transforms::{BodyTransformBuilder, Transform, TransformConfig, Transforms, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
 use futures::stream::{FuturesOrdered, FuturesUnordered};
@@ -11,6 +11,8 @@ use futures::StreamExt;
 use serde::Deserialize;
 use std::future::Future;
 use std::pin::Pin;
+
+use super::TransformBuilder;
 
 #[derive(Debug)]
 pub struct ParallelMapBuilder {
@@ -74,16 +76,16 @@ pub struct ParallelMapConfig {
 #[typetag::deserialize(name = "ParallelMap")]
 #[async_trait(?Send)]
 impl TransformConfig for ParallelMapConfig {
-    async fn get_builder(&self, _chain_name: String) -> Result<Box<dyn TransformBuilder>> {
+    async fn get_builder(&self, _chain_name: String) -> Result<TransformBuilder> {
         let mut chains = vec![];
         for _ in 0..self.parallelism {
             chains.push(self.chain.get_builder("parallel_map_chain".into()).await?);
         }
 
-        Ok(Box::new(ParallelMapBuilder {
+        Ok(TransformBuilder::Body(Box::new(ParallelMapBuilder {
             chains,
             ordered: self.ordered_results,
-        }))
+        })))
     }
 }
 
@@ -122,7 +124,7 @@ impl Transform for ParallelMap {
     }
 }
 
-impl TransformBuilder for ParallelMapBuilder {
+impl BodyTransformBuilder for ParallelMapBuilder {
     fn build(&self) -> Transforms {
         Transforms::ParallelMap(ParallelMap {
             chains: self.chains.iter().map(|x| x.build()).collect(),
@@ -165,7 +167,7 @@ mod parallel_map_tests {
     use crate::transforms::debug::printer::DebugPrinter;
     use crate::transforms::null::NullSink;
     use crate::transforms::parallel_map::ParallelMapBuilder;
-    use crate::transforms::TransformBuilder;
+    use crate::transforms::BodyTransformBuilder;
 
     #[tokio::test]
     async fn test_validate_invalid_chain() {

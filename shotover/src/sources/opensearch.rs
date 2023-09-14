@@ -2,7 +2,9 @@ use crate::codec::{opensearch::OpenSearchCodecBuilder, CodecBuilder, Direction};
 use crate::server::TcpCodecListener;
 use crate::sources::{Source, Transport};
 use crate::transforms::chain::TransformChainBuilder;
+use crate::transforms::{SourceBuilder, TransformBuilder, TransformConfig};
 use anyhow::Result;
+use async_trait::async_trait;
 use serde::Deserialize;
 use std::sync::Arc;
 use tokio::sync::{watch, Semaphore};
@@ -10,15 +12,24 @@ use tokio::task::JoinHandle;
 use tracing::{error, info};
 
 #[derive(Deserialize, Debug, Clone)]
-pub struct OpenSearchConfig {
+pub struct OpenSearchSourceConfig {
     pub listen_addr: String,
     pub connection_limit: Option<usize>,
     pub hard_connection_limit: Option<bool>,
     pub timeout: Option<u64>,
 }
 
-impl OpenSearchConfig {
-    pub async fn get_source(
+#[typetag::deserialize(name = "OpenSearchSource")]
+#[async_trait(?Send)]
+impl TransformConfig for OpenSearchSourceConfig {
+    async fn get_builder(&self, _chain_name: String) -> Result<TransformBuilder> {
+        Ok(TransformBuilder::Source(Box::new(self.clone())))
+    }
+}
+
+#[async_trait(?Send)]
+impl SourceBuilder for OpenSearchSourceConfig {
+    async fn build(
         &self,
         chain_builder: TransformChainBuilder,
         trigger_shutdown_rx: watch::Receiver<bool>,
@@ -34,6 +45,10 @@ impl OpenSearchConfig {
             )
             .await?,
         ))
+    }
+
+    fn get_name(&self) -> &'static str {
+        "OpenSearchSource"
     }
 }
 

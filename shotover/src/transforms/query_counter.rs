@@ -2,11 +2,13 @@ use crate::frame::Frame;
 use crate::frame::RedisFrame;
 use crate::message::Messages;
 use crate::transforms::TransformConfig;
-use crate::transforms::{Transform, TransformBuilder, Transforms, Wrapper};
+use crate::transforms::{BodyTransformBuilder, Transform, Transforms, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
 use metrics::{counter, register_counter};
 use serde::Deserialize;
+
+use super::TransformBuilder;
 
 #[derive(Debug, Clone)]
 pub struct QueryCounter {
@@ -27,7 +29,7 @@ impl QueryCounter {
     }
 }
 
-impl TransformBuilder for QueryCounter {
+impl BodyTransformBuilder for QueryCounter {
     fn build(&self) -> Transforms {
         Transforms::QueryCounter(self.clone())
     }
@@ -96,7 +98,9 @@ fn get_redis_query_type(frame: &RedisFrame) -> Option<String> {
 #[typetag::deserialize(name = "QueryCounter")]
 #[async_trait(?Send)]
 impl TransformConfig for QueryCounterConfig {
-    async fn get_builder(&self, _chain_name: String) -> Result<Box<dyn TransformBuilder>> {
-        Ok(Box::new(QueryCounter::new(self.name.clone())))
+    async fn get_builder(&self, _chain_name: String) -> Result<TransformBuilder> {
+        Ok(TransformBuilder::Body(Box::new(QueryCounter::new(
+            self.name.clone(),
+        ))))
     }
 }

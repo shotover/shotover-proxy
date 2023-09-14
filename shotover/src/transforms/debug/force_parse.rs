@@ -1,4 +1,5 @@
 use crate::message::Messages;
+use crate::transforms::{BodyTransformBuilder, Transform, Transforms, Wrapper};
 /// This transform will by default parse requests and responses that pass through it.
 /// request and response parsing can be individually disabled if desired.
 ///
@@ -6,8 +7,7 @@ use crate::message::Messages;
 /// without worrying about the performance impact of other transform logic.
 /// It could also be used to ensure that messages round trip correctly when parsed.
 #[cfg(feature = "alpha-transforms")]
-use crate::transforms::TransformConfig;
-use crate::transforms::{Transform, TransformBuilder, Transforms, Wrapper};
+use crate::transforms::{TransformBuilder, TransformConfig};
 use anyhow::Result;
 use async_trait::async_trait;
 use serde::Deserialize;
@@ -25,13 +25,13 @@ pub struct DebugForceParseConfig {
 #[typetag::deserialize(name = "DebugForceParse")]
 #[async_trait(?Send)]
 impl TransformConfig for DebugForceParseConfig {
-    async fn get_builder(&self, _chain_name: String) -> Result<Box<dyn TransformBuilder>> {
-        Ok(Box::new(DebugForceParse {
+    async fn get_builder(&self, _chain_name: String) -> Result<TransformBuilder> {
+        Ok(TransformBuilder::Body(Box::new(DebugForceParse {
             parse_requests: self.parse_requests,
             parse_responses: self.parse_responses,
             encode_requests: false,
             encode_responses: false,
-        }))
+        })))
     }
 }
 
@@ -48,13 +48,13 @@ pub struct DebugForceEncodeConfig {
 #[typetag::deserialize(name = "DebugForceEncode")]
 #[async_trait(?Send)]
 impl TransformConfig for DebugForceEncodeConfig {
-    async fn get_builder(&self, _chain_name: String) -> Result<Box<dyn TransformBuilder>> {
-        Ok(Box::new(DebugForceParse {
+    async fn get_builder(&self, _chain_name: String) -> Result<TransformBuilder> {
+        Ok(TransformBuilder::Body(Box::new(DebugForceParse {
             parse_requests: self.encode_requests,
             parse_responses: self.encode_responses,
             encode_requests: self.encode_requests,
             encode_responses: self.encode_responses,
-        }))
+        })))
     }
 }
 
@@ -66,7 +66,7 @@ pub struct DebugForceParse {
     encode_responses: bool,
 }
 
-impl TransformBuilder for DebugForceParse {
+impl BodyTransformBuilder for DebugForceParse {
     fn build(&self) -> Transforms {
         Transforms::DebugForceParse(self.clone())
     }

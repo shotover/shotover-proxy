@@ -1,5 +1,7 @@
 use crate::message::Messages;
-use crate::transforms::{Transform, TransformBuilder, TransformConfig, Transforms, Wrapper};
+use crate::transforms::{
+    BodyTransformBuilder, Transform, TransformBuilder, TransformConfig, Transforms, Wrapper,
+};
 use anyhow::Result;
 use async_trait::async_trait;
 use serde::Deserialize;
@@ -12,8 +14,8 @@ pub struct DebugPrinterConfig;
 #[typetag::deserialize(name = "DebugPrinter")]
 #[async_trait(?Send)]
 impl TransformConfig for DebugPrinterConfig {
-    async fn get_builder(&self, _chain_name: String) -> Result<Box<dyn TransformBuilder>> {
-        Ok(Box::new(DebugPrinter::new()))
+    async fn get_builder(&self, _chain_name: String) -> Result<TransformBuilder> {
+        Ok(TransformBuilder::Body(Box::new(DebugPrinter::new())))
     }
 }
 
@@ -34,7 +36,7 @@ impl DebugPrinter {
     }
 }
 
-impl TransformBuilder for DebugPrinter {
+impl BodyTransformBuilder for DebugPrinter {
     fn build(&self) -> Transforms {
         Transforms::DebugPrinter(self.clone())
     }

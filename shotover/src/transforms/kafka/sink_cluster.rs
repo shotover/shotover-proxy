@@ -6,7 +6,9 @@ use crate::message::{Message, Messages};
 use crate::tcp;
 use crate::transforms::util::cluster_connection_pool::{spawn_read_write_tasks, Connection};
 use crate::transforms::util::{Request, Response};
-use crate::transforms::{Transform, TransformBuilder, Transforms, Wrapper};
+use crate::transforms::{BodyTransformBuilder, Transform, Transforms, Wrapper};
+#[cfg(feature = "alpha-transforms")]
+use crate::transforms::{TransformBuilder, TransformConfig};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use dashmap::DashMap;
@@ -41,19 +43,18 @@ pub struct KafkaSinkClusterConfig {
 }
 
 #[cfg(feature = "alpha-transforms")]
-use crate::transforms::TransformConfig;
-
-#[cfg(feature = "alpha-transforms")]
 #[typetag::deserialize(name = "KafkaSinkCluster")]
 #[async_trait(?Send)]
 impl TransformConfig for KafkaSinkClusterConfig {
-    async fn get_builder(&self, chain_name: String) -> Result<Box<dyn TransformBuilder>> {
-        Ok(Box::new(KafkaSinkClusterBuilder::new(
-            self.first_contact_points.clone(),
-            self.shotover_nodes.clone(),
-            chain_name,
-            self.connect_timeout_ms,
-            self.read_timeout,
+    async fn get_builder(&self, chain_name: String) -> Result<TransformBuilder> {
+        Ok(TransformBuilder::Body(Box::new(
+            KafkaSinkClusterBuilder::new(
+                self.first_contact_points.clone(),
+                self.shotover_nodes.clone(),
+                chain_name,
+                self.connect_timeout_ms,
+                self.read_timeout,
+            ),
         )))
     }
 }
@@ -102,7 +103,7 @@ impl KafkaSinkClusterBuilder {
     }
 }
 
-impl TransformBuilder for KafkaSinkClusterBuilder {
+impl BodyTransformBuilder for KafkaSinkClusterBuilder {
     fn build(&self) -> Transforms {
         Transforms::KafkaSinkCluster(KafkaSinkCluster {
             first_contact_points: self.first_contact_points.clone(),

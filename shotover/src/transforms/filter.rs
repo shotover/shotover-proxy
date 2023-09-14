@@ -1,11 +1,11 @@
 use crate::message::{Message, Messages, QueryType};
-use crate::transforms::{Transform, TransformBuilder, TransformConfig, Wrapper};
+use crate::transforms::{BodyTransformBuilder, Transform, TransformConfig, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
 use serde::Deserialize;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use super::Transforms;
+use super::{TransformBuilder, Transforms};
 
 static SHOWN_ERROR: AtomicBool = AtomicBool::new(false);
 
@@ -23,14 +23,14 @@ pub struct QueryTypeFilterConfig {
 #[typetag::deserialize(name = "QueryTypeFilter")]
 #[async_trait(?Send)]
 impl TransformConfig for QueryTypeFilterConfig {
-    async fn get_builder(&self, _chain_name: String) -> Result<Box<dyn TransformBuilder>> {
-        Ok(Box::new(QueryTypeFilter {
+    async fn get_builder(&self, _chain_name: String) -> Result<TransformBuilder> {
+        Ok(TransformBuilder::Body(Box::new(QueryTypeFilter {
             filter: self.filter.clone(),
-        }))
+        })))
     }
 }
 
-impl TransformBuilder for QueryTypeFilter {
+impl BodyTransformBuilder for QueryTypeFilter {
     fn build(&self) -> Transforms {
         Transforms::QueryTypeFilter(self.clone())
     }

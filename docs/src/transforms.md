@@ -2,6 +2,10 @@
 
 ## Concepts
 
+### Source
+
+Source transforms listen for connections from the client and send/receive messages with the client once connection has been established.
+
 ### Sink
 
 Sink transforms send data out of Shotover to some other service. This is the opposite of Shotover's sources, although sources are not transforms.
@@ -26,6 +30,7 @@ Future transforms won't be added to the public API while in alpha. But in these 
 
 | Transform                                                | Terminating | Implementation Status |
 |----------------------------------------------------------|-------------|-----------------------|
+| [CassandraSource](#cassandrasource)                      | ❌          | Beta                  |
 | [CassandraSinkCluster](#cassandrasinkcluster)            | ✅          | Beta                  |
 | [CassandraSinkSingle](#cassandrasinksingle)              | ✅          | Alpha                 |
 | [CassandraPeersRewrite](#cassandrapeersrewrite)          | ❌          | Alpha                 |
@@ -40,12 +45,52 @@ Future transforms won't be added to the public API while in alpha. But in these 
 | [QueryTypeFilter](#querytypefilter)                      | ❌          | Alpha                 |
 | [RedisCache](#rediscache)                                | ❌          | Alpha                 |
 | [RedisClusterPortsRewrite](#redisclusterportsrewrite)    | ❌          | Beta                  |
+| [RedisSource](#redissource)                              | ❌          | Beta                  |
 | [RedisSinkCluster](#redissinkcluster)                    | ✅          | Beta                  |
 | [RedisSinkSingle](#redissinksingle)                      | ✅          | Beta                  |
 | [RedisTimestampTagger](#redistimestamptagger)            | ❌          | Alpha                 |
 | [Tee](#tee)                                              | ✅          | Alpha                 |
 | [RequestThrottling](#requestthrottling)                  |❌           | Alpha                 |
 <!--| [DebugRandomDelay](#debugrandomdelay)                 | ❌          | Alpha                 |-->
+
+### CassandraSource
+
+```yaml
+Cassandra:
+  # The address to listen from.
+  listen_addr: "127.0.0.1:6379"
+
+  # The number of concurrent connections the source will accept.
+  connection_limit: 1000
+
+  # Defines the behaviour that occurs when Once the configured connection limit is reached:
+  # * when true: the connection is dropped.
+  # * when false: the connection will wait until a connection can be made within the limit.
+  hard_connection_limit: false
+
+  # When this field is provided TLS is used when the client connects to Shotover.
+  # Removing this field will disable TLS.
+  #tls:
+  #  # Path to the certificate file, typically named with a .crt extension.
+  #  certificate_path: "tls/localhost.crt"
+  #  # Path to the private key file, typically named with a .key extension.
+  #  private_key_path: "tls/localhost.key"
+  #  # Path to the certificate authority file, typically named with a .crt extension.
+  #  # When this field is provided client authentication will be enabled.
+  #  #certificate_authority_path: "tls/localhost_CA.crt"
+ 
+  # Timeout in seconds after which to terminate an idle connection. This field is optional, if not provided, idle connections will never be terminated.
+  # timeout: 60
+
+  # The transport that cassandra communication will occur over.
+  # TCP is the only Cassandra protocol conforming transport.
+  transport: Tcp
+  
+  # alternatively:
+  #
+  # Use the Cassandra protocol over WebSockets using a Shotover compatible driver.
+  # transport: WebSocket
+```
 
 ### CassandraSinkCluster
 
@@ -412,6 +457,36 @@ This transform should be used with the `RedisSinkCluster` transform. It will wri
 - RedisClusterPortsRewrite:
     # rewrite the ports returned by `CLUSTER SLOTS` and `CLUSTER NODES` to use this port.
     new_port: 6380
+```
+
+### RedisSource
+
+```yaml
+Redis:
+  # The address to listen from
+  listen_addr: "127.0.0.1:6379"
+
+  # The number of concurrent connections the source will accept.
+  connection_limit: 1000
+
+  # Defines the behaviour that occurs when the configured connection limit is reached:
+  # * when true: the connection is dropped.
+  # * when false: the connection will wait until a connection can be made within the limit.
+  hard_connection_limit: false
+
+  # When this field is provided TLS is used when the client connects to Shotover.
+  # Removing this field will disable TLS.
+  #tls:
+  #  # Path to the certificate file, typically named with a .crt extension.
+  #  certificate_path: "tls/redis.crt"
+  #  # Path to the private key file, typically named with a .key extension.
+  #  private_key_path: "tls/redis.key"
+  #  # Path to the certificate authority file typically named ca.crt.
+  #  # When this field is provided client authentication will be enabled.
+  #  #certificate_authority_path: "tls/ca.crt"
+    
+  # Timeout in seconds after which to terminate an idle connection. This field is optional, if not provided, idle connections will never be terminated.
+  # timeout: 60
 ```
 
 ### RedisSinkCluster

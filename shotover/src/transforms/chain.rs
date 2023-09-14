@@ -1,5 +1,6 @@
 use crate::message::Messages;
-use crate::transforms::{TransformBuilder, Transforms, Wrapper};
+
+use crate::transforms::{BodyTransformBuilder, Transforms, Wrapper};
 use anyhow::{anyhow, Result};
 use derivative::Derivative;
 use futures::TryFutureExt;
@@ -200,7 +201,7 @@ impl TransformChain {
 #[derivative(Debug)]
 pub struct TransformChainBuilder {
     pub name: String,
-    pub chain: Vec<Box<dyn TransformBuilder>>,
+    pub chain: Vec<Box<dyn BodyTransformBuilder>>,
 
     #[derivative(Debug = "ignore")]
     chain_total: Counter,
@@ -209,7 +210,7 @@ pub struct TransformChainBuilder {
 }
 
 impl TransformChainBuilder {
-    pub fn new(chain: Vec<Box<dyn TransformBuilder>>, name: String) -> Self {
+    pub fn new(chain: Vec<Box<dyn BodyTransformBuilder>>, name: String) -> Self {
         for transform in &chain {
             register_counter!("shotover_transform_total", "transform" => transform.get_name());
             register_counter!("shotover_transform_failures", "transform" => transform.get_name());

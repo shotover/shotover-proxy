@@ -1,15 +1,11 @@
 ---
-sources:
-  cassandra_prod:
-    Cassandra:
-      listen_addr: "127.0.0.1:9042"
 chain_config:
   main_chain:
+    - CassandraSource:
+        listen_addr: "127.0.0.1:9042"
     - DebugForceParse:
         parse_requests: false
         parse_responses: true
     - CassandraSinkSingle:
         remote_address: "127.0.0.1:9043"
         connect_timeout_ms: 3000
-source_to_chain_mapping:
-  cassandra_prod: main_chain

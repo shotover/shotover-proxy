@@ -1,10 +1,8 @@
 ---
-sources:
-  cassandra_prod:
-    Cassandra:
-      listen_addr: "127.0.0.1:9042"
 chain_config:
   main_chain:
+    - CassandraSource:
+        listen_addr: "127.0.0.1:9042"
     - CassandraSinkCluster:
         first_contact_points: ["172.16.1.2:9042", "172.16.1.3:9042"]
         local_shotover_host_id: "2dd022d6-2937-4754-89d6-02d2933a8f7a"
@@ -22,5 +20,3 @@ chain_config:
             rack: "rack3"
             host_id: "fa74d7ec-1223-472b-97de-04a32ccdb70b"
         connect_timeout_ms: 3000
-source_to_chain_mapping:
-  cassandra_prod: main_chain

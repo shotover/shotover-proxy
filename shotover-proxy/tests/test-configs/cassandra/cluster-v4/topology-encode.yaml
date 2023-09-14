@@ -1,10 +1,8 @@
 ---
-sources:
-  cassandra_prod:
-    Cassandra:
-      listen_addr: "127.0.0.1:9042"
 chain_config:
   main_chain:
+    - CassandraSource:
+        listen_addr: "127.0.0.1:9042"
     - DebugForceEncode:
         encode_requests: true
         encode_responses: true
@@ -17,6 +15,3 @@ chain_config:
             rack: "rack1"
             host_id: "2dd022d6-2937-4754-89d6-02d2933a8f7a"
         connect_timeout_ms: 3000
-
-source_to_chain_mapping:
-  cassandra_prod: main_chain

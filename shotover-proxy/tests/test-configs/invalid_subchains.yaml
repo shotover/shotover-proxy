@@ -1,17 +1,14 @@
 ---
-sources:
-  redis1:
-    Redis:
-      listen_addr: "127.0.0.1:6379"
-  redis2:
-    Redis:
-      listen_addr: "127.0.0.1:6379"
 chain_config:
   a_first_chain:
+    - RedisSource:
+        listen_addr: "127.0.0.1:6379"
     - NullSink
     - NullSink
     - DebugPrinter
   b_second_chain:
+    - RedisSource:
+        listen_addr: "127.0.0.1:6379"
     - DebugPrinter
     - TuneableConsistencyScatter:
         read_consistency: 1
@@ -33,6 +30,3 @@ chain_config:
                   sub_chain_2:
                     - NullSink
                     - NullSink
-source_to_chain_mapping:
-  redis1: a_first_chain
-  redis2: b_second_chain

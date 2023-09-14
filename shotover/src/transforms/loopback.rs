@@ -1,12 +1,12 @@
 use crate::message::Messages;
-use crate::transforms::{Transform, TransformBuilder, Transforms, Wrapper};
+use crate::transforms::{BodyTransformBuilder, Transform, Transforms, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
 
 #[derive(Debug, Clone, Default)]
 pub struct Loopback {}
 
-impl TransformBuilder for Loopback {
+impl BodyTransformBuilder for Loopback {
     fn build(&self) -> Transforms {
         Transforms::Loopback(self.clone())
     }

@@ -1,6 +1,7 @@
+use super::TransformBuilder;
 use crate::tcp;
 use crate::transforms::{
-    Messages, Transform, TransformBuilder, TransformConfig, Transforms, Wrapper,
+    BodyTransformBuilder, Messages, Transform, TransformConfig, Transforms, Wrapper,
 };
 use crate::{
     codec::{opensearch::OpenSearchCodecBuilder, CodecBuilder, Direction},
@@ -26,11 +27,13 @@ pub struct OpenSearchSinkSingleConfig {
 #[typetag::deserialize(name = "OpenSearchSinkSingle")]
 #[async_trait(?Send)]
 impl TransformConfig for OpenSearchSinkSingleConfig {
-    async fn get_builder(&self, chain_name: String) -> Result<Box<dyn TransformBuilder>> {
-        Ok(Box::new(OpenSearchSinkSingleBuilder::new(
-            self.address.clone(),
-            chain_name,
-            self.connect_timeout_ms,
+    async fn get_builder(&self, chain_name: String) -> Result<TransformBuilder> {
+        Ok(TransformBuilder::Body(Box::new(
+            OpenSearchSinkSingleBuilder::new(
+                self.address.clone(),
+                chain_name,
+                self.connect_timeout_ms,
+            ),
         )))
     }
 }
@@ -52,7 +55,7 @@ impl OpenSearchSinkSingleBuilder {
     }
 }
 
-impl TransformBuilder for OpenSearchSinkSingleBuilder {
+impl BodyTransformBuilder for OpenSearchSinkSingleBuilder {
     fn build(&self) -> Transforms {
         Transforms::OpenSearchSinkSingle(OpenSearchSinkSingle {
             address: self.address.clone(),

@@ -1,13 +1,11 @@
 ---
-sources:
-  redis_prod:
-    Redis:
-      listen_addr: "127.0.0.1:6379"
-      tls:
-        certificate_path: "tests/test-configs/redis/tls/certs/localhost.crt"
-        private_key_path: "tests/test-configs/redis/tls/certs/localhost.key"
 chain_config:
   redis_chain:
+    - RedisSource:
+        listen_addr: "127.0.0.1:6379"
+        tls:
+          certificate_path: "tests/test-configs/redis/tls/certs/localhost.crt"
+          private_key_path: "tests/test-configs/redis/tls/certs/localhost.key"
     - DebugForceEncode:
         encode_requests: true
         encode_responses: true
@@ -25,5 +23,3 @@ chain_config:
           certificate_path: "tests/test-configs/redis/tls/certs/localhost.crt"
           private_key_path: "tests/test-configs/redis/tls/certs/localhost.key"
           verify_hostname: true
-source_to_chain_mapping:
-  redis_prod: redis_chain

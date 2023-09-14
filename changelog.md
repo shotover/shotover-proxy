@@ -3,6 +3,45 @@
 Any breaking changes to the `topology.yaml` or `shotover` rust API should be documented here.
 This assists us in knowing when to make the next release a breaking release and assists users with making upgrades to new breaking releases.
 
+## 0.2.0
+
+### topology.yaml
+
+The root level of the topology.yaml is completely overhauled.
+We have not observed the source_to_chain_mapping ever being used so, to simplify the topology.yaml format, sources have been inlined into root level chains.
+
+For example, a topology.yaml that looked like this:
+
+```yaml
+---
+sources:
+  redis_prod:
+    Redis:
+      listen_addr: "127.0.0.1:6379"
+chain_config:
+  redis_chain:
+    - RedisSinkSingle:
+        remote_address: "127.0.0.1:1111"
+        connect_timeout_ms: 3000
+source_to_chain_mapping:
+  redis_prod: redis_chain
+```
+
+Should now be rewritten like this:
+
+```yaml
+---
+chain_config:
+  redis_chain:
+    - RedisSource:
+        listen_addr: "127.0.0.1:6379"
+    - RedisSinkSingle:
+        remote_address: "127.0.0.1:1111"
+        connect_timeout_ms: 3000
+```
+
+### shotover rust api
+
 ## 0.1.11
 
 ### topology.yaml
