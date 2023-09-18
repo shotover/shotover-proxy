@@ -2,14 +2,14 @@ use crate::message::Messages;
 use crate::transforms::{Transform, TransformBuilder, TransformConfig, Transforms, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tracing::info;
 
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct DebugPrinterConfig;
 
-#[typetag::deserialize(name = "DebugPrinter")]
+#[typetag::serde(name = "DebugPrinter")]
 #[async_trait(?Send)]
 impl TransformConfig for DebugPrinterConfig {
     async fn get_builder(&self, _chain_name: String) -> Result<Box<dyn TransformBuilder>> {

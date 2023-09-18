@@ -1,3 +1,5 @@
+//! Config types, used for serializing/deserializing shotover configuration files
+
 use anyhow::{Context, Result};
 use serde::Deserialize;
 

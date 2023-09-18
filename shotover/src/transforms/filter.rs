@@ -2,7 +2,7 @@ use crate::message::{Message, Messages, QueryType};
 use crate::transforms::{Transform, TransformBuilder, TransformConfig, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use super::Transforms;
@@ -14,13 +14,13 @@ pub struct QueryTypeFilter {
     pub filter: QueryType,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct QueryTypeFilterConfig {
     pub filter: QueryType,
 }
 
-#[typetag::deserialize(name = "QueryTypeFilter")]
+#[typetag::serde(name = "QueryTypeFilter")]
 #[async_trait(?Send)]
 impl TransformConfig for QueryTypeFilterConfig {
     async fn get_builder(&self, _chain_name: String) -> Result<Box<dyn TransformBuilder>> {

@@ -7,11 +7,11 @@ use anyhow::Result;
 use async_trait::async_trait;
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tracing::{error, warn};
 
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct TuneableConsistencyScatterConfig {
     pub route_map: HashMap<String, TransformChainConfig>,
@@ -19,7 +19,7 @@ pub struct TuneableConsistencyScatterConfig {
     pub read_consistency: i32,
 }
 
-#[typetag::deserialize(name = "TuneableConsistencyScatter")]
+#[typetag::serde(name = "TuneableConsistencyScatter")]
 #[async_trait(?Send)]
 impl TransformConfig for TuneableConsistencyScatterConfig {
     async fn get_builder(&self, _chain_name: String) -> Result<Box<dyn TransformBuilder>> {

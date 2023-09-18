@@ -10,11 +10,11 @@ use crate::transforms::TransformConfig;
 use crate::transforms::{Transform, TransformBuilder, Transforms, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 /// Messages that pass through this transform will be parsed.
 /// Must be individually enabled at the request or response level.
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct DebugForceParseConfig {
     pub parse_requests: bool,
@@ -22,7 +22,7 @@ pub struct DebugForceParseConfig {
 }
 
 #[cfg(feature = "alpha-transforms")]
-#[typetag::deserialize(name = "DebugForceParse")]
+#[typetag::serde(name = "DebugForceParse")]
 #[async_trait(?Send)]
 impl TransformConfig for DebugForceParseConfig {
     async fn get_builder(&self, _chain_name: String) -> Result<Box<dyn TransformBuilder>> {
@@ -37,7 +37,7 @@ impl TransformConfig for DebugForceParseConfig {
 
 /// Messages that pass through this transform will be parsed and then reencoded.
 /// Must be individually enabled at the request or response level.
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct DebugForceEncodeConfig {
     pub encode_requests: bool,
@@ -45,7 +45,7 @@ pub struct DebugForceEncodeConfig {
 }
 
 #[cfg(feature = "alpha-transforms")]
-#[typetag::deserialize(name = "DebugForceEncode")]
+#[typetag::serde(name = "DebugForceEncode")]
 #[async_trait(?Send)]
 impl TransformConfig for DebugForceEncodeConfig {
     async fn get_builder(&self, _chain_name: String) -> Result<Box<dyn TransformBuilder>> {

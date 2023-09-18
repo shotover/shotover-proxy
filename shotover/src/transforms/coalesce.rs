@@ -2,7 +2,7 @@ use crate::message::Messages;
 use crate::transforms::{Transform, TransformBuilder, TransformConfig, Transforms, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::time::Instant;
 
 #[derive(Debug, Clone)]
@@ -13,14 +13,14 @@ pub struct Coalesce {
     last_write: Instant,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct CoalesceConfig {
     pub flush_when_buffered_message_count: Option<usize>,
     pub flush_when_millis_since_last_flush: Option<u128>,
 }
 
-#[typetag::deserialize(name = "Coalesce")]
+#[typetag::serde(name = "Coalesce")]
 #[async_trait(?Send)]
 impl TransformConfig for CoalesceConfig {
     async fn get_builder(&self, _chain_name: String) -> Result<Box<dyn TransformBuilder>> {

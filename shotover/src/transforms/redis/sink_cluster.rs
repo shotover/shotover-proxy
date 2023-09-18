@@ -25,7 +25,7 @@ use rand::rngs::SmallRng;
 use rand::seq::IteratorRandom;
 use rand::SeedableRng;
 use redis_protocol::types::Redirection;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::oneshot;
@@ -36,17 +36,17 @@ const SLOT_SIZE: usize = 16384;
 
 type ChannelMap = HashMap<String, Vec<UnboundedSender<Request>>>;
 
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct RedisSinkClusterConfig {
     pub first_contact_points: Vec<String>,
     pub direct_destination: Option<String>,
     pub tls: Option<TlsConnectorConfig>,
-    connection_count: Option<usize>,
+    pub connection_count: Option<usize>,
     pub connect_timeout_ms: u64,
 }
 
-#[typetag::deserialize(name = "RedisSinkCluster")]
+#[typetag::serde(name = "RedisSinkCluster")]
 #[async_trait(?Send)]
 impl TransformConfig for RedisSinkClusterConfig {
     async fn get_builder(&self, chain_name: String) -> Result<Box<dyn TransformBuilder>> {

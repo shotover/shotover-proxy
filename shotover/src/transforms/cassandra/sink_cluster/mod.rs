@@ -21,7 +21,7 @@ use metrics::{register_counter, Counter};
 use node::{CassandraNode, ConnectionFactory};
 use node_pool::{GetReplicaErr, KeyspaceMetadata, NodePool};
 use rand::prelude::*;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::time::Duration;
@@ -47,7 +47,7 @@ const SYSTEM_KEYSPACES: [IdentifierRef<'static>; 3] = [
     IdentifierRef::Quoted("system_distributed"),
 ];
 
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct CassandraSinkClusterConfig {
     /// contact points must be within the specified data_center and rack.
@@ -61,7 +61,7 @@ pub struct CassandraSinkClusterConfig {
     pub read_timeout: Option<u64>,
 }
 
-#[typetag::deserialize(name = "CassandraSinkCluster")]
+#[typetag::serde(name = "CassandraSinkCluster")]
 #[async_trait(?Send)]
 impl TransformConfig for CassandraSinkClusterConfig {
     async fn get_builder(&self, chain_name: String) -> Result<Box<dyn TransformBuilder>> {
@@ -181,7 +181,7 @@ impl TransformBuilder for CassandraSinkClusterBuilder {
     }
 }
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct ShotoverNode {
     pub address: SocketAddr,

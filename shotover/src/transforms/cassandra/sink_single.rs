@@ -10,12 +10,12 @@ use async_trait::async_trait;
 use cassandra_protocol::frame::Version;
 use futures::stream::FuturesOrdered;
 use metrics::{register_counter, Counter};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tokio::sync::{mpsc, oneshot};
 use tracing::trace;
 
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct CassandraSinkSingleConfig {
     #[serde(rename = "remote_address")]
@@ -25,7 +25,7 @@ pub struct CassandraSinkSingleConfig {
     pub read_timeout: Option<u64>,
 }
 
-#[typetag::deserialize(name = "CassandraSinkSingle")]
+#[typetag::serde(name = "CassandraSinkSingle")]
 #[async_trait(?Send)]
 impl TransformConfig for CassandraSinkSingleConfig {
     async fn get_builder(&self, chain_name: String) -> Result<Box<dyn TransformBuilder>> {

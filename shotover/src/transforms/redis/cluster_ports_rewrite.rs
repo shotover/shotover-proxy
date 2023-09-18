@@ -6,14 +6,15 @@ use anyhow::{anyhow, bail, Context, Result};
 use async_trait::async_trait;
 use bytes::{BufMut, Bytes, BytesMut};
 use serde::Deserialize;
+use serde::Serialize;
 
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct RedisClusterPortsRewriteConfig {
     pub new_port: u16,
 }
 
-#[typetag::deserialize(name = "RedisClusterPortsRewrite")]
+#[typetag::serde(name = "RedisClusterPortsRewrite")]
 #[async_trait(?Send)]
 impl TransformConfig for RedisClusterPortsRewriteConfig {
     async fn get_builder(&self, _chain_name: String) -> Result<Box<dyn TransformBuilder>> {

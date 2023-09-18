@@ -8,7 +8,7 @@ use futures::stream::{FuturesOrdered, FuturesUnordered};
 use futures::task::{Context, Poll};
 use futures::Stream;
 use futures::StreamExt;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::future::Future;
 use std::pin::Pin;
 
@@ -63,7 +63,7 @@ where
     }
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct ParallelMapConfig {
     pub parallelism: u32,
@@ -71,7 +71,7 @@ pub struct ParallelMapConfig {
     pub ordered_results: bool,
 }
 
-#[typetag::deserialize(name = "ParallelMap")]
+#[typetag::serde(name = "ParallelMap")]
 #[async_trait(?Send)]
 impl TransformConfig for ParallelMapConfig {
     async fn get_builder(&self, _chain_name: String) -> Result<Box<dyn TransformBuilder>> {

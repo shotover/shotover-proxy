@@ -5,7 +5,7 @@ use crate::transforms::{Transform, TransformBuilder, TransformConfig, Transforms
 use anyhow::Result;
 use async_trait::async_trait;
 use metrics::{register_counter, Counter};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tracing::{debug, trace, warn};
 
 pub struct TeeBuilder {
@@ -106,7 +106,7 @@ pub enum ConsistencyBehavior {
     SubchainOnMismatch(BufferedChain),
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct TeeConfig {
     pub behavior: Option<ConsistencyBehaviorConfig>,
@@ -115,7 +115,7 @@ pub struct TeeConfig {
     pub buffer_size: Option<usize>,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub enum ConsistencyBehaviorConfig {
     Ignore,
@@ -124,7 +124,7 @@ pub enum ConsistencyBehaviorConfig {
     SubchainOnMismatch(TransformChainConfig),
 }
 
-#[typetag::deserialize(name = "Tee")]
+#[typetag::serde(name = "Tee")]
 #[async_trait(?Send)]
 impl TransformConfig for TeeConfig {
     async fn get_builder(&self, _chain_name: String) -> Result<Box<dyn TransformBuilder>> {

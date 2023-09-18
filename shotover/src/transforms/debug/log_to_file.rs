@@ -2,18 +2,18 @@ use crate::message::{Encodable, Message};
 use crate::transforms::{Transform, TransformBuilder, Transforms, Wrapper};
 use anyhow::{Context, Result};
 use async_trait::async_trait;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use tracing::{error, info};
 
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct DebugLogToFileConfig;
 
 #[cfg(feature = "alpha-transforms")]
-#[typetag::deserialize(name = "DebugLogToFile")]
+#[typetag::serde(name = "DebugLogToFile")]
 #[async_trait(?Send)]
 impl crate::transforms::TransformConfig for DebugLogToFileConfig {
     async fn get_builder(&self, _chain_name: String) -> Result<Box<dyn TransformBuilder>> {

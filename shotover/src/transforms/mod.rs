@@ -240,7 +240,7 @@ impl Transforms {
     }
 }
 
-#[typetag::deserialize]
+#[typetag::serde]
 #[async_trait(?Send)]
 pub trait TransformConfig: Debug {
     async fn get_builder(&self, chain_name: String) -> Result<Box<dyn TransformBuilder>>;

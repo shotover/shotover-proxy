@@ -11,19 +11,19 @@ use crate::{
 };
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tokio::sync::oneshot;
 use tracing::trace;
 
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct OpenSearchSinkSingleConfig {
     #[serde(rename = "remote_address")]
     address: String,
     connect_timeout_ms: u64,
 }
 
-#[typetag::deserialize(name = "OpenSearchSinkSingle")]
+#[typetag::serde(name = "OpenSearchSinkSingle")]
 #[async_trait(?Send)]
 impl TransformConfig for OpenSearchSinkSingleConfig {
     async fn get_builder(&self, chain_name: String) -> Result<Box<dyn TransformBuilder>> {

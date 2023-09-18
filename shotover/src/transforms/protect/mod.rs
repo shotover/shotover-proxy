@@ -11,7 +11,7 @@ use cql3_parser::cassandra_statement::CassandraStatement;
 use cql3_parser::common::Identifier;
 use cql3_parser::insert::InsertValues;
 use cql3_parser::select::SelectElement;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 mod aws_kms;
@@ -20,7 +20,7 @@ mod key_management;
 mod local_kek;
 mod pkcs_11;
 
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct ProtectConfig {
     pub keyspace_table_columns: HashMap<String, HashMap<String, Vec<String>>>,
@@ -31,7 +31,7 @@ pub struct ProtectConfig {
 use crate::transforms::TransformConfig;
 
 #[cfg(feature = "alpha-transforms")]
-#[typetag::deserialize(name = "Protect")]
+#[typetag::serde(name = "Protect")]
 #[async_trait(?Send)]
 impl TransformConfig for ProtectConfig {
     async fn get_builder(&self, _chain_name: String) -> Result<Box<dyn TransformBuilder>> {

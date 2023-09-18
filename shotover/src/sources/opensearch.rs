@@ -3,13 +3,13 @@ use crate::server::TcpCodecListener;
 use crate::sources::{Source, Transport};
 use crate::transforms::chain::TransformChainBuilder;
 use anyhow::Result;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::{watch, Semaphore};
 use tokio::task::JoinHandle;
 use tracing::{error, info};
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct OpenSearchConfig {
     pub listen_addr: String,
     pub connection_limit: Option<usize>,

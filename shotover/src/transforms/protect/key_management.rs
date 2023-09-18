@@ -9,7 +9,7 @@ use base64::{engine::general_purpose, Engine as _};
 use bytes::Bytes;
 use cached::proc_macro::cached;
 use chacha20poly1305::Key;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 #[derive(Clone, Debug)]
@@ -18,7 +18,7 @@ pub enum KeyManager {
     Local(LocalKeyManagement),
 }
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(deny_unknown_fields)]
 pub enum KeyManagerConfig {
     AWSKms {

@@ -5,11 +5,11 @@ use crate::transforms::chain::{BufferedChain, TransformChainBuilder};
 use crate::transforms::{Transform, TransformBuilder, TransformConfig, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct ConnectionBalanceAndPoolConfig {
     pub name: String,
@@ -17,7 +17,7 @@ pub struct ConnectionBalanceAndPoolConfig {
     pub chain: TransformChainConfig,
 }
 
-#[typetag::deserialize(name = "ConnectionBalanceAndPool")]
+#[typetag::serde(name = "ConnectionBalanceAndPool")]
 #[async_trait(?Send)]
 impl TransformConfig for ConnectionBalanceAndPoolConfig {
     async fn get_builder(&self, _chain_name: String) -> Result<Box<dyn TransformBuilder>> {

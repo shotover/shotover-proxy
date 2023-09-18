@@ -2,11 +2,11 @@ use crate::transforms::chain::TransformChainBuilder;
 use crate::transforms::{TransformBuilder, TransformConfig};
 use anyhow::Result;
 use serde::de::{DeserializeSeed, Deserializer, MapAccess, SeqAccess, Visitor};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::fmt::{self, Debug};
 use std::iter;
 
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct TransformChainConfig(
     #[serde(rename = "TransformChain", deserialize_with = "vec_transform_config")]

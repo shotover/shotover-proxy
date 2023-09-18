@@ -14,7 +14,7 @@ use bytes::{Buf, Bytes};
 use cassandra_protocol::compression::Compression;
 use cassandra_protocol::frame::message_error::{ErrorBody, ErrorType};
 use nonzero_ext::nonzero;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::num::NonZeroU32;
 
 pub enum Metadata {
@@ -436,7 +436,7 @@ pub enum Encodable {
     Frame(Frame),
 }
 
-#[derive(PartialEq, Debug, Clone, Deserialize)]
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 #[serde(deny_unknown_fields)]
 pub enum QueryType {
     Read,

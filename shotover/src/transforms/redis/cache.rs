@@ -12,7 +12,7 @@ use cql3_parser::common::{FQName, Identifier, Operand, RelationElement, Relation
 use cql3_parser::select::Select;
 use itertools::Itertools;
 use metrics::{register_counter, Counter};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 use std::net::SocketAddr;
 use tracing::{error, warn};
@@ -48,15 +48,14 @@ enum CacheableState {
     Skip,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct TableCacheSchemaConfig {
     partition_key: Vec<String>,
     range_key: Vec<String>,
 }
 
-#[derive(Deserialize, Debug, Clone)]
-#[serde(deny_unknown_fields)]
+#[derive(Debug, Clone)]
 pub struct TableCacheSchema {
     partition_key: Vec<Identifier>,
     range_key: Vec<Identifier>,
@@ -75,14 +74,14 @@ impl From<&TableCacheSchemaConfig> for TableCacheSchema {
     }
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct RedisConfig {
     pub caching_schema: HashMap<String, TableCacheSchemaConfig>,
     pub chain: TransformChainConfig,
 }
 
-#[typetag::deserialize(name = "RedisCache")]
+#[typetag::serde(name = "RedisCache")]
 #[async_trait(?Send)]
 impl TransformConfig for RedisConfig {
     async fn get_builder(&self, _chain_name: String) -> Result<Box<dyn TransformBuilder>> {
