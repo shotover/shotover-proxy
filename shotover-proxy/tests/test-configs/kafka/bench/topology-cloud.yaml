@@ -1,12 +1,9 @@
 ---
 sources:
-  kafka_source:
-    Kafka:
+  - Kafka:
+      name: "kafka"
       listen_addr: "HOST_ADDRESS:9092"
-chain_config:
-  main_chain:
-    - KafkaSinkSingle:
-        remote_address: "KAFKA_ADDRESS:9092"
-        connect_timeout_ms: 3000
-source_to_chain_mapping:
-  kafka_source: main_chain
+      chain:
+        - KafkaSinkSingle:
+            remote_address: "KAFKA_ADDRESS:9092"
+            connect_timeout_ms: 3000

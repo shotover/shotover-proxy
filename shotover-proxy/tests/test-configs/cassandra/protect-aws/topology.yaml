@@ -1,23 +1,20 @@
 ---
 sources:
-  cassandra_prod:
-    Cassandra:
+  - Cassandra:
+      name: "cassandra"
       listen_addr: "127.0.0.1:9042"
-chain_config:
-  main_chain:
-    - Protect:
-        key_manager:
-          AWSKms:
-            endpoint: "http://localhost:5000"
-            region: "us-east-1"
-            cmk_id: "alias/aws/secretsmanager"
-            number_of_bytes: 32
-        keyspace_table_columns:
-          test_protect_keyspace:
-            test_table:
-              - col1
-    - CassandraSinkSingle:
-        remote_address: "127.0.0.1:9043"
-        connect_timeout_ms: 3000
-source_to_chain_mapping:
-  cassandra_prod: main_chain
+      chain:
+        - Protect:
+            key_manager:
+              AWSKms:
+                endpoint: "http://localhost:5000"
+                region: "us-east-1"
+                cmk_id: "alias/aws/secretsmanager"
+                number_of_bytes: 32
+            keyspace_table_columns:
+              test_protect_keyspace:
+                test_table:
+                  - col1
+        - CassandraSinkSingle:
+            remote_address: "127.0.0.1:9043"
+            connect_timeout_ms: 3000

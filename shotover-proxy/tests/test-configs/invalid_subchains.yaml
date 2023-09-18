@@ -1,38 +1,34 @@
 ---
 sources:
-  redis1:
-    Redis:
+  - Redis:
+      name: "redis"
       listen_addr: "127.0.0.1:6379"
-  redis2:
-    Redis:
+      chain:
+        - NullSink
+        - NullSink
+        - DebugPrinter
+  - Redis:
+      name: "redis"
       listen_addr: "127.0.0.1:6379"
-chain_config:
-  a_first_chain:
-    - NullSink
-    - NullSink
-    - DebugPrinter
-  b_second_chain:
-    - DebugPrinter
-    - TuneableConsistencyScatter:
-        read_consistency: 1
-        write_consistency: 1
-        route_map:
-          a_chain_1:
-            - NullSink
-            - DebugPrinter
-          b_chain_2:
-            - NullSink
-            - NullSink
-          c_chain_3:
-            - TuneableConsistencyScatter:
-                read_consistency: 1
-                write_consistency: 1
-                route_map:
-                  sub_chain_1:
-                    - NullSink
-                  sub_chain_2:
-                    - NullSink
-                    - NullSink
-source_to_chain_mapping:
-  redis1: a_first_chain
-  redis2: b_second_chain
+      chain:
+        - DebugPrinter
+        - TuneableConsistencyScatter:
+            read_consistency: 1
+            write_consistency: 1
+            route_map:
+              a_chain_1:
+                - NullSink
+                - DebugPrinter
+              b_chain_2:
+                - NullSink
+                - NullSink
+              c_chain_3:
+                - TuneableConsistencyScatter:
+                    read_consistency: 1
+                    write_consistency: 1
+                    route_map:
+                      sub_chain_1:
+                        - NullSink
+                      sub_chain_2:
+                        - NullSink
+                        - NullSink

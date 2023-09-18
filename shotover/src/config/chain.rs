@@ -28,15 +28,17 @@ impl TransformChainConfig {
 /// e.g. with typetag + yaml + the default serializer:
 /// this would fail to deserialize:
 /// ```yaml
-/// chain_config:
-///   redis_chain:
+/// Redis:
+///   ...
+///   chain:
 ///     - NullSink
 /// ```
 ///
 /// but this would work fine:
 /// ```yaml
-/// chain_config:
-///   redis_chain:
+/// Redis:
+///   ...
+///   chain:
 ///     - NullSink: {}
 /// ```
 ///

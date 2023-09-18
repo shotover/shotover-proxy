@@ -1,9 +1,9 @@
 use crate::codec::Direction;
 use crate::codec::{cassandra::CassandraCodecBuilder, CodecBuilder};
+use crate::config::chain::TransformChainConfig;
 use crate::server::TcpCodecListener;
 use crate::sources::{Source, Transport};
 use crate::tls::{TlsAcceptor, TlsAcceptorConfig};
-use crate::transforms::chain::TransformChainBuilder;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -11,26 +11,28 @@ use tokio::sync::{watch, Semaphore};
 use tokio::task::JoinHandle;
 use tracing::{error, info};
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct CassandraConfig {
+    pub name: String,
     pub listen_addr: String,
     pub connection_limit: Option<usize>,
     pub hard_connection_limit: Option<bool>,
     pub tls: Option<TlsAcceptorConfig>,
     pub timeout: Option<u64>,
     pub transport: Option<Transport>,
+    pub chain: TransformChainConfig,
 }
 
 impl CassandraConfig {
     pub async fn get_source(
         &self,
-        chain_builder: TransformChainBuilder,
         trigger_shutdown_rx: watch::Receiver<bool>,
-    ) -> Result<Source> {
+    ) -> Result<Source, Vec<String>> {
         Ok(Source::Cassandra(
             CassandraSource::new(
-                chain_builder,
+                self.name.clone(),
+                &self.chain,
                 self.listen_addr.clone(),
                 trigger_shutdown_rx,
                 self.connection_limit,
@@ -46,15 +48,14 @@ impl CassandraConfig {
 
 #[derive(Debug)]
 pub struct CassandraSource {
-    pub name: &'static str,
     pub join_handle: JoinHandle<()>,
-    pub listen_addr: String,
 }
 
 impl CassandraSource {
     #![allow(clippy::too_many_arguments)]
     pub async fn new(
-        chain_builder: TransformChainBuilder,
+        name: String,
+        chain_config: &TransformChainConfig,
         listen_addr: String,
         mut trigger_shutdown_rx: watch::Receiver<bool>,
         connection_limit: Option<usize>,
@@ -62,13 +63,11 @@ impl CassandraSource {
         tls: Option<TlsAcceptorConfig>,
         timeout: Option<u64>,
         transport: Option<Transport>,
-    ) -> Result<Self> {
-        let name = "CassandraSource";
-
+    ) -> Result<Self, Vec<String>> {
         info!("Starting Cassandra source on [{}]", listen_addr);
 
         let mut listener = TcpCodecListener::new(
-            chain_builder,
+            chain_config,
             name.to_string(),
             listen_addr.clone(),
             hard_connection_limit.unwrap_or(false),
@@ -97,10 +96,6 @@ impl CassandraSource {
             }
         });
 
-        Ok(Self {
-            name,
-            join_handle,
-            listen_addr,
-        })
+        Ok(Self { join_handle })
     }
 }

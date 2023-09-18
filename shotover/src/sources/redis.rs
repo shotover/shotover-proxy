@@ -1,8 +1,8 @@
 use crate::codec::{redis::RedisCodecBuilder, CodecBuilder, Direction};
+use crate::config::chain::TransformChainConfig;
 use crate::server::TcpCodecListener;
 use crate::sources::{Source, Transport};
 use crate::tls::{TlsAcceptor, TlsAcceptorConfig};
-use crate::transforms::chain::TransformChainBuilder;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -10,25 +10,27 @@ use tokio::sync::{watch, Semaphore};
 use tokio::task::JoinHandle;
 use tracing::{error, info};
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct RedisConfig {
+    pub name: String,
     pub listen_addr: String,
     pub connection_limit: Option<usize>,
     pub hard_connection_limit: Option<bool>,
     pub tls: Option<TlsAcceptorConfig>,
     pub timeout: Option<u64>,
+    pub chain: TransformChainConfig,
 }
 
 impl RedisConfig {
     pub async fn get_source(
         &self,
-        chain_builder: TransformChainBuilder,
         trigger_shutdown_rx: watch::Receiver<bool>,
-    ) -> Result<Source> {
+    ) -> Result<Source, Vec<String>> {
         Ok(Source::Redis(
             RedisSource::new(
-                chain_builder,
+                self.name.clone(),
+                &self.chain,
                 self.listen_addr.clone(),
                 trigger_shutdown_rx,
                 self.connection_limit,
@@ -43,27 +45,26 @@ impl RedisConfig {
 
 #[derive(Debug)]
 pub struct RedisSource {
-    pub name: &'static str,
     pub join_handle: JoinHandle<()>,
-    pub listen_addr: String,
 }
 
 impl RedisSource {
+    #![allow(clippy::too_many_arguments)]
     pub async fn new(
-        chain_builder: TransformChainBuilder,
+        name: String,
+        chain_config: &TransformChainConfig,
         listen_addr: String,
         mut trigger_shutdown_rx: watch::Receiver<bool>,
         connection_limit: Option<usize>,
         hard_connection_limit: Option<bool>,
         tls: Option<TlsAcceptorConfig>,
         timeout: Option<u64>,
-    ) -> Result<RedisSource> {
+    ) -> Result<RedisSource, Vec<String>> {
         info!("Starting Redis source on [{}]", listen_addr);
-        let name = "RedisSource";
 
         let mut listener = TcpCodecListener::new(
-            chain_builder,
-            name.to_string(),
+            chain_config,
+            name,
             listen_addr.clone(),
             hard_connection_limit.unwrap_or(false),
             RedisCodecBuilder::new(Direction::Source),
@@ -91,10 +92,6 @@ impl RedisSource {
             }
         });
 
-        Ok(RedisSource {
-            name,
-            join_handle,
-            listen_addr,
-        })
+        Ok(RedisSource { join_handle })
     }
 }

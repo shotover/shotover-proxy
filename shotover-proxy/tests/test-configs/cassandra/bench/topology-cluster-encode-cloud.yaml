@@ -1,21 +1,18 @@
 ---
 sources:
-  cassandra_prod:
-    Cassandra:
+  - Cassandra:
+      name: "cassandra"
       listen_addr: "HOST_ADDRESS:9042"
-chain_config:
-  main_chain:
-    - DebugForceEncode:
-        encode_requests: true
-        encode_responses: true
-    - CassandraSinkCluster:
-        first_contact_points: ["CASSANDRA_ADDRESS:9042"]
-        local_shotover_host_id: "2dd022d6-2937-4754-89d6-02d2933a8f7a"
-        shotover_nodes:
-          - address: "HOST_ADDRESS:9042"
-            data_center: "dc1"
-            rack: "rack1"
-            host_id: "2dd022d6-2937-4754-89d6-02d2933a8f7a"
-        connect_timeout_ms: 3000
-source_to_chain_mapping:
-  cassandra_prod: main_chain
+      chain:
+        - DebugForceEncode:
+            encode_requests: true
+            encode_responses: true
+        - CassandraSinkCluster:
+            first_contact_points: ["CASSANDRA_ADDRESS:9042"]
+            local_shotover_host_id: "2dd022d6-2937-4754-89d6-02d2933a8f7a"
+            shotover_nodes:
+              - address: "HOST_ADDRESS:9042"
+                data_center: "dc1"
+                rack: "rack1"
+                host_id: "2dd022d6-2937-4754-89d6-02d2933a8f7a"
+            connect_timeout_ms: 3000

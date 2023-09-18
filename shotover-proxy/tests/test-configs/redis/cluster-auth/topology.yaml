@@ -1,24 +1,21 @@
 ---
 sources:
-  redis_prod:
-    Redis:
+  - Redis:
+      name: "redis"
       listen_addr: "127.0.0.1:6379"
-chain_config:
-  redis_chain:
-    # This transform is only here to ensure that the transform correctly handles the case where
-    # redis returns an error due to being unauthenticated
-    - RedisClusterPortsRewrite:
-        new_port: 6379
-    - RedisSinkCluster:
-        first_contact_points:
-          [
-            "127.0.0.1:2230",
-            "127.0.0.1:2231",
-            "127.0.0.1:2232",
-            "127.0.0.1:2233",
-            "127.0.0.1:2234",
-            "127.0.0.1:2235",
-          ]
-        connect_timeout_ms: 3000
-source_to_chain_mapping:
-  redis_prod: redis_chain
+      chain:
+        # This transform is only here to ensure that the transform correctly handles the case where
+        # redis returns an error due to being unauthenticated
+        - RedisClusterPortsRewrite:
+            new_port: 6379
+        - RedisSinkCluster:
+            first_contact_points:
+              [
+                "127.0.0.1:2230",
+                "127.0.0.1:2231",
+                "127.0.0.1:2232",
+                "127.0.0.1:2233",
+                "127.0.0.1:2234",
+                "127.0.0.1:2235",
+              ]
+            connect_timeout_ms: 3000
