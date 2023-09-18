@@ -65,3 +65,6 @@ rdkafka-driver-tests = ["test-helpers/rdkafka-driver-tests"]
 [[bench]]
 name = "windsock"
 harness = false
+# windsock is dependent on the DebugForceEncode transform for the shotover=message-parsed benches.
+# rather than manually adding #[cfg(feature = "alpha-transforms")] everywhere we just forbid compilation entirely without the alpha-transforms feature
+required-features = ["alpha-transforms"]
