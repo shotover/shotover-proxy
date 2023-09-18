@@ -29,7 +29,6 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{mpsc, oneshot, RwLock};
 use tokio::time::timeout;
-use uuid::Uuid;
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
@@ -432,16 +431,12 @@ impl KafkaSinkCluster {
                 .request_api_key(ApiKey::FindCoordinatorKey as i16)
                 .request_api_version(2)
                 .correlation_id(0)
-                .client_id(None)
-                .unknown_tagged_fields(Default::default())
                 .build()
                 .unwrap(),
             body: RequestBody::FindCoordinator(
                 FindCoordinatorRequest::builder()
-                    .coordinator_keys(vec![])
                     .key_type(0)
                     .key(group.0)
-                    .unknown_tagged_fields(Default::default())
                     .build()
                     .unwrap(),
             ),
@@ -485,8 +480,6 @@ impl KafkaSinkCluster {
                 .request_api_key(ApiKey::MetadataKey as i16)
                 .request_api_version(4)
                 .correlation_id(0)
-                .client_id(None)
-                .unknown_tagged_fields(Default::default())
                 .build()
                 .unwrap(),
             body: RequestBody::Metadata(
@@ -497,17 +490,11 @@ impl KafkaSinkCluster {
                             .map(|name| {
                                 MetadataRequestTopic::builder()
                                     .name(Some(name))
-                                    .topic_id(Uuid::nil())
-                                    .unknown_tagged_fields(Default::default())
                                     .build()
                                     .unwrap()
                             })
                             .collect(),
                     ))
-                    .allow_auto_topic_creation(false)
-                    .include_cluster_authorized_operations(false)
-                    .include_topic_authorized_operations(false)
-                    .unknown_tagged_fields(Default::default())
                     .build()
                     .unwrap(),
             ),
