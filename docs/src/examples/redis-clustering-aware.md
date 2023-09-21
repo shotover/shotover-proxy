@@ -59,18 +59,15 @@ First we will modify our `topology.yaml` file to have a single Redis source. Thi
 ```yaml
 ---
 sources:
-  redis_prod:
-    Redis:
+  - Redis:
+      name: "redis"
       listen_addr: "0.0.0.0:6380"
-chain_config:
-  redis_chain:
-    - RedisClusterPortsRewrite:
-         new_port: 6380
-    - RedisSinkSingle:
-        remote_address: "0.0.0.0:6379"
-        connect_timeout_ms: 3000
-source_to_chain_mapping:
-  redis_prod: redis_chain
+      chain:
+        - RedisClusterPortsRewrite:
+            new_port: 6380
+        - RedisSinkSingle:
+            remote_address: "0.0.0.0:6379"
+            connect_timeout_ms: 3000
 ```
 
 Modify an existing `topology.yaml` or create a new one and place the above example as the file's contents.

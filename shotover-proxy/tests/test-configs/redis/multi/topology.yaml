@@ -1,28 +1,25 @@
 ---
 sources:
-  redis_prod:
-    Redis:
+  - Redis:
+      name: "redis"
       listen_addr: "127.0.0.1:6379"
-chain_config:
-  redis_chain:
-    - TuneableConsistencyScatter:
-        write_consistency: 2
-        read_consistency: 2
-        route_map:
-          one:
-            - RedisTimestampTagger
-            - RedisSinkSingle:
-                remote_address: "127.0.0.1:3331"
-                connect_timeout_ms: 3000
-          two:
-            - RedisTimestampTagger
-            - RedisSinkSingle:
-                remote_address: "127.0.0.1:3332"
-                connect_timeout_ms: 3000
-          three:
-            - RedisTimestampTagger
-            - RedisSinkSingle:
-                remote_address: "127.0.0.1:3333"
-                connect_timeout_ms: 3000
-source_to_chain_mapping:
-  redis_prod: redis_chain
+      chain:
+        - TuneableConsistencyScatter:
+            write_consistency: 2
+            read_consistency: 2
+            route_map:
+              one:
+                - RedisTimestampTagger
+                - RedisSinkSingle:
+                    remote_address: "127.0.0.1:3331"
+                    connect_timeout_ms: 3000
+              two:
+                - RedisTimestampTagger
+                - RedisSinkSingle:
+                    remote_address: "127.0.0.1:3332"
+                    connect_timeout_ms: 3000
+              three:
+                - RedisTimestampTagger
+                - RedisSinkSingle:
+                    remote_address: "127.0.0.1:3333"
+                    connect_timeout_ms: 3000

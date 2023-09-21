@@ -1,10 +1,7 @@
 ---
 sources:
-  redis_prod:
-    Redis:
+  - Redis:
+      name: "redis"
       listen_addr: "127.0.0.1:6379"
-chain_config:
-  redis_chain:
-    - DebugPrinter
-source_to_chain_mapping:
-  redis_prod: redis_chain
+      chain:
+        - DebugPrinter

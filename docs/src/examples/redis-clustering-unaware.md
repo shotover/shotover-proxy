@@ -45,25 +45,21 @@ networks:
 ```yaml
 ---
 sources:
-  redis_prod:
-    # define how shotover listens for incoming connections from our client application (`redis-benchmark`).
-    Redis:
+  - Redis:
+      name: "redis"
+      # define where shotover listens for incoming connections from our client application (`redis-benchmark`).
       listen_addr: "0.0.0.0:6379"
-chain_config:
-  redis_chain:
-    # configure Shotover to connect to the Redis cluster via our defined contact points
-    - RedisSinkCluster:
-        first_contact_points:
-          - "172.16.1.2:6379"
-          - "172.16.1.3:6379"
-          - "172.16.1.4:6379"
-          - "172.16.1.5:6379"
-          - "172.16.1.6:6379"
-          - "172.16.1.7:6379"
-        connect_timeout_ms: 3000
-source_to_chain_mapping:
-  # connect our Redis source to our Redis cluster sink (transform).
-  redis_prod: redis_chain
+      chain:
+        # configure Shotover to connect to the Redis cluster via our defined contact points
+        - RedisSinkCluster:
+            first_contact_points:
+              - "172.16.1.2:6379"
+              - "172.16.1.3:6379"
+              - "172.16.1.4:6379"
+              - "172.16.1.5:6379"
+              - "172.16.1.6:6379"
+              - "172.16.1.7:6379"
+            connect_timeout_ms: 3000
 ```
 
 Modify an existing `topology.yaml` or create a new one and place the above example as the file's contents.

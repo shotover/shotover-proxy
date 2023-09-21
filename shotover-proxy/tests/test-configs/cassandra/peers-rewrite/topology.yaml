@@ -1,24 +1,19 @@
 ---
 sources:
-  cassandra_prod_1:
-    Cassandra:
+  - Cassandra:
+      name: "cassandra"
       listen_addr: "127.0.0.1:9043"
+      chain:
+      - CassandraSinkSingle:
+          remote_address: "172.16.1.2:9042"
+          connect_timeout_ms: 3000
 
-  cassandra_prod_2:
-    Cassandra:
+  - Cassandra:
+      name: "cassandra"
       listen_addr: "127.0.0.1:9044"
-
-chain_config:
-  main_chain:
-    - CassandraSinkSingle:
-        remote_address: "172.16.1.2:9042"
-        connect_timeout_ms: 3000
-  peers_rewrite_port:
-    - CassandraPeersRewrite:
-        port: 9044
-    - CassandraSinkSingle:
-        remote_address: "172.16.1.2:9042"
-        connect_timeout_ms: 3000
-source_to_chain_mapping:
-  cassandra_prod_1: main_chain
-  cassandra_prod_2: peers_rewrite_port
+      chain:
+        - CassandraPeersRewrite:
+            port: 9044
+        - CassandraSinkSingle:
+            remote_address: "172.16.1.2:9042"
+            connect_timeout_ms: 3000

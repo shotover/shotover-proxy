@@ -1,12 +1,9 @@
 ---
 sources:
-  opensearch_prod:
-    OpenSearch:
+  - OpenSearch:
+      name: "OpenSearch"
       listen_addr: "127.0.0.1:9201"
-chain_config:
-  main_chain:
-    - OpenSearchSinkSingle:
-        remote_address: "127.0.0.1:9200"
-        connect_timeout_ms: 3000
-source_to_chain_mapping:
-  opensearch_prod: main_chain
+      chain:
+        - OpenSearchSinkSingle:
+            remote_address: "127.0.0.1:9200"
+            connect_timeout_ms: 3000

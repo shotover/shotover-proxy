@@ -1,7 +1,7 @@
 use crate::codec::{opensearch::OpenSearchCodecBuilder, CodecBuilder, Direction};
+use crate::config::chain::TransformChainConfig;
 use crate::server::TcpCodecListener;
 use crate::sources::{Source, Transport};
-use crate::transforms::chain::TransformChainBuilder;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -9,23 +9,25 @@ use tokio::sync::{watch, Semaphore};
 use tokio::task::JoinHandle;
 use tracing::{error, info};
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct OpenSearchConfig {
+    pub name: String,
     pub listen_addr: String,
     pub connection_limit: Option<usize>,
     pub hard_connection_limit: Option<bool>,
     pub timeout: Option<u64>,
+    pub chain: TransformChainConfig,
 }
 
 impl OpenSearchConfig {
     pub async fn get_source(
         &self,
-        chain_builder: TransformChainBuilder,
         trigger_shutdown_rx: watch::Receiver<bool>,
-    ) -> Result<Source> {
+    ) -> Result<Source, Vec<String>> {
         Ok(Source::OpenSearch(
             OpenSearchSource::new(
-                chain_builder,
+                self.name.clone(),
+                &self.chain,
                 self.listen_addr.clone(),
                 trigger_shutdown_rx,
                 self.connection_limit,
@@ -39,26 +41,23 @@ impl OpenSearchConfig {
 
 #[derive(Debug)]
 pub struct OpenSearchSource {
-    pub name: &'static str,
     pub join_handle: JoinHandle<()>,
-    pub listen_addr: String,
 }
 
 impl OpenSearchSource {
     pub async fn new(
-        chain_builder: TransformChainBuilder,
+        name: String,
+        chain_config: &TransformChainConfig,
         listen_addr: String,
         mut trigger_shutdown_rx: watch::Receiver<bool>,
         connection_limit: Option<usize>,
         hard_connection_limit: Option<bool>,
         timeout: Option<u64>,
-    ) -> Result<Self> {
-        let name = "OpenSearchSource";
-
+    ) -> Result<Self, Vec<String>> {
         info!("Starting OpenSearch source on [{}]", listen_addr);
 
         let mut listener = TcpCodecListener::new(
-            chain_builder,
+            chain_config,
             name.to_string(),
             listen_addr.clone(),
             hard_connection_limit.unwrap_or(false),
@@ -87,10 +86,6 @@ impl OpenSearchSource {
             }
         });
 
-        Ok(Self {
-            name,
-            join_handle,
-            listen_addr,
-        })
+        Ok(Self { join_handle })
     }
 }

@@ -1,16 +1,13 @@
 ---
 sources:
-  redis_prod:
-    Redis:
+  - Redis:
+      name: "redis"
       listen_addr: "HOST_ADDRESS:6379"
-chain_config:
-  redis_chain:
-    - DebugForceEncode:
-        encode_requests: true
-        encode_responses: true
-    - RedisSinkCluster:
-        first_contact_points:
-          - "REDIS_ADDRESS:6379"
-        connect_timeout_ms: 3000
-source_to_chain_mapping:
-  redis_prod: redis_chain
+      chain:
+        - DebugForceEncode:
+            encode_requests: true
+            encode_responses: true
+        - RedisSinkCluster:
+            first_contact_points:
+              - "REDIS_ADDRESS:6379"
+            connect_timeout_ms: 3000

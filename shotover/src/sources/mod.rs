@@ -4,7 +4,6 @@ use crate::sources::cassandra::{CassandraConfig, CassandraSource};
 use crate::sources::kafka::{KafkaConfig, KafkaSource};
 use crate::sources::opensearch::{OpenSearchConfig, OpenSearchSource};
 use crate::sources::redis::{RedisConfig, RedisSource};
-use crate::transforms::chain::TransformChainBuilder;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
@@ -41,7 +40,7 @@ impl Source {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub enum SourceConfig {
     Cassandra(CassandraConfig),
@@ -53,14 +52,13 @@ pub enum SourceConfig {
 impl SourceConfig {
     pub(crate) async fn get_source(
         &self,
-        chain_builder: TransformChainBuilder,
         trigger_shutdown_rx: watch::Receiver<bool>,
-    ) -> Result<Source> {
+    ) -> Result<Source, Vec<String>> {
         match self {
-            SourceConfig::Cassandra(c) => c.get_source(chain_builder, trigger_shutdown_rx).await,
-            SourceConfig::Redis(r) => r.get_source(chain_builder, trigger_shutdown_rx).await,
-            SourceConfig::Kafka(r) => r.get_source(chain_builder, trigger_shutdown_rx).await,
-            SourceConfig::OpenSearch(r) => r.get_source(chain_builder, trigger_shutdown_rx).await,
+            SourceConfig::Cassandra(c) => c.get_source(trigger_shutdown_rx).await,
+            SourceConfig::Redis(r) => r.get_source(trigger_shutdown_rx).await,
+            SourceConfig::Kafka(r) => r.get_source(trigger_shutdown_rx).await,
+            SourceConfig::OpenSearch(r) => r.get_source(trigger_shutdown_rx).await,
         }
     }
 }

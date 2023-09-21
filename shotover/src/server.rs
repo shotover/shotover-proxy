@@ -1,4 +1,5 @@
 use crate::codec::{CodecBuilder, CodecReadError, CodecWriteError};
+use crate::config::chain::TransformChainConfig;
 use crate::message::Messages;
 use crate::sources::Transport;
 use crate::tls::{AcceptError, TlsAcceptor};
@@ -77,7 +78,7 @@ pub struct TcpCodecListener<C: CodecBuilder> {
 impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
     #![allow(clippy::too_many_arguments)]
     pub async fn new(
-        chain_builder: TransformChainBuilder,
+        chain_config: &TransformChainConfig,
         source_name: String,
         listen_addr: String,
         hard_connection_limit: bool,
@@ -87,12 +88,34 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
         tls: Option<TlsAcceptor>,
         timeout: Option<u64>,
         transport: Transport,
-    ) -> Result<Self> {
+    ) -> Result<Self, Vec<String>> {
         let available_connections_gauge =
             register_gauge!("shotover_available_connections", "source" => source_name.clone());
         available_connections_gauge.set(limit_connections.available_permits() as f64);
 
-        let listener = Some(create_listener(&listen_addr).await?);
+        let chain_builder = chain_config
+            .get_builder(format!("{source_name} source chain"))
+            .await
+            .map_err(|x| vec![format!("{x:?}")])?;
+
+        let mut errors = chain_builder
+            .validate()
+            .iter()
+            .map(|x| format!("  {x}"))
+            .collect::<Vec<String>>();
+
+        let listener = match create_listener(&listen_addr).await {
+            Ok(listener) => Some(listener),
+            Err(error) => {
+                errors.push(format!("{error:?}"));
+                None
+            }
+        };
+
+        if !errors.is_empty() {
+            errors.insert(0, format!("{source_name} source:"));
+            return Err(errors);
+        }
 
         Ok(TcpCodecListener {
             chain_builder,

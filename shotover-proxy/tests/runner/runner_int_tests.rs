@@ -57,8 +57,9 @@ async fn test_shotover_shutdown_when_invalid_topology_non_terminating_last() {
 
 Caused by:
     Topology errors
-    redis_chain:
-      Non-terminating transform \"DebugPrinter\" is last in chain. Last transform must be terminating.
+    redis source:
+      redis source chain:
+        Non-terminating transform \"DebugPrinter\" is last in chain. Last transform must be terminating.
     ")])
     .await;
 }
@@ -75,8 +76,9 @@ async fn test_shotover_shutdown_when_invalid_topology_terminating_not_last() {
 
 Caused by:
     Topology errors
-    redis_chain:
-      Terminating transform \"NullSink\" is not last in chain. Terminating transform must be last in chain.
+    redis source:
+      redis source chain:
+        Terminating transform \"NullSink\" is not last in chain. Terminating transform must be last in chain.
     ")])
     .await;
 }
@@ -93,21 +95,23 @@ async fn test_shotover_shutdown_when_topology_invalid_topology_subchains() {
 
 Caused by:
     Topology errors
-    a_first_chain:
-      Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
-      Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
-      Non-terminating transform "DebugPrinter" is last in chain. Last transform must be terminating.
-    b_second_chain:
-      TuneableConsistencyScatter:
-        a_chain_1:
-          Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
-          Non-terminating transform "DebugPrinter" is last in chain. Last transform must be terminating.
-        b_chain_2:
-          Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
-        c_chain_3:
-          TuneableConsistencyScatter:
-            sub_chain_2:
-              Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
+    redis source:
+      redis source chain:
+        Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
+        Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
+        Non-terminating transform "DebugPrinter" is last in chain. Last transform must be terminating.
+    redis source:
+      redis source chain:
+        TuneableConsistencyScatter:
+          a_chain_1:
+            Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
+            Non-terminating transform "DebugPrinter" is last in chain. Last transform must be terminating.
+          b_chain_2:
+            Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
+          c_chain_3:
+            TuneableConsistencyScatter:
+              sub_chain_2:
+                Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
     "#),
             EventMatcher::new().with_level(Level::Warn)
                 .with_target("shotover::transforms::distributed::tuneable_consistency_scatter")
