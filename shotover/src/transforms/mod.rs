@@ -18,7 +18,7 @@ use crate::transforms::load_balance::ConnectionBalanceAndPool;
 use crate::transforms::loopback::Loopback;
 use crate::transforms::null::NullSink;
 #[cfg(feature = "alpha-transforms")]
-use crate::transforms::opensearch::OpenSearchSinkSingle;
+use crate::transforms::opensearch::sink_single::OpenSearchSinkSingle;
 use crate::transforms::parallel_map::ParallelMap;
 use crate::transforms::protect::Protect;
 use crate::transforms::query_counter::QueryCounter;

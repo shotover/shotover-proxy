@@ -5,6 +5,8 @@ use http::{HeaderMap, Method, StatusCode, Uri, Version};
 use serde_json::Value;
 use std::fmt;
 
+use crate::message::QueryType;
+
 #[derive(Debug, Clone, Derivative)]
 #[derivative(PartialEq)]
 pub struct ResponseParts {
@@ -74,6 +76,21 @@ impl OpenSearchFrame {
         });
         let body = Bytes::new();
         Self::new(headers, body)
+    }
+
+    pub fn get_query_type(&self) -> QueryType {
+        if let HttpHead::Request(request) = &self.headers {
+            match &request.method {
+                &Method::GET | &Method::HEAD => QueryType::Read,
+                &Method::POST | &Method::PUT | &Method::DELETE | &Method::PATCH => QueryType::Write,
+                m => {
+                    tracing::warn!("handled method: {:?}", m);
+                    QueryType::Read
+                }
+            }
+        } else {
+            QueryType::Read
+        }
     }
 
     pub fn json_str(&self) -> String {

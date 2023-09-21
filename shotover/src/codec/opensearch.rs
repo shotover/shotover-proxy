@@ -117,9 +117,10 @@ impl OpenSearchDecoder {
         let mut headers = [httparse::EMPTY_HEADER; 16];
         let mut response = httparse::Response::new(&mut headers);
 
-        let body_start = match response.parse(src).unwrap() {
-            httparse::Status::Complete(body_start) => body_start,
-            httparse::Status::Partial => return Ok(None),
+        let body_start = match response.parse(src) {
+            Ok(httparse::Status::Complete(body_start)) => body_start,
+            Ok(httparse::Status::Partial) => return Ok(None),
+            Err(err) => return Err(anyhow!("error parsing response: {}", err)),
         };
         match response.version.unwrap() {
             1 => (),

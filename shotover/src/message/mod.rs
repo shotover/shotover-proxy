@@ -245,7 +245,7 @@ impl Message {
             Some(Frame::Redis(redis)) => redis_query_type(redis), // free-standing function as we cant define methods on RedisFrame
             Some(Frame::Kafka(_)) => todo!(),
             Some(Frame::Dummy) => todo!(),
-            Some(Frame::OpenSearch(_)) => todo!(),
+            Some(Frame::OpenSearch(os)) => os.get_query_type(),
             None => QueryType::ReadWrite,
         }
     }

@@ -81,5 +81,10 @@ pub fn get_image_waiters() -> &'static [Image] {
             log_regex_to_wait_for: r"Node started",
             timeout: 120,
         },
+        Image {
+            name: "opensearchproject/opensearch-dashboards:2.9.0",
+            log_regex_to_wait_for: r"Server running",
+            timeout: 120,
+        },
     ]
 }

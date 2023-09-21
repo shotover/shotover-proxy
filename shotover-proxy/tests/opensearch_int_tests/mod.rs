@@ -11,6 +11,7 @@ use opensearch::{
         Method, StatusCode, Url,
     },
     indices::{IndicesCreateParts, IndicesDeleteParts, IndicesExistsParts},
+    indices::{IndicesCreateParts, IndicesDeleteParts, IndicesExistsParts},
     nodes::NodesInfoParts,
     indices::{IndicesCreateParts, IndicesDeleteParts, IndicesExistsParts, IndicesGetParts},
     params::Refresh,
@@ -19,11 +20,11 @@ use opensearch::{
 };
 use serde_json::{json, Value};
 use test_helpers::docker_compose::docker_compose;
-// use tokio::{
-//     sync::oneshot,
-//     task::JoinHandle,
-//     time::{interval, Duration},
-// };
+use tokio::{
+    sync::oneshot,
+    task::JoinHandle,
+    time::{interval, Duration},
+};
 
 async fn assert_ok_and_get_json(response: Result<Response, Error>) -> Value {
     let response = response.unwrap();
@@ -289,9 +290,9 @@ async fn passthrough_standard() {
 async fn dual_write_basic() {
     let _compose = docker_compose("tests/test-configs/opensearch-dual-write/docker-compose.yaml");
 
-    let addr1 = "http://localhost:9201";
+    let addr1 = "http://172.16.1.2:9200";
     let client1 = create_client(addr1);
-    let addr2 = "http://localhost:9202";
+    let addr2 = "http://172.16.1.3:9200";
     let client2 = create_client(addr2);
 
     let shotover = shotover_process("tests/test-configs/opensearch-dual-write/topology.yaml")
@@ -357,33 +358,34 @@ async fn dual_write_basic() {
     shotover.shutdown_and_then_consume_events(&[]).await;
 }
 
-// async fn start_writer_thread(
-//     client: OpenSearch,
-//     mut shutdown_notification_rx: oneshot::Receiver<()>,
-// ) -> tokio::task::JoinHandle<()> {
-//     tokio::spawn(async move {
-//         let mut i = 0;
-//         let mut interval = interval(Duration::from_millis(100));
-//
-//         loop {
-//             tokio::select! {
-//                 _ = interval.tick() => {
-//                     // TODO send the message to opensearch
-//                 },
-//                 _ = &mut shutdown_notification_rx => {
-//                     println!("shutting down writer thread");
-//                     break;
-//                 }
-//             }
-//         }
-//     })
-// }
+async fn index_1000_documents(client: &OpenSearch) {
+    let mut body: Vec<BulkOperation<_>> = vec![];
+    for i in 0..100 {
+        let op = BulkOperation::index(json!({
+            "name": "John",
+            "age": i
+        }))
+        .id(i.to_string())
+        .into();
+        body.push(op);
+    }
+
+    assert_ok_and_get_json(
+        client
+            .bulk(BulkParts::Index("test-index"))
+            .body(body)
+            .refresh(Refresh::WaitFor)
+            .send()
+            .await,
+    )
+    .await;
+}
 
 #[tokio::test(flavor = "multi_thread")]
-async fn dual_write() {
-    // let shotover_addr = "http://localhost:9200";
-    let source_addr = "http://localhost:9201";
-    // let target_addr = "http://localhost:9202";
+async fn dual_write_reindex() {
+    let shotover_addr = "http://localhost:9200";
+    let source_addr = "http://172.16.1.2:9200";
+    let target_addr = "http://172.16.1.3:9200";
 
     let _compose = docker_compose("tests/test-configs/opensearch-dual-write/docker-compose.yaml");
 
@@ -391,9 +393,9 @@ async fn dual_write() {
         .start()
         .await;
 
-    // let shotover_client = create_client(shotover_addr);
+    let shotover_client = create_client(shotover_addr);
     let source_client = create_client(source_addr);
-    // let target_client = create_client(target_addr);
+    let target_client = create_client(target_addr);
 
     // Create indexes in source cluster
     assert_ok_and_get_json(
@@ -405,18 +407,91 @@ async fn dual_write() {
     )
     .await;
 
-    // Get index info from source cluster and create in target cluster
-
-    let index_info = assert_ok_and_get_json(
-        source_client
+    // Create in target cluster
+    assert_ok_and_get_json(
+        target_client
             .indices()
-            .get(IndicesGetParts::Index(&["test-index"]))
+            .create(IndicesCreateParts::Index("test-index"))
             .send()
             .await,
     )
     .await;
 
-    println!("{:?}", index_info);
+    index_1000_documents(&source_client).await;
+
+    let shotover_client_c = shotover_client.clone();
+    let dual_write_jh = tokio::spawn(async move {
+        for _ in 0..20 {
+            // get a random number in between 0 and 2000
+            let i = rand::random::<u32>() % 100;
+
+            let response = shotover_client_c
+                .search(SearchParts::Index(&["test-index"]))
+                .from(0)
+                .size(200)
+                .body(json!({
+                    "query": {
+                        "match": {
+                            "age": i,
+                        }
+                    }
+                }))
+                .allow_no_indices(true)
+                .send()
+                .await
+                .unwrap();
+
+            let json_res = response.json::<Value>().await;
+
+            let document = match &json_res {
+                Ok(json) => &json["hits"]["hits"][0],
+                Err(e) => {
+                    println!("Error: {:?}", e);
+                    continue;
+                }
+            };
+
+            // shotover_client_c
+            //     .index(IndexParts::Index("test-index"))
+            //     .body(json!({
+            //         "name": Value::String(format!("{} Smith", document["_source"]["name"].as_str().unwrap())),
+            //         "age": document["_source"]["age"]
+            //     }))
+            //     .refresh(Refresh::WaitFor)
+            //     .send()
+            //     .await
+            //     .unwrap();
+
+            tokio::time::sleep(Duration::from_millis(500)).await;
+        }
+    });
+
+    let target_client_c = target_client.clone();
+    let reindex_jh = tokio::spawn(async move {
+        target_client_c
+            .reindex()
+            .body(json!(
+                {
+                    "source":{
+                        "remote":{
+                            "host": source_addr,
+                            "username":"admin",
+                            "password":"admin"
+                        },
+                        "index": "test-index"
+                   },
+                   "dest":{
+                        "index": "test-index",
+                   }
+                }
+            ))
+            .requests_per_second(1)
+            .send()
+            .await
+            .unwrap();
+    });
+
+    let _ = tokio::join!(reindex_jh, dual_write_jh);
 
     // Begin dual writes and verify data ends up in both clusters
     // Begin reindex operations
