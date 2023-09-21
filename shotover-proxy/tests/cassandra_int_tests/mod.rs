@@ -7,6 +7,7 @@ use cdrs_tokio::frame::events::{
 use futures::future::join_all;
 use futures::Future;
 use rstest::rstest;
+use rstest_reuse::{self, *};
 #[cfg(feature = "cassandra-cpp-driver-tests")]
 use test_helpers::connection::cassandra::CassandraDriver::Datastax;
 use test_helpers::connection::cassandra::Compression;
@@ -58,10 +59,14 @@ where
     timestamp::test(&connection).await;
 }
 
+#[template]
 #[rstest]
 #[case::cdrs(CdrsTokio)]
 #[cfg_attr(feature = "cassandra-cpp-driver-tests", case::datastax(Datastax))]
 #[case::scylla(Scylla)]
+fn all_cassandra_drivers(#[case] driver: CassandraDriver) {}
+
+#[apply(all_cassandra_drivers)]
 #[tokio::test(flavor = "multi_thread")]
 async fn passthrough_standard(#[case] driver: CassandraDriver) {
     let _compose = docker_compose("tests/test-configs/cassandra/passthrough/docker-compose.yaml");
@@ -78,10 +83,7 @@ async fn passthrough_standard(#[case] driver: CassandraDriver) {
 }
 
 #[cfg(feature = "alpha-transforms")]
-#[rstest]
-#[case::cdrs(CdrsTokio)]
-#[cfg_attr(feature = "cassandra-cpp-driver-tests", case::datastax(Datastax))]
-#[case::scylla(Scylla)]
+#[apply(all_cassandra_drivers)]
 #[tokio::test(flavor = "multi_thread")]
 async fn passthrough_encode(#[case] driver: CassandraDriver) {
     let _compose = docker_compose("tests/test-configs/cassandra/passthrough/docker-compose.yaml");
@@ -172,10 +174,7 @@ async fn cluster_single_rack_v3(#[case] driver: CassandraDriver) {
     cluster::single_rack_v3::test_topology_task(None).await;
 }
 
-#[rstest]
-#[case::cdrs(CdrsTokio)]
-#[cfg_attr(feature = "cassandra-cpp-driver-tests", case::datastax(Datastax))]
-#[case::scylla(Scylla)]
+#[apply(all_cassandra_drivers)]
 #[tokio::test(flavor = "multi_thread")]
 async fn cluster_single_rack_v4(#[case] driver: CassandraDriver) {
     let mut compose = docker_compose("tests/test-configs/cassandra/cluster-v4/docker-compose.yaml");
@@ -329,10 +328,7 @@ async fn source_tls_and_cluster_tls(#[case] driver: CassandraDriver) {
     cluster::single_rack_v4::test_topology_task(Some(ca_cert), None).await;
 }
 
-#[rstest]
-#[case::cdrs(CdrsTokio)]
-#[cfg_attr(feature = "cassandra-cpp-driver-tests", case::datastax(Datastax))]
-#[case::scylla(Scylla)]
+#[apply(all_cassandra_drivers)]
 #[tokio::test(flavor = "multi_thread")]
 async fn cassandra_redis_cache(#[case] driver: CassandraDriver) {
     let _compose = docker_compose("tests/test-configs/cassandra/redis-cache/docker-compose.yaml");

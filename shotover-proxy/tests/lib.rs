@@ -1,3 +1,7 @@
+#[cfg(test)]
+#[allow(clippy::single_component_path_imports)]
+use rstest_reuse;
+
 use test_helpers::shotover_process::ShotoverProcessBuilder;
 use tokio_bin_process::bin_path;
 

@@ -3874,6 +3874,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "rstest_reuse"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "88530b681abe67924d42cca181d070e3ac20e0740569441a9e35a7cedd2b34a4"
+dependencies = [
+ "quote",
+ "rand 0.8.5",
+ "rustc_version",
+ "syn 2.0.36",
+]
+
+[[package]]
 name = "russh"
 version = "0.38.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4460,6 +4472,7 @@ dependencies = [
  "redis-protocol",
  "regex",
  "rstest",
+ "rstest_reuse",
  "rustls-pemfile",
  "scylla",
  "serde",
