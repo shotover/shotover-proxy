@@ -58,16 +58,16 @@ impl Transform for QueryTypeFilter {
             .filter_map(|(i, m)| match self.filter {
                 Filter::AllowList(ref allow_list) => {
                     if allow_list.contains(&m.get_query_type()) {
-                        return None;
+                        None
                     } else {
-                        return Some((i, m));
+                        Some((i, m))
                     }
                 }
                 Filter::DenyList(ref deny_list) => {
                     if deny_list.contains(&m.get_query_type()) {
-                        return Some((i, m));
+                        Some((i, m))
                     } else {
-                        return None;
+                        None
                     }
                 }
             })
