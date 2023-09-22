@@ -10,7 +10,7 @@ use shotover::message::{Message, ProtocolType, QueryType};
 use shotover::transforms::cassandra::peers_rewrite::CassandraPeersRewrite;
 use shotover::transforms::chain::{TransformChain, TransformChainBuilder};
 use shotover::transforms::debug::returner::{DebugReturner, Response};
-use shotover::transforms::filter::QueryTypeFilter;
+use shotover::transforms::filter::{Filter, QueryTypeFilter};
 use shotover::transforms::null::NullSink;
 #[cfg(feature = "alpha-transforms")]
 use shotover::transforms::protect::{KeyManagerConfig, ProtectConfig};
@@ -50,7 +50,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         let chain = TransformChainBuilder::new(
             vec![
                 Box::new(QueryTypeFilter {
-                    filter: QueryType::Read,
+                    filter: Filter::DenyList(vec![QueryType::Read]),
                 }),
                 Box::new(DebugReturner::new(Response::Redis("a".into()))),
             ],

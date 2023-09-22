@@ -9,7 +9,7 @@ sources:
             behavior:
               SubchainOnMismatch:
                 - QueryTypeFilter:
-                    filter: Read
+                    DenyList: [Read]
                 - RedisSinkSingle:
                     remote_address: "127.0.0.1:1111"
                     connect_timeout_ms: 3000

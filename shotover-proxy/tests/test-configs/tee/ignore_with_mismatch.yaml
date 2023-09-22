@@ -10,7 +10,7 @@ sources:
             buffer_size: 10000
             chain:
             - QueryTypeFilter:
-                filter: Read
+                DenyList: [Read]
             - DebugReturner:
                 Redis: "41"
         - DebugReturner:

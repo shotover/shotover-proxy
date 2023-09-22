@@ -9,15 +9,23 @@ use super::Transforms;
 
 static SHOWN_ERROR: AtomicBool = AtomicBool::new(false);
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(deny_unknown_fields)]
+pub enum Filter {
+    AllowList(Vec<QueryType>),
+    DenyList(Vec<QueryType>),
+}
+
 #[derive(Debug, Clone)]
 pub struct QueryTypeFilter {
-    pub filter: QueryType,
+    pub filter: Filter,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct QueryTypeFilterConfig {
-    pub filter: QueryType,
+    #[serde(flatten)]
+    pub filter: Filter,
 }
 
 #[typetag::serde(name = "QueryTypeFilter")]
@@ -47,11 +55,20 @@ impl Transform for QueryTypeFilter {
             .requests
             .iter_mut()
             .enumerate()
-            .filter_map(|(i, m)| {
-                if m.get_query_type() == self.filter {
-                    Some((i, m))
-                } else {
-                    None
+            .filter_map(|(i, m)| match self.filter {
+                Filter::AllowList(ref allow_list) => {
+                    if allow_list.contains(&m.get_query_type()) {
+                        return None;
+                    } else {
+                        return Some((i, m));
+                    }
+                }
+                Filter::DenyList(ref deny_list) => {
+                    if deny_list.contains(&m.get_query_type()) {
+                        return Some((i, m));
+                    } else {
+                        return None;
+                    }
                 }
             })
             .map(|(i, m)| {
@@ -93,6 +110,7 @@ impl Transform for QueryTypeFilter {
 
 #[cfg(test)]
 mod test {
+    use super::Filter;
     use crate::frame::Frame;
     use crate::frame::RedisFrame;
     use crate::message::{Message, QueryType};
@@ -101,9 +119,63 @@ mod test {
     use crate::transforms::{Transform, Transforms, Wrapper};
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_filter() {
+    async fn test_filter_denylist() {
         let mut filter_transform = QueryTypeFilter {
-            filter: QueryType::Read,
+            filter: Filter::DenyList(vec![QueryType::Read]),
+        };
+
+        let mut chain = vec![Transforms::Loopback(Loopback::default())];
+
+        let messages: Vec<_> = (0..26)
+            .map(|i| {
+                if i % 2 == 0 {
+                    Message::from_frame(Frame::Redis(RedisFrame::Array(vec![
+                        RedisFrame::BulkString("GET".into()),
+                        RedisFrame::BulkString("key".into()),
+                    ])))
+                } else {
+                    Message::from_frame(Frame::Redis(RedisFrame::Array(vec![
+                        RedisFrame::BulkString("SET".into()),
+                        RedisFrame::BulkString("key".into()),
+                        RedisFrame::BulkString("value".into()),
+                    ])))
+                }
+            })
+            .collect();
+
+        let mut requests_wrapper = Wrapper::new(messages);
+        requests_wrapper.reset(&mut chain);
+        let result = filter_transform.transform(requests_wrapper).await.unwrap();
+
+        assert_eq!(result.len(), 26);
+
+        for (i, mut message) in result.into_iter().enumerate() {
+            if let Some(frame) = message.frame() {
+                if i % 2 == 0 {
+                    assert_eq!(
+                        frame,
+                        &Frame::Redis(RedisFrame::Error(
+                            "ERR Message was filtered out by shotover".into()
+                        )),
+                    )
+                } else {
+                    assert_eq!(
+                        frame,
+                        &Frame::Redis(RedisFrame::Array(vec![
+                            RedisFrame::BulkString("SET".into()),
+                            RedisFrame::BulkString("key".into()),
+                            RedisFrame::BulkString("value".into()),
+                        ]))
+                    )
+                }
+            }
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_filter_allowlist() {
+        let mut filter_transform = QueryTypeFilter {
+            filter: Filter::AllowList(vec![QueryType::Write]),
         };
 
         let mut chain = vec![Transforms::Loopback(Loopback::default())];
