@@ -139,11 +139,10 @@ impl RedisBench {
     async fn run_aws_shotover(
         &self,
         instance: Arc<Ec2InstanceWithShotover>,
-        shotover: Shotover,
         redis_ip: String,
     ) -> Option<RunningShotover> {
         let ip = instance.instance.private_ip().to_string();
-        match shotover {
+        match self.shotover {
             Shotover::Standard | Shotover::ForcedMessageParsed => {
                 let topology =
                     self.generate_topology_yaml(format!("{ip}:6379"), format!("{redis_ip}:6379"));
@@ -229,11 +228,10 @@ impl Bench for RedisBench {
         let redis_ip = redis_instances.private_ips()[0].to_string();
         let shotover_ip = shotover_instance.instance.private_ip().to_string();
 
-        redis_instances.run(self.encryption).await;
-        // unlike other sinks, redis cluster sink needs the redis instance to be already up
-        let running_shotover = self
-            .run_aws_shotover(shotover_instance.clone(), self.shotover, redis_ip.clone())
-            .await;
+        let (_, running_shotover) = futures::join!(
+            redis_instances.run(self.encryption),
+            self.run_aws_shotover(shotover_instance.clone(), redis_ip.clone())
+        );
 
         let destination_ip = if running_shotover.is_some() {
             format!("redis://{shotover_ip}")
