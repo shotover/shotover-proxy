@@ -1,6 +1,6 @@
 use crate::{
     aws::{Ec2InstanceWithDocker, Ec2InstanceWithShotover, RunningShotover},
-    common::{rewritten_file, Shotover},
+    common::{self, Shotover},
     profilers::{self, CloudProfilerRunner, ProfilerRunner},
 };
 use anyhow::Result;
@@ -28,9 +28,20 @@ use scylla::{
     transport::Compression as ScyllaCompression, Session as ScyllaSession,
     SessionBuilder as ScyllaSessionBuilder,
 };
+use shotover::{
+    config::chain::TransformChainConfig,
+    sources::SourceConfig,
+    transforms::{
+        cassandra::{
+            sink_cluster::{CassandraSinkClusterConfig, ShotoverNode},
+            sink_single::CassandraSinkSingleConfig,
+        },
+        debug::force_parse::DebugForceEncodeConfig,
+        TransformConfig,
+    },
+};
 use std::{
     collections::HashMap,
-    path::Path,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -41,6 +52,7 @@ use test_helpers::{
 };
 use tokio::sync::mpsc::UnboundedSender;
 use tokio_bin_process::bin_path;
+use uuid::Uuid;
 use windsock::{Bench, BenchParameters, BenchTask, Profiling, Report};
 
 const ROW_COUNT: usize = 1000;
@@ -365,6 +377,71 @@ impl CassandraBench {
             cassandra: 1,
         }
     }
+
+    fn generate_topology_yaml(&self, host_address: String, cassandra_address: String) -> String {
+        let mut transforms = vec![];
+        if let Shotover::ForcedMessageParsed = self.shotover {
+            transforms.push(Box::new(DebugForceEncodeConfig {
+                encode_requests: true,
+                encode_responses: true,
+            }) as Box<dyn TransformConfig>);
+        }
+
+        match self.topology {
+            Topology::Cluster3 => {
+                transforms.push(Box::new(CassandraSinkClusterConfig {
+                    first_contact_points: vec![cassandra_address],
+                    tls: None,
+                    connect_timeout_ms: 3000,
+                    local_shotover_host_id: "2dd022d6-2937-4754-89d6-02d2933a8f7a".parse().unwrap(),
+                    read_timeout: None,
+                    shotover_nodes: vec![ShotoverNode {
+                        address: host_address.parse().unwrap(),
+                        data_center: "dc1".to_owned(),
+                        rack: "rack1".to_owned(),
+                        host_id: "2dd022d6-2937-4754-89d6-02d2933a8f7a".parse().unwrap(),
+                    }],
+                }));
+            }
+            Topology::Single => {
+                transforms.push(Box::new(CassandraSinkSingleConfig {
+                    address: cassandra_address,
+                    tls: None,
+                    connect_timeout_ms: 3000,
+                    read_timeout: None,
+                }));
+            }
+        }
+
+        common::generate_topology(SourceConfig::Cassandra(
+            shotover::sources::cassandra::CassandraConfig {
+                name: "cassandra".to_owned(),
+                listen_addr: host_address,
+                connection_limit: None,
+                hard_connection_limit: None,
+                tls: None,
+                timeout: None,
+                chain: TransformChainConfig(transforms),
+                transport: None,
+            },
+        ))
+    }
+
+    async fn run_aws_shotover(
+        &self,
+        instance: Arc<Ec2InstanceWithShotover>,
+        cassandra_ip: String,
+    ) -> Option<RunningShotover> {
+        let ip = instance.instance.private_ip().to_string();
+        match self.shotover {
+            Shotover::Standard | Shotover::ForcedMessageParsed => {
+                let topology = self
+                    .generate_topology_yaml(format!("{ip}:9042"), format!("{cassandra_ip}:9042"));
+                Some(instance.run_shotover(&topology).await)
+            }
+            Shotover::None => None,
+        }
+    }
 }
 
 #[async_trait]
@@ -488,12 +565,7 @@ impl Bench for CassandraBench {
 
         let (_, running_shotover) = futures::join!(
             run_aws_cassandra(cassandra_nodes, self.topology.clone()),
-            run_aws_shotover(
-                shotover_instance.clone(),
-                self.shotover,
-                cassandra_ip.clone(),
-                self.topology.clone(),
-            )
+            self.run_aws_shotover(shotover_instance.clone(), cassandra_ip.clone(),)
         );
 
         let destination_ip = if running_shotover.is_some() {
@@ -525,10 +597,8 @@ impl Bench for CassandraBench {
 
         let address = match (&self.topology, &self.shotover) {
             (Topology::Single, Shotover::None) => "127.0.0.1:9043",
-            (Topology::Single, Shotover::Standard) => "127.0.0.1:9042",
             (Topology::Cluster3, Shotover::None) => "172.16.1.2:9044",
-            (Topology::Cluster3, Shotover::Standard) => "127.0.0.1:9042",
-            (_, Shotover::ForcedMessageParsed) => todo!(),
+            (_, Shotover::Standard | Shotover::ForcedMessageParsed) => "127.0.0.1:9042",
         };
         let config_dir = match &self.topology {
             Topology::Single => "tests/test-configs/cassandra/passthrough",
@@ -546,16 +616,26 @@ impl Bench for CassandraBench {
                 panic!("Mocked cassandra database does not provide a clustered mode")
             }
         };
+        let cassandra_address = match &self.topology {
+            Topology::Single => "127.0.0.1:9043".to_owned(),
+            Topology::Cluster3 => "172.16.1.2:9044".to_owned(),
+        };
         let mut profiler = ProfilerRunner::new(self.name(), profiling);
         let shotover = match self.shotover {
-            Shotover::Standard => Some(
-                ShotoverProcessBuilder::new_with_topology(&format!("{config_dir}/topology.yaml"))
-                    .with_bin(bin_path!("shotover-proxy"))
-                    .with_profile(profiler.shotover_profile())
-                    .with_cores(core_count.shotover as u32)
-                    .start()
-                    .await,
-            ),
+            Shotover::Standard => {
+                let topology_contents =
+                    self.generate_topology_yaml(address.to_owned(), cassandra_address);
+                let topology_path = std::env::temp_dir().join(Uuid::new_v4().to_string());
+                std::fs::write(&topology_path, topology_contents).unwrap();
+                Some(
+                    ShotoverProcessBuilder::new_with_topology(topology_path.to_str().unwrap())
+                        .with_bin(bin_path!("shotover-proxy"))
+                        .with_profile(profiler.shotover_profile())
+                        .with_cores(core_count.shotover as u32)
+                        .start()
+                        .await,
+                )
+            }
             Shotover::None => None,
             Shotover::ForcedMessageParsed => todo!(),
         };
@@ -627,39 +707,6 @@ impl Bench for CassandraBench {
         self.operation.run(&session, reporter, parameters).await;
     }
 }
-
-async fn run_aws_shotover(
-    instance: Arc<Ec2InstanceWithShotover>,
-    shotover: Shotover,
-    cassandra_ip: String,
-    topology: Topology,
-) -> Option<RunningShotover> {
-    let config_dir = "tests/test-configs/cassandra/bench";
-    let ip = instance.instance.private_ip().to_string();
-    match shotover {
-        Shotover::Standard | Shotover::ForcedMessageParsed => {
-            let encoded = match shotover {
-                Shotover::Standard => "",
-                Shotover::ForcedMessageParsed => "-encode",
-                Shotover::None => unreachable!(),
-            };
-            let clustered = match topology {
-                Topology::Single => "",
-                Topology::Cluster3 => "-cluster",
-            };
-            let topology = rewritten_file(
-                Path::new(&format!(
-                    "{config_dir}/topology{clustered}{encoded}-cloud.yaml"
-                )),
-                &[("HOST_ADDRESS", &ip), ("CASSANDRA_ADDRESS", &cassandra_ip)],
-            )
-            .await;
-            Some(instance.run_shotover(&topology).await)
-        }
-        Shotover::None => None,
-    }
-}
-
 async fn run_aws_cassandra(nodes: Vec<AwsNodeInfo>, topology: Topology) {
     match topology {
         Topology::Cluster3 => run_aws_cassandra_cluster(nodes).await,

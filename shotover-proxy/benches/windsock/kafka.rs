@@ -1,12 +1,16 @@
 use crate::aws::{Ec2InstanceWithDocker, Ec2InstanceWithShotover};
-use crate::common::{rewritten_file, Shotover};
+use crate::common::{self, Shotover};
 use crate::profilers::{self, CloudProfilerRunner, ProfilerRunner};
-use crate::shotover::shotover_process;
+use crate::shotover::shotover_process_custom_topology;
 use anyhow::Result;
 use async_trait::async_trait;
 use aws_throwaway::Ec2Instance;
 use futures::StreamExt;
-use std::path::Path;
+use shotover::config::chain::TransformChainConfig;
+use shotover::sources::SourceConfig;
+use shotover::transforms::debug::force_parse::DebugForceEncodeConfig;
+use shotover::transforms::kafka::sink_single::KafkaSinkSingleConfig;
+use shotover::transforms::TransformConfig;
 use std::sync::Arc;
 use std::{collections::HashMap, time::Duration};
 use test_helpers::docker_compose::docker_compose;
@@ -34,6 +38,48 @@ impl KafkaBench {
         KafkaBench {
             shotover,
             message_size,
+        }
+    }
+
+    fn generate_topology_yaml(&self, host_address: String, kafka_address: String) -> String {
+        let mut transforms = vec![];
+        if let Shotover::ForcedMessageParsed = self.shotover {
+            transforms.push(Box::new(DebugForceEncodeConfig {
+                encode_requests: true,
+                encode_responses: true,
+            }) as Box<dyn TransformConfig>);
+        }
+
+        transforms.push(Box::new(KafkaSinkSingleConfig {
+            address: kafka_address,
+            connect_timeout_ms: 3000,
+            read_timeout: None,
+        }));
+
+        common::generate_topology(SourceConfig::Kafka(shotover::sources::kafka::KafkaConfig {
+            name: "kafka".to_owned(),
+            listen_addr: host_address,
+            connection_limit: None,
+            hard_connection_limit: None,
+            tls: None,
+            timeout: None,
+            chain: TransformChainConfig(transforms),
+        }))
+    }
+
+    async fn run_aws_shotover(
+        &self,
+        instance: Arc<Ec2InstanceWithShotover>,
+        kafka_ip: String,
+    ) -> Option<crate::aws::RunningShotover> {
+        let ip = instance.instance.private_ip().to_string();
+        match self.shotover {
+            Shotover::Standard | Shotover::ForcedMessageParsed => {
+                let topology =
+                    self.generate_topology_yaml(format!("{ip}:9092"), format!("{kafka_ip}:9092"));
+                Some(instance.run_shotover(&topology).await)
+            }
+            Shotover::None => None,
         }
     }
 }
@@ -93,7 +139,7 @@ impl Bench for KafkaBench {
 
         let (_, running_shotover) = futures::join!(
             run_aws_kafka(kafka_instance),
-            run_aws_shotover(shotover_instance, self.shotover, kafka_ip.clone())
+            self.run_aws_shotover(shotover_instance, kafka_ip.clone())
         );
 
         let destination_ip = if running_shotover.is_some() {
@@ -125,13 +171,14 @@ impl Bench for KafkaBench {
 
         let mut profiler = ProfilerRunner::new(self.name(), profiling);
         let shotover = match self.shotover {
-            Shotover::Standard => {
-                Some(shotover_process(&format!("{config_dir}/topology.yaml"), &profiler).await)
+            Shotover::Standard | Shotover::ForcedMessageParsed => {
+                let topology_yaml = self.generate_topology_yaml(
+                    "127.0.0.1:9192".to_owned(),
+                    "127.0.0.1:9092".to_owned(),
+                );
+                Some(shotover_process_custom_topology(&topology_yaml, &profiler).await)
             }
             Shotover::None => None,
-            Shotover::ForcedMessageParsed => Some(
-                shotover_process(&format!("{config_dir}/topology-encode.yaml"), &profiler).await,
-            ),
         };
 
         let broker_address = match self.shotover {
@@ -213,31 +260,6 @@ impl Bench for KafkaBench {
         for task in tasks {
             task.await.unwrap();
         }
-    }
-}
-
-async fn run_aws_shotover(
-    instance: Arc<Ec2InstanceWithShotover>,
-    shotover: Shotover,
-    kafka_ip: String,
-) -> Option<crate::aws::RunningShotover> {
-    let config_dir = "tests/test-configs/kafka/bench";
-    let ip = instance.instance.private_ip().to_string();
-    match shotover {
-        Shotover::Standard | Shotover::ForcedMessageParsed => {
-            let encoded = match shotover {
-                Shotover::Standard => "",
-                Shotover::ForcedMessageParsed => "-encode",
-                Shotover::None => unreachable!(),
-            };
-            let topology = rewritten_file(
-                Path::new(&format!("{config_dir}/topology{encoded}-cloud.yaml")),
-                &[("HOST_ADDRESS", &ip), ("KAFKA_ADDRESS", &kafka_ip)],
-            )
-            .await;
-            Some(instance.run_shotover(&topology).await)
-        }
-        Shotover::None => None,
     }
 }
 

@@ -3,15 +3,6 @@ use test_helpers::shotover_process::ShotoverProcessBuilder;
 use tokio_bin_process::{bin_path, BinProcess};
 use uuid::Uuid;
 
-#[cfg(feature = "rdkafka-driver-tests")]
-pub async fn shotover_process(topology_path: &str, profiler: &ProfilerRunner) -> BinProcess {
-    ShotoverProcessBuilder::new_with_topology(topology_path)
-        .with_bin(bin_path!("shotover-proxy"))
-        .with_profile(profiler.shotover_profile())
-        .start()
-        .await
-}
-
 pub async fn shotover_process_custom_topology(
     topology_contents: &str,
     profiler: &ProfilerRunner,
