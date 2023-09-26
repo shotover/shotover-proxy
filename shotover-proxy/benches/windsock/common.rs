@@ -1,4 +1,5 @@
 use anyhow::Context;
+use shotover::{config::topology::Topology, sources::SourceConfig};
 use std::path::Path;
 
 #[derive(Clone, Copy)]
@@ -30,4 +31,12 @@ pub async fn rewritten_file(path: &Path, find_replace: &[(&str, &str)]) -> Strin
         text = text.replace(find, replace);
     }
     text
+}
+
+pub fn generate_topology(source: SourceConfig) -> String {
+    Topology {
+        sources: vec![source],
+    }
+    .serialize()
+    .unwrap()
 }

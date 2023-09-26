@@ -1,8 +1,8 @@
 use crate::{
     aws::{Ec2InstanceWithDocker, Ec2InstanceWithShotover, RunningShotover, WindsockAws},
-    common::{rewritten_file, Shotover},
+    common::{self, Shotover},
     profilers::{self, CloudProfilerRunner, ProfilerRunner},
-    shotover::shotover_process,
+    shotover::shotover_process_custom_topology,
 };
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
@@ -13,12 +13,21 @@ use fred::{
 };
 use itertools::Itertools;
 use rustls_pemfile::{certs, Item};
+use shotover::{
+    config::chain::TransformChainConfig,
+    sources::SourceConfig,
+    tls::{TlsAcceptorConfig, TlsConnectorConfig},
+    transforms::{
+        debug::force_parse::DebugForceEncodeConfig,
+        redis::{sink_cluster::RedisSinkClusterConfig, sink_single::RedisSinkSingleConfig},
+        TransformConfig,
+    },
+};
 use std::{
     collections::HashMap,
     fs::File,
     io::BufReader,
     net::IpAddr,
-    path::Path,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -66,6 +75,80 @@ impl RedisBench {
             shotover,
             operation,
             encryption,
+        }
+    }
+
+    fn generate_topology_yaml(&self, host_address: String, redis_address: String) -> String {
+        let certs = "tests/test-configs/redis/tls/certs";
+        let tls_connector = match self.encryption {
+            Encryption::Tls => Some(TlsConnectorConfig {
+                certificate_authority_path: format!("{certs}/localhost_CA.crt"),
+                certificate_path: Some(format!("{certs}/localhost.crt")),
+                private_key_path: Some(format!("{certs}/localhost.key")),
+                verify_hostname: true,
+            }),
+            Encryption::None => None,
+        };
+        let tls_acceptor = match self.encryption {
+            Encryption::Tls => Some(TlsAcceptorConfig {
+                certificate_path: format!("{certs}/localhost.crt"),
+                private_key_path: format!("{certs}/localhost.key"),
+                certificate_authority_path: None,
+            }),
+            Encryption::None => None,
+        };
+
+        let mut transforms = vec![];
+        if let Shotover::ForcedMessageParsed = self.shotover {
+            transforms.push(Box::new(DebugForceEncodeConfig {
+                encode_requests: true,
+                encode_responses: true,
+            }) as Box<dyn TransformConfig>);
+        }
+
+        match self.topology {
+            RedisTopology::Cluster3 => {
+                transforms.push(Box::new(RedisSinkClusterConfig {
+                    first_contact_points: vec![redis_address],
+                    direct_destination: None,
+                    tls: tls_connector,
+                    connection_count: None,
+                    connect_timeout_ms: 3000,
+                }));
+            }
+            RedisTopology::Single => {
+                transforms.push(Box::new(RedisSinkSingleConfig {
+                    address: redis_address,
+                    tls: tls_connector,
+                    connect_timeout_ms: 3000,
+                }));
+            }
+        }
+
+        common::generate_topology(SourceConfig::Redis(shotover::sources::redis::RedisConfig {
+            name: "redis".to_owned(),
+            listen_addr: host_address,
+            connection_limit: None,
+            hard_connection_limit: None,
+            tls: tls_acceptor,
+            timeout: None,
+            chain: TransformChainConfig(transforms),
+        }))
+    }
+
+    async fn run_aws_shotover(
+        &self,
+        instance: Arc<Ec2InstanceWithShotover>,
+        redis_ip: String,
+    ) -> Option<RunningShotover> {
+        let ip = instance.instance.private_ip().to_string();
+        match self.shotover {
+            Shotover::Standard | Shotover::ForcedMessageParsed => {
+                let topology =
+                    self.generate_topology_yaml(format!("{ip}:6379"), format!("{redis_ip}:6379"));
+                Some(instance.run_shotover(&topology).await)
+            }
+            Shotover::None => None,
         }
     }
 }
@@ -145,15 +228,10 @@ impl Bench for RedisBench {
         let redis_ip = redis_instances.private_ips()[0].to_string();
         let shotover_ip = shotover_instance.instance.private_ip().to_string();
 
-        redis_instances.run(self.encryption).await;
-        // unlike other sinks, redis cluster sink needs the redis instance to be already up
-        let running_shotover = run_aws_shotover(
-            shotover_instance.clone(),
-            self.shotover,
-            redis_ip.clone(),
-            self.topology,
-        )
-        .await;
+        let (_, running_shotover) = futures::join!(
+            redis_instances.run(self.encryption),
+            self.run_aws_shotover(shotover_instance.clone(), redis_ip.clone())
+        );
 
         let destination_ip = if running_shotover.is_some() {
             format!("redis://{shotover_ip}")
@@ -185,13 +263,17 @@ impl Bench for RedisBench {
         test_helpers::cert::generate_redis_test_certs();
 
         // rediss:// url is not needed to enable TLS because we overwrite the TLS config later on
-        let address = match (self.topology, self.shotover) {
+        let client_url = match (self.topology, self.shotover) {
             (RedisTopology::Single, Shotover::None) => "redis://127.0.0.1:1111",
             (RedisTopology::Cluster3, Shotover::None) => "redis-cluster://172.16.1.2:6379",
             (
                 RedisTopology::Single | RedisTopology::Cluster3,
                 Shotover::Standard | Shotover::ForcedMessageParsed,
             ) => "redis://127.0.0.1:6379",
+        };
+        let redis_address = match self.topology {
+            RedisTopology::Single => "127.0.0.1:1111",
+            RedisTopology::Cluster3 => "172.16.1.2:6379",
         };
         let config_dir = match (self.topology, self.encryption) {
             (RedisTopology::Single, Encryption::None) => "tests/test-configs/redis/passthrough",
@@ -204,17 +286,16 @@ impl Bench for RedisBench {
         let _compose = docker_compose(&format!("{config_dir}/docker-compose.yaml"));
         let mut profiler = ProfilerRunner::new(self.name(), profiling);
         let shotover = match self.shotover {
-            Shotover::Standard => {
-                Some(shotover_process(&format!("{config_dir}/topology.yaml"), &profiler).await)
+            Shotover::Standard | Shotover::ForcedMessageParsed => {
+                let topology_yaml = self
+                    .generate_topology_yaml("127.0.0.1:6379".to_owned(), redis_address.to_owned());
+                Some(shotover_process_custom_topology(&topology_yaml, &profiler).await)
             }
-            Shotover::ForcedMessageParsed => Some(
-                shotover_process(&format!("{config_dir}/topology-encode.yaml"), &profiler).await,
-            ),
             Shotover::None => None,
         };
         profiler.run(&shotover).await;
 
-        self.execute_run(address, &parameters).await;
+        self.execute_run(client_url, &parameters).await;
 
         if let Some(shotover) = shotover {
             shotover
@@ -367,38 +448,6 @@ impl BenchTask for BenchTaskRedis {
             }
         }
         Ok(())
-    }
-}
-
-async fn run_aws_shotover(
-    instance: Arc<Ec2InstanceWithShotover>,
-    shotover: Shotover,
-    redis_ip: String,
-    topology: RedisTopology,
-) -> Option<RunningShotover> {
-    let config_dir = "tests/test-configs/redis/bench";
-    let ip = instance.instance.private_ip().to_string();
-    match shotover {
-        Shotover::Standard | Shotover::ForcedMessageParsed => {
-            let clustered = match topology {
-                RedisTopology::Single => "",
-                RedisTopology::Cluster3 => "-cluster",
-            };
-            let encoded = match shotover {
-                Shotover::Standard => "",
-                Shotover::ForcedMessageParsed => "-encode",
-                Shotover::None => unreachable!(),
-            };
-            let topology = rewritten_file(
-                Path::new(&format!(
-                    "{config_dir}/topology{clustered}{encoded}-cloud.yaml"
-                )),
-                &[("HOST_ADDRESS", &ip), ("REDIS_ADDRESS", &redis_ip)],
-            )
-            .await;
-            Some(instance.run_shotover(&topology).await)
-        }
-        Shotover::None => None,
     }
 }
 
