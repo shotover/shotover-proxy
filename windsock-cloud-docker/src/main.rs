@@ -60,7 +60,7 @@ fn main() {
     container_bash(&format!(
         r#"cd shotover-proxy;
 source "$HOME/.cargo/env";
-AWS_ACCESS_KEY_ID={access_key_id} AWS_SECRET_ACCESS_KEY={secret_access_key} CARGO_TERM_COLOR=always cargo test --target-dir /target --release --bench windsock --features alpha-transforms -- {args}"#
+AWS_ACCESS_KEY_ID={access_key_id} AWS_SECRET_ACCESS_KEY={secret_access_key} CARGO_TERM_COLOR=always cargo test --target-dir /target --release --bench windsock --features alpha-transforms --features rdkafka-driver-tests -- {args}"#
     ));
 
     // extract windsock results
