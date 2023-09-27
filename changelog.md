@@ -7,6 +7,8 @@ This assists us in knowing when to make the next release a breaking release and 
 
 ### topology.yaml
 
+#### Configuration of transform chains to sources change
+
 The root level of the topology.yaml is completely overhauled.
 We have not observed the source_to_chain_mapping ever being used, so to simplify the topology.yaml format root level chains have been inlined sources.
 
@@ -40,6 +42,21 @@ sources:
             remote_address: "127.0.0.1:1111"
             connect_timeout_ms: 3000
 ```
+
+#### Configuration options for Filter transform changed
+
+The usage of the Filter transform has been changed to use either an allow list or deny list instead of just a deny list previously.
+
+```yaml
+    - QueryTypeFilter:
+        # old config: 
+        # filter: Read
+
+        # new config:
+        DenyList: [Read]
+```
+
+
 
 ### shotover rust api
 
