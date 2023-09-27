@@ -363,26 +363,18 @@ This transform emits a metrics [counter](user-guide/observability.md#counter) na
 
 ### QueryTypeFilter
 
-This transform will drop messages that match the specified filter.
+This transform will drop messages that match the specified filter. You can either filter out all messages that do not match those on the `AllowList` or filter the messages that match those on the `DenyList`.
 
 ```yaml
-- QueryTypeFilter:
-    # drop messages that are read
-    filter: Read
 
-    # alternatively:
-    #
-    # drop messages that are write
-    # filter: Write
-    #
-    # drop messages that are read write
-    # filter: ReadWrite
-    #
-    # drop messages that are schema changes
-    # filter: SchemaChange
-    #
-    # drop messages that are pub sub messages
-    # filter: PubSubMessage
+# Possible message types to filter: [Read, Write, ReadWrite, SchemaChange, PubSubMessage]
+
+- QueryTypeFilter:
+    # only allow read messages through with an allow list
+    AllowList: [Read]
+
+    # only allow read messages by blocking all other messages with a deny list
+    # DenyList: [Write, ReadWrite, SchemaChange, PubSubMessage]
 ```
 
 ### RedisCache

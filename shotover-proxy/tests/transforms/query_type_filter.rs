@@ -1,21 +1,14 @@
 use crate::shotover_process;
 use test_helpers::connection::redis_connection;
 
-#[tokio::test(flavor = "multi_thread")]
-async fn test_query_type_filter() {
-    let shotover = shotover_process("tests/test-configs/query_type_filter/simple.yaml")
-        .start()
-        .await;
-
-    let mut connection = redis_connection::new_async("127.0.0.1", 6379).await;
-
+async fn test_pipeline(connection: &mut redis::aio::Connection) {
     // using individual queries tests QueryTypeFilter with a MessageWrapper containing a single message at a time.
     for _ in 0..100 {
         // Because this is a write it should be filtered out and replaced with an error
         let result = redis::cmd("SET")
             .arg("key")
             .arg("myvalue")
-            .query_async::<_, ()>(&mut connection)
+            .query_async::<_, ()>(connection)
             .await
             .unwrap_err()
             .to_string();
@@ -27,7 +20,7 @@ async fn test_query_type_filter() {
         // Because this is a read it should not be filtered out and gets the DebugReturner value of 42
         let result: String = redis::cmd("GET")
             .arg("key")
-            .query_async(&mut connection)
+            .query_async(connection)
             .await
             .unwrap();
         assert_eq!("42", result);
@@ -47,7 +40,7 @@ async fn test_query_type_filter() {
             .ignore()
             .cmd("GET")
             .arg("some_key")
-            .query_async::<_, ()>(&mut connection)
+            .query_async::<_, ()>(connection)
             .await
             .unwrap_err()
             .to_string();
@@ -67,12 +60,25 @@ async fn test_query_type_filter() {
             .ignore()
             .cmd("GET")
             .arg("some_key")
-            .query_async(&mut connection)
+            .query_async(connection)
             .await
             .unwrap();
 
         assert_eq!(result, vec!("42".to_string()));
     }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_query_type_filter() {
+    let shotover = shotover_process("tests/test-configs/query_type_filter/simple.yaml")
+        .start()
+        .await;
+
+    let mut deny_connection = redis_connection::new_async("127.0.0.1", 6379).await;
+    let mut allow_connection = redis_connection::new_async("127.0.0.1", 6380).await;
+
+    test_pipeline(&mut deny_connection).await;
+    test_pipeline(&mut allow_connection).await;
 
     shotover.shutdown_and_then_consume_events(&[]).await;
 }

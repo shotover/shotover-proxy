@@ -6,6 +6,15 @@ sources:
       connection_limit: 3000000
       chain:
         - QueryTypeFilter:
-            filter: Write
+            DenyList: [Write]
+        - DebugReturner:
+            Redis: "42"
+  - Redis:
+      name: "redis"
+      listen_addr: "127.0.0.1:6380"
+      connection_limit: 3000000
+      chain:
+        - QueryTypeFilter:
+            AllowList: [Read]
         - DebugReturner:
             Redis: "42"

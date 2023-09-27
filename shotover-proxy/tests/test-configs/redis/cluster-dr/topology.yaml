@@ -11,7 +11,7 @@ sources:
             buffer_size: 10000
             chain:
             - QueryTypeFilter:
-                filter: Read
+                DenyList: [Read]
             - Coalesce:
                 flush_when_buffered_message_count: 2000
                 # Use an unreasonably large timeout here so that integration tests dont break on slow hardware or a performance regression
