@@ -20,11 +20,7 @@ use opensearch::{
 };
 use serde_json::{json, Value};
 use test_helpers::docker_compose::docker_compose;
-use tokio::{
-    sync::oneshot,
-    task::JoinHandle,
-    time::{interval, Duration},
-};
+use tokio::time::Duration;
 
 async fn assert_ok_and_get_json(response: Result<Response, Error>) -> Value {
     let response = response.unwrap();
@@ -436,7 +432,6 @@ async fn dual_write_reindex() {
                         }
                     }
                 }))
-                .allow_no_indices(true)
                 .send()
                 .await
                 .unwrap();
@@ -451,16 +446,18 @@ async fn dual_write_reindex() {
                 }
             };
 
-            // shotover_client_c
-            //     .index(IndexParts::Index("test-index"))
-            //     .body(json!({
-            //         "name": Value::String(format!("{} Smith", document["_source"]["name"].as_str().unwrap())),
-            //         "age": document["_source"]["age"]
-            //     }))
-            //     .refresh(Refresh::WaitFor)
-            //     .send()
-            //     .await
-            //     .unwrap();
+            shotover_client_c
+                .update(opensearch::UpdateParts::IndexId(
+                    "test-index",
+                    document["_id"].as_str().unwrap(),
+                ))
+                .body(json!({
+                    "name": Value::String("Smith".into()),
+                }))
+                .refresh(Refresh::WaitFor)
+                .send()
+                .await
+                .unwrap();
 
             tokio::time::sleep(Duration::from_millis(500)).await;
         }
@@ -491,12 +488,143 @@ async fn dual_write_reindex() {
             .unwrap();
     });
 
+    // Begin dual writes
+    // Begin reindex operations
     let _ = tokio::join!(reindex_jh, dual_write_jh);
 
-    // Begin dual writes and verify data ends up in both clusters
-    // Begin reindex operations
-    // Continue dual writing until reindex operation complete
     // verify both clusters end up in the same state
+    let target_response = target_client
+        .search(SearchParts::Index(&["test-index"]))
+        .from(0)
+        .size(200)
+        .body(json!({
+            "query": {
+                "match": {
+                    "name": "Smith",
+                }
+            }
+        }))
+        .send()
+        .await
+        .unwrap()
+        .json::<Value>()
+        .await
+        .unwrap();
+
+    let source_response = source_client
+        .search(SearchParts::Index(&["test-index"]))
+        .from(0)
+        .size(200)
+        .body(json!({
+            "query": {
+                "match": {
+                    "name": "Smith",
+                }
+            }
+        }))
+        .send()
+        .await
+        .unwrap()
+        .json::<Value>()
+        .await
+        .unwrap();
+
+    assert_eq!(
+        target_response["hits"]["hits"].as_array().unwrap().len(),
+        source_response["hits"]["hits"].as_array().unwrap().len()
+    );
+
+    target_response["hits"]["hits"]
+        .as_array()
+        .unwrap()
+        .clone()
+        .sort_by(|a, b| {
+            let a_age = a["_source"]["age"].as_i64().unwrap();
+            let b_age = b["_source"]["age"].as_i64().unwrap();
+            a_age.cmp(&b_age)
+        });
+
+    source_response["hits"]["hits"]
+        .as_array()
+        .unwrap()
+        .clone()
+        .sort_by(|a, b| {
+            let a_age = a["_source"]["age"].as_i64().unwrap();
+            let b_age = b["_source"]["age"].as_i64().unwrap();
+            a_age.cmp(&b_age)
+        });
+
+    assert_eq!(
+        target_response["hits"]["hits"].as_array().unwrap(),
+        source_response["hits"]["hits"].as_array().unwrap()
+    );
+
+    // verify both clusters end up in the same state
+    let target_response = target_client
+        .search(SearchParts::Index(&["test-index"]))
+        .from(0)
+        .size(200)
+        .body(json!({
+            "query": {
+                "match": {
+                    "name": "John",
+                }
+            }
+        }))
+        .send()
+        .await
+        .unwrap()
+        .json::<Value>()
+        .await
+        .unwrap();
+
+    let source_response = source_client
+        .search(SearchParts::Index(&["test-index"]))
+        .from(0)
+        .size(200)
+        .body(json!({
+            "query": {
+                "match": {
+                    "name": "John",
+                }
+            }
+        }))
+        .send()
+        .await
+        .unwrap()
+        .json::<Value>()
+        .await
+        .unwrap();
+
+    assert_eq!(
+        target_response["hits"]["hits"].as_array().unwrap().len(),
+        source_response["hits"]["hits"].as_array().unwrap().len()
+    );
+
+    target_response["hits"]["hits"]
+        .as_array()
+        .unwrap()
+        .clone()
+        .sort_by(|a, b| {
+            let a_age = a["_source"]["age"].as_i64().unwrap();
+            let b_age = b["_source"]["age"].as_i64().unwrap();
+            a_age.cmp(&b_age)
+        });
+
+    source_response["hits"]["hits"]
+        .as_array()
+        .unwrap()
+        .clone()
+        .sort_by(|a, b| {
+            let a_age = a["_source"]["age"].as_i64().unwrap();
+            let b_age = b["_source"]["age"].as_i64().unwrap();
+            a_age.cmp(&b_age)
+        });
+
+    assert_eq!(
+        target_response["hits"]["hits"].as_array().unwrap(),
+        source_response["hits"]["hits"].as_array().unwrap()
+    );
 
     shotover.shutdown_and_then_consume_events(&[]).await;
 }

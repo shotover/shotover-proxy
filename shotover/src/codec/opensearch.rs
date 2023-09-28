@@ -120,7 +120,13 @@ impl OpenSearchDecoder {
         let body_start = match response.parse(src) {
             Ok(httparse::Status::Complete(body_start)) => body_start,
             Ok(httparse::Status::Partial) => return Ok(None),
-            Err(err) => return Err(anyhow!("error parsing response: {}", err)),
+            Err(err) => {
+                return Err(anyhow!(
+                    "error: {} parsing response: {}",
+                    err,
+                    pretty_hex::pretty_hex(&src)
+                ))
+            }
         };
         match response.version.unwrap() {
             1 => (),
@@ -197,6 +203,12 @@ impl Decoder for OpenSearchDecoder {
                         content_length,
                     }) = decode_result
                     {
+                        tracing::debug!(
+                            "{}: incoming OpenSearch message:\n{}",
+                            self.direction,
+                            pretty_hex::pretty_hex(&src)
+                        );
+
                         self.state = State::ReadingBody(http_headers, content_length);
                         src.advance(body_start);
                     } else {

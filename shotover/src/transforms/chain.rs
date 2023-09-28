@@ -278,6 +278,8 @@ impl TransformChainBuilder {
         #[cfg(test)]
         let count_clone = count.clone();
 
+        let span = tracing::error_span!("subchain");
+
         // Even though we don't keep the join handle, this thread will wrap up once all corresponding senders have been dropped.
 
         let mut chain = self.build();
@@ -329,7 +331,7 @@ impl TransformChainBuilder {
                     ),
                 }
             }
-            .in_current_span(),
+            .instrument(span),
         );
 
         BufferedChain {

@@ -175,6 +175,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                 "connection",
                 id = self.connection_count,
                 source = self.source_name.as_str(),
+                chain = self.chain_builder.name.as_str(),
             );
             let transport = self.transport;
             async {
