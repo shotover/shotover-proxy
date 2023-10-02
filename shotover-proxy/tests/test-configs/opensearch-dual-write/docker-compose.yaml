@@ -20,10 +20,10 @@ services:
       &environment
       cluster.name: opensearch-cluster-1
       node.name: opensearch-node1
-      bootstrap.memory_lock: true
+      bootstrap.memory_lock: "true"
       OPENSEARCH_JAVA_OPTS: "-Xms512m -Xmx512m"
       discovery.type: single-node
-      plugins.security.disabled: true
+      plugins.security.disabled: "true"
       reindex.remote.allowlist: 172.16.1.2:9200
     ulimits:
       memlock:
@@ -70,7 +70,7 @@ services:
     container_name: opensearch-dashboards
     environment:
       OPENSEARCH_HOSTS: '["http://172.16.1.2:9200"]'
-      DISABLE_SECURITY_DASHBOARDS_PLUGIN: true
+      DISABLE_SECURITY_DASHBOARDS_PLUGIN: "true"
     networks:
       cluster_subnet:
         ipv4_address: 172.16.1.4
@@ -80,7 +80,7 @@ services:
     container_name: opensearch-dashboard-2
     environment:
       OPENSEARCH_HOSTS: '["http://172.16.1.3:9200"]'
-      DISABLE_SECURITY_DASHBOARDS_PLUGIN: true
+      DISABLE_SECURITY_DASHBOARDS_PLUGIN: "true"
     networks:
       cluster_subnet:
         ipv4_address: 172.16.1.5
