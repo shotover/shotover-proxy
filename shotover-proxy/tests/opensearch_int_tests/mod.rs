@@ -40,6 +40,36 @@ async fn assert_ok_and_get_json(response: Result<Response, Error>) -> Value {
     }
 }
 
+async fn assert_ok_and_same_data(
+    response_a: Result<Response, Error>,
+    response_b: Result<Response, Error>,
+) {
+    let mut response_a = assert_ok_and_get_json(response_a).await["hits"]["hits"]
+        .as_array()
+        .unwrap()
+        .clone();
+    let mut response_b = assert_ok_and_get_json(response_b).await["hits"]["hits"]
+        .as_array()
+        .unwrap()
+        .clone();
+
+    assert_eq!(response_a.len(), response_b.len());
+
+    response_a.sort_by(|a, b| {
+        let a_age = a["_source"]["age"].as_i64().unwrap();
+        let b_age = b["_source"]["age"].as_i64().unwrap();
+        a_age.cmp(&b_age)
+    });
+
+    response_b.sort_by(|a, b| {
+        let a_age = a["_source"]["age"].as_i64().unwrap();
+        let b_age = b["_source"]["age"].as_i64().unwrap();
+        a_age.cmp(&b_age)
+    });
+
+    assert_eq!(response_a, response_b,);
+}
+
 pub async fn test_bulk(client: &OpenSearch) {
     assert_ok_and_get_json(
         client
@@ -354,7 +384,7 @@ async fn dual_write_basic() {
     shotover.shutdown_and_then_consume_events(&[]).await;
 }
 
-async fn index_1000_documents(client: &OpenSearch) {
+async fn index_100_documents(client: &OpenSearch) {
     let mut body: Vec<BulkOperation<_>> = vec![];
     for i in 0..100 {
         let op = BulkOperation::index(json!({
@@ -413,7 +443,7 @@ async fn dual_write_reindex() {
     )
     .await;
 
-    index_1000_documents(&source_client).await;
+    index_100_documents(&source_client).await;
 
     let shotover_client_c = shotover_client.clone();
     let dual_write_jh = tokio::spawn(async move {
@@ -421,43 +451,41 @@ async fn dual_write_reindex() {
             // get a random number in between 0 and 2000
             let i = rand::random::<u32>() % 100;
 
-            let response = shotover_client_c
-                .search(SearchParts::Index(&["test-index"]))
-                .from(0)
-                .size(200)
-                .body(json!({
-                    "query": {
-                        "match": {
-                            "age": i,
+            let response = assert_ok_and_get_json(
+                shotover_client_c
+                    .search(SearchParts::Index(&["test-index"]))
+                    .from(0)
+                    .size(200)
+                    .body(json!({
+                        "query": {
+                            "match": {
+                                "age": i,
+                            }
                         }
-                    }
-                }))
-                .send()
-                .await
-                .unwrap();
+                    }))
+                    .send()
+                    .await,
+            )
+            .await;
 
-            let json_res = response.json::<Value>().await;
+            assert_eq!(response["hits"]["hits"].as_array().unwrap().len(), 1);
 
-            let document = match &json_res {
-                Ok(json) => &json["hits"]["hits"][0],
-                Err(e) => {
-                    println!("Error: {:?}", e);
-                    continue;
-                }
-            };
+            let document = &response["hits"]["hits"][0];
 
-            shotover_client_c
-                .update(opensearch::UpdateParts::IndexId(
-                    "test-index",
-                    document["_id"].as_str().unwrap(),
-                ))
-                .body(json!({
-                    "name": Value::String("Smith".into()),
-                }))
-                .refresh(Refresh::WaitFor)
-                .send()
-                .await
-                .unwrap();
+            assert_ok_and_get_json(
+                shotover_client_c
+                    .update(opensearch::UpdateParts::IndexId(
+                        "test-index",
+                        document["_id"].as_str().unwrap(),
+                    ))
+                    .body(json!({
+                        "doc": { "name" : Value::String("Smith".into())}
+                    }))
+                    .refresh(Refresh::WaitFor)
+                    .send()
+                    .await,
+            )
+            .await;
 
             tokio::time::sleep(Duration::from_millis(500)).await;
         }
@@ -493,7 +521,7 @@ async fn dual_write_reindex() {
     let _ = tokio::join!(reindex_jh, dual_write_jh);
 
     // verify both clusters end up in the same state
-    let target_response = target_client
+    let target = target_client
         .search(SearchParts::Index(&["test-index"]))
         .from(0)
         .size(200)
@@ -504,14 +532,9 @@ async fn dual_write_reindex() {
                 }
             }
         }))
-        .send()
-        .await
-        .unwrap()
-        .json::<Value>()
-        .await
-        .unwrap();
+        .send();
 
-    let source_response = source_client
+    let source = source_client
         .search(SearchParts::Index(&["test-index"]))
         .from(0)
         .size(200)
@@ -522,45 +545,12 @@ async fn dual_write_reindex() {
                 }
             }
         }))
-        .send()
-        .await
-        .unwrap()
-        .json::<Value>()
-        .await
-        .unwrap();
+        .send();
 
-    assert_eq!(
-        target_response["hits"]["hits"].as_array().unwrap().len(),
-        source_response["hits"]["hits"].as_array().unwrap().len()
-    );
-
-    target_response["hits"]["hits"]
-        .as_array()
-        .unwrap()
-        .clone()
-        .sort_by(|a, b| {
-            let a_age = a["_source"]["age"].as_i64().unwrap();
-            let b_age = b["_source"]["age"].as_i64().unwrap();
-            a_age.cmp(&b_age)
-        });
-
-    source_response["hits"]["hits"]
-        .as_array()
-        .unwrap()
-        .clone()
-        .sort_by(|a, b| {
-            let a_age = a["_source"]["age"].as_i64().unwrap();
-            let b_age = b["_source"]["age"].as_i64().unwrap();
-            a_age.cmp(&b_age)
-        });
-
-    assert_eq!(
-        target_response["hits"]["hits"].as_array().unwrap(),
-        source_response["hits"]["hits"].as_array().unwrap()
-    );
+    assert_ok_and_same_data(target.await, source.await).await;
 
     // verify both clusters end up in the same state
-    let target_response = target_client
+    let target = target_client
         .search(SearchParts::Index(&["test-index"]))
         .from(0)
         .size(200)
@@ -571,14 +561,9 @@ async fn dual_write_reindex() {
                 }
             }
         }))
-        .send()
-        .await
-        .unwrap()
-        .json::<Value>()
-        .await
-        .unwrap();
+        .send();
 
-    let source_response = source_client
+    let source = source_client
         .search(SearchParts::Index(&["test-index"]))
         .from(0)
         .size(200)
@@ -589,42 +574,9 @@ async fn dual_write_reindex() {
                 }
             }
         }))
-        .send()
-        .await
-        .unwrap()
-        .json::<Value>()
-        .await
-        .unwrap();
+        .send();
 
-    assert_eq!(
-        target_response["hits"]["hits"].as_array().unwrap().len(),
-        source_response["hits"]["hits"].as_array().unwrap().len()
-    );
-
-    target_response["hits"]["hits"]
-        .as_array()
-        .unwrap()
-        .clone()
-        .sort_by(|a, b| {
-            let a_age = a["_source"]["age"].as_i64().unwrap();
-            let b_age = b["_source"]["age"].as_i64().unwrap();
-            a_age.cmp(&b_age)
-        });
-
-    source_response["hits"]["hits"]
-        .as_array()
-        .unwrap()
-        .clone()
-        .sort_by(|a, b| {
-            let a_age = a["_source"]["age"].as_i64().unwrap();
-            let b_age = b["_source"]["age"].as_i64().unwrap();
-            a_age.cmp(&b_age)
-        });
-
-    assert_eq!(
-        target_response["hits"]["hits"].as_array().unwrap(),
-        source_response["hits"]["hits"].as_array().unwrap()
-    );
+    assert_ok_and_same_data(target.await, source.await).await;
 
     shotover.shutdown_and_then_consume_events(&[]).await;
 }

@@ -5,8 +5,7 @@ sources:
       listen_addr: "127.0.0.1:9200"
       chain:
         - Tee:
-          # behavior: LogWarningOnMismatch
-            behavior: Ignore
+            behavior: LogWarningOnMismatch
             buffer_size: 10000
             chain:
               - OpenSearchSinkSingle:
