@@ -9,9 +9,10 @@ sources:
             behavior: Ignore
             buffer_size: 10000
             chain:
-            - QueryTypeFilter:
-                DenyList: [Read]
-            - DebugReturner:
-                Redis: "42"
+              Single:
+                - QueryTypeFilter:
+                    DenyList: [Read]
+                - DebugReturner:
+                    Redis: "42"
         - DebugReturner:
             Redis: "42"

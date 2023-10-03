@@ -15,7 +15,8 @@ sources:
                     connect_timeout_ms: 3000
             buffer_size: 10000
             chain:
-              - DebugReturner:
-                  Redis: "42"
+              Single:
+                - DebugReturner:
+                    Redis: "42"
         - DebugReturner:
             Redis: "42"

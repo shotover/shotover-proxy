@@ -9,9 +9,10 @@ sources:
             behavior: LogWarningOnMismatch
             buffer_size: 10000
             chain:
-            - QueryTypeFilter:
-                DenyList: [Read]
-            - DebugReturner:
-                Redis: "41"
+              Single:
+                - QueryTypeFilter:
+                    DenyList: [Read]
+                - DebugReturner:
+                    Redis: "41"
         - DebugReturner: 
             Redis: "42"

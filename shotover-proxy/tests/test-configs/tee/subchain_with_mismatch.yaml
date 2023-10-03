@@ -15,9 +15,10 @@ sources:
                     remote_address: "127.0.0.1:1111"
                     connect_timeout_ms: 3000
             chain:
-              - QueryTypeFilter:
-                  DenyList: [Read]
-              - DebugReturner:
-                  Redis: "41"
+              Single:
+                - QueryTypeFilter:
+                    DenyList: [Read]
+                - DebugReturner:
+                    Redis: "41"
         - DebugReturner:
             Redis: "42"

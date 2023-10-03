@@ -6,6 +6,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use metrics::{register_counter, Counter};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use tracing::{debug, trace, warn};
 
 pub struct TeeBuilder {
@@ -106,12 +107,32 @@ pub enum ConsistencyBehavior {
     SubchainOnMismatch(BufferedChain),
 }
 
+pub enum ChainMode {
+    Single(BufferedChain),
+    Multi(HashMap<String, BufferedChain>),
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub enum ChainModeConfig {
+    Single(TransformChainConfig),
+    Multi(HashMap<String, TransformChainConfig>),
+}
+
+impl ChainModeConfig {
+    async fn get_builder(&self) -> Result<TransformChainBuilder> {
+        match self {
+            ChainModeConfig::Single(chain) => chain.get_builder("tee_chain".to_string()).await,
+            ChainModeConfig::Multi(_chains) => todo!(),
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct TeeConfig {
     pub behavior: Option<ConsistencyBehaviorConfig>,
     pub timeout_micros: Option<u64>,
-    pub chain: TransformChainConfig,
+    pub chain: ChainModeConfig,
     pub buffer_size: Option<usize>,
 }
 
@@ -146,7 +167,8 @@ impl TransformConfig for TeeConfig {
             }
             None => ConsistencyBehaviorBuilder::Ignore,
         };
-        let tee_chain = self.chain.get_builder("tee_chain".to_string()).await?;
+
+        let tee_chain = self.chain.get_builder().await?;
 
         Ok(Box::new(TeeBuilder::new(
             tee_chain,
@@ -253,12 +275,16 @@ mod tests {
     use super::*;
     use crate::transforms::null::NullSinkConfig;
 
+    fn null_sink_chain() -> ChainModeConfig {
+        ChainModeConfig::Single(TransformChainConfig(vec![Box::new(NullSinkConfig)]))
+    }
+
     #[tokio::test]
     async fn test_validate_subchain_valid() {
         let config = TeeConfig {
             behavior: None,
             timeout_micros: None,
-            chain: TransformChainConfig(vec![Box::new(NullSinkConfig)]),
+            chain: null_sink_chain(),
             buffer_size: None,
         };
 
@@ -272,7 +298,10 @@ mod tests {
         let config = TeeConfig {
             behavior: None,
             timeout_micros: None,
-            chain: TransformChainConfig(vec![Box::new(NullSinkConfig), Box::new(NullSinkConfig)]),
+            chain: ChainModeConfig::Single(TransformChainConfig(vec![
+                Box::new(NullSinkConfig),
+                Box::new(NullSinkConfig),
+            ])),
             buffer_size: None,
         };
 
@@ -289,7 +318,7 @@ mod tests {
         let config = TeeConfig {
             behavior: Some(ConsistencyBehaviorConfig::Ignore),
             timeout_micros: None,
-            chain: TransformChainConfig(vec![Box::new(NullSinkConfig)]),
+            chain: null_sink_chain(),
             buffer_size: None,
         };
         let transform = config.get_builder("".to_owned()).await.unwrap();
@@ -302,7 +331,7 @@ mod tests {
         let config = TeeConfig {
             behavior: Some(ConsistencyBehaviorConfig::FailOnMismatch),
             timeout_micros: None,
-            chain: TransformChainConfig(vec![Box::new(NullSinkConfig)]),
+            chain: null_sink_chain(),
             buffer_size: None,
         };
         let transform = config.get_builder("".to_owned()).await.unwrap();
@@ -317,7 +346,7 @@ mod tests {
                 TransformChainConfig(vec![Box::new(NullSinkConfig), Box::new(NullSinkConfig)]),
             )),
             timeout_micros: None,
-            chain: TransformChainConfig(vec![Box::new(NullSinkConfig)]),
+            chain: null_sink_chain(),
             buffer_size: None,
         };
 
@@ -336,7 +365,7 @@ mod tests {
                 TransformChainConfig(vec![Box::new(NullSinkConfig)]),
             )),
             timeout_micros: None,
-            chain: TransformChainConfig(vec![Box::new(NullSinkConfig)]),
+            chain: null_sink_chain(),
             buffer_size: None,
         };
 
