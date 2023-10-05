@@ -8,7 +8,6 @@ license = "Apache-2.0"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-shell-quote = "0.3.0"
 shotover = { path = "../shotover" }
 
 [dev-dependencies]
@@ -54,8 +53,7 @@ opensearch = "2.1.0"
 serde_json = "1.0.103"
 time = { version = "0.3.25" }
 inferno = { version = "0.11.15", default-features = false, features = ["multithreaded", "nameattr"] }
-# workaround segfault in cassandra-cpp, seems to be caused by recent upgrade of openssl-src from 1.1.1 to 3.0.0
-openssl-sys = { version = "=0.9.92" }
+shell-quote = "0.3.0"
 
 [features]
 # Include WIP alpha transforms in the public API

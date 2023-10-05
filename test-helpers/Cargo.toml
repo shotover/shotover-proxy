@@ -20,7 +20,7 @@ cassandra-cpp = { version = "2.0.0", default-features = false, features = ["log"
 scylla.workspace = true
 openssl.workspace = true
 bytes.workspace = true
-ordered-float = { version = "3.0.0", features = ["serde"] }
+ordered-float.workspace = true
 tokio.workspace = true
 uuid.workspace = true
 redis.workspace = true

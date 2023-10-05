@@ -103,7 +103,6 @@ async fn passthrough_encode(#[case] driver: CassandraDriver) {
 #[rstest]
 #[case::scylla(Scylla)]
 //#[case::cdrs(CdrsTokio)] // TODO
-#[cfg_attr(feature = "cassandra-cpp-driver-tests", case::datastax(Datastax))]
 #[tokio::test(flavor = "multi_thread")]
 async fn source_tls_and_single_tls(#[case] driver: CassandraDriver) {
     test_helpers::cert::generate_cassandra_test_certs();
@@ -282,7 +281,6 @@ async fn cluster_multi_rack(#[case] driver: CassandraDriver) {
 #[rstest]
 #[case::scylla(Scylla)]
 //#[case::cdrs(CdrsTokio)] // TODO
-#[cfg_attr(feature = "cassandra-cpp-driver-tests", case::datastax(Datastax))]
 #[tokio::test(flavor = "multi_thread")]
 async fn source_tls_and_cluster_tls(#[case] driver: CassandraDriver) {
     test_helpers::cert::generate_cassandra_test_certs();
