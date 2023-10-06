@@ -45,6 +45,11 @@ pub fn get_image_waiters() -> &'static [Image] {
             timeout: 120,
         },
         Image {
+            name: "bitnami/redis:6.2.13-debian-11-r73",
+            log_regex_to_wait_for: r"Ready to accept connections",
+            timeout: 120,
+        },
+        Image {
             name: "bitnami/redis-cluster:6.2.12-debian-11-r26",
             //`Cluster state changed` is created by the node services
             //`Cluster correctly created` is created by the init service
