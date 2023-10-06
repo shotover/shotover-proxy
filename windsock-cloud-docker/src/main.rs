@@ -7,7 +7,13 @@ fn main() {
     let mut args = std::env::args();
     args.next(); // skip binary name
     let args: Vec<String> = args
-        .map(|x| String::from_utf8(shell_quote::bash::escape(x)).unwrap())
+        .map(|x| {
+            if x.is_empty() {
+                String::from("''")
+            } else {
+                String::from_utf8(shell_quote::bash::escape(x)).unwrap()
+            }
+        })
         .collect();
     let args = args.join(" ");
 
@@ -65,7 +71,7 @@ AWS_ACCESS_KEY_ID={access_key_id} AWS_SECRET_ACCESS_KEY={secret_access_key} CARG
 
     // extract windsock results
     let local_windsock_data = root.join("target").join("windsock_data");
-    std::fs::remove_dir_all(&local_windsock_data).unwrap();
+    std::fs::remove_dir_all(&local_windsock_data).ok();
     docker(&[
         "cp",
         "windsock-cloud:/target/windsock_data",
