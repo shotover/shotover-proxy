@@ -17,6 +17,7 @@ use cql3_parser::common::{
 use cql3_parser::select::{Select, SelectElement};
 use futures::future::try_join_all;
 use itertools::Itertools;
+use std::fmt::Write;
 use std::net::{IpAddr, Ipv4Addr};
 use uuid::Uuid;
 use version_compare::Cmp;
@@ -307,10 +308,13 @@ impl MessageRewriter {
                     })
                     .collect();
                     if !prepared_results.windows(2).all(|w| w[0] == w[1]) {
-                        let err_str = prepared_results
-                            .iter()
-                            .map(|p| format!("\n{:?}", p))
-                            .collect::<String>();
+                        let err_str =
+                            prepared_results
+                                .iter()
+                                .fold(String::new(), |mut output, b| {
+                                    let _ = write!(output, "\n{b:?}");
+                                    output
+                                });
 
                         tracing::error!(
                             "Nodes did not return the same response to PREPARE statement {err_str}"
