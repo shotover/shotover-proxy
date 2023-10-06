@@ -92,7 +92,10 @@ else
 fi
 "#).await;
     while let Some(line) = receiver.recv().await {
-        println!("{}", line)
+        match line {
+            Ok(line) => println!("{line}"),
+            Err(err) => panic!("Failed to setup instance: {err:?}"),
+        }
     }
 
     println!("Finished creating instance.");
@@ -151,7 +154,10 @@ cargo nextest run {} 2>&1
         ))
         .await;
     while let Some(line) = receiver.recv().await {
-        println!("{}", line)
+        match line {
+            Ok(line) => println!("{line}"),
+            Err(err) => println!("{err:?}"),
+        }
     }
 
     Ok(())
@@ -176,7 +182,10 @@ cargo windsock {} 2>&1
         ))
         .await;
     while let Some(line) = receiver.recv().await {
-        println!("{}", line)
+        match line {
+            Ok(line) => println!("{line}"),
+            Err(err) => println!("{err:?}"),
+        }
     }
 
     rsync_fetch_windsock_results(state).await;

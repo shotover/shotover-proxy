@@ -216,9 +216,14 @@ sudo docker system prune -af"#,
         loop {
             match tokio::time::timeout(Duration::from_secs(120), receiver.recv()).await {
                 Ok(Some(line)) => {
-                    writeln!(logs, "{}", line).unwrap();
-                    if regex.is_match(&line) {
-                        return;
+                    match line {
+                        Ok(line) => {
+                            writeln!(logs, "{line}").unwrap();
+                            if regex.is_match(&line) {
+                                return;
+                            }
+                        }
+                        Err(err) => panic!("docker logs failed: {err:?}"),
                     }
                 }
                 Ok(None) => panic!(
@@ -287,7 +292,7 @@ RUST_BACKTRACE=1 ./shotover-bin --config-file config.yaml --topology-file topolo
                 tokio::select! {
                     line = receiver.recv() => {
                         match line {
-                            Some(line) => {
+                            Some(Ok(line)) => {
                                 let event = Event::from_json_str(&line).unwrap();
                                 if let Level::Warn = event.level {
                                     tracing::error!("shotover warn:\n    {event}");
@@ -299,6 +304,7 @@ RUST_BACKTRACE=1 ./shotover-bin --config-file config.yaml --topology-file topolo
                                     return
                                 }
                             }
+                            Some(Err(err)) => panic!("shotover-bin failed: {err:?}"),
                             None => return,
                         }
                     },
