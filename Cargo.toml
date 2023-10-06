@@ -63,6 +63,7 @@ async-trait = "0.1.30"
 typetag = "0.2.5"
 aws-throwaway = "0.2.0"
 tokio-bin-process = "0.4.0"
+ordered-float = { version = "4.0.0", features = ["serde"] }
 
 [patch.crates-io]
 bigdecimal = { git = "https://github.com/rukai/bigdecimal-rs", branch = "0.4.2"}
