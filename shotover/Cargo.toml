@@ -19,7 +19,7 @@ pretty-hex = "0.3.0"
 tokio-stream = "0.1.2"
 bytes-utils = "0.1.1"
 derivative = "2.1.1"
-cached = { version = "0.45", features = ["async"] }
+cached = { version = "0.46", features = ["async"] }
 async-recursion = "1.0"
 governor = { version = "0.6", default-features = false, features = ["std", "jitter", "quanta"] }
 nonzero_ext = "0.3.0"
@@ -72,7 +72,7 @@ halfbrown = "0.2.1"
 redis-protocol.workspace = true
 cassandra-protocol.workspace = true
 crc16 = "0.4.0"
-ordered-float = { version = "3.0.0", features = ["serde"] }
+ordered-float.workspace = true
 
 #Crypto
 aws-config = "0.56.0"
