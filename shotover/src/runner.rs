@@ -1,30 +1,26 @@
 //! Tools for initializing shotover in the final binary.
-use crate::config::topology::Topology;
-use crate::config::Config;
+use crate::config::{topology::Topology, Config};
 use crate::observability::LogFilterHttpExporter;
-use crate::transforms::Transforms;
-use crate::transforms::Wrapper;
-use anyhow::Context;
-use anyhow::{anyhow, Result};
+use crate::transforms::{Transforms, Wrapper};
+use anyhow::{anyhow, Context, Result};
 use clap::{crate_version, Parser};
 use metrics_exporter_prometheus::PrometheusBuilder;
-use std::env;
-use std::net::SocketAddr;
+use std::{env, net::SocketAddr};
 use tokio::runtime::{self, Runtime};
 use tokio::signal::unix::{signal, SignalKind};
 use tokio::sync::watch;
 use tracing::{debug, error, info};
 use tracing_appender::non_blocking::{NonBlocking, WorkerGuard};
-use tracing_subscriber::filter::Directive;
-use tracing_subscriber::fmt::format::DefaultFields;
-use tracing_subscriber::fmt::format::Format;
-use tracing_subscriber::fmt::format::Full;
-use tracing_subscriber::fmt::format::Json;
-use tracing_subscriber::fmt::format::JsonFields;
-use tracing_subscriber::fmt::Layer;
-use tracing_subscriber::layer::Layered;
-use tracing_subscriber::reload::Handle;
-use tracing_subscriber::{EnvFilter, Registry};
+use tracing_subscriber::{
+    filter::Directive,
+    fmt::{
+        format::{DefaultFields, Format, Full, Json, JsonFields},
+        Layer,
+    },
+    layer::Layered,
+    reload::Handle,
+    EnvFilter, Registry,
+};
 
 #[derive(Parser, Clone)]
 #[clap(version = crate_version!(), author = "Instaclustr")]

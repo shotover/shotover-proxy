@@ -86,7 +86,7 @@ impl LogFilterHttpExporter {
                                                 format!("{:?}", error),
                                             )
                                         }
-                                        Ok(()) => rsp(StatusCode::NO_CONTENT, Body::empty()),
+                                        Ok(()) => rsp(StatusCode::OK, Body::empty()),
                                     },
                                     Err(error) => {
                                         error!(%error, "setting filter failed - Couldn't read bytes");

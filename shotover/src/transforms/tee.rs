@@ -2,15 +2,25 @@ use crate::config::chain::TransformChainConfig;
 use crate::message::Messages;
 use crate::transforms::chain::{BufferedChain, TransformChainBuilder};
 use crate::transforms::{Transform, TransformBuilder, TransformConfig, Transforms, Wrapper};
-use anyhow::Result;
+use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
+use bytes::Bytes;
+use hyper::{
+    service::{make_service_fn, service_fn},
+    Method, Request, StatusCode, {Body, Response, Server},
+};
 use metrics::{register_counter, Counter};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::convert::Infallible;
+use std::net::SocketAddr;
+use std::str;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 use tracing::{debug, trace, warn};
 
 pub struct TeeBuilder {
-    pub tx: TransformChainBuilder,
+    pub tx: ChainModeBuilder,
     pub buffer_size: usize,
     pub behavior: ConsistencyBehaviorBuilder,
     pub timeout_micros: Option<u64>,
@@ -26,7 +36,7 @@ pub enum ConsistencyBehaviorBuilder {
 
 impl TeeBuilder {
     pub fn new(
-        tx: TransformChainBuilder,
+        tx: ChainModeBuilder,
         buffer_size: usize,
         behavior: ConsistencyBehaviorBuilder,
         timeout_micros: Option<u64>,
@@ -93,7 +103,7 @@ impl TransformBuilder for TeeBuilder {
 }
 
 pub struct Tee {
-    pub tx: BufferedChain,
+    pub tx: ChainMode,
     pub buffer_size: usize,
     pub behavior: ConsistencyBehavior,
     pub timeout_micros: Option<u64>,
@@ -107,9 +117,58 @@ pub enum ConsistencyBehavior {
     SubchainOnMismatch(BufferedChain),
 }
 
+pub struct MultiChain {
+    current: Arc<Mutex<String>>,
+    chains: HashMap<String, BufferedChain>,
+}
+
 pub enum ChainMode {
     Single(BufferedChain),
-    Multi(HashMap<String, BufferedChain>),
+    Multi(MultiChain),
+}
+
+impl ChainMode {
+    async fn process_request_no_return(
+        &mut self,
+        requests_wrapper: Wrapper<'_>,
+        timeout_micros: Option<u64>,
+    ) -> Result<()> {
+        match self {
+            ChainMode::Single(chain) => {
+                chain
+                    .process_request_no_return(requests_wrapper, timeout_micros)
+                    .await
+            }
+            ChainMode::Multi(multi_chain) => {
+                let current = multi_chain.current.lock().await;
+                let chain = multi_chain.chains.get_mut(&*current).unwrap();
+                chain
+                    .process_request_no_return(requests_wrapper, timeout_micros)
+                    .await
+            }
+        }
+    }
+
+    async fn process_request(
+        &mut self,
+        requests_wrapper: Wrapper<'_>,
+        timeout_micros: Option<u64>,
+    ) -> Result<Messages> {
+        match self {
+            ChainMode::Single(chain) => {
+                chain
+                    .process_request(requests_wrapper, timeout_micros)
+                    .await
+            }
+            ChainMode::Multi(multi_chain) => {
+                let current = multi_chain.current.lock().await;
+                let chain = multi_chain.chains.get_mut(&*current).unwrap();
+                chain
+                    .process_request(requests_wrapper, timeout_micros)
+                    .await
+            }
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -118,12 +177,71 @@ pub enum ChainModeConfig {
     Multi(HashMap<String, TransformChainConfig>),
 }
 
-impl ChainModeConfig {
-    async fn get_builder(&self) -> Result<TransformChainBuilder> {
+pub enum ChainModeBuilder {
+    Single(TransformChainBuilder),
+    Multi(HashMap<String, TransformChainBuilder>),
+}
+
+impl ChainModeBuilder {
+    fn build_buffered(&self, buffer_size: usize) -> ChainMode {
         match self {
-            ChainModeConfig::Single(chain) => chain.get_builder("tee_chain".to_string()).await,
-            ChainModeConfig::Multi(_chains) => todo!(),
+            ChainModeBuilder::Single(chain) => ChainMode::Single(chain.build_buffered(buffer_size)),
+            ChainModeBuilder::Multi(chains) => {
+                let mut chain_map = HashMap::new();
+                for (name, chain) in chains {
+                    chain_map.insert(name.clone(), chain.build_buffered(buffer_size));
+                }
+
+                let chain_switch_listener =
+                    ChainSwitchListener::new("127.0.0.1:8061".parse().unwrap());
+
+                let current = Arc::new(Mutex::new("chain_a".to_string())); // TODO
+
+                tokio::spawn(chain_switch_listener.async_run(current.clone()));
+
+                ChainMode::Multi(MultiChain {
+                    current,
+                    chains: chain_map,
+                })
+            }
         }
+    }
+
+    fn validate(&self) -> Vec<String> {
+        match self {
+            ChainModeBuilder::Single(chain) => chain.validate(),
+            ChainModeBuilder::Multi(chains) => {
+                let mut errors = Vec::new();
+                for (name, chain) in chains {
+                    let mut chain_errors = chain.validate();
+                    if !chain_errors.is_empty() {
+                        chain_errors.insert(0, format!("  {}:", name));
+                        errors.extend(chain_errors);
+                    }
+                }
+                errors
+            }
+        }
+    }
+}
+
+impl ChainModeConfig {
+    async fn get_builder(&self) -> Result<ChainModeBuilder> {
+        Ok(match self {
+            ChainModeConfig::Single(chain) => {
+                ChainModeBuilder::Single(chain.get_builder("tee_chain".to_string()).await?)
+            }
+            ChainModeConfig::Multi(chains) => {
+                let mut chain_map = HashMap::new();
+                for (name, chain) in chains {
+                    chain_map.insert(
+                        name.clone(),
+                        chain.get_builder(format!("tee_chain_{}", name)).await?,
+                    );
+                }
+                ChainModeBuilder::Multi(chain_map)
+            }
+        })
     }
 }
 
@@ -267,6 +385,94 @@ impl Transform for Tee {
                 Ok(chain_response)
             }
         }
+    }
+}
+
+struct ChainSwitchListener {
+    address: SocketAddr,
+}
+
+impl ChainSwitchListener {
+    fn new(address: SocketAddr) -> Self {
+        ChainSwitchListener { address }
+    }
+
+    fn rsp(status: StatusCode, body: impl Into<Body>) -> Response<Body> {
+        Response::builder()
+            .status(status)
+            .body(body.into())
+            .expect("builder with known status code must not fail")
+    }
+
+    async fn set_current_chain(bytes: Bytes, current_chain: Arc<Mutex<String>>) -> Result<()> {
+        let new_current_chain = str::from_utf8(bytes.as_ref())?;
+        tracing::trace!(request.body = ?new_current_chain);
+        let mut current = current_chain.lock().await;
+        *current = new_current_chain.into();
+        tracing::trace!("current_chain set to {}", current);
+
+        Ok(())
+    }
+
+    async fn async_run(self, current_chain: Arc<Mutex<String>>) {
+        if let Err(err) = self.async_run_inner(current_chain).await {
+            tracing::error!("Error in ChainSwitchListener: {}", err);
+        }
+    }
+    async fn async_run_inner(self, current_chain: Arc<Mutex<String>>) -> Result<()> {
+        let make_svc = make_service_fn(move |_| {
+            let current_chain = current_chain.clone();
+            async move {
+                Ok::<_, Infallible>(service_fn(move |req: Request<Body>| {
+                    let current_chain = current_chain.clone();
+                    async move {
+                        let response = match (req.method(), req.uri().path()) {
+                            (&Method::GET, "/current") => {
+                                let current_chain = current_chain.lock().await.clone();
+                                Self::rsp(StatusCode::OK, current_chain)
+                            }
+                            (&Method::PUT, "/switch") => {
+                                match hyper::body::to_bytes(req.into_body()).await {
+                                    Ok(body) => {
+                                        match Self::set_current_chain(body, current_chain.clone())
+                                            .await
+                                        {
+                                            Err(error) => {
+                                                tracing::error!(
+                                                    ?error,
+                                                    "setting current_chain failed"
+                                                );
+                                                Self::rsp(
+                                                    StatusCode::BAD_REQUEST,
+                                                    "setting current_chain failed",
+                                                )
+                                            }
+                                            Ok(()) => Self::rsp(StatusCode::OK, Body::empty()),
+                                        }
+                                    }
+                                    Err(error) => {
+                                        tracing:: error!(%error, "setting filter failed - Couldn't read bytes");
+                                        Self::rsp(
+                                            StatusCode::INTERNAL_SERVER_ERROR,
+                                            format!("{error:?}"),
+                                        )
+                                    }
+                                }
+                            }
+                            _ => Self::rsp(StatusCode::NOT_FOUND, "/current or /filter"),
+                        };
+                        Ok::<_, Infallible>(response)
+                    }
+                }))
+            }
+        });
+
+        let address = self.address;
+        Server::try_bind(&address)
+            .with_context(|| format!("Failed to bind to {}", address))?
+            .serve(make_svc)
+            .await
+            .map_err(|e| anyhow!(e))
     }
 }
 

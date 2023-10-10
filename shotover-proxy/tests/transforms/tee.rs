@@ -1,4 +1,5 @@
 use crate::shotover_process;
+use hyper::{body, Body, Client, Method, Request, Response};
 use test_helpers::connection::redis_connection;
 use test_helpers::docker_compose::docker_compose;
 use test_helpers::shotover_process::{EventMatcher, Level};
@@ -192,4 +193,86 @@ async fn test_subchain_with_mismatch() {
 
     assert_eq!("myvalue", result);
     shotover.shutdown_and_then_consume_events(&[]).await;
+}
+
+async fn read_response_body(res: Response<Body>) -> Result<String, hyper::Error> {
+    let bytes = body::to_bytes(res.into_body()).await?;
+    Ok(String::from_utf8(bytes.to_vec()).expect("response was not valid utf-8"))
+}
+
+async fn hyper_request(uri: String, method: Method, body: Body) -> Response<Body> {
+    let client = Client::new();
+
+    let req = Request::builder()
+        .method(method)
+        .uri(uri)
+        .body(body)
+        .expect("request builder");
+
+    client.request(req).await.unwrap()
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_switch_chain() {
+    let shotover = shotover_process("tests/test-configs/tee/switch_chain.yaml")
+        .start()
+        .await;
+
+    let mut connection = redis_connection::new_async("127.0.0.1", 6379).await;
+
+    let result = redis::cmd("SET")
+        .arg("key")
+        .arg("myvalue")
+        .query_async::<_, String>(&mut connection)
+        .await
+        .unwrap();
+
+    assert_eq!("a", result);
+
+    let res = hyper_request(
+        "http://localhost:8061/current".to_string(),
+        Method::GET,
+        Body::empty(),
+    )
+    .await;
+    let body = read_response_body(res).await.unwrap();
+    assert_eq!("chain_a", body);
+
+    let _ = hyper_request(
+        "http://localhost:8061/switch".to_string(),
+        Method::PUT,
+        Body::from("chain_b"),
+    )
+    .await;
+
+    let res = hyper_request(
+        "http://localhost:8061/current".to_string(),
+        Method::GET,
+        Body::empty(),
+    )
+    .await;
+    let body = read_response_body(res).await.unwrap();
+    assert_eq!("chain_b", body);
+
+    let result = redis::cmd("SET")
+        .arg("key")
+        .arg("myvalue")
+        .query_async::<_, String>(&mut connection)
+        .await
+        .unwrap();
+
+    assert_eq!("a", result);
+
+    let event_matcher = &[EventMatcher::new()
+        .with_level(Level::Warn)
+        .with_target("shotover::transforms::tee")
+        .with_message(
+            r#"Tee mismatch: 
+chain response: ["Redis BulkString(b\"a\"))"] 
+tee response: ["Redis BulkString(b\"b\"))"]"#,
+        )];
+
+    shotover
+        .shutdown_and_then_consume_events(event_matcher)
+        .await;
 }

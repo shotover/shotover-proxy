@@ -1,0 +1,20 @@
+---
+sources:
+  - Redis:
+      name: "redis"
+      listen_addr: "127.0.0.1:6379"
+      connection_limit: 3000000
+      chain:
+        - Tee:
+            behavior: LogWarningOnMismatch
+            buffer_size: 10000
+            chain:
+              Multi:
+                chain_a: 
+                  - DebugReturner:
+                      Redis: "a"
+                chain_b:
+                  - DebugReturner:
+                      Redis: "b"
+        - DebugReturner:
+            Redis: "a"

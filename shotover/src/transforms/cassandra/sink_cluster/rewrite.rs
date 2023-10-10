@@ -19,6 +19,7 @@ use futures::future::try_join_all;
 use itertools::Itertools;
 use std::fmt::Write;
 use std::net::{IpAddr, Ipv4Addr};
+use tracing::error;
 use uuid::Uuid;
 use version_compare::Cmp;
 
@@ -301,7 +302,7 @@ impl MessageRewriter {
                             ..
                         })) => Some(prepared),
                         other => {
-                            tracing::error!("Response to Prepare query was not a Prepared, was instead: {other:?}");
+                            error!("Response to Prepare query was not a Prepared, was instead: {other:?}");
                             warnings.push(format!("Shotover: Response to Prepare query was not a Prepared, was instead: {other:?}"));
                             None
                         }
@@ -316,7 +317,7 @@ impl MessageRewriter {
                                     output
                                 });
 
-                        tracing::error!(
+                        error!(
                             "Nodes did not return the same response to PREPARE statement {err_str}"
                         );
                         warnings.push(format!(
