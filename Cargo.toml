@@ -27,7 +27,7 @@ debug = true
 codegen-units = 1
 
 [workspace.dependencies]
-scylla = { version = "0.9.0", features = ["ssl"], git = "https://github.com/scylladb/scylla-rust-driver/" }
+scylla = { version = "0.10.0", features = ["ssl"] }
 bytes = "1.0.0"
 tokio = { version = "1.25.0", features = ["full", "macros"] }
 tokio-util = { version = "0.7.7" }
@@ -64,6 +64,3 @@ typetag = "0.2.5"
 aws-throwaway = "0.2.0"
 tokio-bin-process = "0.4.0"
 ordered-float = { version = "4.0.0", features = ["serde"] }
-
-[patch.crates-io]
-bigdecimal = { git = "https://github.com/rukai/bigdecimal-rs", branch = "0.4.2"}

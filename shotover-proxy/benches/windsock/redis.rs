@@ -334,7 +334,7 @@ impl Bench for RedisBench {
                     .into(),
             );
         }
-        let client = Arc::new(RedisClient::new(config, None, None));
+        let client = Arc::new(RedisClient::new(config, None, None, None));
 
         // connect to the server, returning a handle to the task that drives the connection
         let shutdown_handle = client.connect();
