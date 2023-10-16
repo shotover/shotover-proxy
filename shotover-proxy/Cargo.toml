@@ -42,7 +42,7 @@ async-trait.workspace = true
 tracing-subscriber.workspace = true
 tracing-appender.workspace = true
 async-once-cell = "0.5.2"
-fred = { version = "6.3.0", features = ["enable-rustls"] }
+fred = { version = "7.0.0", features = ["enable-rustls"] }
 tokio-bin-process.workspace = true
 rustls-pemfile = "1.0.2"
 aws-throwaway.workspace = true
