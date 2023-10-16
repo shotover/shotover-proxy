@@ -57,17 +57,10 @@ jobs:
         key: ubuntu-20.04-packages
     - name: Install ubuntu packages
       run: shotover-proxy/build/install_ubuntu_packages.sh
-    - name: Install cargo-hack and nextest
+    - name: Install nextest
       uses: taiki-e/install-action@v2
       with:
-        tool: cargo-hack@0.6.4,nextest@0.9.57
-    - name: Check `cargo fmt` was run
-      run: cargo fmt --all -- --check
-    - name: Ensure that all crates compile and have no warnings under every possible combination of features
-      # some things to explicitly point out:
-      # * clippy also reports rustc warnings and errors
-      # * clippy --all-targets causes clippy to run against tests and examples which it doesnt do by default.
-      run: cargo hack --feature-powerset clippy --all-targets --locked ${{ matrix.cargo_flags }} -- -D warnings
+        tool: nextest@0.9.57
     - name: Build tests
       run: |
         cargo test --doc ${{ matrix.cargo_flags }} --all-features -- --show-output --nocapture
