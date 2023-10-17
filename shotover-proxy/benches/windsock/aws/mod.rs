@@ -279,7 +279,6 @@ impl Ec2InstanceWithShotover {
             let mut receiver = self
             .instance
             .ssh()
-            // TODO: invoke current_exe --harnessed-startup shotover --name $benchname --profilers $profilers
             .shell_stdout_lines(r#"
 killall -w shotover-bin > /dev/null || true
 RUST_BACKTRACE=1 ./shotover-bin --config-file config.yaml --topology-file topology.yaml --log-format json"#)
