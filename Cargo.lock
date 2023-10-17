@@ -5671,6 +5671,7 @@ version = "0.1.0"
 dependencies = [
  "shell-quote",
  "subprocess",
+ "tokio",
 ]
 
 [[package]]
