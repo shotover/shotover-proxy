@@ -1,7 +1,7 @@
 ---
 sources:
   - Redis:
-      name: "redis"
+      name: "redis-1"
       listen_addr: "127.0.0.1:6379"
       connection_limit: 3000000
       chain:
@@ -14,6 +14,21 @@ sources:
                   - DebugReturner:
                       Redis: "a"
                 chain_b:
+                  - DebugReturner:
+                      Redis: "b"
+        - DebugReturner:
+            Redis: "a"
+  - Redis:
+      name: "redis-2"
+      listen_addr: "127.0.0.1:6378"
+      connection_limit: 
+      chain:
+        - Tee:
+            behavior: LogWarningOnMismatch
+            buffer_size: 10000
+            switch_port: 1234
+            chain:
+              Single:
                   - DebugReturner:
                       Redis: "b"
         - DebugReturner:

@@ -213,7 +213,7 @@ async fn hyper_request(uri: String, method: Method, body: Body) -> Response<Body
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn test_switch_chain() {
+async fn test_switch_subchain() {
     let shotover = shotover_process("tests/test-configs/tee/switch_chain.yaml")
         .start()
         .await;
@@ -230,7 +230,7 @@ async fn test_switch_chain() {
     assert_eq!("a", result);
 
     let res = hyper_request(
-        "http://localhost:8061/current".to_string(),
+        "http://localhost:8061/subchain/current".to_string(),
         Method::GET,
         Body::empty(),
     )
@@ -239,14 +239,14 @@ async fn test_switch_chain() {
     assert_eq!("chain_a", body);
 
     let _ = hyper_request(
-        "http://localhost:8061/switch".to_string(),
+        "http://localhost:8061/subchain/switch".to_string(),
         Method::PUT,
         Body::from("chain_b"),
     )
     .await;
 
     let res = hyper_request(
-        "http://localhost:8061/current".to_string(),
+        "http://localhost:8061/subchain/current".to_string(),
         Method::GET,
         Body::empty(),
     )
@@ -274,5 +274,54 @@ tee response: ["Redis BulkString(b\"b\"))"]"#,
 
     shotover
         .shutdown_and_then_consume_events(event_matcher)
+        .await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_switch_main_chain() {
+    let shotover = shotover_process("tests/test-configs/tee/switch_chain.yaml")
+        .start()
+        .await;
+
+    let mut connection = redis_connection::new_async("127.0.0.1", 6378).await;
+
+    let result = redis::cmd("SET")
+        .arg("key")
+        .arg("myvalue")
+        .query_async::<_, String>(&mut connection)
+        .await
+        .unwrap();
+
+    assert_eq!("a", result);
+
+    let _ = hyper_request(
+        "http://localhost:1234/switch".to_string(),
+        Method::PUT,
+        Body::from("true"),
+    )
+    .await;
+
+    let res = hyper_request(
+        "http://localhost:1234/switched".to_string(),
+        Method::GET,
+        Body::empty(),
+    )
+    .await;
+    let body = read_response_body(res).await.unwrap();
+    assert_eq!("true", body);
+
+    let result = redis::cmd("SET")
+        .arg("key")
+        .arg("myvalue")
+        .query_async::<_, String>(&mut connection)
+        .await
+        .unwrap();
+
+    assert_eq!("b", result);
+
+    shotover
+        .shutdown_and_then_consume_events(&[EventMatcher::new()
+            .with_level(Level::Warn)
+            .with_count(tokio_bin_process::event_matcher::Count::Times(2))])
         .await;
 }
