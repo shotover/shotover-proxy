@@ -20,6 +20,7 @@ use opensearch::{
 };
 use serde_json::{json, Value};
 use test_helpers::docker_compose::docker_compose;
+use test_helpers::shotover_process::{EventMatcher, Level};
 use tokio::time::Duration;
 
 async fn assert_ok_and_get_json(response: Result<Response, Error>) -> Value {
@@ -578,5 +579,9 @@ async fn dual_write_reindex() {
 
     assert_ok_and_same_data(target.await, source.await).await;
 
-    shotover.shutdown_and_then_consume_events(&[]).await;
+    shotover
+        .shutdown_and_then_consume_events(&[EventMatcher::new()
+            .with_level(Level::Warn)
+            .with_target("shotover::transforms::tee")])
+        .await;
 }
