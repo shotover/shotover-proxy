@@ -1,0 +1,46 @@
+---
+sources:
+  - Redis:
+      name: "redis-1"
+      listen_addr: "127.0.0.1:6371"
+      connection_limit: 
+      chain:
+        - Tee:
+            behavior: Ignore
+            buffer_size: 10000
+            switch_port: 1231
+            chain:
+              - DebugReturner:
+                  Redis: "b"
+        - DebugReturner:
+            Redis: "a"
+  - Redis:
+      name: "redis-3"
+      listen_addr: "127.0.0.1:6372"
+      connection_limit: 
+      chain:
+        - Tee:
+            behavior: 
+              SubchainOnMismatch:
+                - NullSink
+            buffer_size: 10000
+            switch_port: 1232
+            chain:
+              - DebugReturner:
+                  Redis: "b"
+        - DebugReturner:
+            Redis: "a"
+  - Redis:
+      name: "redis-3"
+      listen_addr: "127.0.0.1:6373"
+      connection_limit: 
+      chain:
+        - Tee:
+            behavior: LogWarningOnMismatch
+            buffer_size: 10000
+            switch_port: 1233
+            chain:
+              - DebugReturner:
+                  Redis: "b"
+        - DebugReturner:
+            Redis: "a"

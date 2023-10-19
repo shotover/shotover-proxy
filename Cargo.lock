@@ -4447,6 +4447,7 @@ dependencies = [
  "futures",
  "hex",
  "hex-literal",
+ "hyper",
  "inferno",
  "itertools 0.11.0",
  "nix 0.27.1",
