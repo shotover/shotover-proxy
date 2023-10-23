@@ -1,5 +1,6 @@
 //! This module provides abstractions for getting system usage from the unix command `sar`, on ubuntu it is contained within the package `sysstat`.
 
+use anyhow::Result;
 use aws_throwaway::Ec2Instance;
 use std::{collections::HashMap, process::Stdio};
 use time::OffsetDateTime;
@@ -110,7 +111,7 @@ fn metric_with_formatter<F: Fn(&str) -> String>(
 /// 12:19:52    kbmemfree   kbavail kbmemused  %memused kbbuffers  kbcached  kbcommit   %commit  kbactive   kbinact   kbdirty
 /// 12:19:53     10827924  17655248  14426872     43.97    482592   6566224  20441924     62.30  13649508   7304056       148
 /// ```
-pub fn parse_sar(rx: &mut UnboundedReceiver<String>) -> ParsedSar {
+pub fn parse_sar(rx: &mut UnboundedReceiver<Result<String>>) -> ParsedSar {
     let mut named_values = HashMap::new();
 
     // read date command
@@ -121,7 +122,7 @@ pub fn parse_sar(rx: &mut UnboundedReceiver<String>) -> ParsedSar {
         };
     };
     let started_at =
-        OffsetDateTime::from_unix_timestamp_nanos(started_at.parse().unwrap()).unwrap();
+        OffsetDateTime::from_unix_timestamp_nanos(started_at.unwrap().parse().unwrap()).unwrap();
 
     // skip header
     if rx.try_recv().is_err() {
@@ -152,8 +153,9 @@ pub fn parse_sar(rx: &mut UnboundedReceiver<String>) -> ParsedSar {
             };
         };
         for (head, data) in header
+            .unwrap()
             .split_whitespace()
-            .zip(data.split_whitespace())
+            .zip(data.unwrap().split_whitespace())
             .skip(1)
         {
             named_values
@@ -176,7 +178,7 @@ const SAR_COMMAND: &str = "date +%s%N; sar -r -u 1";
 
 /// Run the sar command on the local machine.
 /// Each line of output is returned via the `UnboundedReceiver`
-pub fn run_sar_local() -> UnboundedReceiver<String> {
+pub fn run_sar_local() -> UnboundedReceiver<Result<String>> {
     let (tx, rx) = unbounded_channel();
     tokio::spawn(async move {
         let mut child = Command::new("bash")
@@ -187,7 +189,7 @@ pub fn run_sar_local() -> UnboundedReceiver<String> {
             .unwrap();
         let mut reader = BufReader::new(child.stdout.take().unwrap()).lines();
         while let Some(line) = reader.next_line().await.unwrap() {
-            if tx.send(line).is_err() {
+            if tx.send(Ok(line)).is_err() {
                 child.kill().await.unwrap();
                 return;
             }
@@ -199,6 +201,6 @@ pub fn run_sar_local() -> UnboundedReceiver<String> {
 
 /// Run the sar command over ssh on the passed instance.
 /// Each line of output is returned via the `UnboundedReceiver`
-pub async fn run_sar_remote(instance: &Ec2Instance) -> UnboundedReceiver<String> {
+pub async fn run_sar_remote(instance: &Ec2Instance) -> UnboundedReceiver<Result<String>> {
     instance.ssh().shell_stdout_lines(SAR_COMMAND).await
 }
