@@ -506,11 +506,11 @@ This is mainly used in conjunction with the `TuneableConsistencyScatter` transfo
 This transform sends messages to both the defined sub chain and the remaining down-chain transforms.
 The response from the down-chain transform is returned back up-chain but various behaviours can be defined by the `behaviour` field to handle the case when the responses from the sub chain and down-chain do not match.
 
-Tee also exposes an optional HTTP API to switch which chain is the "sub-chain" and which chain is the "primary chain", that being the chain which responses are returned to the client from.
+Tee also exposes an optional HTTP API to switch which chain to use as the "result source", that is the chain to return responses from.
 
-`GET` `/switched` will return `"true"` or `"false"` indicating whether the chain has been switched from what was ooriginally defined in the topology file.
+`GET` `/result-source` will return `"regular-chain"` or `"tee-chain"` indicating what chain is being used for the result source.
 
-`PUT` `/switch` with the body content as either `true` or `false` will either switch the chain or revert it to the definition in the topology file.
+`PUT` `/result-source` with the body content as either `regular-chain` or `tee-chain` to set the result source.
 
 ```yaml
 - Tee:

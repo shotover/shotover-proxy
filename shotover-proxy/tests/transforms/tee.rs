@@ -234,20 +234,20 @@ async fn test_switch_main_chain() {
         assert_eq!("a", result);
 
         let _ = hyper_request(
-            format!("http://localhost:{}/switch", switch_port),
+            format!("http://localhost:{}/result-source", switch_port),
             Method::PUT,
-            Body::from("true"),
+            Body::from("tee-chain"),
         )
         .await;
 
         let res = hyper_request(
-            format!("http://localhost:{}/switched", switch_port),
+            format!("http://localhost:{}/result-source", switch_port),
             Method::GET,
             Body::empty(),
         )
         .await;
         let body = read_response_body(res).await.unwrap();
-        assert_eq!("true", body);
+        assert_eq!("tee-chain", body);
 
         let result = redis::cmd("SET")
             .arg("key")
@@ -259,9 +259,9 @@ async fn test_switch_main_chain() {
         assert_eq!("b", result);
 
         let _ = hyper_request(
-            format!("http://localhost:{}/switch", switch_port),
+            format!("http://localhost:{}/result-source", switch_port),
             Method::PUT,
-            Body::from("false"),
+            Body::from("regular-chain"),
         )
         .await;
 

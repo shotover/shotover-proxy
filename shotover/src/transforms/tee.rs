@@ -4,6 +4,7 @@ use crate::transforms::chain::{BufferedChain, TransformChainBuilder};
 use crate::transforms::{Transform, TransformBuilder, TransformConfig, Transforms, Wrapper};
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
+use atomic_enum::atomic_enum;
 use bytes::Bytes;
 use hyper::{
     service::{make_service_fn, service_fn},
@@ -11,8 +12,9 @@ use hyper::{
 };
 use metrics::{register_counter, Counter};
 use serde::{Deserialize, Serialize};
+use std::fmt;
+use std::sync::atomic::Ordering;
 use std::{convert::Infallible, net::SocketAddr, str, sync::Arc};
-use tokio::sync::Mutex;
 use tracing::{debug, error, trace, warn};
 
 pub struct TeeBuilder {
@@ -22,7 +24,6 @@ pub struct TeeBuilder {
     pub timeout_micros: Option<u64>,
     dropped_messages: Counter,
     switch_port: Option<u16>,
-    switched_chain: Option<Arc<Mutex<bool>>>,
 }
 
 pub enum ConsistencyBehaviorBuilder {
@@ -39,7 +40,6 @@ impl TeeBuilder {
         behavior: ConsistencyBehaviorBuilder,
         timeout_micros: Option<u64>,
         switch_port: Option<u16>,
-        switched_chain: Option<Arc<Mutex<bool>>>,
     ) -> Self {
         let dropped_messages = register_counter!("tee_dropped_messages", "chain" => "Tee");
 
@@ -50,17 +50,18 @@ impl TeeBuilder {
             timeout_micros,
             dropped_messages,
             switch_port,
-            switched_chain,
         }
     }
 }
 
 impl TransformBuilder for TeeBuilder {
     fn build(&self) -> Transforms {
+        let result_source = Arc::new(AtomicResultSource::new(ResultSource::RegularChain));
+
         if let Some(switch_port) = self.switch_port {
             let chain_switch_listener =
                 ChainSwitchListener::new(SocketAddr::from(([127, 0, 0, 1], switch_port)));
-            tokio::spawn(chain_switch_listener.async_run(self.switched_chain.clone().unwrap()));
+            tokio::spawn(chain_switch_listener.async_run(result_source.clone()));
         }
 
         Transforms::Tee(Tee {
@@ -78,7 +79,7 @@ impl TransformBuilder for TeeBuilder {
             buffer_size: self.buffer_size,
             timeout_micros: self.timeout_micros,
             dropped_messages: self.dropped_messages.clone(),
-            switched_chain: self.switched_chain.clone(),
+            result_source: result_source.clone(),
         })
     }
 
@@ -117,7 +118,22 @@ pub struct Tee {
     pub behavior: ConsistencyBehavior,
     pub timeout_micros: Option<u64>,
     dropped_messages: Counter,
-    switched_chain: Option<Arc<Mutex<bool>>>,
+    result_source: Arc<AtomicResultSource>,
+}
+
+#[atomic_enum]
+pub enum ResultSource {
+    RegularChain,
+    TeeChain,
+}
+
+impl fmt::Display for ResultSource {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ResultSource::RegularChain => write!(f, "regular-chain"),
+            ResultSource::TeeChain => write!(f, "tee-chain"),
+        }
+    }
 }
 
 pub enum ConsistencyBehavior {
@@ -176,7 +192,6 @@ impl TransformConfig for TeeConfig {
             behavior,
             self.timeout_micros,
             self.switch_port,
-            Some(Arc::new(Mutex::new(false))),
         )))
     }
 }
@@ -189,24 +204,15 @@ impl Transform for Tee {
 }
 
 impl Tee {
-    async fn is_switched(&mut self) -> bool {
-        if let Some(switched_chain) = self.switched_chain.as_ref() {
-            let switched = switched_chain.lock().await;
-            *switched
-        } else {
-            false
-        }
-    }
-
     async fn return_response(
         &mut self,
         tee_result: Messages,
         chain_result: Messages,
     ) -> Result<Messages> {
-        if self.is_switched().await {
-            Ok(tee_result)
-        } else {
-            Ok(chain_result)
+        let result_source: ResultSource = self.result_source.load(Ordering::Relaxed);
+        match result_source {
+            ResultSource::RegularChain => Ok(chain_result),
+            ResultSource::TeeChain => Ok(tee_result),
         }
     }
 
@@ -214,28 +220,32 @@ impl Tee {
         &'a mut self,
         requests_wrapper: Wrapper<'a>,
     ) -> Result<Messages> {
-        if self.is_switched().await {
-            let (tee_result, chain_result) = tokio::join!(
-                self.tx
-                    .process_request(requests_wrapper.clone(), self.timeout_micros),
-                requests_wrapper.call_next_transform()
-            );
-            if let Err(e) = chain_result {
-                self.dropped_messages.increment(1);
-                trace!("Tee Ignored error {e}");
+        let result_source: ResultSource = self.result_source.load(Ordering::Relaxed);
+        match result_source {
+            ResultSource::RegularChain => {
+                let (tee_result, chain_result) = tokio::join!(
+                    self.tx
+                        .process_request_no_return(requests_wrapper.clone(), self.timeout_micros),
+                    requests_wrapper.call_next_transform()
+                );
+                if let Err(e) = tee_result {
+                    self.dropped_messages.increment(1);
+                    trace!("Tee Ignored error {e}");
+                }
+                chain_result
             }
-            tee_result
-        } else {
-            let (tee_result, chain_result) = tokio::join!(
-                self.tx
-                    .process_request_no_return(requests_wrapper.clone(), self.timeout_micros),
-                requests_wrapper.call_next_transform()
-            );
-            if let Err(e) = tee_result {
-                self.dropped_messages.increment(1);
-                trace!("Tee Ignored error {e}");
+            ResultSource::TeeChain => {
+                let (tee_result, chain_result) = tokio::join!(
+                    self.tx
+                        .process_request(requests_wrapper.clone(), self.timeout_micros),
+                    requests_wrapper.call_next_transform()
+                );
+                if let Err(e) = chain_result {
+                    self.dropped_messages.increment(1);
+                    trace!("Tee Ignored error {e}");
+                }
+                tee_result
             }
-            chain_result
         }
     }
 
@@ -334,50 +344,69 @@ impl ChainSwitchListener {
             .expect("builder with known status code must not fail")
     }
 
-    async fn set_switched_chain(body: Bytes, switched_chain: Arc<Mutex<bool>>) -> Result<()> {
-        let new_switched_chain_state_str = str::from_utf8(body.as_ref())?;
-        let new_switched_chain_state = new_switched_chain_state_str.parse::<bool>()?;
-        let mut switched = switched_chain.lock().await;
-        *switched = new_switched_chain_state;
+    async fn set_result_source_chain(
+        body: Bytes,
+        result_source: Arc<AtomicResultSource>,
+    ) -> Result<()> {
+        let new_result_source = str::from_utf8(body.as_ref())?;
+
+        let new_value = match new_result_source {
+            "tee-chain" => ResultSource::TeeChain,
+            "regular-chain" => ResultSource::RegularChain,
+            _ => {
+                return Err(anyhow!(
+                    r"Invalid value for result source: {}, should be 'tee-chain' or 'regular-chain'",
+                    new_result_source
+                ))
+            }
+        };
+
+        debug!("Setting result source to {}", new_value);
+
+        result_source.store(new_value, Ordering::Relaxed);
         Ok(())
     }
 
-    async fn async_run(self, switched_chain: Arc<Mutex<bool>>) {
-        if let Err(err) = self.async_run_inner(switched_chain).await {
+    async fn async_run(self, result_source: Arc<AtomicResultSource>) {
+        if let Err(err) = self.async_run_inner(result_source).await {
             error!("Error in ChainSwitchListener: {}", err);
         }
     }
 
-    async fn async_run_inner(self, switched_chain: Arc<Mutex<bool>>) -> Result<()> {
+    async fn async_run_inner(self, result_source: Arc<AtomicResultSource>) -> Result<()> {
         let make_svc = make_service_fn(move |_| {
-            let switched_chain = switched_chain.clone();
+            let result_source = result_source.clone();
             async move {
                 Ok::<_, Infallible>(service_fn(move |req: Request<Body>| {
-                    let switched_chain = switched_chain.clone();
+                    let result_source = result_source.clone();
                     async move {
                         let response = match (req.method(), req.uri().path()) {
-                            (&Method::GET, "/switched") => {
-                                let switched_chain: bool = *switched_chain.lock().await;
-                                Self::rsp(StatusCode::OK, switched_chain.to_string())
+                            (&Method::GET, "/result-source") => {
+                                let result_source: ResultSource =
+                                    result_source.load(Ordering::Relaxed);
+                                Self::rsp(StatusCode::OK, result_source.to_string())
                             }
-                            (&Method::PUT, "/switch") => {
+                            (&Method::PUT, "/result-source") => {
                                 match hyper::body::to_bytes(req.into_body()).await {
                                     Ok(body) => {
-                                        match Self::set_switched_chain(body, switched_chain.clone())
-                                            .await
+                                        match Self::set_result_source_chain(
+                                            body,
+                                            result_source.clone(),
+                                        )
+                                        .await
                                         {
                                             Err(error) => {
-                                                error!(?error, "switching chain failed");
+                                                error!(?error, "setting result source failed");
                                                 Self::rsp(
                                                     StatusCode::BAD_REQUEST,
-                                                    "switching chain failed",
+                                                    "setting result source failed",
                                                 )
                                             }
                                             Ok(()) => Self::rsp(StatusCode::OK, Body::empty()),
                                         }
                                     }
                                     Err(error) => {
-                                        error!(%error, "setting filter failed - Couldn't read bytes");
+                                        error!(%error, "setting result source failed - Couldn't read bytes");
                                         Self::rsp(
                                             StatusCode::INTERNAL_SERVER_ERROR,
                                             format!("{error:?}"),
@@ -385,7 +414,7 @@ impl ChainSwitchListener {
                                     }
                                 }
                             }
-                            _ => Self::rsp(StatusCode::NOT_FOUND, "/switched or /switch"),
+                            _ => Self::rsp(StatusCode::NOT_FOUND, "try /result-source"),
                         };
                         Ok::<_, Infallible>(response)
                     }
