@@ -1,5 +1,6 @@
 use self::samply::Samply;
 use crate::common::Shotover;
+use anyhow::Result;
 use aws_throwaway::Ec2Instance;
 use perf_flamegraph::Perf;
 use std::{collections::HashMap, path::PathBuf};
@@ -19,7 +20,7 @@ pub struct ProfilerRunner {
     results_path: PathBuf,
     perf: Option<Perf>,
     samply: Option<Samply>,
-    sys_monitor: Option<UnboundedReceiver<String>>,
+    sys_monitor: Option<UnboundedReceiver<Result<String>>>,
 }
 
 impl ProfilerRunner {
@@ -98,7 +99,7 @@ impl Drop for ProfilerRunner {
 
 pub struct CloudProfilerRunner {
     bench_name: String,
-    monitor_instances: HashMap<String, UnboundedReceiver<String>>,
+    monitor_instances: HashMap<String, UnboundedReceiver<Result<String>>>,
 }
 
 impl CloudProfilerRunner {
