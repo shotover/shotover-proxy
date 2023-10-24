@@ -508,9 +508,9 @@ The response from the down-chain transform is returned back up-chain but various
 
 Tee also exposes an optional HTTP API to switch which chain to use as the "result source", that is the chain to return responses from.
 
-`GET` `/result-source` will return `"regular-chain"` or `"tee-chain"` indicating what chain is being used for the result source.
+`GET` `/transform/tee/result-source` will return `regular-chain` or `tee-chain` indicating which chain is being used for the result source.
 
-`PUT` `/result-source` with the body content as either `regular-chain` or `tee-chain` to set the result source.
+`PUT` `/transform/tee/result-source` with the body content as either `regular-chain` or `tee-chain` to set the result source.
 
 ```yaml
 - Tee:
@@ -534,8 +534,10 @@ Tee also exposes an optional HTTP API to switch which chain to use as the "resul
     #         filter: Read
     #     - NullSink
 
-    # Optional port to for the HTTP chain switcher API to listen on
-    # switch_port: 1234
+    # The port that the HTTP API will listen on.
+    # When this field is not provided the HTTP API will not be run.
+    # http_api_port: 1234
+    #
     # Timeout for sending to the sub chain in microseconds
     timeout_micros: 1000
     # The number of message batches that the tee can hold onto in its buffer of messages to send.

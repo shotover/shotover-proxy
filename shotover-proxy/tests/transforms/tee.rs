@@ -234,14 +234,20 @@ async fn test_switch_main_chain() {
         assert_eq!("a", result);
 
         let _ = hyper_request(
-            format!("http://localhost:{}/result-source", switch_port),
+            format!(
+                "http://localhost:{}/transform/tee/result-source",
+                switch_port
+            ),
             Method::PUT,
             Body::from("tee-chain"),
         )
         .await;
 
         let res = hyper_request(
-            format!("http://localhost:{}/result-source", switch_port),
+            format!(
+                "http://localhost:{}/transform/tee/result-source",
+                switch_port
+            ),
             Method::GET,
             Body::empty(),
         )
@@ -259,7 +265,10 @@ async fn test_switch_main_chain() {
         assert_eq!("b", result);
 
         let _ = hyper_request(
-            format!("http://localhost:{}/result-source", switch_port),
+            format!(
+                "http://localhost:{}/transform/tee/result-source",
+                switch_port
+            ),
             Method::PUT,
             Body::from("regular-chain"),
         )
