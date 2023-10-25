@@ -1,4 +1,5 @@
 use crate::shotover_process;
+use hyper::{body, Body, Client, Method, Request, Response};
 use test_helpers::connection::redis_connection;
 use test_helpers::docker_compose::docker_compose;
 use test_helpers::shotover_process::{EventMatcher, Level};
@@ -192,4 +193,100 @@ async fn test_subchain_with_mismatch() {
 
     assert_eq!("myvalue", result);
     shotover.shutdown_and_then_consume_events(&[]).await;
+}
+
+async fn read_response_body(res: Response<Body>) -> Result<String, hyper::Error> {
+    let bytes = body::to_bytes(res.into_body()).await?;
+    Ok(String::from_utf8(bytes.to_vec()).expect("response was not valid utf-8"))
+}
+
+async fn hyper_request(uri: String, method: Method, body: Body) -> Response<Body> {
+    let client = Client::new();
+
+    let req = Request::builder()
+        .method(method)
+        .uri(uri)
+        .body(body)
+        .expect("request builder");
+
+    client.request(req).await.unwrap()
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_switch_main_chain() {
+    let shotover = shotover_process("tests/test-configs/tee/switch_chain.yaml")
+        .start()
+        .await;
+
+    for i in 1..=3 {
+        let redis_port = 6370 + i;
+        let switch_port = 1230 + i;
+
+        let mut connection = redis_connection::new_async("127.0.0.1", redis_port).await;
+
+        let result = redis::cmd("SET")
+            .arg("key")
+            .arg("myvalue")
+            .query_async::<_, String>(&mut connection)
+            .await
+            .unwrap();
+
+        assert_eq!("a", result);
+
+        let _ = hyper_request(
+            format!(
+                "http://localhost:{}/transform/tee/result-source",
+                switch_port
+            ),
+            Method::PUT,
+            Body::from("tee-chain"),
+        )
+        .await;
+
+        let res = hyper_request(
+            format!(
+                "http://localhost:{}/transform/tee/result-source",
+                switch_port
+            ),
+            Method::GET,
+            Body::empty(),
+        )
+        .await;
+        let body = read_response_body(res).await.unwrap();
+        assert_eq!("tee-chain", body);
+
+        let result = redis::cmd("SET")
+            .arg("key")
+            .arg("myvalue")
+            .query_async::<_, String>(&mut connection)
+            .await
+            .unwrap();
+
+        assert_eq!("b", result);
+
+        let _ = hyper_request(
+            format!(
+                "http://localhost:{}/transform/tee/result-source",
+                switch_port
+            ),
+            Method::PUT,
+            Body::from("regular-chain"),
+        )
+        .await;
+
+        let result = redis::cmd("SET")
+            .arg("key")
+            .arg("myvalue")
+            .query_async::<_, String>(&mut connection)
+            .await
+            .unwrap();
+
+        assert_eq!("a", result);
+    }
+
+    shotover
+        .shutdown_and_then_consume_events(&[EventMatcher::new()
+            .with_level(Level::Warn)
+            .with_count(tokio_bin_process::event_matcher::Count::Times(3))])
+        .await;
 }

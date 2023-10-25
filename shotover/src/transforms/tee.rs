@@ -2,11 +2,20 @@ use crate::config::chain::TransformChainConfig;
 use crate::message::Messages;
 use crate::transforms::chain::{BufferedChain, TransformChainBuilder};
 use crate::transforms::{Transform, TransformBuilder, TransformConfig, Transforms, Wrapper};
-use anyhow::Result;
+use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
+use atomic_enum::atomic_enum;
+use bytes::Bytes;
+use hyper::{
+    service::{make_service_fn, service_fn},
+    Method, Request, StatusCode, {Body, Response, Server},
+};
 use metrics::{register_counter, Counter};
 use serde::{Deserialize, Serialize};
-use tracing::{debug, trace, warn};
+use std::fmt;
+use std::sync::atomic::Ordering;
+use std::{convert::Infallible, net::SocketAddr, str, sync::Arc};
+use tracing::{debug, error, trace, warn};
 
 pub struct TeeBuilder {
     pub tx: TransformChainBuilder,
@@ -14,6 +23,7 @@ pub struct TeeBuilder {
     pub behavior: ConsistencyBehaviorBuilder,
     pub timeout_micros: Option<u64>,
     dropped_messages: Counter,
+    result_source: Arc<AtomicResultSource>,
 }
 
 pub enum ConsistencyBehaviorBuilder {
@@ -29,7 +39,16 @@ impl TeeBuilder {
         buffer_size: usize,
         behavior: ConsistencyBehaviorBuilder,
         timeout_micros: Option<u64>,
+        switch_port: Option<u16>,
     ) -> Self {
+        let result_source = Arc::new(AtomicResultSource::new(ResultSource::RegularChain));
+
+        if let Some(switch_port) = switch_port {
+            let chain_switch_listener =
+                ChainSwitchListener::new(SocketAddr::from(([127, 0, 0, 1], switch_port)));
+            tokio::spawn(chain_switch_listener.async_run(result_source.clone()));
+        }
+
         let dropped_messages = register_counter!("tee_dropped_messages", "chain" => "Tee");
 
         TeeBuilder {
@@ -38,6 +57,7 @@ impl TeeBuilder {
             behavior,
             timeout_micros,
             dropped_messages,
+            result_source,
         }
     }
 }
@@ -59,6 +79,7 @@ impl TransformBuilder for TeeBuilder {
             buffer_size: self.buffer_size,
             timeout_micros: self.timeout_micros,
             dropped_messages: self.dropped_messages.clone(),
+            result_source: self.result_source.clone(),
         })
     }
 
@@ -97,6 +118,22 @@ pub struct Tee {
     pub behavior: ConsistencyBehavior,
     pub timeout_micros: Option<u64>,
     dropped_messages: Counter,
+    result_source: Arc<AtomicResultSource>,
+}
+
+#[atomic_enum]
+pub enum ResultSource {
+    RegularChain,
+    TeeChain,
+}
+
+impl fmt::Display for ResultSource {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ResultSource::RegularChain => write!(f, "regular-chain"),
+            ResultSource::TeeChain => write!(f, "tee-chain"),
+        }
+    }
 }
 
 pub enum ConsistencyBehavior {
@@ -113,6 +150,7 @@ pub struct TeeConfig {
     pub timeout_micros: Option<u64>,
     pub chain: TransformChainConfig,
     pub buffer_size: Option<usize>,
+    pub switch_port: Option<u16>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -153,6 +191,7 @@ impl TransformConfig for TeeConfig {
             buffer_size,
             behavior,
             self.timeout_micros,
+            self.switch_port,
         )))
     }
 }
@@ -161,18 +200,7 @@ impl TransformConfig for TeeConfig {
 impl Transform for Tee {
     async fn transform<'a>(&'a mut self, requests_wrapper: Wrapper<'a>) -> Result<Messages> {
         match &mut self.behavior {
-            ConsistencyBehavior::Ignore => {
-                let (tee_result, chain_result) = tokio::join!(
-                    self.tx
-                        .process_request_no_return(requests_wrapper.clone(), self.timeout_micros),
-                    requests_wrapper.call_next_transform()
-                );
-                if let Err(e) = tee_result {
-                    self.dropped_messages.increment(1);
-                    trace!("Tee Ignored error {e}");
-                }
-                chain_result
-            }
+            ConsistencyBehavior::Ignore => self.ignore_behaviour(requests_wrapper).await,
             ConsistencyBehavior::FailOnMismatch => {
                 let (tee_result, chain_result) = tokio::join!(
                     self.tx
@@ -200,7 +228,8 @@ impl Transform for Tee {
                             "ERR The responses from the Tee subchain and down-chain did not match and behavior is set to fail on mismatch".into())?;
                     }
                 }
-                Ok(chain_response)
+
+                Ok(self.return_response(tee_response, chain_response).await)
             }
             ConsistencyBehavior::SubchainOnMismatch(mismatch_chain) => {
                 let failed_message = requests_wrapper.clone();
@@ -217,7 +246,7 @@ impl Transform for Tee {
                     mismatch_chain.process_request(failed_message, None).await?;
                 }
 
-                Ok(chain_response)
+                Ok(self.return_response(tee_response, chain_response).await)
             }
             ConsistencyBehavior::LogWarningOnMismatch => {
                 let (tee_result, chain_result) = tokio::join!(
@@ -242,9 +271,156 @@ impl Transform for Tee {
                             .collect::<Vec<_>>()
                     );
                 }
-                Ok(chain_response)
+                Ok(self.return_response(tee_response, chain_response).await)
             }
         }
+    }
+}
+
+impl Tee {
+    async fn return_response(&mut self, tee_result: Messages, chain_result: Messages) -> Messages {
+        let result_source: ResultSource = self.result_source.load(Ordering::Relaxed);
+        match result_source {
+            ResultSource::RegularChain => chain_result,
+            ResultSource::TeeChain => tee_result,
+        }
+    }
+
+    async fn ignore_behaviour<'a>(&'a mut self, requests_wrapper: Wrapper<'a>) -> Result<Messages> {
+        let result_source: ResultSource = self.result_source.load(Ordering::Relaxed);
+        match result_source {
+            ResultSource::RegularChain => {
+                let (tee_result, chain_result) = tokio::join!(
+                    self.tx
+                        .process_request_no_return(requests_wrapper.clone(), self.timeout_micros),
+                    requests_wrapper.call_next_transform()
+                );
+                if let Err(e) = tee_result {
+                    self.dropped_messages.increment(1);
+                    trace!("Tee Ignored error {e}");
+                }
+                chain_result
+            }
+            ResultSource::TeeChain => {
+                let (tee_result, chain_result) = tokio::join!(
+                    self.tx
+                        .process_request(requests_wrapper.clone(), self.timeout_micros),
+                    requests_wrapper.call_next_transform()
+                );
+                if let Err(e) = chain_result {
+                    self.dropped_messages.increment(1);
+                    trace!("Tee Ignored error {e}");
+                }
+                tee_result
+            }
+        }
+    }
+}
+
+struct ChainSwitchListener {
+    address: SocketAddr,
+}
+
+impl ChainSwitchListener {
+    fn new(address: SocketAddr) -> Self {
+        Self { address }
+    }
+
+    fn rsp(status: StatusCode, body: impl Into<Body>) -> Response<Body> {
+        Response::builder()
+            .status(status)
+            .body(body.into())
+            .expect("builder with known status code must not fail")
+    }
+
+    async fn set_result_source_chain(
+        body: Bytes,
+        result_source: Arc<AtomicResultSource>,
+    ) -> Result<()> {
+        let new_result_source = str::from_utf8(body.as_ref())?;
+
+        let new_value = match new_result_source {
+            "tee-chain" => ResultSource::TeeChain,
+            "regular-chain" => ResultSource::RegularChain,
+            _ => {
+                return Err(anyhow!(
+                    r"Invalid value for result source: {}, should be 'tee-chain' or 'regular-chain'",
+                    new_result_source
+                ))
+            }
+        };
+
+        debug!("Setting result source to {}", new_value);
+
+        result_source.store(new_value, Ordering::Relaxed);
+        Ok(())
+    }
+
+    async fn async_run(self, result_source: Arc<AtomicResultSource>) {
+        if let Err(err) = self.async_run_inner(result_source).await {
+            error!("Error in ChainSwitchListener: {}", err);
+        }
+    }
+
+    async fn async_run_inner(self, result_source: Arc<AtomicResultSource>) -> Result<()> {
+        let make_svc = make_service_fn(move |_| {
+            let result_source = result_source.clone();
+            async move {
+                Ok::<_, Infallible>(service_fn(move |req: Request<Body>| {
+                    let result_source = result_source.clone();
+                    async move {
+                        let response = match (req.method(), req.uri().path()) {
+                            (&Method::GET, "/transform/tee/result-source") => {
+                                let result_source: ResultSource =
+                                    result_source.load(Ordering::Relaxed);
+                                Self::rsp(StatusCode::OK, result_source.to_string())
+                            }
+                            (&Method::PUT, "/transform/tee/result-source") => {
+                                match hyper::body::to_bytes(req.into_body()).await {
+                                    Ok(body) => {
+                                        match Self::set_result_source_chain(
+                                            body,
+                                            result_source.clone(),
+                                        )
+                                        .await
+                                        {
+                                            Err(error) => {
+                                                error!(?error, "setting result source failed");
+                                                Self::rsp(
+                                                    StatusCode::BAD_REQUEST,
+                                                    format!(
+                                                        "setting result source failed: {error}"
+                                                    ),
+                                                )
+                                            }
+                                            Ok(()) => Self::rsp(StatusCode::OK, Body::empty()),
+                                        }
+                                    }
+                                    Err(error) => {
+                                        error!(%error, "setting result source failed - Couldn't read bytes");
+                                        Self::rsp(
+                                            StatusCode::INTERNAL_SERVER_ERROR,
+                                            format!("{error:?}"),
+                                        )
+                                    }
+                                }
+                            }
+                            _ => {
+                                Self::rsp(StatusCode::NOT_FOUND, "try /tranform/tee/result-source")
+                            }
+                        };
+                        Ok::<_, Infallible>(response)
+                    }
+                }))
+            }
+        });
+
+        let address = self.address;
+        Server::try_bind(&address)
+            .with_context(|| format!("Failed to bind to {}", address))?
+            .serve(make_svc)
+            .await
+            .map_err(|e| anyhow!(e))
     }
 }
 
@@ -260,6 +436,7 @@ mod tests {
             timeout_micros: None,
             chain: TransformChainConfig(vec![Box::new(NullSinkConfig)]),
             buffer_size: None,
+            switch_port: None,
         };
 
         let transform = config.get_builder("".to_owned()).await.unwrap();
@@ -274,6 +451,7 @@ mod tests {
             timeout_micros: None,
             chain: TransformChainConfig(vec![Box::new(NullSinkConfig), Box::new(NullSinkConfig)]),
             buffer_size: None,
+            switch_port: None,
         };
 
         let transform = config.get_builder("".to_owned()).await.unwrap();
@@ -291,6 +469,7 @@ mod tests {
             timeout_micros: None,
             chain: TransformChainConfig(vec![Box::new(NullSinkConfig)]),
             buffer_size: None,
+            switch_port: None,
         };
         let transform = config.get_builder("".to_owned()).await.unwrap();
         let result = transform.validate();
@@ -304,6 +483,7 @@ mod tests {
             timeout_micros: None,
             chain: TransformChainConfig(vec![Box::new(NullSinkConfig)]),
             buffer_size: None,
+            switch_port: None,
         };
         let transform = config.get_builder("".to_owned()).await.unwrap();
         let result = transform.validate();
@@ -319,6 +499,7 @@ mod tests {
             timeout_micros: None,
             chain: TransformChainConfig(vec![Box::new(NullSinkConfig)]),
             buffer_size: None,
+            switch_port: None,
         };
 
         let transform = config.get_builder("".to_owned()).await.unwrap();
@@ -338,6 +519,7 @@ mod tests {
             timeout_micros: None,
             chain: TransformChainConfig(vec![Box::new(NullSinkConfig)]),
             buffer_size: None,
+            switch_port: None,
         };
 
         let transform = config.get_builder("".to_owned()).await.unwrap();

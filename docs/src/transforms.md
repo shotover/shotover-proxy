@@ -506,6 +506,12 @@ This is mainly used in conjunction with the `TuneableConsistencyScatter` transfo
 This transform sends messages to both the defined sub chain and the remaining down-chain transforms.
 The response from the down-chain transform is returned back up-chain but various behaviours can be defined by the `behaviour` field to handle the case when the responses from the sub chain and down-chain do not match.
 
+Tee also exposes an optional HTTP API to switch which chain to use as the "result source", that is the chain to return responses from.
+
+`GET` `/transform/tee/result-source` will return `regular-chain` or `tee-chain` indicating which chain is being used for the result source.
+
+`PUT` `/transform/tee/result-source` with the body content as either `regular-chain` or `tee-chain` to set the result source.
+
 ```yaml
 - Tee:
     # Ignore responses returned by the sub chain
@@ -528,6 +534,10 @@ The response from the down-chain transform is returned back up-chain but various
     #         filter: Read
     #     - NullSink
 
+    # The port that the HTTP API will listen on.
+    # When this field is not provided the HTTP API will not be run.
+    # http_api_port: 1234
+    #
     # Timeout for sending to the sub chain in microseconds
     timeout_micros: 1000
     # The number of message batches that the tee can hold onto in its buffer of messages to send.
