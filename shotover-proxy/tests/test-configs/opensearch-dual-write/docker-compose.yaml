@@ -18,7 +18,7 @@ services:
         ipv4_address: 172.16.1.2
     environment:
       &environment
-      cluster.name: opensearch-cluster-1
+      cluster.name: source-cluster
       node.name: opensearch-node1
       bootstrap.memory_lock: "true"
       OPENSEARCH_JAVA_OPTS: "-Xms512m -Xmx512m"
@@ -47,7 +47,7 @@ services:
         ipv4_address: 172.16.1.3
     environment:
       <<: *environment
-      cluster.name: opensearch-cluster-2
+      cluster.name: target-cluster
       node.name: opensearch-node2
     ulimits:
       memlock:
