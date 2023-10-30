@@ -210,6 +210,7 @@ impl Decoder for OpenSearchDecoder {
                     }
 
                     if src.len() < content_length {
+                        self.state = State::ReadingBody(http_headers, content_length);
                         return Ok(None);
                     }
 

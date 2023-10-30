@@ -2,12 +2,14 @@ use crate::shotover_process;
 use opensearch::{
     auth::Credentials,
     cert::CertificateValidation,
-    http::response::Response,
     http::{
+        headers::{HeaderName, HeaderValue},
+        response::Response,
         transport::{SingleNodeConnectionPool, TransportBuilder},
         Method, StatusCode, Url,
     },
     indices::{IndicesCreateParts, IndicesDeleteParts, IndicesExistsParts},
+    nodes::NodesInfoParts,
     params::Refresh,
     BulkOperation, BulkParts, DeleteParts, Error, IndexParts, OpenSearch, SearchParts,
 };
@@ -224,6 +226,20 @@ async fn opensearch_test_suite(client: &OpenSearch) {
 
     test_bulk(client).await;
     test_delete_index(client).await;
+
+    // request a large message without compression that has to be processed in multiple batches on the codec side
+    let _ = assert_ok_and_get_json(
+        client
+            .nodes()
+            .info(NodesInfoParts::None)
+            .header(
+                HeaderName::from_lowercase(b"accept-encoding").unwrap(),
+                HeaderValue::from_str("").unwrap(),
+            )
+            .send()
+            .await,
+    )
+    .await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
