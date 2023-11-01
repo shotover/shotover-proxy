@@ -531,7 +531,7 @@ Tee also exposes an optional HTTP API to switch which chain to use as the "resul
     # behavior: 
     #   SubchainOnMismatch:
     #     - QueryTypeFilter:
-    #         filter: Read
+    #         DenyList: [Read]
     #     - NullSink
 
     # The port that the HTTP API will listen on.
@@ -546,7 +546,7 @@ Tee also exposes an optional HTTP API to switch which chain to use as the "resul
     # The sub chain to send duplicate messages through
     chain:
       - QueryTypeFilter:
-          filter: Read
+          DenyList: [Read]
       - NullSink
 ```
 
