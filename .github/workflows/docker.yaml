@@ -1,0 +1,27 @@
+---
+name: "docker"
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+# Cancel already running jobs
+concurrency:
+  group: docker_${{ github.head_ref }}
+  cancel-in-progress: true
+
+jobs:
+  publish-image:
+    name: "Build docker image and run smoke test"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Push image
+        run: |
+          # build image
+          docker build -t shotover:test .
+
+          # run image for 5 seconds and then send it SIGTERM, if it returns a nonzero exit code fail CI
+          timeout --preserve-status 5 docker run --mount type=bind,source="$(pwd)"/shotover-proxy/config,target=/config shotover:test
