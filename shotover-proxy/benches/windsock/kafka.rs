@@ -41,7 +41,7 @@ impl KafkaBench {
         }
     }
 
-    fn generate_topology_yaml(&self, host_address: String, kafka_address: String) -> String {
+    fn generate_topology_yaml(&self, host_address: String) -> String {
         let mut transforms = vec![];
         if let Shotover::ForcedMessageParsed = self.shotover {
             transforms.push(Box::new(DebugForceEncodeConfig {
@@ -51,7 +51,7 @@ impl KafkaBench {
         }
 
         transforms.push(Box::new(KafkaSinkSingleConfig {
-            address: kafka_address,
+            destination_port: 9192,
             connect_timeout_ms: 3000,
             read_timeout: None,
         }));
@@ -70,13 +70,11 @@ impl KafkaBench {
     async fn run_aws_shotover(
         &self,
         instance: Arc<Ec2InstanceWithDocker>,
-        kafka_ip: String,
     ) -> Option<crate::aws::RunningShotover> {
         let ip = instance.instance.private_ip().to_string();
         match self.shotover {
             Shotover::Standard | Shotover::ForcedMessageParsed => {
-                let topology =
-                    self.generate_topology_yaml(format!("{ip}:9092"), format!("{kafka_ip}:9192"));
+                let topology = self.generate_topology_yaml(format!("{ip}:9092"));
                 Some(instance.run_shotover(&topology).await)
             }
             Shotover::None => None,
@@ -141,7 +139,7 @@ impl Bench for KafkaBench {
 
         let (_, running_shotover) = futures::join!(
             run_aws_kafka(kafka_instance.clone(), 9192),
-            self.run_aws_shotover(kafka_instance, kafka_ip.clone())
+            self.run_aws_shotover(kafka_instance)
         );
 
         let destination_address = if running_shotover.is_some() {
@@ -177,18 +175,15 @@ impl Bench for KafkaBench {
         let mut profiler = ProfilerRunner::new(self.name(), profiling);
         let shotover = match self.shotover {
             Shotover::Standard | Shotover::ForcedMessageParsed => {
-                let topology_yaml = self.generate_topology_yaml(
-                    "127.0.0.1:9192".to_owned(),
-                    "127.0.0.1:9092".to_owned(),
-                );
+                let topology_yaml = self.generate_topology_yaml("127.0.0.1:9092".to_owned());
                 Some(shotover_process_custom_topology(&topology_yaml, &profiler).await)
             }
             Shotover::None => None,
         };
 
         let broker_address = match self.shotover {
-            Shotover::ForcedMessageParsed | Shotover::Standard => "127.0.0.1:9192",
-            Shotover::None => "127.0.0.1:9092",
+            Shotover::ForcedMessageParsed | Shotover::Standard => "127.0.0.1:9092",
+            Shotover::None => "127.0.0.1:9192",
         };
 
         profiler.run(&shotover).await;
