@@ -1,4 +1,4 @@
-use crate::aws::{Ec2InstanceWithDocker, Ec2InstanceWithShotover};
+use crate::aws::Ec2InstanceWithDocker;
 use crate::common::{self, Shotover};
 use crate::profilers::{self, CloudProfilerRunner, ProfilerRunner};
 use crate::shotover::shotover_process_custom_topology;
@@ -69,14 +69,14 @@ impl KafkaBench {
 
     async fn run_aws_shotover(
         &self,
-        instance: Arc<Ec2InstanceWithShotover>,
+        instance: Arc<Ec2InstanceWithDocker>,
         kafka_ip: String,
     ) -> Option<crate::aws::RunningShotover> {
         let ip = instance.instance.private_ip().to_string();
         match self.shotover {
             Shotover::Standard | Shotover::ForcedMessageParsed => {
                 let topology =
-                    self.generate_topology_yaml(format!("{ip}:9092"), format!("{kafka_ip}:9092"));
+                    self.generate_topology_yaml(format!("{ip}:9092"), format!("{kafka_ip}:9192"));
                 Some(instance.run_shotover(&topology).await)
             }
             Shotover::None => None,
@@ -123,33 +123,38 @@ impl Bench for KafkaBench {
             aws.create_shotover_instance()
         );
 
-        let mut profiler_instances: HashMap<String, &Ec2Instance> = [
+        let profiler_instances: HashMap<String, &Ec2Instance> = [
             ("bencher".to_owned(), &bench_instance.instance),
             ("kafka".to_owned(), &kafka_instance.instance),
         ]
         .into();
-        if let Shotover::ForcedMessageParsed | Shotover::Standard = self.shotover {
-            profiler_instances.insert("shotover".to_owned(), &shotover_instance.instance);
-        }
+
+        // TODO: enable when testing KafkaSinkCluster
+        //profiler_instances.insert("shotover".to_owned(), &shotover_instance.instance);
+
         let mut profiler =
             CloudProfilerRunner::new(self.name(), profiling, profiler_instances).await;
 
         let kafka_ip = kafka_instance.instance.private_ip().to_string();
-        let shotover_ip = shotover_instance.instance.private_ip().to_string();
+        // TODO: make use of this when we start benching KafkaSinkCluster
+        let _shotover_ip = shotover_instance.instance.private_ip().to_string();
 
         let (_, running_shotover) = futures::join!(
-            run_aws_kafka(kafka_instance),
-            self.run_aws_shotover(shotover_instance, kafka_ip.clone())
+            run_aws_kafka(kafka_instance.clone(), 9192),
+            self.run_aws_shotover(kafka_instance, kafka_ip.clone())
         );
 
-        let destination_ip = if running_shotover.is_some() {
-            shotover_ip
+        let destination_address = if running_shotover.is_some() {
+            format!("{kafka_ip}:9092")
         } else {
-            kafka_ip
+            format!("{kafka_ip}:9192")
         };
 
         bench_instance
-            .run_bencher(&self.run_args(&destination_ip, &parameters), &self.name())
+            .run_bencher(
+                &self.run_args(&destination_address, &parameters),
+                &self.name(),
+            )
             .await;
 
         profiler.finish();
@@ -263,7 +268,7 @@ impl Bench for KafkaBench {
     }
 }
 
-async fn run_aws_kafka(instance: Arc<Ec2InstanceWithDocker>) {
+async fn run_aws_kafka(instance: Arc<Ec2InstanceWithDocker>, port: i16) {
     let ip = instance.instance.private_ip().to_string();
     instance
         .run_container(
@@ -272,7 +277,11 @@ async fn run_aws_kafka(instance: Arc<Ec2InstanceWithDocker>) {
                 ("ALLOW_PLAINTEXT_LISTENER".to_owned(), "yes".to_owned()),
                 (
                     "KAFKA_CFG_ADVERTISED_LISTENERS".to_owned(),
-                    format!("PLAINTEXT://{ip}:9092"),
+                    format!("PLAINTEXT://{ip}:{port}"),
+                ),
+                (
+                    "KAFKA_CFG_LISTENERS".to_owned(),
+                    format!("PLAINTEXT://:{port},CONTROLLER://:9093"),
                 ),
                 ("KAFKA_HEAP_OPTS".to_owned(), "-Xmx512M -Xms512M".to_owned()),
             ],
