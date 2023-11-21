@@ -324,11 +324,8 @@ impl RunningShotover {
                         match line {
                             Some(Ok(line)) => {
                                 let event = Event::from_json_str(&line).unwrap();
-                                if let Level::Warn = event.level {
-                                    tracing::error!("shotover warn:\n    {event}");
-                                }
-                                if let Level::Error = event.level {
-                                    tracing::error!("shotover error:\n    {event}");
+                                if let Level::Warn | Level::Error = event.level {
+                                    println!("AWS shotover: {event}");
                                 }
                                 if event_tx.send(event).is_err() {
                                     return
@@ -344,6 +341,7 @@ impl RunningShotover {
                 }
             }
         });
+
         // wait for shotover to startup
         loop {
             let event = event_rx
@@ -367,9 +365,19 @@ impl RunningShotover {
         // dropping shutdown_tx instructs the task to shutdown causing shotover to be terminated
         std::mem::drop(self.shutdown_tx);
 
+        let ignore = [
+            // Occurs when shotover is under really heavy kafka load, maybe shotover isnt reading off the socket and then kafka times out and gives up?
+            "failed to receive message on tcp stream: Custom { kind: Other, error: \"bytes remaining on stream\" }",
+        ];
+
         while let Some(event) = self.event_rx.recv().await {
             if let Level::Warn | Level::Error = event.level {
-                panic!("Received error/warn event from shotover:\n     {event}")
+                if !ignore
+                    .iter()
+                    .any(|ignore| event.fields.message.contains(ignore))
+                {
+                    panic!("Received error/warn event from shotover:\n     {event}")
+                }
             }
         }
     }
