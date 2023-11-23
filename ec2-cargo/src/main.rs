@@ -41,7 +41,7 @@ async fn main() {
         return;
     }
 
-    let aws = Aws::new(CleanupResources::AllResources).await;
+    let aws = Aws::builder(CleanupResources::AllResources).build().await;
     let instance_type = InstanceType::from(args.instance_type.as_str());
     let instance = aws
         .create_ec2_instance(Ec2InstanceDefinition::new(instance_type).volume_size_gigabytes(40))
@@ -196,7 +196,7 @@ cargo windsock {} 2>&1
 async fn rsync_push_shotover(state: &State) {
     let instance = &state.instance;
     let project_root_dir = &state.cargo_meta.workspace_root;
-    let address = instance.public_ip();
+    let address = instance.public_ip().unwrap().to_string();
 
     rsync(
         state,
@@ -213,7 +213,7 @@ async fn rsync_push_shotover(state: &State) {
 async fn rsync_fetch_windsock_results(state: &State) {
     let instance = &state.instance;
     let windsock_dir = &state.cargo_meta.target_directory.join("windsock_data");
-    let address = instance.public_ip();
+    let address = instance.public_ip().unwrap().to_string();
 
     rsync(
         state,

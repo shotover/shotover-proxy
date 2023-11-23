@@ -32,14 +32,14 @@ bytes = "1.0.0"
 tokio = { version = "1.25.0", features = ["full", "macros"] }
 tokio-util = { version = "0.7.7" }
 tokio-openssl = "0.6.2"
-itertools = "0.11.0"
+itertools = "0.12.0"
 openssl = { version = "0.10.36", features = ["vendored"] }
 anyhow = "1.0.42"
 serde = { version = "1.0.111", features = ["derive"] }
 serde_yaml = "0.9.17"
 uuid = { version = "1.0.0", features = ["serde", "v4"] }
 reqwest = "0.11.6"
-redis = { version = "0.23.0", features = ["tokio-comp", "cluster"] }
+redis = { version = "0.23.3", features = ["tokio-comp", "cluster"] }
 cdrs-tokio = "8.0"
 cassandra-protocol = "3.0"
 tracing = "0.1.15"
@@ -61,7 +61,8 @@ rand_distr = "0.4.1"
 clap = { version = "4.0.4", features = ["cargo", "derive"] }
 async-trait = "0.1.30"
 typetag = "0.2.5"
-aws-throwaway = "0.3.0"
+aws-throwaway = "0.4.0"
 tokio-bin-process = "0.4.0"
 ordered-float = { version = "4.0.0", features = ["serde"] }
 hyper = { version = "0.14.14", features = ["server"] }
+shell-quote = "0.4.0"
