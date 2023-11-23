@@ -109,6 +109,16 @@ curl -sSL https://get.docker.com/ | sudo sh"#,
             )
             .await;
 
+        let local_shotover_path = bin_path!("shotover-proxy");
+        instance
+            .ssh()
+            .push_file(local_shotover_path, Path::new("shotover-bin"))
+            .await;
+        instance
+            .ssh()
+            .push_file(Path::new("config/config.yaml"), Path::new("config.yaml"))
+            .await;
+
         let instance = Arc::new(Ec2InstanceWithDocker { instance });
         (*self.docker_instances.write().await).push(instance.clone());
         instance
@@ -162,6 +172,7 @@ sudo apt-get install -y sysstat"#,
     }
 }
 
+/// Despite the name can also run shotover
 pub struct Ec2InstanceWithDocker {
     pub instance: Ec2Instance,
 }
@@ -239,6 +250,15 @@ sudo docker system prune -af"#,
             }
         }
     }
+
+    #[cfg(feature = "rdkafka-driver-tests")]
+    pub async fn run_shotover(self: Arc<Self>, topology: &str) -> RunningShotover {
+        self.instance
+            .ssh()
+            .push_file_from_bytes(topology.as_bytes(), Path::new("topology.yaml"))
+            .await;
+        RunningShotover::new(&self.instance).await
+    }
 }
 
 fn get_compatible_instance_type() -> InstanceType {
@@ -278,28 +298,34 @@ impl Ec2InstanceWithShotover {
             .ssh()
             .push_file_from_bytes(topology.as_bytes(), Path::new("topology.yaml"))
             .await;
+        RunningShotover::new(&self.instance).await
+    }
+}
 
+pub struct RunningShotover {
+    shutdown_tx: tokio::sync::mpsc::UnboundedSender<()>,
+    event_rx: tokio::sync::mpsc::UnboundedReceiver<Event>,
+}
+
+impl RunningShotover {
+    async fn new(instance: &Ec2Instance) -> Self {
         let (shutdown_tx, mut shutdown_rx) = tokio::sync::mpsc::unbounded_channel();
         let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut receiver = instance
+                    .ssh()
+                    .shell_stdout_lines(r#"
+        killall -w shotover-bin > /dev/null || true
+        RUST_BACKTRACE=1 ./shotover-bin --config-file config.yaml --topology-file topology.yaml --log-format json"#)
+                    .await;
         tokio::task::spawn(async move {
-            let mut receiver = self
-            .instance
-            .ssh()
-            .shell_stdout_lines(r#"
-killall -w shotover-bin > /dev/null || true
-RUST_BACKTRACE=1 ./shotover-bin --config-file config.yaml --topology-file topology.yaml --log-format json"#)
-            .await;
             loop {
                 tokio::select! {
                     line = receiver.recv() => {
                         match line {
                             Some(Ok(line)) => {
                                 let event = Event::from_json_str(&line).unwrap();
-                                if let Level::Warn = event.level {
-                                    tracing::error!("shotover warn:\n    {event}");
-                                }
-                                if let Level::Error = event.level {
-                                    tracing::error!("shotover error:\n    {event}");
+                                if let Level::Warn | Level::Error = event.level {
+                                    println!("AWS shotover: {event}");
                                 }
                                 if event_tx.send(event).is_err() {
                                     return
@@ -310,11 +336,6 @@ RUST_BACKTRACE=1 ./shotover-bin --config-file config.yaml --topology-file topolo
                         }
                     },
                     _ = shutdown_rx.recv() => {
-                        // shutdown_tx is dropped, instructing us to shutdown
-                        // we MUST drop self before dropping event_tx to ensure that the Arc<Ec2InstanceWithShotover> clone is dropped before the task indicates that it has terminated.
-                        // Otherwise we may hit a race condition and fail the assertion that there is only one Arc<Ec2InstanceWithShotover> clone alive.
-                        std::mem::drop(self);
-                        std::mem::drop(event_tx);
                         return;
                     },
                 }
@@ -334,27 +355,29 @@ RUST_BACKTRACE=1 ./shotover-bin --config-file config.yaml --topology-file topolo
                 break;
             }
         }
-
         RunningShotover {
             shutdown_tx,
             event_rx,
         }
     }
-}
 
-pub struct RunningShotover {
-    shutdown_tx: tokio::sync::mpsc::UnboundedSender<()>,
-    event_rx: tokio::sync::mpsc::UnboundedReceiver<Event>,
-}
-
-impl RunningShotover {
     pub async fn shutdown(mut self) {
         // dropping shutdown_tx instructs the task to shutdown causing shotover to be terminated
         std::mem::drop(self.shutdown_tx);
 
+        let ignore = [
+            // Occurs when shotover is under really heavy kafka load, maybe shotover isnt reading off the socket and then kafka times out and gives up?
+            "failed to receive message on tcp stream: Custom { kind: Other, error: \"bytes remaining on stream\" }",
+        ];
+
         while let Some(event) = self.event_rx.recv().await {
             if let Level::Warn | Level::Error = event.level {
-                panic!("Received error/warn event from shotover:\n     {event}")
+                if !ignore
+                    .iter()
+                    .any(|ignore| event.fields.message.contains(ignore))
+                {
+                    panic!("Received error/warn event from shotover:\n     {event}")
+                }
             }
         }
     }
