@@ -62,9 +62,6 @@ impl KeyManagerConfig {
                 grant_tokens,
                 endpoint,
             } => Ok(KeyManager::AWSKms(AWSKeyManagement {
-                // TODO: This client is being recreated for each connection.
-                // but doing so is quite expensive so we should share it between all connections
-                // fortunately doing so is quite easy since all methods are `&self`
                 client: KmsClient::new(&config(region, endpoint).await),
                 cmk_id,
                 encryption_context,
