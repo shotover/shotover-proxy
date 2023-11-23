@@ -1,5 +1,5 @@
 use docker_compose_runner::*;
-use std::env;
+use std::{env, time::Duration};
 use tracing_subscriber::fmt::TestWriter;
 
 pub use docker_compose_runner::DockerCompose;
@@ -14,7 +14,7 @@ fn setup_tracing_subscriber_for_test_logic() {
 
 pub fn docker_compose(file_path: &str) -> DockerCompose {
     setup_tracing_subscriber_for_test_logic();
-    DockerCompose::new(get_image_waiters(), |_| {}, file_path)
+    DockerCompose::new(&IMAGE_WAITERS, |_| {}, file_path)
 }
 
 /// Creates a new DockerCompose running an instance of moto the AWS mocking server
@@ -27,59 +27,57 @@ pub fn new_moto() -> DockerCompose {
     docker_compose("tests/transforms/docker-compose-moto.yaml")
 }
 
-pub fn get_image_waiters() -> &'static [Image] {
-    &[
-        Image {
-            name: "motoserver/moto",
-            log_regex_to_wait_for: r"Press CTRL\+C to quit",
-            timeout: 120,
-        },
-        Image {
-            name: "library/redis:5.0.9",
-            log_regex_to_wait_for: r"Ready to accept connections",
-            timeout: 120,
-        },
-        Image {
-            name: "library/redis:6.2.5",
-            log_regex_to_wait_for: r"Ready to accept connections",
-            timeout: 120,
-        },
-        Image {
-            name: "bitnami/redis:6.2.13-debian-11-r73",
-            log_regex_to_wait_for: r"Ready to accept connections",
-            timeout: 120,
-        },
-        Image {
-            name: "bitnami/redis-cluster:6.2.12-debian-11-r26",
-            //`Cluster state changed` is created by the node services
-            //`Cluster correctly created` is created by the init service
-            log_regex_to_wait_for: r"Cluster state changed|Cluster correctly created",
-            timeout: 120,
-        },
-        Image {
-            name: "bitnami/cassandra:4.0.6",
-            log_regex_to_wait_for: r"Startup complete",
-            timeout: 120,
-        },
-        Image {
-            name: "shotover/cassandra-test:4.0.6-r1",
-            log_regex_to_wait_for: r"Startup complete",
-            timeout: 120,
-        },
-        Image {
-            name: "shotover/cassandra-test:3.11.13-r1",
-            log_regex_to_wait_for: r"Startup complete",
-            timeout: 120,
-        },
-        Image {
-            name: "bitnami/kafka:3.4.0-debian-11-r22",
-            log_regex_to_wait_for: r"Kafka Server started",
-            timeout: 120,
-        },
-        Image {
-            name: "opensearchproject/opensearch:2.9.0",
-            log_regex_to_wait_for: r"Node started",
-            timeout: 120,
-        },
-    ]
-}
+pub static IMAGE_WAITERS: [Image; 10] = [
+    Image {
+        name: "motoserver/moto",
+        log_regex_to_wait_for: r"Press CTRL\+C to quit",
+        timeout: Duration::from_secs(120),
+    },
+    Image {
+        name: "library/redis:5.0.9",
+        log_regex_to_wait_for: r"Ready to accept connections",
+        timeout: Duration::from_secs(120),
+    },
+    Image {
+        name: "library/redis:6.2.5",
+        log_regex_to_wait_for: r"Ready to accept connections",
+        timeout: Duration::from_secs(120),
+    },
+    Image {
+        name: "bitnami/redis:6.2.13-debian-11-r73",
+        log_regex_to_wait_for: r"Ready to accept connections",
+        timeout: Duration::from_secs(120),
+    },
+    Image {
+        name: "bitnami/redis-cluster:6.2.12-debian-11-r26",
+        //`Cluster state changed` is created by the node services
+        //`Cluster correctly created` is created by the init service
+        log_regex_to_wait_for: r"Cluster state changed|Cluster correctly created",
+        timeout: Duration::from_secs(120),
+    },
+    Image {
+        name: "bitnami/cassandra:4.0.6",
+        log_regex_to_wait_for: r"Startup complete",
+        timeout: Duration::from_secs(120),
+    },
+    Image {
+        name: "shotover/cassandra-test:4.0.6-r1",
+        log_regex_to_wait_for: r"Startup complete",
+        timeout: Duration::from_secs(120),
+    },
+    Image {
+        name: "shotover/cassandra-test:3.11.13-r1",
+        log_regex_to_wait_for: r"Startup complete",
+        timeout: Duration::from_secs(120),
+    },
+    Image {
+        name: "bitnami/kafka:3.4.0-debian-11-r22",
+        log_regex_to_wait_for: r"Kafka Server started",
+        timeout: Duration::from_secs(120),
+    },
+    Image {
+        name: "opensearchproject/opensearch:2.9.0",
+        log_regex_to_wait_for: r"Node started",
+        timeout: Duration::from_secs(120),
+    },
+];

@@ -20,4 +20,4 @@ tokio.workspace = true
 
 [dev-dependencies]
 scylla = { version = "0.10.0", features = ["ssl"] }
-docker-compose-runner = "0.2.0"
+docker-compose-runner = "0.3.0"
