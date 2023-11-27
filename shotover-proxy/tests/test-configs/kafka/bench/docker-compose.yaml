@@ -3,8 +3,8 @@ services:
   kafka:
     image: 'bitnami/kafka:3.4.0-debian-11-r22'
     ports:
-      - '9092:9092'
+      - '9192:9192'
     environment:
-      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093
-      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://127.0.0.1:9092
+      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9192,CONTROLLER://:9093
+      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://127.0.0.1:9192
       - ALLOW_PLAINTEXT_LISTENER=yes
