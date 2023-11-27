@@ -36,7 +36,9 @@ impl WindsockAws {
                 shotover_instance: RwLock::new(None),
                 bencher_instance: RwLock::new(None),
                 docker_instances: RwLock::new(vec![]),
-                aws: Aws::new(CleanupResources::WithAppTag(AWS_THROWAWAY_TAG.to_owned())).await,
+                aws: Aws::builder(CleanupResources::WithAppTag(AWS_THROWAWAY_TAG.to_owned()))
+                    .build()
+                    .await,
             }
         })
         .await
@@ -198,7 +200,7 @@ sudo docker system prune -af"#,
         let mut env_args = String::new();
         for (key, value) in envs {
             let key_value =
-                String::from_utf8(shell_quote::bash::escape(format!("{key}={value}"))).unwrap();
+                String::from_utf8(shell_quote::Bash::quote(&format!("{key}={value}"))).unwrap();
             env_args.push_str(&format!(" -e {key_value}"))
         }
         let output = self
