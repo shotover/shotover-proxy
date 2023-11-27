@@ -15,7 +15,7 @@ alpha-transforms = []
 
 [dependencies]
 atomic_enum = "0.2.0"
-pretty-hex = "0.3.0"
+pretty-hex = "0.4.0"
 tokio-stream = "0.1.2"
 bytes-utils = "0.1.1"
 derivative = "2.1.1"
@@ -75,8 +75,8 @@ crc16 = "0.4.0"
 ordered-float.workspace = true
 
 #Crypto
-aws-config = "0.56.0"
-aws-sdk-kms = "0.33"
+aws-config = "1.0.0"
+aws-sdk-kms = "1.1.0"
 strum_macros = "0.25"
 chacha20poly1305 = { version = "0.10.0", features = ["std"] }
 generic-array = { version = "0.14", features = ["serde"] }

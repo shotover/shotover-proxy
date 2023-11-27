@@ -1,8 +1,8 @@
 use crate::transforms::protect::aws_kms::AWSKeyManagement;
 use crate::transforms::protect::local_kek::LocalKeyManagement;
 use anyhow::{anyhow, Result};
-use aws_config::meta::region::RegionProviderChain;
 use aws_config::SdkConfig;
+use aws_config::{meta::region::RegionProviderChain, BehaviorVersion};
 use aws_sdk_kms::config::Region;
 use aws_sdk_kms::Client as KmsClient;
 use base64::{engine::general_purpose, Engine as _};
@@ -37,16 +37,11 @@ pub enum KeyManagerConfig {
 }
 
 async fn config(region: String, endpoint: Option<String>) -> SdkConfig {
-    let region_provider = RegionProviderChain::first_try(Region::new(region));
+    let builder = aws_config::defaults(BehaviorVersion::v2023_11_09())
+        .region(RegionProviderChain::first_try(Region::new(region)));
     match endpoint {
-        Some(endpoint) => {
-            aws_config::from_env()
-                .region(region_provider)
-                .endpoint_url(endpoint)
-                .load()
-                .await
-        }
-        None => aws_config::from_env().region(region_provider).load().await,
+        Some(endpoint) => builder.endpoint_url(endpoint).load().await,
+        None => builder.load().await,
     }
 }
 
