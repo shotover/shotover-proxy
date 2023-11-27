@@ -8,5 +8,5 @@ sources:
             encode_requests: true
             encode_responses: true
         - KafkaSinkSingle:
-            remote_address: "127.0.0.1:9092"
+            destination_port: 9092
             connect_timeout_ms: 3000
