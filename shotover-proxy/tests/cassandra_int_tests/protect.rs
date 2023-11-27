@@ -84,6 +84,49 @@ pub async fn test(shotover_session: &CassandraConnection, direct_session: &Cassa
     )
     .await;
 
+    assert_query_result(
+        shotover_session,
+        "SELECT pk, cluster, col1, col2, col3 FROM test_protect_keyspace.test_table",
+        &[
+            &[
+                ResultValue::Varchar("pk1".into()),
+                ResultValue::Varchar("cluster".into()),
+                ResultValue::Blob("I am gonna get encrypted!!".into()),
+                ResultValue::Int(0),
+                ResultValue::Boolean(true),
+            ],
+            &[
+                ResultValue::Varchar("pk2".into()),
+                ResultValue::Varchar("cluster".into()),
+                ResultValue::Blob("encrypted2".into()),
+                ResultValue::Int(1),
+                ResultValue::Boolean(true),
+            ],
+            &[
+                ResultValue::Varchar("pk3".into()),
+                ResultValue::Varchar("cluster".into()),
+                ResultValue::Blob("encrypted3".into()),
+                ResultValue::Int(2),
+                ResultValue::Boolean(false),
+            ],
+            &[
+                ResultValue::Varchar("pk4".into()),
+                ResultValue::Varchar("cluster".into()),
+                ResultValue::Blob("encrypted4".into()),
+                ResultValue::Int(3),
+                ResultValue::Boolean(true),
+            ],
+            &[
+                ResultValue::Varchar("pk5".into()),
+                ResultValue::Varchar("cluster".into()),
+                ResultValue::Blob("encrypted5".into()),
+                ResultValue::Int(4),
+                ResultValue::Boolean(false),
+            ],
+        ],
+    )
+    .await;
+
     // assert that data is encrypted on cassandra side
     let result = direct_session
         .execute("SELECT pk, cluster, col1, col2, col3 FROM test_protect_keyspace.test_table")
