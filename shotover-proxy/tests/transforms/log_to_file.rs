@@ -15,15 +15,20 @@ async fn log_to_file() {
 
     assert_ok(redis::cmd("SET").arg("foo").arg(42), &mut connection).await;
     let request = std::fs::read("message-log/1/requests/message1.bin").unwrap();
-    assert_eq!(
-        request,
-        "*3\r\n$3\r\nSET\r\n$3\r\nfoo\r\n$2\r\n42\r\n".as_bytes()
-    );
+    assert_eq_string(&request, "*3\r\n$3\r\nSET\r\n$3\r\nfoo\r\n$2\r\n42\r\n");
 
     let response = std::fs::read("message-log/1/responses/message1.bin").unwrap();
-    assert_eq!(response, "+OK\r\n".as_bytes());
+    assert_eq_string(&response, "+OK\r\n");
 
     shotover.shutdown_and_then_consume_events(&[]).await;
 
     std::fs::remove_dir_all("message-log").unwrap();
+}
+
+/// Gives useful error message when both expected and actual data are valid utf8 strings
+fn assert_eq_string(actual_bytes: &[u8], expected_str: &str) {
+    match std::str::from_utf8(actual_bytes) {
+        Ok(actual) => assert_eq!(actual, expected_str),
+        Err(_) => assert_eq!(actual_bytes, expected_str.as_bytes()),
+    }
 }
