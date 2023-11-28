@@ -13,8 +13,7 @@ pub struct Protected {
     _kek_id: String,
 }
 
-pub async fn select_all(shotover_session: &CassandraConnection) {
-    // assert that data is decrypted by shotover
+async fn select_all(shotover_session: &CassandraConnection) {
     assert_query_result(
         shotover_session,
         "SELECT pk, cluster, col1, col2, col3 FROM test_protect_keyspace.test_table",
@@ -57,49 +56,12 @@ pub async fn select_all(shotover_session: &CassandraConnection) {
         ],
     )
     .await;
+}
 
-    assert_query_result(
-        shotover_session,
-        "SELECT pk, cluster, col1, col2, col3 FROM test_protect_keyspace.test_table",
-        &[
-            &[
-                ResultValue::Varchar("pk0".into()),
-                ResultValue::Varchar("cluster".into()),
-                ResultValue::Blob("encrypted0".into()),
-                ResultValue::Int(0),
-                ResultValue::Boolean(true),
-            ],
-            &[
-                ResultValue::Varchar("pk1".into()),
-                ResultValue::Varchar("cluster".into()),
-                ResultValue::Blob("encrypted1".into()),
-                ResultValue::Int(1),
-                ResultValue::Boolean(true),
-            ],
-            &[
-                ResultValue::Varchar("pk2".into()),
-                ResultValue::Varchar("cluster".into()),
-                ResultValue::Blob("encrypted2".into()),
-                ResultValue::Int(2),
-                ResultValue::Boolean(false),
-            ],
-            &[
-                ResultValue::Varchar("pk3".into()),
-                ResultValue::Varchar("cluster".into()),
-                ResultValue::Blob("encrypted3".into()),
-                ResultValue::Int(3),
-                ResultValue::Boolean(true),
-            ],
-            &[
-                ResultValue::Varchar("pk4".into()),
-                ResultValue::Varchar("cluster".into()),
-                ResultValue::Blob("encrypted4".into()),
-                ResultValue::Int(4),
-                ResultValue::Boolean(false),
-            ],
-        ],
-    )
-    .await;
+// assert that data is decrypted by shotover
+async fn select(shotover_session: &CassandraConnection) {
+    select_all(shotover_session).await;
+    select_all(shotover_session).await; // run again to check any caching works
 
     for i in 0..5 {
         assert_query_result(
@@ -131,7 +93,7 @@ async fn setup(shotover_session: &CassandraConnection) {
 }
 
 async fn insert_data(shotover_session: &CassandraConnection) {
-    let statements  =[
+    let statements = [
         "INSERT INTO test_protect_keyspace.test_table (pk, cluster, col1, col2, col3) VALUES ('pk0', 'cluster', 'encrypted0', 0, true);",
         "INSERT INTO test_protect_keyspace.test_table (pk, cluster, col1, col2, col3) VALUES ('pk1', 'cluster', 'encrypted1', 1, true)",
         "INSERT INTO test_protect_keyspace.test_table (pk, cluster, col1, col2, col3) VALUES ('pk2', 'cluster', 'encrypted2', 2, false)",
@@ -159,7 +121,7 @@ pub async fn test(shotover_session: &CassandraConnection, direct_session: &Cassa
     setup(shotover_session).await;
     insert_data(shotover_session).await;
 
-    select_all(shotover_session).await;
+    select(shotover_session).await;
 
     // assert that data is encrypted on cassandra side
     let result = direct_session
