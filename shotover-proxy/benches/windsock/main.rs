@@ -37,7 +37,7 @@ fn main() {
 
     let cassandra_benches = itertools::iproduct!(
         [CassandraDb::Cassandra],
-        [Topology::Single, Topology::Cluster3],
+        [CassandraTopology::Single, CassandraTopology::Cluster3],
         [Shotover::None, Shotover::Standard],
         [Compression::None, Compression::Lz4],
         [Operation::ReadI64, Operation::WriteBlob],
@@ -55,7 +55,7 @@ fn main() {
             }
 
             if driver == CassandraDriver::CdrsTokio
-                && (operation != Operation::ReadI64 || topology != Topology::Single)
+                && (operation != Operation::ReadI64 || topology != CassandraTopology::Single)
             {
                 return None;
             }
@@ -78,9 +78,16 @@ fn main() {
             Shotover::Standard,
             Shotover::ForcedMessageParsed
         ],
-        [Size::B1, Size::KB1, Size::KB100,]
+        [
+            KafkaTopology::Single,
+            KafkaTopology::Cluster1,
+            KafkaTopology::Cluster3
+        ],
+        [Size::B1, Size::KB1, Size::KB100]
     )
-    .map(|(shotover, size)| Box::new(KafkaBench::new(shotover, size)) as Box<dyn Bench>);
+    .map(|(shotover, topology, size)| {
+        Box::new(KafkaBench::new(shotover, topology, size)) as Box<dyn Bench>
+    });
     #[cfg(not(feature = "rdkafka-driver-tests"))]
     let kafka_benches = std::iter::empty();
 
@@ -102,7 +109,7 @@ fn main() {
         vec![
             Box::new(CassandraBench::new(
                 CassandraDb::Mocked,
-                Topology::Single,
+                CassandraTopology::Single,
                 Shotover::None,
                 Compression::None,
                 Operation::ReadI64,
@@ -111,7 +118,7 @@ fn main() {
             )) as Box<dyn Bench>,
             Box::new(CassandraBench::new(
                 CassandraDb::Mocked,
-                Topology::Single,
+                CassandraTopology::Single,
                 Shotover::Standard,
                 Compression::None,
                 Operation::ReadI64,

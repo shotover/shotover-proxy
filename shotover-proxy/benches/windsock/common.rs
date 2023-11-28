@@ -1,4 +1,4 @@
-use shotover::{config::topology::Topology, sources::SourceConfig};
+use shotover::{config::topology::Topology as ShotoverTopology, sources::SourceConfig};
 
 #[derive(Clone, Copy)]
 pub enum Shotover {
@@ -21,7 +21,7 @@ impl Shotover {
 }
 
 pub fn generate_topology(source: SourceConfig) -> String {
-    Topology {
+    ShotoverTopology {
         sources: vec![source],
     }
     .serialize()
