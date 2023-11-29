@@ -101,8 +101,9 @@ impl KafkaBench {
     async fn run_aws_kafka(&self, nodes: Vec<Arc<Ec2InstanceWithDocker>>) {
         match self.topology {
             KafkaTopology::Cluster3 => self.run_aws_kafka_cluster(nodes).await,
-            KafkaTopology::Cluster1 => self.run_aws_kafka_cluster(vec![nodes[0].clone()]).await,
-            KafkaTopology::Single => self.run_aws_kafka_single(nodes[0].clone()).await,
+            KafkaTopology::Cluster1 | KafkaTopology::Single => {
+                self.run_aws_kafka_cluster(vec![nodes[0].clone()]).await
+            }
         }
     }
 
@@ -149,31 +150,6 @@ impl KafkaBench {
         for task in tasks {
             task.await.unwrap();
         }
-    }
-
-    async fn run_aws_kafka_single(&self, instance: Arc<Ec2InstanceWithDocker>) {
-        let ip = instance.instance.private_ip().to_string();
-        let port = 9192;
-        instance
-            .run_container(
-                "bitnami/kafka:3.4.0-debian-11-r22",
-                &[
-                    ("ALLOW_PLAINTEXT_LISTENER".to_owned(), "yes".to_owned()),
-                    (
-                        "KAFKA_CFG_ADVERTISED_LISTENERS".to_owned(),
-                        format!("PLAINTEXT://{ip}:{port}"),
-                    ),
-                    (
-                        "KAFKA_CFG_LISTENERS".to_owned(),
-                        format!("PLAINTEXT://:{port},CONTROLLER://:9093"),
-                    ),
-                    (
-                        "KAFKA_HEAP_OPTS".to_owned(),
-                        "-Xmx4096M -Xms4096M".to_owned(),
-                    ),
-                ],
-            )
-            .await;
     }
 
     async fn run_aws_shotover_on_own_instance(
