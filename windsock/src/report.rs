@@ -161,6 +161,13 @@ pub enum Metric {
 }
 
 impl Metric {
+    pub fn name(&self) -> &str {
+        match self {
+            Metric::Total { name, .. } => name,
+            Metric::EachSecond { name, .. } => name,
+        }
+    }
+
     pub(crate) fn identifier(&self) -> MetricIdentifier {
         match self {
             Metric::Total { name, .. } => MetricIdentifier::Total {

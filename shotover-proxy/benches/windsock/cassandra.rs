@@ -552,7 +552,8 @@ impl Bench for CassandraBench {
             }
         }
         let mut profiler =
-            CloudProfilerRunner::new(self.name(), profiling, profiler_instances).await;
+            CloudProfilerRunner::new(self.name(), profiling, profiler_instances, &shotover_ip)
+                .await;
 
         let cassandra_nodes = vec![
             AwsNodeInfo {
