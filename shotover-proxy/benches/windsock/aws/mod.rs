@@ -12,7 +12,7 @@ use std::{
     path::{Path, PathBuf},
     sync::Arc,
 };
-use test_helpers::docker_compose::get_image_waiters;
+use test_helpers::docker_compose::IMAGE_WAITERS;
 use tokio::sync::RwLock;
 use tokio_bin_process::bin_path;
 use tokio_bin_process::event::{Event, Level};
@@ -218,7 +218,7 @@ sudo docker system prune -af"#,
             .ssh()
             .shell_stdout_lines(&format!("sudo docker logs -f {container_id} 2>&1"))
             .await;
-        let image_waiter = get_image_waiters()
+        let image_waiter = IMAGE_WAITERS
             .iter()
             .find(|x| x.name == image)
             .unwrap_or_else(|| {

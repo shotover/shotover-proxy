@@ -61,8 +61,8 @@ rand_distr = "0.4.1"
 clap = { version = "4.0.4", features = ["cargo", "derive"] }
 async-trait = "0.1.30"
 typetag = "0.2.5"
-aws-throwaway = "0.4.0"
+aws-throwaway = "0.5.0"
 tokio-bin-process = "0.4.0"
 ordered-float = { version = "4.0.0", features = ["serde"] }
 hyper = { version = "0.14.14", features = ["server"] }
-shell-quote = "0.4.0"
+shell-quote = { default-features = false, version = "0.5.0" }

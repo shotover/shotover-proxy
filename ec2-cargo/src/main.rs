@@ -74,12 +74,6 @@ sudo /bin/docker1 "$@"
 ' | sudo dd of=/bin/docker
 sudo chmod +x /bin/docker
 
-# hack to work around docker-compose command not being present on this machine
-echo '#!/bin/bash
-docker compose "$@"
-' | sudo dd of=/bin/docker-compose
-sudo chmod +x /bin/docker-compose
-
 echo "export RUST_BACKTRACE=1" >> .profile
 echo "export CARGO_TERM_COLOR=always" >> .profile
 echo 'source "$HOME/.cargo/env"' >> .profile

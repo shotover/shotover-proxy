@@ -138,16 +138,14 @@ impl BenchTask for BenchTaskCassandra {
 }
 
 fn docker_compose(file_path: &str) -> DockerCompose {
-    DockerCompose::new(get_image_waiters(), |_| {}, file_path)
+    DockerCompose::new(&IMAGE_WAITERS, |_| {}, file_path)
 }
 
-fn get_image_waiters() -> &'static [Image] {
-    &[Image {
-        name: "bitnami/cassandra:4.0.6",
-        log_regex_to_wait_for: r"Startup complete",
-        timeout: 120,
-    }]
-}
+static IMAGE_WAITERS: [Image; 1] = [Image {
+    name: "bitnami/cassandra:4.0.6",
+    log_regex_to_wait_for: r"Startup complete",
+    timeout: Duration::from_secs(120),
+}];
 
 fn set_working_dir() {
     // tests and benches will set the directory to the directory of the crate, we are acting as a benchmark so we do the same
