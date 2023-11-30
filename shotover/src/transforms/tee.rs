@@ -457,7 +457,7 @@ mod tests {
         let transform = config.get_builder("".to_owned()).await.unwrap();
         let result = transform.validate().join("\n");
         let expected = r#"Tee:
-  tee_chain:
+  tee_chain chain:
     Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain."#;
         assert_eq!(result, expected);
     }
@@ -505,7 +505,7 @@ mod tests {
         let transform = config.get_builder("".to_owned()).await.unwrap();
         let result = transform.validate().join("\n");
         let expected = r#"Tee:
-  mismatch_chain:
+  mismatch_chain chain:
     Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain."#;
         assert_eq!(result, expected);
     }

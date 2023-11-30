@@ -103,14 +103,14 @@ Caused by:
     redis source:
       redis source chain:
         TuneableConsistencyScatter:
-          a_chain_1:
+          a_chain_1 chain:
             Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
             Non-terminating transform "DebugPrinter" is last in chain. Last transform must be terminating.
-          b_chain_2:
+          b_chain_2 chain:
             Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
-          c_chain_3:
+          c_chain_3 chain:
             TuneableConsistencyScatter:
-              sub_chain_2:
+              sub_chain_2 chain:
                 Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
     "#),
             EventMatcher::new().with_level(Level::Warn)

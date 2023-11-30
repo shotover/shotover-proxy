@@ -231,7 +231,7 @@ impl TransformChainBuilder {
     pub fn validate(&self) -> Vec<String> {
         if self.chain.is_empty() {
             return vec![
-                format!("{}:", self.name),
+                format!("{} chain:", self.name),
                 "  Chain cannot be empty".to_string(),
             ];
         }
@@ -264,7 +264,7 @@ impl TransformChainBuilder {
             .collect::<Vec<String>>();
 
         if !errors.is_empty() {
-            errors.insert(0, format!("{}:", self.name));
+            errors.insert(0, format!("{} chain:", self.name));
         }
 
         errors
@@ -386,7 +386,7 @@ mod chain_tests {
         let chain = TransformChainBuilder::new(vec![], "test-chain".to_string());
         assert_eq!(
             chain.validate(),
-            vec!["test-chain:", "  Chain cannot be empty"]
+            vec!["test-chain chain:", "  Chain cannot be empty"]
         );
     }
 

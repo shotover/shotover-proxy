@@ -812,7 +812,11 @@ mod test {
 
         assert_eq!(
             transform.validate(),
-            vec!["RedisCache:", "  test-chain:", "    Chain cannot be empty"]
+            vec![
+                "RedisCache:",
+                "  test-chain chain:",
+                "    Chain cannot be empty"
+            ]
         );
     }
 
