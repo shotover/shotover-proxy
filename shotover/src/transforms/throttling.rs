@@ -130,7 +130,7 @@ mod test {
             assert_eq!(
                 chain.validate(),
                 vec![
-                    "test-chain:",
+                    "test-chain chain:",
                     "  RequestThrottling:",
                     "    max_requests_per_second has a minimum allowed value of 50"
                 ]

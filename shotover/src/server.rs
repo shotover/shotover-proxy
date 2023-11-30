@@ -94,7 +94,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
         available_connections_gauge.set(limit_connections.available_permits() as f64);
 
         let chain_builder = chain_config
-            .get_builder(format!("{source_name} source chain"))
+            .get_builder(format!("{source_name} source"))
             .await
             .map_err(|x| vec![format!("{x:?}")])?;
 
