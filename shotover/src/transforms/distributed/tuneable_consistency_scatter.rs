@@ -402,7 +402,7 @@ mod scatter_transform_tests {
             transform.validate(),
             vec![
                 "TuneableConsistencyScatter:",
-                "  test-chain-2:",
+                "  test-chain-2 chain:",
                 "    Chain cannot be empty"
             ]
         );

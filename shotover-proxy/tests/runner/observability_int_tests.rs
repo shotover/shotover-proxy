@@ -20,8 +20,8 @@ async fn test_metrics() {
 # TYPE shotover_transform_total counter
 query_count{name="redis-chain"}
 shotover_available_connections{source="redis"}
-shotover_chain_failures{chain="redis source chain"}
-shotover_chain_total{chain="redis source chain"}
+shotover_chain_failures{chain="redis source"}
+shotover_chain_total{chain="redis source"}
 shotover_transform_failures{transform="NullSink"}
 shotover_transform_failures{transform="QueryCounter"}
 shotover_transform_latency_count{transform="NullSink"}
@@ -72,15 +72,15 @@ shotover_transform_total{transform="QueryCounter"}
 # TYPE shotover_chain_latency summary
 query_count{name="redis-chain",query="GET",type="redis"}
 query_count{name="redis-chain",query="SET",type="redis"}
-shotover_chain_latency_count{chain="redis source chain",client_details="127.0.0.1"}
-shotover_chain_latency_sum{chain="redis source chain",client_details="127.0.0.1"}
-shotover_chain_latency{chain="redis source chain",client_details="127.0.0.1",quantile="0"}
-shotover_chain_latency{chain="redis source chain",client_details="127.0.0.1",quantile="0.5"}
-shotover_chain_latency{chain="redis source chain",client_details="127.0.0.1",quantile="0.9"}
-shotover_chain_latency{chain="redis source chain",client_details="127.0.0.1",quantile="0.95"}
-shotover_chain_latency{chain="redis source chain",client_details="127.0.0.1",quantile="0.99"}
-shotover_chain_latency{chain="redis source chain",client_details="127.0.0.1",quantile="0.999"}
-shotover_chain_latency{chain="redis source chain",client_details="127.0.0.1",quantile="1"}
+shotover_chain_latency_count{chain="redis source",client_details="127.0.0.1"}
+shotover_chain_latency_sum{chain="redis source",client_details="127.0.0.1"}
+shotover_chain_latency{chain="redis source",client_details="127.0.0.1",quantile="0"}
+shotover_chain_latency{chain="redis source",client_details="127.0.0.1",quantile="0.5"}
+shotover_chain_latency{chain="redis source",client_details="127.0.0.1",quantile="0.9"}
+shotover_chain_latency{chain="redis source",client_details="127.0.0.1",quantile="0.95"}
+shotover_chain_latency{chain="redis source",client_details="127.0.0.1",quantile="0.99"}
+shotover_chain_latency{chain="redis source",client_details="127.0.0.1",quantile="0.999"}
+shotover_chain_latency{chain="redis source",client_details="127.0.0.1",quantile="1"}
 "#;
     assert_metrics_has_keys(expected, expected_new).await;
 
