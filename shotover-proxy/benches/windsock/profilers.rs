@@ -128,7 +128,7 @@ impl CloudProfilerRunner {
         bench_name: String,
         profiling: Profiling,
         instances: HashMap<String, &Ec2Instance>,
-        shotover_ip: &str,
+        shotover_ip: &Option<String>,
     ) -> Self {
         let run_sys_monitor = profiling
             .profilers_to_use
@@ -146,7 +146,10 @@ impl CloudProfilerRunner {
         }
 
         let shotover_metrics = if run_shotover_metrics {
-            Some(ShotoverMetrics::new(bench_name.clone(), shotover_ip))
+            Some(ShotoverMetrics::new(
+                bench_name.clone(),
+                shotover_ip.as_ref().unwrap(),
+            ))
         } else {
             None
         };

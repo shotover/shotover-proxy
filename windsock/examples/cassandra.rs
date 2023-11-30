@@ -10,6 +10,7 @@ use std::{
     time::{Duration, Instant},
 };
 use tokio::sync::mpsc::UnboundedSender;
+use windsock::cloud::NoCloud;
 use windsock::{Bench, BenchParameters, BenchTask, Profiling, Report, Windsock};
 
 fn main() {
@@ -19,7 +20,7 @@ fn main() {
             Box::new(CassandraBench::new(Some(Compression::Lz4))),
             Box::new(CassandraBench::new(None)),
         ],
-        None,
+        NoCloud::new_boxed(),
         &["release"],
     )
     .run();
@@ -37,6 +38,8 @@ impl CassandraBench {
 
 #[async_trait]
 impl Bench for CassandraBench {
+    type CloudResourcesRequired = ();
+    type CloudResources = ();
     fn tags(&self) -> HashMap<String, String> {
         [
             ("name".to_owned(), "cassandra".to_owned()),
@@ -57,6 +60,7 @@ impl Bench for CassandraBench {
 
     async fn orchestrate_cloud(
         &self,
+        _resources: (),
         _running_in_release: bool,
         _profiling: Profiling,
         _bench_parameters: BenchParameters,

@@ -12,9 +12,15 @@ use crate::common::*;
 #[cfg(feature = "rdkafka-driver-tests")]
 use crate::kafka::*;
 use crate::redis::*;
+use aws::cloud::CloudResources;
+use aws::cloud::CloudResourcesRequired;
 use std::path::Path;
 use tracing_subscriber::EnvFilter;
 use windsock::{Bench, Windsock};
+
+type ShotoverBench = Box<
+    dyn Bench<CloudResourcesRequired = CloudResourcesRequired, CloudResources = CloudResources>,
+>;
 
 fn main() {
     let (non_blocking, _guard) = tracing_appender::non_blocking(std::io::stdout());
@@ -79,7 +85,7 @@ fn main() {
                 protocol,
                 driver,
                 connection_count,
-            )) as Box<dyn Bench>)
+            )) as ShotoverBench)
         },
     );
     #[cfg(feature = "rdkafka-driver-tests")]
@@ -97,7 +103,7 @@ fn main() {
         [Size::B1, Size::KB1, Size::KB100]
     )
     .map(|(shotover, topology, size)| {
-        Box::new(KafkaBench::new(shotover, topology, size)) as Box<dyn Bench>
+        Box::new(KafkaBench::new(shotover, topology, size)) as ShotoverBench
     });
     #[cfg(not(feature = "rdkafka-driver-tests"))]
     let kafka_benches = std::iter::empty();
@@ -113,7 +119,7 @@ fn main() {
         [Encryption::None, Encryption::Tls]
     )
     .map(|(topology, shotover, operation, encryption)| {
-        Box::new(RedisBench::new(topology, shotover, operation, encryption)) as Box<dyn Bench>
+        Box::new(RedisBench::new(topology, shotover, operation, encryption)) as ShotoverBench
     });
 
     Windsock::new(
@@ -127,7 +133,7 @@ fn main() {
                 CassandraProtocol::V4,
                 CassandraDriver::Scylla,
                 10,
-            )) as Box<dyn Bench>,
+            )) as ShotoverBench,
             Box::new(CassandraBench::new(
                 CassandraDb::Mocked,
                 CassandraTopology::Single,
@@ -144,7 +150,7 @@ fn main() {
         .chain(kafka_benches)
         .chain(redis_benches)
         .collect(),
-        Some(aws::cloud::AwsCloud::new_boxed()),
+        aws::cloud::AwsCloud::new_boxed(),
         &["release"],
     )
     .run();
