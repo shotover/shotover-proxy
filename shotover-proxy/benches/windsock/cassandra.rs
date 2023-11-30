@@ -74,10 +74,22 @@ enum CassandraDbInstance {
     Mocked(MockHandle),
 }
 
-#[derive(Clone, PartialEq)]
-pub enum Topology {
+#[derive(Clone, Copy, PartialEq)]
+pub enum CassandraTopology {
     Single,
     Cluster3,
+}
+
+impl CassandraTopology {
+    pub fn to_tag(self) -> (String, String) {
+        (
+            "topology".to_owned(),
+            match self {
+                CassandraTopology::Single => "single".to_owned(),
+                CassandraTopology::Cluster3 => "cluster3".to_owned(),
+            },
+        )
+    }
 }
 
 struct CoreCount {
@@ -340,7 +352,7 @@ impl CassandraSession {
 
 pub struct CassandraBench {
     db: CassandraDb,
-    topology: Topology,
+    topology: CassandraTopology,
     shotover: Shotover,
     compression: Compression,
     operation: Operation,
@@ -351,7 +363,7 @@ pub struct CassandraBench {
 impl CassandraBench {
     pub fn new(
         db: CassandraDb,
-        topology: Topology,
+        topology: CassandraTopology,
         shotover: Shotover,
         compression: Compression,
         operation: Operation,
@@ -388,7 +400,7 @@ impl CassandraBench {
         }
 
         match self.topology {
-            Topology::Cluster3 => {
+            CassandraTopology::Cluster3 => {
                 transforms.push(Box::new(CassandraSinkClusterConfig {
                     first_contact_points: vec![cassandra_address],
                     tls: None,
@@ -403,7 +415,7 @@ impl CassandraBench {
                     }],
                 }));
             }
-            Topology::Single => {
+            CassandraTopology::Single => {
                 transforms.push(Box::new(CassandraSinkSingleConfig {
                     address: cassandra_address,
                     tls: None,
@@ -455,13 +467,7 @@ impl Bench for CassandraBench {
                     CassandraDb::Mocked => "cassandra-mocked".to_owned(),
                 },
             ),
-            (
-                "topology".to_owned(),
-                match &self.topology {
-                    Topology::Single => "single".to_owned(),
-                    Topology::Cluster3 => "cluster3".to_owned(),
-                },
-            ),
+            self.topology.to_tag(),
             self.shotover.to_tag(),
             (
                 "operation".to_owned(),
@@ -536,12 +542,12 @@ impl Bench for CassandraBench {
             profiler_instances.insert("shotover".to_owned(), &shotover_instance.instance);
         }
         match self.topology {
-            Topology::Cluster3 => {
+            CassandraTopology::Cluster3 => {
                 profiler_instances.insert("cassandra1".to_owned(), &cassandra_instance1.instance);
                 profiler_instances.insert("cassandra2".to_owned(), &cassandra_instance2.instance);
                 profiler_instances.insert("cassandra3".to_owned(), &cassandra_instance3.instance);
             }
-            Topology::Single => {
+            CassandraTopology::Single => {
                 profiler_instances.insert("cassandra".to_owned(), &cassandra_instance1.instance);
             }
         }
@@ -564,7 +570,7 @@ impl Bench for CassandraBench {
         ];
 
         let (_, running_shotover) = futures::join!(
-            run_aws_cassandra(cassandra_nodes, self.topology.clone()),
+            run_aws_cassandra(cassandra_nodes, self.topology),
             self.run_aws_shotover(shotover_instance.clone(), cassandra_ip.clone(),)
         );
 
@@ -596,29 +602,29 @@ impl Bench for CassandraBench {
         let core_count = self.core_count();
 
         let address = match (&self.topology, &self.shotover) {
-            (Topology::Single, Shotover::None) => "127.0.0.1:9043",
-            (Topology::Cluster3, Shotover::None) => "172.16.1.2:9044",
+            (CassandraTopology::Single, Shotover::None) => "127.0.0.1:9043",
+            (CassandraTopology::Cluster3, Shotover::None) => "172.16.1.2:9044",
             (_, Shotover::Standard | Shotover::ForcedMessageParsed) => "127.0.0.1:9042",
         };
         let config_dir = match &self.topology {
-            Topology::Single => "tests/test-configs/cassandra/passthrough",
-            Topology::Cluster3 => "tests/test-configs/cassandra/cluster-v4",
+            CassandraTopology::Single => "tests/test-configs/cassandra/passthrough",
+            CassandraTopology::Cluster3 => "tests/test-configs/cassandra/cluster-v4",
         };
 
         let _db_instance = match (&self.db, &self.topology) {
             (CassandraDb::Cassandra, _) => CassandraDbInstance::Compose(docker_compose(&format!(
                 "{config_dir}/docker-compose.yaml"
             ))),
-            (CassandraDb::Mocked, Topology::Single) => CassandraDbInstance::Mocked(
+            (CassandraDb::Mocked, CassandraTopology::Single) => CassandraDbInstance::Mocked(
                 test_helpers::mock_cassandra::start(core_count.cassandra, 9043),
             ),
-            (CassandraDb::Mocked, Topology::Cluster3) => {
+            (CassandraDb::Mocked, CassandraTopology::Cluster3) => {
                 panic!("Mocked cassandra database does not provide a clustered mode")
             }
         };
         let cassandra_address = match &self.topology {
-            Topology::Single => "127.0.0.1:9043".to_owned(),
-            Topology::Cluster3 => "172.16.1.2:9044".to_owned(),
+            CassandraTopology::Single => "127.0.0.1:9043".to_owned(),
+            CassandraTopology::Cluster3 => "172.16.1.2:9044".to_owned(),
         };
         let mut profiler = ProfilerRunner::new(self.name(), profiling);
         let shotover = match self.shotover {
@@ -707,10 +713,10 @@ impl Bench for CassandraBench {
         self.operation.run(&session, reporter, parameters).await;
     }
 }
-async fn run_aws_cassandra(nodes: Vec<AwsNodeInfo>, topology: Topology) {
+async fn run_aws_cassandra(nodes: Vec<AwsNodeInfo>, topology: CassandraTopology) {
     match topology {
-        Topology::Cluster3 => run_aws_cassandra_cluster(nodes).await,
-        Topology::Single => run_aws_cassandra_single(nodes[0].instance.clone()).await,
+        CassandraTopology::Cluster3 => run_aws_cassandra_cluster(nodes).await,
+        CassandraTopology::Single => run_aws_cassandra_single(nodes[0].instance.clone()).await,
     }
 }
 
