@@ -188,7 +188,7 @@ mod parallel_map_tests {
             transform.validate(),
             vec![
                 "ParallelMap:",
-                "  test-chain-2:",
+                "  test-chain-2 chain:",
                 "    Chain cannot be empty"
             ]
         );
