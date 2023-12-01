@@ -783,6 +783,7 @@ struct Measurement {
 pub enum Goal {
     BiggerIsBetter,
     SmallerIsBetter,
+    None,
 }
 
 enum Color {

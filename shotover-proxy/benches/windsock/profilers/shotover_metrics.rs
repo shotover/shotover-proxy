@@ -73,7 +73,7 @@ impl ShotoverMetrics {
                                 let Value::Gauge(x) = x else {
                                     panic!("metric type changed during bench run")
                                 };
-                                (*x, x.to_string(), Goal::SmallerIsBetter) // TODO: Goal::None
+                                (*x, x.to_string(), Goal::None)
                             })
                             .collect(),
                     });
@@ -90,8 +90,7 @@ impl ShotoverMetrics {
                                 };
                                 let diff = x - prev;
                                 prev = *x;
-                                (diff, diff.to_string(), Goal::SmallerIsBetter)
-                                // TODO: Goal::None
+                                (diff, diff.to_string(), Goal::None)
                             })
                             .collect(),
                     });
