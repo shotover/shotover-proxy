@@ -8,7 +8,10 @@ mod report;
 mod tables;
 
 pub use bench::{Bench, BenchParameters, BenchTask, Profiling};
-pub use report::{ExternalReport, Metric, OperationsReport, PubSubReport, Report, ReportArchive};
+pub use report::{
+    ExternalReport, LatencyPercentile, Metric, OperationsReport, PubSubReport, Report,
+    ReportArchive,
+};
 pub use tables::Goal;
 
 use anyhow::{anyhow, Result};

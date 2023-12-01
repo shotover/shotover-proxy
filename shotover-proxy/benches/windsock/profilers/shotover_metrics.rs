@@ -3,7 +3,7 @@ use std::{collections::HashMap, time::Duration};
 use time::OffsetDateTime;
 use tokio::task::JoinHandle;
 use tokio::{sync::mpsc, time::MissedTickBehavior};
-use windsock::{Goal, Metric, ReportArchive};
+use windsock::{Goal, LatencyPercentile, Metric, ReportArchive};
 
 pub struct ShotoverMetrics {
     shutdown_tx: mpsc::Sender<()>,
@@ -37,7 +37,7 @@ impl ShotoverMetrics {
         raw_metrics: Vec<RawPrometheusExposition>,
         report: &ReportArchive,
     ) -> ParsedMetrics {
-        let mut parsed_metrics: ParsedMetrics = HashMap::new();
+        let mut result: ParsedMetrics = HashMap::new();
         for raw_metric in raw_metrics {
             if raw_metric.timestamp > report.bench_started_at {
                 let metrics = prometheus_parse::Scrape::parse(
@@ -54,18 +54,19 @@ impl ShotoverMetrics {
                         sample.labels
                     );
 
-                    parsed_metrics.entry(key).or_default().push(sample.value);
+                    result.entry(key).or_default().push(sample.value);
                 }
             }
         }
-        parsed_metrics
+        result
     }
+
     pub fn windsock_metrics(parsed_metrics: ParsedMetrics) -> Vec<Metric> {
-        let mut new_metrics = vec![];
+        let mut result = vec![];
         for (name, value) in parsed_metrics {
             match value[0] {
                 Value::Gauge(_) => {
-                    new_metrics.push(Metric::EachSecond {
+                    result.push(Metric::EachSecond {
                         name,
                         values: value
                             .iter()
@@ -80,7 +81,7 @@ impl ShotoverMetrics {
                 }
                 Value::Counter(_) => {
                     let mut prev = 0.0;
-                    new_metrics.push(Metric::EachSecond {
+                    result.push(Metric::EachSecond {
                         name,
                         values: value
                             .iter()
@@ -102,23 +103,20 @@ impl ShotoverMetrics {
                     };
                     let values = summary
                         .iter()
-                        .map(|x| {
-                            (
-                                x.count,
-                                format!("{} - {:.4}ms", x.quantile, x.count * 1000.0),
-                                Goal::SmallerIsBetter,
-                            )
+                        .map(|x| LatencyPercentile {
+                            value: x.count,
+                            value_display: format!("{:.4}ms", x.count * 1000.0),
+                            quantile: x.quantile.to_string(),
                         })
                         .collect();
-                    // TODO: add a Metric::QuantileLatency and use instead
-                    new_metrics.push(Metric::EachSecond { name, values });
+                    result.push(Metric::LatencyPercentiles { name, values });
                 }
                 _ => {
                     tracing::warn!("Unused shotover metric: {name}")
                 }
             }
         }
-        new_metrics.sort_by_key(|x| {
+        result.sort_by_key(|x| {
             let name = x.name();
             // move latency metrics to the top
             if name.starts_with("chain_latency") || name.starts_with("transform_latency") {
@@ -134,7 +132,7 @@ impl ShotoverMetrics {
                 name.to_owned()
             }
         });
-        new_metrics
+        result
     }
 
     async fn collect_metrics(
@@ -166,7 +164,7 @@ impl ShotoverMetrics {
 
     pub fn insert_results_to_bench_archive(self) {
         std::mem::drop(self.shutdown_tx);
-        // TODO: asyncify it all or something
+        // TODO: make this function + caller async, lets do this in a follow up PR to avoid making this PR even more complex.
         futures::executor::block_on(async { self.task.await.unwrap() })
     }
 }
