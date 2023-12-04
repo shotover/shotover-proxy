@@ -246,11 +246,11 @@ impl Bench for KafkaBench {
             }
         }
 
-        let mut profiler =
-            CloudProfilerRunner::new(self.name(), profiling, profiler_instances).await;
-
         let kafka_ip = kafka_instance1.instance.private_ip().to_string();
         let shotover_ip = shotover_instance.instance.private_ip().to_string();
+
+        let mut profiler =
+            CloudProfilerRunner::new(self.name(), profiling, profiler_instances, &kafka_ip).await;
 
         let kafka_instances = vec![
             kafka_instance1.clone(),

@@ -530,13 +530,13 @@ fn base(reports: &[ReportColumn], table_type: &str) {
                         .iter()
                         .find(|metric| metric.identifier() == metric_identifier)
                         .map(|metric| match metric {
-                            Metric::EachSecond { .. } => unreachable!(),
                             Metric::Total {
                                 compare,
                                 value,
                                 goal,
                                 ..
                             } => (*compare, value.to_owned(), *goal),
+                            _ => unreachable!(),
                         })
                 }));
             }
@@ -561,10 +561,48 @@ fn base(reports: &[ReportColumn], table_type: &str) {
                             .iter()
                             .find(|x| x.identifier() == metric_identifier)
                             .and_then(|metric| match metric {
-                                Metric::Total { .. } => unreachable!(),
                                 Metric::EachSecond { values, .. } => values.get(i).cloned(),
+                                _ => unreachable!(),
                             })
                     }));
+                }
+            }
+            MetricIdentifier::LatencyPercentiles { name } => {
+                rows.push(Row::Heading(format!("{name} Percentiles")));
+                for (i, largest_col) in reports
+                    .iter()
+                    .map(|x| {
+                        x.current
+                            .metrics
+                            .iter()
+                            .find(|x| x.identifier() == metric_identifier)
+                            .map(|metric| match metric {
+                                Metric::LatencyPercentiles { values, .. } => values.clone(),
+                                _ => unreachable!(),
+                            })
+                            .unwrap_or(vec![])
+                    })
+                    .max_by_key(|x| x.len())
+                    .unwrap()
+                    .into_iter()
+                    .enumerate()
+                {
+                    rows.push(Row::measurements(
+                        reports,
+                        &largest_col.quantile,
+                        |report| {
+                            report
+                                .metrics
+                                .iter()
+                                .find(|x| x.identifier() == metric_identifier)
+                                .and_then(|metric| match metric {
+                                    Metric::LatencyPercentiles { values, .. } => {
+                                        values.get(i).map(|x| x.to_measurement())
+                                    }
+                                    _ => unreachable!(),
+                                })
+                        },
+                    ));
                 }
             }
         }
@@ -783,6 +821,7 @@ struct Measurement {
 pub enum Goal {
     BiggerIsBetter,
     SmallerIsBetter,
+    None,
 }
 
 enum Color {

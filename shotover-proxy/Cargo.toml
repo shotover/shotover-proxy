@@ -11,6 +11,8 @@ license = "Apache-2.0"
 shotover = { path = "../shotover" }
 
 [dev-dependencies]
+prometheus-parse = "0.2.4"
+reqwest.workspace = true
 scylla.workspace = true
 anyhow.workspace = true
 tokio.workspace = true

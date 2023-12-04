@@ -158,15 +158,47 @@ pub enum Metric {
         name: String,
         values: Vec<(f64, String, Goal)>,
     },
+    LatencyPercentiles {
+        name: String,
+        values: Vec<LatencyPercentile>,
+    },
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct LatencyPercentile {
+    pub quantile: String,
+    pub value: f64,
+    pub value_display: String,
+}
+
+impl LatencyPercentile {
+    pub(crate) fn to_measurement(&self) -> (f64, String, Goal) {
+        (
+            self.value,
+            self.value_display.clone(),
+            Goal::SmallerIsBetter,
+        )
+    }
 }
 
 impl Metric {
+    pub fn name(&self) -> &str {
+        match self {
+            Metric::Total { name, .. } => name,
+            Metric::EachSecond { name, .. } => name,
+            Metric::LatencyPercentiles { name, .. } => name,
+        }
+    }
+
     pub(crate) fn identifier(&self) -> MetricIdentifier {
         match self {
             Metric::Total { name, .. } => MetricIdentifier::Total {
                 name: name.to_owned(),
             },
             Metric::EachSecond { name, .. } => MetricIdentifier::EachSecond {
+                name: name.to_owned(),
+            },
+            Metric::LatencyPercentiles { name, .. } => MetricIdentifier::LatencyPercentiles {
                 name: name.to_owned(),
             },
         }
@@ -177,6 +209,7 @@ impl Metric {
         match self {
             Metric::Total { .. } => 1,
             Metric::EachSecond { values, .. } => values.len(),
+            Metric::LatencyPercentiles { values, .. } => values.len(),
         }
     }
 }
@@ -185,6 +218,7 @@ impl Metric {
 pub enum MetricIdentifier {
     Total { name: String },
     EachSecond { name: String },
+    LatencyPercentiles { name: String },
 }
 
 fn error_message_insertion(messages: &mut Vec<String>, new_message: String) {
