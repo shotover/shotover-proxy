@@ -232,16 +232,17 @@ impl Bench for KafkaBench {
             [("bencher".to_owned(), &bench_instance.instance)].into();
 
         // only profile instances that we are actually using for this bench
+        if let Shotover::ForcedMessageParsed | Shotover::Standard = self.shotover {
+            profiler_instances.insert("shotover".to_owned(), &shotover_instance.instance);
+        }
         match self.topology {
             KafkaTopology::Single | KafkaTopology::Cluster1 => {
                 profiler_instances.insert("kafka".to_owned(), &kafka_instance1.instance);
-                profiler_instances.insert("shotover".to_owned(), &shotover_instance.instance);
             }
             KafkaTopology::Cluster3 => {
                 profiler_instances.insert("kafka1".to_owned(), &kafka_instance1.instance);
                 profiler_instances.insert("kafka2".to_owned(), &kafka_instance2.instance);
                 profiler_instances.insert("kafka3".to_owned(), &kafka_instance3.instance);
-                profiler_instances.insert("shotover".to_owned(), &shotover_instance.instance);
             }
         }
 
