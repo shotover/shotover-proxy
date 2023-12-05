@@ -31,8 +31,17 @@ pub enum GetReplicaErr {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub enum ReplicationStrategy {
+    SimpleStrategy,
+    NetworkTopologyStrategy,
+    LocalStrategy,
+    Unknown,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct KeyspaceMetadata {
     pub replication_factor: usize,
+    pub replication_strategy: ReplicationStrategy,
 }
 
 // Values in the builder are shared between transform instances that come from the same transform in the topology.yaml
@@ -70,8 +79,12 @@ pub struct NodePool {
 }
 
 impl NodePool {
-    pub fn nodes(&mut self) -> &mut [CassandraNode] {
+    pub fn nodes_mut(&mut self) -> &mut [CassandraNode] {
         &mut self.nodes
+    }
+
+    pub fn nodes(&self) -> &[CassandraNode] {
+        &self.nodes
     }
 
     /// if the node list has been updated use the new list, copying over any existing connections
@@ -90,6 +103,11 @@ impl NodePool {
         }
         self.nodes = new_nodes;
         self.token_map = TokenMap::new(self.nodes.as_slice());
+        tracing::debug!(
+            "nodes updated, nodes={:#?}\ntokens={:#?}",
+            self.nodes,
+            self.token_map
+        );
     }
 
     pub fn report_issue_with_node(&mut self, address: SocketAddr) {
@@ -201,10 +219,7 @@ impl NodePool {
 
         let replica_host_ids = self
             .token_map
-            .iter_replica_nodes_capped(
-                Murmur3Token::generate(&routing_key),
-                keyspace.replication_factor,
-            )
+            .iter_replica_nodes(self.nodes(), Murmur3Token::generate(&routing_key), keyspace)
             .collect::<Vec<uuid::Uuid>>();
 
         let mut nodes: Vec<&mut CassandraNode> = self
@@ -227,9 +242,16 @@ impl NodePool {
             // An execute message is being delivered outside of CassandraSinkCluster's designated rack. The only cases this can occur is when:
             // The client correctly routes to the shotover node that reports it has the token in its rack, however the destination cassandra node has since gone down and is now inaccessible.
             // or
+            // ReplicationStrategy::SimpleStrategy is used with a replication factor > 1
+            // or
             // The clients token aware routing is broken.
+            #[cfg(debug_assertions)]
+            tracing::warn!("No suitable nodes to route to found within rack. This error only occurs in debug builds as it should never occur in an ideal integration test situation.");
             self.out_of_rack_requests.increment(1);
         }
+        tracing::debug!(
+            "Shotover with designated rack {rack:?} found replica nodes {replica_host_ids:?}"
+        );
 
         Ok(nodes)
     }

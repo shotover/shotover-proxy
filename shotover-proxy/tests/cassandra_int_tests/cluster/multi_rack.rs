@@ -162,30 +162,35 @@ pub async fn test(connection: &CassandraConnection) {
     assert_eq!(out_of_rack_request, "0");
 }
 
-pub async fn test_topology_task(ca_path: Option<&str>) {
+pub async fn test_topology_task(
+    ca_path: Option<&str>,
+    expected_nodes: Vec<SocketAddr>,
+    expected_racks: Vec<&'static str>,
+    token_count: usize,
+) {
     let nodes = run_topology_task(ca_path, None).await;
 
-    assert_eq!(nodes.len(), 3);
-    let mut possible_addresses: Vec<SocketAddr> = vec![
-        "172.16.1.2:9042".parse().unwrap(),
-        "172.16.1.3:9042".parse().unwrap(),
-        "172.16.1.4:9042".parse().unwrap(),
-    ];
-    let mut possible_racks: Vec<&str> = vec!["rack1", "rack2", "rack3"];
+    assert_eq!(nodes.len(), expected_nodes.len());
+    let mut possible_addresses = expected_nodes;
+    let mut possible_racks = expected_racks;
     for node in &nodes {
         let address_index = possible_addresses
             .iter()
             .position(|x| *x == node.address)
-            .expect("Node did not contain a unique expected address");
+            .unwrap_or_else(|| {
+                panic!("Node did not contain a unique expected address. nodes: {nodes:#?}")
+            });
         possible_addresses.remove(address_index);
 
         let rack_index = possible_racks
             .iter()
             .position(|x| *x == node.rack)
-            .expect("Node did not contain a unique expected rack");
+            .unwrap_or_else(|| {
+                panic!("Node did not contain a unique expected rack. nodes: {nodes:#?}")
+            });
         possible_racks.remove(rack_index);
 
-        assert_eq!(node.tokens.len(), 128);
+        assert_eq!(node.tokens.len(), token_count);
         assert!(node.is_up);
     }
 }

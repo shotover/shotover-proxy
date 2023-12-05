@@ -3,6 +3,8 @@ use cassandra_protocol::token::Murmur3Token;
 use std::collections::BTreeMap;
 use uuid::Uuid;
 
+use super::node_pool::{KeyspaceMetadata, ReplicationStrategy};
+
 #[derive(Debug, Clone)]
 pub struct TokenMap {
     token_ring: BTreeMap<Murmur3Token, Uuid>,
@@ -18,16 +20,40 @@ impl TokenMap {
         }
     }
 
-    /// Returns nodes starting at given token and going in the direction of replicas.
-    pub fn iter_replica_nodes_capped(
-        &self,
-        token: Murmur3Token,
-        replica_count: usize,
+    /// Walk the token ring to figure out which nodes are acting as replicas for the given query.
+    /// The way we do this depends on the replication strategy used:
+    /// * ReplicationStrategy::SimpleStrategy - Each cassandra node has many tokens assigned to it to form the token ring.
+    ///     Take the hashed key (token) and walk along the token ring starting at the token in the ring after the token from our key.
+    ///     Return the nodes belonging to the first replication_factor number of tokens encountered.
+    /// * ReplicationStrategy::NetworkTopologyStrategy - The same as the simple strategy but also:
+    ///     When we walk the token ring we need to skip tokens belonging to nodes in a rack we have already encountered in this walk.
+    ///
+    /// For more info: https://docs.datastax.com/en/cassandra-oss/3.0/cassandra/architecture/archDataDistributeReplication.html
+    pub fn iter_replica_nodes<'a>(
+        &'a self,
+        nodes: &'a [CassandraNode],
+        token_from_key: Murmur3Token,
+        keyspace: &'a KeyspaceMetadata,
     ) -> impl Iterator<Item = Uuid> + '_ {
+        let mut racks_used = vec![];
         self.token_ring
-            .range(token..)
+            .range(token_from_key..)
             .chain(self.token_ring.iter())
-            .take(replica_count)
+            .filter(move |(_, host_id)| {
+                if let ReplicationStrategy::NetworkTopologyStrategy = keyspace.replication_strategy
+                {
+                    let rack = &nodes.iter().find(|x| x.host_id == **host_id).unwrap().rack;
+                    if racks_used.contains(&rack) {
+                        false
+                    } else {
+                        racks_used.push(rack);
+                        true
+                    }
+                } else {
+                    true
+                }
+            })
+            .take(keyspace.replication_factor)
             .map(|(_, node)| *node)
     }
 }
@@ -98,7 +124,33 @@ mod test_token_map {
     fn verify_tokens(node_host_ids: &[Uuid], token: Murmur3Token) {
         let token_map = TokenMap::new(prepare_nodes().as_slice());
         let nodes = token_map
-            .iter_replica_nodes_capped(token, node_host_ids.len())
+            .iter_replica_nodes(
+                &[
+                    CassandraNode::new(
+                        "127.0.0.1:9042".parse().unwrap(),
+                        "rack1".to_owned(),
+                        vec![],
+                        NODE_1,
+                    ),
+                    CassandraNode::new(
+                        "127.0.0.2:9042".parse().unwrap(),
+                        "rack1".to_owned(),
+                        vec![],
+                        NODE_2,
+                    ),
+                    CassandraNode::new(
+                        "127.0.0.3:9042".parse().unwrap(),
+                        "rack1".to_owned(),
+                        vec![],
+                        NODE_3,
+                    ),
+                ],
+                token,
+                &KeyspaceMetadata {
+                    replication_factor: node_host_ids.len(),
+                    replication_strategy: ReplicationStrategy::SimpleStrategy,
+                },
+            )
             .collect_vec();
 
         assert_eq!(nodes, node_host_ids);
