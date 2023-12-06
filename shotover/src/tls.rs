@@ -2,10 +2,14 @@
 
 use crate::tcp;
 use anyhow::{anyhow, bail, Context, Error, Result};
-use rustls::client::{InvalidDnsNameError, ServerCertVerified, ServerCertVerifier, WebPkiVerifier};
-use rustls::server::{AllowAnyAuthenticatedClient, NoClientAuth};
-use rustls::{Certificate, CertificateError, PrivateKey, RootCertStore, ServerName};
-use rustls_pemfile::{certs, Item};
+use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
+use rustls::client::WebPkiServerVerifier;
+use rustls::server::WebPkiClientVerifier;
+use rustls::{
+    CertificateError, ClientConfig, DigitallySignedStruct, RootCertStore, SignatureScheme,
+};
+use rustls_pemfile::Item;
+use rustls_pki_types::{CertificateDer, InvalidDnsNameError, PrivateKeyDer, ServerName, UnixTime};
 use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::{BufReader, ErrorKind};
@@ -43,32 +47,30 @@ pub enum AcceptError {
 
 fn load_ca(path: &str) -> Result<RootCertStore> {
     let mut pem = BufReader::new(File::open(path)?);
-    let certs = rustls_pemfile::certs(&mut pem).context("Error while parsing PEM")?;
-
     let mut root_cert_store = RootCertStore::empty();
-    for cert in certs {
+    for cert in rustls_pemfile::certs(&mut pem) {
         root_cert_store
-            .add(&Certificate(cert))
+            .add(cert.context("Error while parsing PEM")?)
             .context("Failed to add cert to cert store")?;
     }
     Ok(root_cert_store)
 }
 
-fn load_certs(path: &str) -> Result<Vec<Certificate>> {
-    certs(&mut BufReader::new(File::open(path)?))
+fn load_certs(path: &str) -> Result<Vec<CertificateDer<'static>>> {
+    rustls_pemfile::certs(&mut BufReader::new(File::open(path)?))
+        .collect::<Result<Vec<_>, _>>()
         .context("Error while parsing PEM")
-        .map(|certs| certs.into_iter().map(Certificate).collect())
 }
 
-fn load_private_key(path: &str) -> Result<PrivateKey> {
-    let keys = rustls_pemfile::read_all(&mut BufReader::new(File::open(path)?))
-        .context("Error while parsing PEM")?;
-    keys.into_iter()
-        .find_map(|item| match item {
-            Item::RSAKey(x) | Item::PKCS8Key(x) => Some(PrivateKey(x)),
-            _ => None,
-        })
-        .ok_or_else(|| anyhow!("No suitable keys found in PEM"))
+fn load_private_key(path: &str) -> Result<PrivateKeyDer<'static>> {
+    for key in rustls_pemfile::read_all(&mut BufReader::new(File::open(path)?)) {
+        match key.context("Error while parsing PEM")? {
+            Item::Pkcs8Key(x) => return Ok(x.into()),
+            Item::Pkcs1Key(x) => return Ok(x.into()),
+            _ => {}
+        }
+    }
+    Err(anyhow!("No suitable keys found in PEM"))
 }
 
 impl TlsAcceptor {
@@ -85,9 +87,11 @@ impl TlsAcceptor {
                 let root_cert_store = load_ca(path).with_context(|| {
                     format!("Failed to read file {path} configured at 'certificate_authority_path'")
                 })?;
-                AllowAnyAuthenticatedClient::new(root_cert_store).boxed()
+                WebPkiClientVerifier::builder(root_cert_store.into())
+                    .build()
+                    .unwrap()
             } else {
-                NoClientAuth::boxed()
+                WebPkiClientVerifier::no_client_auth()
             };
 
         let private_key = load_private_key(&tls_config.private_key_path).with_context(|| {
@@ -104,7 +108,6 @@ impl TlsAcceptor {
         })?;
 
         let config = rustls::ServerConfig::builder()
-            .with_safe_defaults()
             .with_client_cert_verifier(client_cert_verifier)
             .with_single_cert(certs, private_key)?;
 
@@ -174,12 +177,13 @@ impl TlsConnector {
             })
             .transpose()?;
 
-        let config_builder = rustls::ClientConfig::builder().with_safe_defaults();
+        let config_builder = ClientConfig::builder();
         let config = match (private_key, certs, tls_config.verify_hostname) {
             (Some(private_key), Some(certs), true) => config_builder
                 .with_root_certificates(root_cert_store)
                 .with_client_auth_cert(certs, private_key)?,
             (Some(private_key), Some(certs), false) => config_builder
+                .dangerous()
                 .with_custom_certificate_verifier(Arc::new(SkipVerifyHostName::new(
                     root_cert_store,
                 )))
@@ -188,6 +192,7 @@ impl TlsConnector {
                 .with_root_certificates(root_cert_store)
                 .with_no_client_auth(),
             (None, None, false) => config_builder
+                .dangerous()
                 .with_custom_certificate_verifier(Arc::new(SkipVerifyHostName::new(
                     root_cert_store,
                 )))
@@ -220,14 +225,17 @@ impl TlsConnector {
     }
 }
 
+#[derive(Debug)]
 pub struct SkipVerifyHostName {
-    verifier: WebPkiVerifier,
+    verifier: Arc<WebPkiServerVerifier>,
 }
 
 impl SkipVerifyHostName {
     pub fn new(roots: RootCertStore) -> Self {
         SkipVerifyHostName {
-            verifier: WebPkiVerifier::new(roots, None),
+            verifier: WebPkiServerVerifier::builder(Arc::new(roots))
+                .build()
+                .unwrap(),
         }
     }
 }
@@ -239,18 +247,16 @@ impl SkipVerifyHostName {
 impl ServerCertVerifier for SkipVerifyHostName {
     fn verify_server_cert(
         &self,
-        end_entity: &Certificate,
-        intermediates: &[Certificate],
-        server_name: &ServerName,
-        scts: &mut dyn Iterator<Item = &[u8]>,
+        end_entity: &CertificateDer<'_>,
+        intermediates: &[CertificateDer<'_>],
+        server_name: &ServerName<'_>,
         ocsp_response: &[u8],
-        now: std::time::SystemTime,
-    ) -> std::result::Result<rustls::client::ServerCertVerified, rustls::Error> {
+        now: UnixTime,
+    ) -> std::result::Result<ServerCertVerified, rustls::Error> {
         match self.verifier.verify_server_cert(
             end_entity,
             intermediates,
             server_name,
-            scts,
             ocsp_response,
             now,
         ) {
@@ -260,6 +266,28 @@ impl ServerCertVerifier for SkipVerifyHostName {
             }
             Err(err) => Err(err),
         }
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, rustls::Error> {
+        self.verifier.verify_tls12_signature(message, cert, dss)
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, rustls::Error> {
+        self.verifier.verify_tls13_signature(message, cert, dss)
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
+        self.verifier.supported_verify_schemes()
     }
 }
 
@@ -275,7 +303,7 @@ impl AsyncStream for TcpStream {}
 /// Allows retrieving the hostname from any ToSocketAddrs type
 pub trait ToHostname {
     fn to_hostname(&self) -> String;
-    fn to_servername(&self) -> Result<ServerName, InvalidDnsNameError>;
+    fn to_servername(&self) -> Result<ServerName<'static>, InvalidDnsNameError>;
 }
 
 /// Implement for all reference types
@@ -283,7 +311,7 @@ impl<T: ToHostname + ?Sized> ToHostname for &T {
     fn to_hostname(&self) -> String {
         (**self).to_hostname()
     }
-    fn to_servername(&self) -> Result<ServerName, InvalidDnsNameError> {
+    fn to_servername(&self) -> Result<ServerName<'static>, InvalidDnsNameError> {
         (**self).to_servername()
     }
 }
@@ -292,8 +320,8 @@ impl ToHostname for String {
     fn to_hostname(&self) -> String {
         self.split(':').next().unwrap_or("").to_owned()
     }
-    fn to_servername(&self) -> Result<ServerName, InvalidDnsNameError> {
-        ServerName::try_from(self.to_hostname().as_str())
+    fn to_servername(&self) -> Result<ServerName<'static>, InvalidDnsNameError> {
+        ServerName::try_from(self.to_hostname())
     }
 }
 
@@ -301,8 +329,8 @@ impl ToHostname for &str {
     fn to_hostname(&self) -> String {
         self.split(':').next().unwrap_or("").to_owned()
     }
-    fn to_servername(&self) -> Result<ServerName, InvalidDnsNameError> {
-        ServerName::try_from(self.split(':').next().unwrap_or(""))
+    fn to_servername(&self) -> Result<ServerName<'static>, InvalidDnsNameError> {
+        ServerName::try_from(self.split(':').next().unwrap_or("").to_owned())
     }
 }
 
@@ -310,8 +338,8 @@ impl ToHostname for (&str, u16) {
     fn to_hostname(&self) -> String {
         self.0.to_string()
     }
-    fn to_servername(&self) -> Result<ServerName, InvalidDnsNameError> {
-        ServerName::try_from(self.0)
+    fn to_servername(&self) -> Result<ServerName<'static>, InvalidDnsNameError> {
+        ServerName::try_from(self.0.to_owned())
     }
 }
 
@@ -319,8 +347,8 @@ impl ToHostname for (String, u16) {
     fn to_hostname(&self) -> String {
         self.0.to_string()
     }
-    fn to_servername(&self) -> Result<ServerName, InvalidDnsNameError> {
-        ServerName::try_from(self.0.as_str())
+    fn to_servername(&self) -> Result<ServerName<'static>, InvalidDnsNameError> {
+        ServerName::try_from(self.0.clone())
     }
 }
 
@@ -328,8 +356,8 @@ impl ToHostname for (IpAddr, u16) {
     fn to_hostname(&self) -> String {
         self.0.to_string()
     }
-    fn to_servername(&self) -> Result<ServerName, InvalidDnsNameError> {
-        Ok(ServerName::IpAddress(self.0))
+    fn to_servername(&self) -> Result<ServerName<'static>, InvalidDnsNameError> {
+        Ok(ServerName::IpAddress(self.0.into()))
     }
 }
 
@@ -337,8 +365,8 @@ impl ToHostname for (Ipv4Addr, u16) {
     fn to_hostname(&self) -> String {
         self.0.to_string()
     }
-    fn to_servername(&self) -> Result<ServerName, InvalidDnsNameError> {
-        Ok(ServerName::IpAddress(IpAddr::V4(self.0)))
+    fn to_servername(&self) -> Result<ServerName<'static>, InvalidDnsNameError> {
+        Ok(ServerName::IpAddress(IpAddr::V4(self.0).into()))
     }
 }
 
@@ -346,8 +374,8 @@ impl ToHostname for (Ipv6Addr, u16) {
     fn to_hostname(&self) -> String {
         self.0.to_string()
     }
-    fn to_servername(&self) -> Result<ServerName, InvalidDnsNameError> {
-        Ok(ServerName::IpAddress(IpAddr::V6(self.0)))
+    fn to_servername(&self) -> Result<ServerName<'static>, InvalidDnsNameError> {
+        Ok(ServerName::IpAddress(IpAddr::V6(self.0).into()))
     }
 }
 
@@ -355,7 +383,7 @@ impl ToHostname for SocketAddr {
     fn to_hostname(&self) -> String {
         self.ip().to_string()
     }
-    fn to_servername(&self) -> Result<ServerName, InvalidDnsNameError> {
-        Ok(ServerName::IpAddress(self.ip()))
+    fn to_servername(&self) -> Result<ServerName<'static>, InvalidDnsNameError> {
+        Ok(ServerName::IpAddress(self.ip().into()))
     }
 }
