@@ -606,7 +606,7 @@ mod test_system_keyspaces {
             ),
         ];
 
-        let result = system_keyspaces::build_keyspace(row, "dc1").unwrap();
+        let result = system_keyspaces::build_keyspace(row, "datacenter1").unwrap();
         assert_eq!(
             result,
             (
@@ -631,7 +631,7 @@ mod test_system_keyspaces {
                         ),
                     ),
                     (
-                        GenericValue::Varchar("dc1".into()),
+                        GenericValue::Varchar("datacenter1".into()),
                         GenericValue::Varchar("3".into()),
                     ),
                 ]
@@ -640,7 +640,7 @@ mod test_system_keyspaces {
             ),
         ];
 
-        let result = system_keyspaces::build_keyspace(row, "dc1").unwrap();
+        let result = system_keyspaces::build_keyspace(row, "datacenter1").unwrap();
 
         assert_eq!(
             result,

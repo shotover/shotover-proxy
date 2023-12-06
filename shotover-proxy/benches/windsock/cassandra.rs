@@ -409,7 +409,7 @@ impl CassandraBench {
                     read_timeout: None,
                     shotover_nodes: vec![ShotoverNode {
                         address: host_address.parse().unwrap(),
-                        data_center: "dc1".to_owned(),
+                        data_center: "datacenter1".to_owned(),
                         rack: "rack1".to_owned(),
                         host_id: "2dd022d6-2937-4754-89d6-02d2933a8f7a".parse().unwrap(),
                     }],
@@ -749,7 +749,7 @@ async fn run_aws_cassandra_cluster(nodes: Vec<AwsNodeInfo>) {
                             "CASSANDRA_CLUSTER_NAME".to_owned(),
                             "TestCluster".to_owned(),
                         ),
-                        ("CASSANDRA_DC".to_owned(), "dc1".to_owned()),
+                        ("CASSANDRA_DC".to_owned(), "datacenter1".to_owned()),
                         ("CASSANDRA_RACK".to_owned(), "rack1".to_owned()),
                         ("CASSANDRA_SEEDS".to_owned(), seeds),
                         ("CASSANDRA_INITIAL_TOKENS".to_owned(), node.tokens),

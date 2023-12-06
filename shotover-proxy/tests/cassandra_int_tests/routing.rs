@@ -189,7 +189,7 @@ mod composite_key {
         "CREATE TABLE IF NOT EXISTS test_routing_ks.my_test_table_composite (key int, name text, age int, blah text, PRIMARY KEY((key, name), age));";
         run_query(connection, create_table_cql).await;
 
-        let create_keyspace = "CREATE KEYSPACE stresscql2small WITH replication = {'class': 'NetworkTopologyStrategy', 'dc1': 3};";
+        let create_keyspace = "CREATE KEYSPACE stresscql2small WITH replication = {'class': 'NetworkTopologyStrategy', 'datacenter1': 3};";
         let create_table =
         "CREATE TABLE stresscql2small.typestest (name text, choice boolean, address inet, PRIMARY KEY((name,choice), address)) WITH compaction = { 'class':'LeveledCompactionStrategy' } AND comment='A table of many types to test wide rows'";
         run_query(connection, create_keyspace).await;

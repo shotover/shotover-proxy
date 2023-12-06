@@ -9,7 +9,7 @@ async fn test_rewrite_system_peers(connection: &CassandraConnection) {
     let star_results = [
         // peer is non-determistic because we dont know which node this will be
         ResultValue::Any,
-        ResultValue::Varchar("dc1".into()),
+        ResultValue::Varchar("datacenter1".into()),
         // host_id is non-determistic because we dont know which node this will be
         ResultValue::Any,
         ResultValue::Null,
@@ -54,7 +54,7 @@ async fn test_rewrite_system_peers_v2(connection: &CassandraConnection) {
         // peer is non-determistic because we dont know which node this will be
         ResultValue::Any,
         ResultValue::Int(7000),
-        ResultValue::Varchar("dc1".into()),
+        ResultValue::Varchar("datacenter1".into()),
         // host_id is non-determistic because we dont know which node this will be
         ResultValue::Any,
         // native_address is non-determistic because we dont know which node this will be
@@ -105,7 +105,7 @@ async fn test_rewrite_system_local(connection: &CassandraConnection) {
         ResultValue::Int(7000),
         ResultValue::Varchar("TestCluster".into()),
         ResultValue::Varchar("3.4.5".into()),
-        ResultValue::Varchar("dc1".into()),
+        ResultValue::Varchar("datacenter1".into()),
         // gossip_generation is non deterministic cant assert on it
         ResultValue::Any,
         // host_id is non-deterministic because we dont know which shotover node this will be
