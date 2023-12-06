@@ -429,9 +429,9 @@ async fn peers_rewrite_v4(#[case] driver: CassandraDriver) {
             &normal_connection,
             "SELECT data_center, native_port, rack FROM system.peers_v2;",
             &[&[
-                ResultValue::Varchar("Mars".into()),
+                ResultValue::Varchar("datacenter1".into()),
                 ResultValue::Int(9042),
-                ResultValue::Varchar("West".into()),
+                ResultValue::Varchar("rack1".into()),
             ]],
         )
         .await;
@@ -455,9 +455,9 @@ async fn peers_rewrite_v4(#[case] driver: CassandraDriver) {
             &rewrite_port_connection,
             "SELECT data_center, native_port, rack FROM system.peers_v2;",
             &[&[
-                ResultValue::Varchar("Mars".into()),
+                ResultValue::Varchar("datacenter1".into()),
                 ResultValue::Int(9044),
-                ResultValue::Varchar("West".into()),
+                ResultValue::Varchar("rack1".into()),
             ]],
         )
         .await;

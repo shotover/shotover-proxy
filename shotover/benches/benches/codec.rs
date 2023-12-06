@@ -216,7 +216,7 @@ fn peers_v2_result() -> CassandraResult {
             GenericValue::Integer(7000, IntSize::I32),
             GenericValue::Varchar("TestCluster".into()),
             GenericValue::Varchar("3.4.5".into()),
-            GenericValue::Varchar("dc1".into()),
+            GenericValue::Varchar("datacenter1".into()),
             GenericValue::Integer(1662429909, IntSize::I32),
             GenericValue::Uuid("2dd022d6-2937-4754-89d6-02d2933a8f7a".parse().unwrap()),
             GenericValue::Inet("127.0.0.1".parse().unwrap()),
