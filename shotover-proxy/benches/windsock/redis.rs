@@ -378,6 +378,8 @@ impl Bench for RedisBench {
     }
 }
 
+// TODO: when fred updates its rustls version recopy these functions from shotover/src/tls.rs
+
 fn load_certs(path: &str) -> Vec<Certificate> {
     load_certs_inner(path)
         .with_context(|| format!("Failed to read certs at {path:?}"))
