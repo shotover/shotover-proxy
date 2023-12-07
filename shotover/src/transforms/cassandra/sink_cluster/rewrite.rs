@@ -111,7 +111,7 @@ impl MessageRewriter {
 
                     // This is purely an optimization: To avoid opening these connections sequentially later on, we open them concurrently now.
                     try_join_all(
-                        pool.nodes()
+                        pool.nodes_mut()
                             .iter_mut()
                             .filter(|x| destination_nodes.contains(&x.host_id))
                             .map(|node| node.get_connection(connection_factory)),

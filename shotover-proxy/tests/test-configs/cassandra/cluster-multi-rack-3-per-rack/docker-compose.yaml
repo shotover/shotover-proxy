@@ -1,0 +1,103 @@
+version: "3.3"
+networks:
+  cluster_subnet:
+    name: cluster_subnet
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.16.1.0/24
+          gateway: 172.16.1.1
+
+services:
+  cassandra1_1:
+    image: &image library/cassandra:4.0.6
+    networks:
+      cluster_subnet:
+        ipv4_address: 172.16.1.2
+    environment: &environment
+      CASSANDRA_SEEDS: "cassandra1_1,cassandra1_2,cassandra1_3,cassandra2_1,cassandra2_2,cassandra2_3,cassandra3_1,cassandra3_2,cassandra3_3"
+      CASSANDRA_CLUSTER_NAME: TestCluster
+      CASSANDRA_RACK: rack1
+      CASSANDRA_DC: datacenter1
+      CASSANDRA_ENDPOINT_SNITCH: GossipingPropertyFileSnitch
+      MAX_HEAP_SIZE: "400M"
+      MIN_HEAP_SIZE: "400M"
+      HEAP_NEWSIZE: "48M"
+    volumes: &volumes
+      - type: tmpfs
+        target: /var/lib/cassandra
+  cassandra1_2:
+    image: *image
+    networks:
+      cluster_subnet:
+        ipv4_address: 172.16.1.3
+    environment:
+      <<: *environment
+      CASSANDRA_RACK: rack1
+    volumes: *volumes
+  cassandra1_3:
+    image: *image
+    networks:
+      cluster_subnet:
+        ipv4_address: 172.16.1.4
+    environment:
+      <<: *environment
+      CASSANDRA_RACK: rack1
+    volumes: *volumes
+
+  cassandra2_1:
+    image: *image
+    networks:
+      cluster_subnet:
+        ipv4_address: 172.16.1.5
+    environment:
+      <<: *environment
+      CASSANDRA_RACK: rack2
+    volumes: *volumes
+  cassandra2_2:
+    image: *image
+    networks:
+      cluster_subnet:
+        ipv4_address: 172.16.1.6
+    environment:
+      <<: *environment
+      CASSANDRA_RACK: rack2
+    volumes: *volumes
+  cassandra2_3:
+    image: *image
+    networks:
+      cluster_subnet:
+        ipv4_address: 172.16.1.7
+    environment:
+      <<: *environment
+      CASSANDRA_RACK: rack2
+    volumes: *volumes
+
+  cassandra3_1:
+    image: *image
+    networks:
+      cluster_subnet:
+        ipv4_address: 172.16.1.8
+    environment:
+      <<: *environment
+      CASSANDRA_RACK: rack3
+    volumes: *volumes
+  cassandra3_2:
+    image: *image
+    networks:
+      cluster_subnet:
+        ipv4_address: 172.16.1.9
+    environment:
+      <<: *environment
+      CASSANDRA_RACK: rack3
+    volumes: *volumes
+  cassandra3_3:
+    image: *image
+    networks:
+      cluster_subnet:
+        ipv4_address: 172.16.1.10
+    environment:
+      <<: *environment
+      CASSANDRA_RACK: rack3
+    volumes: *volumes

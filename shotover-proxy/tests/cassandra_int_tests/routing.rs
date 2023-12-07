@@ -174,7 +174,9 @@ mod compound_key {
 
 mod composite_key {
     use rand::{distributions::Alphanumeric, Rng};
-    use test_helpers::connection::cassandra::{run_query, CassandraConnection, ResultValue};
+    use test_helpers::connection::cassandra::{
+        run_query, CassandraConnection, Consistency, ResultValue,
+    };
 
     pub async fn test(shotover: &CassandraConnection, cassandra: &CassandraConnection) {
         simple_test(shotover, cassandra).await;
@@ -345,6 +347,7 @@ mod composite_key {
                     ResultValue::Varchar(name.clone()),
                     ResultValue::Boolean(true),
                 ],
+                Consistency::All,
             )
             .await
             .unwrap();
@@ -356,6 +359,7 @@ mod composite_key {
                     ResultValue::Varchar(name.clone()),
                     ResultValue::Boolean(true),
                 ],
+                Consistency::All,
             )
             .await
             .unwrap();
@@ -364,6 +368,7 @@ mod composite_key {
             .execute_prepared(
                 &simple1,
                 &[ResultValue::Varchar(name), ResultValue::Boolean(true)],
+                Consistency::All,
             )
             .await
             .unwrap();
