@@ -81,14 +81,10 @@ strum_macros = "0.25"
 chacha20poly1305 = { version = "0.10.0", features = ["std"] }
 generic-array = { version = "0.14", features = ["serde"] }
 kafka-protocol = "0.7.0"
-# dangerous_configuration is used to implement equivalent functionality to openssl `verify_hostname(false)`
-#
-# verify_hostname(false) like functionality can be useful when you're forced to use a particular domain name and it's impractical to generate a fresh certificate with that domain name
-# e.g. we generate a huge pool of certificates up front (to handle bursts given the Let's Encrypt rate limiting),
-# and later assign them to clusters, so the certificates have a fixed set of domains baked in.
-rustls = { version = "0.21.0", features = ["dangerous_configuration"] }
-tokio-rustls = "0.24"
-rustls-pemfile = "1.0.2"
+rustls = { version = "0.22.0" }
+tokio-rustls = "0.25"
+rustls-pemfile = "2.0.0"
+rustls-pki-types = "1.0.1"
 string = "0.3.0"
 xxhash-rust = { version = "0.8.6", features = ["xxh3"] }
 dashmap = "5.4.0"

@@ -235,6 +235,8 @@ async fn fetch_current_nodes(
 }
 
 mod system_keyspaces {
+    use crate::transforms::cassandra::sink_cluster::node_pool::ReplicationStrategy;
+
     use super::*;
     use std::str::FromStr;
 
@@ -308,7 +310,10 @@ mod system_keyspaces {
                         anyhow!("Could not parse replication factor as an integer",)
                     })?;
 
-                    KeyspaceMetadata { replication_factor }
+                    KeyspaceMetadata {
+                        replication_factor,
+                        replication_strategy: ReplicationStrategy::SimpleStrategy,
+                    }
                 }
                 "org.apache.cassandra.locator.NetworkTopologyStrategy"
                 | "NetworkTopologyStrategy" => {
@@ -330,17 +335,20 @@ mod system_keyspaces {
 
                     KeyspaceMetadata {
                         replication_factor: data_center_rf,
+                        replication_strategy: ReplicationStrategy::NetworkTopologyStrategy,
                     }
                 }
                 "org.apache.cassandra.locator.LocalStrategy" | "LocalStrategy" => {
                     KeyspaceMetadata {
                         replication_factor: 1,
+                        replication_strategy: ReplicationStrategy::LocalStrategy,
                     }
                 }
                 _ => {
                     tracing::warn!("Unrecognised replication strategy: {strategy_name:?}");
                     KeyspaceMetadata {
                         replication_factor: 1,
+                        replication_strategy: ReplicationStrategy::Unknown,
                     }
                 }
             }
@@ -584,6 +592,8 @@ mod system_peers {
 
 #[cfg(test)]
 mod test_system_keyspaces {
+    use crate::transforms::cassandra::sink_cluster::node_pool::ReplicationStrategy;
+
     use super::*;
 
     #[test]
@@ -606,13 +616,14 @@ mod test_system_keyspaces {
             ),
         ];
 
-        let result = system_keyspaces::build_keyspace(row, "dc1").unwrap();
+        let result = system_keyspaces::build_keyspace(row, "datacenter1").unwrap();
         assert_eq!(
             result,
             (
                 "test".into(),
                 KeyspaceMetadata {
-                    replication_factor: 2
+                    replication_factor: 2,
+                    replication_strategy: ReplicationStrategy::SimpleStrategy,
                 }
             )
         )
@@ -631,7 +642,7 @@ mod test_system_keyspaces {
                         ),
                     ),
                     (
-                        GenericValue::Varchar("dc1".into()),
+                        GenericValue::Varchar("datacenter1".into()),
                         GenericValue::Varchar("3".into()),
                     ),
                 ]
@@ -640,14 +651,15 @@ mod test_system_keyspaces {
             ),
         ];
 
-        let result = system_keyspaces::build_keyspace(row, "dc1").unwrap();
+        let result = system_keyspaces::build_keyspace(row, "datacenter1").unwrap();
 
         assert_eq!(
             result,
             (
                 "test".into(),
                 KeyspaceMetadata {
-                    replication_factor: 3
+                    replication_factor: 3,
+                    replication_strategy: ReplicationStrategy::NetworkTopologyStrategy,
                 }
             )
         )

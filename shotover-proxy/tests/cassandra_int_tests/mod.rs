@@ -8,6 +8,7 @@ use futures::future::join_all;
 use futures::Future;
 use rstest::rstest;
 use rstest_reuse::{self, *};
+use std::net::SocketAddr;
 #[cfg(feature = "cassandra-cpp-driver-tests")]
 use test_helpers::connection::cassandra::CassandraDriver::Datastax;
 use test_helpers::connection::cassandra::Compression;
@@ -53,8 +54,28 @@ where
     native_types::test(&connection).await;
     collections::test(&connection, driver).await;
     functions::test(&connection).await;
-    prepared_statements_simple::test(&connection, connection_creator).await;
-    prepared_statements_all::test(&connection).await;
+    prepared_statements_simple::test(&connection, connection_creator, 1).await;
+    prepared_statements_all::test(&connection, 1).await;
+    batch_statements::test(&connection).await;
+    timestamp::test(&connection).await;
+}
+
+async fn standard_test_suite_rf3<Fut>(connection_creator: impl Fn() -> Fut, driver: CassandraDriver)
+where
+    Fut: Future<Output = CassandraConnection>,
+{
+    // reuse a single connection a bunch to save time recreating connections
+    let connection = connection_creator().await;
+
+    keyspace::test(&connection).await;
+    table::test(&connection).await;
+    udt::test(&connection).await;
+    native_types::test(&connection).await;
+    collections::test(&connection, driver).await;
+    prepared_statements_simple::test(&connection, &connection_creator, 1).await;
+    prepared_statements_simple::test(&connection, &connection_creator, 3).await;
+    prepared_statements_all::test(&connection, 1).await;
+    prepared_statements_all::test(&connection, 3).await;
     batch_statements::test(&connection).await;
     timestamp::test(&connection).await;
 }
@@ -234,7 +255,7 @@ async fn cluster_single_rack_v4(#[case] driver: CassandraDriver) {
 #[cfg_attr(feature = "cassandra-cpp-driver-tests", case::datastax(Datastax))]
 #[case::scylla(Scylla)]
 #[tokio::test(flavor = "multi_thread")]
-async fn cluster_multi_rack(#[case] driver: CassandraDriver) {
+async fn cluster_multi_rack_1_per_rack(#[case] driver: CassandraDriver) {
     let _compose =
         docker_compose("tests/test-configs/cassandra/cluster-multi-rack/docker-compose.yaml");
 
@@ -275,7 +296,73 @@ async fn cluster_multi_rack(#[case] driver: CassandraDriver) {
         shotover_rack3.shutdown_and_then_consume_events(&[]).await;
     }
 
-    cluster::multi_rack::test_topology_task(None).await;
+    let expected_nodes: Vec<(SocketAddr, &'static str)> = vec![
+        ("172.16.1.2:9042".parse().unwrap(), "rack1"),
+        ("172.16.1.3:9042".parse().unwrap(), "rack2"),
+        ("172.16.1.4:9042".parse().unwrap(), "rack3"),
+    ];
+    cluster::multi_rack::test_topology_task(None, expected_nodes, 128).await;
+}
+
+// This is very slow, only test with one driver
+#[rstest]
+#[case::scylla(Scylla)]
+#[tokio::test(flavor = "multi_thread")]
+async fn cluster_multi_rack_3_per_rack(#[case] driver: CassandraDriver) {
+    let _compose = docker_compose(
+        "tests/test-configs/cassandra/cluster-multi-rack-3-per-rack/docker-compose.yaml",
+    );
+
+    {
+        let shotover_rack1 = shotover_process(
+            "tests/test-configs/cassandra/cluster-multi-rack-3-per-rack/topology_rack1.yaml",
+        )
+        .with_log_name("Rack1")
+        .with_observability_port(9001)
+        .start()
+        .await;
+        let shotover_rack2 = shotover_process(
+            "tests/test-configs/cassandra/cluster-multi-rack-3-per-rack/topology_rack2.yaml",
+        )
+        .with_log_name("Rack2")
+        .with_observability_port(9002)
+        .start()
+        .await;
+        let shotover_rack3 = shotover_process(
+            "tests/test-configs/cassandra/cluster-multi-rack-3-per-rack/topology_rack3.yaml",
+        )
+        .with_log_name("Rack3")
+        .with_observability_port(9003)
+        .start()
+        .await;
+
+        let connection = || async {
+            let mut connection = CassandraConnectionBuilder::new("127.0.0.1", 9042, driver)
+                .build()
+                .await;
+            connection
+                .enable_schema_awaiter("172.16.1.2:9042", None)
+                .await;
+            connection
+        };
+        standard_test_suite_rf3(&connection, driver).await;
+
+        shotover_rack1.shutdown_and_then_consume_events(&[]).await;
+        shotover_rack2.shutdown_and_then_consume_events(&[]).await;
+        shotover_rack3.shutdown_and_then_consume_events(&[]).await;
+    }
+    let expected_nodes: Vec<(SocketAddr, &'static str)> = vec![
+        ("172.16.1.2:9042".parse().unwrap(), "rack1"),
+        ("172.16.1.3:9042".parse().unwrap(), "rack1"),
+        ("172.16.1.4:9042".parse().unwrap(), "rack1"),
+        ("172.16.1.5:9042".parse().unwrap(), "rack2"),
+        ("172.16.1.6:9042".parse().unwrap(), "rack2"),
+        ("172.16.1.7:9042".parse().unwrap(), "rack2"),
+        ("172.16.1.8:9042".parse().unwrap(), "rack3"),
+        ("172.16.1.9:9042".parse().unwrap(), "rack3"),
+        ("172.16.1.10:9042".parse().unwrap(), "rack3"),
+    ];
+    cluster::multi_rack::test_topology_task(None, expected_nodes, 16).await;
 }
 
 #[rstest]
@@ -344,7 +431,7 @@ async fn cassandra_redis_cache(#[case] driver: CassandraDriver) {
     udt::test(&connection).await;
     functions::test(&connection).await;
     // collections::test // TODO: for some reason this test case fails here
-    prepared_statements_simple::test(&connection, connection_creator).await;
+    prepared_statements_simple::test(&connection, connection_creator, 1).await;
     batch_statements::test(&connection).await;
     cache::test(&connection, &mut redis_connection).await;
 
@@ -429,9 +516,9 @@ async fn peers_rewrite_v4(#[case] driver: CassandraDriver) {
             &normal_connection,
             "SELECT data_center, native_port, rack FROM system.peers_v2;",
             &[&[
-                ResultValue::Varchar("Mars".into()),
+                ResultValue::Varchar("datacenter1".into()),
                 ResultValue::Int(9042),
-                ResultValue::Varchar("West".into()),
+                ResultValue::Varchar("rack1".into()),
             ]],
         )
         .await;
@@ -455,9 +542,9 @@ async fn peers_rewrite_v4(#[case] driver: CassandraDriver) {
             &rewrite_port_connection,
             "SELECT data_center, native_port, rack FROM system.peers_v2;",
             &[&[
-                ResultValue::Varchar("Mars".into()),
+                ResultValue::Varchar("datacenter1".into()),
                 ResultValue::Int(9044),
-                ResultValue::Varchar("West".into()),
+                ResultValue::Varchar("rack1".into()),
             ]],
         )
         .await;

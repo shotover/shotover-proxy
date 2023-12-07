@@ -1,5 +1,5 @@
 use test_helpers::connection::cassandra::{
-    assert_query_result, run_query, CassandraConnection, ResultValue,
+    assert_query_result, run_query, CassandraConnection, Consistency, ResultValue,
 };
 
 fn values() -> Vec<ResultValue> {
@@ -22,7 +22,7 @@ fn values() -> Vec<ResultValue> {
     ]
 }
 
-async fn insert(connection: &CassandraConnection) {
+async fn insert(connection: &CassandraConnection, replication_factor: u32) {
     #[cfg(feature = "cassandra-cpp-driver-tests")]
     let datastax = matches!(connection, CassandraConnection::Datastax { .. });
     #[cfg(not(feature = "cassandra-cpp-driver-tests"))]
@@ -31,7 +31,7 @@ async fn insert(connection: &CassandraConnection) {
     if datastax {
         // workaround cassandra-cpp not yet supporting binding decimal values
         let prepared = connection
-                .prepare("INSERT INTO test_prepare_statements_all.test (id, v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13) VALUES (?, ?, ?, ?, ?, 1.0, ?, ?, ?, ?, ?, ?, ?, ?, ?);")
+                .prepare(&format!("INSERT INTO test_prepare_statements_all{replication_factor}.test (id, v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13) VALUES (?, ?, ?, ?, ?, 1.0, ?, ?, ?, ?, ?, ?, ?, ?, ?);"))
                 .await;
 
         assert_eq!(
@@ -54,28 +54,31 @@ async fn insert(connection: &CassandraConnection) {
                         ResultValue::Time(5),
                         ResultValue::SmallInt(1),
                         ResultValue::TinyInt(2),
-                    ]
+                    ],
+                    Consistency::All,
                 )
                 .await,
             Ok(Vec::<Vec<_>>::new())
         );
     } else {
         let prepared = connection
-                .prepare("INSERT INTO test_prepare_statements_all.test (id, v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);")
+                .prepare(&format!("INSERT INTO test_prepare_statements_all{replication_factor}.test (id, v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);"))
                 .await;
         assert_eq!(
-            connection.execute_prepared(&prepared, &values()).await,
+            connection
+                .execute_prepared(&prepared, &values(), Consistency::All,)
+                .await,
             Ok(Vec::<Vec<_>>::new())
         );
     }
 }
 
-async fn select(connection: &CassandraConnection) {
+async fn select(connection: &CassandraConnection, replication_factor: u32) {
     if let CassandraConnection::CdrsTokio { .. } = connection {
         // workaround cdrs-tokio having broken encoding for bytes
         assert_query_result(
             connection,
-            "SELECT id, v0, v1, v3, v5, v6, v7, v8, v9, v10, v11, v12, v13 FROM test_prepare_statements_all.test WHERE id = 1",
+            &format!("SELECT id, v0, v1, v3, v5, v6, v7, v8, v9, v10, v11, v12, v13 FROM test_prepare_statements_all{replication_factor}.test WHERE id = 1"),
             &[&[
                 ResultValue::Int(1),
                 ResultValue::Ascii("foo".to_owned()),
@@ -98,21 +101,24 @@ async fn select(connection: &CassandraConnection) {
     } else {
         assert_query_result(
             connection,
-            "SELECT id, v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13 FROM test_prepare_statements_all.test WHERE id = 1",
+            &format!("SELECT id, v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13 FROM test_prepare_statements_all{replication_factor}.test WHERE id = 1"),
             &[&values()],
         )
         .await;
     }
 }
 
-pub async fn test(connection: &CassandraConnection) {
-    run_query(connection, "CREATE KEYSPACE test_prepare_statements_all WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };").await;
+async fn setup(connection: &CassandraConnection, replication_factor: u32) {
+    run_query(connection, &format!("CREATE KEYSPACE test_prepare_statements_all{replication_factor} WITH REPLICATION = {{ 'class' : 'NetworkTopologyStrategy', 'datacenter1' : {replication_factor} }};")).await;
     run_query(
         connection,
-        "CREATE TABLE test_prepare_statements_all.test (id int PRIMARY KEY, v0 ascii, v1 bigint, v2 blob, v3 boolean, v4 decimal, v5 double, v6 float, v7 timestamp, v8 uuid, v9 inet, v10 date, v11 time, v12 smallint, v13 tinyint);",
+        &format!("CREATE TABLE test_prepare_statements_all{replication_factor}.test (id int PRIMARY KEY, v0 ascii, v1 bigint, v2 blob, v3 boolean, v4 decimal, v5 double, v6 float, v7 timestamp, v8 uuid, v9 inet, v10 date, v11 time, v12 smallint, v13 tinyint);"),
     )
     .await;
+}
 
-    insert(connection).await;
-    select(connection).await;
+pub async fn test(connection: &CassandraConnection, replication_factor: u32) {
+    setup(connection, replication_factor).await;
+    insert(connection, replication_factor).await;
+    select(connection, replication_factor).await;
 }

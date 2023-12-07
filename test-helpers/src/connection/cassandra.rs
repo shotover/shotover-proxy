@@ -1,8 +1,8 @@
 use bytes::BufMut;
 #[cfg(feature = "cassandra-cpp-driver-tests")]
 use cassandra_cpp::{
-    BatchType, CassErrorCode, CassResult, Cluster, Error, ErrorKind,
-    PreparedStatement as PreparedStatementCpp, Session as DatastaxSession, Ssl,
+    BatchType, CassErrorCode, CassResult, Cluster, Consistency as DatastaxConsistency, Error,
+    ErrorKind, PreparedStatement as PreparedStatementCpp, Session as DatastaxSession, Ssl,
     Statement as StatementCpp, Value, ValueType,
 };
 use cassandra_protocol::frame::message_error::ErrorType;
@@ -18,6 +18,7 @@ use cdrs_tokio::{
     authenticators::StaticPasswordAuthenticatorProvider,
     cluster::session::{Session as CdrsTokioSession, SessionBuilder, TcpSessionBuilder},
     cluster::{NodeAddress, NodeTcpConfigBuilder, TcpConnectionManager},
+    consistency::Consistency as CdrsConsistency,
     frame::{
         message_response::ResponseBody, message_result::ResResultBody, Envelope, Serialize, Version,
     },
@@ -30,7 +31,7 @@ use openssl::ssl::{SslContext, SslMethod};
 use ordered_float::OrderedFloat;
 use scylla::batch::Batch as ScyllaBatch;
 use scylla::frame::response::result::CqlValue;
-use scylla::frame::types::Consistency;
+use scylla::frame::types::Consistency as ScyllaConsistency;
 use scylla::frame::value::Value as ScyllaValue;
 use scylla::prepared_statement::PreparedStatement as PreparedStatementScylla;
 use scylla::statement::query::Query as ScyllaQuery;
@@ -161,6 +162,11 @@ pub enum ProtocolVersion {
     V3,
     V4,
     V5,
+}
+
+pub enum Consistency {
+    One,
+    All,
 }
 
 pub enum Tls {
@@ -315,7 +321,7 @@ impl CassandraConnection {
                     }))
                     .default_execution_profile_handle(
                         ExecutionProfile::builder()
-                            .consistency(Consistency::One)
+                            .consistency(ScyllaConsistency::One)
                             .build()
                             .into_handle(),
                     );
@@ -591,10 +597,11 @@ impl CassandraConnection {
         &self,
         prepared_query: &PreparedQuery,
         values: &[ResultValue],
+        consistency: Consistency,
     ) -> Result<Vec<Vec<ResultValue>>, ErrorBody> {
         tokio::time::timeout(
             Duration::from_secs(10),
-            self.execute_prepared_inner(prepared_query, values),
+            self.execute_prepared_inner(prepared_query, values, consistency),
         )
         .await
         .expect("Attempted to execute a CQL prepared query but timed out after 10s")
@@ -604,6 +611,7 @@ impl CassandraConnection {
         &self,
         prepared_query: &PreparedQuery,
         values: &[ResultValue],
+        consistency: Consistency,
     ) -> Result<Vec<Vec<ResultValue>>, ErrorBody> {
         match self {
             #[cfg(feature = "cassandra-cpp-driver-tests")]
@@ -614,11 +622,21 @@ impl CassandraConnection {
                 }
 
                 statement.set_tracing(true).unwrap();
+                statement
+                    .set_consistency(match consistency {
+                        Consistency::All => DatastaxConsistency::ALL,
+                        Consistency::One => DatastaxConsistency::ONE,
+                    })
+                    .unwrap();
                 Self::process_datastax_response(statement.execute().await)
             }
             Self::CdrsTokio { session, .. } => {
                 let statement = prepared_query.as_cdrs();
-                let query_params = Self::bind_values_cdrs(values);
+                let mut query_params = Self::bind_values_cdrs(values);
+                query_params.consistency = match consistency {
+                    Consistency::All => CdrsConsistency::All,
+                    Consistency::One => CdrsConsistency::One,
+                };
 
                 let params = StatementParams {
                     query_params,
@@ -636,10 +654,15 @@ impl CassandraConnection {
                 Self::process_cdrs_response(session.exec_with_params(statement, &params).await)
             }
             Self::Scylla { session, .. } => {
-                let statement = prepared_query.as_scylla();
+                // clone to avoid changing default consistency
+                let mut statement = prepared_query.as_scylla().clone();
+                statement.set_consistency(match consistency {
+                    Consistency::All => ScyllaConsistency::All,
+                    Consistency::One => ScyllaConsistency::One,
+                });
                 let values = Self::build_values_scylla(values);
 
-                Self::process_scylla_response(session.execute(statement, values).await)
+                Self::process_scylla_response(session.execute(&statement, values).await)
             }
         }
     }
@@ -821,7 +844,7 @@ impl CassandraConnection {
                     DbError::Overloaded => ErrorType::Overloaded,
                     DbError::ServerError => ErrorType::Server,
                     DbError::Invalid => ErrorType::Invalid,
-                    code => todo!("Implement handling for cassandra_cpp err: {code:?}"),
+                    code => todo!("Implement handling for scylla err: {code:?}"),
                 },
                 message,
             }),

@@ -9,7 +9,7 @@ async fn test_rewrite_system_peers(connection: &CassandraConnection) {
     let star_results = [
         // peer is non-determistic because we dont know which node this will be
         ResultValue::Any,
-        ResultValue::Varchar("dc1".into()),
+        ResultValue::Varchar("datacenter1".into()),
         // host_id is non-determistic because we dont know which node this will be
         ResultValue::Any,
         ResultValue::Null,
@@ -54,7 +54,7 @@ async fn test_rewrite_system_peers_v2(connection: &CassandraConnection) {
         // peer is non-determistic because we dont know which node this will be
         ResultValue::Any,
         ResultValue::Int(7000),
-        ResultValue::Varchar("dc1".into()),
+        ResultValue::Varchar("datacenter1".into()),
         // host_id is non-determistic because we dont know which node this will be
         ResultValue::Any,
         // native_address is non-determistic because we dont know which node this will be
@@ -105,7 +105,7 @@ async fn test_rewrite_system_local(connection: &CassandraConnection) {
         ResultValue::Int(7000),
         ResultValue::Varchar("TestCluster".into()),
         ResultValue::Varchar("3.4.5".into()),
-        ResultValue::Varchar("dc1".into()),
+        ResultValue::Varchar("datacenter1".into()),
         // gossip_generation is non deterministic cant assert on it
         ResultValue::Any,
         // host_id is non-deterministic because we dont know which shotover node this will be
@@ -162,30 +162,24 @@ pub async fn test(connection: &CassandraConnection) {
     assert_eq!(out_of_rack_request, "0");
 }
 
-pub async fn test_topology_task(ca_path: Option<&str>) {
+pub async fn test_topology_task(
+    ca_path: Option<&str>,
+    mut expected_nodes: Vec<(SocketAddr, &'static str)>,
+    token_count: usize,
+) {
     let nodes = run_topology_task(ca_path, None).await;
 
-    assert_eq!(nodes.len(), 3);
-    let mut possible_addresses: Vec<SocketAddr> = vec![
-        "172.16.1.2:9042".parse().unwrap(),
-        "172.16.1.3:9042".parse().unwrap(),
-        "172.16.1.4:9042".parse().unwrap(),
-    ];
-    let mut possible_racks: Vec<&str> = vec!["rack1", "rack2", "rack3"];
+    assert_eq!(nodes.len(), expected_nodes.len());
     for node in &nodes {
-        let address_index = possible_addresses
+        let address_index = expected_nodes
             .iter()
-            .position(|x| *x == node.address)
-            .expect("Node did not contain a unique expected address");
-        possible_addresses.remove(address_index);
+            .position(|(address, rack)| *address == node.address && *rack == node.rack)
+            .unwrap_or_else(|| {
+                panic!("An expected node was missing from the list of actual nodes. Expected nodes:{expected_nodes:#?}\nactual nodes:{nodes:#?}")
+            });
+        expected_nodes.remove(address_index);
 
-        let rack_index = possible_racks
-            .iter()
-            .position(|x| *x == node.rack)
-            .expect("Node did not contain a unique expected rack");
-        possible_racks.remove(rack_index);
-
-        assert_eq!(node.tokens.len(), 128);
+        assert_eq!(node.tokens.len(), token_count);
         assert!(node.is_up);
     }
 }

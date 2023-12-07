@@ -174,7 +174,9 @@ mod compound_key {
 
 mod composite_key {
     use rand::{distributions::Alphanumeric, Rng};
-    use test_helpers::connection::cassandra::{run_query, CassandraConnection, ResultValue};
+    use test_helpers::connection::cassandra::{
+        run_query, CassandraConnection, Consistency, ResultValue,
+    };
 
     pub async fn test(shotover: &CassandraConnection, cassandra: &CassandraConnection) {
         simple_test(shotover, cassandra).await;
@@ -189,7 +191,7 @@ mod composite_key {
         "CREATE TABLE IF NOT EXISTS test_routing_ks.my_test_table_composite (key int, name text, age int, blah text, PRIMARY KEY((key, name), age));";
         run_query(connection, create_table_cql).await;
 
-        let create_keyspace = "CREATE KEYSPACE stresscql2small WITH replication = {'class': 'NetworkTopologyStrategy', 'dc1': 3};";
+        let create_keyspace = "CREATE KEYSPACE stresscql2small WITH replication = {'class': 'NetworkTopologyStrategy', 'datacenter1': 3};";
         let create_table =
         "CREATE TABLE stresscql2small.typestest (name text, choice boolean, address inet, PRIMARY KEY((name,choice), address)) WITH compaction = { 'class':'LeveledCompactionStrategy' } AND comment='A table of many types to test wide rows'";
         run_query(connection, create_keyspace).await;
@@ -345,6 +347,7 @@ mod composite_key {
                     ResultValue::Varchar(name.clone()),
                     ResultValue::Boolean(true),
                 ],
+                Consistency::All,
             )
             .await
             .unwrap();
@@ -356,6 +359,7 @@ mod composite_key {
                     ResultValue::Varchar(name.clone()),
                     ResultValue::Boolean(true),
                 ],
+                Consistency::All,
             )
             .await
             .unwrap();
@@ -364,6 +368,7 @@ mod composite_key {
             .execute_prepared(
                 &simple1,
                 &[ResultValue::Varchar(name), ResultValue::Boolean(true)],
+                Consistency::All,
             )
             .await
             .unwrap();

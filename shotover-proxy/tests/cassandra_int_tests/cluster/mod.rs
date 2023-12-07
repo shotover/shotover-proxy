@@ -36,7 +36,12 @@ pub async fn run_topology_task(ca_path: Option<&str>, port: Option<u32>) -> Vec<
         connection_factory.push_handshake_message(message);
     }
 
-    create_topology_task(nodes_tx, keyspaces_tx, task_handshake_rx, "dc1".to_string());
+    create_topology_task(
+        nodes_tx,
+        keyspaces_tx,
+        task_handshake_rx,
+        "datacenter1".to_string(),
+    );
 
     // Give the handshake task a hardcoded handshake.
     // Normally the handshake is the handshake that the client gave shotover.

@@ -4,7 +4,7 @@ mod test_token_aware_router {
     use super::super::routing_key::calculate_routing_key;
     use crate::transforms::cassandra::sink_cluster::node::CassandraNode;
     use crate::transforms::cassandra::sink_cluster::node_pool::{
-        NodePoolBuilder, PreparedMetadata,
+        NodePoolBuilder, PreparedMetadata, ReplicationStrategy,
     };
     use crate::transforms::cassandra::sink_cluster::{KeyspaceChanRx, KeyspaceChanTx};
     use cassandra_protocol::consistency::Consistency::One;
@@ -36,6 +36,7 @@ mod test_token_aware_router {
 
         let keyspace_metadata = KeyspaceMetadata {
             replication_factor: 3,
+            replication_strategy: ReplicationStrategy::SimpleStrategy,
         };
 
         let (keyspaces_tx, mut keyspaces_rx): (KeyspaceChanTx, KeyspaceChanRx) =

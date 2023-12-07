@@ -5,7 +5,7 @@ use test_helpers::connection::cassandra::{assert_query_result, CassandraConnecti
 async fn test_rewrite_system_peers_dummy_peers(connection: &CassandraConnection) {
     let star_results1 = [
         ResultValue::Inet("127.0.0.1".parse().unwrap()),
-        ResultValue::Varchar("dc1".into()),
+        ResultValue::Varchar("datacenter1".into()),
         ResultValue::Uuid("3c3c4e2d-ba74-4f76-b52e-fb5bcee6a9f4".parse().unwrap()),
         ResultValue::Null,
         ResultValue::Varchar("rack1".into()),
@@ -20,7 +20,7 @@ async fn test_rewrite_system_peers_dummy_peers(connection: &CassandraConnection)
     ];
     let star_results2 = [
         ResultValue::Inet("127.0.0.1".parse().unwrap()),
-        ResultValue::Varchar("dc1".into()),
+        ResultValue::Varchar("datacenter1".into()),
         ResultValue::Uuid("fa74d7ec-1223-472b-97de-04a32ccdb70b".parse().unwrap()),
         ResultValue::Null,
         ResultValue::Varchar("rack1".into()),
@@ -65,7 +65,7 @@ async fn test_rewrite_system_local(connection: &CassandraConnection) {
         ResultValue::Inet("127.0.0.1".parse().unwrap()),
         ResultValue::Varchar("TestCluster".into()),
         ResultValue::Varchar("3.4.4".into()),
-        ResultValue::Varchar("dc1".into()),
+        ResultValue::Varchar("datacenter1".into()),
         // gossip_generation is non deterministic cant assert on it
         ResultValue::Any,
         ResultValue::Uuid("2dd022d6-2937-4754-89d6-02d2933a8f7a".parse().unwrap()),

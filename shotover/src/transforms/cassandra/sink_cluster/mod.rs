@@ -378,7 +378,7 @@ impl CassandraSinkCluster {
                     .ok_or_else(|| anyhow!("ran out of nodes to send prepare messages to"))?;
                 match self
                     .pool
-                    .nodes()
+                    .nodes_mut()
                     .iter_mut()
                     .find(|node| node.host_id == next_host_id)
                     .ok_or_else(|| anyhow!("node {next_host_id} has dissapeared"))?
@@ -516,7 +516,7 @@ impl CassandraSinkCluster {
             // If any errors occurred close the connection as we can no
             // longer make any guarantees about the current state of the connection
             if !is_use_statement_successful(response) {
-                self.pool.nodes()[node_index].outbound = None;
+                self.pool.nodes_mut()[node_index].outbound = None;
             }
         }
 
