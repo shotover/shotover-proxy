@@ -164,31 +164,20 @@ pub async fn test(connection: &CassandraConnection) {
 
 pub async fn test_topology_task(
     ca_path: Option<&str>,
-    expected_nodes: Vec<SocketAddr>,
-    expected_racks: Vec<&'static str>,
+    mut expected_nodes: Vec<(SocketAddr, &'static str)>,
     token_count: usize,
 ) {
     let nodes = run_topology_task(ca_path, None).await;
 
     assert_eq!(nodes.len(), expected_nodes.len());
-    let mut possible_addresses = expected_nodes;
-    let mut possible_racks = expected_racks;
     for node in &nodes {
-        let address_index = possible_addresses
+        let address_index = expected_nodes
             .iter()
-            .position(|x| *x == node.address)
+            .position(|(address, rack)| *address == node.address && *rack == node.rack)
             .unwrap_or_else(|| {
-                panic!("Node did not contain a unique expected address. nodes: {nodes:#?}")
+                panic!("An expected node was missing from the list of actual nodes. Expected nodes:{expected_nodes:#?}\nactual nodes:{nodes:#?}")
             });
-        possible_addresses.remove(address_index);
-
-        let rack_index = possible_racks
-            .iter()
-            .position(|x| *x == node.rack)
-            .unwrap_or_else(|| {
-                panic!("Node did not contain a unique expected rack. nodes: {nodes:#?}")
-            });
-        possible_racks.remove(rack_index);
+        expected_nodes.remove(address_index);
 
         assert_eq!(node.tokens.len(), token_count);
         assert!(node.is_up);

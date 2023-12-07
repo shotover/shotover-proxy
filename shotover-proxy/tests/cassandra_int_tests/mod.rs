@@ -296,13 +296,12 @@ async fn cluster_multi_rack_1_per_rack(#[case] driver: CassandraDriver) {
         shotover_rack3.shutdown_and_then_consume_events(&[]).await;
     }
 
-    let expected_nodes: Vec<SocketAddr> = vec![
-        "172.16.1.2:9042".parse().unwrap(),
-        "172.16.1.3:9042".parse().unwrap(),
-        "172.16.1.4:9042".parse().unwrap(),
+    let expected_nodes: Vec<(SocketAddr, &'static str)> = vec![
+        ("172.16.1.2:9042".parse().unwrap(), "rack1"),
+        ("172.16.1.3:9042".parse().unwrap(), "rack2"),
+        ("172.16.1.4:9042".parse().unwrap(), "rack3"),
     ];
-    let expected_racks = vec!["rack1", "rack2", "rack3"];
-    cluster::multi_rack::test_topology_task(None, expected_nodes, expected_racks, 128).await;
+    cluster::multi_rack::test_topology_task(None, expected_nodes, 128).await;
 }
 
 // This is very slow, only test with one driver
@@ -352,21 +351,18 @@ async fn cluster_multi_rack_3_per_rack(#[case] driver: CassandraDriver) {
         shotover_rack2.shutdown_and_then_consume_events(&[]).await;
         shotover_rack3.shutdown_and_then_consume_events(&[]).await;
     }
-    let expected_nodes: Vec<SocketAddr> = vec![
-        "172.16.1.2:9042".parse().unwrap(),
-        "172.16.1.3:9042".parse().unwrap(),
-        "172.16.1.4:9042".parse().unwrap(),
-        "172.16.1.5:9042".parse().unwrap(),
-        "172.16.1.6:9042".parse().unwrap(),
-        "172.16.1.7:9042".parse().unwrap(),
-        "172.16.1.8:9042".parse().unwrap(),
-        "172.16.1.9:9042".parse().unwrap(),
-        "172.16.1.10:9042".parse().unwrap(),
+    let expected_nodes: Vec<(SocketAddr, &'static str)> = vec![
+        ("172.16.1.2:9042".parse().unwrap(), "rack1"),
+        ("172.16.1.3:9042".parse().unwrap(), "rack1"),
+        ("172.16.1.4:9042".parse().unwrap(), "rack1"),
+        ("172.16.1.5:9042".parse().unwrap(), "rack2"),
+        ("172.16.1.6:9042".parse().unwrap(), "rack2"),
+        ("172.16.1.7:9042".parse().unwrap(), "rack2"),
+        ("172.16.1.8:9042".parse().unwrap(), "rack3"),
+        ("172.16.1.9:9042".parse().unwrap(), "rack3"),
+        ("172.16.1.10:9042".parse().unwrap(), "rack3"),
     ];
-    let expected_racks = vec![
-        "rack1", "rack1", "rack1", "rack2", "rack2", "rack2", "rack3", "rack3", "rack3",
-    ];
-    cluster::multi_rack::test_topology_task(None, expected_nodes, expected_racks, 16).await;
+    cluster::multi_rack::test_topology_task(None, expected_nodes, 16).await;
 }
 
 #[rstest]
