@@ -13,6 +13,9 @@ sources:
               test_protect_keyspace:
                 test_table:
                   - col1
+              test_protect_keyspace_2:
+                test_table:
+                  - col1
         - CassandraSinkSingle:
             remote_address: "127.0.0.1:9043"
             connect_timeout_ms: 3000

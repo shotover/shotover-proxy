@@ -117,7 +117,10 @@ async fn insert_data(shotover_session: &CassandraConnection) {
     run_query(shotover_session, &insert_statement).await;
 }
 
-pub async fn test(shotover_session: &CassandraConnection, direct_session: &CassandraConnection) {
+pub async fn larger_test(
+    shotover_session: &CassandraConnection,
+    direct_session: &CassandraConnection,
+) {
     setup(shotover_session).await;
     insert_data(shotover_session).await;
 
@@ -142,4 +145,61 @@ pub async fn test(shotover_session: &CassandraConnection, direct_session: &Cassa
             panic!("expected 3rd column to be ResultValue::Blob in {row:?}");
         }
     }
+}
+
+async fn smaller_test(
+    shotover_session: &CassandraConnection,
+    direct_session: &CassandraConnection,
+) {
+    run_query(
+        shotover_session,
+        "CREATE KEYSPACE test_protect_keyspace_2 WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };"
+    ).await;
+
+    run_query(
+        shotover_session,
+        "CREATE TABLE test_protect_keyspace_2.test_table (pk varchar PRIMARY KEY, cluster varchar, col1 blob, col2 int, col3 boolean);"
+    ).await;
+
+    run_query(
+        shotover_session,
+        "INSERT INTO test_protect_keyspace_2.test_table (pk, cluster, col1, col2, col3) VALUES ('pk1', 'cluster', 'I am gonna get encrypted!!', 0, true);"
+    ).await;
+
+    assert_query_result(
+        shotover_session,
+        "SELECT pk, cluster, col1, col2, col3 FROM test_protect_keyspace_2.test_table WHERE pk = 'pk1'",
+        &[&[
+            ResultValue::Varchar("pk1".into()),
+            ResultValue::Varchar("cluster".into()),
+            ResultValue::Blob("I am gonna get encrypted!!".into()),
+            ResultValue::Int(0),
+            ResultValue::Boolean(true),
+        ]],
+    )
+    .await;
+
+    // assert that data is encrypted on cassandra side
+    let result = direct_session
+        .execute("SELECT pk, cluster, col1, col2, col3 FROM test_protect_keyspace_2.test_table WHERE pk = 'pk1'")
+        .await;
+    assert_eq!(result.len(), 1);
+    let row = &result[0];
+
+    assert_eq!(row.len(), 5);
+
+    // regular values are stored unencrypted
+    assert_eq!(row[1], ResultValue::Varchar("cluster".into()));
+
+    // protected values are stored encrypted
+    if let ResultValue::Blob(value) = &row[2] {
+        let _: Protected = bincode::deserialize(value).unwrap();
+    } else {
+        panic!("expected 3rd column to be ResultValue::Blob in {row:?}");
+    }
+}
+
+pub async fn test(shotover_session: &CassandraConnection, direct_session: &CassandraConnection) {
+    larger_test(shotover_session, direct_session).await;
+    smaller_test(shotover_session, direct_session).await;
 }
