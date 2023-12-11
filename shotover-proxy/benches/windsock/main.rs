@@ -46,10 +46,20 @@ fn main() {
             CassandraProtocol::V4,
             CassandraProtocol::V5
         ],
-        [CassandraDriver::Scylla, CassandraDriver::CdrsTokio]
+        [CassandraDriver::Scylla, CassandraDriver::CdrsTokio],
+        [1, 10, 100]
     )
     .filter_map(
-        |(cassandra, topology, shotover, compression, operation, protocol, driver)| {
+        |(
+            cassandra,
+            topology,
+            shotover,
+            compression,
+            operation,
+            protocol,
+            driver,
+            connection_count,
+        )| {
             if driver == CassandraDriver::Scylla && protocol != CassandraProtocol::V4 {
                 return None;
             }
@@ -68,6 +78,7 @@ fn main() {
                 operation,
                 protocol,
                 driver,
+                connection_count,
             )) as Box<dyn Bench>)
         },
     );
@@ -115,6 +126,7 @@ fn main() {
                 Operation::ReadI64,
                 CassandraProtocol::V4,
                 CassandraDriver::Scylla,
+                10,
             )) as Box<dyn Bench>,
             Box::new(CassandraBench::new(
                 CassandraDb::Mocked,
@@ -124,6 +136,7 @@ fn main() {
                 Operation::ReadI64,
                 CassandraProtocol::V4,
                 CassandraDriver::Scylla,
+                10,
             )),
         ]
         .into_iter()
