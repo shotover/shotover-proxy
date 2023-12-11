@@ -358,9 +358,11 @@ pub struct CassandraBench {
     operation: Operation,
     protocol: CassandraProtocol,
     driver: CassandraDriver,
+    connection_count: usize,
 }
 
 impl CassandraBench {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         db: CassandraDb,
         topology: CassandraTopology,
@@ -369,6 +371,7 @@ impl CassandraBench {
         operation: Operation,
         protocol: CassandraProtocol,
         driver: CassandraDriver,
+        connection_count: usize,
     ) -> Self {
         CassandraBench {
             db,
@@ -378,6 +381,7 @@ impl CassandraBench {
             operation,
             protocol,
             driver,
+            connection_count,
         }
     }
 
@@ -497,6 +501,10 @@ impl Bench for CassandraBench {
                     CassandraDriver::Scylla => "scylla".to_owned(),
                     CassandraDriver::CdrsTokio => "cdrs-tokio".to_owned(),
                 },
+            ),
+            (
+                "connection_count".to_owned(),
+                self.connection_count.to_string(),
             ),
         ]
         .into_iter()
@@ -674,6 +682,9 @@ impl Bench for CassandraBench {
                     // We do not need to refresh metadata as there is nothing else fiddling with the topology or schema.
                     // By default the metadata refreshes every 60s and that can cause performance issues so we disable it by using an absurdly high refresh interval
                     .cluster_metadata_refresh_interval(Duration::from_secs(10000000000))
+                    .pool_size(scylla::transport::session::PoolSize::PerShard(
+                        self.connection_count.try_into().unwrap(),
+                    ))
                     .compression(match self.compression {
                         Compression::None => None,
                         Compression::Lz4 => Some(ScyllaCompression::Lz4),
