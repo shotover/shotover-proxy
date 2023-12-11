@@ -322,17 +322,15 @@ async fn spawn_tasks_inner<T: BenchTask, I>(
         let task_count = operations_per_second.map(|x| x.min(500)).unwrap_or(500);
 
         let mut result_stream = stream
-            // unconstrained to workaround quadratic complexity of buffer_unordered()
-            .map(|_| {
-                tokio::task::unconstrained(async {
-                    let start = Instant::now();
-                    let result = task.run_one_operation().await;
-                    (result, start.elapsed())
-                })
+            .map(|_| async {
+                let start = Instant::now();
+                let task = task.clone();
+                let result = tokio::task::spawn(async move { task.run_one_operation().await })
+                    .await
+                    .unwrap();
+                (result, start.elapsed())
             })
             .buffer_unordered(task_count as usize);
-
-        // TODO: will this adjust to multiple tokio threads? what happens if I make each run_one_operation a task?
 
         while let Some((res, elapsed)) = result_stream.next().await {
             let report = match res {
