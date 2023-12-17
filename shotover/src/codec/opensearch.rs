@@ -7,20 +7,29 @@ use crate::message::{Encodable, Message, Messages};
 use anyhow::{anyhow, Result};
 use bytes::{Buf, BytesMut};
 use http::{header, HeaderName, HeaderValue, Method, Request, Response};
-use std::sync::{Arc, Mutex};
+use metrics::Histogram;
+use std::{
+    sync::{Arc, Mutex},
+    time::Instant,
+};
 use tokio_util::codec::{Decoder, Encoder};
 
 #[derive(Clone)]
 pub struct OpenSearchCodecBuilder {
     direction: Direction,
+    message_latency: Histogram,
 }
 
 impl CodecBuilder for OpenSearchCodecBuilder {
     type Decoder = OpenSearchDecoder;
     type Encoder = OpenSearchEncoder;
 
-    fn new(direction: Direction) -> Self {
-        Self { direction }
+    fn new(direction: Direction, destination_name: String) -> Self {
+        let message_latency = super::message_latency(direction, destination_name);
+        Self {
+            direction,
+            message_latency,
+        }
     }
 
     fn build(&self) -> (OpenSearchDecoder, OpenSearchEncoder) {
@@ -28,7 +37,11 @@ impl CodecBuilder for OpenSearchCodecBuilder {
 
         (
             OpenSearchDecoder::new(self.direction, last_outgoing_method.clone()),
-            OpenSearchEncoder::new(self.direction, last_outgoing_method),
+            OpenSearchEncoder::new(
+                self.direction,
+                last_outgoing_method,
+                self.message_latency.clone(),
+            ),
         )
     }
 
@@ -181,6 +194,7 @@ impl Decoder for OpenSearchDecoder {
             return Ok(None);
         }
 
+        let received_at = Instant::now();
         loop {
             match std::mem::replace(&mut self.state, State::ParsingResponse) {
                 State::ParsingResponse => {
@@ -204,9 +218,13 @@ impl Decoder for OpenSearchDecoder {
                 }
                 State::ReadingBody(http_headers, content_length) => {
                     if let Some(Method::HEAD) = *self.last_outgoing_method.lock().unwrap() {
-                        return Ok(Some(vec![Message::from_frame(Frame::OpenSearch(
-                            OpenSearchFrame::new(http_headers, bytes::Bytes::new()),
-                        ))]));
+                        return Ok(Some(vec![Message::from_frame(
+                            Frame::OpenSearch(OpenSearchFrame::new(
+                                http_headers,
+                                bytes::Bytes::new(),
+                            )),
+                            received_at,
+                        )]));
                     }
 
                     if src.len() < content_length {
@@ -215,9 +233,10 @@ impl Decoder for OpenSearchDecoder {
                     }
 
                     let body = src.split_to(content_length).freeze();
-                    return Ok(Some(vec![Message::from_frame(Frame::OpenSearch(
-                        OpenSearchFrame::new(http_headers, body),
-                    ))]));
+                    return Ok(Some(vec![Message::from_frame(
+                        Frame::OpenSearch(OpenSearchFrame::new(http_headers, body)),
+                        received_at,
+                    )]));
                 }
             }
         }
@@ -227,13 +246,19 @@ impl Decoder for OpenSearchDecoder {
 pub struct OpenSearchEncoder {
     direction: Direction,
     last_outgoing_method: Arc<Mutex<Option<Method>>>,
+    message_latency: Histogram,
 }
 
 impl OpenSearchEncoder {
-    pub fn new(direction: Direction, last_outgoing_method: Arc<Mutex<Option<Method>>>) -> Self {
+    pub fn new(
+        direction: Direction,
+        last_outgoing_method: Arc<Mutex<Option<Method>>>,
+        message_latency: Histogram,
+    ) -> Self {
         Self {
             direction,
             last_outgoing_method,
+            message_latency,
         }
     }
 }
@@ -250,6 +275,7 @@ impl Encoder<Messages> for OpenSearchEncoder {
             let start = dst.len();
             m.ensure_message_type(MessageType::OpenSearch)
                 .map_err(CodecWriteError::Encoder)?;
+            let received_at = m.received_at;
             let result = match m.into_encodable() {
                 Encodable::Bytes(bytes) => {
                     dst.extend_from_slice(&bytes);
@@ -301,6 +327,7 @@ impl Encoder<Messages> for OpenSearchEncoder {
                     Ok(())
                 }
             };
+            self.message_latency.record(received_at.elapsed());
 
             tracing::debug!(
                 "{}: outgoing OpenSearch message:\n{}",
@@ -320,7 +347,8 @@ mod opensearch_tests {
     use tokio_util::codec::{Decoder, Encoder};
 
     fn test_frame(raw_frame: &[u8], direction: Direction) {
-        let (mut decoder, mut encoder) = OpenSearchCodecBuilder::new(direction).build();
+        let (mut decoder, mut encoder) =
+            OpenSearchCodecBuilder::new(direction, "opensearch".to_owned()).build();
         let message = decoder
             .decode(&mut BytesMut::from(raw_frame))
             .unwrap()

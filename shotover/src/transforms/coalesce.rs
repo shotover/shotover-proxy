@@ -113,7 +113,7 @@ mod test {
         ))];
 
         let messages: Vec<_> = (0..25)
-            .map(|_| Message::from_frame(Frame::Redis(RedisFrame::Null)))
+            .map(|_| Message::from_frame_now(Frame::Redis(RedisFrame::Null)))
             .collect();
 
         let mut requests_wrapper = Wrapper::new(messages.clone());
@@ -154,7 +154,7 @@ mod test {
         ))];
 
         let messages: Vec<_> = (0..25)
-            .map(|_| Message::from_frame(Frame::Redis(RedisFrame::Null)))
+            .map(|_| Message::from_frame_now(Frame::Redis(RedisFrame::Null)))
             .collect();
 
         let mut requests_wrapper = Wrapper::new(messages.clone());
@@ -195,7 +195,7 @@ mod test {
         ))];
 
         let messages: Vec<_> = (0..25)
-            .map(|_| Message::from_frame(Frame::Redis(RedisFrame::Null)))
+            .map(|_| Message::from_frame_now(Frame::Redis(RedisFrame::Null)))
             .collect();
 
         let mut requests_wrapper = Wrapper::new(messages.clone());

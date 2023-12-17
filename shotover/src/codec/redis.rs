@@ -1,9 +1,12 @@
+use std::time::Instant;
+
 use super::{CodecWriteError, Direction};
 use crate::codec::{CodecBuilder, CodecReadError};
 use crate::frame::{Frame, MessageType};
 use crate::message::{Encodable, Message, Messages};
 use anyhow::{anyhow, Result};
 use bytes::{Buf, BytesMut};
+use metrics::Histogram;
 use redis_protocol::resp2::prelude::decode_mut;
 use redis_protocol::resp2::prelude::encode_bytes;
 use tokio_util::codec::{Decoder, Encoder};
@@ -11,20 +14,25 @@ use tokio_util::codec::{Decoder, Encoder};
 #[derive(Clone)]
 pub struct RedisCodecBuilder {
     direction: Direction,
+    message_latency: Histogram,
 }
 
 impl CodecBuilder for RedisCodecBuilder {
     type Decoder = RedisDecoder;
     type Encoder = RedisEncoder;
 
-    fn new(direction: Direction) -> Self {
-        Self { direction }
+    fn new(direction: Direction, destination_name: String) -> Self {
+        let message_latency = super::message_latency(direction, destination_name);
+        Self {
+            direction,
+            message_latency,
+        }
     }
 
     fn build(&self) -> (RedisDecoder, RedisEncoder) {
         (
             RedisDecoder::new(self.direction),
-            RedisEncoder::new(self.direction),
+            RedisEncoder::new(self.direction, self.message_latency.clone()),
         )
     }
 
@@ -35,6 +43,7 @@ impl CodecBuilder for RedisCodecBuilder {
 
 pub struct RedisEncoder {
     direction: Direction,
+    message_latency: Histogram,
 }
 
 pub struct RedisDecoder {
@@ -56,6 +65,7 @@ impl Decoder for RedisDecoder {
     type Error = CodecReadError;
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
+        let received_at = Instant::now();
         loop {
             match decode_mut(src).map_err(|e| {
                 CodecReadError::Parser(anyhow!(e).context("Error decoding redis frame"))
@@ -66,8 +76,11 @@ impl Decoder for RedisDecoder {
                         self.direction,
                         pretty_hex::pretty_hex(&bytes)
                     );
-                    self.messages
-                        .push(Message::from_bytes_and_frame(bytes, Frame::Redis(frame)));
+                    self.messages.push(Message::from_bytes_and_frame(
+                        bytes,
+                        Frame::Redis(frame),
+                        received_at,
+                    ));
                 }
                 None => {
                     if self.messages.is_empty() || src.remaining() != 0 {
@@ -82,8 +95,11 @@ impl Decoder for RedisDecoder {
 }
 
 impl RedisEncoder {
-    pub fn new(direction: Direction) -> Self {
-        Self { direction }
+    pub fn new(direction: Direction, message_latency: Histogram) -> Self {
+        Self {
+            direction,
+            message_latency,
+        }
     }
 }
 
@@ -95,6 +111,7 @@ impl Encoder<Messages> for RedisEncoder {
             let start = dst.len();
             m.ensure_message_type(MessageType::Redis)
                 .map_err(CodecWriteError::Encoder)?;
+            let received_at = m.received_at;
             let result = match m.into_encodable() {
                 Encodable::Bytes(bytes) => {
                     dst.extend_from_slice(&bytes);
@@ -107,6 +124,7 @@ impl Encoder<Messages> for RedisEncoder {
                         .map_err(|e| anyhow!("Redis encoding error: {} - {:#?}", e, item))
                 }
             };
+            self.message_latency.record(received_at.elapsed());
             tracing::debug!(
                 "{}: outgoing redis message:\n{}",
                 self.direction,
@@ -147,7 +165,8 @@ mod redis_tests {
     const HSET_MESSAGE: [u8; 75] = hex!("2a340d0a24340d0a485345540d0a2431380d0a6d797365743a5f5f72616e645f696e745f5f0d0a2432300d0a656c656d656e743a5f5f72616e645f696e745f5f0d0a24330d0a7878780d0a");
 
     fn test_frame(raw_frame: &[u8]) {
-        let (mut decoder, mut encoder) = RedisCodecBuilder::new(Direction::Sink).build();
+        let (mut decoder, mut encoder) =
+            RedisCodecBuilder::new(Direction::Sink, "redis".to_owned()).build();
         let message = decoder
             .decode(&mut BytesMut::from(raw_frame))
             .unwrap()

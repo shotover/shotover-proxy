@@ -632,16 +632,19 @@ impl MessageRewriter {
 
 fn create_query(messages: &Messages, query: &str, version: Version) -> Result<Message> {
     let stream_id = get_unused_stream_id(messages)?;
-    Ok(Message::from_frame(Frame::Cassandra(CassandraFrame {
-        version,
-        stream_id,
-        tracing: Tracing::Request(false),
-        warnings: vec![],
-        operation: CassandraOperation::Query {
-            query: Box::new(parse_statement_single(query)),
-            params: Box::default(),
-        },
-    })))
+    Ok(Message::from_frame(
+        Frame::Cassandra(CassandraFrame {
+            version,
+            stream_id,
+            tracing: Tracing::Request(false),
+            warnings: vec![],
+            operation: CassandraOperation::Query {
+                query: Box::new(parse_statement_single(query)),
+                params: Box::default(),
+            },
+        }),
+        messages[0].received_at,
+    ))
 }
 
 fn get_unused_stream_id(messages: &Messages) -> Result<i16> {

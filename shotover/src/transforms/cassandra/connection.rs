@@ -41,7 +41,7 @@ pub struct ResponseError {
 
 impl ResponseError {
     pub fn to_response(&self, version: Version) -> Message {
-        Message::from_frame(Frame::Cassandra(CassandraFrame::shotover_error(
+        Message::from_frame_now(Frame::Cassandra(CassandraFrame::shotover_error(
             self.stream_id,
             version,
             &format!("{}", self),

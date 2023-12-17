@@ -4,6 +4,7 @@ use crate::message::Messages;
 use cassandra_protocol::compression::Compression;
 use core::fmt;
 use kafka::RequestHeader;
+use metrics::{register_histogram, Histogram};
 use tokio_util::codec::{Decoder, Encoder};
 
 pub mod cassandra;
@@ -22,6 +23,17 @@ impl fmt::Display for Direction {
         match self {
             Self::Sink => write!(f, "Sink"),
             Self::Source => write!(f, "Source"),
+        }
+    }
+}
+
+pub fn message_latency(direction: Direction, destination_name: String) -> Histogram {
+    match direction {
+        Direction::Source => {
+            register_histogram!("sink_to_source_latency", "source" => destination_name)
+        }
+        Direction::Sink => {
+            register_histogram!("source_to_sink_latency", "sink" => destination_name)
         }
     }
 }
@@ -102,7 +114,7 @@ pub trait CodecBuilder: Clone + Send {
     type Encoder: EncoderHalf;
     fn build(&self) -> (Self::Decoder, Self::Encoder);
 
-    fn new(direction: Direction) -> Self;
+    fn new(direction: Direction, destination_name: String) -> Self;
 
     fn websocket_subprotocol(&self) -> &'static str;
 }

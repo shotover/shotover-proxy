@@ -28,6 +28,7 @@ use redis_protocol::types::Redirection;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
+use std::time::Instant;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::{oneshot, RwLock};
 use tokio::time::{timeout, Duration};
@@ -53,7 +54,7 @@ impl TransformConfig for RedisSinkClusterConfig {
     async fn get_builder(&self, chain_name: String) -> Result<Box<dyn TransformBuilder>> {
         let connection_pool = ConnectionPool::new_with_auth(
             Duration::from_millis(self.connect_timeout_ms),
-            RedisCodecBuilder::new(Direction::Sink),
+            RedisCodecBuilder::new(Direction::Sink, "RedisSinkCluster".to_owned()),
             RedisAuthenticator {},
             self.tls.clone(),
         )?;
@@ -241,7 +242,7 @@ impl RedisSinkCluster {
             )),
             // Send to all senders.
             // If any of the responses were a failure then return that failure.
-            // Otherwise return the first successful result
+            // Otherwise collate results according to routing_info.
             _ => {
                 let responses = FuturesUnordered::new();
 
@@ -251,36 +252,46 @@ impl RedisSinkCluster {
                 Ok(Box::pin(async move {
                     let response = responses
                         .fold(None, |acc, response| async move {
-                            if let Some(RedisFrame::Error(_)) = acc {
+                            if let Some((_, RedisFrame::Error(_))) = acc {
                                 acc
                             } else {
                                 match response {
                                     Ok(Response {
                                         response: Ok(mut message),
                                         ..
-                                    }) => Some(match message.frame().unwrap() {
-                                        Frame::Redis(frame) => {
-                                            let new_frame = frame.take();
-                                            match acc {
-                                                Some(prev_frame) => routing_info
-                                                    .response_join()
-                                                    .join(prev_frame, new_frame),
-                                                None => new_frame,
+                                    }) => Some((
+                                        message.received_at,
+                                        match message.frame().unwrap() {
+                                            Frame::Redis(frame) => {
+                                                let new_frame = frame.take();
+                                                match acc {
+                                                    Some((_, prev_frame)) => routing_info
+                                                        .response_join()
+                                                        .join(prev_frame, new_frame),
+                                                    None => new_frame,
+                                                }
                                             }
-                                        }
-                                        _ => unreachable!("direct response from a redis sink"),
-                                    }),
+                                            _ => unreachable!("direct response from a redis sink"),
+                                        },
+                                    )),
                                     Ok(Response {
                                         response: Err(e), ..
-                                    }) => Some(RedisFrame::Error(e.to_string().into())),
-                                    Err(e) => Some(RedisFrame::Error(e.to_string().into())),
+                                    }) => Some((
+                                        Instant::now(),
+                                        RedisFrame::Error(e.to_string().into()),
+                                    )),
+                                    Err(e) => Some((
+                                        Instant::now(),
+                                        RedisFrame::Error(e.to_string().into()),
+                                    )),
                                 }
                             }
                         })
                         .await;
 
+                    let (received_at, response) = response.unwrap();
                     Ok(Response {
-                        response: Ok(Message::from_frame(Frame::Redis(response.unwrap()))),
+                        response: Ok(Message::from_frame(Frame::Redis(response), received_at)),
                     })
                 }))
             }
@@ -905,7 +916,7 @@ async fn get_topology_from_node(
 ) -> Result<SlotMap, TransformError> {
     let return_chan_rx = send_message_request(
         &sender,
-        Message::from_frame(Frame::Redis(RedisFrame::Array(vec![
+        Message::from_frame_now(Frame::Redis(RedisFrame::Array(vec![
             RedisFrame::BulkString("CLUSTER".into()),
             RedisFrame::BulkString("SLOTS".into()),
         ]))),
@@ -968,7 +979,7 @@ fn short_circuit(frame: RedisFrame) -> Result<ResponseFuture> {
 
     one_tx
         .send(Response {
-            response: Ok(Message::from_frame(Frame::Redis(frame))),
+            response: Ok(Message::from_frame_now(Frame::Redis(frame))),
         })
         .map_err(|_| anyhow!("Failed to send short circuited redis frame"))?;
 
@@ -1032,7 +1043,7 @@ impl Transform for RedisSinkCluster {
             trace!("Got resp {:?}", s);
             let Response { response } = s.or_else(|e| -> Result<Response> {
                 Ok(Response {
-                    response: Ok(Message::from_frame(Frame::Redis(RedisFrame::Error(
+                    response: Ok(Message::from_frame_now(Frame::Redis(RedisFrame::Error(
                         format!("ERR Could not route request - {e}").into(),
                     )))),
                 })
@@ -1108,7 +1119,7 @@ impl Authenticator<UsernamePasswordToken> for RedisAuthenticator {
 
         let return_rx = send_message_request(
             sender,
-            Message::from_frame(Frame::Redis(RedisFrame::Array(auth_args))),
+            Message::from_frame_now(Frame::Redis(RedisFrame::Array(auth_args))),
         )?;
 
         match receive_frame_response(return_rx).await? {

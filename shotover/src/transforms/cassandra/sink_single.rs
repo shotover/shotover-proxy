@@ -61,7 +61,8 @@ impl CassandraSinkSingleBuilder {
     ) -> CassandraSinkSingleBuilder {
         let failed_requests = register_counter!("shotover_failed_requests_count", "chain" => chain_name, "transform" => "CassandraSinkSingle");
         let receive_timeout = timeout.map(Duration::from_secs);
-        let codec_builder = CassandraCodecBuilder::new(Direction::Sink);
+        let codec_builder =
+            CassandraCodecBuilder::new(Direction::Sink, "CassandraSinkSingle".to_owned());
 
         CassandraSinkSingleBuilder {
             version: None,

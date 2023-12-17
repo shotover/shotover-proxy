@@ -160,7 +160,7 @@ mod test {
     use cassandra_protocol::query::QueryParams;
 
     fn create_query_message(query: &str) -> Message {
-        Message::from_frame(Frame::Cassandra(CassandraFrame {
+        Message::from_frame_now(Frame::Cassandra(CassandraFrame {
             version: Version::V4,
             stream_id: 0,
             tracing: Tracing::Request(false),
@@ -183,7 +183,7 @@ mod test {
     }
 
     fn create_response_message(col_specs: &[ColSpec], rows: Vec<Vec<GenericValue>>) -> Message {
-        Message::from_frame(Frame::Cassandra(CassandraFrame {
+        Message::from_frame_now(Frame::Cassandra(CassandraFrame {
             version: Version::V4,
             stream_id: 0,
             tracing: Tracing::Response(None),

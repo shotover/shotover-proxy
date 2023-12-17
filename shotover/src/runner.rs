@@ -122,7 +122,10 @@ impl Shotover {
         config: &Config,
         tracing: &TracingState,
     ) -> Result<()> {
-        let recorder = PrometheusBuilder::new().build_recorder();
+        let recorder = PrometheusBuilder::new()
+            .set_quantiles(&[0.0, 0.1, 0.5, 0.9, 0.95, 0.99, 0.999, 1.0])
+            .unwrap()
+            .build_recorder();
         let handle = recorder.handle();
         metrics::set_boxed_recorder(Box::new(recorder))?;
 

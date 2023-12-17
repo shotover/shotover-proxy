@@ -13,7 +13,7 @@ pub fn produce_channel(
     let (tx, rx) = oneshot::channel();
     let return_chan = if produce.acks == 0 {
         tx.send(Response {
-            response: Ok(Message::from_frame(Frame::Dummy)),
+            response: Ok(Message::from_frame_now(Frame::Dummy)),
         })
         .unwrap();
         None
