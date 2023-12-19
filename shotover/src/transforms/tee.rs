@@ -49,7 +49,8 @@ impl TeeBuilder {
             tokio::spawn(chain_switch_listener.async_run(result_source.clone()));
         }
 
-        let dropped_messages = register_counter!("tee_dropped_messages", "chain" => "Tee");
+        let dropped_messages =
+            register_counter!("shotover_tee_dropped_messages_count", "chain" => "Tee");
 
         TeeBuilder {
             tx,

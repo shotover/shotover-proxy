@@ -89,8 +89,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
         timeout: Option<u64>,
         transport: Transport,
     ) -> Result<Self, Vec<String>> {
-        let available_connections_gauge =
-            register_gauge!("shotover_available_connections", "source" => source_name.clone());
+        let available_connections_gauge = register_gauge!("shotover_available_connections_count", "source" => source_name.clone());
         available_connections_gauge.set(limit_connections.available_permits() as f64);
 
         let chain_builder = chain_config

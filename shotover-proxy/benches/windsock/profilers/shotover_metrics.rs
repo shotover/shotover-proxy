@@ -14,7 +14,13 @@ pub struct RawPrometheusExposition {
     timestamp: OffsetDateTime,
     content: String,
 }
-type ParsedMetrics = HashMap<String, Vec<Value>>;
+
+#[derive(Eq, PartialEq, Hash)]
+struct MetricLabel {
+    label: String,
+    unit: Unit,
+}
+type ParsedMetrics = HashMap<MetricLabel, Vec<Value>>;
 
 impl ShotoverMetrics {
     pub fn new(bench_name: String, shotover_ip: &str) -> Self {
@@ -33,7 +39,7 @@ impl ShotoverMetrics {
         ShotoverMetrics { task, shutdown_tx }
     }
 
-    pub fn parse_metrics(
+    fn parse_metrics(
         raw_metrics: Vec<RawPrometheusExposition>,
         report: &ReportArchive,
     ) -> ParsedMetrics {
@@ -45,25 +51,20 @@ impl ShotoverMetrics {
                 )
                 .unwrap();
                 for sample in metrics.samples {
-                    let key = format!(
-                        "{}{{{}}}",
-                        sample
-                            .metric
-                            .strip_prefix("shotover_")
-                            .unwrap_or(&sample.metric),
-                        sample.labels
-                    );
+                    let (name, unit) = parse_name(sample.metric);
+                    let label = format!("{name}{{{}}}", sample.labels);
+                    let metric_name = MetricLabel { label, unit };
 
-                    result.entry(key).or_default().push(sample.value);
+                    result.entry(metric_name).or_default().push(sample.value);
                 }
             }
         }
         result
     }
 
-    pub fn windsock_metrics(parsed_metrics: ParsedMetrics) -> Vec<Metric> {
+    fn windsock_metrics(parsed_metrics: ParsedMetrics) -> Vec<Metric> {
         let mut result = vec![];
-        for (name, value) in parsed_metrics {
+        for (MetricLabel { label: name, unit }, value) in parsed_metrics {
             match value[0] {
                 Value::Gauge(_) => {
                     result.push(Metric::EachSecond {
@@ -74,7 +75,7 @@ impl ShotoverMetrics {
                                 let Value::Gauge(x) = x else {
                                     panic!("metric type changed during bench run")
                                 };
-                                (*x, x.to_string(), Goal::None)
+                                (*x, unit.format(*x), Goal::None)
                             })
                             .collect(),
                     });
@@ -91,7 +92,7 @@ impl ShotoverMetrics {
                                 };
                                 let diff = x - prev;
                                 prev = *x;
-                                (diff, diff.to_string(), Goal::None)
+                                (diff, unit.format(diff), Goal::None)
                             })
                             .collect(),
                     });
@@ -105,7 +106,7 @@ impl ShotoverMetrics {
                         .iter()
                         .map(|x| LatencyPercentile {
                             value: x.count,
-                            value_display: format!("{:.4}ms", x.count * 1000.0),
+                            value_display: unit.format(x.count),
                             quantile: x.quantile.to_string(),
                         })
                         .collect();
@@ -166,5 +167,35 @@ impl ShotoverMetrics {
         std::mem::drop(self.shutdown_tx);
         // TODO: make this function + caller async, lets do this in a follow up PR to avoid making this PR even more complex.
         futures::executor::block_on(async { self.task.await.unwrap() })
+    }
+}
+
+fn parse_name(name: String) -> (String, Unit) {
+    let name = name.strip_prefix("shotover_").unwrap_or(&name);
+
+    if let Some(name) = name.strip_suffix("_seconds") {
+        (name.to_owned(), Unit::Seconds)
+    } else if let Some(name) = name.strip_suffix("_count") {
+        (name.to_owned(), Unit::Count)
+    } else {
+        (name.to_owned(), Unit::Undefined)
+    }
+}
+
+#[derive(Eq, PartialEq, Hash)]
+enum Unit {
+    Seconds,
+    Count,
+    Undefined,
+}
+
+impl Unit {
+    fn format(&self, value: f64) -> String {
+        match self {
+            Unit::Seconds => format!("{:.4}ms", value * 1000.0),
+            // Rounding is needed to get reasonable values out of histograms
+            Unit::Count => value.round().to_string(),
+            Unit::Undefined => value.to_string(),
+        }
     }
 }

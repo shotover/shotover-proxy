@@ -22,7 +22,7 @@ pub struct QueryCounterConfig {
 
 impl QueryCounter {
     pub fn new(counter_name: String) -> Self {
-        register_counter!("query_count", "name" => counter_name.clone());
+        register_counter!("shotover_query_count", "name" => counter_name.clone());
 
         QueryCounter { counter_name }
     }
@@ -45,18 +45,18 @@ impl Transform for QueryCounter {
             match m.frame() {
                 Some(Frame::Cassandra(frame)) => {
                     for statement in frame.operation.queries() {
-                        counter!("query_count", 1, "name" => self.counter_name.clone(), "query" => statement.short_name(), "type" => "cassandra");
+                        counter!("shotover_query_count", 1, "name" => self.counter_name.clone(), "query" => statement.short_name(), "type" => "cassandra");
                     }
                 }
                 Some(Frame::Redis(frame)) => {
                     if let Some(query_type) = get_redis_query_type(frame) {
-                        counter!("query_count", 1, "name" => self.counter_name.clone(), "query" => query_type, "type" => "redis");
+                        counter!("shotover_query_count", 1, "name" => self.counter_name.clone(), "query" => query_type, "type" => "redis");
                     } else {
-                        counter!("query_count", 1, "name" => self.counter_name.clone(), "query" => "unknown", "type" => "redis");
+                        counter!("shotover_query_count", 1, "name" => self.counter_name.clone(), "query" => "unknown", "type" => "redis");
                     }
                 }
                 Some(Frame::Kafka(_)) => {
-                    counter!("query_count", 1, "name" => self.counter_name.clone(), "query" => "unknown", "type" => "kafka");
+                    counter!("shotover_query_count", 1, "name" => self.counter_name.clone(), "query" => "unknown", "type" => "kafka");
                 }
                 Some(Frame::Dummy) => {
                     // Dummy does not count as a message
@@ -65,7 +65,7 @@ impl Transform for QueryCounter {
                     todo!();
                 }
                 None => {
-                    counter!("query_count", 1, "name" => self.counter_name.clone(), "query" => "unknown", "type" => "none")
+                    counter!("shotover_query_count", 1, "name" => self.counter_name.clone(), "query" => "unknown", "type" => "none")
                 }
             }
         }

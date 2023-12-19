@@ -143,9 +143,9 @@ pub struct VersionCounter {
 impl VersionCounter {
     fn new() -> Self {
         Self {
-            v3: register_counter!("client_protocol_version", "version" => "v3"),
-            v4: register_counter!("client_protocol_version", "version" => "v4"),
-            v5: register_counter!("client_protocol_version", "version" => "v5"),
+            v3: register_counter!("shotover_client_protocol_version_count", "version" => "v3"),
+            v4: register_counter!("shotover_client_protocol_version_count", "version" => "v4"),
+            v5: register_counter!("shotover_client_protocol_version_count", "version" => "v5"),
         }
     }
 

@@ -59,7 +59,7 @@ impl CassandraSinkSingleBuilder {
         connect_timeout_ms: u64,
         timeout: Option<u64>,
     ) -> CassandraSinkSingleBuilder {
-        let failed_requests = register_counter!("failed_requests", "chain" => chain_name, "transform" => "CassandraSinkSingle");
+        let failed_requests = register_counter!("shotover_failed_requests_count", "chain" => chain_name, "transform" => "CassandraSinkSingle");
         let receive_timeout = timeout.map(Duration::from_secs);
         let codec_builder = CassandraCodecBuilder::new(Direction::Sink);
 
