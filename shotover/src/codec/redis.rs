@@ -76,10 +76,10 @@ impl Decoder for RedisDecoder {
                         self.direction,
                         pretty_hex::pretty_hex(&bytes)
                     );
-                    self.messages.push(Message::from_bytes_and_frame(
+                    self.messages.push(Message::from_bytes_and_frame_at_instant(
                         bytes,
                         Frame::Redis(frame),
-                        received_at,
+                        Some(received_at),
                     ));
                 }
                 None => {
@@ -111,7 +111,7 @@ impl Encoder<Messages> for RedisEncoder {
             let start = dst.len();
             m.ensure_message_type(MessageType::Redis)
                 .map_err(CodecWriteError::Encoder)?;
-            let received_at = m.received_at;
+            let received_at = m.received_from_source_or_sink_at;
             let result = match m.into_encodable() {
                 Encodable::Bytes(bytes) => {
                     dst.extend_from_slice(&bytes);
@@ -124,7 +124,9 @@ impl Encoder<Messages> for RedisEncoder {
                         .map_err(|e| anyhow!("Redis encoding error: {} - {:#?}", e, item))
                 }
             };
-            self.message_latency.record(received_at.elapsed());
+            if let Some(received_at) = received_at {
+                self.message_latency.record(received_at.elapsed());
+            }
             tracing::debug!(
                 "{}: outgoing redis message:\n{}",
                 self.direction,

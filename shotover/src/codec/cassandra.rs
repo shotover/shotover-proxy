@@ -357,7 +357,7 @@ impl CassandraDecoder {
 
                 let compressed = self.check_compression(&bytes).unwrap();
 
-                let message = Message::from_bytes(
+                let message = Message::from_bytes_at_instant(
                     bytes.freeze(),
                     crate::message::ProtocolType::Cassandra {
                         compression: if compressed {
@@ -366,7 +366,7 @@ impl CassandraDecoder {
                             Compression::None
                         },
                     },
-                    received_at,
+                    Some(received_at),
                 );
 
                 Ok(vec![message])
@@ -509,12 +509,12 @@ impl CassandraDecoder {
                 pretty_hex::pretty_hex(&envelope)
             );
 
-            envelopes.push(Message::from_bytes(
+            envelopes.push(Message::from_bytes_at_instant(
                 envelope,
                 crate::message::ProtocolType::Cassandra {
                     compression: Compression::None,
                 },
-                received_at,
+                Some(received_at),
             ));
         }
 
@@ -702,7 +702,7 @@ fn reject_protocol_version(version: u8) -> CodecReadError {
         version
     );
 
-    CodecReadError::RespondAndThenCloseConnection(vec![Message::from_frame_now(Frame::Cassandra(
+    CodecReadError::RespondAndThenCloseConnection(vec![Message::from_frame(Frame::Cassandra(
         CassandraFrame {
             version: Version::V4,
             stream_id: 0,
@@ -756,10 +756,12 @@ impl Encoder<Messages> for CassandraEncoder {
 
         for m in item {
             let start = dst.len();
-            let received_at = m.received_at;
+            let received_at = m.received_from_source_or_sink_at;
             self.encode_frame(dst, m, version, compression, handshake_complete)
                 .map_err(CodecWriteError::Encoder)?;
-            self.message_latency.record(received_at.elapsed());
+            if let Some(received_at) = received_at {
+                self.message_latency.record(received_at.elapsed());
+            }
             tracing::debug!(
                 "{}: outgoing cassandra message:\n{}",
                 self.direction,
@@ -1054,7 +1056,7 @@ mod cassandra_protocol_tests {
         let mut startup_body: HashMap<String, String> = HashMap::new();
         startup_body.insert("CQL_VERSION".into(), "3.0.0".into());
         let bytes = hex!("0400000001000000160001000b43514c5f56455253494f4e0005332e302e30");
-        let messages = vec![Message::from_frame_now(Frame::Cassandra(CassandraFrame {
+        let messages = vec![Message::from_frame(Frame::Cassandra(CassandraFrame {
             version: Version::V4,
             operation: CassandraOperation::Startup(BodyReqStartup { map: startup_body }),
             stream_id: 0,
@@ -1068,7 +1070,7 @@ mod cassandra_protocol_tests {
     fn test_codec_options() {
         let mut codec = CassandraCodecBuilder::new(Direction::Sink, "cassandra".to_owned());
         let bytes = hex!("040000000500000000");
-        let messages = vec![Message::from_frame_now(Frame::Cassandra(CassandraFrame {
+        let messages = vec![Message::from_frame(Frame::Cassandra(CassandraFrame {
             version: Version::V4,
             operation: CassandraOperation::Options(vec![]),
             stream_id: 0,
@@ -1082,7 +1084,7 @@ mod cassandra_protocol_tests {
     fn test_codec_ready() {
         let mut codec = CassandraCodecBuilder::new(Direction::Sink, "cassandra".to_owned());
         let bytes = hex!("840000000200000000");
-        let messages = vec![Message::from_frame_now(Frame::Cassandra(CassandraFrame {
+        let messages = vec![Message::from_frame(Frame::Cassandra(CassandraFrame {
             version: Version::V4,
             operation: CassandraOperation::Ready(vec![]),
             stream_id: 0,
@@ -1099,7 +1101,7 @@ mod cassandra_protocol_tests {
             "040000010b000000310003000f544f504f4c4f47595f4348414e4745
             000d5354415455535f4348414e4745000d534348454d415f4348414e4745"
         );
-        let messages = vec![Message::from_frame_now(Frame::Cassandra(CassandraFrame {
+        let messages = vec![Message::from_frame(Frame::Cassandra(CassandraFrame {
             version: Version::V4,
             operation: CassandraOperation::Register(BodyReqRegister {
                 events: vec![
@@ -1124,7 +1126,7 @@ mod cassandra_protocol_tests {
             65727265645f6970001000047261636b000d000f72656c656173655f76657273696f6e000d000b7270635f616464726
             573730010000e736368656d615f76657273696f6e000c0006746f6b656e730022000d00000000"
         );
-        let messages = vec![Message::from_frame_now(Frame::Cassandra(CassandraFrame {
+        let messages = vec![Message::from_frame(Frame::Cassandra(CassandraFrame {
             version: Version::V4,
             operation: CassandraOperation::Result(CassandraResult::Rows {
                 rows: vec![],
@@ -1231,7 +1233,7 @@ mod cassandra_protocol_tests {
             74656d2e6c6f63616c205748455245206b6579203d20276c6f63616c27000100"
         );
 
-        let messages = vec![Message::from_frame_now(Frame::Cassandra(CassandraFrame {
+        let messages = vec![Message::from_frame(Frame::Cassandra(CassandraFrame {
             version: Version::V4,
             stream_id: 3,
             tracing: Tracing::Request(false),
@@ -1254,7 +1256,7 @@ mod cassandra_protocol_tests {
             6d2e666f6f2028626172292056414c554553202827626172322729000100"
         );
 
-        let messages = vec![Message::from_frame_now(Frame::Cassandra(CassandraFrame {
+        let messages = vec![Message::from_frame(Frame::Cassandra(CassandraFrame {
             version: Version::V4,
             stream_id: 3,
             tracing: Tracing::Request(false),

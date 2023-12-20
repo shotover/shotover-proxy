@@ -110,10 +110,10 @@ impl Decoder for KafkaDecoder {
                 } else {
                     None
                 };
-                self.messages.push(Message::from_bytes(
+                self.messages.push(Message::from_bytes_at_instant(
                     bytes.freeze(),
                     ProtocolType::Kafka { request_header },
-                    received_at,
+                    Some(received_at),
                 ));
             } else if self.messages.is_empty() || src.remaining() != 0 {
                 return Ok(None);
@@ -152,7 +152,7 @@ impl Encoder<Messages> for KafkaEncoder {
             let start = dst.len();
             m.ensure_message_type(MessageType::Kafka)
                 .map_err(CodecWriteError::Encoder)?;
-            let received_at = m.received_at;
+            let received_at = m.received_from_source_or_sink_at;
             let result = match m.into_encodable() {
                 Encodable::Bytes(bytes) => {
                     dst.extend_from_slice(&bytes);
@@ -169,7 +169,9 @@ impl Encoder<Messages> for KafkaEncoder {
                 tx.send(RequestHeader { api_key, version })
                     .map_err(|e| CodecWriteError::Encoder(anyhow!(e)))?;
             }
-            self.message_latency.record(received_at.elapsed());
+            if let Some(received_at) = received_at {
+                self.message_latency.record(received_at.elapsed());
+            }
             tracing::debug!(
                 "{}: outgoing kafka message:\n{}",
                 self.direction,

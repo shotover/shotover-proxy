@@ -26,7 +26,7 @@ use std::collections::HashMap;
 use std::hash::Hasher;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use tokio::sync::{mpsc, oneshot, RwLock};
 use tokio::time::timeout;
 
@@ -255,19 +255,16 @@ impl KafkaSinkCluster {
                 _ => {}
             }
         }
-        let received_at = requests[0].received_at;
 
         for group in groups {
-            let node = self
-                .find_coordinator_of_group(group.clone(), received_at)
-                .await?;
+            let node = self.find_coordinator_of_group(group.clone()).await?;
             self.group_to_coordinator_broker
                 .insert(group, node.broker_id);
             self.add_node_if_new(node).await;
         }
 
         if !topics.is_empty() {
-            let mut metadata = self.get_metadata_of_topics(topics, received_at).await?;
+            let mut metadata = self.get_metadata_of_topics(topics).await?;
             match metadata.frame() {
                 Some(Frame::Kafka(KafkaFrame::Response {
                     body: ResponseBody::Metadata(metadata),
@@ -432,29 +429,22 @@ impl KafkaSinkCluster {
         Ok(results)
     }
 
-    async fn find_coordinator_of_group(
-        &mut self,
-        group: GroupId,
-        received_at: Instant,
-    ) -> Result<KafkaNode> {
-        let request = Message::from_frame(
-            Frame::Kafka(KafkaFrame::Request {
-                header: RequestHeader::builder()
-                    .request_api_key(ApiKey::FindCoordinatorKey as i16)
-                    .request_api_version(2)
-                    .correlation_id(0)
+    async fn find_coordinator_of_group(&mut self, group: GroupId) -> Result<KafkaNode> {
+        let request = Message::from_frame(Frame::Kafka(KafkaFrame::Request {
+            header: RequestHeader::builder()
+                .request_api_key(ApiKey::FindCoordinatorKey as i16)
+                .request_api_version(2)
+                .correlation_id(0)
+                .build()
+                .unwrap(),
+            body: RequestBody::FindCoordinator(
+                FindCoordinatorRequest::builder()
+                    .key_type(0)
+                    .key(group.0)
                     .build()
                     .unwrap(),
-                body: RequestBody::FindCoordinator(
-                    FindCoordinatorRequest::builder()
-                        .key_type(0)
-                        .key(group.0)
-                        .build()
-                        .unwrap(),
-                ),
-            }),
-            received_at,
-        );
+            ),
+        }));
 
         let connection = self
             .nodes
@@ -488,38 +478,31 @@ impl KafkaSinkCluster {
         }
     }
 
-    async fn get_metadata_of_topics(
-        &mut self,
-        topics: Vec<TopicName>,
-        received_at: Instant,
-    ) -> Result<Message> {
-        let request = Message::from_frame(
-            Frame::Kafka(KafkaFrame::Request {
-                header: RequestHeader::builder()
-                    .request_api_key(ApiKey::MetadataKey as i16)
-                    .request_api_version(4)
-                    .correlation_id(0)
+    async fn get_metadata_of_topics(&mut self, topics: Vec<TopicName>) -> Result<Message> {
+        let request = Message::from_frame(Frame::Kafka(KafkaFrame::Request {
+            header: RequestHeader::builder()
+                .request_api_key(ApiKey::MetadataKey as i16)
+                .request_api_version(4)
+                .correlation_id(0)
+                .build()
+                .unwrap(),
+            body: RequestBody::Metadata(
+                MetadataRequest::builder()
+                    .topics(Some(
+                        topics
+                            .into_iter()
+                            .map(|name| {
+                                MetadataRequestTopic::builder()
+                                    .name(Some(name))
+                                    .build()
+                                    .unwrap()
+                            })
+                            .collect(),
+                    ))
                     .build()
                     .unwrap(),
-                body: RequestBody::Metadata(
-                    MetadataRequest::builder()
-                        .topics(Some(
-                            topics
-                                .into_iter()
-                                .map(|name| {
-                                    MetadataRequestTopic::builder()
-                                        .name(Some(name))
-                                        .build()
-                                        .unwrap()
-                                })
-                                .collect(),
-                        ))
-                        .build()
-                        .unwrap(),
-                ),
-            }),
-            received_at,
-        );
+            ),
+        }));
 
         let connection = self
             .nodes

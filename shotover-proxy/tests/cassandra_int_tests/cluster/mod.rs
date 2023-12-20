@@ -66,14 +66,14 @@ fn create_handshake() -> Vec<Message> {
     startup_body.insert("CQL_VERSION".into(), "3.0.0".into());
 
     vec![
-        Message::from_frame_now(Frame::Cassandra(CassandraFrame {
+        Message::from_frame(Frame::Cassandra(CassandraFrame {
             version: Version::V4,
             stream_id: 64,
             tracing: Tracing::Request(false),
             warnings: vec![],
             operation: CassandraOperation::Startup(BodyReqStartup { map: startup_body }),
         })),
-        Message::from_frame_now(Frame::Cassandra(CassandraFrame {
+        Message::from_frame(Frame::Cassandra(CassandraFrame {
             version: Version::V4,
             stream_id: 128,
             tracing: Tracing::Request(false),

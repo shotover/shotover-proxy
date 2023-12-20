@@ -218,12 +218,12 @@ impl Decoder for OpenSearchDecoder {
                 }
                 State::ReadingBody(http_headers, content_length) => {
                     if let Some(Method::HEAD) = *self.last_outgoing_method.lock().unwrap() {
-                        return Ok(Some(vec![Message::from_frame(
+                        return Ok(Some(vec![Message::from_frame_at_instant(
                             Frame::OpenSearch(OpenSearchFrame::new(
                                 http_headers,
                                 bytes::Bytes::new(),
                             )),
-                            received_at,
+                            Some(received_at),
                         )]));
                     }
 
@@ -233,9 +233,9 @@ impl Decoder for OpenSearchDecoder {
                     }
 
                     let body = src.split_to(content_length).freeze();
-                    return Ok(Some(vec![Message::from_frame(
+                    return Ok(Some(vec![Message::from_frame_at_instant(
                         Frame::OpenSearch(OpenSearchFrame::new(http_headers, body)),
-                        received_at,
+                        Some(received_at),
                     )]));
                 }
             }
@@ -275,7 +275,7 @@ impl Encoder<Messages> for OpenSearchEncoder {
             let start = dst.len();
             m.ensure_message_type(MessageType::OpenSearch)
                 .map_err(CodecWriteError::Encoder)?;
-            let received_at = m.received_at;
+            let received_at = m.received_from_source_or_sink_at;
             let result = match m.into_encodable() {
                 Encodable::Bytes(bytes) => {
                     dst.extend_from_slice(&bytes);
@@ -327,7 +327,9 @@ impl Encoder<Messages> for OpenSearchEncoder {
                     Ok(())
                 }
             };
-            self.message_latency.record(received_at.elapsed());
+            if let Some(received_at) = received_at {
+                self.message_latency.record(received_at.elapsed());
+            }
 
             tracing::debug!(
                 "{}: outgoing OpenSearch message:\n{}",

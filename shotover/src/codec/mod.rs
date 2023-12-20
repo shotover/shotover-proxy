@@ -30,10 +30,10 @@ impl fmt::Display for Direction {
 pub fn message_latency(direction: Direction, destination_name: String) -> Histogram {
     match direction {
         Direction::Source => {
-            register_histogram!("sink_to_source_latency", "source" => destination_name)
+            register_histogram!("shotover_sink_to_source_latency_seconds", "source" => destination_name)
         }
         Direction::Sink => {
-            register_histogram!("source_to_sink_latency", "sink" => destination_name)
+            register_histogram!("shotover_source_to_sink_latency_seconds", "sink" => destination_name)
         }
     }
 }

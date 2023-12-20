@@ -51,7 +51,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         let chain =
             TransformChainBuilder::new(vec![Box::<NullSink>::default()], "bench".to_string());
         let wrapper = Wrapper::new_with_chain_name(
-            vec![Message::from_frame_now(Frame::Redis(RedisFrame::Null))],
+            vec![Message::from_frame(Frame::Redis(RedisFrame::Null))],
             chain.name.clone(),
             "127.0.0.1:6379".parse().unwrap(),
         );
@@ -80,12 +80,12 @@ fn criterion_benchmark(c: &mut Criterion) {
         );
         let wrapper = Wrapper::new_with_chain_name(
             vec![
-                Message::from_frame_now(Frame::Redis(RedisFrame::Array(vec![
+                Message::from_frame(Frame::Redis(RedisFrame::Array(vec![
                     RedisFrame::BulkString(Bytes::from_static(b"SET")),
                     RedisFrame::BulkString(Bytes::from_static(b"foo")),
                     RedisFrame::BulkString(Bytes::from_static(b"bar")),
                 ]))),
-                Message::from_frame_now(Frame::Redis(RedisFrame::Array(vec![
+                Message::from_frame(Frame::Redis(RedisFrame::Array(vec![
                     RedisFrame::BulkString(Bytes::from_static(b"GET")),
                     RedisFrame::BulkString(Bytes::from_static(b"foo")),
                 ]))),
@@ -111,7 +111,7 @@ fn criterion_benchmark(c: &mut Criterion) {
             vec![
                 Box::new(RedisTimestampTagger::new()),
                 Box::new(DebugReturner::new(Response::Message(vec![
-                    Message::from_frame_now(Frame::Redis(RedisFrame::Array(vec![
+                    Message::from_frame(Frame::Redis(RedisFrame::Array(vec![
                         RedisFrame::BulkString(Bytes::from_static(b"1")), // real frame
                         RedisFrame::BulkString(Bytes::from_static(b"1")), // timestamp
                     ]))),
@@ -120,13 +120,11 @@ fn criterion_benchmark(c: &mut Criterion) {
             "bench".to_string(),
         );
         let wrapper_set = Wrapper::new_with_chain_name(
-            vec![Message::from_frame_now(Frame::Redis(RedisFrame::Array(
-                vec![
-                    RedisFrame::BulkString(Bytes::from_static(b"SET")),
-                    RedisFrame::BulkString(Bytes::from_static(b"foo")),
-                    RedisFrame::BulkString(Bytes::from_static(b"bar")),
-                ],
-            )))],
+            vec![Message::from_frame(Frame::Redis(RedisFrame::Array(vec![
+                RedisFrame::BulkString(Bytes::from_static(b"SET")),
+                RedisFrame::BulkString(Bytes::from_static(b"foo")),
+                RedisFrame::BulkString(Bytes::from_static(b"bar")),
+            ])))],
             chain.name.clone(),
             "127.0.0.1:6379".parse().unwrap(),
         );
@@ -143,12 +141,10 @@ fn criterion_benchmark(c: &mut Criterion) {
         });
 
         let wrapper_get = Wrapper::new_with_chain_name(
-            vec![Message::from_frame_now(Frame::Redis(RedisFrame::Array(
-                vec![
-                    RedisFrame::BulkString(Bytes::from_static(b"GET")),
-                    RedisFrame::BulkString(Bytes::from_static(b"foo")),
-                ],
-            )))],
+            vec![Message::from_frame(Frame::Redis(RedisFrame::Array(vec![
+                RedisFrame::BulkString(Bytes::from_static(b"GET")),
+                RedisFrame::BulkString(Bytes::from_static(b"foo")),
+            ])))],
             chain.name.clone(),
             "127.0.0.1:6379".parse().unwrap(),
         );
@@ -174,13 +170,11 @@ fn criterion_benchmark(c: &mut Criterion) {
             "bench".to_string(),
         );
         let wrapper = Wrapper::new_with_chain_name(
-            vec![Message::from_frame_now(Frame::Redis(RedisFrame::Array(
-                vec![
-                    RedisFrame::BulkString(Bytes::from_static(b"SET")),
-                    RedisFrame::BulkString(Bytes::from_static(b"foo")),
-                    RedisFrame::BulkString(Bytes::from_static(b"bar")),
-                ],
-            )))],
+            vec![Message::from_frame(Frame::Redis(RedisFrame::Array(vec![
+                RedisFrame::BulkString(Bytes::from_static(b"SET")),
+                RedisFrame::BulkString(Bytes::from_static(b"foo")),
+                RedisFrame::BulkString(Bytes::from_static(b"bar")),
+            ])))],
             chain.name.clone(),
             "127.0.0.1:6379".parse().unwrap(),
         );
@@ -213,7 +207,7 @@ fn criterion_benchmark(c: &mut Criterion) {
             "bench".to_string(),
         );
         let wrapper = Wrapper::new_with_chain_name(
-            vec![Message::from_bytes_now(
+            vec![Message::from_bytes(
                 Bytes::from(
                     // a simple select query
                     hex!(
@@ -252,7 +246,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         );
 
         let wrapper = Wrapper::new_with_chain_name(
-            vec![Message::from_bytes_now(
+            vec![Message::from_bytes(
                 CassandraFrame {
                     version: Version::V4,
                     stream_id: 0,
@@ -359,7 +353,7 @@ fn criterion_benchmark(c: &mut Criterion) {
 #[cfg(feature = "alpha-transforms")]
 fn cassandra_parsed_query(query: &str) -> Wrapper {
     Wrapper::new_with_chain_name(
-        vec![Message::from_frame_now(Frame::Cassandra(CassandraFrame {
+        vec![Message::from_frame(Frame::Cassandra(CassandraFrame {
             version: Version::V4,
             stream_id: 0,
             tracing: Tracing::Request(false),

@@ -60,7 +60,7 @@ fn criterion_benchmark(c: &mut Criterion) {
             });
         }
         {
-            let mut message = Message::from_bytes_now(
+            let mut message = Message::from_bytes(
                 Bytes::from(message.to_vec()),
                 ProtocolType::Kafka {
                     request_header: None,
@@ -121,7 +121,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     {
         let mut messages = vec![];
         for (message, _) in KAFKA_REQUESTS {
-            let mut message = Message::from_bytes_now(
+            let mut message = Message::from_bytes(
                 Bytes::from(message.to_vec()),
                 ProtocolType::Kafka {
                     request_header: None,
@@ -154,7 +154,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     }
 
     {
-        let messages = vec![Message::from_frame_now(Frame::Cassandra(CassandraFrame {
+        let messages = vec![Message::from_frame(Frame::Cassandra(CassandraFrame {
             version: Version::V4,
             stream_id: 1,
             tracing: Tracing::Request(false),
@@ -182,7 +182,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     }
 
     {
-        let messages = vec![Message::from_frame_now(Frame::Cassandra(CassandraFrame {
+        let messages = vec![Message::from_frame(Frame::Cassandra(CassandraFrame {
             version: Version::V4,
             stream_id: 0,
             tracing: Tracing::Response(None),

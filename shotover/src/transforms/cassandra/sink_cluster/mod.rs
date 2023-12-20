@@ -439,7 +439,7 @@ impl CassandraSinkCluster {
                         // send an unprepared error in response to force
                         // the client to reprepare the query
                         return_chan_tx
-                            .send(Ok(Message::from_frame_now(Frame::Cassandra(
+                            .send(Ok(Message::from_frame(Frame::Cassandra(
                                 CassandraFrame {
                                     operation: CassandraOperation::Error(ErrorBody {
                                         message: "Shotover does not have this query's metadata. Please re-prepare on this Shotover host before sending again.".into(),
@@ -592,7 +592,7 @@ fn send_error_in_response_to_metadata(
     error: &str,
 ) -> oneshot::Receiver<Result<Message, ResponseError>> {
     let (tx, rx) = oneshot::channel();
-    tx.send(Ok(Message::from_frame_now(Frame::Cassandra(
+    tx.send(Ok(Message::from_frame(Frame::Cassandra(
         CassandraFrame::shotover_error(metadata.stream_id, metadata.version, error),
     ))))
     .unwrap();

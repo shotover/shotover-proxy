@@ -132,12 +132,12 @@ mod test {
         let messages: Vec<_> = (0..26)
             .map(|i| {
                 if i % 2 == 0 {
-                    Message::from_frame_now(Frame::Redis(RedisFrame::Array(vec![
+                    Message::from_frame(Frame::Redis(RedisFrame::Array(vec![
                         RedisFrame::BulkString("GET".into()),
                         RedisFrame::BulkString("key".into()),
                     ])))
                 } else {
-                    Message::from_frame_now(Frame::Redis(RedisFrame::Array(vec![
+                    Message::from_frame(Frame::Redis(RedisFrame::Array(vec![
                         RedisFrame::BulkString("SET".into()),
                         RedisFrame::BulkString("key".into()),
                         RedisFrame::BulkString("value".into()),
@@ -188,12 +188,12 @@ mod test {
         let messages: Vec<_> = (0..26)
             .map(|i| {
                 if i % 2 == 0 {
-                    Message::from_frame_now(Frame::Redis(RedisFrame::Array(vec![
+                    Message::from_frame(Frame::Redis(RedisFrame::Array(vec![
                         RedisFrame::BulkString("GET".into()),
                         RedisFrame::BulkString("key".into()),
                     ])))
                 } else {
-                    Message::from_frame_now(Frame::Redis(RedisFrame::Array(vec![
+                    Message::from_frame(Frame::Redis(RedisFrame::Array(vec![
                         RedisFrame::BulkString("SET".into()),
                         RedisFrame::BulkString("key".into()),
                         RedisFrame::BulkString("value".into()),

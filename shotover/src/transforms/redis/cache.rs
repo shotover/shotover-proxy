@@ -160,13 +160,13 @@ impl SimpleRedisCache {
                                 match build_redis_key_from_cql3(query, table_cache_schema) {
                                     Ok(address) => {
                                         indices.push(i);
-                                        return Some(Message::from_frame(
+                                        return Some(Message::from_frame_at_instant(
                                             Frame::Redis(RedisFrame::Array(vec![
                                                 RedisFrame::BulkString("HGET".into()),
                                                 RedisFrame::BulkString(address.key),
                                                 RedisFrame::BulkString(address.field),
                                             ])),
-                                            message.received_at,
+                                            message.received_from_source_or_sink_at,
                                         ));
                                     }
                                     Err(_e) => {} // TODO match Err(()) here or just have build_redis_key_from_cql3 return Option
@@ -207,9 +207,9 @@ impl SimpleRedisCache {
                                             if response_frame.version == request_frame.version {
                                                 response_frame.stream_id = request_frame.stream_id;
                                                 Some((
-                                                    Message::from_frame(
+                                                    Message::from_frame_at_instant(
                                                         Frame::Cassandra(response_frame),
-                                                        redis_response.received_at
+                                                        redis_response.received_from_source_or_sink_at
                                                     ),
                                                     redis_index,
                                                 ))
@@ -265,11 +265,11 @@ impl SimpleRedisCache {
     /// Clears the cache for the entire table
     /// TODO make this drop only the specified keys not the entire cache
     fn drop_table(&self, _statement: &CassandraStatement, response: &Message) -> Message {
-        Message::from_frame(
+        Message::from_frame_at_instant(
             Frame::Redis(RedisFrame::Array(vec![RedisFrame::BulkString(
                 "FLUSHDB".into(),
             )])),
-            response.received_at,
+            response.received_from_source_or_sink_at,
         )
     }
 
@@ -285,12 +285,12 @@ impl SimpleRedisCache {
                     // TODO: handle errors
                     build_redis_key_from_cql3(statement, table_cache_schema)
                 {
-                    return Some(Message::from_frame(
+                    return Some(Message::from_frame_at_instant(
                         Frame::Redis(RedisFrame::Array(vec![
                             RedisFrame::BulkString("DEL".into()),
                             RedisFrame::BulkString(address.key),
                         ])),
-                        response.received_at,
+                        response.received_from_source_or_sink_at,
                     ));
                 }
             }
@@ -315,14 +315,14 @@ impl SimpleRedisCache {
                         // 2. we should be able to directly use the raw bytes when the message has not yet been mutated
                         let encoded = frame.clone().encode(Compression::None);
 
-                        return Ok(Some(Message::from_frame(
+                        return Ok(Some(Message::from_frame_at_instant(
                             Frame::Redis(RedisFrame::Array(vec![
                                 RedisFrame::BulkString("HSET".into()),
                                 RedisFrame::BulkString(address.key),
                                 RedisFrame::BulkString(address.field),
                                 RedisFrame::BulkString(encoded.into()),
                             ])),
-                            response.received_at,
+                            response.received_from_source_or_sink_at,
                         )));
                     }
                 }

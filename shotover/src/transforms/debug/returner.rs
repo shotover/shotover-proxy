@@ -63,7 +63,7 @@ impl Transform for DebugReturner {
                 .requests
                 .iter()
                 .map(|_| {
-                    Message::from_frame_now(Frame::Redis(RedisFrame::BulkString(
+                    Message::from_frame(Frame::Redis(RedisFrame::BulkString(
                         string.to_string().into(),
                     )))
                 })

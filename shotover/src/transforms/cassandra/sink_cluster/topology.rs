@@ -191,7 +191,7 @@ async fn register_for_topology_and_status_events(
     version: Version,
 ) -> Result<()> {
     let mut response = connection
-        .send(Message::from_frame_now(Frame::Cassandra(CassandraFrame {
+        .send(Message::from_frame(Frame::Cassandra(CassandraFrame {
             version,
             stream_id: 0,
             tracing: Tracing::Request(false),
@@ -246,7 +246,7 @@ mod system_keyspaces {
         version: Version,
     ) -> Result<HashMap<String, KeyspaceMetadata>> {
         let response = connection
-            .send(Message::from_frame_now(Frame::Cassandra(CassandraFrame {
+            .send(Message::from_frame(Frame::Cassandra(CassandraFrame {
                 version,
                 stream_id: 0,
                 tracing: Tracing::Request(false),
@@ -376,7 +376,7 @@ mod system_local {
         version: Version,
     ) -> Result<Vec<CassandraNode>> {
         let response = connection
-            .send(Message::from_frame_now(Frame::Cassandra(CassandraFrame {
+            .send(Message::from_frame(Frame::Cassandra(CassandraFrame {
                 version,
                 stream_id: 1,
                 tracing: Tracing::Request(false),
@@ -461,7 +461,7 @@ mod system_peers {
         version: Version,
     ) -> Result<Vec<CassandraNode>> {
         let mut response = connection.send(
-            Message::from_frame_now(Frame::Cassandra(CassandraFrame {
+            Message::from_frame(Frame::Cassandra(CassandraFrame {
                 version,
                 stream_id: 0,
                 tracing: Tracing::Request(false),
@@ -478,7 +478,7 @@ mod system_peers {
 
         if is_peers_v2_does_not_exist_error(&mut response) {
             response = connection
-                .send(Message::from_frame_now(Frame::Cassandra(CassandraFrame {
+                .send(Message::from_frame(Frame::Cassandra(CassandraFrame {
                     version,
                     stream_id: 0,
                     tracing: Tracing::Request(false),
