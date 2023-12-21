@@ -3,7 +3,7 @@ use crate::transforms::{TransformBuilder, Transforms, Wrapper};
 use anyhow::{anyhow, Result};
 use derivative::Derivative;
 use futures::TryFutureExt;
-use metrics::{histogram, register_counter, register_histogram, Counter};
+use metrics::{histogram, register_counter, register_histogram, Counter, Histogram};
 use std::net::SocketAddr;
 use tokio::sync::{mpsc, oneshot};
 use tokio::time::{Duration, Instant};
@@ -62,6 +62,8 @@ pub struct TransformChain {
     chain_total: Counter,
     #[derivative(Debug = "ignore")]
     chain_failures: Counter,
+    #[derivative(Debug = "ignore")]
+    chain_batch_size: Histogram,
 }
 
 #[derive(Debug, Clone)]
@@ -167,13 +169,14 @@ impl TransformChain {
         let start = Instant::now();
         wrapper.reset(&mut self.chain);
 
+        self.chain_batch_size.record(wrapper.requests.len() as f64);
         let result = wrapper.call_next_transform().await;
         self.chain_total.increment(1);
         if result.is_err() {
             self.chain_failures.increment(1);
         }
 
-        histogram!("shotover_chain_latency", start.elapsed(),  "chain" => self.name.clone(), "client_details" => client_details);
+        histogram!("shotover_chain_latency_seconds", start.elapsed(),  "chain" => self.name.clone(), "client_details" => client_details);
         result
     }
 
@@ -185,13 +188,14 @@ impl TransformChain {
         let start = Instant::now();
         wrapper.reset_rev(&mut self.chain);
 
+        self.chain_batch_size.record(wrapper.requests.len() as f64);
         let result = wrapper.call_next_transform_pushed().await;
         self.chain_total.increment(1);
         if result.is_err() {
             self.chain_failures.increment(1);
         }
 
-        histogram!("shotover_chain_latency", start.elapsed(),  "chain" => self.name.clone(), "client_details" => client_details);
+        histogram!("shotover_chain_latency_seconds", start.elapsed(),  "chain" => self.name.clone(), "client_details" => client_details);
         result
     }
 }
@@ -206,25 +210,31 @@ pub struct TransformChainBuilder {
     chain_total: Counter,
     #[derivative(Debug = "ignore")]
     chain_failures: Counter,
+    #[derivative(Debug = "ignore")]
+    chain_batch_size: Histogram,
 }
 
 impl TransformChainBuilder {
     pub fn new(chain: Vec<Box<dyn TransformBuilder>>, name: String) -> Self {
         for transform in &chain {
-            register_counter!("shotover_transform_total", "transform" => transform.get_name());
-            register_counter!("shotover_transform_failures", "transform" => transform.get_name());
-            register_histogram!("shotover_transform_latency", "transform" => transform.get_name());
+            register_counter!("shotover_transform_total_count", "transform" => transform.get_name());
+            register_counter!("shotover_transform_failures_count", "transform" => transform.get_name());
+            register_histogram!("shotover_transform_latency_seconds", "transform" => transform.get_name());
         }
 
-        let chain_total = register_counter!("shotover_chain_total", "chain" => name.clone());
-        let chain_failures = register_counter!("shotover_chain_failures", "chain" => name.clone());
-        // Cant register shotover_chain_latency because a unique one is created for each client ip address
+        let chain_batch_size =
+            register_histogram!("shotover_chain_messages_per_batch_count", "chain" => name.clone());
+        let chain_total = register_counter!("shotover_chain_total_count", "chain" => name.clone());
+        let chain_failures =
+            register_counter!("shotover_chain_failures_count", "chain" => name.clone());
+        // Cant register shotover_chain_latency_seconds because a unique one is created for each client ip address
 
         TransformChainBuilder {
             name,
             chain,
             chain_total,
             chain_failures,
+            chain_batch_size,
         }
     }
 
@@ -348,6 +358,7 @@ impl TransformChainBuilder {
             chain,
             chain_total: self.chain_total.clone(),
             chain_failures: self.chain_failures.clone(),
+            chain_batch_size: self.chain_batch_size.clone(),
         }
     }
 
@@ -371,6 +382,7 @@ impl TransformChainBuilder {
             chain,
             chain_total: self.chain_total.clone(),
             chain_failures: self.chain_failures.clone(),
+            chain_batch_size: self.chain_batch_size.clone(),
         }
     }
 }

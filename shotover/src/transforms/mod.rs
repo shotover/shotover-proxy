@@ -337,7 +337,7 @@ impl<'a> Wrapper<'a> {
         if result.is_err() {
             counter!("shotover_transform_failures", 1, "transform" => transform_name)
         }
-        histogram!("shotover_transform_latency", start.elapsed(),  "transform" => transform_name);
+        histogram!("shotover_transform_latency_seconds", start.elapsed(),  "transform" => transform_name);
         result
     }
 
@@ -358,7 +358,7 @@ impl<'a> Wrapper<'a> {
         if result.is_err() {
             counter!("shotover_transform_pushed_failures", 1, "transform" => transform_name)
         }
-        histogram!("shotover_transform_pushed_latency", start.elapsed(),  "transform" => transform_name);
+        histogram!("shotover_transform_pushed_latency_seconds", start.elapsed(),  "transform" => transform_name);
         result
     }
 

@@ -159,7 +159,7 @@ impl RedisSinkCluster {
             token: None,
         };
 
-        register_counter!("failed_requests", "chain" => chain_name, "transform" => sink_cluster.get_name());
+        register_counter!("shotover_failed_requests_count", "chain" => chain_name, "transform" => sink_cluster.get_name());
 
         sink_cluster
     }
@@ -598,7 +598,7 @@ impl RedisSinkCluster {
     #[inline(always)]
     fn send_error_response(&self, message: &str) -> Result<ResponseFuture> {
         if let Err(e) = CONTEXT_CHAIN_NAME.try_with(|chain_name| {
-        counter!("failed_requests", 1, "chain" => chain_name.to_string(), "transform" => self.get_name());
+        counter!("shotover_failed_requests_count", 1, "chain" => chain_name.to_string(), "transform" => self.get_name());
     }) {
         error!("failed to count failed request - missing chain name: {:?}", e);
     }
