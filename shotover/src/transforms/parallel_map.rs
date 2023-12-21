@@ -96,9 +96,8 @@ impl Transform for ParallelMap {
             let mut future = UOFutures::new(self.ordered);
             for chain in self.chains.iter_mut() {
                 if let Some(message) = message_iter.next() {
-                    future.push(chain.process_request(Wrapper::new_with_chain_name(
+                    future.push(chain.process_request(Wrapper::new_with_addr(
                         vec![message],
-                        chain.name.clone(),
                         requests_wrapper.local_addr,
                     )));
                 }
@@ -172,9 +171,9 @@ mod parallel_map_tests {
                 Box::<DebugPrinter>::default(),
                 Box::<NullSink>::default(),
             ],
-            "test-chain-1".to_string(),
+            "test-chain-1",
         );
-        let chain_2 = TransformChainBuilder::new(vec![], "test-chain-2".to_string());
+        let chain_2 = TransformChainBuilder::new(vec![], "test-chain-2");
 
         let transform = ParallelMapBuilder {
             chains: vec![chain_1, chain_2],
@@ -199,7 +198,7 @@ mod parallel_map_tests {
                 Box::<DebugPrinter>::default(),
                 Box::<NullSink>::default(),
             ],
-            "test-chain-1".to_string(),
+            "test-chain-1",
         );
         let chain_2 = TransformChainBuilder::new(
             vec![
@@ -207,7 +206,7 @@ mod parallel_map_tests {
                 Box::<DebugPrinter>::default(),
                 Box::<NullSink>::default(),
             ],
-            "test-chain-2".to_string(),
+            "test-chain-2",
         );
 
         let transform = ParallelMapBuilder {

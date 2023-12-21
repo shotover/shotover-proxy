@@ -27,11 +27,9 @@ fn criterion_benchmark(c: &mut Criterion) {
 
     // loopback is the fastest possible transform as it does not even have to drop the received requests
     {
-        let chain =
-            TransformChainBuilder::new(vec![Box::<Loopback>::default()], "bench".to_string());
-        let wrapper = Wrapper::new_with_chain_name(
+        let chain = TransformChainBuilder::new(vec![Box::<Loopback>::default()], "bench");
+        let wrapper = Wrapper::new_with_addr(
             vec![Message::from_frame(Frame::Redis(RedisFrame::Null))],
-            chain.name.clone(),
             "127.0.0.1:6379".parse().unwrap(),
         );
 
@@ -48,11 +46,9 @@ fn criterion_benchmark(c: &mut Criterion) {
     }
 
     {
-        let chain =
-            TransformChainBuilder::new(vec![Box::<NullSink>::default()], "bench".to_string());
-        let wrapper = Wrapper::new_with_chain_name(
+        let chain = TransformChainBuilder::new(vec![Box::<NullSink>::default()], "bench");
+        let wrapper = Wrapper::new_with_addr(
             vec![Message::from_frame(Frame::Redis(RedisFrame::Null))],
-            chain.name.clone(),
             "127.0.0.1:6379".parse().unwrap(),
         );
 
@@ -76,9 +72,9 @@ fn criterion_benchmark(c: &mut Criterion) {
                 }),
                 Box::new(DebugReturner::new(Response::Redis("a".into()))),
             ],
-            "bench".to_string(),
+            "bench",
         );
-        let wrapper = Wrapper::new_with_chain_name(
+        let wrapper = Wrapper::new_with_addr(
             vec![
                 Message::from_frame(Frame::Redis(RedisFrame::Array(vec![
                     RedisFrame::BulkString(Bytes::from_static(b"SET")),
@@ -90,7 +86,6 @@ fn criterion_benchmark(c: &mut Criterion) {
                     RedisFrame::BulkString(Bytes::from_static(b"foo")),
                 ]))),
             ],
-            chain.name.clone(),
             "127.0.0.1:6379".parse().unwrap(),
         );
 
@@ -117,15 +112,14 @@ fn criterion_benchmark(c: &mut Criterion) {
                     ]))),
                 ]))),
             ],
-            "bench".to_string(),
+            "bench",
         );
-        let wrapper_set = Wrapper::new_with_chain_name(
+        let wrapper_set = Wrapper::new_with_addr(
             vec![Message::from_frame(Frame::Redis(RedisFrame::Array(vec![
                 RedisFrame::BulkString(Bytes::from_static(b"SET")),
                 RedisFrame::BulkString(Bytes::from_static(b"foo")),
                 RedisFrame::BulkString(Bytes::from_static(b"bar")),
             ])))],
-            chain.name.clone(),
             "127.0.0.1:6379".parse().unwrap(),
         );
 
@@ -140,12 +134,11 @@ fn criterion_benchmark(c: &mut Criterion) {
             )
         });
 
-        let wrapper_get = Wrapper::new_with_chain_name(
+        let wrapper_get = Wrapper::new_with_addr(
             vec![Message::from_frame(Frame::Redis(RedisFrame::Array(vec![
                 RedisFrame::BulkString(Bytes::from_static(b"GET")),
                 RedisFrame::BulkString(Bytes::from_static(b"foo")),
             ])))],
-            chain.name.clone(),
             "127.0.0.1:6379".parse().unwrap(),
         );
 
@@ -167,15 +160,14 @@ fn criterion_benchmark(c: &mut Criterion) {
                 Box::new(RedisClusterPortsRewrite::new(2004)),
                 Box::<NullSink>::default(),
             ],
-            "bench".to_string(),
+            "bench",
         );
-        let wrapper = Wrapper::new_with_chain_name(
+        let wrapper = Wrapper::new_with_addr(
             vec![Message::from_frame(Frame::Redis(RedisFrame::Array(vec![
                 RedisFrame::BulkString(Bytes::from_static(b"SET")),
                 RedisFrame::BulkString(Bytes::from_static(b"foo")),
                 RedisFrame::BulkString(Bytes::from_static(b"bar")),
             ])))],
-            chain.name.clone(),
             "127.0.0.1:6379".parse().unwrap(),
         );
 
@@ -204,9 +196,9 @@ fn criterion_benchmark(c: &mut Criterion) {
                 .unwrap(),
                 Box::<NullSink>::default(),
             ],
-            "bench".to_string(),
+            "bench",
         );
-        let wrapper = Wrapper::new_with_chain_name(
+        let wrapper = Wrapper::new_with_addr(
             vec![Message::from_bytes(
                 Bytes::from(
                     // a simple select query
@@ -220,7 +212,6 @@ fn criterion_benchmark(c: &mut Criterion) {
                     compression: Compression::None,
                 },
             )],
-            chain.name.clone(),
             "127.0.0.1:6379".parse().unwrap(),
         );
 
@@ -242,10 +233,10 @@ fn criterion_benchmark(c: &mut Criterion) {
                 Box::new(CassandraPeersRewrite::new(9042)),
                 Box::<NullSink>::default(),
             ],
-            "bench".into(),
+            "bench",
         );
 
-        let wrapper = Wrapper::new_with_chain_name(
+        let wrapper = Wrapper::new_with_addr(
             vec![Message::from_bytes(
                 CassandraFrame {
                     version: Version::V4,
@@ -275,7 +266,6 @@ fn criterion_benchmark(c: &mut Criterion) {
                     compression: Compression::None,
                 },
             )],
-            "bench".into(),
             "127.0.0.1:6379".parse().unwrap(),
         );
 
@@ -315,7 +305,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                 .unwrap(),
                 Box::<NullSink>::default(),
             ],
-            "bench".into(),
+            "bench",
         );
 
         let wrapper = cassandra_parsed_query(
@@ -352,7 +342,7 @@ fn criterion_benchmark(c: &mut Criterion) {
 
 #[cfg(feature = "alpha-transforms")]
 fn cassandra_parsed_query(query: &str) -> Wrapper {
-    Wrapper::new_with_chain_name(
+    Wrapper::new_with_addr(
         vec![Message::from_frame(Frame::Cassandra(CassandraFrame {
             version: Version::V4,
             stream_id: 0,
@@ -373,7 +363,6 @@ fn cassandra_parsed_query(query: &str) -> Wrapper {
                 }),
             },
         }))],
-        "bench".into(),
         "127.0.0.1:6379".parse().unwrap(),
     )
 }
