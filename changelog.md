@@ -3,6 +3,27 @@
 Any breaking changes to the `topology.yaml` or `shotover` rust API should be documented here.
 This assists us in knowing when to make the next release a breaking release and assists users with making upgrades to new breaking releases.
 
+## 0.3.0
+
+### metrics
+
+The prometheus metrics were renamed to better follow the official reccomended naming scheme: <https://prometheus.io/docs/practices/naming/>
+This included ensuring all meterics were prefixed with `shotover_` and all metrics were suffixed with an appropriate `_unit`.
+This includes:
+
+* `shotover_transform_total` -> `shotover_transform_total_count`
+* `shotover_transform_failures` -> `shotover_transform_failures_count`
+* `shotover_transform_latency`  -> `shotover_transform_latency_seconds`
+* `shotover_chain_total` -> `shotover_chain_total_count`
+* `shotover_chain_failures`  -> `shotover_chain_failures_count`
+* `shotover_chain_latency`  -> `shotover_chain_latency_seconds`
+* `shotover_available_connections` -> `shotover_available_connections_count`
+* `shotover_chain_failures` -> `shotover_chain_failures_count`
+* `out_of_rack_requests`  -> `shotover_out_of_rack_requests_count`
+* `client_protocol_version` -> `shotover_client_protocol_version_count`
+* `failed_requests` -> `shotover_failed_requests_count`
+* `query_count` -> `shotover_query_count`
+
 ## 0.2.0
 
 ### topology.yaml
@@ -56,15 +77,7 @@ The usage of the Filter transform has been changed to use either an allow list o
         DenyList: [Read]
 ```
 
-
-
-### shotover rust api
-
 ## 0.1.11
-
-### topology.yaml
-
-* No recorded changes
 
 ### shotover rust api
 
