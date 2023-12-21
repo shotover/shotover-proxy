@@ -36,12 +36,6 @@ pub struct Sampler {
     sample_chain: TransformChain,
 }
 
-impl Sampler {
-    fn get_name(&self) -> &'static str {
-        "Sampler"
-    }
-}
-
 #[async_trait]
 impl Transform for Sampler {
     async fn transform<'a>(&'a mut self, requests_wrapper: Wrapper<'a>) -> Result<Messages> {
@@ -49,8 +43,7 @@ impl Transform for Sampler {
         if chance < self.numerator {
             let sample = requests_wrapper.clone();
             let (sample, downstream) = tokio::join!(
-                self.sample_chain
-                    .process_request(sample, self.get_name().to_string()),
+                self.sample_chain.process_request(sample),
                 requests_wrapper.call_next_transform()
             );
             if sample.is_err() {

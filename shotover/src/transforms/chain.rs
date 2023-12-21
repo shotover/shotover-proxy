@@ -161,15 +161,12 @@ impl BufferedChain {
 }
 
 impl TransformChain {
-    pub async fn process_request(
-        &mut self,
-        mut wrapper: Wrapper<'_>,
-        client_details: String,
-    ) -> Result<Messages> {
+    pub async fn process_request(&mut self, mut wrapper: Wrapper<'_>) -> Result<Messages> {
         let start = Instant::now();
         wrapper.reset(&mut self.chain);
 
         self.chain_batch_size.record(wrapper.requests.len() as f64);
+        let client_details = wrapper.client_details.to_owned();
         let result = wrapper.call_next_transform().await;
         self.chain_total.increment(1);
         if result.is_err() {
@@ -180,15 +177,12 @@ impl TransformChain {
         result
     }
 
-    pub async fn process_request_rev(
-        &mut self,
-        mut wrapper: Wrapper<'_>,
-        client_details: String,
-    ) -> Result<Messages> {
+    pub async fn process_request_rev(&mut self, mut wrapper: Wrapper<'_>) -> Result<Messages> {
         let start = Instant::now();
         wrapper.reset_rev(&mut self.chain);
 
         self.chain_batch_size.record(wrapper.requests.len() as f64);
+        let client_details = wrapper.client_details.to_owned();
         let result = wrapper.call_next_transform_pushed().await;
         self.chain_total.increment(1);
         if result.is_err() {
@@ -378,7 +372,7 @@ impl TransformChainBuilder {
 
                     let mut wrapper = Wrapper::new_with_chain_name(messages, chain.name.clone(), local_addr);
                     wrapper.flush = flush;
-                    let chain_response = chain.process_request(wrapper, chain.name.clone()).await;
+                    let chain_response = chain.process_request(wrapper).await;
 
                     if let Err(e) = &chain_response {
                         error!("Internal error in buffered chain: {e:?}");
@@ -397,10 +391,7 @@ impl TransformChainBuilder {
                 debug!("buffered chain processing thread exiting, stopping chain loop and dropping");
 
                 match chain
-                    .process_request(
-                        Wrapper::flush_with_chain_name(chain.name.clone()),
-                        "".into(),
-                    )
+                    .process_request(Wrapper::flush_with_chain_name(chain.name.clone()))
                     .await
                 {
                     Ok(_) => info!("Buffered chain {} was shutdown", chain.name),
