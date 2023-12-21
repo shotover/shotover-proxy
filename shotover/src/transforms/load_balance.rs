@@ -124,7 +124,7 @@ mod test {
                 .unwrap();
         }
 
-        match chain.chain[0].build() {
+        match chain.chain[0].builder.build() {
             Transforms::PoolConnections(p) => {
                 let all_connections = p.all_connections.lock().await;
                 assert_eq!(all_connections.len(), 3);

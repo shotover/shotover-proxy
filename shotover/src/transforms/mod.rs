@@ -33,7 +33,6 @@ use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use core::fmt;
 use futures::Future;
-use metrics::{counter, histogram};
 use std::fmt::{Debug, Formatter};
 use std::iter::Rev;
 use std::net::SocketAddr;
@@ -42,6 +41,8 @@ use std::slice::IterMut;
 use strum_macros::IntoStaticStr;
 use tokio::sync::mpsc;
 use tokio::time::Instant;
+
+use self::chain::TransformAndMetrics;
 
 pub mod cassandra;
 pub mod chain;
@@ -265,22 +266,22 @@ pub struct Wrapper<'a> {
 
 #[derive(Debug)]
 enum TransformIter<'a> {
-    Forwards(IterMut<'a, Transforms>),
-    Backwards(Rev<IterMut<'a, Transforms>>),
+    Forwards(IterMut<'a, TransformAndMetrics>),
+    Backwards(Rev<IterMut<'a, TransformAndMetrics>>),
 }
 
 impl<'a> TransformIter<'a> {
-    fn new_forwards(transforms: &'a mut [Transforms]) -> TransformIter<'a> {
+    fn new_forwards(transforms: &'a mut [TransformAndMetrics]) -> TransformIter<'a> {
         TransformIter::Forwards(transforms.iter_mut())
     }
 
-    fn new_backwards(transforms: &'a mut [Transforms]) -> TransformIter<'a> {
+    fn new_backwards(transforms: &'a mut [TransformAndMetrics]) -> TransformIter<'a> {
         TransformIter::Backwards(transforms.iter_mut().rev())
     }
 }
 
 impl<'a> Iterator for TransformIter<'a> {
-    type Item = &'a mut Transforms;
+    type Item = &'a mut TransformAndMetrics;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self {
@@ -320,7 +321,13 @@ impl<'a> Wrapper<'a> {
     ///
     /// The result of calling the next transform is then provided as a response.
     pub async fn call_next_transform(mut self) -> Result<Messages> {
-        let transform = match self.transforms.next() {
+        let TransformAndMetrics {
+            transform,
+            transform_total,
+            transform_failures,
+            transform_latency,
+            ..
+        } = match self.transforms.next() {
             Some(transform) => transform,
             None => panic!("The transform chain does not end with a terminating transform. If you want to throw the messages away use a NullSink transform, otherwise use a terminating sink transform to send the messages somewhere.")
         };
@@ -333,16 +340,22 @@ impl<'a> Wrapper<'a> {
             .scope(chain_name, transform.transform(self))
             .await
             .map_err(|e| e.context(anyhow!("{transform_name} transform failed")));
-        counter!("shotover_transform_total", 1, "transform" => transform_name);
+        transform_total.increment(1);
         if result.is_err() {
-            counter!("shotover_transform_failures", 1, "transform" => transform_name)
+            transform_failures.increment(1);
         }
-        histogram!("shotover_transform_latency_seconds", start.elapsed(),  "transform" => transform_name);
+        transform_latency.record(start.elapsed());
         result
     }
 
     pub async fn call_next_transform_pushed(mut self) -> Result<Messages> {
-        let transform = match self.transforms.next() {
+        let TransformAndMetrics {
+            transform,
+            transform_pushed_total,
+            transform_pushed_failures,
+            transform_pushed_latency,
+            ..
+        } = match self.transforms.next() {
             Some(transform) => transform,
             None => return Ok(self.requests),
         };
@@ -353,12 +366,13 @@ impl<'a> Wrapper<'a> {
         let start = Instant::now();
         let result = CONTEXT_CHAIN_NAME
             .scope(chain_name, transform.transform_pushed(self))
-            .await;
-        counter!("shotover_transform_pushed_total", 1, "transform" => transform_name);
+            .await
+            .map_err(|e| e.context(anyhow!("{transform_name} transform failed")));
+        transform_pushed_total.increment(1);
         if result.is_err() {
-            counter!("shotover_transform_pushed_failures", 1, "transform" => transform_name)
+            transform_pushed_failures.increment(1);
         }
-        histogram!("shotover_transform_pushed_latency_seconds", start.elapsed(),  "transform" => transform_name);
+        transform_pushed_latency.record(start.elapsed());
         result
     }
 
@@ -429,11 +443,11 @@ impl<'a> Wrapper<'a> {
         format!("{:?}", messages)
     }
 
-    pub fn reset(&mut self, transforms: &'a mut [Transforms]) {
+    pub fn reset(&mut self, transforms: &'a mut [TransformAndMetrics]) {
         self.transforms = TransformIter::new_forwards(transforms);
     }
 
-    pub fn reset_rev(&mut self, transforms: &'a mut [Transforms]) {
+    pub fn reset_rev(&mut self, transforms: &'a mut [TransformAndMetrics]) {
         self.transforms = TransformIter::new_backwards(transforms);
     }
 }
