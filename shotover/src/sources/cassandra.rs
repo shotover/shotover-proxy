@@ -7,6 +7,7 @@ use crate::tls::{TlsAcceptor, TlsAcceptorConfig};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::{watch, Semaphore};
 use tokio::task::JoinHandle;
 use tracing::{error, info};
@@ -75,7 +76,7 @@ impl CassandraSource {
             Arc::new(Semaphore::new(connection_limit.unwrap_or(512))),
             trigger_shutdown_rx.clone(),
             tls.map(TlsAcceptor::new).transpose()?,
-            timeout,
+            timeout.map(Duration::from_secs),
             transport.unwrap_or(Transport::Tcp),
         )
         .await?;
