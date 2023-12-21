@@ -58,7 +58,7 @@ impl RedisSinkSingleBuilder {
         chain_name: String,
         connect_timeout_ms: u64,
     ) -> Self {
-        let failed_requests = register_counter!("failed_requests", "chain" => chain_name, "transform" => "RedisSinkSingle");
+        let failed_requests = register_counter!("shotover_failed_requests_count", "chain" => chain_name, "transform" => "RedisSinkSingle");
         let connect_timeout = Duration::from_millis(connect_timeout_ms);
 
         RedisSinkSingleBuilder {

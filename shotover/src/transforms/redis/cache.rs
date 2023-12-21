@@ -85,7 +85,7 @@ pub struct RedisConfig {
 #[async_trait(?Send)]
 impl TransformConfig for RedisConfig {
     async fn get_builder(&self, _chain_name: String) -> Result<Box<dyn TransformBuilder>> {
-        let missed_requests = register_counter!("cache_miss");
+        let missed_requests = register_counter!("shotover_cache_miss_count");
 
         let caching_schema: HashMap<FQName, TableCacheSchema> = self
             .caching_schema

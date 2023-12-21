@@ -55,7 +55,7 @@ impl NodePoolBuilder {
     pub fn new(chain_name: String) -> Self {
         Self {
             prepared_metadata: Arc::new(RwLock::new(HashMap::new())),
-            out_of_rack_requests: register_counter!("out_of_rack_requests", "chain" => chain_name, "transform" => "CassandraSinkCluster"),
+            out_of_rack_requests: register_counter!("shotover_out_of_rack_requests_count", "chain" => chain_name, "transform" => "CassandraSinkCluster"),
         }
     }
 
