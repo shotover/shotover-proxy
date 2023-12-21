@@ -367,7 +367,7 @@ impl<'a> Wrapper<'a> {
         Wrapper {
             requests,
             transforms: TransformIter::new_forwards(&mut []),
-            client_details: "".to_string(),
+            client_details: "".to_owned(),
             local_addr: "127.0.0.1:8000".parse().unwrap(),
             chain_name: "".to_string(),
             flush: false,
@@ -382,7 +382,7 @@ impl<'a> Wrapper<'a> {
         Wrapper {
             requests,
             transforms: TransformIter::new_forwards(&mut []),
-            client_details: "".to_string(),
+            client_details: "".to_owned(),
             local_addr,
             chain_name,
             flush: false,
@@ -393,7 +393,7 @@ impl<'a> Wrapper<'a> {
         Wrapper {
             requests: vec![],
             transforms: TransformIter::new_forwards(&mut []),
-            client_details: "".into(),
+            client_details: "".to_owned(),
             // The connection is closed so we need to just fake an address here
             local_addr: "127.0.0.1:10000".parse().unwrap(),
             chain_name,

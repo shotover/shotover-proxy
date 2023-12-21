@@ -659,10 +659,7 @@ impl<C: CodecBuilder + 'static> Handler<C> {
         // Flush messages regardless of if we are shutting down due to a failure or due to application shutdown
         match self
             .chain
-            .process_request(
-                Wrapper::flush_with_chain_name(self.chain.name.clone()),
-                client_details,
-            )
+            .process_request(Wrapper::flush_with_chain_name(self.chain.name.clone()))
             .await
         {
             Ok(_) => {}
@@ -749,13 +746,13 @@ impl<C: CodecBuilder + 'static> Handler<C> {
 
             let modified_messages = if reverse_chain {
                 self.chain
-                    .process_request_rev(wrapper, client_details.to_owned())
+                    .process_request_rev(wrapper)
                     .await
                     .context("Chain failed to receive pushed messages/events, the connection will now be closed.")?
             } else {
                 match self
                     .chain
-                    .process_request(wrapper, client_details.to_owned())
+                    .process_request(wrapper)
                     .await
                     .context("Chain failed to send and/or receive messages, the connection will now be closed.")
                 {
