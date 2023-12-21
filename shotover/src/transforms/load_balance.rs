@@ -119,7 +119,7 @@ mod test {
         for _ in 0..90 {
             chain
                 .build()
-                .process_request(Wrapper::new(Messages::new()), "test_client".to_string())
+                .process_request(Wrapper::new(Messages::new()))
                 .await
                 .unwrap();
         }

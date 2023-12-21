@@ -38,7 +38,6 @@ fn criterion_benchmark(c: &mut Criterion) {
                 || BenchInput {
                     chain: chain.build(),
                     wrapper: wrapper.clone(),
-                    client_details: "".into(),
                 },
                 BenchInput::bench,
                 BatchSize::SmallInput,
@@ -77,7 +76,6 @@ fn criterion_benchmark(c: &mut Criterion) {
                 || BenchInput {
                     chain: chain.build(),
                     wrapper: wrapper.clone(),
-                    client_details: "".into(),
                 },
                 BenchInput::bench,
                 BatchSize::SmallInput,
@@ -113,7 +111,6 @@ fn criterion_benchmark(c: &mut Criterion) {
                 || BenchInput {
                     chain: chain.build(),
                     wrapper: wrapper_set.clone(),
-                    client_details: "".into(),
                 },
                 BenchInput::bench,
                 BatchSize::SmallInput,
@@ -134,7 +131,6 @@ fn criterion_benchmark(c: &mut Criterion) {
                 || BenchInput {
                     chain: chain.build(),
                     wrapper: wrapper_get.clone(),
-                    client_details: "".into(),
                 },
                 BenchInput::bench,
                 BatchSize::SmallInput,
@@ -165,7 +161,6 @@ fn criterion_benchmark(c: &mut Criterion) {
                 || BenchInput {
                     chain: chain.build(),
                     wrapper: wrapper.clone(),
-                    client_details: "".into(),
                 },
                 BenchInput::bench,
                 BatchSize::SmallInput,
@@ -211,7 +206,6 @@ fn criterion_benchmark(c: &mut Criterion) {
                 || BenchInput {
                     chain: chain.build(),
                     wrapper: wrapper.clone(),
-                    client_details: "".into(),
                 },
                 BenchInput::bench,
                 BatchSize::SmallInput,
@@ -267,7 +261,6 @@ fn criterion_benchmark(c: &mut Criterion) {
                 || BenchInput {
                     chain: chain.build(),
                     wrapper: wrapper.clone(),
-                    client_details: "".into(),
                 },
                 BenchInput::bench,
                 BatchSize::SmallInput,
@@ -311,7 +304,6 @@ fn criterion_benchmark(c: &mut Criterion) {
                 || BenchInput {
                     chain: chain.build(),
                     wrapper: wrapper.clone(),
-                    client_details: "".into(),
                 },
                 BenchInput::bench,
                 BatchSize::SmallInput,
@@ -327,7 +319,6 @@ fn criterion_benchmark(c: &mut Criterion) {
                 || BenchInput {
                     chain: chain.build(),
                     wrapper: wrapper.clone(),
-                    client_details: "".into(),
                 },
                 BenchInput::bench,
                 BatchSize::SmallInput,
@@ -367,15 +358,11 @@ fn cassandra_parsed_query(query: &str) -> Wrapper {
 struct BenchInput<'a> {
     chain: TransformChain,
     wrapper: Wrapper<'a>,
-    client_details: String,
 }
 
 impl<'a> BenchInput<'a> {
     async fn bench(mut self) {
-        self.chain
-            .process_request(self.wrapper, self.client_details)
-            .await
-            .unwrap();
+        self.chain.process_request(self.wrapper).await.unwrap();
     }
 }
 

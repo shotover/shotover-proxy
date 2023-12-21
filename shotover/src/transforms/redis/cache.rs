@@ -250,14 +250,11 @@ impl SimpleRedisCache {
 
         let redis_responses = self
             .cache_chain
-            .process_request(
-                Wrapper::new_with_chain_name(
-                    redis_requests,
-                    self.cache_chain.name.clone(),
-                    local_addr,
-                ),
-                "clientdetailstodo".to_string(),
-            )
+            .process_request(Wrapper::new_with_chain_name(
+                redis_requests,
+                self.cache_chain.name.clone(),
+                local_addr,
+            ))
             .await?;
 
         Ok(self.unwrap_cache_response(redis_responses, redis_indices, cassandra_requests))
@@ -363,14 +360,11 @@ impl SimpleRedisCache {
         if !cache_messages.is_empty() {
             let result = self
                 .cache_chain
-                .process_request(
-                    Wrapper::new_with_chain_name(
-                        cache_messages,
-                        self.cache_chain.name.clone(),
-                        local_addr,
-                    ),
-                    "clientdetailstodo".to_string(),
-                )
+                .process_request(Wrapper::new_with_chain_name(
+                    cache_messages,
+                    self.cache_chain.name.clone(),
+                    local_addr,
+                ))
                 .await;
             if let Err(err) = result {
                 warn!("Cache error: {err}");
