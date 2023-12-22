@@ -18,6 +18,9 @@ async fn test_metrics() {
 # TYPE shotover_query_count counter
 # TYPE shotover_transform_failures_count counter
 # TYPE shotover_transform_latency_seconds summary
+# TYPE shotover_transform_pushed_failures_count counter
+# TYPE shotover_transform_pushed_latency_seconds summary
+# TYPE shotover_transform_pushed_total_count counter
 # TYPE shotover_transform_total_count counter
 shotover_available_connections_count{source="redis"}
 shotover_chain_failures_count{chain="redis source"}
@@ -52,9 +55,30 @@ shotover_transform_latency_seconds{transform="QueryCounter",quantile="0.95"}
 shotover_transform_latency_seconds{transform="QueryCounter",quantile="0.99"}
 shotover_transform_latency_seconds{transform="QueryCounter",quantile="0.999"}
 shotover_transform_latency_seconds{transform="QueryCounter",quantile="1"}
+shotover_transform_pushed_failures_count{transform="NullSink"}
+shotover_transform_pushed_failures_count{transform="QueryCounter"}
+shotover_transform_pushed_latency_seconds_count{transform="NullSink"}
+shotover_transform_pushed_latency_seconds_count{transform="QueryCounter"}
+shotover_transform_pushed_latency_seconds_sum{transform="NullSink"}
+shotover_transform_pushed_latency_seconds_sum{transform="QueryCounter"}
+shotover_transform_pushed_latency_seconds{transform="NullSink",quantile="0"}
+shotover_transform_pushed_latency_seconds{transform="NullSink",quantile="0.5"}
+shotover_transform_pushed_latency_seconds{transform="NullSink",quantile="0.9"}
+shotover_transform_pushed_latency_seconds{transform="NullSink",quantile="0.95"}
+shotover_transform_pushed_latency_seconds{transform="NullSink",quantile="0.99"}
+shotover_transform_pushed_latency_seconds{transform="NullSink",quantile="0.999"}
+shotover_transform_pushed_latency_seconds{transform="NullSink",quantile="1"}
+shotover_transform_pushed_latency_seconds{transform="QueryCounter",quantile="0"}
+shotover_transform_pushed_latency_seconds{transform="QueryCounter",quantile="0.5"}
+shotover_transform_pushed_latency_seconds{transform="QueryCounter",quantile="0.9"}
+shotover_transform_pushed_latency_seconds{transform="QueryCounter",quantile="0.95"}
+shotover_transform_pushed_latency_seconds{transform="QueryCounter",quantile="0.99"}
+shotover_transform_pushed_latency_seconds{transform="QueryCounter",quantile="0.999"}
+shotover_transform_pushed_latency_seconds{transform="QueryCounter",quantile="1"}
+shotover_transform_pushed_total_count{transform="NullSink"}
+shotover_transform_pushed_total_count{transform="QueryCounter"}
 shotover_transform_total_count{transform="NullSink"}
 shotover_transform_total_count{transform="QueryCounter"}
-
 "#;
     assert_metrics_has_keys("", expected).await;
 
@@ -81,7 +105,6 @@ shotover_transform_total_count{transform="QueryCounter"}
 
     let expected_new = r#"
 # TYPE shotover_chain_latency_seconds summary
-# TYPE shotover_transform_total counter
 shotover_chain_latency_seconds_count{chain="redis source",client_details="127.0.0.1"}
 shotover_chain_latency_seconds_sum{chain="redis source",client_details="127.0.0.1"}
 shotover_chain_latency_seconds{chain="redis source",client_details="127.0.0.1",quantile="0"}
@@ -93,9 +116,6 @@ shotover_chain_latency_seconds{chain="redis source",client_details="127.0.0.1",q
 shotover_chain_latency_seconds{chain="redis source",client_details="127.0.0.1",quantile="1"}
 shotover_query_count{name="redis-chain",query="GET",type="redis"}
 shotover_query_count{name="redis-chain",query="SET",type="redis"}
-shotover_transform_total{transform="NullSink"}
-shotover_transform_total{transform="QueryCounter"}
-
 "#;
     assert_metrics_has_keys(expected, expected_new).await;
 

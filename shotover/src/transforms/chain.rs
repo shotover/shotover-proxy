@@ -9,7 +9,7 @@ use tokio::sync::{mpsc, oneshot};
 use tokio::time::{Duration, Instant};
 use tracing::{debug, error, info, trace, Instrument};
 
-type InnerChain = Vec<Transforms>;
+type InnerChain = Vec<TransformAndMetrics>;
 
 #[derive(Debug)]
 pub struct BufferedChainMessages {
@@ -196,9 +196,74 @@ impl TransformChain {
 
 #[derive(Derivative)]
 #[derivative(Debug)]
+pub struct TransformAndMetrics {
+    pub transform: Transforms,
+    #[derivative(Debug = "ignore")]
+    pub transform_total: Counter,
+    #[derivative(Debug = "ignore")]
+    pub transform_failures: Counter,
+    #[derivative(Debug = "ignore")]
+    pub transform_latency: Histogram,
+    #[derivative(Debug = "ignore")]
+    pub transform_pushed_total: Counter,
+    #[derivative(Debug = "ignore")]
+    pub transform_pushed_failures: Counter,
+    #[derivative(Debug = "ignore")]
+    pub transform_pushed_latency: Histogram,
+}
+
+impl TransformAndMetrics {
+    #[cfg(test)]
+    pub fn new(transform: Transforms) -> Self {
+        TransformAndMetrics {
+            transform,
+            transform_total: Counter::noop(),
+            transform_failures: Counter::noop(),
+            transform_latency: Histogram::noop(),
+            transform_pushed_total: Counter::noop(),
+            transform_pushed_failures: Counter::noop(),
+            transform_pushed_latency: Histogram::noop(),
+        }
+    }
+}
+
+#[derive(Derivative)]
+#[derivative(Debug)]
+pub struct TransformBuilderAndMetrics {
+    pub builder: Box<dyn TransformBuilder>,
+    #[derivative(Debug = "ignore")]
+    transform_total: Counter,
+    #[derivative(Debug = "ignore")]
+    transform_failures: Counter,
+    #[derivative(Debug = "ignore")]
+    transform_latency: Histogram,
+    #[derivative(Debug = "ignore")]
+    transform_pushed_total: Counter,
+    #[derivative(Debug = "ignore")]
+    transform_pushed_failures: Counter,
+    #[derivative(Debug = "ignore")]
+    transform_pushed_latency: Histogram,
+}
+
+impl TransformBuilderAndMetrics {
+    fn build(&self) -> TransformAndMetrics {
+        TransformAndMetrics {
+            transform: self.builder.build(),
+            transform_total: self.transform_total.clone(),
+            transform_failures: self.transform_failures.clone(),
+            transform_latency: self.transform_latency.clone(),
+            transform_pushed_total: self.transform_pushed_total.clone(),
+            transform_pushed_failures: self.transform_pushed_failures.clone(),
+            transform_pushed_latency: self.transform_pushed_latency.clone(),
+        }
+    }
+}
+
+#[derive(Derivative)]
+#[derivative(Debug)]
 pub struct TransformChainBuilder {
     pub name: String,
-    pub chain: Vec<Box<dyn TransformBuilder>>,
+    pub chain: Vec<TransformBuilderAndMetrics>,
 
     #[derivative(Debug = "ignore")]
     chain_total: Counter,
@@ -210,11 +275,17 @@ pub struct TransformChainBuilder {
 
 impl TransformChainBuilder {
     pub fn new(chain: Vec<Box<dyn TransformBuilder>>, name: String) -> Self {
-        for transform in &chain {
-            register_counter!("shotover_transform_total_count", "transform" => transform.get_name());
-            register_counter!("shotover_transform_failures_count", "transform" => transform.get_name());
-            register_histogram!("shotover_transform_latency_seconds", "transform" => transform.get_name());
-        }
+        let chain = chain.into_iter().map(|builder|
+            TransformBuilderAndMetrics {
+                transform_total: register_counter!("shotover_transform_total_count", "transform" => builder.get_name()),
+                transform_failures: register_counter!("shotover_transform_failures_count", "transform" => builder.get_name()),
+                transform_latency: register_histogram!("shotover_transform_latency_seconds", "transform" => builder.get_name()),
+                transform_pushed_total: register_counter!("shotover_transform_pushed_total_count", "transform" => builder.get_name()),
+                transform_pushed_failures: register_counter!("shotover_transform_pushed_failures_count", "transform" => builder.get_name()),
+                transform_pushed_latency: register_histogram!("shotover_transform_pushed_latency_seconds", "transform" => builder.get_name()),
+                builder,
+            }
+        ).collect();
 
         let chain_batch_size =
             register_histogram!("shotover_chain_messages_per_batch_count", "chain" => name.clone());
@@ -249,19 +320,19 @@ impl TransformChainBuilder {
             .flat_map(|(i, transform)| {
                 let mut errors = vec![];
 
-                if i == last_index && !transform.is_terminating() {
+                if i == last_index && !transform.builder.is_terminating() {
                     errors.push(format!(
                         "  Non-terminating transform {:?} is last in chain. Last transform must be terminating.",
-                        transform.get_name()
+                        transform.builder.get_name()
                     ));
-                } else if i != last_index && transform.is_terminating() {
+                } else if i != last_index && transform.builder.is_terminating() {
                     errors.push(format!(
                         "  Terminating transform {:?} is not last in chain. Terminating transform must be last in chain.",
-                        transform.get_name()
+                        transform.builder.get_name()
                     ));
                 }
 
-                errors.extend(transform.validate().iter().map(|x| format!("  {x}")));
+                errors.extend(transform.builder.validate().iter().map(|x| format!("  {x}")));
 
                 errors
             })
@@ -363,7 +434,9 @@ impl TransformChainBuilder {
             .iter()
             .map(|x| {
                 let mut transform = x.build();
-                transform.set_pushed_messages_tx(pushed_messages_tx.clone());
+                transform
+                    .transform
+                    .set_pushed_messages_tx(pushed_messages_tx.clone());
                 transform
             })
             .collect();
