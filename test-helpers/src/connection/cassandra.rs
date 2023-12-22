@@ -1,3 +1,4 @@
+use bigdecimal::BigDecimal;
 use bytes::BufMut;
 #[cfg(feature = "cassandra-cpp-driver-tests")]
 use cassandra_cpp::{
@@ -27,13 +28,15 @@ use cdrs_tokio::{
     query_values,
     transport::TransportTcp,
 };
+use num_bigint::BigInt;
 use openssl::ssl::{SslContext, SslMethod};
 use ordered_float::OrderedFloat;
 use scylla::batch::Batch as ScyllaBatch;
 use scylla::frame::response::result::CqlValue;
 use scylla::frame::types::Consistency as ScyllaConsistency;
-use scylla::frame::value::Value as ScyllaValue;
+use scylla::frame::value::{CqlDate, CqlTime, CqlTimestamp};
 use scylla::prepared_statement::PreparedStatement as PreparedStatementScylla;
+use scylla::serialize::value::SerializeCql;
 use scylla::statement::query::Query as ScyllaQuery;
 use scylla::transport::errors::{DbError, QueryError};
 use scylla::{
@@ -696,26 +699,31 @@ impl CassandraConnection {
             .build()
     }
 
-    fn build_values_scylla(values: &[ResultValue]) -> Vec<Box<dyn ScyllaValue + '_>> {
+    // TODO: lets return Vec<CqlValue> instead, as it provides better gaurantees for correctness
+    fn build_values_scylla(values: &[ResultValue]) -> Vec<Box<dyn SerializeCql + '_>> {
         values
             .iter()
             .map(|v| match v {
-                ResultValue::Int(v) => Box::new(v) as Box<dyn ScyllaValue>,
-                ResultValue::Ascii(v) => Box::new(v) as Box<dyn ScyllaValue>,
-                ResultValue::BigInt(v) => Box::new(v) as Box<dyn ScyllaValue>,
-                ResultValue::Blob(v) => Box::new(v) as Box<dyn ScyllaValue>,
-                ResultValue::Boolean(v) => Box::new(v) as Box<dyn ScyllaValue>,
-                ResultValue::Decimal(v) => Box::new(v) as Box<dyn ScyllaValue>,
-                ResultValue::Double(v) => Box::new(*v.as_ref()) as Box<dyn ScyllaValue>,
-                ResultValue::Float(v) => Box::new(*v.as_ref()) as Box<dyn ScyllaValue>,
-                ResultValue::Timestamp(v) => Box::new(v) as Box<dyn ScyllaValue>,
-                ResultValue::Uuid(v) => Box::new(v) as Box<dyn ScyllaValue>,
-                ResultValue::Inet(v) => Box::new(v) as Box<dyn ScyllaValue>,
-                ResultValue::Date(v) => Box::new(*v as i32) as Box<dyn ScyllaValue>,
-                ResultValue::Time(v) => Box::new(v) as Box<dyn ScyllaValue>,
-                ResultValue::SmallInt(v) => Box::new(v) as Box<dyn ScyllaValue>,
-                ResultValue::TinyInt(v) => Box::new(v) as Box<dyn ScyllaValue>,
-                ResultValue::Varchar(v) => Box::new(v) as Box<dyn ScyllaValue>,
+                ResultValue::Int(v) => Box::new(v) as Box<dyn SerializeCql>,
+                ResultValue::Ascii(v) => Box::new(v),
+                ResultValue::BigInt(v) => Box::new(v),
+                ResultValue::Blob(v) => Box::new(v),
+                ResultValue::Boolean(v) => Box::new(v),
+                ResultValue::Decimal(buf) => {
+                    let scale = i32::from_be_bytes(buf[0..4].try_into().unwrap());
+                    let int_value = BigInt::from_signed_bytes_be(&buf[4..]);
+                    Box::new(BigDecimal::from((int_value, scale as i64)))
+                }
+                ResultValue::Double(v) => Box::new(*v.as_ref()),
+                ResultValue::Float(v) => Box::new(*v.as_ref()),
+                ResultValue::Timestamp(v) => Box::new(CqlTimestamp(*v)),
+                ResultValue::Uuid(v) => Box::new(v),
+                ResultValue::Inet(v) => Box::new(v),
+                ResultValue::Date(v) => Box::new(CqlDate(*v)),
+                ResultValue::Time(v) => Box::new(CqlTime(*v)),
+                ResultValue::SmallInt(v) => Box::new(v),
+                ResultValue::TinyInt(v) => Box::new(v),
+                ResultValue::Varchar(v) => Box::new(v),
                 value => todo!("Implement handling of {value:?} for scylla"),
             })
             .collect()
@@ -1106,7 +1114,7 @@ impl ResultValue {
                 }
                 CqlValue::Float(float) => Self::Float(float.into()),
                 CqlValue::Int(int) => Self::Int(int),
-                CqlValue::Timestamp(timestamp) => Self::Timestamp(timestamp.num_milliseconds()),
+                CqlValue::Timestamp(timestamp) => Self::Timestamp(timestamp.0),
                 CqlValue::Uuid(uuid) => Self::Uuid(uuid),
                 CqlValue::Varint(var_int) => {
                     let mut buf = vec![];
@@ -1116,8 +1124,8 @@ impl ResultValue {
                 }
                 CqlValue::Timeuuid(timeuuid) => Self::TimeUuid(timeuuid),
                 CqlValue::Inet(ip) => Self::Inet(ip),
-                CqlValue::Date(date) => Self::Date(date),
-                CqlValue::Time(time) => Self::Time(time.num_nanoseconds().unwrap()),
+                CqlValue::Date(date) => Self::Date(date.0),
+                CqlValue::Time(time) => Self::Time(time.0),
                 CqlValue::SmallInt(small_int) => Self::SmallInt(small_int),
                 CqlValue::TinyInt(tiny_int) => Self::TinyInt(tiny_int),
                 CqlValue::Duration(_duration) => todo!(),
