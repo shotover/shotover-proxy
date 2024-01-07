@@ -690,7 +690,7 @@ pub enum ResponseJoin {
 impl RoutingInfo {
     #[inline(always)]
     pub fn for_command_frame(args: &[RedisFrame]) -> Result<RoutingInfo> {
-        let command_name = match args.get(0) {
+        let command_name = match args.first() {
             Some(RedisFrame::BulkString(command_name)) => command_name.to_ascii_uppercase(),
             _ => bail!("syntax error: bad command name"),
         };

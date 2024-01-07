@@ -1009,7 +1009,7 @@ async fn is_cluster_replicas_ready(connection: &mut Connection, master_id: &str)
         .await
         .unwrap();
     if let Value::Bulk(data) = res {
-        if let Some(Value::Data(data)) = data.get(0) {
+        if let Some(Value::Data(data)) = data.first() {
             return !data.is_empty();
         }
     }
