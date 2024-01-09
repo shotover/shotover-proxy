@@ -76,7 +76,7 @@ impl Transform for QueryCounter {
 
 fn get_redis_query_type(frame: &RedisFrame) -> Option<String> {
     if let RedisFrame::Array(array) = frame {
-        if let Some(RedisFrame::BulkString(v)) = array.get(0) {
+        if let Some(RedisFrame::BulkString(v)) = array.first() {
             let upper_bytes = v.to_ascii_uppercase();
             match String::from_utf8(upper_bytes) {
                 Ok(query_type) => {
