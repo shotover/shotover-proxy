@@ -156,7 +156,7 @@ pub async fn test(connection: &CassandraConnection) {
     test_rewrite_system_peers_v2(connection).await;
 
     let out_of_rack_request = get_metrics_value(
-        "shotover_out_of_rack_requests_count{chain=\"cassandra source\",transform=\"CassandraSinkCluster\"}",
+        "shotover_out_of_rack_requests_count{chain=\"cassandra\",transform=\"CassandraSinkCluster\"}",
     )
     .await;
     assert_eq!(out_of_rack_request, "0");
