@@ -7,7 +7,6 @@ async fn test_metrics() {
     let shotover = shotover_process("tests/test-configs/null-redis/topology.yaml")
         .start()
         .await;
-    let mut connection = redis_connection::new_async("127.0.0.1", 6379).await;
 
     // Expected string looks unnatural because it is sorted in alphabetical order to make it match the sorted error output
     let expected = r#"
@@ -98,7 +97,8 @@ shotover_transform_total_count{transform="QueryCounter"}
 "#;
     assert_metrics_has_keys("", expected).await;
 
-    // Check we still get the metrics after sending a couple requests
+    let mut connection = redis_connection::new_async("127.0.0.1", 6379).await;
+
     redis::cmd("SET")
         .arg("the_key")
         .arg(42)
@@ -131,6 +131,7 @@ shotover_chain_latency_seconds{chain="redis",client_details="127.0.0.1",quantile
 shotover_chain_latency_seconds{chain="redis",client_details="127.0.0.1",quantile="0.99"}
 shotover_chain_latency_seconds{chain="redis",client_details="127.0.0.1",quantile="0.999"}
 shotover_chain_latency_seconds{chain="redis",client_details="127.0.0.1",quantile="1"}
+shotover_query_count{name="redis-chain",query="CLIENT",type="redis"}
 shotover_query_count{name="redis-chain",query="GET",type="redis"}
 shotover_query_count{name="redis-chain",query="SET",type="redis"}
 "#;

@@ -78,14 +78,24 @@ async fn test_log_with_mismatch() {
 
     assert_eq!("42", result);
     shotover
-        .shutdown_and_then_consume_events(&[EventMatcher::new()
-            .with_level(Level::Warn)
-            .with_target("shotover::transforms::tee")
-            .with_message(
-                r#"Tee mismatch: 
-chain response: ["Redis BulkString(b\"42\"))"] 
+        .shutdown_and_then_consume_events(&[
+            EventMatcher::new()
+                .with_level(Level::Warn)
+                .with_target("shotover::transforms::tee")
+                .with_message(
+                    r#"Tee mismatch:
+chain response: ["Redis BulkString(b\"42\"))", "Redis BulkString(b\"42\"))"]
+tee response: ["Redis BulkString(b\"41\"))", "Redis BulkString(b\"41\"))"]"#,
+                ),
+            EventMatcher::new()
+                .with_level(Level::Warn)
+                .with_target("shotover::transforms::tee")
+                .with_message(
+                    r#"Tee mismatch:
+chain response: ["Redis BulkString(b\"42\"))"]
 tee response: ["Redis BulkString(b\"41\"))"]"#,
-            )])
+                ),
+        ])
         .await;
 }
 
@@ -287,6 +297,7 @@ async fn test_switch_main_chain() {
     shotover
         .shutdown_and_then_consume_events(&[EventMatcher::new()
             .with_level(Level::Warn)
-            .with_count(tokio_bin_process::event_matcher::Count::Times(3))])
+            // 1 warning per loop above + 1 warning from the redis-rs driver connection handshake
+            .with_count(tokio_bin_process::event_matcher::Count::Times(4))])
         .await;
 }

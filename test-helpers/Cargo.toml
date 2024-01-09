@@ -32,7 +32,7 @@ tracing-subscriber.workspace = true
 serde_yaml.workspace = true
 anyhow.workspace = true
 rcgen.workspace = true
-rdkafka = { version = "0.35", features = ["cmake-build"], optional = true }
+rdkafka = { version = "0.36", features = ["cmake-build"], optional = true }
 docker-compose-runner = "0.3.0"
 # TODO: make scylla reexport these so we dont have to import random old versions
 bigdecimal = "0.2.2"
