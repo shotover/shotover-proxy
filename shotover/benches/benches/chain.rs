@@ -11,6 +11,7 @@ use shotover::transforms::cassandra::peers_rewrite::CassandraPeersRewrite;
 use shotover::transforms::chain::{TransformChain, TransformChainBuilder};
 use shotover::transforms::debug::returner::{DebugReturner, Response};
 use shotover::transforms::filter::{Filter, QueryTypeFilter};
+use shotover::transforms::loopback::Loopback;
 use shotover::transforms::null::NullSink;
 #[cfg(feature = "alpha-transforms")]
 use shotover::transforms::protect::{KeyManagerConfig, ProtectConfig};
@@ -24,6 +25,28 @@ fn criterion_benchmark(c: &mut Criterion) {
     let mut group = c.benchmark_group("transform");
     group.noise_threshold(0.2);
 
+    // loopback is the fastest possible transform as it does not even have to drop the received requests
+    {
+        let chain =
+            TransformChainBuilder::new(vec![Box::<Loopback>::default()], "bench".to_string());
+        let wrapper = Wrapper::new_with_chain_name(
+            vec![Message::from_frame(Frame::Redis(RedisFrame::Null))],
+            chain.name.clone(),
+            "127.0.0.1:6379".parse().unwrap(),
+        );
+
+        group.bench_function("loopback", |b| {
+            b.to_async(&rt).iter_batched(
+                || BenchInput {
+                    chain: chain.build(),
+                    wrapper: wrapper.clone(),
+                },
+                BenchInput::bench,
+                BatchSize::SmallInput,
+            )
+        });
+    }
+
     {
         let chain =
             TransformChainBuilder::new(vec![Box::<NullSink>::default()], "bench".to_string());
@@ -33,12 +56,11 @@ fn criterion_benchmark(c: &mut Criterion) {
             "127.0.0.1:6379".parse().unwrap(),
         );
 
-        group.bench_function("NullSink", |b| {
+        group.bench_function("nullsink", |b| {
             b.to_async(&rt).iter_batched(
                 || BenchInput {
                     chain: chain.build(),
                     wrapper: wrapper.clone(),
-                    client_details: "".into(),
                 },
                 BenchInput::bench,
                 BatchSize::SmallInput,
@@ -77,7 +99,6 @@ fn criterion_benchmark(c: &mut Criterion) {
                 || BenchInput {
                     chain: chain.build(),
                     wrapper: wrapper.clone(),
-                    client_details: "".into(),
                 },
                 BenchInput::bench,
                 BatchSize::SmallInput,
@@ -113,7 +134,6 @@ fn criterion_benchmark(c: &mut Criterion) {
                 || BenchInput {
                     chain: chain.build(),
                     wrapper: wrapper_set.clone(),
-                    client_details: "".into(),
                 },
                 BenchInput::bench,
                 BatchSize::SmallInput,
@@ -134,7 +154,6 @@ fn criterion_benchmark(c: &mut Criterion) {
                 || BenchInput {
                     chain: chain.build(),
                     wrapper: wrapper_get.clone(),
-                    client_details: "".into(),
                 },
                 BenchInput::bench,
                 BatchSize::SmallInput,
@@ -165,7 +184,6 @@ fn criterion_benchmark(c: &mut Criterion) {
                 || BenchInput {
                     chain: chain.build(),
                     wrapper: wrapper.clone(),
-                    client_details: "".into(),
                 },
                 BenchInput::bench,
                 BatchSize::SmallInput,
@@ -211,7 +229,6 @@ fn criterion_benchmark(c: &mut Criterion) {
                 || BenchInput {
                     chain: chain.build(),
                     wrapper: wrapper.clone(),
-                    client_details: "".into(),
                 },
                 BenchInput::bench,
                 BatchSize::SmallInput,
@@ -267,7 +284,6 @@ fn criterion_benchmark(c: &mut Criterion) {
                 || BenchInput {
                     chain: chain.build(),
                     wrapper: wrapper.clone(),
-                    client_details: "".into(),
                 },
                 BenchInput::bench,
                 BatchSize::SmallInput,
@@ -311,7 +327,6 @@ fn criterion_benchmark(c: &mut Criterion) {
                 || BenchInput {
                     chain: chain.build(),
                     wrapper: wrapper.clone(),
-                    client_details: "".into(),
                 },
                 BenchInput::bench,
                 BatchSize::SmallInput,
@@ -327,7 +342,6 @@ fn criterion_benchmark(c: &mut Criterion) {
                 || BenchInput {
                     chain: chain.build(),
                     wrapper: wrapper.clone(),
-                    client_details: "".into(),
                 },
                 BenchInput::bench,
                 BatchSize::SmallInput,
@@ -367,15 +381,15 @@ fn cassandra_parsed_query(query: &str) -> Wrapper {
 struct BenchInput<'a> {
     chain: TransformChain,
     wrapper: Wrapper<'a>,
-    client_details: String,
 }
 
 impl<'a> BenchInput<'a> {
-    async fn bench(mut self) {
-        self.chain
-            .process_request(self.wrapper, self.client_details)
-            .await
-            .unwrap();
+    async fn bench(mut self) -> (Vec<Message>, TransformChain) {
+        // Return both the chain itself and the response to avoid measuring the time to drop the values in the benchmark
+        (
+            self.chain.process_request(self.wrapper).await.unwrap(),
+            self.chain,
+        )
     }
 }
 

@@ -38,7 +38,7 @@ hex.workspace = true
 hex-literal.workspace = true
 async-trait.workspace = true
 typetag.workspace = true
-tokio-tungstenite = "0.20.0"
+tokio-tungstenite = "0.21.0"
 
 # Error handling
 thiserror = "1.0"

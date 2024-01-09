@@ -1,6 +1,6 @@
 use crate::codec::{CodecBuilder, CodecReadError, CodecWriteError};
 use crate::config::chain::TransformChainConfig;
-use crate::message::Messages;
+use crate::message::{Message, Messages};
 use crate::sources::Transport;
 use crate::tls::{AcceptError, TlsAcceptor};
 use crate::transforms::chain::{TransformChain, TransformChainBuilder};
@@ -19,7 +19,6 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio::sync::{mpsc, watch, OwnedSemaphorePermit, Semaphore};
 use tokio::task::JoinHandle;
 use tokio::time;
-use tokio::time::timeout;
 use tokio::time::Duration;
 use tokio_tungstenite::tungstenite::{
     handshake::server::{Request, Response},
@@ -67,8 +66,8 @@ pub struct TcpCodecListener<C: CodecBuilder> {
 
     available_connections_gauge: Gauge,
 
-    /// Timeout in seconds after which to kill an idle connection. No timeout means connections will never be timed out.
-    timeout: Option<u64>,
+    /// Timeout after which to kill an idle connection. No timeout means connections will never be timed out.
+    timeout: Option<Duration>,
 
     connection_handles: Vec<JoinHandle<()>>,
 
@@ -86,15 +85,14 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
         limit_connections: Arc<Semaphore>,
         trigger_shutdown_rx: watch::Receiver<bool>,
         tls: Option<TlsAcceptor>,
-        timeout: Option<u64>,
+        timeout: Option<Duration>,
         transport: Transport,
     ) -> Result<Self, Vec<String>> {
-        let available_connections_gauge =
-            register_gauge!("shotover_available_connections", "source" => source_name.clone());
+        let available_connections_gauge = register_gauge!("shotover_available_connections_count", "source" => source_name.clone());
         available_connections_gauge.set(limit_connections.available_permits() as f64);
 
         let chain_builder = chain_config
-            .get_builder(format!("{source_name} source"))
+            .get_builder(source_name.clone())
             .await
             .map_err(|x| vec![format!("{x:?}")])?;
 
@@ -284,7 +282,7 @@ pub struct Handler<C: CodecBuilder> {
     /// which point the connection is terminated.
     shutdown: Shutdown,
     /// Timeout in seconds after which to kill an idle connection. No timeout means connections will never be timed out.
-    timeout: Option<u64>,
+    timeout: Option<Duration>,
     pushed_messages_rx: UnboundedReceiver<Messages>,
     _permit: OwnedSemaphorePermit,
 }
@@ -660,10 +658,7 @@ impl<C: CodecBuilder + 'static> Handler<C> {
         // Flush messages regardless of if we are shutting down due to a failure or due to application shutdown
         match self
             .chain
-            .process_request(
-                Wrapper::flush_with_chain_name(self.chain.name.clone()),
-                client_details,
-            )
+            .process_request(Wrapper::flush_with_chain_name(self.chain.name.clone()))
             .await
         {
             Ok(_) => {}
@@ -679,6 +674,24 @@ impl<C: CodecBuilder + 'static> Handler<C> {
         result
     }
 
+    async fn receive_with_timeout(
+        timeout: Option<Duration>,
+        in_rx: &mut UnboundedReceiver<Vec<Message>>,
+        client_details: &str,
+    ) -> Option<Vec<Message>> {
+        if let Some(timeout) = timeout {
+            match tokio::time::timeout(timeout, in_rx.recv()).await {
+                Ok(messages) => messages,
+                Err(_) => {
+                    debug!("Dropping connection to {client_details} due to being idle for more than {timeout:?}");
+                    None
+                }
+            }
+        } else {
+            in_rx.recv().await
+        }
+    }
+
     async fn process_messages(
         &mut self,
         client_details: &str,
@@ -688,34 +701,18 @@ impl<C: CodecBuilder + 'static> Handler<C> {
     ) -> Result<()> {
         // As long as the shutdown signal has not been received, try to read a
         // new request frame.
-        let mut idle_time_seconds: u64 = 1;
-
         while !self.shutdown.is_shutdown() {
             // While reading a request frame, also listen for the shutdown signal
             debug!("Waiting for message {client_details}");
             let mut reverse_chain = false;
 
             let messages = tokio::select! {
-                res = timeout(Duration::from_secs(idle_time_seconds), in_rx.recv()) => {
-                    match res {
-                        Ok(maybe_message) => {
-                            idle_time_seconds = 1;
-                            match maybe_message {
-                                Some(m) => m,
-                                None => return Ok(())
-                            }
-                        },
-                        Err(_) => {
-                            if let Some(timeout) =  self.timeout {
-                                if idle_time_seconds < timeout {
-                                    debug!("Connection Idle for more than {} seconds {}", timeout, client_details);
-                                } else {
-                                    debug!("Dropping. Connection Idle for more than {} seconds {}", timeout, client_details);
-                                    return Ok(());
-                                }
-                            }
-                            idle_time_seconds *= 2;
-                            continue
+                requests = Self::receive_with_timeout(self.timeout, &mut in_rx, client_details) => {
+                    match requests {
+                        Some(requests) => requests,
+                        None => {
+                            // Either we timed out the connection or the client disconnected, so terminate this connection
+                            return Ok(())
                         }
                     }
                 },
@@ -750,13 +747,13 @@ impl<C: CodecBuilder + 'static> Handler<C> {
 
             let modified_messages = if reverse_chain {
                 self.chain
-                    .process_request_rev(wrapper, client_details.to_owned())
+                    .process_request_rev(wrapper)
                     .await
                     .context("Chain failed to receive pushed messages/events, the connection will now be closed.")?
             } else {
                 match self
                     .chain
-                    .process_request(wrapper, client_details.to_owned())
+                    .process_request(wrapper)
                     .await
                     .context("Chain failed to send and/or receive messages, the connection will now be closed.")
                 {

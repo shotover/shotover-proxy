@@ -114,6 +114,7 @@ mod test {
     use crate::frame::Frame;
     use crate::frame::RedisFrame;
     use crate::message::{Message, QueryType};
+    use crate::transforms::chain::TransformAndMetrics;
     use crate::transforms::filter::QueryTypeFilter;
     use crate::transforms::loopback::Loopback;
     use crate::transforms::{Transform, Transforms, Wrapper};
@@ -124,7 +125,9 @@ mod test {
             filter: Filter::DenyList(vec![QueryType::Read]),
         };
 
-        let mut chain = vec![Transforms::Loopback(Loopback::default())];
+        let mut chain = vec![TransformAndMetrics::new(Transforms::Loopback(
+            Loopback::default(),
+        ))];
 
         let messages: Vec<_> = (0..26)
             .map(|i| {
@@ -178,7 +181,9 @@ mod test {
             filter: Filter::AllowList(vec![QueryType::Write]),
         };
 
-        let mut chain = vec![Transforms::Loopback(Loopback::default())];
+        let mut chain = vec![TransformAndMetrics::new(Transforms::Loopback(
+            Loopback::default(),
+        ))];
 
         let messages: Vec<_> = (0..26)
             .map(|i| {

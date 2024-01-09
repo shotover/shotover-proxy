@@ -5,7 +5,7 @@ use test_helpers::metrics::get_metrics_value;
 
 /// gets the current miss count from the cache instrumentation.
 async fn get_cache_miss_value() -> u64 {
-    let value = get_metrics_value("cache_miss").await;
+    let value = get_metrics_value("shotover_cache_miss_count").await;
     value
         .parse()
         .map_err(|_| format!("Failed to parse {value} to integer"))
