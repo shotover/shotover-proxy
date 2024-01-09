@@ -24,10 +24,8 @@ pub struct KafkaSinkSingleConfig {
     pub read_timeout: Option<u64>,
 }
 
-#[cfg(feature = "alpha-transforms")]
 use crate::transforms::TransformConfig;
 
-#[cfg(feature = "alpha-transforms")]
 #[typetag::serde(name = "KafkaSinkSingle")]
 #[async_trait(?Send)]
 impl TransformConfig for KafkaSinkSingleConfig {

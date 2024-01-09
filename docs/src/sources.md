@@ -87,3 +87,29 @@ Redis:
     Transform2
     ...
 ```
+
+## Kafka
+
+```yaml
+Kafka:
+  # The address to listen from
+  listen_addr: "127.0.0.1:6379"
+
+  # The number of concurrent connections the source will accept.
+  # If not provided defaults to 512
+  connection_limit: 512
+
+  # Defines the behaviour that occurs when Once the configured connection limit is reached:
+  # * when true: the connection is dropped.
+  # * when false: the connection will wait until a connection can be made within the limit.
+  # If not provided defaults to false
+  hard_connection_limit: false
+
+  # Timeout in seconds after which to terminate an idle connection. This field is optional, if not provided, idle connections will never be terminated.
+  # timeout: 60
+
+  chain:
+    Transform1
+    Transform2
+    ...
+```

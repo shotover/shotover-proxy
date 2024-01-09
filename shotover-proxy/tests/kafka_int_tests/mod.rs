@@ -1,18 +1,13 @@
-#[cfg(feature = "alpha-transforms")]
 #[cfg(feature = "rdkafka-driver-tests")]
 use crate::shotover_process;
-#[cfg(feature = "alpha-transforms")]
 #[cfg(feature = "rdkafka-driver-tests")]
 use std::time::Duration;
-#[cfg(feature = "alpha-transforms")]
 #[cfg(feature = "rdkafka-driver-tests")]
 use test_helpers::docker_compose::docker_compose;
 
-#[cfg(feature = "alpha-transforms")]
 #[cfg(feature = "rdkafka-driver-tests")]
 mod test_cases;
 
-#[cfg(feature = "alpha-transforms")]
 #[cfg(feature = "rdkafka-driver-tests")]
 #[tokio::test]
 async fn passthrough_standard() {
@@ -33,7 +28,6 @@ async fn passthrough_standard() {
 }
 
 #[cfg(feature = "rdkafka-driver-tests")]
-#[cfg(feature = "alpha-transforms")]
 #[tokio::test]
 async fn passthrough_encode() {
     let _docker_compose =
@@ -48,7 +42,6 @@ async fn passthrough_encode() {
 }
 
 #[cfg(feature = "rdkafka-driver-tests")]
-#[cfg(feature = "alpha-transforms")]
 #[tokio::test]
 async fn cluster_single_shotover() {
     let _docker_compose = docker_compose("tests/test-configs/kafka/cluster/docker-compose.yaml");
@@ -67,7 +60,6 @@ async fn cluster_single_shotover() {
 }
 
 #[cfg(feature = "rdkafka-driver-tests")]
-#[cfg(feature = "alpha-transforms")]
 #[tokio::test]
 async fn cluster_multi_shotover() {
     let _docker_compose = docker_compose("tests/test-configs/kafka/cluster/docker-compose.yaml");
