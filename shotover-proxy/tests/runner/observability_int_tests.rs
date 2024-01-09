@@ -23,17 +23,17 @@ async fn test_metrics() {
 # TYPE shotover_transform_pushed_total_count counter
 # TYPE shotover_transform_total_count counter
 shotover_available_connections_count{source="redis"}
-shotover_chain_failures_count{chain="redis source"}
-shotover_chain_messages_per_batch_count_count{chain="redis source"}
-shotover_chain_messages_per_batch_count_sum{chain="redis source"}
-shotover_chain_messages_per_batch_count{chain="redis source",quantile="0"}
-shotover_chain_messages_per_batch_count{chain="redis source",quantile="0.5"}
-shotover_chain_messages_per_batch_count{chain="redis source",quantile="0.9"}
-shotover_chain_messages_per_batch_count{chain="redis source",quantile="0.95"}
-shotover_chain_messages_per_batch_count{chain="redis source",quantile="0.99"}
-shotover_chain_messages_per_batch_count{chain="redis source",quantile="0.999"}
-shotover_chain_messages_per_batch_count{chain="redis source",quantile="1"}
-shotover_chain_total_count{chain="redis source"}
+shotover_chain_failures_count{chain="redis"}
+shotover_chain_messages_per_batch_count_count{chain="redis"}
+shotover_chain_messages_per_batch_count_sum{chain="redis"}
+shotover_chain_messages_per_batch_count{chain="redis",quantile="0"}
+shotover_chain_messages_per_batch_count{chain="redis",quantile="0.5"}
+shotover_chain_messages_per_batch_count{chain="redis",quantile="0.9"}
+shotover_chain_messages_per_batch_count{chain="redis",quantile="0.95"}
+shotover_chain_messages_per_batch_count{chain="redis",quantile="0.99"}
+shotover_chain_messages_per_batch_count{chain="redis",quantile="0.999"}
+shotover_chain_messages_per_batch_count{chain="redis",quantile="1"}
+shotover_chain_total_count{chain="redis"}
 shotover_query_count{name="redis-chain"}
 shotover_transform_failures_count{transform="NullSink"}
 shotover_transform_failures_count{transform="QueryCounter"}
@@ -105,15 +105,15 @@ shotover_transform_total_count{transform="QueryCounter"}
 
     let expected_new = r#"
 # TYPE shotover_chain_latency_seconds summary
-shotover_chain_latency_seconds_count{chain="redis source",client_details="127.0.0.1"}
-shotover_chain_latency_seconds_sum{chain="redis source",client_details="127.0.0.1"}
-shotover_chain_latency_seconds{chain="redis source",client_details="127.0.0.1",quantile="0"}
-shotover_chain_latency_seconds{chain="redis source",client_details="127.0.0.1",quantile="0.5"}
-shotover_chain_latency_seconds{chain="redis source",client_details="127.0.0.1",quantile="0.9"}
-shotover_chain_latency_seconds{chain="redis source",client_details="127.0.0.1",quantile="0.95"}
-shotover_chain_latency_seconds{chain="redis source",client_details="127.0.0.1",quantile="0.99"}
-shotover_chain_latency_seconds{chain="redis source",client_details="127.0.0.1",quantile="0.999"}
-shotover_chain_latency_seconds{chain="redis source",client_details="127.0.0.1",quantile="1"}
+shotover_chain_latency_seconds_count{chain="redis",client_details="127.0.0.1"}
+shotover_chain_latency_seconds_sum{chain="redis",client_details="127.0.0.1"}
+shotover_chain_latency_seconds{chain="redis",client_details="127.0.0.1",quantile="0"}
+shotover_chain_latency_seconds{chain="redis",client_details="127.0.0.1",quantile="0.5"}
+shotover_chain_latency_seconds{chain="redis",client_details="127.0.0.1",quantile="0.9"}
+shotover_chain_latency_seconds{chain="redis",client_details="127.0.0.1",quantile="0.95"}
+shotover_chain_latency_seconds{chain="redis",client_details="127.0.0.1",quantile="0.99"}
+shotover_chain_latency_seconds{chain="redis",client_details="127.0.0.1",quantile="0.999"}
+shotover_chain_latency_seconds{chain="redis",client_details="127.0.0.1",quantile="1"}
 shotover_query_count{name="redis-chain",query="GET",type="redis"}
 shotover_query_count{name="redis-chain",query="SET",type="redis"}
 "#;
