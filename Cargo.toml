@@ -7,7 +7,6 @@ members = [
     "custom-transforms-example",
     "ec2-cargo",
     "windsock-cloud-docker",
-    "config-adapter"
 ]
 resolver = "2"
 
