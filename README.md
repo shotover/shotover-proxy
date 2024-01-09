@@ -13,7 +13,7 @@ For full documentation please go to [https://docs.shotover.io/](https://docs.sho
 ## Building
 
 Shotover is supported on Linux and macOS.
-To build Shotover from source please refer to [the contributing documentation](https://shotover.io/shotover-blog/docs/contributing.html)
+To build Shotover from source please refer to [the contributing documentation](https://docs.shotover.io/shotover-blog/docs/contributing.html)
 
 ## What is Shotover?
 
@@ -33,7 +33,7 @@ It currently supports writing output to the following technologies (sinks):
 
 Concrete examples where Shotover has been applied include:
 
-* [Multi-region, active-active redis](shotover-proxy/tests/test-configs/redis-multi/)
+* [Multi-region, active-active redis](shotover-proxy/tests/test-configs/redis/multi)
 <!--* [Cassandra query caching in redis, with a query audit trail sent to kafka](shotover-proxy/tests/test-configs/cass-redis-kafka/)-->
 
 More broadly, Shotover is designed to be used for a very wide ranging class of problems where it is useful to transparently intercept a database call and redirect it. This allows you to change the behaviour of running applications at the infrastructure level without change to the application code itself.
