@@ -44,7 +44,7 @@ pub struct KeyspaceMetadata {
 // Values in the builder are shared between transform instances that come from the same transform in the topology.yaml
 #[derive(Clone)]
 pub struct NodePoolBuilder {
-    prepared_metadata: Arc<RwLock<HashMap<CBytesShort, PreparedMetadata>>>,
+    prepared_metadata: Arc<RwLock<HashMap<CBytesShort, Arc<PreparedMetadata>>>>,
     out_of_rack_requests: Counter,
 }
 
@@ -68,7 +68,7 @@ impl NodePoolBuilder {
 }
 
 pub struct NodePool {
-    prepared_metadata: Arc<RwLock<HashMap<CBytesShort, PreparedMetadata>>>,
+    prepared_metadata: Arc<RwLock<HashMap<CBytesShort, Arc<PreparedMetadata>>>>,
     keyspace_metadata: HashMap<String, KeyspaceMetadata>,
     token_map: TokenMap,
     nodes: Vec<CassandraNode>,
@@ -122,7 +122,7 @@ impl NodePool {
 
     pub async fn add_prepared_result(&mut self, id: CBytesShort, metadata: PreparedMetadata) {
         let mut write_lock = self.prepared_metadata.write().await;
-        write_lock.insert(id, metadata);
+        write_lock.insert(id, Arc::new(metadata));
     }
 
     pub async fn get_random_node_in_dc_rack(

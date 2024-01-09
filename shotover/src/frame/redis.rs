@@ -4,7 +4,7 @@ use crate::message::QueryType;
 #[inline]
 pub fn redis_query_type(frame: &RedisFrame) -> QueryType {
     if let RedisFrame::Array(frames) = frame {
-        if let Some(RedisFrame::BulkString(bytes)) = frames.get(0) {
+        if let Some(RedisFrame::BulkString(bytes)) = frames.first() {
             return match bytes.to_ascii_uppercase().as_slice() {
                 b"APPEND" | b"BITCOUNT" | b"STRLEN" | b"GET" | b"GETRANGE" | b"MGET"
                 | b"LRANGE" | b"LINDEX" | b"LLEN" | b"SCARD" | b"SISMEMBER" | b"SMEMBERS"

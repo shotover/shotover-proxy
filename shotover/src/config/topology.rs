@@ -108,7 +108,7 @@ mod topology_tests {
     async fn test_validate_chain_empty_chain() {
         let expected = r#"Topology errors
 foo source:
-  foo source chain:
+  foo chain:
     Chain cannot be empty
 "#;
 
@@ -127,7 +127,7 @@ foo source:
     async fn test_validate_coalesce() {
         let expected = r#"Topology errors
 foo source:
-  foo source chain:
+  foo chain:
     Coalesce:
       Need to provide at least one of these fields:
       * flush_when_buffered_message_count
@@ -155,7 +155,7 @@ foo source:
     async fn test_validate_chain_terminating_in_middle() {
         let expected = r#"Topology errors
 foo source:
-  foo source chain:
+  foo chain:
     Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
 "#;
 
@@ -175,7 +175,7 @@ foo source:
     async fn test_validate_chain_non_terminating_at_end() {
         let expected = r#"Topology errors
 foo source:
-  foo source chain:
+  foo chain:
     Non-terminating transform "DebugPrinter" is last in chain. Last transform must be terminating.
 "#;
 
@@ -195,7 +195,7 @@ foo source:
     async fn test_validate_chain_terminating_middle_non_terminating_at_end() {
         let expected = r#"Topology errors
 foo source:
-  foo source chain:
+  foo chain:
     Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
     Non-terminating transform "DebugPrinter" is last in chain. Last transform must be terminating.
 "#;
@@ -241,7 +241,7 @@ foo source:
     async fn test_validate_chain_invalid_subchain_scatter() {
         let expected = r#"Topology errors
 foo source:
-  foo source chain:
+  foo chain:
     TuneableConsistencyScatter:
       subchain-1 chain:
         Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
@@ -298,7 +298,7 @@ foo source:
     async fn test_validate_chain_invalid_subchain_redis_cache() {
         let expected = r#"Topology errors
 foo source:
-  foo source chain:
+  foo chain:
     RedisCache:
       cache_chain chain:
         Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
@@ -348,7 +348,7 @@ foo source:
     async fn test_validate_chain_invalid_subchain_parallel_map() {
         let expected = r#"Topology errors
 foo source:
-  foo source chain:
+  foo chain:
     ParallelMap:
       parallel_map_chain chain:
         Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
@@ -379,7 +379,7 @@ foo source:
     async fn test_validate_chain_subchain_terminating_in_middle() {
         let expected = r#"Topology errors
 foo source:
-  foo source chain:
+  foo chain:
     TuneableConsistencyScatter:
       subchain-1 chain:
         Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
@@ -415,7 +415,7 @@ foo source:
     async fn test_validate_chain_subchain_non_terminating_at_end() {
         let expected = r#"Topology errors
 foo source:
-  foo source chain:
+  foo chain:
     TuneableConsistencyScatter:
       subchain-1 chain:
         Non-terminating transform "DebugPrinter" is last in chain. Last transform must be terminating.
@@ -449,7 +449,7 @@ foo source:
     async fn test_validate_chain_subchain_terminating_middle_non_terminating_at_end() {
         let expected = r#"Topology errors
 foo source:
-  foo source chain:
+  foo chain:
     TuneableConsistencyScatter:
       subchain-1 chain:
         Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
@@ -496,12 +496,12 @@ foo source:
 
         let expected = r#"Topology errors
 redis source:
-  redis source chain:
+  redis chain:
     Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
     Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
     Non-terminating transform "DebugPrinter" is last in chain. Last transform must be terminating.
 redis source:
-  redis source chain:
+  redis chain:
     TuneableConsistencyScatter:
       a_chain_1 chain:
         Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
