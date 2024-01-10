@@ -9,7 +9,6 @@ use crate::transforms::util::cluster_connection_pool::{Authenticator, Connection
 use crate::transforms::util::{Request, Response};
 use crate::transforms::{
     ResponseFuture, Transform, TransformBuilder, TransformConfig, Transforms, Wrapper,
-    CONTEXT_CHAIN_NAME,
 };
 use anyhow::{anyhow, bail, ensure, Context, Result};
 use async_trait::async_trait;
@@ -31,7 +30,7 @@ use std::sync::Arc;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::{oneshot, RwLock};
 use tokio::time::{timeout, Duration};
-use tracing::{debug, error, trace, warn};
+use tracing::{debug, trace, warn};
 
 const SLOT_SIZE: usize = 16384;
 
@@ -53,7 +52,7 @@ impl TransformConfig for RedisSinkClusterConfig {
     async fn get_builder(&self, chain_name: String) -> Result<Box<dyn TransformBuilder>> {
         let connection_pool = ConnectionPool::new_with_auth(
             Duration::from_millis(self.connect_timeout_ms),
-            RedisCodecBuilder::new(Direction::Sink),
+            RedisCodecBuilder::new(Direction::Sink, "RedisSinkCluster".to_owned()),
             RedisAuthenticator {},
             self.tls.clone(),
         )?;
@@ -115,6 +114,7 @@ impl Topology {
 
 #[derive(Debug)]
 pub struct RedisSinkCluster {
+    chain_name: String,
     has_run_init: bool,
     topology: Topology,
     shared_topology: Arc<RwLock<Topology>>,
@@ -144,6 +144,7 @@ impl RedisSinkCluster {
         >,
     ) -> Self {
         let sink_cluster = RedisSinkCluster {
+            chain_name: chain_name.clone(),
             has_run_init: false,
             first_contact_points,
             direct_destination,
@@ -241,7 +242,7 @@ impl RedisSinkCluster {
             )),
             // Send to all senders.
             // If any of the responses were a failure then return that failure.
-            // Otherwise return the first successful result
+            // Otherwise collate results according to routing_info.
             _ => {
                 let responses = FuturesUnordered::new();
 
@@ -251,36 +252,43 @@ impl RedisSinkCluster {
                 Ok(Box::pin(async move {
                     let response = responses
                         .fold(None, |acc, response| async move {
-                            if let Some(RedisFrame::Error(_)) = acc {
+                            if let Some((_, RedisFrame::Error(_))) = acc {
                                 acc
                             } else {
                                 match response {
                                     Ok(Response {
                                         response: Ok(mut message),
                                         ..
-                                    }) => Some(match message.frame().unwrap() {
-                                        Frame::Redis(frame) => {
-                                            let new_frame = frame.take();
-                                            match acc {
-                                                Some(prev_frame) => routing_info
-                                                    .response_join()
-                                                    .join(prev_frame, new_frame),
-                                                None => new_frame,
+                                    }) => Some((
+                                        message.received_from_source_or_sink_at,
+                                        match message.frame().unwrap() {
+                                            Frame::Redis(frame) => {
+                                                let new_frame = frame.take();
+                                                match acc {
+                                                    Some((_, prev_frame)) => routing_info
+                                                        .response_join()
+                                                        .join(prev_frame, new_frame),
+                                                    None => new_frame,
+                                                }
                                             }
-                                        }
-                                        _ => unreachable!("direct response from a redis sink"),
-                                    }),
+                                            _ => unreachable!("direct response from a redis sink"),
+                                        },
+                                    )),
                                     Ok(Response {
                                         response: Err(e), ..
-                                    }) => Some(RedisFrame::Error(e.to_string().into())),
-                                    Err(e) => Some(RedisFrame::Error(e.to_string().into())),
+                                    }) => Some((None, RedisFrame::Error(e.to_string().into()))),
+                                    Err(e) => Some((None, RedisFrame::Error(e.to_string().into()))),
                                 }
                             }
                         })
                         .await;
 
+                    let (received_at, response) = response.unwrap();
                     Ok(Response {
-                        response: Ok(Message::from_frame(Frame::Redis(response.unwrap()))),
+                        response: Ok(Message::from_frame_at_instant(
+                            Frame::Redis(response),
+                            received_at,
+                        )),
                     })
                 }))
             }
@@ -597,11 +605,7 @@ impl RedisSinkCluster {
 
     #[inline(always)]
     fn send_error_response(&self, message: &str) -> Result<ResponseFuture> {
-        if let Err(e) = CONTEXT_CHAIN_NAME.try_with(|chain_name| {
-        counter!("shotover_failed_requests_count", 1, "chain" => chain_name.to_string(), "transform" => self.get_name());
-    }) {
-        error!("failed to count failed request - missing chain name: {:?}", e);
-    }
+        counter!("shotover_failed_requests_count", 1, "chain" => self.chain_name.clone(), "transform" => self.get_name());
         short_circuit(RedisFrame::Error(message.into()))
     }
 

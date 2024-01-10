@@ -162,7 +162,6 @@ impl BufferedChain {
 
 impl TransformChain {
     pub async fn process_request(&mut self, mut wrapper: Wrapper<'_>) -> Result<Messages> {
-        wrapper.chain_name = self.name;
         let start = Instant::now();
         wrapper.reset(&mut self.chain);
 

@@ -13,9 +13,11 @@ use anyhow::{anyhow, Context, Result};
 use bytes::{Buf, Bytes};
 use cassandra_protocol::compression::Compression;
 use cassandra_protocol::frame::message_error::{ErrorBody, ErrorType};
+use derivative::Derivative;
 use nonzero_ext::nonzero;
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroU32;
+use std::time::Instant;
 
 pub enum Metadata {
     Cassandra(CassandraMetadata),
@@ -64,7 +66,8 @@ pub type Messages = Vec<Message>;
 ///
 /// The transform may also go one step further and modify the message's Frame + call [`Message::invalidate_cache`].
 /// This results in an expensive cost to reassemble the message bytes when the message is sent to the destination.
-#[derive(PartialEq, Debug, Clone)]
+#[derive(Derivative, Debug, Clone)]
+#[derivative(PartialEq)]
 pub struct Message {
     /// It is an invariant that this field must remain Some at all times.
     /// The only reason it is an Option is to allow temporarily taking ownership of the value from an &mut T
@@ -74,6 +77,17 @@ pub struct Message {
     // This metadata field is only used for communication between transforms and should not be touched by sinks or sources
     pub(crate) meta_timestamp: Option<i64>,
 
+    /// The instant the bytes were read off the TCP connection at a source or sink.
+    /// This field is used to measure the time it takes for a message to go from one end of the chain to the other.
+    ///
+    /// In order to keep this metric as accurate as possible transforms should follow the following rules:
+    /// * When a transform clones a request to go down a seperate subchain this field should be duplicated into each clone.
+    /// * When a transform splits a message into multiple messages the last message in the resulting sequence should retain this field and the rest should be set to `None`.
+    /// * When generating a message that does not correspond to an internal message, for example to query database topology, set this field to `None`.
+    /// * When a response is generated from a request, for example to return an error message to the client, set this field to `None`.
+    #[derivative(PartialEq = "ignore")]
+    pub(crate) received_from_source_or_sink_at: Option<Instant>,
+
     pub(crate) codec_state: CodecState,
 }
 
@@ -82,7 +96,11 @@ impl Message {
     /// This method should be called when you have have just the raw bytes of a message.
     /// This is expected to be used only by codecs that are decoding a protocol where the length of the message is provided in the header. e.g. cassandra
     /// Providing just the bytes results in better performance when only the raw bytes are available.
-    pub fn from_bytes(bytes: Bytes, protocol_type: ProtocolType) -> Self {
+    pub fn from_bytes_at_instant(
+        bytes: Bytes,
+        protocol_type: ProtocolType,
+        received_from_source_or_sink_at: Option<Instant>,
+    ) -> Self {
         Message {
             inner: Some(MessageInner::RawBytes {
                 bytes,
@@ -90,29 +108,49 @@ impl Message {
             }),
             meta_timestamp: None,
             codec_state: CodecState::from(&protocol_type),
+            received_from_source_or_sink_at,
         }
     }
 
     /// This method should be called when you have both a Frame and matching raw bytes of a message.
     /// This is expected to be used only by codecs that are decoding a protocol that does not include length of the message in the header. e.g. redis
     /// Providing both the raw bytes and Frame results in better performance if they are both already available.
-    pub fn from_bytes_and_frame(bytes: Bytes, frame: Frame) -> Self {
+    pub fn from_bytes_and_frame_at_instant(
+        bytes: Bytes,
+        frame: Frame,
+        received_from_source_or_sink_at: Option<Instant>,
+    ) -> Self {
         Message {
             codec_state: frame.as_codec_state(),
             inner: Some(MessageInner::Parsed { bytes, frame }),
             meta_timestamp: None,
+            received_from_source_or_sink_at,
         }
     }
 
     /// This method should be called when you have just a Frame of a message.
     /// This is expected to be used by transforms that are generating custom messages.
     /// Providing just the Frame results in better performance when only the Frame is available.
-    pub fn from_frame(frame: Frame) -> Self {
+    pub fn from_frame_at_instant(
+        frame: Frame,
+        received_from_source_or_sink_at: Option<Instant>,
+    ) -> Self {
         Message {
             codec_state: frame.as_codec_state(),
             inner: Some(MessageInner::Modified { frame }),
             meta_timestamp: None,
+            received_from_source_or_sink_at,
         }
+    }
+
+    /// Same as [`Message::from_bytes`] but `received_from_source_or_sink_at` is set to None.
+    pub fn from_bytes(bytes: Bytes, protocol_type: ProtocolType) -> Self {
+        Self::from_bytes_at_instant(bytes, protocol_type, None)
+    }
+
+    /// Same as [`Message::from_frame`] but `received_from_source_or_sink_at` is set to None.
+    pub fn from_frame(frame: Frame) -> Self {
+        Self::from_frame_at_instant(frame, None)
     }
 }
 
@@ -311,25 +349,28 @@ impl Message {
     pub fn set_backpressure(&mut self) -> Result<()> {
         let metadata = self.metadata()?;
 
-        *self = Message::from_frame(match metadata {
-            Metadata::Cassandra(metadata) => {
-                let body = CassandraOperation::Error(ErrorBody {
-                    message: "Server overloaded".into(),
-                    ty: ErrorType::Overloaded,
-                });
+        *self = Message::from_frame_at_instant(
+            match metadata {
+                Metadata::Cassandra(metadata) => {
+                    let body = CassandraOperation::Error(ErrorBody {
+                        message: "Server overloaded".into(),
+                        ty: ErrorType::Overloaded,
+                    });
 
-                Frame::Cassandra(CassandraFrame {
-                    version: metadata.version,
-                    stream_id: metadata.stream_id,
-                    tracing: Tracing::Response(None),
-                    warnings: vec![],
-                    operation: body,
-                })
-            }
-            Metadata::Redis => unimplemented!(),
-            Metadata::Kafka => unimplemented!(),
-            Metadata::OpenSearch => unimplemented!(),
-        });
+                    Frame::Cassandra(CassandraFrame {
+                        version: metadata.version,
+                        stream_id: metadata.stream_id,
+                        tracing: Tracing::Response(None),
+                        warnings: vec![],
+                        operation: body,
+                    })
+                }
+                Metadata::Redis => unimplemented!(),
+                Metadata::Kafka => unimplemented!(),
+                Metadata::OpenSearch => unimplemented!(),
+            },
+            self.received_from_source_or_sink_at,
+        );
 
         Ok(())
     }

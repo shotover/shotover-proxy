@@ -95,7 +95,7 @@ pub struct KafkaSinkSingle {
 impl Transform for KafkaSinkSingle {
     async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Messages> {
         if self.outbound.is_none() {
-            let codec = KafkaCodecBuilder::new(Direction::Sink);
+            let codec = KafkaCodecBuilder::new(Direction::Sink, "KafkaSinkSingle".to_owned());
             let tcp_stream = tcp::tcp_stream(
                 self.connect_timeout,
                 (requests_wrapper.local_addr.ip(), self.address_port),

@@ -472,7 +472,8 @@ mod system_peers {
                     )),
                 params: Box::default(),
                 },
-            })),
+            }),
+        ),
         )?.await??;
 
         if is_peers_v2_does_not_exist_error(&mut response) {

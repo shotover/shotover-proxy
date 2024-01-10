@@ -129,7 +129,8 @@ impl Transform for RedisSinkSingle {
                 Box::pin(tcp_stream) as Pin<Box<dyn AsyncStream + Send + Sync>>
             };
 
-            let (decoder, encoder) = RedisCodecBuilder::new(Direction::Sink).build();
+            let (decoder, encoder) =
+                RedisCodecBuilder::new(Direction::Sink, "RedisSinkSingle".to_owned()).build();
             let (stream_rx, stream_tx) = tokio::io::split(generic_stream);
             let outbound_tx = FramedWrite::new(stream_tx, encoder);
             let outbound_rx = FramedRead::new(stream_rx, decoder);

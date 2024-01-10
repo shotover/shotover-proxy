@@ -13,9 +13,10 @@ use cassandra_protocol::frame::{Flags, Opcode, Version, PAYLOAD_SIZE_LIMIT};
 use cql3_parser::cassandra_statement::CassandraStatement;
 use cql3_parser::common::Identifier;
 use lz4_flex::{block::get_maximum_output_size, compress_into, decompress};
-use metrics::{register_counter, Counter};
+use metrics::{register_counter, Counter, Histogram};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::time::Instant;
 use tokio_util::codec::{Decoder, Encoder};
 use tracing::info;
 
@@ -96,18 +97,21 @@ impl From<CompressionState> for Compression {
 pub struct CassandraCodecBuilder {
     direction: Direction,
     version_counter: VersionCounter,
+    message_latency: Histogram,
 }
 
 impl CodecBuilder for CassandraCodecBuilder {
     type Decoder = CassandraDecoder;
     type Encoder = CassandraEncoder;
 
-    fn new(direction: Direction) -> Self {
+    fn new(direction: Direction, destination_name: String) -> Self {
         let version_counter = VersionCounter::new();
+        let message_latency = super::message_latency(direction, destination_name);
 
         Self {
             direction,
             version_counter,
+            message_latency,
         }
     }
 
@@ -124,7 +128,13 @@ impl CodecBuilder for CassandraCodecBuilder {
                 handshake_complete.clone(),
                 self.version_counter.clone(),
             ),
-            CassandraEncoder::new(version, compression, self.direction, handshake_complete),
+            CassandraEncoder::new(
+                version,
+                compression,
+                self.direction,
+                handshake_complete,
+                self.message_latency.clone(),
+            ),
         )
     }
 
@@ -233,6 +243,7 @@ impl CassandraDecoder {
         version: Version,
         compression: Compression,
         handshake_complete: bool,
+        received_at: Instant,
     ) -> Result<Vec<Message>> {
         match (version, handshake_complete) {
             (Version::V5, true) => match compression {
@@ -268,7 +279,8 @@ impl CassandraDecoder {
                     frame_bytes.advance(UNCOMPRESSED_FRAME_HEADER_LENGTH);
                     let payload = frame_bytes.split_to(payload_length).freeze();
 
-                    let envelopes = self.extract_envelopes_from_payload(payload, self_contained)?;
+                    let envelopes =
+                        self.extract_envelopes_from_payload(payload, self_contained, received_at)?;
 
                     Ok(envelopes)
                 }
@@ -328,7 +340,8 @@ impl CassandraDecoder {
                         .into()
                     };
 
-                    let envelopes = self.extract_envelopes_from_payload(payload, self_contained)?;
+                    let envelopes =
+                        self.extract_envelopes_from_payload(payload, self_contained, received_at)?;
 
                     Ok(envelopes)
                 }
@@ -344,7 +357,7 @@ impl CassandraDecoder {
 
                 let compressed = self.check_compression(&bytes).unwrap();
 
-                let message = Message::from_bytes(
+                let message = Message::from_bytes_at_instant(
                     bytes.freeze(),
                     crate::message::ProtocolType::Cassandra {
                         compression: if compressed {
@@ -353,6 +366,7 @@ impl CassandraDecoder {
                             Compression::None
                         },
                     },
+                    Some(received_at),
                 );
 
                 Ok(vec![message])
@@ -445,6 +459,7 @@ impl CassandraDecoder {
         &mut self,
         payload: Bytes,
         self_contained: bool,
+        received_at: Instant,
     ) -> Result<Vec<Message>> {
         if !self_contained {
             self.payload_buffer.extend_from_slice(&payload);
@@ -455,18 +470,22 @@ impl CassandraDecoder {
                 } else {
                     let payload = self.payload_buffer.split().freeze();
                     self.expected_payload_len = None;
-                    self.parse_full_envelopes_from_payload(payload)
+                    self.parse_full_envelopes_from_payload(payload, received_at)
                 }
             } else {
                 self.expected_payload_len = extract_expected_payload_len(&self.payload_buffer);
                 Ok(vec![])
             }
         } else {
-            self.parse_full_envelopes_from_payload(payload)
+            self.parse_full_envelopes_from_payload(payload, received_at)
         }
     }
 
-    fn parse_full_envelopes_from_payload(&self, mut payload: Bytes) -> Result<Vec<Message>> {
+    fn parse_full_envelopes_from_payload(
+        &self,
+        mut payload: Bytes,
+        received_at: Instant,
+    ) -> Result<Vec<Message>> {
         let mut envelopes: Vec<Message> = vec![];
 
         while !payload.is_empty() {
@@ -490,11 +509,12 @@ impl CassandraDecoder {
                 pretty_hex::pretty_hex(&envelope)
             );
 
-            envelopes.push(Message::from_bytes(
+            envelopes.push(Message::from_bytes_at_instant(
                 envelope,
                 crate::message::ProtocolType::Cassandra {
                     compression: Compression::None,
                 },
+                Some(received_at),
             ));
         }
 
@@ -552,12 +572,20 @@ impl Decoder for CassandraDecoder {
         let version: Version = self.version.load(Ordering::Relaxed).into();
         let compression: Compression = self.compression.load(Ordering::Relaxed).into();
         let handshake_complete = self.handshake_complete.load(Ordering::Relaxed);
+        let received_at = Instant::now();
 
         loop {
             match self.check_size(src, version, compression, handshake_complete) {
                 Ok(frame_len) => {
                     let mut messages = self
-                        .decode_frame(src, frame_len, version, compression, handshake_complete)
+                        .decode_frame(
+                            src,
+                            frame_len,
+                            version,
+                            compression,
+                            handshake_complete,
+                            received_at,
+                        )
                         .map_err(CodecReadError::Parser)?;
 
                     for message in messages.iter_mut() {
@@ -693,6 +721,7 @@ pub struct CassandraEncoder {
     compression: Arc<AtomicCompressionState>,
     direction: Direction,
     handshake_complete: Arc<AtomicBool>,
+    message_latency: Histogram,
 }
 
 impl CassandraEncoder {
@@ -701,8 +730,10 @@ impl CassandraEncoder {
         compression: Arc<AtomicCompressionState>,
         direction: Direction,
         handshake_complete: Arc<AtomicBool>,
+        message_latency: Histogram,
     ) -> CassandraEncoder {
         CassandraEncoder {
+            message_latency,
             version,
             compression,
             direction,
@@ -725,8 +756,12 @@ impl Encoder<Messages> for CassandraEncoder {
 
         for m in item {
             let start = dst.len();
+            let received_at = m.received_from_source_or_sink_at;
             self.encode_frame(dst, m, version, compression, handshake_complete)
                 .map_err(CodecWriteError::Encoder)?;
+            if let Some(received_at) = received_at {
+                self.message_latency.record(received_at.elapsed());
+            }
             tracing::debug!(
                 "{}: outgoing cassandra message:\n{}",
                 self.direction,
@@ -1017,7 +1052,7 @@ mod cassandra_protocol_tests {
 
     #[test]
     fn test_codec_startup() {
-        let mut codec = CassandraCodecBuilder::new(Direction::Sink);
+        let mut codec = CassandraCodecBuilder::new(Direction::Sink, "cassandra".to_owned());
         let mut startup_body: HashMap<String, String> = HashMap::new();
         startup_body.insert("CQL_VERSION".into(), "3.0.0".into());
         let bytes = hex!("0400000001000000160001000b43514c5f56455253494f4e0005332e302e30");
@@ -1033,7 +1068,7 @@ mod cassandra_protocol_tests {
 
     #[test]
     fn test_codec_options() {
-        let mut codec = CassandraCodecBuilder::new(Direction::Sink);
+        let mut codec = CassandraCodecBuilder::new(Direction::Sink, "cassandra".to_owned());
         let bytes = hex!("040000000500000000");
         let messages = vec![Message::from_frame(Frame::Cassandra(CassandraFrame {
             version: Version::V4,
@@ -1047,7 +1082,7 @@ mod cassandra_protocol_tests {
 
     #[test]
     fn test_codec_ready() {
-        let mut codec = CassandraCodecBuilder::new(Direction::Sink);
+        let mut codec = CassandraCodecBuilder::new(Direction::Sink, "cassandra".to_owned());
         let bytes = hex!("840000000200000000");
         let messages = vec![Message::from_frame(Frame::Cassandra(CassandraFrame {
             version: Version::V4,
@@ -1061,7 +1096,7 @@ mod cassandra_protocol_tests {
 
     #[test]
     fn test_codec_register() {
-        let mut codec = CassandraCodecBuilder::new(Direction::Sink);
+        let mut codec = CassandraCodecBuilder::new(Direction::Sink, "cassandra".to_owned());
         let bytes = hex!(
             "040000010b000000310003000f544f504f4c4f47595f4348414e4745
             000d5354415455535f4348414e4745000d534348454d415f4348414e4745"
@@ -1084,7 +1119,7 @@ mod cassandra_protocol_tests {
 
     #[test]
     fn test_codec_result() {
-        let mut codec = CassandraCodecBuilder::new(Direction::Sink);
+        let mut codec = CassandraCodecBuilder::new(Direction::Sink, "cassandra".to_owned());
         let bytes = hex!(
             "840000020800000099000000020000000100000009000673797374656
             d000570656572730004706565720010000b646174615f63656e746572000d0007686f73745f6964000c000c70726566
@@ -1192,7 +1227,7 @@ mod cassandra_protocol_tests {
 
     #[test]
     fn test_codec_query_select() {
-        let mut codec = CassandraCodecBuilder::new(Direction::Sink);
+        let mut codec = CassandraCodecBuilder::new(Direction::Sink, "cassandra".to_owned());
         let bytes = hex!(
             "0400000307000000350000002e53454c454354202a2046524f4d20737973
             74656d2e6c6f63616c205748455245206b6579203d20276c6f63616c27000100"
@@ -1215,7 +1250,7 @@ mod cassandra_protocol_tests {
 
     #[test]
     fn test_codec_query_insert() {
-        let mut codec = CassandraCodecBuilder::new(Direction::Sink);
+        let mut codec = CassandraCodecBuilder::new(Direction::Sink, "cassandra".to_owned());
         let bytes = hex!(
             "0400000307000000330000002c494e5345525420494e544f207379737465
             6d2e666f6f2028626172292056414c554553202827626172322729000100"

@@ -1,11 +1,13 @@
-use super::{CodecWriteError, Direction};
+use super::{message_latency, CodecWriteError, Direction};
 use crate::codec::{CodecBuilder, CodecReadError};
 use crate::frame::MessageType;
 use crate::message::{Encodable, Message, Messages, ProtocolType};
 use anyhow::{anyhow, Result};
 use bytes::{Buf, BytesMut};
 use kafka_protocol::messages::ApiKey;
+use metrics::Histogram;
 use std::sync::mpsc;
+use std::time::Instant;
 use tokio_util::codec::{Decoder, Encoder};
 
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -17,6 +19,7 @@ pub struct RequestHeader {
 #[derive(Clone)]
 pub struct KafkaCodecBuilder {
     direction: Direction,
+    message_latency: Histogram,
 }
 
 // Depending on if the codec is used in a sink or a source requires different processing logic:
@@ -27,8 +30,12 @@ impl CodecBuilder for KafkaCodecBuilder {
     type Decoder = KafkaDecoder;
     type Encoder = KafkaEncoder;
 
-    fn new(direction: Direction) -> Self {
-        Self { direction }
+    fn new(direction: Direction, destination_name: String) -> Self {
+        let message_latency = message_latency(direction, destination_name);
+        Self {
+            direction,
+            message_latency,
+        }
     }
 
     fn build(&self) -> (KafkaDecoder, KafkaEncoder) {
@@ -41,7 +48,7 @@ impl CodecBuilder for KafkaCodecBuilder {
         };
         (
             KafkaDecoder::new(rx, self.direction),
-            KafkaEncoder::new(tx, self.direction),
+            KafkaEncoder::new(tx, self.direction, self.message_latency.clone()),
         )
     }
 
@@ -87,6 +94,7 @@ impl Decoder for KafkaDecoder {
     type Error = CodecReadError;
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
+        let received_at = Instant::now();
         loop {
             if let Some(size) = get_length_of_full_message(src) {
                 let bytes = src.split_to(size);
@@ -102,9 +110,10 @@ impl Decoder for KafkaDecoder {
                 } else {
                     None
                 };
-                self.messages.push(Message::from_bytes(
+                self.messages.push(Message::from_bytes_at_instant(
                     bytes.freeze(),
                     ProtocolType::Kafka { request_header },
+                    Some(received_at),
                 ));
             } else if self.messages.is_empty() || src.remaining() != 0 {
                 return Ok(None);
@@ -116,6 +125,7 @@ impl Decoder for KafkaDecoder {
 }
 
 pub struct KafkaEncoder {
+    message_latency: Histogram,
     request_header_tx: Option<mpsc::Sender<RequestHeader>>,
     direction: Direction,
 }
@@ -124,8 +134,10 @@ impl KafkaEncoder {
     pub fn new(
         request_header_tx: Option<mpsc::Sender<RequestHeader>>,
         direction: Direction,
+        message_latency: Histogram,
     ) -> Self {
         KafkaEncoder {
+            message_latency,
             request_header_tx,
             direction,
         }
@@ -140,6 +152,7 @@ impl Encoder<Messages> for KafkaEncoder {
             let start = dst.len();
             m.ensure_message_type(MessageType::Kafka)
                 .map_err(CodecWriteError::Encoder)?;
+            let received_at = m.received_from_source_or_sink_at;
             let result = match m.into_encodable() {
                 Encodable::Bytes(bytes) => {
                     dst.extend_from_slice(&bytes);
@@ -155,6 +168,9 @@ impl Encoder<Messages> for KafkaEncoder {
                     .map_err(|_| CodecWriteError::Encoder(anyhow!("unknown api key {api_key}")))?;
                 tx.send(RequestHeader { api_key, version })
                     .map_err(|e| CodecWriteError::Encoder(anyhow!(e)))?;
+            }
+            if let Some(received_at) = received_at {
+                self.message_latency.record(received_at.elapsed());
             }
             tracing::debug!(
                 "{}: outgoing kafka message:\n{}",

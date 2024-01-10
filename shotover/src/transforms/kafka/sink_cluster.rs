@@ -140,6 +140,10 @@ pub struct KafkaSinkCluster {
 #[async_trait]
 impl Transform for KafkaSinkCluster {
     async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Messages> {
+        if requests_wrapper.requests.is_empty() {
+            return Ok(vec![]);
+        }
+
         if self.nodes.is_empty() {
             let nodes: Result<Vec<KafkaNode>> = self
                 .first_contact_points
@@ -789,7 +793,7 @@ struct KafkaNode {
 impl KafkaNode {
     async fn get_connection(&mut self, connect_timeout: Duration) -> Result<&Connection> {
         if self.connection.is_none() {
-            let codec = KafkaCodecBuilder::new(Direction::Sink);
+            let codec = KafkaCodecBuilder::new(Direction::Sink, "KafkaSinkCluster".to_owned());
             let tcp_stream = tcp::tcp_stream(
                 connect_timeout,
                 (
