@@ -124,7 +124,7 @@ mod test {
                     }),
                     Box::<NullSink>::default(),
                 ],
-                "test-chain".to_string(),
+                "test-chain",
             );
 
             assert_eq!(
@@ -146,7 +146,7 @@ mod test {
                     }),
                     Box::<NullSink>::default(),
                 ],
-                "test-chain".to_string(),
+                "test-chain",
             );
 
             assert_eq!(chain.validate(), Vec::<String>::new());
