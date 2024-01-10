@@ -257,7 +257,7 @@ pub struct Wrapper<'a> {
     pub client_details: String,
     /// Contains the shotover source's ip address and port which the message was received on
     pub local_addr: SocketAddr,
-    chain_name: String,
+    chain_name: &'static str,
     /// When true transforms must flush any buffered messages into the messages field.
     /// This can occur at any time but will always occur before the transform is destroyed due to either
     /// shotover or the transform's chain shutting down.
@@ -300,7 +300,7 @@ impl<'a> Clone for Wrapper<'a> {
             requests: self.requests.clone(),
             transforms: TransformIter::new_forwards(&mut []),
             client_details: self.client_details.clone(),
-            chain_name: self.chain_name.clone(),
+            chain_name: self.chain_name,
             local_addr: self.local_addr,
             flush: self.flush,
         }
@@ -308,7 +308,7 @@ impl<'a> Clone for Wrapper<'a> {
 }
 
 tokio::task_local! {
-    pub static CONTEXT_CHAIN_NAME: String;
+    pub static CONTEXT_CHAIN_NAME: &'static str;
 }
 
 impl<'a> Wrapper<'a> {
@@ -333,11 +333,10 @@ impl<'a> Wrapper<'a> {
         };
 
         let transform_name = transform.get_name();
-        let chain_name = self.chain_name.clone();
 
         let start = Instant::now();
         let result = CONTEXT_CHAIN_NAME
-            .scope(chain_name, transform.transform(self))
+            .scope(self.chain_name, transform.transform(self))
             .await
             .map_err(|e| e.context(anyhow!("{transform_name} transform failed")));
         transform_total.increment(1);
@@ -361,11 +360,10 @@ impl<'a> Wrapper<'a> {
         };
 
         let transform_name = transform.get_name();
-        let chain_name = self.chain_name.clone();
 
         let start = Instant::now();
         let result = CONTEXT_CHAIN_NAME
-            .scope(chain_name, transform.transform_pushed(self))
+            .scope(self.chain_name, transform.transform_pushed(self))
             .await
             .map_err(|e| e.context(anyhow!("{transform_name} transform failed")));
         transform_pushed_total.increment(1);
@@ -377,40 +375,36 @@ impl<'a> Wrapper<'a> {
     }
 
     #[cfg(test)]
-    pub fn new(requests: Messages) -> Self {
+    pub fn new_test(requests: Messages) -> Self {
         Wrapper {
             requests,
             transforms: TransformIter::new_forwards(&mut []),
             client_details: "".to_owned(),
             local_addr: "127.0.0.1:8000".parse().unwrap(),
-            chain_name: "".to_string(),
+            chain_name: "",
             flush: false,
         }
     }
 
-    pub fn new_with_chain_name(
-        requests: Messages,
-        chain_name: String,
-        local_addr: SocketAddr,
-    ) -> Self {
+    pub fn new_with_addr(requests: Messages, local_addr: SocketAddr) -> Self {
         Wrapper {
             requests,
             transforms: TransformIter::new_forwards(&mut []),
             client_details: "".to_owned(),
             local_addr,
-            chain_name,
+            chain_name: "",
             flush: false,
         }
     }
 
-    pub fn flush_with_chain_name(chain_name: String) -> Self {
+    pub fn flush() -> Self {
         Wrapper {
             requests: vec![],
             transforms: TransformIter::new_forwards(&mut []),
             client_details: "".to_owned(),
             // The connection is closed so we need to just fake an address here
             local_addr: "127.0.0.1:10000".parse().unwrap(),
-            chain_name,
+            chain_name: "",
             flush: true,
         }
     }
@@ -418,7 +412,6 @@ impl<'a> Wrapper<'a> {
     pub fn new_with_client_details(
         requests: Messages,
         client_details: String,
-        chain_name: String,
         local_addr: SocketAddr,
     ) -> Self {
         Wrapper {
@@ -426,7 +419,7 @@ impl<'a> Wrapper<'a> {
             transforms: TransformIter::new_forwards(&mut []),
             client_details,
             local_addr,
-            chain_name,
+            chain_name: "",
             flush: false,
         }
     }

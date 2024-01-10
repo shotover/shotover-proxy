@@ -18,7 +18,7 @@ impl SamplerBuilder {
         SamplerBuilder {
             numerator: 1,
             denominator: 100,
-            sample_chain: TransformChainBuilder::new(vec![], "dummy".to_string()),
+            sample_chain: TransformChainBuilder::new(vec![], "dummy"),
         }
     }
 }

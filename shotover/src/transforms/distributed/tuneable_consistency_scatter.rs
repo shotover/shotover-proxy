@@ -29,7 +29,7 @@ impl TransformConfig for TuneableConsistencyScatterConfig {
         for (key, value) in &self.route_map {
             route_map.push(value.get_builder(key.clone()).await?);
         }
-        route_map.sort_by_key(|x| x.name.clone());
+        route_map.sort_by_key(|x| x.name);
 
         Ok(Box::new(TuneableConsistencyScatterBuilder {
             route_map,
@@ -154,7 +154,7 @@ fn resolve_fragments_max_integer(fragments: Vec<Message>) -> Message {
 
 fn get_upper_command_name(message: &mut Message) -> Vec<u8> {
     if let Some(Frame::Redis(RedisFrame::Array(frames))) = message.frame() {
-        if let Some(RedisFrame::BulkString(bytes)) = frames.get(0) {
+        if let Some(RedisFrame::BulkString(bytes)) = frames.first() {
             return bytes.to_ascii_uppercase();
         }
     }
@@ -316,7 +316,7 @@ mod scatter_transform_tests {
             "OK".into(),
         )))];
 
-        let wrapper = Wrapper::new(vec![Message::from_frame(Frame::Redis(
+        let wrapper = Wrapper::new_test(vec![Message::from_frame(Frame::Redis(
             RedisFrame::BulkString(Bytes::from_static(b"foo")),
         ))]);
 
@@ -326,15 +326,15 @@ mod scatter_transform_tests {
         let mut two_of_three = HashMap::new();
         two_of_three.insert(
             "one".to_string(),
-            TransformChainBuilder::new(vec![ok_repeat.clone()], "one".to_string()),
+            TransformChainBuilder::new(vec![ok_repeat.clone()], "one"),
         );
         two_of_three.insert(
             "two".to_string(),
-            TransformChainBuilder::new(vec![ok_repeat.clone()], "two".to_string()),
+            TransformChainBuilder::new(vec![ok_repeat.clone()], "two"),
         );
         two_of_three.insert(
             "three".to_string(),
-            TransformChainBuilder::new(vec![err_repeat.clone()], "three".to_string()),
+            TransformChainBuilder::new(vec![err_repeat.clone()], "three"),
         );
 
         let mut tuneable_success_consistency =
@@ -354,15 +354,15 @@ mod scatter_transform_tests {
         let mut one_of_three = HashMap::new();
         one_of_three.insert(
             "one".to_string(),
-            TransformChainBuilder::new(vec![ok_repeat.clone()], "one".to_string()),
+            TransformChainBuilder::new(vec![ok_repeat.clone()], "one"),
         );
         one_of_three.insert(
             "two".to_string(),
-            TransformChainBuilder::new(vec![err_repeat.clone()], "two".to_string()),
+            TransformChainBuilder::new(vec![err_repeat.clone()], "two"),
         );
         one_of_three.insert(
             "three".to_string(),
-            TransformChainBuilder::new(vec![err_repeat.clone()], "three".to_string()),
+            TransformChainBuilder::new(vec![err_repeat.clone()], "three"),
         );
 
         let mut tuneable_fail_consistency =
@@ -388,9 +388,9 @@ mod scatter_transform_tests {
                 Box::<DebugPrinter>::default(),
                 Box::<NullSink>::default(),
             ],
-            "test-chain-1".to_string(),
+            "test-chain-1",
         );
-        let chain_2 = TransformChainBuilder::new(vec![], "test-chain-2".to_string());
+        let chain_2 = TransformChainBuilder::new(vec![], "test-chain-2");
 
         let transform = TuneableConsistencyScatterBuilder {
             route_map: vec![chain_1, chain_2],
@@ -416,7 +416,7 @@ mod scatter_transform_tests {
                 Box::<DebugPrinter>::default(),
                 Box::<NullSink>::default(),
             ],
-            "test-chain-1".to_string(),
+            "test-chain-1",
         );
         let chain_2 = TransformChainBuilder::new(
             vec![
@@ -424,7 +424,7 @@ mod scatter_transform_tests {
                 Box::<DebugPrinter>::default(),
                 Box::<NullSink>::default(),
             ],
-            "test-chain-2".to_string(),
+            "test-chain-2",
         );
 
         let transform = TuneableConsistencyScatterBuilder {

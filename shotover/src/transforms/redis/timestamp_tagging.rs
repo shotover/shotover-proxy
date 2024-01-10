@@ -192,7 +192,7 @@ impl Transform for RedisTimestampTagger {
             if let Some(Frame::Redis(frame)) = message.frame() {
                 if let RedisFrame::Array(array) = frame {
                     if array
-                        .get(0)
+                        .first()
                         .map(|x| x == &RedisFrame::BulkString("EXEC".into()))
                         .unwrap_or(false)
                     {

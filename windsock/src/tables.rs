@@ -36,7 +36,7 @@ pub fn compare_by_name(names: &str) -> Result<()> {
         names.split_whitespace().map(ReportColumn::load).collect();
     let mut columns = columns?;
 
-    let baseline = columns.get(0).map(|x| x.current.clone());
+    let baseline = columns.first().map(|x| x.current.clone());
     for column in &mut columns.iter_mut().skip(1) {
         column.baseline = baseline.clone();
     }
