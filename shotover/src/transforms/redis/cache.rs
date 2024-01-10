@@ -250,11 +250,7 @@ impl SimpleRedisCache {
 
         let redis_responses = self
             .cache_chain
-            .process_request(Wrapper::new_with_chain_name(
-                redis_requests,
-                self.cache_chain.name.clone(),
-                local_addr,
-            ))
+            .process_request(Wrapper::new_with_addr(redis_requests, local_addr))
             .await?;
 
         Ok(self.unwrap_cache_response(redis_responses, redis_indices, cassandra_requests))
@@ -360,11 +356,7 @@ impl SimpleRedisCache {
         if !cache_messages.is_empty() {
             let result = self
                 .cache_chain
-                .process_request(Wrapper::new_with_chain_name(
-                    cache_messages,
-                    self.cache_chain.name.clone(),
-                    local_addr,
-                ))
+                .process_request(Wrapper::new_with_addr(cache_messages, local_addr))
                 .await;
             if let Err(err) = result {
                 warn!("Cache error: {err}");
@@ -799,7 +791,7 @@ mod test {
     #[test]
     fn test_validate_invalid_chain() {
         let transform = SimpleRedisCacheBuilder {
-            cache_chain: TransformChainBuilder::new(vec![], "test-chain".to_string()),
+            cache_chain: TransformChainBuilder::new(vec![], "test-chain"),
             caching_schema: HashMap::new(),
             missed_requests: register_counter!("cache_miss"),
         };
@@ -822,7 +814,7 @@ mod test {
                 Box::new(DebugPrinter::new()),
                 Box::<NullSink>::default(),
             ],
-            "test-chain".to_string(),
+            "test-chain",
         );
 
         let transform = SimpleRedisCacheBuilder {

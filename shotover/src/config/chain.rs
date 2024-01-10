@@ -19,7 +19,7 @@ impl TransformChainConfig {
         for tc in &self.0 {
             transforms.push(tc.get_builder(name.clone()).await?)
         }
-        Ok(TransformChainBuilder::new(transforms, name))
+        Ok(TransformChainBuilder::new(transforms, name.leak()))
     }
 }
 
