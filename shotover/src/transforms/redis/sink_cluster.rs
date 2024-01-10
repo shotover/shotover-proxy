@@ -9,7 +9,6 @@ use crate::transforms::util::cluster_connection_pool::{Authenticator, Connection
 use crate::transforms::util::{Request, Response};
 use crate::transforms::{
     ResponseFuture, Transform, TransformBuilder, TransformConfig, Transforms, Wrapper,
-    CONTEXT_CHAIN_NAME,
 };
 use anyhow::{anyhow, bail, ensure, Context, Result};
 use async_trait::async_trait;
@@ -31,7 +30,7 @@ use std::sync::Arc;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::{oneshot, RwLock};
 use tokio::time::{timeout, Duration};
-use tracing::{debug, error, trace, warn};
+use tracing::{debug, trace, warn};
 
 const SLOT_SIZE: usize = 16384;
 
@@ -115,6 +114,7 @@ impl Topology {
 
 #[derive(Debug)]
 pub struct RedisSinkCluster {
+    chain_name: String,
     has_run_init: bool,
     topology: Topology,
     shared_topology: Arc<RwLock<Topology>>,
@@ -144,6 +144,7 @@ impl RedisSinkCluster {
         >,
     ) -> Self {
         let sink_cluster = RedisSinkCluster {
+            chain_name: chain_name.clone(),
             has_run_init: false,
             first_contact_points,
             direct_destination,
@@ -604,11 +605,7 @@ impl RedisSinkCluster {
 
     #[inline(always)]
     fn send_error_response(&self, message: &str) -> Result<ResponseFuture> {
-        if let Err(e) = CONTEXT_CHAIN_NAME.try_with(|chain_name| {
-        counter!("shotover_failed_requests_count", 1, "chain" => chain_name.to_string(), "transform" => self.get_name());
-    }) {
-        error!("failed to count failed request - missing chain name: {:?}", e);
-    }
+        counter!("shotover_failed_requests_count", 1, "chain" => self.chain_name.clone(), "transform" => self.get_name());
         short_circuit(RedisFrame::Error(message.into()))
     }
 
