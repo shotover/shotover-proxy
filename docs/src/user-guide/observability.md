@@ -13,6 +13,8 @@ This interface will serve Prometheus metrics from `/metrics`. The following metr
 | `shotover_chain_latency_seconds`           | `chain`     | [histogram](#histogram) | The latency for running `chain`                                           |
 | `shotover_chain_messages_per_batch_count`  | `chain`     | [histogram](#histogram) | The number of messages in each batch passing through `chain`.             |
 | `shotover_available_connections_count`     | `source`    | [gauge](#gauge)         | The number of connections currently connected to `source`                 |
+| `shotover_source_to_sink_latency_seconds`  | `sink`      | [histogram](#histogram) | The milliseconds between reading a request from a source TCP connection and writing it to a sink TCP connection  |
+| `shotover_sink_to_source_latency_seconds`  | `source`    | [histogram](#histogram) | The milliseconds between reading a response from a sink TCP connection and writing it to a source TCP connection |
 
 ## Metric data types
 
@@ -23,6 +25,9 @@ A single value, which can only be incremented, not decremented. Starts out with 
 ### Histogram
 
 Measures the distribution of values for a set of measurements and starts with no initial values.
+
+Every 20 seconds one of the 3 chunks of historical values are cleared.
+This means that values are held onto for around 60 seconds.
 
 ### Gauge
 

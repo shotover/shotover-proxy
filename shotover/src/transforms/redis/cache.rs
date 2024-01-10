@@ -160,13 +160,14 @@ impl SimpleRedisCache {
                                 match build_redis_key_from_cql3(query, table_cache_schema) {
                                     Ok(address) => {
                                         indices.push(i);
-                                        return Some(Message::from_frame(Frame::Redis(
-                                            RedisFrame::Array(vec![
+                                        return Some(Message::from_frame_at_instant(
+                                            Frame::Redis(RedisFrame::Array(vec![
                                                 RedisFrame::BulkString("HGET".into()),
                                                 RedisFrame::BulkString(address.key),
                                                 RedisFrame::BulkString(address.field),
-                                            ]),
-                                        )));
+                                            ])),
+                                            message.received_from_source_or_sink_at,
+                                        ));
                                     }
                                     Err(_e) => {} // TODO match Err(()) here or just have build_redis_key_from_cql3 return Option
                                 }
@@ -206,9 +207,10 @@ impl SimpleRedisCache {
                                             if response_frame.version == request_frame.version {
                                                 response_frame.stream_id = request_frame.stream_id;
                                                 Some((
-                                                    Message::from_frame(Frame::Cassandra(
-                                                        response_frame,
-                                                    )),
+                                                    Message::from_frame_at_instant(
+                                                        Frame::Cassandra(response_frame),
+                                                        redis_response.received_from_source_or_sink_at
+                                                    ),
                                                     redis_index,
                                                 ))
                                             } else {
@@ -250,11 +252,7 @@ impl SimpleRedisCache {
 
         let redis_responses = self
             .cache_chain
-            .process_request(Wrapper::new_with_chain_name(
-                redis_requests,
-                self.cache_chain.name.clone(),
-                local_addr,
-            ))
+            .process_request(Wrapper::new_with_addr(redis_requests, local_addr))
             .await?;
 
         Ok(self.unwrap_cache_response(redis_responses, redis_indices, cassandra_requests))
@@ -262,24 +260,34 @@ impl SimpleRedisCache {
 
     /// Clears the cache for the entire table
     /// TODO make this drop only the specified keys not the entire cache
-    fn drop_table(&self, _statement: &CassandraStatement) -> Message {
-        Message::from_frame(Frame::Redis(RedisFrame::Array(vec![
-            RedisFrame::BulkString("FLUSHDB".into()),
-        ])))
+    fn drop_table(&self, _statement: &CassandraStatement, response: &Message) -> Message {
+        Message::from_frame_at_instant(
+            Frame::Redis(RedisFrame::Array(vec![RedisFrame::BulkString(
+                "FLUSHDB".into(),
+            )])),
+            response.received_from_source_or_sink_at,
+        )
     }
 
     /// clear the cache for the single row specified by the redis_key
-    fn delete_row(&mut self, statement: &CassandraStatement) -> Option<Message> {
+    fn delete_row(
+        &mut self,
+        statement: &CassandraStatement,
+        response: &Message,
+    ) -> Option<Message> {
         if let Some(table_name) = statement.get_table_name() {
             if let Some(table_cache_schema) = self.caching_schema.get(table_name) {
                 if let Ok(address) =
                     // TODO: handle errors
                     build_redis_key_from_cql3(statement, table_cache_schema)
                 {
-                    return Some(Message::from_frame(Frame::Redis(RedisFrame::Array(vec![
-                        RedisFrame::BulkString("DEL".into()),
-                        RedisFrame::BulkString(address.key),
-                    ]))));
+                    return Some(Message::from_frame_at_instant(
+                        Frame::Redis(RedisFrame::Array(vec![
+                            RedisFrame::BulkString("DEL".into()),
+                            RedisFrame::BulkString(address.key),
+                        ])),
+                        response.received_from_source_or_sink_at,
+                    ));
                 }
             }
         }
@@ -303,14 +311,15 @@ impl SimpleRedisCache {
                         // 2. we should be able to directly use the raw bytes when the message has not yet been mutated
                         let encoded = frame.clone().encode(Compression::None);
 
-                        return Ok(Some(Message::from_frame(Frame::Redis(RedisFrame::Array(
-                            vec![
+                        return Ok(Some(Message::from_frame_at_instant(
+                            Frame::Redis(RedisFrame::Array(vec![
                                 RedisFrame::BulkString("HSET".into()),
                                 RedisFrame::BulkString(address.key),
                                 RedisFrame::BulkString(address.field),
                                 RedisFrame::BulkString(encoded.into()),
-                            ],
-                        )))));
+                            ])),
+                            response.received_from_source_or_sink_at,
+                        )));
                     }
                 }
             }
@@ -340,12 +349,12 @@ impl SimpleRedisCache {
                 for statement in operation.queries() {
                     match is_cacheable(statement) {
                         CacheableState::DeleteRow => {
-                            if let Some(message) = self.delete_row(statement) {
+                            if let Some(message) = self.delete_row(statement, response) {
                                 cache_messages.push(message);
                             }
                         }
                         CacheableState::DropTable => {
-                            cache_messages.push(self.drop_table(statement));
+                            cache_messages.push(self.drop_table(statement, response));
                         }
                         CacheableState::CacheRow => {
                             if let Some(message) = self.cache_row(statement, response)? {
@@ -360,11 +369,7 @@ impl SimpleRedisCache {
         if !cache_messages.is_empty() {
             let result = self
                 .cache_chain
-                .process_request(Wrapper::new_with_chain_name(
-                    cache_messages,
-                    self.cache_chain.name.clone(),
-                    local_addr,
-                ))
+                .process_request(Wrapper::new_with_addr(cache_messages, local_addr))
                 .await;
             if let Err(err) = result {
                 warn!("Cache error: {err}");
@@ -799,7 +804,7 @@ mod test {
     #[test]
     fn test_validate_invalid_chain() {
         let transform = SimpleRedisCacheBuilder {
-            cache_chain: TransformChainBuilder::new(vec![], "test-chain".to_string()),
+            cache_chain: TransformChainBuilder::new(vec![], "test-chain"),
             caching_schema: HashMap::new(),
             missed_requests: register_counter!("cache_miss"),
         };
@@ -822,7 +827,7 @@ mod test {
                 Box::new(DebugPrinter::new()),
                 Box::<NullSink>::default(),
             ],
-            "test-chain".to_string(),
+            "test-chain",
         );
 
         let transform = SimpleRedisCacheBuilder {

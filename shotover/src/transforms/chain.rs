@@ -55,7 +55,7 @@ impl BufferedChainMessages {
 #[derive(Derivative)]
 #[derivative(Debug)]
 pub struct TransformChain {
-    pub name: String,
+    pub name: &'static str,
     pub chain: InnerChain,
 
     #[derivative(Debug = "ignore")]
@@ -173,7 +173,7 @@ impl TransformChain {
             self.chain_failures.increment(1);
         }
 
-        histogram!("shotover_chain_latency_seconds", start.elapsed(),  "chain" => self.name.clone(), "client_details" => client_details);
+        histogram!("shotover_chain_latency_seconds", start.elapsed(),  "chain" => self.name, "client_details" => client_details);
         result
     }
 
@@ -189,7 +189,7 @@ impl TransformChain {
             self.chain_failures.increment(1);
         }
 
-        histogram!("shotover_chain_latency_seconds", start.elapsed(),  "chain" => self.name.clone(), "client_details" => client_details);
+        histogram!("shotover_chain_latency_seconds", start.elapsed(),  "chain" => self.name, "client_details" => client_details);
         result
     }
 }
@@ -262,7 +262,7 @@ impl TransformBuilderAndMetrics {
 #[derive(Derivative)]
 #[derivative(Debug)]
 pub struct TransformChainBuilder {
-    pub name: String,
+    pub name: &'static str,
     pub chain: Vec<TransformBuilderAndMetrics>,
 
     #[derivative(Debug = "ignore")]
@@ -274,7 +274,7 @@ pub struct TransformChainBuilder {
 }
 
 impl TransformChainBuilder {
-    pub fn new(chain: Vec<Box<dyn TransformBuilder>>, name: String) -> Self {
+    pub fn new(chain: Vec<Box<dyn TransformBuilder>>, name: &'static str) -> Self {
         let chain = chain.into_iter().map(|builder|
             TransformBuilderAndMetrics {
                 transform_total: register_counter!("shotover_transform_total_count", "transform" => builder.get_name()),
@@ -288,10 +288,9 @@ impl TransformChainBuilder {
         ).collect();
 
         let chain_batch_size =
-            register_histogram!("shotover_chain_messages_per_batch_count", "chain" => name.clone());
-        let chain_total = register_counter!("shotover_chain_total_count", "chain" => name.clone());
-        let chain_failures =
-            register_counter!("shotover_chain_failures_count", "chain" => name.clone());
+            register_histogram!("shotover_chain_messages_per_batch_count", "chain" => name);
+        let chain_total = register_counter!("shotover_chain_total_count", "chain" => name);
+        let chain_failures = register_counter!("shotover_chain_failures_count", "chain" => name);
         // Cant register shotover_chain_latency_seconds because a unique one is created for each client ip address
 
         TransformChainBuilder {
@@ -370,7 +369,7 @@ impl TransformChainBuilder {
                         count_clone.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                     }
 
-                    let mut wrapper = Wrapper::new_with_chain_name(messages, chain.name.clone(), local_addr);
+                    let mut wrapper = Wrapper::new_with_addr(messages, local_addr);
                     wrapper.flush = flush;
                     let chain_response = chain.process_request(wrapper).await;
 
@@ -391,7 +390,7 @@ impl TransformChainBuilder {
                 debug!("buffered chain processing thread exiting, stopping chain loop and dropping");
 
                 match chain
-                    .process_request(Wrapper::flush_with_chain_name(chain.name.clone()))
+                    .process_request(Wrapper::flush())
                     .await
                 {
                     Ok(_) => info!("Buffered chain {} was shutdown", chain.name),
@@ -416,7 +415,7 @@ impl TransformChainBuilder {
         let chain = self.chain.iter().map(|x| x.build()).collect();
 
         TransformChain {
-            name: self.name.clone(),
+            name: self.name,
             chain,
             chain_total: self.chain_total.clone(),
             chain_failures: self.chain_failures.clone(),
@@ -442,7 +441,7 @@ impl TransformChainBuilder {
             .collect();
 
         TransformChain {
-            name: self.name.clone(),
+            name: self.name,
             chain,
             chain_total: self.chain_total.clone(),
             chain_failures: self.chain_failures.clone(),
@@ -459,7 +458,7 @@ mod chain_tests {
 
     #[tokio::test]
     async fn test_validate_invalid_chain() {
-        let chain = TransformChainBuilder::new(vec![], "test-chain".to_string());
+        let chain = TransformChainBuilder::new(vec![], "test-chain");
         assert_eq!(
             chain.validate(),
             vec!["test-chain chain:", "  Chain cannot be empty"]
@@ -474,7 +473,7 @@ mod chain_tests {
                 Box::<DebugPrinter>::default(),
                 Box::<NullSink>::default(),
             ],
-            "test-chain".to_string(),
+            "test-chain",
         );
         assert_eq!(chain.validate(), Vec::<String>::new());
     }

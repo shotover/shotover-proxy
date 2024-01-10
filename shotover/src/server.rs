@@ -656,11 +656,7 @@ impl<C: CodecBuilder + 'static> Handler<C> {
             .await;
 
         // Flush messages regardless of if we are shutting down due to a failure or due to application shutdown
-        match self
-            .chain
-            .process_request(Wrapper::flush_with_chain_name(self.chain.name.clone()))
-            .await
-        {
+        match self.chain.process_request(Wrapper::flush()).await {
             Ok(_) => {}
             Err(e) => error!(
                 "{:?}",
@@ -738,12 +734,8 @@ impl<C: CodecBuilder + 'static> Handler<C> {
                 messages.clone()
             };
 
-            let wrapper = Wrapper::new_with_client_details(
-                messages,
-                client_details.to_owned(),
-                self.chain.name.clone(),
-                local_addr,
-            );
+            let wrapper =
+                Wrapper::new_with_client_details(messages, client_details.to_owned(), local_addr);
 
             let modified_messages = if reverse_chain {
                 self.chain

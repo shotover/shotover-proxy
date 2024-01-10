@@ -116,26 +116,26 @@ mod test {
             .map(|_| Message::from_frame(Frame::Redis(RedisFrame::Null)))
             .collect();
 
-        let mut requests_wrapper = Wrapper::new(messages.clone());
+        let mut requests_wrapper = Wrapper::new_test(messages.clone());
         requests_wrapper.reset(&mut chain);
         assert_eq!(coalesce.transform(requests_wrapper).await.unwrap().len(), 0);
 
-        let mut requests_wrapper = Wrapper::new(messages.clone());
+        let mut requests_wrapper = Wrapper::new_test(messages.clone());
         requests_wrapper.reset(&mut chain);
         assert_eq!(coalesce.transform(requests_wrapper).await.unwrap().len(), 0);
 
-        let mut requests_wrapper = Wrapper::new(messages.clone());
+        let mut requests_wrapper = Wrapper::new_test(messages.clone());
         requests_wrapper.reset(&mut chain);
         assert_eq!(coalesce.transform(requests_wrapper).await.unwrap().len(), 0);
 
-        let mut requests_wrapper = Wrapper::new(messages.clone());
+        let mut requests_wrapper = Wrapper::new_test(messages.clone());
         requests_wrapper.reset(&mut chain);
         assert_eq!(
             coalesce.transform(requests_wrapper).await.unwrap().len(),
             100
         );
 
-        let mut requests_wrapper = Wrapper::new(messages.clone());
+        let mut requests_wrapper = Wrapper::new_test(messages.clone());
         requests_wrapper.reset(&mut chain);
         assert_eq!(coalesce.transform(requests_wrapper).await.unwrap().len(), 0);
     }
@@ -157,26 +157,26 @@ mod test {
             .map(|_| Message::from_frame(Frame::Redis(RedisFrame::Null)))
             .collect();
 
-        let mut requests_wrapper = Wrapper::new(messages.clone());
+        let mut requests_wrapper = Wrapper::new_test(messages.clone());
         requests_wrapper.reset(&mut chain);
         assert_eq!(coalesce.transform(requests_wrapper).await.unwrap().len(), 0);
 
         tokio::time::sleep(Duration::from_millis(10_u64)).await;
 
-        let mut requests_wrapper = Wrapper::new(messages.clone());
+        let mut requests_wrapper = Wrapper::new_test(messages.clone());
         requests_wrapper.reset(&mut chain);
         assert_eq!(coalesce.transform(requests_wrapper).await.unwrap().len(), 0);
 
         tokio::time::sleep(Duration::from_millis(100_u64)).await;
 
-        let mut requests_wrapper = Wrapper::new(messages.clone());
+        let mut requests_wrapper = Wrapper::new_test(messages.clone());
         requests_wrapper.reset(&mut chain);
         assert_eq!(
             coalesce.transform(requests_wrapper).await.unwrap().len(),
             75
         );
 
-        let mut requests_wrapper = Wrapper::new(messages.clone());
+        let mut requests_wrapper = Wrapper::new_test(messages.clone());
         requests_wrapper.reset(&mut chain);
         assert_eq!(coalesce.transform(requests_wrapper).await.unwrap().len(), 0);
     }
@@ -198,45 +198,45 @@ mod test {
             .map(|_| Message::from_frame(Frame::Redis(RedisFrame::Null)))
             .collect();
 
-        let mut requests_wrapper = Wrapper::new(messages.clone());
+        let mut requests_wrapper = Wrapper::new_test(messages.clone());
         requests_wrapper.reset(&mut chain);
         assert_eq!(coalesce.transform(requests_wrapper).await.unwrap().len(), 0);
 
         tokio::time::sleep(Duration::from_millis(10_u64)).await;
 
-        let mut requests_wrapper = Wrapper::new(messages.clone());
+        let mut requests_wrapper = Wrapper::new_test(messages.clone());
         requests_wrapper.reset(&mut chain);
         assert_eq!(coalesce.transform(requests_wrapper).await.unwrap().len(), 0);
 
         tokio::time::sleep(Duration::from_millis(100_u64)).await;
 
-        let mut requests_wrapper = Wrapper::new(messages.clone());
+        let mut requests_wrapper = Wrapper::new_test(messages.clone());
         requests_wrapper.reset(&mut chain);
         assert_eq!(
             coalesce.transform(requests_wrapper).await.unwrap().len(),
             75
         );
 
-        let mut requests_wrapper = Wrapper::new(messages.clone());
+        let mut requests_wrapper = Wrapper::new_test(messages.clone());
         requests_wrapper.reset(&mut chain);
         assert_eq!(coalesce.transform(requests_wrapper).await.unwrap().len(), 0);
 
-        let mut requests_wrapper = Wrapper::new(messages.clone());
+        let mut requests_wrapper = Wrapper::new_test(messages.clone());
         requests_wrapper.reset(&mut chain);
         assert_eq!(coalesce.transform(requests_wrapper).await.unwrap().len(), 0);
 
-        let mut requests_wrapper = Wrapper::new(messages.clone());
+        let mut requests_wrapper = Wrapper::new_test(messages.clone());
         requests_wrapper.reset(&mut chain);
         assert_eq!(coalesce.transform(requests_wrapper).await.unwrap().len(), 0);
 
-        let mut requests_wrapper = Wrapper::new(messages.clone());
+        let mut requests_wrapper = Wrapper::new_test(messages.clone());
         requests_wrapper.reset(&mut chain);
         assert_eq!(
             coalesce.transform(requests_wrapper).await.unwrap().len(),
             100
         );
 
-        let mut requests_wrapper = Wrapper::new(messages);
+        let mut requests_wrapper = Wrapper::new_test(messages);
         requests_wrapper.reset(&mut chain);
         assert_eq!(coalesce.transform(requests_wrapper).await.unwrap().len(), 0);
     }

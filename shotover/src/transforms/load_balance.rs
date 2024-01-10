@@ -110,16 +110,16 @@ mod test {
                 vec![Box::new(DebugReturner::new(Response::Message(
                     Messages::new(),
                 )))],
-                "child_test".to_string(),
+                "child_test",
             )),
         });
 
-        let chain = TransformChainBuilder::new(vec![transform], "test".to_string());
+        let chain = TransformChainBuilder::new(vec![transform], "test");
 
         for _ in 0..90 {
             chain
                 .build()
-                .process_request(Wrapper::new(Messages::new()))
+                .process_request(Wrapper::new_test(Messages::new()))
                 .await
                 .unwrap();
         }
