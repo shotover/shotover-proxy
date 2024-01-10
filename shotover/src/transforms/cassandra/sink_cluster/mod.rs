@@ -450,7 +450,8 @@ impl CassandraSinkCluster {
                                     version: self.version.unwrap(),
                                     warnings: vec![],
                                 },
-                            )))).expect("the receiver is guaranteed to be alive, so this must succeed");
+                            ),
+                        ))).expect("the receiver is guaranteed to be alive, so this must succeed");
                         return_chan_rx
                     }
                     Err(GetReplicaErr::NoNodeAvailable(err)) => {

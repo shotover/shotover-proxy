@@ -95,7 +95,10 @@ impl ConnectionFactory {
             use_message: None,
             tls,
             pushed_messages_tx: None,
-            codec_builder: CassandraCodecBuilder::new(Direction::Sink),
+            codec_builder: CassandraCodecBuilder::new(
+                Direction::Sink,
+                "CassandraSinkCluster".to_owned(),
+            ),
         }
     }
 

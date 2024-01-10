@@ -52,7 +52,7 @@ impl TransformConfig for RedisSinkClusterConfig {
     async fn get_builder(&self, chain_name: String) -> Result<Box<dyn TransformBuilder>> {
         let connection_pool = ConnectionPool::new_with_auth(
             Duration::from_millis(self.connect_timeout_ms),
-            RedisCodecBuilder::new(Direction::Sink),
+            RedisCodecBuilder::new(Direction::Sink, "RedisSinkCluster".to_owned()),
             RedisAuthenticator {},
             self.tls.clone(),
         )?;
@@ -242,7 +242,7 @@ impl RedisSinkCluster {
             )),
             // Send to all senders.
             // If any of the responses were a failure then return that failure.
-            // Otherwise return the first successful result
+            // Otherwise collate results according to routing_info.
             _ => {
                 let responses = FuturesUnordered::new();
 
@@ -252,36 +252,43 @@ impl RedisSinkCluster {
                 Ok(Box::pin(async move {
                     let response = responses
                         .fold(None, |acc, response| async move {
-                            if let Some(RedisFrame::Error(_)) = acc {
+                            if let Some((_, RedisFrame::Error(_))) = acc {
                                 acc
                             } else {
                                 match response {
                                     Ok(Response {
                                         response: Ok(mut message),
                                         ..
-                                    }) => Some(match message.frame().unwrap() {
-                                        Frame::Redis(frame) => {
-                                            let new_frame = frame.take();
-                                            match acc {
-                                                Some(prev_frame) => routing_info
-                                                    .response_join()
-                                                    .join(prev_frame, new_frame),
-                                                None => new_frame,
+                                    }) => Some((
+                                        message.received_from_source_or_sink_at,
+                                        match message.frame().unwrap() {
+                                            Frame::Redis(frame) => {
+                                                let new_frame = frame.take();
+                                                match acc {
+                                                    Some((_, prev_frame)) => routing_info
+                                                        .response_join()
+                                                        .join(prev_frame, new_frame),
+                                                    None => new_frame,
+                                                }
                                             }
-                                        }
-                                        _ => unreachable!("direct response from a redis sink"),
-                                    }),
+                                            _ => unreachable!("direct response from a redis sink"),
+                                        },
+                                    )),
                                     Ok(Response {
                                         response: Err(e), ..
-                                    }) => Some(RedisFrame::Error(e.to_string().into())),
-                                    Err(e) => Some(RedisFrame::Error(e.to_string().into())),
+                                    }) => Some((None, RedisFrame::Error(e.to_string().into()))),
+                                    Err(e) => Some((None, RedisFrame::Error(e.to_string().into()))),
                                 }
                             }
                         })
                         .await;
 
+                    let (received_at, response) = response.unwrap();
                     Ok(Response {
-                        response: Ok(Message::from_frame(Frame::Redis(response.unwrap()))),
+                        response: Ok(Message::from_frame_at_instant(
+                            Frame::Redis(response),
+                            received_at,
+                        )),
                     })
                 }))
             }

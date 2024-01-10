@@ -44,7 +44,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                     || {
                         (
                             // recreate codec since it is stateful
-                            KafkaCodecBuilder::new(Direction::Source).build(),
+                            KafkaCodecBuilder::new(Direction::Source, "kafka".to_owned()).build(),
                             input.clone(),
                         )
                     },
@@ -77,7 +77,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                     || {
                         (
                             // recreate codec since it is stateful
-                            KafkaCodecBuilder::new(Direction::Sink).build(),
+                            KafkaCodecBuilder::new(Direction::Sink, "kafka".to_owned()).build(),
                             messages.clone(),
                         )
                     },
@@ -102,7 +102,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                 || {
                     (
                         // recreate codec since it is stateful
-                        KafkaCodecBuilder::new(Direction::Source).build(),
+                        KafkaCodecBuilder::new(Direction::Source, "kafka".to_owned()).build(),
                         input.clone(),
                     )
                 },
@@ -139,7 +139,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                 || {
                     (
                         // recreate codec since it is stateful
-                        KafkaCodecBuilder::new(Direction::Sink).build(),
+                        KafkaCodecBuilder::new(Direction::Sink, "kafka".to_owned()).build(),
                         messages.clone(),
                     )
                 },
@@ -165,7 +165,8 @@ fn criterion_benchmark(c: &mut Criterion) {
             },
         }))];
 
-        let (_, mut encoder) = CassandraCodecBuilder::new(Direction::Sink).build();
+        let (_, mut encoder) =
+            CassandraCodecBuilder::new(Direction::Sink, "cassandra".to_owned()).build();
 
         group.bench_function("encode_cassandra_system.local_query", |b| {
             b.iter_batched(
@@ -189,7 +190,8 @@ fn criterion_benchmark(c: &mut Criterion) {
             operation: CassandraOperation::Result(peers_v2_result()),
         }))];
 
-        let (_, mut encoder) = CassandraCodecBuilder::new(Direction::Sink).build();
+        let (_, mut encoder) =
+            CassandraCodecBuilder::new(Direction::Sink, "cassandra".to_owned()).build();
 
         group.bench_function("encode_cassandra_system.local_result", |b| {
             b.iter_batched(

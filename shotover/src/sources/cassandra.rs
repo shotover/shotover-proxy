@@ -72,7 +72,7 @@ impl CassandraSource {
             name.to_string(),
             listen_addr.clone(),
             hard_connection_limit.unwrap_or(false),
-            CassandraCodecBuilder::new(Direction::Source),
+            CassandraCodecBuilder::new(Direction::Source, name),
             Arc::new(Semaphore::new(connection_limit.unwrap_or(512))),
             trigger_shutdown_rx.clone(),
             tls.map(TlsAcceptor::new).transpose()?,

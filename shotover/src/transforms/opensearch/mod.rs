@@ -57,7 +57,7 @@ impl TransformBuilder for OpenSearchSinkSingleBuilder {
         Transforms::OpenSearchSinkSingle(OpenSearchSinkSingle {
             address: self.address.clone(),
             connect_timeout: self.connect_timeout,
-            codec_builder: OpenSearchCodecBuilder::new(Direction::Sink),
+            codec_builder: OpenSearchCodecBuilder::new(Direction::Sink, self.get_name().to_owned()),
             connection: None,
         })
     }

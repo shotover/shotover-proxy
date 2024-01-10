@@ -65,10 +65,10 @@ impl RedisSource {
 
         let mut listener = TcpCodecListener::new(
             chain_config,
-            name,
+            name.clone(),
             listen_addr.clone(),
             hard_connection_limit.unwrap_or(false),
-            RedisCodecBuilder::new(Direction::Source),
+            RedisCodecBuilder::new(Direction::Source, name),
             Arc::new(Semaphore::new(connection_limit.unwrap_or(512))),
             trigger_shutdown_rx.clone(),
             tls.map(TlsAcceptor::new).transpose()?,
