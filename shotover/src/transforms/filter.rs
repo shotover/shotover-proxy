@@ -146,7 +146,7 @@ mod test {
             })
             .collect();
 
-        let mut requests_wrapper = Wrapper::new(messages);
+        let mut requests_wrapper = Wrapper::new_test(messages);
         requests_wrapper.reset(&mut chain);
         let result = filter_transform.transform(requests_wrapper).await.unwrap();
 
@@ -202,7 +202,7 @@ mod test {
             })
             .collect();
 
-        let mut requests_wrapper = Wrapper::new(messages);
+        let mut requests_wrapper = Wrapper::new_test(messages);
         requests_wrapper.reset(&mut chain);
         let result = filter_transform.transform(requests_wrapper).await.unwrap();
 
