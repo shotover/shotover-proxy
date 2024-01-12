@@ -263,19 +263,19 @@ async fn cluster_multi_rack_1_per_rack(#[case] driver: CassandraDriver) {
         let shotover_rack1 =
             shotover_process("tests/test-configs/cassandra/cluster-multi-rack/topology_rack1.yaml")
                 .with_log_name("Rack1")
-                .with_observability_port(9001)
+                .with_config("tests/test-configs/shotover-config/config1.yaml")
                 .start()
                 .await;
         let shotover_rack2 =
             shotover_process("tests/test-configs/cassandra/cluster-multi-rack/topology_rack2.yaml")
                 .with_log_name("Rack2")
-                .with_observability_port(9002)
+                .with_config("tests/test-configs/shotover-config/config2.yaml")
                 .start()
                 .await;
         let shotover_rack3 =
             shotover_process("tests/test-configs/cassandra/cluster-multi-rack/topology_rack3.yaml")
                 .with_log_name("Rack3")
-                .with_observability_port(9003)
+                .with_config("tests/test-configs/shotover-config/config3.yaml")
                 .start()
                 .await;
 
@@ -318,22 +318,22 @@ async fn cluster_multi_rack_2_per_rack(#[case] driver: CassandraDriver) {
         let shotover_rack1 = shotover_process(
             "tests/test-configs/cassandra/cluster-multi-rack-2-per-rack/topology_rack1.yaml",
         )
+        .with_config("tests/test-configs/shotover-config/config1.yaml")
         .with_log_name("Rack1")
-        .with_observability_port(9001)
         .start()
         .await;
         let shotover_rack2 = shotover_process(
             "tests/test-configs/cassandra/cluster-multi-rack-2-per-rack/topology_rack2.yaml",
         )
         .with_log_name("Rack2")
-        .with_observability_port(9002)
+        .with_config("tests/test-configs/shotover-config/config2.yaml")
         .start()
         .await;
         let shotover_rack3 = shotover_process(
             "tests/test-configs/cassandra/cluster-multi-rack-2-per-rack/topology_rack3.yaml",
         )
+        .with_config("tests/test-configs/shotover-config/config3.yaml")
         .with_log_name("Rack3")
-        .with_observability_port(9003)
         .start()
         .await;
 

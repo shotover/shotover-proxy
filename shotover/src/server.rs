@@ -169,11 +169,8 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
             }
 
             self.connection_count = self.connection_count.wrapping_add(1);
-            let span = tracing::error_span!(
-                "connection",
-                id = self.connection_count,
-                source = self.source_name.as_str(),
-            );
+            let span =
+                crate::connection_span::span(self.connection_count, self.source_name.as_str());
             let transport = self.transport;
             async {
                 // Accept a new socket. This will attempt to perform error handling.
