@@ -1,6 +1,5 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
-use uuid::Uuid;
 
 pub use tokio_bin_process::bin_path;
 pub use tokio_bin_process::event::{Event, Level};
@@ -9,11 +8,11 @@ pub use tokio_bin_process::BinProcess;
 
 pub struct ShotoverProcessBuilder {
     topology_path: String,
+    config_path: Option<String>,
     bin_path: Option<PathBuf>,
     log_name: Option<String>,
     cores: Option<String>,
     profile: Option<String>,
-    observability_port: Option<u16>,
     event_matchers: Vec<EventMatcher>,
 }
 
@@ -21,13 +20,19 @@ impl ShotoverProcessBuilder {
     pub fn new_with_topology(topology_path: &str) -> Self {
         Self {
             topology_path: topology_path.to_owned(),
+            config_path: None,
             bin_path: None,
             log_name: None,
             cores: None,
             profile: None,
-            observability_port: None,
             event_matchers: vec![],
         }
+    }
+
+    /// Specify the config file path, if none specified will use `config/config.yaml`
+    pub fn with_config(mut self, path: &str) -> Self {
+        self.config_path = Some(path.to_owned());
+        self
     }
 
     /// Hint that there is a precompiled shotover binary available.
@@ -55,11 +60,6 @@ impl ShotoverProcessBuilder {
         if let Some(profile) = profile {
             self.profile = Some(profile.to_string());
         }
-        self
-    }
-
-    pub fn with_observability_port(mut self, port: u16) -> Self {
-        self.observability_port = Some(port);
         self
     }
 
@@ -101,20 +101,10 @@ impl ShotoverProcessBuilder {
         if let Some(cores) = &self.cores {
             args.extend(["--core-threads", cores]);
         }
-        let config_path = if let Some(observability_port) = self.observability_port {
-            let config_path = std::env::temp_dir().join(Uuid::new_v4().to_string());
-            let config_contents = format!(
-                r#"
----
-main_log_level: "info,shotover_proxy=info"
-observability_interface: "127.0.0.1:{observability_port}"
-"#
-            );
-            std::fs::write(&config_path, config_contents).unwrap();
-            config_path.into_os_string().into_string().unwrap()
-        } else {
-            "config/config.yaml".to_owned()
-        };
+        let config_path = self
+            .config_path
+            .clone()
+            .unwrap_or_else(|| "config/config.yaml".to_owned());
         args.extend(["-c", &config_path]);
 
         let log_name = self.log_name.as_deref().unwrap_or("shotover");

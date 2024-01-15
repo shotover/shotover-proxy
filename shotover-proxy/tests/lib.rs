@@ -13,5 +13,7 @@ mod runner;
 mod transforms;
 
 pub fn shotover_process(topology_path: &str) -> ShotoverProcessBuilder {
-    ShotoverProcessBuilder::new_with_topology(topology_path).with_bin(bin_path!("shotover-proxy"))
+    ShotoverProcessBuilder::new_with_topology(topology_path)
+        .with_bin(bin_path!("shotover-proxy"))
+        .with_config("tests/test-configs/shotover-config/config1.yaml")
 }
