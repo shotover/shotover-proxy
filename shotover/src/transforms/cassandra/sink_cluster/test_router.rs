@@ -9,7 +9,6 @@ mod test_token_aware_router {
     use crate::transforms::cassandra::sink_cluster::{KeyspaceChanRx, KeyspaceChanTx};
     use cassandra_protocol::consistency::Consistency::One;
     use cassandra_protocol::frame::message_execute::BodyReqExecuteOwned;
-    use cassandra_protocol::frame::Version;
     use cassandra_protocol::query::QueryParams;
     use cassandra_protocol::query::QueryValues::SimpleValues;
     use cassandra_protocol::token::Murmur3Token;
@@ -69,14 +68,11 @@ mod test_token_aware_router {
                 now_in_seconds: None,
             };
 
-            let token = Murmur3Token::generate(
-                &calculate_routing_key(
-                    &prepared_metadata().pk_indexes,
-                    query_parameters.values.as_ref().unwrap(),
-                    Version::V4,
-                )
-                .unwrap(),
-            );
+            let token = calculate_routing_key(
+                &prepared_metadata().pk_indexes,
+                query_parameters.values.as_ref().unwrap(),
+            )
+            .unwrap();
 
             assert_eq!(token, test_token);
 
@@ -84,7 +80,6 @@ mod test_token_aware_router {
                 .get_replica_node_in_dc(
                     &execute_body(id.clone(), query_parameters),
                     "rack1",
-                    Version::V4,
                     &mut rng,
                 )
                 .await
