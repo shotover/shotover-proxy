@@ -2,7 +2,8 @@ use crate::codec::kafka::RequestHeader as CodecRequestHeader;
 use anyhow::{anyhow, Context, Result};
 use bytes::{BufMut, Bytes, BytesMut};
 use kafka_protocol::messages::{
-    ApiKey, DescribeClusterResponse, FetchRequest, FetchResponse, FindCoordinatorRequest,
+    ApiKey, CreateTopicsRequest, DeleteGroupsRequest, DeleteTopicsRequest, DescribeClusterResponse,
+    DescribeConfigsRequest, FetchRequest, FetchResponse, FindCoordinatorRequest,
     FindCoordinatorResponse, HeartbeatRequest, HeartbeatResponse, JoinGroupRequest,
     JoinGroupResponse, LeaderAndIsrRequest, ListOffsetsRequest, ListOffsetsResponse,
     MetadataRequest, MetadataResponse, OffsetFetchRequest, OffsetFetchResponse, ProduceRequest,
@@ -81,6 +82,10 @@ pub enum RequestBody {
     FindCoordinator(FindCoordinatorRequest),
     LeaderAndIsr(LeaderAndIsrRequest),
     Heartbeat(HeartbeatRequest),
+    CreateTopics(CreateTopicsRequest),
+    DeleteTopics(DeleteTopicsRequest),
+    DeleteGroups(DeleteGroupsRequest),
+    DescribeConfigs(DescribeConfigsRequest),
     Unknown { api_key: ApiKey, message: Bytes },
 }
 
@@ -156,6 +161,12 @@ impl KafkaFrame {
             }
             ApiKey::LeaderAndIsrKey => RequestBody::LeaderAndIsr(decode(&mut bytes, version)?),
             ApiKey::HeartbeatKey => RequestBody::Heartbeat(decode(&mut bytes, version)?),
+            ApiKey::CreateTopicsKey => RequestBody::CreateTopics(decode(&mut bytes, version)?),
+            ApiKey::DeleteTopicsKey => RequestBody::DeleteTopics(decode(&mut bytes, version)?),
+            ApiKey::DeleteGroupsKey => RequestBody::DeleteGroups(decode(&mut bytes, version)?),
+            ApiKey::DescribeConfigsKey => {
+                RequestBody::DescribeConfigs(decode(&mut bytes, version)?)
+            }
             api_key => RequestBody::Unknown {
                 api_key,
                 message: bytes,
@@ -229,6 +240,10 @@ impl KafkaFrame {
                     RequestBody::FindCoordinator(x) => encode(x, bytes, version)?,
                     RequestBody::LeaderAndIsr(x) => encode(x, bytes, version)?,
                     RequestBody::Heartbeat(x) => encode(x, bytes, version)?,
+                    RequestBody::CreateTopics(x) => encode(x, bytes, version)?,
+                    RequestBody::DeleteTopics(x) => encode(x, bytes, version)?,
+                    RequestBody::DeleteGroups(x) => encode(x, bytes, version)?,
+                    RequestBody::DescribeConfigs(x) => encode(x, bytes, version)?,
                     RequestBody::Unknown { message, .. } => bytes.extend_from_slice(&message),
                 }
             }
