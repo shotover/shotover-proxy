@@ -11,9 +11,9 @@ impl Samply {
                 "install",
                 "samply",
                 "--git",
-                "https://github.com/rukai/samply",
+                "https://github.com/mstange/samply",
                 "--rev",
-                "af14e56ac9e809a445e4f0bd80fcd4fefc45b552",
+                "4c8d5eb164e44c4eda1b29de116f5ea546d64c65",
             ],
         )
         .await;

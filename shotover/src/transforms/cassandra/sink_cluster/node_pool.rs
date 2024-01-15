@@ -1,13 +1,10 @@
-use crate::transforms::cassandra::connection::CassandraConnection;
-
 use super::node::{CassandraNode, ConnectionFactory};
 use super::routing_key::calculate_routing_key;
 use super::token_map::TokenMap;
 use super::KeyspaceChanRx;
+use crate::transforms::cassandra::connection::CassandraConnection;
 use anyhow::{anyhow, Context, Error, Result};
 use cassandra_protocol::frame::message_execute::BodyReqExecuteOwned;
-use cassandra_protocol::frame::Version;
-use cassandra_protocol::token::Murmur3Token;
 use cassandra_protocol::types::CBytesShort;
 use metrics::{register_counter, Counter};
 use rand::prelude::*;
@@ -187,7 +184,6 @@ impl NodePool {
         &mut self,
         execute: &BodyReqExecuteOwned,
         rack: &str,
-        version: Version,
         rng: &mut SmallRng,
     ) -> Result<Vec<&mut CassandraNode>, GetReplicaErr> {
         let metadata = {
@@ -213,13 +209,12 @@ impl NodePool {
             execute.query_parameters.values.as_ref().ok_or_else(|| {
                 GetReplicaErr::Other(anyhow!("Execute body does not have query parameters"))
             })?,
-            version,
         )
         .ok_or(GetReplicaErr::NoRoutingKey)?;
 
         let replica_host_ids = self
             .token_map
-            .iter_replica_nodes(self.nodes(), Murmur3Token::generate(&routing_key), keyspace)
+            .iter_replica_nodes(self.nodes(), routing_key, keyspace)
             .collect::<Vec<uuid::Uuid>>();
 
         let mut nodes: Vec<&mut CassandraNode> = self
@@ -260,13 +255,10 @@ impl NodePool {
         &mut self,
         execute: &BodyReqExecuteOwned,
         rack: &str,
-        version: Version,
         rng: &mut SmallRng,
         connection_factory: &ConnectionFactory,
     ) -> Result<&CassandraConnection, GetReplicaErr> {
-        let nodes = self
-            .get_replica_node_in_dc(execute, rack, version, rng)
-            .await?;
+        let nodes = self.get_replica_node_in_dc(execute, rack, rng).await?;
 
         get_accessible_node(connection_factory, nodes)
             .await

@@ -29,6 +29,7 @@ use tokio::sync::{mpsc, oneshot, watch};
 use topology::{create_topology_task, TaskConnectionInfo};
 use uuid::Uuid;
 
+mod murmur;
 pub mod node;
 mod node_pool;
 mod rewrite;
@@ -396,7 +397,6 @@ impl CassandraSinkCluster {
                     .get_replica_connection_in_dc(
                         execute,
                         rack,
-                        self.version.unwrap(),
                         &mut self.rng,
                         &self.connection_factory,
                     )
