@@ -730,43 +730,49 @@ fn parse_system_nodes(mut response: Message) -> Result<Vec<NodeInfo>, MessagePar
                         )));
                     }
 
-                    let release_version = if let Some(GenericValue::Varchar(value)) = row.pop() {
-                        value
-                    } else {
-                        return Err(MessageParseError::ParseFailure(anyhow!(
-                            "release_version not a varchar"
-                        )));
+                    let release_version = match row.pop() {
+                        Some(GenericValue::Varchar(value)) => value,
+                        other => {
+                            return Err(MessageParseError::ParseFailure(anyhow!(
+                                "Expected release_version to be a Varchar but was {other:?}"
+                            )))
+                        }
                     };
 
-                    let tokens = if let Some(GenericValue::List(value)) = row.pop() {
-                        value
-                    } else {
-                        return Err(MessageParseError::ParseFailure(anyhow!(
-                            "tokens not a list"
-                        )));
+                    let tokens = match row.pop() {
+                        Some(GenericValue::List(value)) => value,
+                        other => {
+                            return Err(MessageParseError::ParseFailure(anyhow!(
+                                "Expected tokens to be a list but was {other:?}"
+                            )))
+                        }
                     };
 
-                    let schema_version = if let Some(GenericValue::Uuid(value)) = row.pop() {
-                        value
-                    } else {
-                        return Err(MessageParseError::ParseFailure(anyhow!(
-                            "schema_version not a uuid"
-                        )));
+                    let schema_version = match row.pop() {
+                        Some(GenericValue::Uuid(value)) => value,
+                        other => {
+                            return Err(MessageParseError::ParseFailure(anyhow!(
+                                "Expected schema_version to be a Uuid but was {other:?}"
+                            )))
+                        }
                     };
 
-                    let data_center = if let Some(GenericValue::Varchar(value)) = row.pop() {
-                        value
-                    } else {
-                        return Err(MessageParseError::ParseFailure(anyhow!(
-                            "data_center not a varchar"
-                        )));
+                    let data_center = match row.pop() {
+                        Some(GenericValue::Varchar(value)) => value,
+                        other => {
+                            return Err(MessageParseError::ParseFailure(anyhow!(
+                                "Expected data_center to be a Varchar but was {other:?}"
+                            )))
+                        }
                     };
-                    let rack = if let Some(GenericValue::Varchar(value)) = row.pop() {
-                        value
-                    } else {
-                        return Err(MessageParseError::ParseFailure(anyhow!(
-                            "rack not a varchar"
-                        )));
+
+                    let rack = match row.pop() {
+                        Some(GenericValue::Varchar(value)) => value,
+                        other => {
+                            return Err(MessageParseError::ParseFailure(anyhow!(
+                                "Expected rack to be a Varchar but was {other:?}"
+                            )))
+                        }
                     };
 
                     Ok(NodeInfo {
