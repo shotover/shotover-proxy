@@ -77,8 +77,10 @@ async fn cluster_multi_shotover() {
             shotover_process(&format!(
                 "tests/test-configs/kafka/cluster/topology{i}.yaml"
             ))
+            .with_config(&format!(
+                "tests/test-configs/shotover-config/config{i}.yaml"
+            ))
             .with_log_name(&format!("shotover{i}"))
-            .with_observability_port(9000 + i)
             .start()
             .await,
         );

@@ -38,5 +38,13 @@ A single value that can increment or decrement over time. Starts out with an ini
 You can configure log levels and filters at `/filter`. This can be done by a POST HTTP request to the `/filter` endpoint with the `env_filter` string set as the POST data. For example:
 
 ```shell
-curl -X PUT -d 'info,shotover_proxy=info' http://127.0.0.1:9001/filter
+curl -X PUT -d 'info, shotover_proxy=info, shotover::connection_span::info` http://127.0.0.1:9001/filter
 ```
+
+Some examples of how you can tweak this filter:
+
+* configure the first `info` to set the log level for dependencies
+* configure `shotover=info` to set the log level for shotover itself
+* set `shotover::connection_span=info` to `shotover::connection_span=debug` to attach connection info to most log events, this is disabled by default due to a minor performance hit.
+
+For more control over filtering you should understand [The tracing filter format](https://docs.rs/tracing-subscriber/latest/tracing_subscriber/filter/struct.EnvFilter.html#directives).
