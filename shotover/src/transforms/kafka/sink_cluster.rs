@@ -40,10 +40,8 @@ pub struct KafkaSinkClusterConfig {
     pub read_timeout: Option<u64>,
 }
 
-#[cfg(feature = "alpha-transforms")]
 use crate::transforms::TransformConfig;
 
-#[cfg(feature = "alpha-transforms")]
 #[typetag::serde(name = "KafkaSinkCluster")]
 #[async_trait(?Send)]
 impl TransformConfig for KafkaSinkClusterConfig {
@@ -307,6 +305,7 @@ impl KafkaSinkCluster {
         }
 
         for mut message in requests {
+            // This routing is documented in transforms.md so make sure to update that when making changes here.
             match message.frame() {
                 // route to partition leader
                 Some(Frame::Kafka(KafkaFrame::Request {

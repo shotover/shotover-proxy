@@ -33,6 +33,8 @@ Future transforms won't be added to the public API while in alpha. But in these 
 | [TuneableConsistencyScatter](#tuneableconsistencyscatter)| ✅          | Alpha                 |
 | [DebugPrinter](#debugprinter)                            | ❌          | Alpha                 |
 | [DebugReturner](#debugreturner)                          | ✅          | Alpha                 |
+| [KafkaSinkCluster](#kafkasinkcluster)                    | ✅          | Beta                  |
+| [KafkaSinkSingle](#kafkasinksingle)                      | ✅          | Beta                  |
 | [NullSink](#nullsink)                                    | ✅          | Beta                  |
 | [ParallelMap](#parallelmap)                              | ✅          | Alpha                 |
 | [Protect](#protect)                                      | ❌          | Alpha                 |
@@ -123,10 +125,10 @@ While `system.peers`/`system.peers_v2` will be rewritten to list the configured 
     #  # Enable/disable verifying the hostname of the certificate provided by the destination.
     #  #verify_hostname: true
 
-  # Timeout in seconds after which to give up waiting for a response from the destination.
-  # This field is optional, if not provided, timeout will never occur.
-  # When a timeout occurs the connection to the client is immediately closed.
-  # read_timeout: 60
+    # Timeout in seconds after which to give up waiting for a response from the destination.
+    # This field is optional, if not provided, timeout will never occur.
+    # When a timeout occurs the connection to the client is immediately closed.
+    # read_timeout: 60
 ```
 
 #### Error handling
@@ -170,10 +172,10 @@ No cluster discovery or routing occurs with this transform.
     #  # Enable/disable verifying the hostname of the certificate provided by the destination.
     #  #verify_hostname: true
 
-  # Timeout in seconds after which to give up waiting for a response from the destination.
-  # This field is optional, if not provided, timeout will never occur.
-  # When a timeout occurs the connection to the client is immediately closed.
-  # read_timeout: 60
+    # Timeout in seconds after which to give up waiting for a response from the destination.
+    # This field is optional, if not provided, timeout will never occur.
+    # When a timeout occurs the connection to the client is immediately closed.
+    # read_timeout: 60
 ```
 
 This transfrom emits a metrics [counter](user-guide/observability.md#counter) named `failed_requests` and the labels `transform` defined as `CassandraSinkSingle` and `chain` as the name of the chain that this transform is in.
@@ -266,6 +268,73 @@ Delay the transform chain at the position that this transform sits at.
   distribution: 500
 ```
 -->
+
+### KafkaSinkCluster
+
+This transform will route kafka messages to a broker within a Kafka cluster:
+
+* produce messages are routed to the partition leader
+* fetch messages are routed to a random partition replica
+* heartbeat, syncgroup, offsetfetch and joingroup are all routed to the group coordinator
+* all other messages go to a random node.
+
+The fact that Shotover is routing to multiple destination nodes will be hidden from the client.
+Instead Shotover will pretend to be either a single Kafka node or part of a cluster of Kafka nodes consisting entirely of Shotover instances.
+
+This is achieved by rewriting the FindCoordinator, Metadata and DescribeCluster messages to contain the nodes in the shotover cluster instead of the kafka cluster.
+
+```yaml
+- CassandraSinkCluster:
+    # Addresses of the initial kafka brokers to connect to.
+    first_contact_points: ["172.16.1.2:9042", "172.16.1.3:9042"]
+
+    # A list of every Shotover node that will be proxying to the same kafka cluster.
+    # This field should be identical for all Shotover nodes proxying to the same kafka cluster.
+    shotover_nodes:
+      # Address of the Shotover node.
+      # This is usually the same address as the Shotover source that is connected to this sink.
+      # But it may be different if you want Shotover to report a different address.
+      - "127.0.0.1:9042"
+      # If you only have a single Shotover instance then you only want a single node.
+      # Otherwise if you have multiple Shotover instances then add more nodes e.g.
+      #- "127.0.0.2:9042"
+
+    # Number of milliseconds to wait for a connection to be created to a destination kafka broker.
+    # If the timeout is exceeded then connection to another node is attempted
+    # If all known nodes have resulted in connection timeouts an error will be returned to the client.
+    connect_timeout_ms: 3000
+
+    # Timeout in seconds after which to give up waiting for a response from the destination.
+    # This field is optional, if not provided, timeout will never occur.
+    # When a timeout occurs the connection to the client is immediately closed.
+    # read_timeout: 60
+```
+
+### KafkaSinkSingle
+
+This transform will send/receive Kafka messages to a single Kafka node running on the same machine as shotover.
+All kafka brokers in the cluster must be configured with a shotover instance in front of them.
+All shotover instances must be on the same port X and all kafka instances must use another port Y.
+The client will then connect via shotovers port X.
+
+In order to force clients to connect through shotover the FindCoordinator, Metadata and DescribeCluster messages are rewritten to use the shotover port.
+
+```yaml
+- KafkaSinkSingle:
+    # The port of the upstream Cassandra node/service.
+    destination_port: 9042
+
+    # Number of milliseconds to wait for a connection to be created to the destination cassandra instance.
+    # If the timeout is exceeded then an error is returned to the client.
+    connect_timeout_ms: 3000
+
+    # Timeout in seconds after which to give up waiting for a response from the destination.
+    # This field is optional, if not provided, timeout will never occur.
+    # When a timeout occurs the connection to the client is immediately closed.
+    # read_timeout: 60
+```
+
+This transfrom emits a metrics [counter](user-guide/observability.md#counter) named `failed_requests` and the labels `transform` defined as `CassandraSinkSingle` and `chain` as the name of the chain that this transform is in.
 
 ### NullSink
 
