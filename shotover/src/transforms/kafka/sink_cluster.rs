@@ -25,6 +25,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::hash::Hasher;
 use std::net::SocketAddr;
+use std::sync::atomic::AtomicI64;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{mpsc, oneshot, RwLock};
@@ -61,6 +62,7 @@ pub struct KafkaSinkClusterBuilder {
     shotover_nodes: Vec<KafkaAddress>,
     connect_timeout: Duration,
     read_timeout: Option<Duration>,
+    controller_broker: Arc<AtomicBrokerId>,
     group_to_coordinator_broker: Arc<DashMap<GroupId, BrokerId>>,
     topics: Arc<DashMap<TopicName, Topic>>,
     nodes_shared: Arc<RwLock<Vec<KafkaNode>>>,
@@ -92,6 +94,7 @@ impl KafkaSinkClusterBuilder {
             shotover_nodes,
             connect_timeout: Duration::from_millis(connect_timeout_ms),
             read_timeout: receive_timeout,
+            controller_broker: Arc::new(AtomicBrokerId::new()),
             group_to_coordinator_broker: Arc::new(DashMap::new()),
             topics: Arc::new(DashMap::new()),
             nodes_shared: Arc::new(RwLock::new(vec![])),
@@ -109,6 +112,7 @@ impl TransformBuilder for KafkaSinkClusterBuilder {
             read_timeout: self.read_timeout,
             nodes: vec![],
             nodes_shared: self.nodes_shared.clone(),
+            controller_broker: self.controller_broker.clone(),
             group_to_coordinator_broker: self.group_to_coordinator_broker.clone(),
             topics: self.topics.clone(),
             rng: SmallRng::from_rng(rand::thread_rng()).unwrap(),
@@ -124,6 +128,28 @@ impl TransformBuilder for KafkaSinkClusterBuilder {
     }
 }
 
+struct AtomicBrokerId(AtomicI64);
+
+impl AtomicBrokerId {
+    fn new() -> Self {
+        AtomicBrokerId(i64::MAX.into())
+    }
+
+    fn set(&self, value: BrokerId) {
+        self.0
+            .store(value.0.into(), std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Returns `None` when set has never been called.
+    /// Otherwise returns `Some` containing the latest set value.
+    fn get(&self) -> Option<BrokerId> {
+        match self.0.load(std::sync::atomic::Ordering::Relaxed) {
+            i64::MAX => None,
+            other => Some(BrokerId(other as i32)),
+        }
+    }
+}
+
 pub struct KafkaSinkCluster {
     first_contact_points: Vec<String>,
     shotover_nodes: Vec<KafkaAddress>,
@@ -132,6 +158,7 @@ pub struct KafkaSinkCluster {
     read_timeout: Option<Duration>,
     nodes: Vec<KafkaNode>,
     nodes_shared: Arc<RwLock<Vec<KafkaNode>>>,
+    controller_broker: Arc<AtomicBrokerId>,
     group_to_coordinator_broker: Arc<DashMap<GroupId, BrokerId>>,
     topics: Arc<DashMap<TopicName, Topic>>,
     rng: SmallRng,
@@ -261,7 +288,8 @@ impl KafkaSinkCluster {
             self.add_node_if_new(node).await;
         }
 
-        if !topics.is_empty() {
+        // request and process metadata if we are missing topics or the controller broker id
+        if !topics.is_empty() || self.controller_broker.get().is_none() {
             let mut metadata = self.get_metadata_of_topics(topics).await?;
             match metadata.frame() {
                 Some(Frame::Kafka(KafkaFrame::Response {
@@ -377,6 +405,7 @@ impl KafkaSinkCluster {
                     results.push(rx);
                 }
 
+                // route to group coordinator
                 Some(Frame::Kafka(KafkaFrame::Request {
                     body: RequestBody::Heartbeat(heartbeat),
                     ..
@@ -405,6 +434,19 @@ impl KafkaSinkCluster {
                     let group_id = join_group.group_id.clone();
                     results.push(self.route_to_coordinator(message, group_id).await?);
                 }
+                Some(Frame::Kafka(KafkaFrame::Request {
+                    body: RequestBody::DeleteGroups(groups),
+                    ..
+                })) => {
+                    let group_id = groups.groups_names.first().unwrap().clone();
+                    results.push(self.route_to_coordinator(message, group_id).await?);
+                }
+
+                // route to controller broker
+                Some(Frame::Kafka(KafkaFrame::Request {
+                    body: RequestBody::CreateTopics(_),
+                    ..
+                })) => results.push(self.route_to_controller(message).await?),
 
                 // route to random node
                 _ => {
@@ -472,7 +514,7 @@ impl KafkaSinkCluster {
                 connection: None,
             }),
             other => Err(anyhow!(
-                "Unexpected message returned to metadata request {other:?}"
+                "Unexpected message returned to findcoordinator request {other:?}"
             )),
         }
     }
@@ -607,6 +649,36 @@ impl KafkaSinkCluster {
         Ok(responses)
     }
 
+    async fn route_to_controller(
+        &mut self,
+        message: Message,
+    ) -> Result<oneshot::Receiver<Response>> {
+        let broker_id = self.controller_broker.get().unwrap();
+
+        let connection = if let Some(node) =
+            self.nodes.iter_mut().find(|x| x.broker_id == *broker_id)
+        {
+            node.get_connection(self.connect_timeout).await?.clone()
+        } else {
+            tracing::warn!("no known broker with id {broker_id:?}, routing message to a random node so that a NOT_CONTROLLER or similar error is returned to the client");
+            self.nodes
+                .choose_mut(&mut self.rng)
+                .unwrap()
+                .get_connection(self.connect_timeout)
+                .await?
+                .clone()
+        };
+
+        let (tx, rx) = oneshot::channel();
+        connection
+            .send(Request {
+                message,
+                return_chan: Some(tx),
+            })
+            .map_err(|_| anyhow!("Failed to send"))?;
+        Ok(rx)
+    }
+
     async fn route_to_coordinator(
         &mut self,
         message: Message,
@@ -654,6 +726,8 @@ impl KafkaSinkCluster {
             };
             self.add_node_if_new(node).await;
         }
+
+        self.controller_broker.set(metadata.controller_id);
 
         for topic in &metadata.topics {
             self.topics.insert(
@@ -759,6 +833,9 @@ fn deduplicate_metadata_brokers(metadata: &mut MetadataResponse) {
                 }
             }
         }
+    }
+    if let Some(id) = replacement_broker_id.get(&metadata.controller_id) {
+        metadata.controller_id = *id;
     }
 }
 

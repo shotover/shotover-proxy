@@ -32,6 +32,7 @@ const KAFKA_REQUESTS: &[(&[u8], &str)] = &[
 ];
 
 fn criterion_benchmark(c: &mut Criterion) {
+    super::init();
     let mut group = c.benchmark_group("codec");
     group.noise_threshold(0.2);
 

@@ -1,8 +1,7 @@
 use aws_throwaway::{Aws, CleanupResources, Ec2Instance, Ec2InstanceDefinition, InstanceType};
 use cargo_metadata::{Metadata, MetadataCommand};
 use clap::Parser;
-use rustyline::DefaultEditor;
-use shellfish::{async_fn, handler::DefaultAsyncHandler, Command, Shell};
+use shellfish::{async_fn, handler::DefaultAsyncHandler, rustyline::DefaultEditor, Command, Shell};
 use std::error::Error;
 use std::fs::Permissions;
 use std::os::unix::prelude::PermissionsExt;

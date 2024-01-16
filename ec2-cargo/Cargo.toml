@@ -13,6 +13,5 @@ clap.workspace = true
 tracing-subscriber.workspace = true
 aws-throwaway.workspace = true
 tracing-appender.workspace = true
-shellfish = { version = "0.8.0", features = ["async"] }
-rustyline = "11.0.0"
+shellfish = { version = "0.9.0", features = ["async"] }
 cargo_metadata = "0.18.0"

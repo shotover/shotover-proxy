@@ -33,6 +33,7 @@
 
 pub mod codec;
 pub mod config;
+mod connection_span;
 pub mod frame;
 pub mod message;
 mod observability;
