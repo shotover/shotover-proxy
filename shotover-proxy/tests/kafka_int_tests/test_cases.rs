@@ -17,8 +17,14 @@ async fn admin(config: ClientConfig) {
         .create_topics(
             &[
                 NewTopic {
-                    name: "foo",
+                    name: "partitions1",
                     num_partitions: 1,
+                    replication: TopicReplication::Fixed(1),
+                    config: vec![],
+                },
+                NewTopic {
+                    name: "paritions3",
+                    num_partitions: 3,
                     replication: TopicReplication::Fixed(1),
                     config: vec![],
                 },
@@ -126,8 +132,7 @@ async fn admin_cleanup(config: ClientConfig) {
     }
 }
 
-async fn produce_consume(client: ClientConfig) {
-    let topic_name = "foo";
+async fn produce_consume(client: ClientConfig, topic_name: &str, i: i64) {
     let producer: FutureProducer = client
         .clone()
         .set("message.timeout.ms", "5000")
@@ -140,7 +145,16 @@ async fn produce_consume(client: ClientConfig) {
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(delivery_status, (0, 0));
+    assert_eq!(delivery_status.1, i * 2);
+
+    let record: FutureRecord<(), _> = FutureRecord::to(topic_name).payload("Message");
+    let delivery_status = producer
+        .send_result(record)
+        .unwrap()
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(delivery_status.1, i * 2 + 1);
 
     let consumer: StreamConsumer = client
         .clone()
@@ -159,9 +173,18 @@ async fn produce_consume(client: ClientConfig) {
     let contents = message.payload_view::<str>().unwrap().unwrap();
     assert_eq!("Message", contents);
     assert_eq!(b"Key", message.key().unwrap());
-    assert_eq!("foo", message.topic());
+    assert_eq!(topic_name, message.topic());
     assert_eq!(0, message.offset());
-    assert_eq!(0, message.partition());
+
+    let message = tokio::time::timeout(Duration::from_secs(30), consumer.recv())
+        .await
+        .expect("Timeout while receiving from consumer")
+        .unwrap();
+    let contents = message.payload_view::<str>().unwrap().unwrap();
+    assert_eq!("Message", contents);
+    assert_eq!(None, message.key());
+    assert_eq!(topic_name, message.topic());
+    assert_eq!(1, message.offset());
 }
 
 async fn produce_consume_acks0(client: ClientConfig) {
@@ -221,7 +244,10 @@ pub async fn basic(address: &str) {
         // internal driver debug logs are emitted to tokio tracing, assuming the appropriate filter is used by the tracing subscriber
         .set("debug", "all");
     admin(client.clone()).await;
-    produce_consume(client.clone()).await;
-    produce_consume_acks0(client.clone()).await;
+    for i in 0..2 {
+        produce_consume(client.clone(), "partitions1", i).await;
+        produce_consume(client.clone(), "partitions3", i).await;
+        produce_consume_acks0(client.clone()).await;
+    }
     admin_cleanup(client.clone()).await;
 }
