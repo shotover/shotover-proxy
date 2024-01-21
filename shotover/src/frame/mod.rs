@@ -159,8 +159,8 @@ impl Display for Frame {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         match self {
             Frame::Cassandra(frame) => write!(f, "Cassandra {}", frame),
-            Frame::Redis(frame) => write!(f, "Redis {:?})", frame),
-            Frame::Kafka(frame) => write!(f, "Kafka {})", frame),
+            Frame::Redis(frame) => write!(f, "Redis {:?}", frame),
+            Frame::Kafka(frame) => write!(f, "Kafka {}", frame),
             Frame::Dummy => write!(f, "Shotover internal dummy message"),
             Frame::OpenSearch(frame) => write!(f, "OpenSearch: {:?}", frame),
         }
