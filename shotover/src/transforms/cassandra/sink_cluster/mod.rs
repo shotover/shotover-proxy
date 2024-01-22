@@ -36,7 +36,7 @@ mod rewrite;
 mod routing_key;
 #[cfg(test)]
 mod test_router;
-mod token_map;
+mod token_ring;
 pub mod topology;
 
 pub type KeyspaceChanTx = watch::Sender<HashMap<String, KeyspaceMetadata>>;
