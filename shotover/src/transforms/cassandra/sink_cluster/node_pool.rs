@@ -1,6 +1,6 @@
 use super::node::{CassandraNode, ConnectionFactory};
 use super::routing_key::calculate_routing_key;
-use super::token_map::TokenMap;
+use super::token_ring::TokenRing;
 use super::KeyspaceChanRx;
 use crate::transforms::cassandra::connection::CassandraConnection;
 use anyhow::{anyhow, Context, Error, Result};
@@ -60,7 +60,7 @@ impl NodePoolBuilder {
         NodePool {
             prepared_metadata: self.prepared_metadata.clone(),
             keyspace_metadata: HashMap::new(),
-            token_map: TokenMap::new(&[]),
+            token_map: TokenRing::new(&[]),
             nodes: vec![],
             out_of_rack_requests: self.out_of_rack_requests.clone(),
         }
@@ -70,7 +70,7 @@ impl NodePoolBuilder {
 pub struct NodePool {
     prepared_metadata: Arc<RwLock<HashMap<CBytesShort, Arc<PreparedMetadata>>>>,
     keyspace_metadata: HashMap<String, KeyspaceMetadata>,
-    token_map: TokenMap,
+    token_map: TokenRing,
     nodes: Vec<CassandraNode>,
     out_of_rack_requests: Counter,
 }
@@ -99,7 +99,7 @@ impl NodePool {
             }
         }
         self.nodes = new_nodes;
-        self.token_map = TokenMap::new(self.nodes.as_slice());
+        self.token_map = TokenRing::new(self.nodes.as_slice());
         tracing::debug!(
             "nodes updated, nodes={:#?}\ntokens={:#?}",
             self.nodes,

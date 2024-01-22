@@ -1,23 +1,46 @@
 use crate::transforms::cassandra::sink_cluster::CassandraNode;
 use cassandra_protocol::token::Murmur3Token;
-use std::collections::BTreeMap;
 use uuid::Uuid;
 
 use super::node_pool::{KeyspaceMetadata, ReplicationStrategy};
 
 #[derive(Debug, Clone)]
-pub struct TokenMap {
-    token_ring: BTreeMap<Murmur3Token, Uuid>,
+pub struct TokenRing {
+    ring_in: Vec<Murmur3Token>,
+    ring_out: Vec<Uuid>,
 }
 
-impl TokenMap {
+impl TokenRing {
     pub fn new(nodes: &[CassandraNode]) -> Self {
-        TokenMap {
-            token_ring: nodes
-                .iter()
-                .flat_map(|node| node.tokens.iter().map(|token| (*token, node.host_id)))
-                .collect(),
-        }
+        let mut ring: Vec<_> = nodes
+            .iter()
+            .flat_map(|node| node.tokens.iter().map(|token| (*token, node.host_id)))
+            .collect();
+        ring.sort_by(|a, b| a.0.cmp(&b.0));
+
+        // Split ring into ring_in and ring_out as its faster to search and retrive seperately
+        let ring_in: Vec<_> = ring.iter().map(|node| node.0).collect();
+        let ring_out: Vec<_> = ring.iter().map(|node| node.1).collect();
+
+        TokenRing { ring_in, ring_out }
+    }
+
+    /// Provides an iterator over the ring members starting at the given token.
+    /// The iterator traverses the whole ring in the direction of increasing tokens.
+    /// After reaching the maximum token it wraps around and continues from the lowest one.
+    /// The iterator visits each member once, it doesn't have infinite length.
+    pub fn ring_range(&self, token: Murmur3Token) -> impl Iterator<Item = Uuid> + '_ {
+        let binary_search_index: usize = match self.ring_in.binary_search_by(|e| e.cmp(&token)) {
+            Ok(exact_match_index) => exact_match_index,
+            Err(first_greater_index) => first_greater_index,
+        };
+
+        self.ring_out
+            .iter()
+            .skip(binary_search_index)
+            .chain(self.ring_out.iter())
+            .copied()
+            .take(self.ring_out.len())
     }
 
     /// Walk the token ring to figure out which nodes are acting as replicas for the given query.
@@ -36,13 +59,11 @@ impl TokenMap {
         keyspace: &'a KeyspaceMetadata,
     ) -> impl Iterator<Item = Uuid> + '_ {
         let mut racks_used = vec![];
-        self.token_ring
-            .range(token_from_key..)
-            .chain(self.token_ring.iter())
-            .filter(move |(_, host_id)| {
+        self.ring_range(token_from_key)
+            .filter(move |host_id| {
                 if let ReplicationStrategy::NetworkTopologyStrategy = keyspace.replication_strategy
                 {
-                    let rack = &nodes.iter().find(|x| x.host_id == **host_id).unwrap().rack;
+                    let rack = &nodes.iter().find(|x| x.host_id == *host_id).unwrap().rack;
                     if racks_used.contains(&rack) {
                         false
                     } else {
@@ -54,7 +75,6 @@ impl TokenMap {
                 }
             })
             .take(keyspace.replication_factor)
-            .map(|(_, node)| *node)
     }
 }
 
@@ -122,7 +142,7 @@ mod test_token_map {
     }
 
     fn verify_tokens(node_host_ids: &[Uuid], token: Murmur3Token) {
-        let token_map = TokenMap::new(prepare_nodes().as_slice());
+        let token_map = TokenRing::new(prepare_nodes().as_slice());
         let nodes = token_map
             .iter_replica_nodes(
                 &[
