@@ -1,5 +1,7 @@
 use crate::redis_int_tests::assert::*;
 use bytes::BytesMut;
+use fred::clients::RedisClient;
+use fred::interfaces::ClientLike;
 use futures::{Future, StreamExt};
 use rand::{thread_rng, Rng};
 use rand_distr::Alphanumeric;
@@ -1265,16 +1267,13 @@ pub async fn test_dr_auth() {
 
 /// A driver variant of this test case is provided so that we can ensure that
 /// at least one driver handles this as we expect.
-pub async fn test_trigger_transform_failure_driver(connection: &mut Connection) {
+/// Fred is used here as redis-rs sends an unconfigurable `CLIENT SETINFO` command and ignores the result on connection init.
+/// This results in the error message being completely dropped with redis-rs.
+pub async fn test_trigger_transform_failure_driver(client: &RedisClient) {
     assert_eq!(
-        redis::cmd("SET")
-            .arg("foo")
-            .arg(42)
-            .query_async::<_, ()>(connection)
-            .await
-            .unwrap_err()
-            .to_string(),
-        "An error was signalled by the server - ResponseError: Internal shotover (or custom transform) bug: Chain failed to send and/or receive messages, the connection will now be closed.  Caused by:     0: RedisSinkSingle transform failed     1: Failed to connect to destination \"127.0.0.1:1111\"     2: Connection refused (os error 111)".to_string()
+        // fred sends a `CLIENT` command on startup to which shotover will reply with an error
+        client.wait_for_connect().await.unwrap_err().details(),
+        "ERR Internal shotover (or custom transform) bug: Chain failed to send and/or receive messages, the connection will now be closed.  Caused by:     0: RedisSinkSingle transform failed     1: Failed to connect to destination \"127.0.0.1:1111\"     2: Connection refused (os error 111)".to_string()
     );
 }
 

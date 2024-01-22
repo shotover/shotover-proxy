@@ -213,7 +213,7 @@ impl Transform for Tee {
 
                 if !chain_response.eq(&tee_response) {
                     debug!(
-                        "Tee mismatch: \nchain response: {:?} \ntee response: {:?}",
+                        "Tee mismatch:\nchain response: {:?}\ntee response: {:?}",
                         chain_response
                             .iter_mut()
                             .map(|m| m.to_high_level_string())
@@ -261,7 +261,7 @@ impl Transform for Tee {
 
                 if !chain_response.eq(&tee_response) {
                     warn!(
-                        "Tee mismatch: \nchain response: {:?} \ntee response: {:?}",
+                        "Tee mismatch:\nchain response: {:?}\ntee response: {:?}",
                         chain_response
                             .iter_mut()
                             .map(|m| m.to_high_level_string())

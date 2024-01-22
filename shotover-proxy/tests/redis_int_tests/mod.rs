@@ -1,5 +1,8 @@
 use crate::shotover_process;
 use basic_driver_tests::*;
+use fred::clients::RedisClient;
+use fred::interfaces::ClientLike;
+use fred::types::RedisConfig;
 use redis::aio::Connection;
 use redis::Commands;
 
@@ -47,9 +50,12 @@ async fn passthrough_redis_down() {
     let shotover = shotover_process("tests/test-configs/redis/passthrough/topology.yaml")
         .start()
         .await;
-    let mut connection = redis_connection::new_async("127.0.0.1", 6379).await;
+    let client = RedisClient::new(RedisConfig::default(), None, None, None);
 
-    test_trigger_transform_failure_driver(&mut connection).await;
+    {
+        let _shutdown_handle = client.connect();
+        test_trigger_transform_failure_driver(&client).await;
+    }
     test_trigger_transform_failure_raw().await;
 
     test_invalid_frame().await;

@@ -9,10 +9,11 @@ use async_trait::async_trait;
 use aws_throwaway::Ec2Instance;
 use fred::{
     prelude::*,
-    rustls::{Certificate, ClientConfig, PrivateKey, RootCertStore},
+    rustls::{ClientConfig, RootCertStore},
 };
 use itertools::Itertools;
-use rustls_pemfile::{certs, Item};
+use rustls_pemfile::Item;
+use rustls_pki_types::{CertificateDer, PrivateKeyDer};
 use shotover::{
     config::chain::TransformChainConfig,
     sources::SourceConfig,
@@ -323,14 +324,14 @@ impl Bench for RedisBench {
 
         let mut config = RedisConfig::from_url(address).unwrap();
         if let Encryption::Tls = self.encryption {
-            let private_key = load_private_key("tests/test-configs/redis/tls/certs/localhost.key");
-            let certs = load_certs("tests/test-configs/redis/tls/certs/localhost.crt");
+            let private_key =
+                load_private_key("tests/test-configs/redis/tls/certs/localhost.key").unwrap();
+            let certs = load_certs("tests/test-configs/redis/tls/certs/localhost.crt").unwrap();
             config.tls = Some(
                 ClientConfig::builder()
-                    .with_safe_defaults()
-                    .with_root_certificates(load_ca(
-                        "tests/test-configs/redis/tls/certs/localhost_CA.crt",
-                    ))
+                    .with_root_certificates(
+                        load_ca("tests/test-configs/redis/tls/certs/localhost_CA.crt").unwrap(),
+                    )
                     .with_client_auth_cert(certs, private_key)
                     .unwrap()
                     .into(),
@@ -378,48 +379,29 @@ impl Bench for RedisBench {
     }
 }
 
-// TODO: when fred updates its rustls version recopy these functions from shotover/src/tls.rs
-
-fn load_certs(path: &str) -> Vec<Certificate> {
-    load_certs_inner(path)
-        .with_context(|| format!("Failed to read certs at {path:?}"))
-        .unwrap()
-}
-fn load_certs_inner(path: &str) -> Result<Vec<Certificate>> {
-    certs(&mut BufReader::new(File::open(path)?))
+fn load_certs(path: &str) -> Result<Vec<CertificateDer<'static>>> {
+    rustls_pemfile::certs(&mut BufReader::new(File::open(path)?))
+        .collect::<Result<Vec<_>, _>>()
         .context("Error while parsing PEM")
-        .map(|certs| certs.into_iter().map(Certificate).collect())
 }
 
-fn load_private_key(path: &str) -> PrivateKey {
-    load_private_key_inner(path)
-        .with_context(|| format!("Failed to read private key at {path:?}"))
-        .unwrap()
-}
-fn load_private_key_inner(path: &str) -> Result<PrivateKey> {
-    let keys = rustls_pemfile::read_all(&mut BufReader::new(File::open(path)?))
-        .context("Error while parsing PEM")?;
-    keys.into_iter()
-        .find_map(|item| match item {
-            Item::RSAKey(x) | Item::PKCS8Key(x) => Some(PrivateKey(x)),
-            _ => None,
-        })
-        .ok_or_else(|| anyhow!("No suitable keys found in PEM"))
+fn load_private_key(path: &str) -> Result<PrivateKeyDer<'static>> {
+    for key in rustls_pemfile::read_all(&mut BufReader::new(File::open(path)?)) {
+        match key.context("Error while parsing PEM")? {
+            Item::Pkcs8Key(x) => return Ok(x.into()),
+            Item::Pkcs1Key(x) => return Ok(x.into()),
+            _ => {}
+        }
+    }
+    Err(anyhow!("No suitable keys found in PEM"))
 }
 
-fn load_ca(path: &str) -> RootCertStore {
-    load_ca_inner(path)
-        .with_context(|| format!("Failed to load CA at {path:?}"))
-        .unwrap()
-}
-fn load_ca_inner(path: &str) -> Result<RootCertStore> {
+fn load_ca(path: &str) -> Result<RootCertStore> {
     let mut pem = BufReader::new(File::open(path)?);
-    let certs = rustls_pemfile::certs(&mut pem).context("Error while parsing PEM")?;
-
     let mut root_cert_store = RootCertStore::empty();
-    for cert in certs {
+    for cert in rustls_pemfile::certs(&mut pem) {
         root_cert_store
-            .add(&Certificate(cert))
+            .add(cert.context("Error while parsing PEM")?)
             .context("Failed to add cert to cert store")?;
     }
     Ok(root_cert_store)
