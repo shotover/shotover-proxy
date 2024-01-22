@@ -39,7 +39,7 @@ serde = { version = "1.0.111", features = ["derive"] }
 serde_yaml = "0.9.17"
 uuid = { version = "1.0.0", features = ["serde", "v4"] }
 reqwest = "0.11.6"
-redis = { version = "0.23.3", features = ["tokio-comp", "cluster"] }
+redis = { version = "0.24.0", features = ["tokio-comp", "cluster"] }
 cdrs-tokio = "8.0"
 cassandra-protocol = "3.0"
 tracing = "0.1.15"
