@@ -84,16 +84,16 @@ async fn test_log_with_mismatch() {
                 .with_target("shotover::transforms::tee")
                 .with_message(
                     r#"Tee mismatch:
-chain response: ["Redis BulkString(b\"42\"))", "Redis BulkString(b\"42\"))"]
-tee response: ["Redis BulkString(b\"41\"))", "Redis BulkString(b\"41\"))"]"#,
+chain response: ["Redis BulkString(b\"42\")", "Redis BulkString(b\"42\")"]
+tee response: ["Redis BulkString(b\"41\")", "Redis BulkString(b\"41\")"]"#,
                 ),
             EventMatcher::new()
                 .with_level(Level::Warn)
                 .with_target("shotover::transforms::tee")
                 .with_message(
                     r#"Tee mismatch:
-chain response: ["Redis BulkString(b\"42\"))"]
-tee response: ["Redis BulkString(b\"41\"))"]"#,
+chain response: ["Redis BulkString(b\"42\")"]
+tee response: ["Redis BulkString(b\"41\")"]"#,
                 ),
         ])
         .await;
