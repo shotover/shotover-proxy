@@ -1,5 +1,5 @@
-mod aws;
 mod cassandra;
+mod cloud;
 mod common;
 #[cfg(feature = "rdkafka-driver-tests")]
 mod kafka;
@@ -12,8 +12,8 @@ use crate::common::*;
 #[cfg(feature = "rdkafka-driver-tests")]
 use crate::kafka::*;
 use crate::redis::*;
-use aws::cloud::CloudResources;
-use aws::cloud::CloudResourcesRequired;
+use cloud::CloudResources;
+use cloud::CloudResourcesRequired;
 use std::path::Path;
 use tracing_subscriber::EnvFilter;
 use windsock::{Bench, Windsock};
@@ -150,7 +150,7 @@ fn main() {
         .chain(kafka_benches)
         .chain(redis_benches)
         .collect(),
-        aws::cloud::AwsCloud::new_boxed(),
+        cloud::AwsCloud::new_boxed(),
         &["release"],
     )
     .run();

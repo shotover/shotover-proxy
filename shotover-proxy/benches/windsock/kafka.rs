@@ -1,5 +1,7 @@
-use crate::aws::cloud::{CloudResources, CloudResourcesRequired};
-use crate::aws::{Ec2InstanceWithDocker, Ec2InstanceWithShotover};
+use crate::cloud::{
+    CloudResources, CloudResourcesRequired, Ec2InstanceWithDocker, Ec2InstanceWithShotover,
+    RunningShotover,
+};
 use crate::common::{self, Shotover};
 use crate::profilers::{self, CloudProfilerRunner, ProfilerRunner};
 use crate::shotover::shotover_process_custom_topology;
@@ -157,7 +159,7 @@ impl KafkaBench {
         &self,
         shotover_instance: Option<Arc<Ec2InstanceWithShotover>>,
         kafka_instance: Arc<Ec2InstanceWithDocker>,
-    ) -> Option<crate::aws::RunningShotover> {
+    ) -> Option<RunningShotover> {
         match self.shotover {
             Shotover::Standard | Shotover::ForcedMessageParsed => {
                 let shotover_instance = shotover_instance.unwrap();
@@ -176,7 +178,7 @@ impl KafkaBench {
     async fn run_aws_shotover_colocated_with_kafka(
         &self,
         instance: Arc<Ec2InstanceWithDocker>,
-    ) -> Option<crate::aws::RunningShotover> {
+    ) -> Option<RunningShotover> {
         let ip = instance.instance.private_ip().to_string();
         match self.shotover {
             Shotover::Standard | Shotover::ForcedMessageParsed => {
