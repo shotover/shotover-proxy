@@ -14,6 +14,7 @@ use cql3_parser::cassandra_statement::CassandraStatement;
 use cql3_parser::common::Identifier;
 use lz4_flex::{block::get_maximum_output_size, compress_into, decompress};
 use metrics::{register_counter, Counter, Histogram};
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
@@ -773,6 +774,16 @@ impl Encoder<Messages> for CassandraEncoder {
 }
 
 impl CassandraEncoder {
+    pub fn set_startup_state_ext(&mut self, compression: String, version: Version) {
+        let mut startup_map = HashMap::new();
+        startup_map.insert("COMPRESSION".into(), compression.to_string());
+        let startup = BodyReqStartup { map: startup_map };
+
+        set_startup_state(&mut self.compression, &mut self.version, version, &startup);
+        self.handshake_complete
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+
     fn encode_frame(
         &mut self,
         dst: &mut BytesMut,

@@ -12,7 +12,7 @@ use shotover::frame::{
     CassandraFrame, CassandraOperation, CassandraResult, Frame,
 };
 use shotover::message::Message;
-use tokio_util::codec::Encoder;
+use tokio_util::codec::{Decoder, Encoder};
 
 fn criterion_benchmark(c: &mut Criterion) {
     let mut group = c.benchmark_group("cassandra_codec");
@@ -30,20 +30,88 @@ fn criterion_benchmark(c: &mut Criterion) {
             },
         }))];
 
-        let (_, mut encoder) =
+        let (mut decoder, mut encoder) =
             CassandraCodecBuilder::new(Direction::Sink, "cassandra".to_owned()).build();
 
-        group.bench_function("encode_cassandra_system.local_query", |b| {
-            b.iter_batched(
-                || messages.clone(),
-                |messages| {
-                    let mut bytes = BytesMut::new();
-                    encoder.encode(messages, &mut bytes).unwrap();
-                    black_box(bytes)
-                },
-                BatchSize::SmallInput,
-            )
-        });
+        encoder.set_startup_state_ext("NONE".to_string(), Version::V4);
+
+        group.bench_function(
+            "encode_cassandra_system.local_query_v4_no_compression",
+            |b| {
+                b.iter_batched(
+                    || messages.clone(),
+                    |messages| {
+                        let mut bytes = BytesMut::new();
+                        encoder.encode(messages, &mut bytes).unwrap();
+                        black_box(bytes)
+                    },
+                    BatchSize::SmallInput,
+                )
+            },
+        );
+
+        group.bench_function(
+            "decode_cassandra_system.local_query_v4_no_compression",
+            |b| {
+                b.iter_batched(
+                    || {
+                        let mut bytes = BytesMut::new();
+                        encoder.encode(messages.clone(), &mut bytes).unwrap();
+                        bytes
+                    },
+                    |mut bytes| decoder.decode(&mut bytes).unwrap(),
+                    BatchSize::SmallInput,
+                )
+            },
+        );
+    }
+
+    {
+        let messages = vec![Message::from_frame(Frame::Cassandra(CassandraFrame {
+            version: Version::V4,
+            stream_id: 1,
+            tracing: Tracing::Request(false),
+            warnings: vec![],
+            operation: CassandraOperation::Query {
+                query: Box::new(parse_statement_single("SELECT * FROM system.local;")),
+                params: Box::default(),
+            },
+        }))];
+
+        let (mut decoder, mut encoder) =
+            CassandraCodecBuilder::new(Direction::Sink, "cassandra".to_owned()).build();
+
+        encoder.set_startup_state_ext("NONE".to_string(), Version::V4);
+
+        group.bench_function(
+            "encode_cassandra_system.local_query_v4_lz4_compression",
+            |b| {
+                b.iter_batched(
+                    || messages.clone(),
+                    |messages| {
+                        let mut bytes = BytesMut::new();
+                        encoder.encode(messages, &mut bytes).unwrap();
+                        black_box(bytes)
+                    },
+                    BatchSize::SmallInput,
+                )
+            },
+        );
+
+        group.bench_function(
+            "decode_cassandra_system.local_query_v4_lz4_compression",
+            |b| {
+                b.iter_batched(
+                    || {
+                        let mut bytes = BytesMut::new();
+                        encoder.encode(messages.clone(), &mut bytes).unwrap();
+                        bytes
+                    },
+                    |mut bytes| decoder.decode(&mut bytes).unwrap(),
+                    BatchSize::SmallInput,
+                )
+            },
+        );
     }
 
     {
@@ -55,20 +123,271 @@ fn criterion_benchmark(c: &mut Criterion) {
             operation: CassandraOperation::Result(peers_v2_result()),
         }))];
 
-        let (_, mut encoder) =
+        let (mut decoder, mut encoder) =
             CassandraCodecBuilder::new(Direction::Sink, "cassandra".to_owned()).build();
 
-        group.bench_function("encode_cassandra_system.local_result", |b| {
-            b.iter_batched(
-                || messages.clone(),
-                |messages| {
-                    let mut bytes = BytesMut::new();
-                    encoder.encode(messages, &mut bytes).unwrap();
-                    black_box(bytes)
-                },
-                BatchSize::SmallInput,
-            )
-        });
+        encoder.set_startup_state_ext("NONE".to_string(), Version::V5);
+
+        group.bench_function(
+            "encode_cassandra_system.local_result_v4_no_compression",
+            |b| {
+                b.iter_batched(
+                    || messages.clone(),
+                    |messages| {
+                        let mut bytes = BytesMut::new();
+                        encoder.encode(messages, &mut bytes).unwrap();
+                        black_box(bytes)
+                    },
+                    BatchSize::SmallInput,
+                )
+            },
+        );
+
+        group.bench_function(
+            "decode_cassandra_system.local_result_v4_no_compression",
+            |b| {
+                b.iter_batched(
+                    || {
+                        let mut bytes = BytesMut::new();
+                        encoder.encode(messages.clone(), &mut bytes).unwrap();
+                        bytes
+                    },
+                    |mut bytes| decoder.decode(&mut bytes).unwrap(),
+                    BatchSize::SmallInput,
+                )
+            },
+        );
+    }
+
+    {
+        let messages = vec![Message::from_frame(Frame::Cassandra(CassandraFrame {
+            version: Version::V4,
+            stream_id: 0,
+            tracing: Tracing::Response(None),
+            warnings: vec![],
+            operation: CassandraOperation::Result(peers_v2_result()),
+        }))];
+
+        let (mut decoder, mut encoder) =
+            CassandraCodecBuilder::new(Direction::Sink, "cassandra".to_owned()).build();
+
+        encoder.set_startup_state_ext("LZ4".to_string(), Version::V5);
+
+        group.bench_function(
+            "encode_cassandra_system.local_result_v4_lz4_compression",
+            |b| {
+                b.iter_batched(
+                    || messages.clone(),
+                    |messages| {
+                        let mut bytes = BytesMut::new();
+                        encoder.encode(messages, &mut bytes).unwrap();
+                        black_box(bytes)
+                    },
+                    BatchSize::SmallInput,
+                )
+            },
+        );
+
+        group.bench_function(
+            "decode_cassandra_system.local_result_v4_lz4_compression",
+            |b| {
+                b.iter_batched(
+                    || {
+                        let mut bytes = BytesMut::new();
+                        encoder.encode(messages.clone(), &mut bytes).unwrap();
+                        bytes
+                    },
+                    |mut bytes| decoder.decode(&mut bytes).unwrap(),
+                    BatchSize::SmallInput,
+                )
+            },
+        );
+    }
+
+    {
+        let messages = vec![Message::from_frame(Frame::Cassandra(CassandraFrame {
+            version: Version::V5,
+            stream_id: 1,
+            tracing: Tracing::Request(false),
+            warnings: vec![],
+            operation: CassandraOperation::Query {
+                query: Box::new(parse_statement_single("SELECT * FROM system.local;")),
+                params: Box::default(),
+            },
+        }))];
+
+        let (mut decoder, mut encoder) =
+            CassandraCodecBuilder::new(Direction::Sink, "cassandra".to_owned()).build();
+
+        encoder.set_startup_state_ext("NONE".to_string(), Version::V5);
+
+        group.bench_function(
+            "encode_cassandra_system.local_query_v5_no_compression",
+            |b| {
+                b.iter_batched(
+                    || messages.clone(),
+                    |messages| {
+                        let mut bytes = BytesMut::new();
+                        encoder.encode(messages, &mut bytes).unwrap();
+                        black_box(bytes)
+                    },
+                    BatchSize::SmallInput,
+                )
+            },
+        );
+
+        group.bench_function(
+            "decode_cassandra_system.local_query_v5_no_compression",
+            |b| {
+                b.iter_batched(
+                    || {
+                        let mut bytes = BytesMut::new();
+                        encoder.encode(messages.clone(), &mut bytes).unwrap();
+                        bytes
+                    },
+                    |mut bytes| decoder.decode(&mut bytes).unwrap(),
+                    BatchSize::SmallInput,
+                )
+            },
+        );
+    }
+
+    {
+        let messages = vec![Message::from_frame(Frame::Cassandra(CassandraFrame {
+            version: Version::V5,
+            stream_id: 1,
+            tracing: Tracing::Request(false),
+            warnings: vec![],
+            operation: CassandraOperation::Query {
+                query: Box::new(parse_statement_single("SELECT * FROM system.local;")),
+                params: Box::default(),
+            },
+        }))];
+
+        let (mut decoder, mut encoder) =
+            CassandraCodecBuilder::new(Direction::Sink, "cassandra".to_owned()).build();
+
+        encoder.set_startup_state_ext("LZ4".to_string(), Version::V5);
+
+        group.bench_function(
+            "encode_cassandra_system.local_query_v5_lz4_compression",
+            |b| {
+                b.iter_batched(
+                    || messages.clone(),
+                    |messages| {
+                        let mut bytes = BytesMut::new();
+                        encoder.encode(messages, &mut bytes).unwrap();
+                        black_box(bytes)
+                    },
+                    BatchSize::SmallInput,
+                )
+            },
+        );
+
+        group.bench_function(
+            "decode_cassandra_system.local_query_v5_lz4_compression",
+            |b| {
+                b.iter_batched(
+                    || {
+                        let mut bytes = BytesMut::new();
+                        encoder.encode(messages.clone(), &mut bytes).unwrap();
+                        bytes
+                    },
+                    |mut bytes| decoder.decode(&mut bytes).unwrap(),
+                    BatchSize::SmallInput,
+                )
+            },
+        );
+    }
+
+    {
+        let messages = vec![Message::from_frame(Frame::Cassandra(CassandraFrame {
+            version: Version::V5,
+            stream_id: 0,
+            tracing: Tracing::Response(None),
+            warnings: vec![],
+            operation: CassandraOperation::Result(peers_v2_result()),
+        }))];
+
+        let (mut decoder, mut encoder) =
+            CassandraCodecBuilder::new(Direction::Sink, "cassandra".to_owned()).build();
+
+        encoder.set_startup_state_ext("NONE".to_string(), Version::V5);
+
+        group.bench_function(
+            "encode_cassandra_system.local_result_v5_no_compression",
+            |b| {
+                b.iter_batched(
+                    || messages.clone(),
+                    |messages| {
+                        let mut bytes = BytesMut::new();
+                        encoder.encode(messages, &mut bytes).unwrap();
+                        black_box(bytes)
+                    },
+                    BatchSize::SmallInput,
+                )
+            },
+        );
+
+        group.bench_function(
+            "decode_cassandra_system.local_result_v5_no_compression",
+            |b| {
+                b.iter_batched(
+                    || {
+                        let mut bytes = BytesMut::new();
+                        encoder.encode(messages.clone(), &mut bytes).unwrap();
+                        bytes
+                    },
+                    |mut bytes| decoder.decode(&mut bytes).unwrap(),
+                    BatchSize::SmallInput,
+                )
+            },
+        );
+    }
+
+    {
+        let messages = vec![Message::from_frame(Frame::Cassandra(CassandraFrame {
+            version: Version::V5,
+            stream_id: 0,
+            tracing: Tracing::Response(None),
+            warnings: vec![],
+            operation: CassandraOperation::Result(peers_v2_result()),
+        }))];
+
+        let (mut decoder, mut encoder) =
+            CassandraCodecBuilder::new(Direction::Sink, "cassandra".to_owned()).build();
+
+        encoder.set_startup_state_ext("LZ4".to_string(), Version::V5);
+
+        group.bench_function(
+            "encode_cassandra_system.local_result_v5_lz4_compression",
+            |b| {
+                b.iter_batched(
+                    || messages.clone(),
+                    |messages| {
+                        let mut bytes = BytesMut::new();
+                        encoder.encode(messages, &mut bytes).unwrap();
+                        black_box(bytes)
+                    },
+                    BatchSize::SmallInput,
+                )
+            },
+        );
+
+        group.bench_function(
+            "decode_cassandra_system.local_result_v5_lz4_compression",
+            |b| {
+                b.iter_batched(
+                    || {
+                        let mut bytes = BytesMut::new();
+                        encoder.encode(messages.clone(), &mut bytes).unwrap();
+                        bytes
+                    },
+                    |mut bytes| decoder.decode(&mut bytes).unwrap(),
+                    BatchSize::SmallInput,
+                )
+            },
+        );
     }
 }
 
