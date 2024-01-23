@@ -11,14 +11,18 @@ use std::time::{Duration, Instant};
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::task::JoinHandle;
 
-pub struct BenchState {
-    bench: Box<dyn Bench>,
+pub struct BenchState<ResourcesRequired, Resources> {
+    bench: Box<dyn Bench<CloudResourcesRequired = ResourcesRequired, CloudResources = Resources>>,
     pub(crate) tags: Tags,
     pub(crate) supported_profilers: Vec<String>,
 }
 
-impl BenchState {
-    pub fn new(bench: Box<dyn Bench>) -> Self {
+impl<ResourcesRequired, Resources> BenchState<ResourcesRequired, Resources> {
+    pub fn new(
+        bench: Box<
+            dyn Bench<CloudResourcesRequired = ResourcesRequired, CloudResources = Resources>,
+        >,
+    ) -> Self {
         let tags = Tags(bench.tags());
         let supported_profilers = bench.supported_profilers();
         BenchState {
@@ -28,7 +32,12 @@ impl BenchState {
         }
     }
 
-    pub async fn orchestrate(&mut self, args: &Args, running_in_release: bool) {
+    pub async fn orchestrate(
+        &mut self,
+        args: &Args,
+        running_in_release: bool,
+        cloud_resources: Option<Resources>,
+    ) {
         let name = self.tags.get_name();
         println!("Running {:?}", name);
 
@@ -46,6 +55,7 @@ impl BenchState {
         if args.cloud {
             self.bench
                 .orchestrate_cloud(
+                    cloud_resources.unwrap(),
                     running_in_release,
                     Profiling {
                         results_path,
@@ -95,18 +105,30 @@ impl BenchState {
     pub fn cores_required(&self) -> Option<usize> {
         Some(self.bench.cores_required())
     }
+
+    pub fn required_cloud_resources(&self) -> ResourcesRequired {
+        self.bench.required_cloud_resources()
+    }
 }
 
 /// Implement this to define your benchmarks
 /// A single implementation of `Bench` can represent multiple benchmarks by initializing it multiple times with different state that returns unique tags.
 #[async_trait]
 pub trait Bench {
+    type CloudResourcesRequired;
+    type CloudResources;
+
     /// Returns tags that are used for forming comparisons, graphs and naming the benchmark
     fn tags(&self) -> HashMap<String, String>;
 
     /// Returns the names of profilers that this bench can be run with
     fn supported_profilers(&self) -> Vec<String> {
         vec![]
+    }
+
+    /// Specifies the cloud resources that should be provided to this bench
+    fn required_cloud_resources(&self) -> Self::CloudResourcesRequired {
+        unimplemented!();
     }
 
     /// How many cores to assign the async runtime in which the bench runs.
@@ -118,6 +140,7 @@ pub trait Bench {
     /// It must setup cloud resources to run the bench in a cloud and then start the bench returning the results on conclusion
     async fn orchestrate_cloud(
         &self,
+        cloud: Self::CloudResources,
         running_in_release: bool,
         profiling: Profiling,
         bench_parameters: BenchParameters,

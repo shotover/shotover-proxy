@@ -1,6 +1,9 @@
 use crate::{bench::BenchState, cli::Args};
 
-pub fn list(args: &Args, benches: &[BenchState]) {
+pub fn list<ResourcesRequired, Resources>(
+    args: &Args,
+    benches: &[BenchState<ResourcesRequired, Resources>],
+) {
     if args.nextest_list_all() {
         // list all windsock benches in nextest format
         for bench in benches {

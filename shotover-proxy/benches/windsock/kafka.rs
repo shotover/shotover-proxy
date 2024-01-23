@@ -1,3 +1,4 @@
+use crate::aws::cloud::{CloudResources, CloudResourcesRequired};
 use crate::aws::{Ec2InstanceWithDocker, Ec2InstanceWithShotover};
 use crate::common::{self, Shotover};
 use crate::profilers::{self, CloudProfilerRunner, ProfilerRunner};
@@ -154,13 +155,14 @@ impl KafkaBench {
 
     async fn run_aws_shotover_on_own_instance(
         &self,
-        shotover_instance: Arc<Ec2InstanceWithShotover>,
+        shotover_instance: Option<Arc<Ec2InstanceWithShotover>>,
         kafka_instance: Arc<Ec2InstanceWithDocker>,
     ) -> Option<crate::aws::RunningShotover> {
-        let shotover_ip = shotover_instance.instance.private_ip().to_string();
-        let kafka_ip = kafka_instance.instance.private_ip().to_string();
         match self.shotover {
             Shotover::Standard | Shotover::ForcedMessageParsed => {
+                let shotover_instance = shotover_instance.unwrap();
+                let shotover_ip = shotover_instance.instance.private_ip().to_string();
+                let kafka_ip = kafka_instance.instance.private_ip().to_string();
                 let topology = self.generate_topology_yaml(
                     format!("{shotover_ip}:9092"),
                     format!("{kafka_ip}:9192"),
@@ -189,6 +191,9 @@ impl KafkaBench {
 
 #[async_trait]
 impl Bench for KafkaBench {
+    type CloudResourcesRequired = CloudResourcesRequired;
+    type CloudResources = CloudResources;
+
     fn cores_required(&self) -> usize {
         2
     }
@@ -212,66 +217,92 @@ impl Bench for KafkaBench {
         profilers::supported_profilers(self.shotover)
     }
 
+    fn required_cloud_resources(&self) -> Self::CloudResourcesRequired {
+        let need_shotover = !matches!(self.shotover, Shotover::None);
+
+        let (docker_instance_count, include_shotover_in_docker_instance) = match self.topology {
+            KafkaTopology::Single => (1, need_shotover),
+            KafkaTopology::Cluster1 => (1, false),
+            KafkaTopology::Cluster3 => (3, false),
+        };
+        let shotover_instance_count = if need_shotover && !include_shotover_in_docker_instance {
+            1
+        } else {
+            0
+        };
+        CloudResourcesRequired {
+            shotover_instance_count,
+            docker_instance_count,
+            include_shotover_in_docker_instance,
+        }
+    }
+
     async fn orchestrate_cloud(
         &self,
+        mut cloud_resources: CloudResources,
         _running_in_release: bool,
         profiling: Profiling,
         parameters: BenchParameters,
     ) -> Result<()> {
-        let aws = crate::aws::WindsockAws::get().await;
-
-        let (kafka_instance1, kafka_instance2, kafka_instance3, bench_instance, shotover_instance) = futures::join!(
-            aws.create_docker_instance(),
-            aws.create_docker_instance(),
-            aws.create_docker_instance(),
-            aws.create_bencher_instance(),
-            aws.create_shotover_instance()
-        );
+        let kafka_instances = cloud_resources.docker;
+        let shotover_instance = cloud_resources.shotover.pop();
+        let bench_instance = cloud_resources.bencher.unwrap();
 
         let mut profiler_instances: HashMap<String, &Ec2Instance> =
             [("bencher".to_owned(), &bench_instance.instance)].into();
 
         // only profile instances that we are actually using for this bench
         if let Shotover::ForcedMessageParsed | Shotover::Standard = self.shotover {
-            profiler_instances.insert("shotover".to_owned(), &shotover_instance.instance);
+            profiler_instances.insert(
+                "shotover".to_owned(),
+                &shotover_instance.as_ref().unwrap().instance,
+            );
         }
         match self.topology {
             KafkaTopology::Single | KafkaTopology::Cluster1 => {
-                profiler_instances.insert("kafka".to_owned(), &kafka_instance1.instance);
+                profiler_instances.insert("kafka".to_owned(), &kafka_instances[0].instance);
             }
             KafkaTopology::Cluster3 => {
-                profiler_instances.insert("kafka1".to_owned(), &kafka_instance1.instance);
-                profiler_instances.insert("kafka2".to_owned(), &kafka_instance2.instance);
-                profiler_instances.insert("kafka3".to_owned(), &kafka_instance3.instance);
+                profiler_instances.insert("kafka1".to_owned(), &kafka_instances[0].instance);
+                profiler_instances.insert("kafka2".to_owned(), &kafka_instances[1].instance);
+                profiler_instances.insert("kafka3".to_owned(), &kafka_instances[2].instance);
             }
         }
 
-        let kafka_ip = kafka_instance1.instance.private_ip().to_string();
-        let shotover_ip = shotover_instance.instance.private_ip().to_string();
+        let kafka_ip = kafka_instances[0].instance.private_ip().to_string();
+        let shotover_ip = shotover_instance
+            .as_ref()
+            .map(|x| x.instance.private_ip().to_string());
 
-        let mut profiler =
-            CloudProfilerRunner::new(self.name(), profiling, profiler_instances, &kafka_ip).await;
+        let mut profiler = CloudProfilerRunner::new(
+            self.name(),
+            profiling,
+            profiler_instances,
+            &Some(kafka_ip.clone()),
+        )
+        .await;
 
-        let kafka_instances = vec![
-            kafka_instance1.clone(),
-            kafka_instance2.clone(),
-            kafka_instance3.clone(),
-        ];
-
-        let (_, running_shotover) = futures::join!(self.run_aws_kafka(kafka_instances), async {
-            match self.topology {
-                KafkaTopology::Single => {
-                    self.run_aws_shotover_colocated_with_kafka(kafka_instance1)
+        let (_, running_shotover) =
+            futures::join!(self.run_aws_kafka(kafka_instances.clone()), async {
+                match self.topology {
+                    KafkaTopology::Single => {
+                        self.run_aws_shotover_colocated_with_kafka(kafka_instances[0].clone())
+                            .await
+                    }
+                    KafkaTopology::Cluster1 | KafkaTopology::Cluster3 => {
+                        self.run_aws_shotover_on_own_instance(
+                            shotover_instance,
+                            kafka_instances[0].clone(),
+                        )
                         .await
+                    }
                 }
-                KafkaTopology::Cluster1 | KafkaTopology::Cluster3 => {
-                    self.run_aws_shotover_on_own_instance(shotover_instance, kafka_instance1)
-                        .await
-                }
-            }
-        });
+            });
 
-        let destination_address = if running_shotover.is_some() {
+        let destination_address = if let Shotover::Standard | Shotover::ForcedMessageParsed =
+            self.shotover
+        {
+            let shotover_ip = shotover_ip.unwrap();
             match &self.topology {
                 KafkaTopology::Single => format!("{kafka_ip}:9092"),
                 KafkaTopology::Cluster1 | KafkaTopology::Cluster3 => format!("{shotover_ip}:9092"),

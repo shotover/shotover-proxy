@@ -13,7 +13,6 @@ use std::{
     sync::Arc,
 };
 use test_helpers::docker_compose::IMAGE_WAITERS;
-use tokio::sync::RwLock;
 use tokio_bin_process::bin_path;
 use tokio_bin_process::event::{Event, Level};
 use windsock::ReportArchive;
@@ -22,10 +21,8 @@ static AWS_THROWAWAY_TAG: &str = "windsock";
 
 static AWS: OnceCell<WindsockAws> = OnceCell::new();
 
+/// TODO: move WindsockAws into a private module so only AwsCloud has access to it.
 pub struct WindsockAws {
-    shotover_instance: RwLock<Option<Arc<Ec2InstanceWithShotover>>>,
-    bencher_instance: RwLock<Option<Arc<Ec2InstanceWithBencher>>>,
-    docker_instances: RwLock<Vec<Arc<Ec2InstanceWithDocker>>>,
     aws: Aws,
 }
 
@@ -33,9 +30,6 @@ impl WindsockAws {
     pub async fn get() -> &'static Self {
         AWS.get_or_init(async move {
             WindsockAws {
-                shotover_instance: RwLock::new(None),
-                bencher_instance: RwLock::new(None),
-                docker_instances: RwLock::new(vec![]),
                 aws: Aws::builder(CleanupResources::WithAppTag(AWS_THROWAWAY_TAG.to_owned()))
                     .build()
                     .await,
@@ -44,14 +38,38 @@ impl WindsockAws {
         .await
     }
 
-    pub async fn create_bencher_instance(&self) -> Arc<Ec2InstanceWithBencher> {
-        if let Some(instance) = &*self.bencher_instance.read().await {
-            if Arc::strong_count(instance) != 1 {
-                panic!("Only one bencher instance can be held at once, make sure you drop the previous instance before calling this method again.")
-            }
-            return instance.clone();
+    pub async fn create_bencher_instances(&self, count: usize) -> Vec<Arc<Ec2InstanceWithBencher>> {
+        let mut futures = vec![];
+        for _ in 0..count {
+            futures.push(self.create_bencher_instance());
         }
+        futures::future::join_all(futures).await
+    }
 
+    pub async fn create_shotover_instances(
+        &self,
+        count: usize,
+    ) -> Vec<Arc<Ec2InstanceWithShotover>> {
+        let mut futures = vec![];
+        for _ in 0..count {
+            futures.push(self.create_shotover_instance());
+        }
+        futures::future::join_all(futures).await
+    }
+
+    pub async fn create_docker_instances(
+        &self,
+        include_shotover: bool,
+        count: usize,
+    ) -> Vec<Arc<Ec2InstanceWithDocker>> {
+        let mut futures = vec![];
+        for _ in 0..count {
+            futures.push(self.create_docker_instance(include_shotover));
+        }
+        futures::future::join_all(futures).await
+    }
+
+    pub async fn create_bencher_instance(&self) -> Arc<Ec2InstanceWithBencher> {
         let instance = Arc::new(Ec2InstanceWithBencher {
             instance: self
                 .aws
@@ -78,17 +96,13 @@ sudo apt-get install -y sysstat"#,
                 Path::new("windsock"),
             )
             .await;
-        *self.bencher_instance.write().await = Some(instance.clone());
-
         instance
     }
 
-    pub async fn create_docker_instance(&self) -> Arc<Ec2InstanceWithDocker> {
-        for instance in &*self.docker_instances.read().await {
-            if Arc::strong_count(instance) == 1 {
-                return instance.clone();
-            }
-        }
+    pub async fn create_docker_instance(
+        &self,
+        include_shotover: bool,
+    ) -> Arc<Ec2InstanceWithDocker> {
         let instance = self
             .aws
             .create_ec2_instance(
@@ -112,28 +126,21 @@ curl -sSL https://get.docker.com/ | sudo sh"#,
             .await;
 
         let local_shotover_path = bin_path!("shotover-proxy");
-        instance
-            .ssh()
-            .push_file(local_shotover_path, Path::new("shotover-bin"))
-            .await;
-        instance
-            .ssh()
-            .push_file(Path::new("config/config.yaml"), Path::new("config.yaml"))
-            .await;
+        if include_shotover {
+            instance
+                .ssh()
+                .push_file(local_shotover_path, Path::new("shotover-bin"))
+                .await;
+            instance
+                .ssh()
+                .push_file(Path::new("config/config.yaml"), Path::new("config.yaml"))
+                .await;
+        }
 
-        let instance = Arc::new(Ec2InstanceWithDocker { instance });
-        (*self.docker_instances.write().await).push(instance.clone());
-        instance
+        Arc::new(Ec2InstanceWithDocker { instance })
     }
 
     pub async fn create_shotover_instance(&self) -> Arc<Ec2InstanceWithShotover> {
-        if let Some(instance) = &*self.shotover_instance.read().await {
-            if Arc::strong_count(instance) != 1 {
-                panic!("Only one shotover instance can be held at once, make sure you drop the previous instance before calling this method again.")
-            }
-            return instance.clone();
-        }
-
         let instance = Arc::new(Ec2InstanceWithShotover {
             instance: self
                 .aws
@@ -164,7 +171,6 @@ sudo apt-get install -y sysstat"#,
             .ssh()
             .push_file(Path::new("config/config.yaml"), Path::new("config.yaml"))
             .await;
-        *self.shotover_instance.write().await = Some(instance.clone());
 
         instance
     }
@@ -182,6 +188,8 @@ pub struct Ec2InstanceWithDocker {
 impl Ec2InstanceWithDocker {
     pub async fn run_container(&self, image: &str, envs: &[(String, String)]) {
         // cleanup old resources
+        // TODO: we need a way to ensure there are no shotover resources running.
+        //       Maybe `.run_shotover` could start both shotover and docker so that we are free to kill shotover in this function
         self.instance
             .ssh()
             .shell(

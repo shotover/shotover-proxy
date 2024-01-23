@@ -1,5 +1,8 @@
 use crate::{
-    aws::{Ec2InstanceWithDocker, Ec2InstanceWithShotover, RunningShotover, WindsockAws},
+    aws::{
+        cloud::{CloudResources, CloudResourcesRequired},
+        Ec2InstanceWithDocker, Ec2InstanceWithShotover, RunningShotover,
+    },
     common::{self, Shotover},
     profilers::{self, CloudProfilerRunner, ProfilerRunner},
     shotover::shotover_process_custom_topology,
@@ -139,23 +142,25 @@ impl RedisBench {
 
     async fn run_aws_shotover(
         &self,
-        instance: Arc<Ec2InstanceWithShotover>,
+        instance: Option<Arc<Ec2InstanceWithShotover>>,
         redis_ip: String,
     ) -> Option<RunningShotover> {
-        let ip = instance.instance.private_ip().to_string();
-        match self.shotover {
-            Shotover::Standard | Shotover::ForcedMessageParsed => {
-                let topology =
-                    self.generate_topology_yaml(format!("{ip}:6379"), format!("{redis_ip}:6379"));
-                Some(instance.run_shotover(&topology).await)
-            }
-            Shotover::None => None,
+        if let Some(instance) = instance {
+            let ip = instance.instance.private_ip().to_string();
+            let topology =
+                self.generate_topology_yaml(format!("{ip}:6379"), format!("{redis_ip}:6379"));
+            Some(instance.run_shotover(&topology).await)
+        } else {
+            None
         }
     }
 }
 
 #[async_trait]
 impl Bench for RedisBench {
+    type CloudResourcesRequired = CloudResourcesRequired;
+    type CloudResources = CloudResources;
+
     fn tags(&self) -> HashMap<String, String> {
         [
             ("name".to_owned(), "redis".to_owned()),
@@ -194,24 +199,42 @@ impl Bench for RedisBench {
         2
     }
 
+    fn required_cloud_resources(&self) -> Self::CloudResourcesRequired {
+        let shotover_instance_count =
+            if let Shotover::Standard | Shotover::ForcedMessageParsed = self.shotover {
+                1
+            } else {
+                0
+            };
+        let docker_instance_count = match self.topology {
+            RedisTopology::Single => 1,
+            RedisTopology::Cluster3 => 7,
+        };
+        CloudResourcesRequired {
+            shotover_instance_count,
+            docker_instance_count,
+            include_shotover_in_docker_instance: false,
+        }
+    }
+
     async fn orchestrate_cloud(
         &self,
+        mut cloud_resources: CloudResources,
         _running_in_release: bool,
         profiling: Profiling,
         parameters: BenchParameters,
     ) -> Result<()> {
-        let aws = WindsockAws::get().await;
-
-        let (redis_instances, bench_instance, shotover_instance) = futures::join!(
-            RedisCluster::create(aws, self.topology),
-            aws.create_bencher_instance(),
-            aws.create_shotover_instance()
-        );
+        let bench_instance = cloud_resources.bencher.unwrap();
+        let shotover_instance = cloud_resources.shotover.pop();
+        let redis_instances = RedisCluster::create(cloud_resources.docker, self.topology);
 
         let mut profiler_instances: HashMap<String, &Ec2Instance> =
             [("bencher".to_owned(), &bench_instance.instance)].into();
         if let Shotover::ForcedMessageParsed | Shotover::Standard = self.shotover {
-            profiler_instances.insert("shotover".to_owned(), &shotover_instance.instance);
+            profiler_instances.insert(
+                "shotover".to_owned(),
+                &shotover_instance.as_ref().unwrap().instance,
+            );
         }
         match &redis_instances {
             RedisCluster::Cluster3 { instances, .. } => {
@@ -225,7 +248,9 @@ impl Bench for RedisBench {
         }
 
         let redis_ip = redis_instances.private_ips()[0].to_string();
-        let shotover_ip = shotover_instance.instance.private_ip().to_string();
+        let shotover_ip = shotover_instance
+            .as_ref()
+            .map(|x| x.instance.private_ip().to_string());
 
         let mut profiler =
             CloudProfilerRunner::new(self.name(), profiling, profiler_instances, &shotover_ip)
@@ -236,7 +261,7 @@ impl Bench for RedisBench {
             self.run_aws_shotover(shotover_instance.clone(), redis_ip.clone())
         );
 
-        let destination_ip = if running_shotover.is_some() {
+        let destination_ip = if let Some(shotover_ip) = shotover_ip {
             format!("redis://{shotover_ip}")
         } else {
             match self.topology {
@@ -446,19 +471,19 @@ enum RedisCluster {
 }
 
 impl RedisCluster {
-    async fn create(aws: &'static WindsockAws, topology: RedisTopology) -> Self {
+    fn create(mut instances: Vec<Arc<Ec2InstanceWithDocker>>, topology: RedisTopology) -> Self {
         match topology {
-            RedisTopology::Single => RedisCluster::Single(aws.create_docker_instance().await),
+            RedisTopology::Single => RedisCluster::Single(instances.pop().unwrap()),
             RedisTopology::Cluster3 => RedisCluster::Cluster3 {
+                cluster_creator: instances.pop().unwrap(),
                 instances: [
-                    aws.create_docker_instance().await,
-                    aws.create_docker_instance().await,
-                    aws.create_docker_instance().await,
-                    aws.create_docker_instance().await,
-                    aws.create_docker_instance().await,
-                    aws.create_docker_instance().await,
+                    instances.pop().unwrap(),
+                    instances.pop().unwrap(),
+                    instances.pop().unwrap(),
+                    instances.pop().unwrap(),
+                    instances.pop().unwrap(),
+                    instances.pop().unwrap(),
                 ],
-                cluster_creator: aws.create_docker_instance().await,
             },
         }
     }
