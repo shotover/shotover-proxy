@@ -18,33 +18,40 @@ use anyhow::{anyhow, Result};
 use bench::BenchState;
 use clap::Parser;
 use cli::Args;
-use cloud::{Cloud, NoCloud};
+use cloud::{BenchInfo, Cloud};
 use filter::Filter;
 use std::process::exit;
 use tokio::runtime::Runtime;
 
-pub struct Windsock {
-    benches: Vec<BenchState>,
-    cloud: Box<dyn Cloud>,
+pub struct Windsock<ResourcesRequired, Resources> {
+    benches: Vec<BenchState<ResourcesRequired, Resources>>,
+    cloud: Box<dyn Cloud<CloudResourcesRequired = ResourcesRequired, CloudResources = Resources>>,
     running_in_release: bool,
 }
 
-impl Windsock {
+impl<ResourcesRequired: Clone, Resources: Clone> Windsock<ResourcesRequired, Resources> {
     /// The benches will be run and filtered out according to the CLI arguments
-    /// The benches that are run will always be done so in the order they are listed, this allows tricks to avoid recreating DB's for every bench.
-    /// e.g. the database handle can be put behind a mutex and only resetup when actually neccessary
+    ///
+    /// Run order:
+    /// * Locally: The benches that are run will always be done so in the order they are listed, this allows tricks to avoid recreating DB's for every bench.
+    ///      e.g. the database handle can be put behind a mutex and only resetup when actually neccessary
+    /// * Cloud: The benches will be run in an order optimized according to its required cloud resources.
     ///
     /// `release_profiles` specifies which cargo profiles Windsock will run under, if a different profile is used windsock will refuse to run.
     pub fn new(
-        benches: Vec<Box<dyn Bench>>,
-        cloud: Option<Box<dyn Cloud>>,
+        benches: Vec<
+            Box<dyn Bench<CloudResourcesRequired = ResourcesRequired, CloudResources = Resources>>,
+        >,
+        cloud: Box<
+            dyn Cloud<CloudResourcesRequired = ResourcesRequired, CloudResources = Resources>,
+        >,
         release_profiles: &[&str],
     ) -> Self {
         let running_in_release = release_profiles.contains(&env!("PROFILE"));
 
         Windsock {
             benches: benches.into_iter().map(BenchState::new).collect(),
-            cloud: cloud.unwrap_or(Box::new(NoCloud)),
+            cloud,
             running_in_release,
         }
     }
@@ -94,8 +101,12 @@ impl Windsock {
             self.internal_run(&args, internal_run, running_in_release)?;
         } else if let Some(name) = args.name.clone() {
             create_runtime(None).block_on(self.run_named_bench(args, name, running_in_release))?;
+        } else if args.cloud {
+            create_runtime(None)
+                .block_on(self.run_filtered_benches_cloud(args, running_in_release))?;
         } else {
-            create_runtime(None).block_on(self.run_filtered_benches(args, running_in_release))?;
+            create_runtime(None)
+                .block_on(self.run_filtered_benches_local(args, running_in_release))?;
         }
 
         Ok(())
@@ -137,6 +148,7 @@ impl Windsock {
         let name = args.filter.as_ref().unwrap().clone();
         self.run_named_bench(args, name, running_in_release).await
     }
+
     async fn run_named_bench(
         &mut self,
         args: Args,
@@ -152,7 +164,18 @@ impl Windsock {
                     .iter()
                     .all(|x| bench.supported_profilers.contains(x))
                 {
-                    bench.orchestrate(&args, running_in_release).await;
+                    let resources = if args.cloud {
+                        Some(
+                            self.cloud
+                                .create_resources(vec![bench.required_cloud_resources()])
+                                .await,
+                        )
+                    } else {
+                        None
+                    };
+                    bench
+                        .orchestrate(&args, running_in_release, resources)
+                        .await;
                 } else {
                     return Err(anyhow!("Specified bench {name:?} was requested to run with the profilers {:?} but it only supports the profilers {:?}", args.profilers, bench.supported_profilers));
                 }
@@ -166,24 +189,15 @@ impl Windsock {
         Ok(())
     }
 
-    async fn run_filtered_benches(&mut self, args: Args, running_in_release: bool) -> Result<()> {
+    async fn run_filtered_benches_cloud(
+        &mut self,
+        args: Args,
+        running_in_release: bool,
+    ) -> Result<()> {
         ReportArchive::clear_last_run();
+        let filter = parse_filter(&args)?;
 
-        let filter = match args
-            .filter
-            .as_ref()
-            .map(|x| Filter::from_query(x.as_ref()))
-            .transpose()
-        {
-            Ok(filter) => filter,
-            Err(err) => {
-                return Err(anyhow!(
-                    "Failed to parse FILTER {:?}\n{}",
-                    args.filter.unwrap(),
-                    err
-                ))
-            }
-        };
+        let mut bench_infos = vec![];
         for bench in &mut self.benches {
             if filter
                 .as_ref()
@@ -196,15 +210,78 @@ impl Windsock {
                 })
                 .unwrap_or(true)
             {
-                bench.orchestrate(&args, running_in_release).await;
+                bench_infos.push(BenchInfo {
+                    resources: bench.required_cloud_resources(),
+                    name: bench.tags.get_name(),
+                });
+            }
+        }
+        bench_infos = self.cloud.order_benches(bench_infos);
+
+        let mut resources = if !bench_infos.is_empty() {
+            Some(
+                self.cloud
+                    .create_resources(bench_infos.iter().map(|x| x.resources.clone()).collect())
+                    .await,
+            )
+        } else {
+            None
+        };
+
+        for (i, bench_info) in bench_infos.iter().enumerate() {
+            for bench in &mut self.benches {
+                if bench.tags.get_name() == bench_info.name {
+                    if let Some(resources) = &mut resources {
+                        self.cloud
+                            .adjust_resources(&bench_infos, i, resources)
+                            .await;
+                    }
+                    bench
+                        .orchestrate(&args, running_in_release, resources.clone())
+                        .await;
+                    break;
+                }
             }
         }
 
-        if args.cloud {
-            self.cloud.cleanup_resources().await;
+        self.cloud.cleanup_resources().await;
+        Ok(())
+    }
+
+    async fn run_filtered_benches_local(
+        &mut self,
+        args: Args,
+        running_in_release: bool,
+    ) -> Result<()> {
+        ReportArchive::clear_last_run();
+        let filter = parse_filter(&args)?;
+        for bench in &mut self.benches {
+            if filter
+                .as_ref()
+                .map(|x| {
+                    x.matches(&bench.tags)
+                        && args
+                            .profilers
+                            .iter()
+                            .all(|x| bench.supported_profilers.contains(x))
+                })
+                .unwrap_or(true)
+            {
+                bench.orchestrate(&args, running_in_release, None).await;
+            }
         }
         Ok(())
     }
+}
+
+fn parse_filter(args: &Args) -> Result<Option<Filter>> {
+    args.filter
+        .as_ref()
+        .map(|filter| {
+            Filter::from_query(filter.as_ref())
+                .map_err(|err| anyhow!("Failed to parse FILTER {filter:?}\n{err}"))
+        })
+        .transpose()
 }
 
 fn create_runtime(worker_threads: Option<usize>) -> Runtime {
