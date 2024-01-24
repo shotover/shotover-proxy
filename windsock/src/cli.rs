@@ -32,7 +32,7 @@ pub struct Args {
 
     /// Instruct benches to profile the application under test with the specified profilers.
     /// Benches that do not support the specified profilers will be skipped.
-    #[clap(long, verbatim_doc_comment)]
+    #[clap(long, verbatim_doc_comment, value_delimiter = ',')]
     pub profilers: Vec<String>,
 
     /// How long in seconds to run each bench for.
