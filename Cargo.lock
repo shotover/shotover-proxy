@@ -187,12 +187,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "async-once-cell"
-version = "0.5.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9338790e78aa95a416786ec8389546c4b6a1dfc3dc36071ed9518a9413a542eb"
-
-[[package]]
 name = "async-recursion"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -792,6 +786,17 @@ checksum = "e412e2cd0f2b2d93e02543ceae7917b3c70331573df19ee046bcbc35e45e87d7"
 dependencies = [
  "byteorder",
  "cipher",
+]
+
+[[package]]
+name = "bstr"
+version = "1.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c48f0051a4b4c5e0b6d365cd04af53aeaa209e3cc15ec2cdb69e73cc87fbd0dc"
+dependencies = [
+ "memchr",
+ "regex-automata 0.4.4",
+ "serde",
 ]
 
 [[package]]
@@ -1703,6 +1708,7 @@ dependencies = [
  "aws-throwaway",
  "cargo_metadata",
  "clap",
+ "shell-quote",
  "shellfish",
  "tokio",
  "tracing-appender",
@@ -4408,6 +4414,9 @@ name = "shell-quote"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a09e78d1f98bc5db3fa689ae39f90c0b9af72fe83b0bb4a13b9636edad92fcbd"
+dependencies = [
+ "bstr",
+]
 
 [[package]]
 name = "shellfish"
@@ -4500,7 +4509,6 @@ name = "shotover-proxy"
 version = "0.2.0"
 dependencies = [
  "anyhow",
- "async-once-cell",
  "async-trait",
  "aws-throwaway",
  "bincode",

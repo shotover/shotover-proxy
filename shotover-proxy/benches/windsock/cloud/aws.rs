@@ -1,8 +1,3 @@
-//! Windsock specific logic built on top of aws_throwaway
-
-pub mod cloud;
-
-use async_once_cell::OnceCell;
 use aws_throwaway::{Aws, Ec2Instance, InstanceType};
 use aws_throwaway::{CleanupResources, Ec2InstanceDefinition};
 use regex::Regex;
@@ -19,23 +14,22 @@ use windsock::ReportArchive;
 
 static AWS_THROWAWAY_TAG: &str = "windsock";
 
-static AWS: OnceCell<WindsockAws> = OnceCell::new();
-
-/// TODO: move WindsockAws into a private module so only AwsCloud has access to it.
-pub struct WindsockAws {
+pub struct AwsInstances {
     aws: Aws,
 }
 
-impl WindsockAws {
-    pub async fn get() -> &'static Self {
-        AWS.get_or_init(async move {
-            WindsockAws {
-                aws: Aws::builder(CleanupResources::WithAppTag(AWS_THROWAWAY_TAG.to_owned()))
-                    .build()
-                    .await,
-            }
-        })
-        .await
+impl AwsInstances {
+    pub async fn new() -> Self {
+        AwsInstances {
+            aws: Aws::builder(CleanupResources::WithAppTag(AWS_THROWAWAY_TAG.to_owned()))
+                .build()
+                .await,
+        }
+    }
+
+    pub async fn cleanup() {
+        Aws::cleanup_resources_static(CleanupResources::WithAppTag(AWS_THROWAWAY_TAG.to_owned()))
+            .await
     }
 
     pub async fn create_bencher_instances(&self, count: usize) -> Vec<Arc<Ec2InstanceWithBencher>> {
