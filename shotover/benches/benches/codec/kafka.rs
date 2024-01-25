@@ -29,7 +29,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         {
             let mut input = BytesMut::new();
             input.extend_from_slice(message);
-            group.bench_function(format!("kafka_decode_{file_name}"), |b| {
+            group.bench_function(format!("decode_{file_name}"), |b| {
                 b.iter_batched(
                     || {
                         (
@@ -62,7 +62,7 @@ fn criterion_benchmark(c: &mut Criterion) {
 
             let messages = vec![message];
 
-            group.bench_function(format!("kafka_encode_{file_name}"), |b| {
+            group.bench_function(format!("encode_{file_name}"), |b| {
                 b.iter_batched(
                     || {
                         (
@@ -124,7 +124,7 @@ fn criterion_benchmark(c: &mut Criterion) {
             messages.push(message);
         }
 
-        group.bench_function("kafka_encode_all", |b| {
+        group.bench_function("encode_all", |b| {
             b.iter_batched(
                 || {
                     (

@@ -33,7 +33,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         let (_, mut encoder) =
             CassandraCodecBuilder::new(Direction::Sink, "cassandra".to_owned()).build();
 
-        group.bench_function("encode_cassandra_system.local_query", |b| {
+        group.bench_function("encode_system.local_query", |b| {
             b.iter_batched(
                 || messages.clone(),
                 |messages| {
@@ -58,7 +58,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         let (_, mut encoder) =
             CassandraCodecBuilder::new(Direction::Sink, "cassandra".to_owned()).build();
 
-        group.bench_function("encode_cassandra_system.local_result", |b| {
+        group.bench_function("encode_system.local_result", |b| {
             b.iter_batched(
                 || messages.clone(),
                 |messages| {
