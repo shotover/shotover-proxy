@@ -8,14 +8,13 @@ use rand_distr::Alphanumeric;
 use redis::aio::Connection;
 use redis::cluster::ClusterConnection;
 use redis::{AsyncCommands, Commands, ErrorKind, RedisError, Value};
-use shotover::frame::RedisFrame;
-use shotover::tcp;
+use redis_protocol::resp2::types::Frame;
 use std::collections::{HashMap, HashSet};
 use std::thread::sleep;
 use std::time::Duration;
 use test_helpers::connection::redis_connection;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpStream;
+use tokio::net::{TcpStream, ToSocketAddrs};
 
 use tokio::time::timeout;
 use tracing::trace;
@@ -1284,15 +1283,13 @@ pub async fn test_trigger_transform_failure_driver(client: &RedisClient) {
 pub async fn test_trigger_transform_failure_raw() {
     // Send invalid redis command
     // To correctly handle this shotover should close the connection
-    let mut connection = tcp::tcp_stream(Duration::from_secs(3), "127.0.0.1:6379")
-        .await
-        .unwrap();
+    let mut connection = tcp_stream(Duration::from_secs(3), "127.0.0.1:6379").await;
 
     connection.write_all(b"*1\r\n$4\r\nping\r\n").await.unwrap();
 
     assert_eq!(
         read_redis_message(&mut connection).await,
-        RedisFrame::Error("ERR Internal shotover (or custom transform) bug: Chain failed to send and/or receive messages, the connection will now be closed.  Caused by:     0: RedisSinkSingle transform failed     1: Failed to connect to destination \"127.0.0.1:1111\"     2: Connection refused (os error 111)".into())
+        Frame::Error("ERR Internal shotover (or custom transform) bug: Chain failed to send and/or receive messages, the connection will now be closed.  Caused by:     0: RedisSinkSingle transform failed     1: Failed to connect to destination \"127.0.0.1:1111\"     2: Connection refused (os error 111)".into())
     );
 
     // If the connection was closed by shotover then we will succesfully read 0 bytes.
@@ -1305,7 +1302,7 @@ pub async fn test_trigger_transform_failure_raw() {
     assert_eq!(amount, 0);
 }
 
-async fn read_redis_message(connection: &mut TcpStream) -> RedisFrame {
+async fn read_redis_message(connection: &mut TcpStream) -> Frame {
     let mut buffer = BytesMut::new();
     loop {
         if let Ok(Some((result, len))) =
@@ -1327,9 +1324,7 @@ async fn read_redis_message(connection: &mut TcpStream) -> RedisFrame {
 pub async fn test_invalid_frame() {
     // Send invalid redis command
     // To correctly handle this shotover should close the connection
-    let mut connection = tcp::tcp_stream(Duration::from_secs(3), "127.0.0.1:6379")
-        .await
-        .unwrap();
+    let mut connection = tcp_stream(Duration::from_secs(3), "127.0.0.1:6379").await;
 
     connection
         .write_all(b"invalid_redis_frame\r\n")
@@ -1712,4 +1707,18 @@ impl Flusher {
                 .ok();
         }
     }
+}
+
+pub async fn tcp_stream<A: ToSocketAddrs + std::fmt::Debug>(
+    connect_timeout: Duration,
+    destination: A,
+) -> tokio::net::TcpStream {
+    timeout(connect_timeout, TcpStream::connect(&destination))
+        .await
+        .unwrap_or_else(|_| {
+            panic!(
+                "destination {destination:?} did not respond to connection attempt within {connect_timeout:?}"
+            )
+        })
+        .unwrap_or_else(|e| panic!("Failed to connect to destination {destination:?}\n{e:?}"))
 }
