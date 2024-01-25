@@ -8,7 +8,7 @@ license = "Apache-2.0"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-shotover = { path = "../shotover" }
+shotover = { path = "../shotover", default-features = false}
 
 [dev-dependencies]
 prometheus-parse = "0.2.4"
@@ -60,8 +60,13 @@ shell-quote.workspace = true
 [features]
 # Include WIP alpha transforms in the public API
 alpha-transforms = ["shotover/alpha-transforms"]
+cassandra = ["shotover/cassandra"]
+kafka = ["shotover/kafka"]
+redis = ["shotover/redis"]
+opensearch = ["shotover/opensearch"]
 cassandra-cpp-driver-tests = ["test-helpers/cassandra-cpp-driver-tests"]
 rdkafka-driver-tests = ["test-helpers/rdkafka-driver-tests"]
+default = ["cassandra", "kafka", "redis", "opensearch"]
 
 [[bench]]
 name = "windsock"

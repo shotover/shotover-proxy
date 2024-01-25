@@ -1,6 +1,7 @@
 //! Generic representations of data types that appear in messages
-//!
+#[cfg(feature = "cassandra")]
 pub mod cassandra;
+#[cfg(feature = "redis")]
 mod redis;
 
 use bigdecimal::BigDecimal;

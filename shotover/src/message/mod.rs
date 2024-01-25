@@ -1,12 +1,16 @@
 //! Message and supporting types - used to hold a message/query/result going between the client and database
 
+#[cfg(feature = "kafka")]
 use crate::codec::kafka::RequestHeader;
 use crate::codec::CodecState;
-use crate::frame::redis::redis_query_type;
+#[cfg(feature = "cassandra")]
 use crate::frame::{cassandra, cassandra::CassandraMetadata};
-use crate::frame::{Frame, MessageType, RedisFrame};
+#[cfg(feature = "redis")]
+use crate::frame::{redis::redis_query_type, RedisFrame};
+use crate::frame::{Frame, MessageType};
 use anyhow::{anyhow, Context, Result};
-use bytes::{Buf, Bytes};
+use bytes::Bytes;
+#[cfg(feature = "cassandra")]
 use cassandra_protocol::compression::Compression;
 use derivative::Derivative;
 use nonzero_ext::nonzero;
@@ -15,34 +19,44 @@ use std::num::NonZeroU32;
 use std::time::Instant;
 
 pub enum Metadata {
+    #[cfg(feature = "cassandra")]
     Cassandra(CassandraMetadata),
+    #[cfg(feature = "redis")]
     Redis,
+    #[cfg(feature = "kafka")]
     Kafka,
+    #[cfg(feature = "opensearch")]
     OpenSearch,
 }
 
 #[derive(PartialEq)]
 pub enum ProtocolType {
-    Cassandra {
-        compression: Compression,
-    },
+    #[cfg(feature = "cassandra")]
+    Cassandra { compression: Compression },
+    #[cfg(feature = "redis")]
     Redis,
+    #[cfg(feature = "kafka")]
     Kafka {
         request_header: Option<RequestHeader>,
     },
+    #[cfg(feature = "opensearch")]
     OpenSearch,
 }
 
 impl From<&ProtocolType> for CodecState {
     fn from(value: &ProtocolType) -> Self {
         match value {
+            #[cfg(feature = "cassandra")]
             ProtocolType::Cassandra { compression } => Self::Cassandra {
                 compression: *compression,
             },
+            #[cfg(feature = "redis")]
             ProtocolType::Redis => Self::Redis,
+            #[cfg(feature = "kafka")]
             ProtocolType::Kafka { request_header } => Self::Kafka {
                 request_header: *request_header,
             },
+            #[cfg(feature = "opensearch")]
             ProtocolType::OpenSearch => Self::OpenSearch,
         }
     }
@@ -239,20 +253,30 @@ impl Message {
     pub fn cell_count(&self) -> Result<NonZeroU32> {
         Ok(match self.inner.as_ref().unwrap() {
             MessageInner::RawBytes {
+                #[cfg(feature = "cassandra")]
                 bytes,
                 message_type,
+                ..
             } => match message_type {
+                #[cfg(feature = "redis")]
                 MessageType::Redis => nonzero!(1u32),
+                #[cfg(feature = "cassandra")]
                 MessageType::Cassandra => cassandra::raw_frame::cell_count(bytes)?,
+                #[cfg(feature = "kafka")]
                 MessageType::Kafka => todo!(),
                 MessageType::Dummy => nonzero!(1u32),
+                #[cfg(feature = "opensearch")]
                 MessageType::OpenSearch => todo!(),
             },
             MessageInner::Modified { frame } | MessageInner::Parsed { frame, .. } => match frame {
+                #[cfg(feature = "cassandra")]
                 Frame::Cassandra(frame) => frame.cell_count()?,
+                #[cfg(feature = "redis")]
                 Frame::Redis(_) => nonzero!(1u32),
+                #[cfg(feature = "kafka")]
                 Frame::Kafka(_) => todo!(),
                 Frame::Dummy => nonzero!(1u32),
+                #[cfg(feature = "opensearch")]
                 Frame::OpenSearch(_) => todo!(),
             },
         })
@@ -273,10 +297,14 @@ impl Message {
 
     pub fn get_query_type(&mut self) -> QueryType {
         match self.frame() {
+            #[cfg(feature = "cassandra")]
             Some(Frame::Cassandra(cassandra)) => cassandra.get_query_type(),
+            #[cfg(feature = "redis")]
             Some(Frame::Redis(redis)) => redis_query_type(redis), // free-standing function as we cant define methods on RedisFrame
+            #[cfg(feature = "kafka")]
             Some(Frame::Kafka(_)) => todo!(),
             Some(Frame::Dummy) => todo!(),
+            #[cfg(feature = "opensearch")]
             Some(Frame::OpenSearch(_)) => todo!(),
             None => QueryType::ReadWrite,
         }
@@ -286,7 +314,9 @@ impl Message {
     /// If self is a request: the returned `Message` is a valid response to self
     /// If self is a response: the returned `Message` is a valid replacement of self
     pub fn to_error_response(&self, error: String) -> Result<Message> {
+        #[allow(unreachable_code)]
         Ok(Message::from_frame(match self.metadata().context("Failed to parse metadata of request or response when producing an error")? {
+            #[cfg(feature = "redis")]
             Metadata::Redis => {
                 // Redis errors can not contain newlines at the protocol level
                 let message = format!("ERR {error}")
@@ -294,14 +324,17 @@ impl Message {
                     .replace('\n', " ");
                 Frame::Redis(RedisFrame::Error(message.into()))
             }
+            #[cfg(feature = "cassandra")]
             Metadata::Cassandra(meta) => Frame::Cassandra(meta.to_error_response(error)),
             // In theory we could actually support kafka errors in some form here but:
             // * kafka errors are defined per response type and many response types only provide an error code without a field for a custom error message.
             //     + Implementing this per response type would add a lot of (localized) complexity but might be worth it.
             // * the official C++ kafka driver we use for integration tests does not pick up errors sent just before closing a connection, so this wouldnt help the usage in server.rs where we send an error before terminating the connection for at least that driver.
+            #[cfg(feature = "kafka")]
             Metadata::Kafka => return Err(anyhow!(error).context(
                 "A generic error cannot be formed because the kafka protocol does not support it",
             )),
+            #[cfg(feature = "opensearch")]
             Metadata::OpenSearch => unimplemented!()
         }))
     }
@@ -310,22 +343,32 @@ impl Message {
     pub fn metadata(&self) -> Result<Metadata> {
         match self.inner.as_ref().unwrap() {
             MessageInner::RawBytes {
+                #[cfg(feature = "cassandra")]
                 bytes,
                 message_type,
+                ..
             } => match message_type {
+                #[cfg(feature = "cassandra")]
                 MessageType::Cassandra => {
                     Ok(Metadata::Cassandra(cassandra::raw_frame::metadata(bytes)?))
                 }
+                #[cfg(feature = "redis")]
                 MessageType::Redis => Ok(Metadata::Redis),
+                #[cfg(feature = "kafka")]
                 MessageType::Kafka => Ok(Metadata::Kafka),
                 MessageType::Dummy => Err(anyhow!("Dummy has no metadata")),
+                #[cfg(feature = "opensearch")]
                 MessageType::OpenSearch => Err(anyhow!("OpenSearch has no metadata")),
             },
             MessageInner::Parsed { frame, .. } | MessageInner::Modified { frame } => match frame {
+                #[cfg(feature = "cassandra")]
                 Frame::Cassandra(frame) => Ok(Metadata::Cassandra(frame.metadata())),
+                #[cfg(feature = "kafka")]
                 Frame::Kafka(_) => Ok(Metadata::Kafka),
+                #[cfg(feature = "redis")]
                 Frame::Redis(_) => Ok(Metadata::Redis),
                 Frame::Dummy => Err(anyhow!("dummy has no metadata")),
+                #[cfg(feature = "opensearch")]
                 Frame::OpenSearch(_) => Err(anyhow!("OpenSearch has no metadata")),
             },
         }
@@ -337,11 +380,17 @@ impl Message {
 
         *self = Message::from_frame_at_instant(
             match metadata {
+                #[cfg(feature = "cassandra")]
                 Metadata::Cassandra(metadata) => Frame::Cassandra(metadata.backpressure_response()),
+                #[cfg(feature = "redis")]
                 Metadata::Redis => unimplemented!(),
+                #[cfg(feature = "kafka")]
                 Metadata::Kafka => unimplemented!(),
+                #[cfg(feature = "opensearch")]
                 Metadata::OpenSearch => unimplemented!(),
             },
+            // reachable with feature = cassandra
+            #[allow(unreachable_code)]
             self.received_from_source_or_sink_at,
         );
 
@@ -354,10 +403,12 @@ impl Message {
     //       For now its just written to match cassandra's stream_id field
     pub fn stream_id(&self) -> Option<i16> {
         match &self.inner {
+            #[cfg(feature = "cassandra")]
             Some(MessageInner::RawBytes {
                 bytes,
                 message_type: MessageType::Cassandra,
             }) => {
+                use bytes::Buf;
                 const HEADER_LEN: usize = 9;
                 if bytes.len() >= HEADER_LEN {
                     Some((&bytes[2..4]).get_i16())
@@ -368,10 +419,14 @@ impl Message {
             Some(MessageInner::RawBytes { .. }) => None,
             Some(MessageInner::Parsed { frame, .. } | MessageInner::Modified { frame }) => {
                 match frame {
+                    #[cfg(feature = "cassandra")]
                     Frame::Cassandra(cassandra) => Some(cassandra.stream_id),
+                    #[cfg(feature = "redis")]
                     Frame::Redis(_) => None,
+                    #[cfg(feature = "kafka")]
                     Frame::Kafka(_) => None,
                     Frame::Dummy => None,
+                    #[cfg(feature = "opensearch")]
                     Frame::OpenSearch(_) => None,
                 }
             }

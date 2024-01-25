@@ -12,6 +12,39 @@ description = "Shotover API for building custom transforms"
 [features]
 # Include WIP alpha transforms in the public API
 alpha-transforms = []
+cassandra = [
+    "dep:cassandra-protocol",
+    "dep:cql3-parser",
+    "dep:lz4_flex",
+    "dep:version-compare",
+    "dep:aws-sdk-kms",
+    "dep:aws-config",
+    "dep:base64",
+    "dep:serde_json",
+    "dep:halfbrown",
+    "dep:chacha20poly1305",
+    "dep:generic-array",
+    "dep:hex",
+    "dep:bincode",
+    "dep:cached",
+]
+kafka = [
+    "dep:kafka-protocol",
+    "dep:dashmap",
+    "dep:xxhash-rust",
+    "dep:string",
+]
+redis = [
+    "dep:redis-protocol",
+    "dep:csv",
+    "dep:crc16",
+]
+opensearch = [
+    "dep:atoi",
+    "dep:http",
+    "dep:httparse",
+]
+default = ["cassandra", "redis", "kafka", "opensearch"]
 
 [dependencies]
 atomic_enum = "0.2.0"
@@ -19,12 +52,12 @@ pretty-hex = "0.4.0"
 tokio-stream = "0.1.2"
 bytes-utils = "0.1.1"
 derivative = "2.1.1"
-cached = { version = "0.48", features = ["async"] }
+cached = { version = "0.48", features = ["async"], optional = true }
 governor = { version = "0.6", default-features = false, features = ["std", "jitter", "quanta"] }
 nonzero_ext = "0.3.0"
-version-compare = "0.1"
+version-compare = { version = "0.1", optional = true }
 rand = { features = ["small_rng"], workspace = true }
-lz4_flex = "0.11.0"
+lz4_flex = { version = "0.11.0", optional = true }
 clap.workspace = true
 itertools.workspace = true
 rand_distr.workspace = true
@@ -32,9 +65,8 @@ bytes.workspace = true
 futures.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
-csv.workspace = true
-hex.workspace = true
-hex-literal.workspace = true
+csv = { workspace = true, optional = true }
+hex = { workspace = true, optional = true }
 async-trait.workspace = true
 typetag.workspace = true
 tokio-tungstenite = "0.21.0"
@@ -46,17 +78,17 @@ backtrace = "0.3.66"
 backtrace-ext = "0.2"
 
 # Parsers
-cql3-parser = "0.4.0"
+cql3-parser = { version = "0.4.0", optional = true }
 serde.workspace = true
-serde_json.workspace = true
+serde_json = { workspace = true, optional = true }
 serde_yaml.workspace = true
-bincode.workspace = true
+bincode = { workspace = true, optional = true }
 num = { version = "0.4.0", features = ["serde"] }
-uuid.workspace = true
+uuid = { workspace = true }
 bigdecimal = { version = "0.4.0", features = ["serde"] }
-base64 = "0.21.0"
-httparse = "1.8.0"
-http = "0.2.9"
+base64 = { version = "0.21.0", optional = true }
+httparse = { version = "1.8.0", optional = true }
+http = { version = "0.2.9", optional = true }
 
 #Observability
 metrics = "0.21.0"
@@ -65,32 +97,36 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 tracing-appender.workspace = true
 hyper.workspace = true
-halfbrown = "0.2.1"
+halfbrown = { version = "0.2.1", optional = true }
 
 # Transform dependencies
-redis-protocol.workspace = true
-cassandra-protocol.workspace = true
-crc16 = "0.4.0"
+redis-protocol = { workspace = true, optional = true }
+cassandra-protocol = { workspace = true, optional = true }
+crc16 = { version = "0.4.0", optional = true }
 ordered-float.workspace = true
 
 #Crypto
-aws-config = "1.0.0"
-aws-sdk-kms = "1.1.0"
-chacha20poly1305 = { version = "0.10.0", features = ["std"] }
-generic-array = { version = "0.14", features = ["serde"] }
-kafka-protocol = "0.8.0"
+aws-config = { version = "1.0.0", optional = true }
+aws-sdk-kms = { version = "1.1.0", optional = true }
+chacha20poly1305 = { version = "0.10.0", features = ["std"], optional = true }
+generic-array = { version = "0.14", features = ["serde"], optional = true }
+kafka-protocol = { version = "0.8.0", optional = true }
 rustls = { version = "0.22.0" }
 tokio-rustls = "0.25"
 rustls-pemfile = "2.0.0"
 rustls-pki-types = "1.0.1"
-string = "0.3.0"
-xxhash-rust = { version = "0.8.6", features = ["xxh3"] }
-dashmap = "5.4.0"
-atoi = "2.0.0"
+string = { version = "0.3.0", optional = true }
+xxhash-rust = { version = "0.8.6", features = ["xxh3"], optional = true }
+dashmap = { version = "5.4.0", optional = true }
+atoi = { version = "2.0.0", optional = true }
 
 [dev-dependencies]
 criterion = { version = "0.5.0", features = ["async_tokio"] }
+hex-literal.workspace = true
 
+# TODO: Optionally compiling benches is quite tricky with criterion, maybe it would be easier with divan?
+#       For now just set required features
 [[bench]]
 name = "benches"
 harness = false
+required-features = ["cassandra", "redis", "kafka"]

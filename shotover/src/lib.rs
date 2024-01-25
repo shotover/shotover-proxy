@@ -31,6 +31,25 @@
 #![deny(clippy::print_stderr)]
 #![allow(clippy::needless_doctest_main)]
 #![allow(clippy::box_default)]
+// Allow dead code if any of the protocol features are disabled
+#![cfg_attr(
+    any(
+        not(feature = "cassandra"),
+        not(feature = "redis"),
+        not(feature = "kafka"),
+        not(feature = "opensearch"),
+    ),
+    allow(dead_code, unused_imports, unused_variables, unused_mut)
+)]
+#[cfg(all(
+    not(feature = "cassandra"),
+    not(feature = "redis"),
+    not(feature = "kafka"),
+    not(feature = "opensearch"),
+))]
+compile_error!(
+    "At least one protocol feature must be enabled, e.g. `cassandra`, `redis`, `kafka` or `opensearch`"
+);
 
 pub mod codec;
 pub mod config;

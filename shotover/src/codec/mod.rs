@@ -1,15 +1,21 @@
 //! Codec types to use for connecting to a DB in a sink transform
 
 use crate::message::Messages;
+#[cfg(feature = "cassandra")]
 use cassandra_protocol::compression::Compression;
 use core::fmt;
+#[cfg(feature = "kafka")]
 use kafka::RequestHeader;
 use metrics::{register_histogram, Histogram};
 use tokio_util::codec::{Decoder, Encoder};
 
+#[cfg(feature = "cassandra")]
 pub mod cassandra;
+#[cfg(feature = "kafka")]
 pub mod kafka;
+#[cfg(feature = "opensearch")]
 pub mod opensearch;
+#[cfg(feature = "redis")]
 pub mod redis;
 
 #[derive(Eq, PartialEq, Copy, Clone)]
@@ -40,18 +46,23 @@ pub fn message_latency(direction: Direction, destination_name: String) -> Histog
 
 #[derive(Debug, Clone, PartialEq, Copy)]
 pub enum CodecState {
+    #[cfg(feature = "cassandra")]
     Cassandra {
         compression: Compression,
     },
+    #[cfg(feature = "redis")]
     Redis,
+    #[cfg(feature = "kafka")]
     Kafka {
         request_header: Option<RequestHeader>,
     },
     Dummy,
+    #[cfg(feature = "opensearch")]
     OpenSearch,
 }
 
 impl CodecState {
+    #[cfg(feature = "cassandra")]
     pub fn as_cassandra(&self) -> Compression {
         match self {
             CodecState::Cassandra { compression } => *compression,
@@ -61,6 +72,7 @@ impl CodecState {
         }
     }
 
+    #[cfg(feature = "kafka")]
     pub fn as_kafka(&self) -> Option<RequestHeader> {
         match self {
             CodecState::Kafka { request_header } => *request_header,

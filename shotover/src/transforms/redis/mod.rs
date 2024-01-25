@@ -1,5 +1,6 @@
 use crate::transforms::util::ConnectionError;
 
+#[cfg(all(feature = "redis", feature = "cassandra"))]
 pub mod cache;
 pub mod cluster_ports_rewrite;
 pub mod sink_cluster;

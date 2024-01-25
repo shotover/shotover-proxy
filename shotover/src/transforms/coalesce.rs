@@ -94,7 +94,7 @@ impl Transform for Coalesce {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "redis"))]
 mod test {
     use crate::frame::{Frame, RedisFrame};
     use crate::message::Message;
