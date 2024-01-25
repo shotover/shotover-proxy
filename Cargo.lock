@@ -116,9 +116,9 @@ dependencies = [
 
 [[package]]
 name = "anstyle"
-version = "1.0.4"
+version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7079075b41f533b8c61d2a4d073c4676e1f8b249ff94a393b0595db304e0dd87"
+checksum = "2faccea4cc4ab4a667ce676a30e8ec13922a692c99bb8f5b11f1502c72e04220"
 
 [[package]]
 name = "anstyle-parse"
@@ -288,53 +288,6 @@ dependencies = [
  "pin-project-lite",
  "tracing",
  "uuid",
-]
-
-[[package]]
-name = "aws-sdk-ec2"
-version = "1.17.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cce9ec24cfcfc5183e121ec979d243f38a725a2128442f32845c1dd5a63be1a1"
-dependencies = [
- "aws-credential-types",
- "aws-runtime",
- "aws-smithy-async",
- "aws-smithy-http",
- "aws-smithy-json",
- "aws-smithy-query",
- "aws-smithy-runtime",
- "aws-smithy-runtime-api",
- "aws-smithy-types",
- "aws-smithy-xml",
- "aws-types",
- "fastrand",
- "http 0.2.11",
- "once_cell",
- "regex-lite",
- "tracing",
-]
-
-[[package]]
-name = "aws-sdk-iam"
-version = "1.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "968e66917d35be98396c8276ca27c2a96768a3c7a248639dbdf73acf372be419"
-dependencies = [
- "aws-credential-types",
- "aws-runtime",
- "aws-smithy-async",
- "aws-smithy-http",
- "aws-smithy-json",
- "aws-smithy-query",
- "aws-smithy-runtime",
- "aws-smithy-runtime-api",
- "aws-smithy-types",
- "aws-smithy-xml",
- "aws-types",
- "http 0.2.11",
- "once_cell",
- "regex-lite",
- "tracing",
 ]
 
 [[package]]
@@ -574,18 +527,17 @@ dependencies = [
 
 [[package]]
 name = "aws-throwaway"
-version = "0.5.1"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3feb00694010c9969f97e8a106ba72efd1f132b6e4bc0db351f9adf92b375b7a"
+checksum = "be0da812cb994ccf68233bb00551df33d55b6841f83ab35f98095316be82133c"
 dependencies = [
  "anyhow",
  "async-trait",
- "aws-config",
- "aws-sdk-ec2",
- "aws-sdk-iam",
  "base64",
  "russh",
  "russh-keys",
+ "serde",
+ "serde_json",
  "ssh-key",
  "tokio",
  "tracing",
@@ -1900,9 +1852,9 @@ dependencies = [
 
 [[package]]
 name = "fred"
-version = "8.0.0"
+version = "8.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0203efc4d5c64b5178ae98641c93c9f9aac66e4f5677775e013dce495b6c75fb"
+checksum = "d3b2a2ac060e3266004c552235c241b481e438e2b1ea75715ea1176914ef2868"
 dependencies = [
  "arc-swap",
  "async-trait",
@@ -2464,9 +2416,9 @@ dependencies = [
 
 [[package]]
 name = "itertools"
-version = "0.12.0"
+version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "25db6b064527c5d482d0423354fcd07a89a2dfe07b67892e62411946db7f07b0"
+checksum = "ba291022dbbd398a455acf126c1e341954079855bc60dfdda641363bd6922569"
 dependencies = [
  "either",
 ]
@@ -3377,7 +3329,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "811031bea65e5a401fb2e1f37d802cca6601e204ac463809a3189352d13b78a5"
 dependencies = [
  "chrono",
- "itertools 0.12.0",
+ "itertools 0.12.1",
  "once_cell",
  "regex",
 ]
@@ -4391,7 +4343,7 @@ dependencies = [
  "http 0.2.11",
  "httparse",
  "hyper",
- "itertools 0.12.0",
+ "itertools 0.12.1",
  "kafka-protocol",
  "lz4_flex",
  "metrics",
@@ -4447,7 +4399,7 @@ dependencies = [
  "hex",
  "hex-literal",
  "hyper",
- "itertools 0.12.0",
+ "itertools 0.12.1",
  "nix",
  "opensearch",
  "prometheus-parse",
@@ -4753,7 +4705,7 @@ dependencies = [
  "cassandra-protocol",
  "cdrs-tokio",
  "docker-compose-runner",
- "itertools 0.12.0",
+ "itertools 0.12.1",
  "num-bigint 0.3.3",
  "openssl",
  "ordered-float",
