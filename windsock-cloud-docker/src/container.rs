@@ -28,10 +28,18 @@ impl Container {
             .await;
             container_bash("apt-get update").await;
             container_bash(
-            "DEBIAN_FRONTEND=noninteractive apt-get install -y curl git cmake pkg-config g++ libssl-dev librdkafka-dev uidmap psmisc",
+            "DEBIAN_FRONTEND=noninteractive apt-get install -y curl git cmake pkg-config g++ libssl-dev librdkafka-dev uidmap psmisc unzip",
         ).await;
             container_bash(
                 "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y",
+            )
+            .await;
+            container_bash(
+                r#"
+curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+unzip awscliv2.zip
+./aws/install
+                "#,
             )
             .await;
         } else {
