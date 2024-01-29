@@ -61,7 +61,7 @@ until sudo apt-get update -qq
 do
   sleep 1
 done
-sudo apt-get install -y cmake pkg-config g++ libssl-dev librdkafka-dev uidmap
+sudo apt-get install -y cmake pkg-config g++ libssl-dev librdkafka-dev uidmap unzip
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 
 curl -sSL https://get.docker.com/ | sudo sh
@@ -72,6 +72,10 @@ echo '#!/bin/bash
 sudo /bin/docker1 "$@"
 ' | sudo dd of=/bin/docker
 sudo chmod +x /bin/docker
+
+curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+unzip awscliv2.zip
+sudo ./aws/install
 
 echo "export RUST_BACKTRACE=1" >> .profile
 echo "export CARGO_TERM_COLOR=always" >> .profile
