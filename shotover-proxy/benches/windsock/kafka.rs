@@ -189,6 +189,23 @@ impl KafkaBench {
             Shotover::None => None,
         }
     }
+
+    fn include_shotover_in_docker_instance(&self) -> bool {
+        match self.topology {
+            KafkaTopology::Single => !matches!(self.shotover, Shotover::None),
+            KafkaTopology::Cluster1 => false,
+            KafkaTopology::Cluster3 => false,
+        }
+    }
+
+    fn shotover_instance_count(&self) -> usize {
+        let need_shotover = !matches!(self.shotover, Shotover::None);
+        if need_shotover && !self.include_shotover_in_docker_instance() {
+            1
+        } else {
+            0
+        }
+    }
 }
 
 #[async_trait]
@@ -220,18 +237,13 @@ impl Bench for KafkaBench {
     }
 
     fn required_cloud_resources(&self) -> Self::CloudResourcesRequired {
-        let need_shotover = !matches!(self.shotover, Shotover::None);
-
-        let (docker_instance_count, include_shotover_in_docker_instance) = match self.topology {
-            KafkaTopology::Single => (1, need_shotover),
-            KafkaTopology::Cluster1 => (1, false),
-            KafkaTopology::Cluster3 => (3, false),
+        let docker_instance_count = match self.topology {
+            KafkaTopology::Single => 1,
+            KafkaTopology::Cluster1 => 1,
+            KafkaTopology::Cluster3 => 3,
         };
-        let shotover_instance_count = if need_shotover && !include_shotover_in_docker_instance {
-            1
-        } else {
-            0
-        };
+        let shotover_instance_count = self.shotover_instance_count();
+        let include_shotover_in_docker_instance = self.include_shotover_in_docker_instance();
         CloudResourcesRequired {
             shotover_instance_count,
             docker_instance_count,
@@ -254,9 +266,9 @@ impl Bench for KafkaBench {
             [("bencher".to_owned(), &bench_instance.instance)].into();
 
         // only profile instances that we are actually using for this bench
-        if let Shotover::ForcedMessageParsed | Shotover::Standard = self.shotover {
+        for i in 0..self.shotover_instance_count() {
             profiler_instances.insert(
-                "shotover".to_owned(),
+                format!("shotover{i}"),
                 &shotover_instance.as_ref().unwrap().instance,
             );
         }
@@ -301,17 +313,17 @@ impl Bench for KafkaBench {
                 }
             });
 
-        let destination_address = if let Shotover::Standard | Shotover::ForcedMessageParsed =
-            self.shotover
-        {
-            let shotover_ip = shotover_ip.unwrap();
-            match &self.topology {
-                KafkaTopology::Single => format!("{kafka_ip}:9092"),
-                KafkaTopology::Cluster1 | KafkaTopology::Cluster3 => format!("{shotover_ip}:9092"),
-            }
-        } else {
-            format!("{kafka_ip}:9192")
-        };
+        let destination_address =
+            if let Shotover::Standard | Shotover::ForcedMessageParsed = self.shotover {
+                match &self.topology {
+                    KafkaTopology::Single => format!("{kafka_ip}:9092"),
+                    KafkaTopology::Cluster1 | KafkaTopology::Cluster3 => {
+                        format!("{}:9092", shotover_ip.unwrap())
+                    }
+                }
+            } else {
+                format!("{kafka_ip}:9192")
+            };
 
         bench_instance
             .run_bencher(
