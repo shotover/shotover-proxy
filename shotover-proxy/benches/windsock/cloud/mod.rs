@@ -1,18 +1,25 @@
-use super::{
-    Ec2InstanceWithBencher, Ec2InstanceWithDocker, Ec2InstanceWithShotover, AWS, AWS_THROWAWAY_TAG,
+//! Windsock specific logic built on top of aws_throwaway
+
+mod aws;
+
+pub use aws::{
+    Ec2InstanceWithBencher, Ec2InstanceWithDocker, Ec2InstanceWithShotover, RunningShotover,
 };
+
 use async_trait::async_trait;
-use aws_throwaway::{Aws, CleanupResources};
+use aws::AwsInstances;
 use std::sync::Arc;
 use windsock::cloud::{BenchInfo, Cloud};
 
-pub struct AwsCloud;
+pub struct AwsCloud {
+    aws: Option<AwsInstances>,
+}
 
 impl AwsCloud {
     pub fn new_boxed() -> Box<
         dyn Cloud<CloudResourcesRequired = CloudResourcesRequired, CloudResources = CloudResources>,
     > {
-        Box::new(AwsCloud)
+        Box::new(AwsCloud { aws: None })
     }
 }
 
@@ -20,30 +27,27 @@ impl AwsCloud {
 impl Cloud for AwsCloud {
     type CloudResourcesRequired = CloudResourcesRequired;
     type CloudResources = CloudResources;
-    async fn cleanup_resources(&self) {
-        match AWS.get() {
+    async fn cleanup_resources(&mut self) {
+        match &self.aws {
             // AWS is initialized, it'll be faster to cleanup resources making use of the initialization
             Some(aws) => aws.cleanup_resources().await,
             // AWS is not initialized, it'll be faster to cleanup resources skipping initialization
-            None => {
-                Aws::cleanup_resources_static(CleanupResources::WithAppTag(
-                    AWS_THROWAWAY_TAG.to_owned(),
-                ))
-                .await
-            }
+            None => AwsInstances::cleanup().await,
         }
     }
 
-    async fn create_resources(&self, required: Vec<CloudResourcesRequired>) -> CloudResources {
+    async fn create_resources(&mut self, required: Vec<CloudResourcesRequired>) -> CloudResources {
         let required = required.into_iter().fold(
             CloudResourcesRequired::default(),
             CloudResourcesRequired::combine,
         );
         println!("Creating AWS resources: {required:#?}");
 
-        // TODO: make Option<WindsockAws> field of AwsCloud
-        let aws = crate::aws::WindsockAws::get().await;
+        if self.aws.is_none() {
+            self.aws = Some(crate::cloud::AwsInstances::new().await);
+        }
 
+        let aws = self.aws.as_ref().unwrap();
         let (docker, mut bencher, shotover) = futures::join!(
             aws.create_docker_instances(
                 required.include_shotover_in_docker_instance,
@@ -61,7 +65,7 @@ impl Cloud for AwsCloud {
     }
 
     fn order_benches(
-        &self,
+        &mut self,
         benches: Vec<BenchInfo<CloudResourcesRequired>>,
     ) -> Vec<BenchInfo<CloudResourcesRequired>> {
         // TODO: put benches with most resources first
@@ -69,7 +73,7 @@ impl Cloud for AwsCloud {
     }
 
     async fn adjust_resources(
-        &self,
+        &mut self,
         _benches: &[BenchInfo<CloudResourcesRequired>],
         _bench_index: usize,
         resources: &mut CloudResources,

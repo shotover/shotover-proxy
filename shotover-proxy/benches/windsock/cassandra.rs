@@ -1,7 +1,7 @@
 use crate::{
-    aws::{
-        cloud::{CloudResources, CloudResourcesRequired},
-        Ec2InstanceWithDocker, Ec2InstanceWithShotover, RunningShotover,
+    cloud::{
+        CloudResources, CloudResourcesRequired, Ec2InstanceWithDocker, Ec2InstanceWithShotover,
+        RunningShotover,
     },
     common::{self, Shotover},
     profilers::{self, CloudProfilerRunner, ProfilerRunner},

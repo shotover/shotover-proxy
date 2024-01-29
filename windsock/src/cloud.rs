@@ -11,20 +11,20 @@ pub trait Cloud {
 
     /// Cleanup all cloud resources created by windsock.
     /// You should destroy not just resources created during this bench run but also resources created in past bench runs that might have missed cleanup due to a panic.
-    async fn cleanup_resources(&self);
+    async fn cleanup_resources(&mut self);
 
     /// This is called once at start up before running any benches.
     /// The implementation must return an object containing all the requested cloud resources.
     /// The `required_resources` contains the `CloudResourcesRequired` returned by each bench that will be executed in this run.
     async fn create_resources(
-        &self,
+        &mut self,
         required_resources: Vec<Self::CloudResourcesRequired>,
     ) -> Self::CloudResources;
 
     /// This is called once at start up before running any benches.
     /// The returned Vec specifies the order in which to run benches.
     fn order_benches(
-        &self,
+        &mut self,
         benches: Vec<BenchInfo<Self::CloudResourcesRequired>>,
     ) -> Vec<BenchInfo<Self::CloudResourcesRequired>> {
         benches
@@ -36,7 +36,7 @@ pub trait Cloud {
     /// It is recommended to create all resources within create_resources for faster completion time, but it may be desirable in some circumstances to create some of them here.
     /// It is recommended to always destroy resources that will never be used again here.
     async fn adjust_resources(
-        &self,
+        &mut self,
         _benches: &[BenchInfo<Self::CloudResourcesRequired>],
         _bench_index: usize,
         _resources: &mut Self::CloudResources,
@@ -64,6 +64,6 @@ impl NoCloud {
 impl Cloud for NoCloud {
     type CloudResourcesRequired = ();
     type CloudResources = ();
-    async fn cleanup_resources(&self) {}
-    async fn create_resources(&self, _requests: Vec<()>) {}
+    async fn cleanup_resources(&mut self) {}
+    async fn create_resources(&mut self, _requests: Vec<()>) {}
 }

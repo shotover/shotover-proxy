@@ -130,10 +130,9 @@ fi
     println!("All AWS throwaway resources have been deleted")
 }
 
-async fn test(state: &mut State, mut args: Vec<String>) -> Result<(), Box<dyn Error>> {
+async fn test(state: &mut State, args: Vec<String>) -> Result<(), Box<dyn Error>> {
     rsync_push_shotover(state).await;
-    args.remove(0);
-    let args = args.join(" ");
+    let args = process_args(args);
     let mut receiver = state
         .instance
         .ssh()
@@ -156,10 +155,9 @@ cargo nextest run {} 2>&1
     Ok(())
 }
 
-async fn windsock(state: &mut State, mut args: Vec<String>) -> Result<(), Box<dyn Error>> {
+async fn windsock(state: &mut State, args: Vec<String>) -> Result<(), Box<dyn Error>> {
     rsync_push_shotover(state).await;
-    args.remove(0);
-    let args = args.join(" ");
+    let args = process_args(args);
     let mut receiver = state
         .instance
         .ssh()
@@ -184,6 +182,14 @@ cargo windsock {} 2>&1
     rsync_fetch_windsock_results(state).await;
 
     Ok(())
+}
+
+fn process_args(mut args: Vec<String>) -> String {
+    args.remove(0);
+    args.iter()
+        .map(|x| String::from_utf8(shell_quote::Bash::quote(x)).unwrap())
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 async fn rsync_push_shotover(state: &State) {

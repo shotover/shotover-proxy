@@ -35,35 +35,29 @@ fn criterion_benchmark(c: &mut Criterion) {
 
         encoder.set_startup_state_ext("NONE".to_string(), Version::V4);
 
-        group.bench_function(
-            "encode_cassandra_system.local_query_v4_no_compression",
-            |b| {
-                b.iter_batched(
-                    || messages.clone(),
-                    |messages| {
-                        let mut bytes = BytesMut::new();
-                        encoder.encode(messages, &mut bytes).unwrap();
-                        black_box(bytes)
-                    },
-                    BatchSize::SmallInput,
-                )
-            },
-        );
+        group.bench_function("encode_system.local_query_v4_no_compression", |b| {
+            b.iter_batched(
+                || messages.clone(),
+                |messages| {
+                    let mut bytes = BytesMut::new();
+                    encoder.encode(messages, &mut bytes).unwrap();
+                    black_box(bytes)
+                },
+                BatchSize::SmallInput,
+            )
+        });
 
-        group.bench_function(
-            "decode_cassandra_system.local_query_v4_no_compression",
-            |b| {
-                b.iter_batched(
-                    || {
-                        let mut bytes = BytesMut::new();
-                        encoder.encode(messages.clone(), &mut bytes).unwrap();
-                        bytes
-                    },
-                    |mut bytes| decoder.decode(&mut bytes).unwrap(),
-                    BatchSize::SmallInput,
-                )
-            },
-        );
+        group.bench_function("decode_system.local_query_v4_no_compression", |b| {
+            b.iter_batched(
+                || {
+                    let mut bytes = BytesMut::new();
+                    encoder.encode(messages.clone(), &mut bytes).unwrap();
+                    bytes
+                },
+                |mut bytes| decoder.decode(&mut bytes).unwrap(),
+                BatchSize::SmallInput,
+            )
+        });
     }
 
     {
@@ -83,35 +77,29 @@ fn criterion_benchmark(c: &mut Criterion) {
 
         encoder.set_startup_state_ext("NONE".to_string(), Version::V4);
 
-        group.bench_function(
-            "encode_cassandra_system.local_query_v4_lz4_compression",
-            |b| {
-                b.iter_batched(
-                    || messages.clone(),
-                    |messages| {
-                        let mut bytes = BytesMut::new();
-                        encoder.encode(messages, &mut bytes).unwrap();
-                        black_box(bytes)
-                    },
-                    BatchSize::SmallInput,
-                )
-            },
-        );
+        group.bench_function("encode_system.local_query_v4_lz4_compression", |b| {
+            b.iter_batched(
+                || messages.clone(),
+                |messages| {
+                    let mut bytes = BytesMut::new();
+                    encoder.encode(messages, &mut bytes).unwrap();
+                    black_box(bytes)
+                },
+                BatchSize::SmallInput,
+            )
+        });
 
-        group.bench_function(
-            "decode_cassandra_system.local_query_v4_lz4_compression",
-            |b| {
-                b.iter_batched(
-                    || {
-                        let mut bytes = BytesMut::new();
-                        encoder.encode(messages.clone(), &mut bytes).unwrap();
-                        bytes
-                    },
-                    |mut bytes| decoder.decode(&mut bytes).unwrap(),
-                    BatchSize::SmallInput,
-                )
-            },
-        );
+        group.bench_function("decode_system.local_query_v4_lz4_compression", |b| {
+            b.iter_batched(
+                || {
+                    let mut bytes = BytesMut::new();
+                    encoder.encode(messages.clone(), &mut bytes).unwrap();
+                    bytes
+                },
+                |mut bytes| decoder.decode(&mut bytes).unwrap(),
+                BatchSize::SmallInput,
+            )
+        });
     }
 
     {
@@ -128,35 +116,29 @@ fn criterion_benchmark(c: &mut Criterion) {
 
         encoder.set_startup_state_ext("NONE".to_string(), Version::V5);
 
-        group.bench_function(
-            "encode_cassandra_system.local_result_v4_no_compression",
-            |b| {
-                b.iter_batched(
-                    || messages.clone(),
-                    |messages| {
-                        let mut bytes = BytesMut::new();
-                        encoder.encode(messages, &mut bytes).unwrap();
-                        black_box(bytes)
-                    },
-                    BatchSize::SmallInput,
-                )
-            },
-        );
+        group.bench_function("encode_system.local_result_v4_no_compression", |b| {
+            b.iter_batched(
+                || messages.clone(),
+                |messages| {
+                    let mut bytes = BytesMut::new();
+                    encoder.encode(messages, &mut bytes).unwrap();
+                    black_box(bytes)
+                },
+                BatchSize::SmallInput,
+            )
+        });
 
-        group.bench_function(
-            "decode_cassandra_system.local_result_v4_no_compression",
-            |b| {
-                b.iter_batched(
-                    || {
-                        let mut bytes = BytesMut::new();
-                        encoder.encode(messages.clone(), &mut bytes).unwrap();
-                        bytes
-                    },
-                    |mut bytes| decoder.decode(&mut bytes).unwrap(),
-                    BatchSize::SmallInput,
-                )
-            },
-        );
+        group.bench_function("decode_system.local_result_v4_no_compression", |b| {
+            b.iter_batched(
+                || {
+                    let mut bytes = BytesMut::new();
+                    encoder.encode(messages.clone(), &mut bytes).unwrap();
+                    bytes
+                },
+                |mut bytes| decoder.decode(&mut bytes).unwrap(),
+                BatchSize::SmallInput,
+            )
+        });
     }
 
     {
@@ -173,35 +155,29 @@ fn criterion_benchmark(c: &mut Criterion) {
 
         encoder.set_startup_state_ext("LZ4".to_string(), Version::V5);
 
-        group.bench_function(
-            "encode_cassandra_system.local_result_v4_lz4_compression",
-            |b| {
-                b.iter_batched(
-                    || messages.clone(),
-                    |messages| {
-                        let mut bytes = BytesMut::new();
-                        encoder.encode(messages, &mut bytes).unwrap();
-                        black_box(bytes)
-                    },
-                    BatchSize::SmallInput,
-                )
-            },
-        );
+        group.bench_function("encode_system.local_result_v4_lz4_compression", |b| {
+            b.iter_batched(
+                || messages.clone(),
+                |messages| {
+                    let mut bytes = BytesMut::new();
+                    encoder.encode(messages, &mut bytes).unwrap();
+                    black_box(bytes)
+                },
+                BatchSize::SmallInput,
+            )
+        });
 
-        group.bench_function(
-            "decode_cassandra_system.local_result_v4_lz4_compression",
-            |b| {
-                b.iter_batched(
-                    || {
-                        let mut bytes = BytesMut::new();
-                        encoder.encode(messages.clone(), &mut bytes).unwrap();
-                        bytes
-                    },
-                    |mut bytes| decoder.decode(&mut bytes).unwrap(),
-                    BatchSize::SmallInput,
-                )
-            },
-        );
+        group.bench_function("decode_system.local_result_v4_lz4_compression", |b| {
+            b.iter_batched(
+                || {
+                    let mut bytes = BytesMut::new();
+                    encoder.encode(messages.clone(), &mut bytes).unwrap();
+                    bytes
+                },
+                |mut bytes| decoder.decode(&mut bytes).unwrap(),
+                BatchSize::SmallInput,
+            )
+        });
     }
 
     {
@@ -221,35 +197,29 @@ fn criterion_benchmark(c: &mut Criterion) {
 
         encoder.set_startup_state_ext("NONE".to_string(), Version::V5);
 
-        group.bench_function(
-            "encode_cassandra_system.local_query_v5_no_compression",
-            |b| {
-                b.iter_batched(
-                    || messages.clone(),
-                    |messages| {
-                        let mut bytes = BytesMut::new();
-                        encoder.encode(messages, &mut bytes).unwrap();
-                        black_box(bytes)
-                    },
-                    BatchSize::SmallInput,
-                )
-            },
-        );
+        group.bench_function("encode_system.local_query_v5_no_compression", |b| {
+            b.iter_batched(
+                || messages.clone(),
+                |messages| {
+                    let mut bytes = BytesMut::new();
+                    encoder.encode(messages, &mut bytes).unwrap();
+                    black_box(bytes)
+                },
+                BatchSize::SmallInput,
+            )
+        });
 
-        group.bench_function(
-            "decode_cassandra_system.local_query_v5_no_compression",
-            |b| {
-                b.iter_batched(
-                    || {
-                        let mut bytes = BytesMut::new();
-                        encoder.encode(messages.clone(), &mut bytes).unwrap();
-                        bytes
-                    },
-                    |mut bytes| decoder.decode(&mut bytes).unwrap(),
-                    BatchSize::SmallInput,
-                )
-            },
-        );
+        group.bench_function("decode_system.local_query_v5_no_compression", |b| {
+            b.iter_batched(
+                || {
+                    let mut bytes = BytesMut::new();
+                    encoder.encode(messages.clone(), &mut bytes).unwrap();
+                    bytes
+                },
+                |mut bytes| decoder.decode(&mut bytes).unwrap(),
+                BatchSize::SmallInput,
+            )
+        });
     }
 
     {
@@ -269,35 +239,29 @@ fn criterion_benchmark(c: &mut Criterion) {
 
         encoder.set_startup_state_ext("LZ4".to_string(), Version::V5);
 
-        group.bench_function(
-            "encode_cassandra_system.local_query_v5_lz4_compression",
-            |b| {
-                b.iter_batched(
-                    || messages.clone(),
-                    |messages| {
-                        let mut bytes = BytesMut::new();
-                        encoder.encode(messages, &mut bytes).unwrap();
-                        black_box(bytes)
-                    },
-                    BatchSize::SmallInput,
-                )
-            },
-        );
+        group.bench_function("encode_system.local_query_v5_lz4_compression", |b| {
+            b.iter_batched(
+                || messages.clone(),
+                |messages| {
+                    let mut bytes = BytesMut::new();
+                    encoder.encode(messages, &mut bytes).unwrap();
+                    black_box(bytes)
+                },
+                BatchSize::SmallInput,
+            )
+        });
 
-        group.bench_function(
-            "decode_cassandra_system.local_query_v5_lz4_compression",
-            |b| {
-                b.iter_batched(
-                    || {
-                        let mut bytes = BytesMut::new();
-                        encoder.encode(messages.clone(), &mut bytes).unwrap();
-                        bytes
-                    },
-                    |mut bytes| decoder.decode(&mut bytes).unwrap(),
-                    BatchSize::SmallInput,
-                )
-            },
-        );
+        group.bench_function("decode_system.local_query_v5_lz4_compression", |b| {
+            b.iter_batched(
+                || {
+                    let mut bytes = BytesMut::new();
+                    encoder.encode(messages.clone(), &mut bytes).unwrap();
+                    bytes
+                },
+                |mut bytes| decoder.decode(&mut bytes).unwrap(),
+                BatchSize::SmallInput,
+            )
+        });
     }
 
     {
@@ -314,35 +278,29 @@ fn criterion_benchmark(c: &mut Criterion) {
 
         encoder.set_startup_state_ext("NONE".to_string(), Version::V5);
 
-        group.bench_function(
-            "encode_cassandra_system.local_result_v5_no_compression",
-            |b| {
-                b.iter_batched(
-                    || messages.clone(),
-                    |messages| {
-                        let mut bytes = BytesMut::new();
-                        encoder.encode(messages, &mut bytes).unwrap();
-                        black_box(bytes)
-                    },
-                    BatchSize::SmallInput,
-                )
-            },
-        );
+        group.bench_function("encode_system.local_result_v5_no_compression", |b| {
+            b.iter_batched(
+                || messages.clone(),
+                |messages| {
+                    let mut bytes = BytesMut::new();
+                    encoder.encode(messages, &mut bytes).unwrap();
+                    black_box(bytes)
+                },
+                BatchSize::SmallInput,
+            )
+        });
 
-        group.bench_function(
-            "decode_cassandra_system.local_result_v5_no_compression",
-            |b| {
-                b.iter_batched(
-                    || {
-                        let mut bytes = BytesMut::new();
-                        encoder.encode(messages.clone(), &mut bytes).unwrap();
-                        bytes
-                    },
-                    |mut bytes| decoder.decode(&mut bytes).unwrap(),
-                    BatchSize::SmallInput,
-                )
-            },
-        );
+        group.bench_function("decode_system.local_result_v5_no_compression", |b| {
+            b.iter_batched(
+                || {
+                    let mut bytes = BytesMut::new();
+                    encoder.encode(messages.clone(), &mut bytes).unwrap();
+                    bytes
+                },
+                |mut bytes| decoder.decode(&mut bytes).unwrap(),
+                BatchSize::SmallInput,
+            )
+        });
     }
 
     {
@@ -359,20 +317,17 @@ fn criterion_benchmark(c: &mut Criterion) {
 
         encoder.set_startup_state_ext("LZ4".to_string(), Version::V5);
 
-        group.bench_function(
-            "encode_cassandra_system.local_result_v5_lz4_compression",
-            |b| {
-                b.iter_batched(
-                    || messages.clone(),
-                    |messages| {
-                        let mut bytes = BytesMut::new();
-                        encoder.encode(messages, &mut bytes).unwrap();
-                        black_box(bytes)
-                    },
-                    BatchSize::SmallInput,
-                )
-            },
-        );
+        group.bench_function("encode_system.local_result_v5_lz4_compression", |b| {
+            b.iter_batched(
+                || messages.clone(),
+                |messages| {
+                    let mut bytes = BytesMut::new();
+                    encoder.encode(messages, &mut bytes).unwrap();
+                    black_box(bytes)
+                },
+                BatchSize::SmallInput,
+            )
+        });
 
         group.bench_function(
             "decode_cassandra_system.local_result_v5_lz4_compression",
