@@ -8,4 +8,8 @@ fn init() {
     std::env::set_var("RUST_LIB_BACKTRACE", "0");
 }
 
-criterion_main!(chain::benches, codec::benches);
+criterion_main!(
+    chain::benches,
+    codec::kafka::benches,
+    codec::cassandra::benches
+);
