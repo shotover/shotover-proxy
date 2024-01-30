@@ -87,7 +87,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         for (message, _) in KAFKA_REQUESTS {
             input.extend_from_slice(message);
         }
-        group.bench_function("kafka_decode_all", |b| {
+        group.bench_function("decode_all", |b| {
             b.iter_batched(
                 || {
                     (
