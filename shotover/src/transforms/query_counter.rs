@@ -1,5 +1,4 @@
 use crate::frame::Frame;
-use crate::frame::RedisFrame;
 use crate::message::Messages;
 use crate::transforms::TransformConfig;
 use crate::transforms::{Transform, TransformBuilder, Transforms, Wrapper};
@@ -49,7 +48,7 @@ impl Transform for QueryCounter {
                     }
                 }
                 Some(Frame::Redis(frame)) => {
-                    if let Some(query_type) = get_redis_query_type(frame) {
+                    if let Some(query_type) = crate::frame::redis::redis_query_name(frame) {
                         counter!("shotover_query_count", 1, "name" => self.counter_name.clone(), "query" => query_type, "type" => "redis");
                     } else {
                         counter!("shotover_query_count", 1, "name" => self.counter_name.clone(), "query" => "unknown", "type" => "redis");
@@ -72,26 +71,6 @@ impl Transform for QueryCounter {
 
         requests_wrapper.call_next_transform().await
     }
-}
-
-fn get_redis_query_type(frame: &RedisFrame) -> Option<String> {
-    if let RedisFrame::Array(array) = frame {
-        if let Some(RedisFrame::BulkString(v)) = array.first() {
-            let upper_bytes = v.to_ascii_uppercase();
-            match String::from_utf8(upper_bytes) {
-                Ok(query_type) => {
-                    return Some(query_type);
-                }
-                Err(err) => {
-                    tracing::error!(
-                        "Failed to convert redis bulkstring to string, err: {:?}",
-                        err
-                    )
-                }
-            }
-        }
-    }
-    None
 }
 
 #[typetag::serde(name = "QueryCounter")]

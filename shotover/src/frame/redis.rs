@@ -17,3 +17,23 @@ pub fn redis_query_type(frame: &RedisFrame) -> QueryType {
     }
     QueryType::Write
 }
+
+pub fn redis_query_name(frame: &RedisFrame) -> Option<String> {
+    if let RedisFrame::Array(array) = frame {
+        if let Some(RedisFrame::BulkString(v)) = array.first() {
+            let upper_bytes = v.to_ascii_uppercase();
+            match String::from_utf8(upper_bytes) {
+                Ok(query_type) => {
+                    return Some(query_type);
+                }
+                Err(err) => {
+                    tracing::error!(
+                        "Failed to convert redis bulkstring to string, err: {:?}",
+                        err
+                    )
+                }
+            }
+        }
+    }
+    None
+}
