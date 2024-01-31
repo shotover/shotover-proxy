@@ -4,7 +4,7 @@ use crate::frame::cassandra::CassandraMetadata;
 use crate::message::{Messages, Metadata};
 use crate::tls::{TlsConnector, TlsConnectorConfig};
 use crate::transforms::cassandra::connection::Response;
-use crate::transforms::{Transform, TransformBuilder, TransformConfig, Transforms, Wrapper};
+use crate::transforms::{Transform, TransformBuilder, TransformConfig, Wrapper};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use cassandra_protocol::frame::Version;
@@ -25,6 +25,7 @@ pub struct CassandraSinkSingleConfig {
     pub read_timeout: Option<u64>,
 }
 
+const NAME: &str = "CassandraSinkSingle";
 #[typetag::serde(name = "CassandraSinkSingle")]
 #[async_trait(?Send)]
 impl TransformConfig for CassandraSinkSingleConfig {
@@ -77,8 +78,8 @@ impl CassandraSinkSingleBuilder {
 }
 
 impl TransformBuilder for CassandraSinkSingleBuilder {
-    fn build(&self) -> Transforms {
-        Transforms::CassandraSinkSingle(CassandraSinkSingle {
+    fn build(&self) -> Box<dyn Transform> {
+        Box::new(CassandraSinkSingle {
             outbound: None,
             version: self.version,
             address: self.address.clone(),
@@ -92,7 +93,7 @@ impl TransformBuilder for CassandraSinkSingleBuilder {
     }
 
     fn get_name(&self) -> &'static str {
-        "CassandraSinkSingle"
+        NAME
     }
 
     fn is_terminating(&self) -> bool {
@@ -168,6 +169,10 @@ impl CassandraSinkSingle {
 
 #[async_trait]
 impl Transform for CassandraSinkSingle {
+    fn get_name(&self) -> &'static str {
+        NAME
+    }
+
     async fn transform<'a>(&'a mut self, requests_wrapper: Wrapper<'a>) -> Result<Messages> {
         self.send_message(requests_wrapper.requests).await
     }

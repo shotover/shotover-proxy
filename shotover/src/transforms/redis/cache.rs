@@ -2,7 +2,7 @@ use crate::config::chain::TransformChainConfig;
 use crate::frame::{CassandraFrame, CassandraOperation, Frame, RedisFrame};
 use crate::message::{Message, Messages};
 use crate::transforms::chain::{TransformChain, TransformChainBuilder};
-use crate::transforms::{Transform, TransformBuilder, TransformConfig, Transforms, Wrapper};
+use crate::transforms::{Transform, TransformBuilder, TransformConfig, Wrapper};
 use anyhow::{bail, Result};
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -81,6 +81,7 @@ pub struct RedisConfig {
     pub chain: TransformChainConfig,
 }
 
+const NAME: &str = "RedisCache";
 #[typetag::serde(name = "RedisCache")]
 #[async_trait(?Send)]
 impl TransformConfig for RedisConfig {
@@ -108,8 +109,8 @@ pub struct SimpleRedisCacheBuilder {
 }
 
 impl TransformBuilder for SimpleRedisCacheBuilder {
-    fn build(&self) -> Transforms {
-        Transforms::RedisCache(SimpleRedisCache {
+    fn build(&self) -> Box<dyn Transform> {
+        Box::new(SimpleRedisCache {
             cache_chain: self.cache_chain.build(),
             caching_schema: self.caching_schema.clone(),
             missed_requests: self.missed_requests.clone(),
@@ -117,7 +118,7 @@ impl TransformBuilder for SimpleRedisCacheBuilder {
     }
 
     fn get_name(&self) -> &'static str {
-        "RedisCache"
+        NAME
     }
 
     fn validate(&self) -> Vec<String> {
@@ -568,6 +569,10 @@ fn build_redis_key_from_cql3(
 
 #[async_trait]
 impl Transform for SimpleRedisCache {
+    fn get_name(&self) -> &'static str {
+        NAME
+    }
+
     async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Messages> {
         let cache_responses = self
             .read_from_cache(&mut requests_wrapper.requests, requests_wrapper.local_addr)

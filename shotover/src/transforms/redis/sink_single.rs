@@ -6,7 +6,7 @@ use crate::frame::{Frame, RedisFrame};
 use crate::message::{Message, Messages};
 use crate::tcp;
 use crate::tls::{AsyncStream, TlsConnector, TlsConnectorConfig};
-use crate::transforms::{Transform, TransformBuilder, TransformConfig, Transforms, Wrapper};
+use crate::transforms::{Transform, TransformBuilder, TransformConfig, Wrapper};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use futures::{FutureExt, SinkExt, StreamExt};
@@ -29,6 +29,7 @@ pub struct RedisSinkSingleConfig {
     pub connect_timeout_ms: u64,
 }
 
+const NAME: &str = "RedisSinkSingle";
 #[typetag::serde(name = "RedisSinkSingle")]
 #[async_trait(?Send)]
 impl TransformConfig for RedisSinkSingleConfig {
@@ -71,8 +72,8 @@ impl RedisSinkSingleBuilder {
 }
 
 impl TransformBuilder for RedisSinkSingleBuilder {
-    fn build(&self) -> Transforms {
-        Transforms::RedisSinkSingle(RedisSinkSingle {
+    fn build(&self) -> Box<dyn Transform> {
+        Box::new(RedisSinkSingle {
             address: self.address.clone(),
             tls: self.tls.clone(),
             connection: None,
@@ -83,7 +84,7 @@ impl TransformBuilder for RedisSinkSingleBuilder {
     }
 
     fn get_name(&self) -> &'static str {
-        "RedisSinkSingle"
+        NAME
     }
 
     fn is_terminating(&self) -> bool {
@@ -110,6 +111,10 @@ pub struct RedisSinkSingle {
 
 #[async_trait]
 impl Transform for RedisSinkSingle {
+    fn get_name(&self) -> &'static str {
+        NAME
+    }
+
     async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Messages> {
         // Return immediately if we have no messages.
         // If we tried to send no messages we would block forever waiting for a reply that will never come.

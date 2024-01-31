@@ -6,7 +6,8 @@ use crate::message::{Message, Messages};
 use crate::tcp;
 use crate::transforms::util::cluster_connection_pool::{spawn_read_write_tasks, Connection};
 use crate::transforms::util::{Request, Response};
-use crate::transforms::{Transform, TransformBuilder, Transforms, Wrapper};
+use crate::transforms::TransformConfig;
+use crate::transforms::{Transform, TransformBuilder, Wrapper};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use dashmap::DashMap;
@@ -40,8 +41,7 @@ pub struct KafkaSinkClusterConfig {
     pub read_timeout: Option<u64>,
 }
 
-use crate::transforms::TransformConfig;
-
+const NAME: &str = "KafkaSinkCluster";
 #[typetag::serde(name = "KafkaSinkCluster")]
 #[async_trait(?Send)]
 impl TransformConfig for KafkaSinkClusterConfig {
@@ -103,8 +103,8 @@ impl KafkaSinkClusterBuilder {
 }
 
 impl TransformBuilder for KafkaSinkClusterBuilder {
-    fn build(&self) -> Transforms {
-        Transforms::KafkaSinkCluster(KafkaSinkCluster {
+    fn build(&self) -> Box<dyn Transform> {
+        Box::new(KafkaSinkCluster {
             first_contact_points: self.first_contact_points.clone(),
             shotover_nodes: self.shotover_nodes.clone(),
             pushed_messages_tx: None,
@@ -120,7 +120,7 @@ impl TransformBuilder for KafkaSinkClusterBuilder {
     }
 
     fn get_name(&self) -> &'static str {
-        "KafkaSinkCluster"
+        NAME
     }
 
     fn is_terminating(&self) -> bool {
@@ -166,6 +166,10 @@ pub struct KafkaSinkCluster {
 
 #[async_trait]
 impl Transform for KafkaSinkCluster {
+    fn get_name(&self) -> &'static str {
+        NAME
+    }
+
     async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Messages> {
         if requests_wrapper.requests.is_empty() {
             return Ok(vec![]);

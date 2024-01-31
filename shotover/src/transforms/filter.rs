@@ -5,8 +5,6 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use super::Transforms;
-
 static SHOWN_ERROR: AtomicBool = AtomicBool::new(false);
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -28,6 +26,7 @@ pub struct QueryTypeFilterConfig {
     pub filter: Filter,
 }
 
+const NAME: &str = "QueryTypeFilter";
 #[typetag::serde(name = "QueryTypeFilter")]
 #[async_trait(?Send)]
 impl TransformConfig for QueryTypeFilterConfig {
@@ -39,17 +38,21 @@ impl TransformConfig for QueryTypeFilterConfig {
 }
 
 impl TransformBuilder for QueryTypeFilter {
-    fn build(&self) -> Transforms {
-        Transforms::QueryTypeFilter(self.clone())
+    fn build(&self) -> Box<dyn Transform> {
+        Box::new(self.clone())
     }
 
     fn get_name(&self) -> &'static str {
-        "QueryTypeFilter"
+        NAME
     }
 }
 
 #[async_trait]
 impl Transform for QueryTypeFilter {
+    fn get_name(&self) -> &'static str {
+        NAME
+    }
+
     async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Messages> {
         let removed_indexes: Result<Vec<(usize, Message)>> = requests_wrapper
             .requests
@@ -117,7 +120,7 @@ mod test {
     use crate::transforms::chain::TransformAndMetrics;
     use crate::transforms::filter::QueryTypeFilter;
     use crate::transforms::loopback::Loopback;
-    use crate::transforms::{Transform, Transforms, Wrapper};
+    use crate::transforms::{Transform, Wrapper};
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_filter_denylist() {
@@ -125,9 +128,7 @@ mod test {
             filter: Filter::DenyList(vec![QueryType::Read]),
         };
 
-        let mut chain = vec![TransformAndMetrics::new(Transforms::Loopback(
-            Loopback::default(),
-        ))];
+        let mut chain = vec![TransformAndMetrics::new(Box::new(Loopback::default()))];
 
         let messages: Vec<_> = (0..26)
             .map(|i| {
@@ -181,9 +182,7 @@ mod test {
             filter: Filter::AllowList(vec![QueryType::Write]),
         };
 
-        let mut chain = vec![TransformAndMetrics::new(Transforms::Loopback(
-            Loopback::default(),
-        ))];
+        let mut chain = vec![TransformAndMetrics::new(Box::new(Loopback::default()))];
 
         let messages: Vec<_> = (0..26)
             .map(|i| {

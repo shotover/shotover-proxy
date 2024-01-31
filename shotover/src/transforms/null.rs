@@ -1,5 +1,5 @@
 use crate::message::Messages;
-use crate::transforms::{Transform, TransformBuilder, TransformConfig, Transforms, Wrapper};
+use crate::transforms::{Transform, TransformBuilder, TransformConfig, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 #[serde(deny_unknown_fields)]
 pub struct NullSinkConfig;
 
+const NAME: &str = "NullSink";
 #[typetag::serde(name = "NullSink")]
 #[async_trait(?Send)]
 impl TransformConfig for NullSinkConfig {
@@ -20,12 +21,12 @@ impl TransformConfig for NullSinkConfig {
 pub struct NullSink {}
 
 impl TransformBuilder for NullSink {
-    fn build(&self) -> super::Transforms {
-        Transforms::NullSink(self.clone())
+    fn build(&self) -> Box<dyn Transform> {
+        Box::new(self.clone())
     }
 
     fn get_name(&self) -> &'static str {
-        "NullSink"
+        NAME
     }
 
     fn is_terminating(&self) -> bool {
@@ -35,6 +36,10 @@ impl TransformBuilder for NullSink {
 
 #[async_trait]
 impl Transform for NullSink {
+    fn get_name(&self) -> &'static str {
+        NAME
+    }
+
     async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Messages> {
         for message in &mut requests_wrapper.requests {
             *message =

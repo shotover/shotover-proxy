@@ -1,5 +1,5 @@
 use crate::message::Messages;
-use crate::transforms::{TransformBuilder, Transforms, Wrapper};
+use crate::transforms::{Transform, TransformBuilder, Wrapper};
 use anyhow::{anyhow, Result};
 use derivative::Derivative;
 use futures::TryFutureExt;
@@ -51,18 +51,13 @@ impl BufferedChainMessages {
 /// Transform chains can be of arbitary complexity and a transform can even have its own set of child transform chains.
 /// Transform chains are defined by the user in Shotover's configuration file and are linked to sources.
 ///
-/// The transform chain is a vector of mutable references to the enum [Transforms] (which is an enum dispatch wrapper around the various transform types).
-#[derive(Derivative)]
-#[derivative(Debug)]
+/// The transform chain is a vector of mutable references to the enum [Transform] (which is an enum dispatch wrapper around the various transform types).
 pub struct TransformChain {
     pub name: &'static str,
     pub chain: InnerChain,
 
-    #[derivative(Debug = "ignore")]
     chain_total: Counter,
-    #[derivative(Debug = "ignore")]
     chain_failures: Counter,
-    #[derivative(Debug = "ignore")]
     chain_batch_size: Histogram,
 }
 
@@ -194,27 +189,19 @@ impl TransformChain {
     }
 }
 
-#[derive(Derivative)]
-#[derivative(Debug)]
 pub struct TransformAndMetrics {
-    pub transform: Transforms,
-    #[derivative(Debug = "ignore")]
+    pub transform: Box<dyn Transform>,
     pub transform_total: Counter,
-    #[derivative(Debug = "ignore")]
     pub transform_failures: Counter,
-    #[derivative(Debug = "ignore")]
     pub transform_latency: Histogram,
-    #[derivative(Debug = "ignore")]
     pub transform_pushed_total: Counter,
-    #[derivative(Debug = "ignore")]
     pub transform_pushed_failures: Counter,
-    #[derivative(Debug = "ignore")]
     pub transform_pushed_latency: Histogram,
 }
 
 impl TransformAndMetrics {
     #[cfg(test)]
-    pub fn new(transform: Transforms) -> Self {
+    pub fn new(transform: Box<dyn Transform>) -> Self {
         TransformAndMetrics {
             transform,
             transform_total: Counter::noop(),

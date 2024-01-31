@@ -4,7 +4,7 @@ use crate::frame::{
 use crate::message::Messages;
 use crate::transforms::protect::key_management::KeyManager;
 pub use crate::transforms::protect::key_management::KeyManagerConfig;
-use crate::transforms::{Transform, TransformBuilder, Transforms, Wrapper};
+use crate::transforms::{Transform, TransformBuilder, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
 use cql3_parser::cassandra_statement::CassandraStatement;
@@ -30,6 +30,7 @@ pub struct ProtectConfig {
 #[cfg(feature = "alpha-transforms")]
 use crate::transforms::TransformConfig;
 
+const NAME: &str = "Protect";
 #[cfg(feature = "alpha-transforms")]
 #[typetag::serde(name = "Protect")]
 #[async_trait(?Send)]
@@ -70,12 +71,12 @@ pub struct Protect {
 }
 
 impl TransformBuilder for Protect {
-    fn build(&self) -> Transforms {
-        Transforms::Protect(Box::new(self.clone()))
+    fn build(&self) -> Box<dyn Transform> {
+        Box::new(self.clone())
     }
 
     fn get_name(&self) -> &'static str {
-        "Protect"
+        NAME
     }
 }
 
@@ -167,6 +168,10 @@ impl Protect {
 
 #[async_trait]
 impl Transform for Protect {
+    fn get_name(&self) -> &'static str {
+        NAME
+    }
+
     async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Messages> {
         // encrypt the values included in any INSERT or UPDATE queries
         for message in requests_wrapper.requests.iter_mut() {

@@ -7,7 +7,7 @@ use crate::message::Messages;
 /// It could also be used to ensure that messages round trip correctly when parsed.
 #[cfg(feature = "alpha-transforms")]
 use crate::transforms::TransformConfig;
-use crate::transforms::{Transform, TransformBuilder, Transforms, Wrapper};
+use crate::transforms::{Transform, TransformBuilder, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -44,6 +44,7 @@ pub struct DebugForceEncodeConfig {
     pub encode_responses: bool,
 }
 
+const NAME: &str = "DebugForceEncode";
 #[cfg(feature = "alpha-transforms")]
 #[typetag::serde(name = "DebugForceEncode")]
 #[async_trait(?Send)]
@@ -67,17 +68,21 @@ pub struct DebugForceParse {
 }
 
 impl TransformBuilder for DebugForceParse {
-    fn build(&self) -> Transforms {
-        Transforms::DebugForceParse(self.clone())
+    fn build(&self) -> Box<dyn Transform> {
+        Box::new(self.clone())
     }
 
     fn get_name(&self) -> &'static str {
-        "DebugForceParse"
+        NAME
     }
 }
 
 #[async_trait]
 impl Transform for DebugForceParse {
+    fn get_name(&self) -> &'static str {
+        NAME
+    }
+
     async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Messages> {
         for message in &mut requests_wrapper.requests {
             if self.parse_requests {

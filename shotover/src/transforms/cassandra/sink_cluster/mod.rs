@@ -5,7 +5,7 @@ use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame};
 use crate::message::{Message, Messages, Metadata};
 use crate::tls::{TlsConnector, TlsConnectorConfig};
 use crate::transforms::cassandra::connection::{CassandraConnection, Response, ResponseError};
-use crate::transforms::{Transform, TransformBuilder, TransformConfig, Transforms, Wrapper};
+use crate::transforms::{Transform, TransformBuilder, TransformConfig, Wrapper};
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use cassandra_protocol::events::ServerEvent;
@@ -62,6 +62,7 @@ pub struct CassandraSinkClusterConfig {
     pub read_timeout: Option<u64>,
 }
 
+const NAME: &str = "CassandraSinkCluster";
 #[typetag::serde(name = "CassandraSinkCluster")]
 #[async_trait(?Send)]
 impl TransformConfig for CassandraSinkClusterConfig {
@@ -152,8 +153,8 @@ impl CassandraSinkClusterBuilder {
 }
 
 impl TransformBuilder for CassandraSinkClusterBuilder {
-    fn build(&self) -> crate::transforms::Transforms {
-        Transforms::CassandraSinkCluster(Box::new(CassandraSinkCluster {
+    fn build(&self) -> Box<dyn Transform> {
+        Box::new(CassandraSinkCluster {
             contact_points: self.contact_points.clone(),
             message_rewriter: self.message_rewriter.clone(),
             control_connection: None,
@@ -170,11 +171,11 @@ impl TransformBuilder for CassandraSinkClusterBuilder {
             keyspaces_rx: self.keyspaces_rx.clone(),
             rng: SmallRng::from_rng(rand::thread_rng()).unwrap(),
             task_handshake_tx: self.task_handshake_tx.clone(),
-        }))
+        })
     }
 
     fn get_name(&self) -> &'static str {
-        "CassandraSinkCluster"
+        NAME
     }
 
     fn is_terminating(&self) -> bool {
@@ -718,6 +719,10 @@ fn is_use_statement_successful(response: Option<Result<Response>>) -> bool {
 
 #[async_trait]
 impl Transform for CassandraSinkCluster {
+    fn get_name(&self) -> &'static str {
+        NAME
+    }
+
     async fn transform<'a>(&'a mut self, requests_wrapper: Wrapper<'a>) -> Result<Messages> {
         self.send_message(requests_wrapper.requests).await
     }

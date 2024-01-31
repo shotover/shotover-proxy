@@ -1,7 +1,7 @@
 use crate::frame::redis::redis_query_type;
 use crate::frame::{Frame, RedisFrame};
 use crate::message::{Message, Messages, QueryType};
-use crate::transforms::{Transform, TransformBuilder, TransformConfig, Transforms, Wrapper};
+use crate::transforms::{Transform, TransformBuilder, TransformConfig, Wrapper};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -15,6 +15,7 @@ use tracing::{debug, trace};
 #[serde(deny_unknown_fields)]
 pub struct RedisTimestampTaggerConfig;
 
+const NAME: &str = "RedisTimestampTagger";
 #[typetag::serde(name = "RedisTimestampTagger")]
 #[async_trait(?Send)]
 impl TransformConfig for RedisTimestampTaggerConfig {
@@ -33,12 +34,12 @@ impl RedisTimestampTagger {
 }
 
 impl TransformBuilder for RedisTimestampTagger {
-    fn build(&self) -> Transforms {
-        Transforms::RedisTimestampTagger(self.clone())
+    fn build(&self) -> Box<dyn Transform> {
+        Box::new(self.clone())
     }
 
     fn get_name(&self) -> &'static str {
-        "RedisTimestampTagger"
+        NAME
     }
 }
 
@@ -182,6 +183,10 @@ fn unwrap_response(message: &mut Message) -> Result<()> {
 
 #[async_trait]
 impl Transform for RedisTimestampTagger {
+    fn get_name(&self) -> &'static str {
+        NAME
+    }
+
     async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Messages> {
         // TODO: This is wrong. We need to keep track of tagged_success per message
         let mut tagged_success = true;

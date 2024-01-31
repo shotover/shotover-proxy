@@ -6,6 +6,8 @@ use async_trait::async_trait;
 use tokio::macros::support::thread_rng_n;
 use tracing::warn;
 
+const NAME: &str = "Sampler";
+
 #[derive(Debug)]
 pub struct SamplerBuilder {
     pub numerator: u32,
@@ -29,7 +31,6 @@ impl Default for SamplerBuilder {
     }
 }
 
-#[derive(Debug)]
 pub struct Sampler {
     numerator: u32,
     denominator: u32,
@@ -38,6 +39,10 @@ pub struct Sampler {
 
 #[async_trait]
 impl Transform for Sampler {
+    fn get_name(&self) -> &'static str {
+        NAME
+    }
+
     async fn transform<'a>(&'a mut self, requests_wrapper: Wrapper<'a>) -> Result<Messages> {
         let chance = thread_rng_n(self.denominator);
         if chance < self.numerator {

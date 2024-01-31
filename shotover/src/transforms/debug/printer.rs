@@ -1,5 +1,5 @@
 use crate::message::Messages;
-use crate::transforms::{Transform, TransformBuilder, TransformConfig, Transforms, Wrapper};
+use crate::transforms::{Transform, TransformBuilder, TransformConfig, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -9,6 +9,7 @@ use tracing::info;
 #[serde(deny_unknown_fields)]
 pub struct DebugPrinterConfig;
 
+const NAME: &str = "DebugPrinter";
 #[typetag::serde(name = "DebugPrinter")]
 #[async_trait(?Send)]
 impl TransformConfig for DebugPrinterConfig {
@@ -35,17 +36,21 @@ impl DebugPrinter {
 }
 
 impl TransformBuilder for DebugPrinter {
-    fn build(&self) -> Transforms {
-        Transforms::DebugPrinter(self.clone())
+    fn build(&self) -> Box<dyn Transform> {
+        Box::new(self.clone())
     }
 
     fn get_name(&self) -> &'static str {
-        "DebugPrinter"
+        NAME
     }
 }
 
 #[async_trait]
 impl Transform for DebugPrinter {
+    fn get_name(&self) -> &'static str {
+        NAME
+    }
+
     async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Messages> {
         for request in &mut requests_wrapper.requests {
             info!("Request: {}", request.to_high_level_string());
