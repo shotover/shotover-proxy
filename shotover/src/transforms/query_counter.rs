@@ -1,7 +1,7 @@
 use crate::frame::Frame;
 use crate::message::Messages;
 use crate::transforms::TransformConfig;
-use crate::transforms::{Transform, TransformBuilder, Transforms, Wrapper};
+use crate::transforms::{Transform, TransformBuilder, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
 use metrics::{counter, register_counter};
@@ -28,17 +28,21 @@ impl QueryCounter {
 }
 
 impl TransformBuilder for QueryCounter {
-    fn build(&self) -> Transforms {
-        Transforms::QueryCounter(self.clone())
+    fn build(&self) -> Box<dyn Transform> {
+        Box::new(self.clone())
     }
 
     fn get_name(&self) -> &'static str {
-        "QueryCounter"
+        NAME
     }
 }
 
 #[async_trait]
 impl Transform for QueryCounter {
+    fn get_name(&self) -> &'static str {
+        NAME
+    }
+
     async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Messages> {
         for m in &mut requests_wrapper.requests {
             match m.frame() {
@@ -73,6 +77,7 @@ impl Transform for QueryCounter {
     }
 }
 
+const NAME: &str = "QueryCounter";
 #[typetag::serde(name = "QueryCounter")]
 #[async_trait(?Send)]
 impl TransformConfig for QueryCounterConfig {

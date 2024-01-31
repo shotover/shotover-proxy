@@ -13,14 +13,13 @@ use serde::{Deserialize, Serialize};
 use std::num::NonZeroU32;
 use std::sync::Arc;
 
-use super::Transforms;
-
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct RequestThrottlingConfig {
     pub max_requests_per_second: NonZeroU32,
 }
 
+const NAME: &str = "RequestThrottling";
 #[typetag::serde(name = "RequestThrottling")]
 #[async_trait(?Send)]
 impl TransformConfig for RequestThrottlingConfig {
@@ -41,12 +40,12 @@ pub struct RequestThrottling {
 }
 
 impl TransformBuilder for RequestThrottling {
-    fn build(&self) -> Transforms {
-        Transforms::RequestThrottling(self.clone())
+    fn build(&self) -> Box<dyn Transform> {
+        Box::new(self.clone())
     }
 
     fn get_name(&self) -> &'static str {
-        "RequestThrottlingConfig"
+        NAME
     }
 
     fn validate(&self) -> Vec<String> {
@@ -63,6 +62,10 @@ impl TransformBuilder for RequestThrottling {
 
 #[async_trait]
 impl Transform for RequestThrottling {
+    fn get_name(&self) -> &'static str {
+        NAME
+    }
+
     async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Messages> {
         // extract throttled messages from the requests_wrapper
         let throttled_messages: Vec<(Message, usize)> = (0..requests_wrapper.requests.len())

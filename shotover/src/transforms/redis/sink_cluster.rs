@@ -7,9 +7,7 @@ use crate::transforms::redis::RedisError;
 use crate::transforms::redis::TransformError;
 use crate::transforms::util::cluster_connection_pool::{Authenticator, ConnectionPool};
 use crate::transforms::util::{Request, Response};
-use crate::transforms::{
-    ResponseFuture, Transform, TransformBuilder, TransformConfig, Transforms, Wrapper,
-};
+use crate::transforms::{ResponseFuture, Transform, TransformBuilder, TransformConfig, Wrapper};
 use anyhow::{anyhow, bail, ensure, Context, Result};
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -46,6 +44,7 @@ pub struct RedisSinkClusterConfig {
     pub connect_timeout_ms: u64,
 }
 
+const NAME: &str = "RedisSinkCluster";
 #[typetag::serde(name = "RedisSinkCluster")]
 #[async_trait(?Send)]
 impl TransformConfig for RedisSinkClusterConfig {
@@ -77,8 +76,8 @@ pub struct RedisSinkClusterBuilder {
 }
 
 impl TransformBuilder for RedisSinkClusterBuilder {
-    fn build(&self) -> Transforms {
-        Transforms::RedisSinkCluster(RedisSinkCluster::new(
+    fn build(&self) -> Box<dyn Transform> {
+        Box::new(RedisSinkCluster::new(
             self.first_contact_points.clone(),
             self.direct_destination.clone(),
             self.connection_count,
@@ -89,7 +88,7 @@ impl TransformBuilder for RedisSinkClusterBuilder {
     }
 
     fn get_name(&self) -> &'static str {
-        "RedisSinkCluster"
+        NAME
     }
 
     fn is_terminating(&self) -> bool {
@@ -185,7 +184,7 @@ impl RedisSinkCluster {
     }
 
     fn get_name(&self) -> &'static str {
-        "RedisSinkCluster"
+        NAME
     }
 
     #[inline]
@@ -985,6 +984,10 @@ fn short_circuit(frame: RedisFrame) -> Result<ResponseFuture> {
 
 #[async_trait]
 impl Transform for RedisSinkCluster {
+    fn get_name(&self) -> &'static str {
+        NAME
+    }
+
     async fn transform<'a>(&'a mut self, requests_wrapper: Wrapper<'a>) -> Result<Messages> {
         if !self.has_run_init {
             self.topology = (*self.shared_topology.read().await).clone();

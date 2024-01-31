@@ -1,7 +1,7 @@
 use crate::frame::Frame;
 use crate::frame::RedisFrame;
 use crate::message::Messages;
-use crate::transforms::{Transform, TransformBuilder, TransformConfig, Transforms, Wrapper};
+use crate::transforms::{Transform, TransformBuilder, TransformConfig, Wrapper};
 use anyhow::{anyhow, bail, Context, Result};
 use async_trait::async_trait;
 use bytes::{BufMut, Bytes, BytesMut};
@@ -14,6 +14,7 @@ pub struct RedisClusterPortsRewriteConfig {
     pub new_port: u16,
 }
 
+const NAME: &str = "RedisClusterPortsRewrite";
 #[typetag::serde(name = "RedisClusterPortsRewrite")]
 #[async_trait(?Send)]
 impl TransformConfig for RedisClusterPortsRewriteConfig {
@@ -25,12 +26,12 @@ impl TransformConfig for RedisClusterPortsRewriteConfig {
 }
 
 impl TransformBuilder for RedisClusterPortsRewrite {
-    fn build(&self) -> Transforms {
-        Transforms::RedisClusterPortsRewrite(self.clone())
+    fn build(&self) -> Box<dyn Transform> {
+        Box::new(self.clone())
     }
 
     fn get_name(&self) -> &'static str {
-        "RedisClusterPortsRewrite"
+        NAME
     }
 }
 
@@ -47,6 +48,10 @@ impl RedisClusterPortsRewrite {
 
 #[async_trait]
 impl Transform for RedisClusterPortsRewrite {
+    fn get_name(&self) -> &'static str {
+        NAME
+    }
+
     async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Messages> {
         // Find the indices of cluster slot messages
         let mut cluster_slots_indices = vec![];

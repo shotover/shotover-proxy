@@ -2,8 +2,6 @@
 use crate::config::topology::Topology;
 use crate::config::Config;
 use crate::observability::LogFilterHttpExporter;
-use crate::transforms::Transforms;
-use crate::transforms::Wrapper;
 use anyhow::Context;
 use anyhow::{anyhow, Result};
 use clap::{crate_version, Parser};
@@ -13,7 +11,7 @@ use std::net::SocketAddr;
 use tokio::runtime::{self, Runtime};
 use tokio::signal::unix::{signal, SignalKind};
 use tokio::sync::watch;
-use tracing::{debug, error, info};
+use tracing::{error, info};
 use tracing_appender::non_blocking::{NonBlocking, WorkerGuard};
 use tracing_subscriber::filter::Directive;
 use tracing_subscriber::fmt::format::DefaultFields;
@@ -301,16 +299,6 @@ async fn run(
     info!("Starting Shotover {}", crate_version!());
     info!(configuration = ?config);
     info!(topology = ?topology);
-
-    debug!(
-        "Transform overhead size on stack is {}",
-        std::mem::size_of::<Transforms>()
-    );
-
-    debug!(
-        "Wrapper overhead size on stack is {}",
-        std::mem::size_of::<Wrapper<'_>>()
-    );
 
     match topology.run_chains(trigger_shutdown_rx).await {
         Ok(sources) => {

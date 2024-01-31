@@ -30,6 +30,7 @@
 #![deny(clippy::print_stdout)]
 #![deny(clippy::print_stderr)]
 #![allow(clippy::needless_doctest_main)]
+#![allow(clippy::box_default)]
 
 pub mod codec;
 pub mod config;

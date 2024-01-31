@@ -1,6 +1,6 @@
 use crate::frame::{Frame, RedisFrame};
 use crate::message::{Message, Messages};
-use crate::transforms::{Transform, TransformBuilder, TransformConfig, Transforms, Wrapper};
+use crate::transforms::{Transform, TransformBuilder, TransformConfig, Wrapper};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -12,6 +12,7 @@ pub struct DebugReturnerConfig {
     response: Response,
 }
 
+const NAME: &str = "DebugReturner";
 #[typetag::serde(name = "DebugReturner")]
 #[async_trait(?Send)]
 impl TransformConfig for DebugReturnerConfig {
@@ -41,12 +42,12 @@ impl DebugReturner {
 }
 
 impl TransformBuilder for DebugReturner {
-    fn build(&self) -> Transforms {
-        Transforms::DebugReturner(self.clone())
+    fn build(&self) -> Box<dyn Transform> {
+        Box::new(self.clone())
     }
 
     fn get_name(&self) -> &'static str {
-        "DebugReturner"
+        NAME
     }
 
     fn is_terminating(&self) -> bool {
@@ -56,6 +57,10 @@ impl TransformBuilder for DebugReturner {
 
 #[async_trait]
 impl Transform for DebugReturner {
+    fn get_name(&self) -> &'static str {
+        NAME
+    }
+
     async fn transform<'a>(&'a mut self, requests_wrapper: Wrapper<'a>) -> Result<Messages> {
         match &self.response {
             Response::Message(message) => Ok(message.clone()),

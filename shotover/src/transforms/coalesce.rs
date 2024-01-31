@@ -1,5 +1,5 @@
 use crate::message::Messages;
-use crate::transforms::{Transform, TransformBuilder, TransformConfig, Transforms, Wrapper};
+use crate::transforms::{Transform, TransformBuilder, TransformConfig, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -20,6 +20,7 @@ pub struct CoalesceConfig {
     pub flush_when_millis_since_last_flush: Option<u128>,
 }
 
+const NAME: &str = "Coalesce";
 #[typetag::serde(name = "Coalesce")]
 #[async_trait(?Send)]
 impl TransformConfig for CoalesceConfig {
@@ -34,12 +35,12 @@ impl TransformConfig for CoalesceConfig {
 }
 
 impl TransformBuilder for Coalesce {
-    fn build(&self) -> Transforms {
-        Transforms::Coalesce(self.clone())
+    fn build(&self) -> Box<dyn Transform> {
+        Box::new(self.clone())
     }
 
     fn get_name(&self) -> &'static str {
-        "Coalesce"
+        NAME
     }
 
     fn validate(&self) -> Vec<String> {
@@ -64,6 +65,10 @@ impl TransformBuilder for Coalesce {
 
 #[async_trait]
 impl Transform for Coalesce {
+    fn get_name(&self) -> &'static str {
+        NAME
+    }
+
     async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Messages> {
         self.buffer.append(&mut requests_wrapper.requests);
 
@@ -96,7 +101,7 @@ mod test {
     use crate::transforms::chain::TransformAndMetrics;
     use crate::transforms::coalesce::Coalesce;
     use crate::transforms::loopback::Loopback;
-    use crate::transforms::{Transform, Transforms, Wrapper};
+    use crate::transforms::{Transform, Wrapper};
     use std::time::{Duration, Instant};
 
     #[tokio::test(flavor = "multi_thread")]
@@ -108,9 +113,7 @@ mod test {
             last_write: Instant::now(),
         };
 
-        let mut chain = vec![TransformAndMetrics::new(Transforms::Loopback(
-            Loopback::default(),
-        ))];
+        let mut chain = vec![TransformAndMetrics::new(Box::new(Loopback::default()))];
 
         let messages: Vec<_> = (0..25)
             .map(|_| Message::from_frame(Frame::Redis(RedisFrame::Null)))
@@ -149,9 +152,7 @@ mod test {
             last_write: Instant::now(),
         };
 
-        let mut chain = vec![TransformAndMetrics::new(Transforms::Loopback(
-            Loopback::default(),
-        ))];
+        let mut chain = vec![TransformAndMetrics::new(Box::new(Loopback::default()))];
 
         let messages: Vec<_> = (0..25)
             .map(|_| Message::from_frame(Frame::Redis(RedisFrame::Null)))
@@ -190,9 +191,7 @@ mod test {
             last_write: Instant::now(),
         };
 
-        let mut chain = vec![TransformAndMetrics::new(Transforms::Loopback(
-            Loopback::default(),
-        ))];
+        let mut chain = vec![TransformAndMetrics::new(Box::new(Loopback::default()))];
 
         let messages: Vec<_> = (0..25)
             .map(|_| Message::from_frame(Frame::Redis(RedisFrame::Null)))

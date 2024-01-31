@@ -6,7 +6,7 @@ use crate::tcp;
 use crate::transforms::kafka::common::produce_channel;
 use crate::transforms::util::cluster_connection_pool::{spawn_read_write_tasks, Connection};
 use crate::transforms::util::{Request, Response};
-use crate::transforms::{Transform, TransformBuilder, Transforms, Wrapper};
+use crate::transforms::{Transform, TransformBuilder, Wrapper};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -26,6 +26,7 @@ pub struct KafkaSinkSingleConfig {
 
 use crate::transforms::TransformConfig;
 
+const NAME: &str = "KafkaSinkSingle";
 #[typetag::serde(name = "KafkaSinkSingle")]
 #[async_trait(?Send)]
 impl TransformConfig for KafkaSinkSingleConfig {
@@ -64,8 +65,8 @@ impl KafkaSinkSingleBuilder {
 }
 
 impl TransformBuilder for KafkaSinkSingleBuilder {
-    fn build(&self) -> Transforms {
-        Transforms::KafkaSinkSingle(KafkaSinkSingle {
+    fn build(&self) -> Box<dyn Transform> {
+        Box::new(KafkaSinkSingle {
             outbound: None,
             address_port: self.address_port,
             pushed_messages_tx: None,
@@ -75,7 +76,7 @@ impl TransformBuilder for KafkaSinkSingleBuilder {
     }
 
     fn get_name(&self) -> &'static str {
-        "KafkaSinkSingle"
+        NAME
     }
 
     fn is_terminating(&self) -> bool {
@@ -93,6 +94,10 @@ pub struct KafkaSinkSingle {
 
 #[async_trait]
 impl Transform for KafkaSinkSingle {
+    fn get_name(&self) -> &'static str {
+        NAME
+    }
+
     async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Messages> {
         if self.outbound.is_none() {
             let codec = KafkaCodecBuilder::new(Direction::Sink, "KafkaSinkSingle".to_owned());

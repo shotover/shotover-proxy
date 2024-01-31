@@ -4,7 +4,7 @@ use crate::frame::{
 };
 use crate::message::{Message, Messages};
 use crate::transforms::cassandra::peers_rewrite::CassandraOperation::Event;
-use crate::transforms::{Transform, TransformBuilder, TransformConfig, Transforms, Wrapper};
+use crate::transforms::{Transform, TransformBuilder, TransformConfig, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
 use cassandra_protocol::frame::events::{ServerEvent, StatusChange};
@@ -19,6 +19,7 @@ pub struct CassandraPeersRewriteConfig {
     pub port: u16,
 }
 
+const NAME: &str = "CassandraPeersRewrite";
 #[typetag::serde(name = "CassandraPeersRewrite")]
 #[async_trait(?Send)]
 impl TransformConfig for CassandraPeersRewriteConfig {
@@ -43,17 +44,21 @@ impl CassandraPeersRewrite {
 }
 
 impl TransformBuilder for CassandraPeersRewrite {
-    fn build(&self) -> Transforms {
-        Transforms::CassandraPeersRewrite(self.clone())
+    fn build(&self) -> Box<dyn Transform> {
+        Box::new(self.clone())
     }
 
     fn get_name(&self) -> &'static str {
-        "CassandraPeersRewrite"
+        NAME
     }
 }
 
 #[async_trait]
 impl Transform for CassandraPeersRewrite {
+    fn get_name(&self) -> &'static str {
+        NAME
+    }
+
     async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Messages> {
         // Find the indices of queries to system.peers & system.peers_v2
         // we need to know which columns in which CQL queries in which messages have system peers

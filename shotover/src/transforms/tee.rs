@@ -1,7 +1,7 @@
 use crate::config::chain::TransformChainConfig;
 use crate::message::Messages;
 use crate::transforms::chain::{BufferedChain, TransformChainBuilder};
-use crate::transforms::{Transform, TransformBuilder, TransformConfig, Transforms, Wrapper};
+use crate::transforms::{Transform, TransformBuilder, TransformConfig, Wrapper};
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use atomic_enum::atomic_enum;
@@ -64,8 +64,8 @@ impl TeeBuilder {
 }
 
 impl TransformBuilder for TeeBuilder {
-    fn build(&self) -> Transforms {
-        Transforms::Tee(Tee {
+    fn build(&self) -> Box<dyn Transform> {
+        Box::new(Tee {
             tx: self.tx.build_buffered(self.buffer_size),
             behavior: match &self.behavior {
                 ConsistencyBehaviorBuilder::Ignore => ConsistencyBehavior::Ignore,
@@ -85,7 +85,7 @@ impl TransformBuilder for TeeBuilder {
     }
 
     fn get_name(&self) -> &'static str {
-        "Tee"
+        NAME
     }
 
     fn validate(&self) -> Vec<String> {
@@ -163,6 +163,7 @@ pub enum ConsistencyBehaviorConfig {
     SubchainOnMismatch(TransformChainConfig),
 }
 
+const NAME: &str = "Tee";
 #[typetag::serde(name = "Tee")]
 #[async_trait(?Send)]
 impl TransformConfig for TeeConfig {
@@ -199,6 +200,10 @@ impl TransformConfig for TeeConfig {
 
 #[async_trait]
 impl Transform for Tee {
+    fn get_name(&self) -> &'static str {
+        NAME
+    }
+
     async fn transform<'a>(&'a mut self, requests_wrapper: Wrapper<'a>) -> Result<Messages> {
         match &mut self.behavior {
             ConsistencyBehavior::Ignore => self.ignore_behaviour(requests_wrapper).await,
