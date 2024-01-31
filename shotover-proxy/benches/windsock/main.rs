@@ -7,18 +7,13 @@ mod profilers;
 mod redis;
 mod shotover;
 
-use crate::cassandra::*;
-use crate::common::*;
-#[cfg(feature = "rdkafka-driver-tests")]
-use crate::kafka::*;
-use crate::redis::*;
 use cloud::CloudResources;
 use cloud::CloudResourcesRequired;
 use std::path::Path;
 use tracing_subscriber::EnvFilter;
 use windsock::{Bench, Windsock};
 
-type ShotoverBench = Box<
+pub type ShotoverBench = Box<
     dyn Bench<CloudResourcesRequired = CloudResourcesRequired, CloudResources = CloudResources>,
 >;
 
@@ -41,117 +36,12 @@ fn main() {
         .unwrap();
     }
 
-    let cassandra_benches = itertools::iproduct!(
-        [CassandraDb::Cassandra],
-        [CassandraTopology::Single, CassandraTopology::Cluster3],
-        [Shotover::None, Shotover::Standard],
-        [Compression::None, Compression::Lz4],
-        [Operation::ReadI64, Operation::WriteBlob],
-        [
-            CassandraProtocol::V3,
-            CassandraProtocol::V4,
-            CassandraProtocol::V5
-        ],
-        [CassandraDriver::Scylla, CassandraDriver::CdrsTokio],
-        [1, 10, 100]
-    )
-    .filter_map(
-        |(
-            cassandra,
-            topology,
-            shotover,
-            compression,
-            operation,
-            protocol,
-            driver,
-            connection_count,
-        )| {
-            if driver == CassandraDriver::Scylla && protocol != CassandraProtocol::V4 {
-                return None;
-            }
+    let mut benches = vec![];
 
-            if driver == CassandraDriver::CdrsTokio
-                && (operation != Operation::ReadI64 || topology != CassandraTopology::Single)
-            {
-                return None;
-            }
-
-            Some(Box::new(CassandraBench::new(
-                cassandra,
-                topology,
-                shotover,
-                compression,
-                operation,
-                protocol,
-                driver,
-                connection_count,
-            )) as ShotoverBench)
-        },
-    );
+    benches.extend(cassandra::benches());
     #[cfg(feature = "rdkafka-driver-tests")]
-    let kafka_benches = itertools::iproduct!(
-        [
-            Shotover::None,
-            Shotover::Standard,
-            Shotover::ForcedMessageParsed
-        ],
-        [
-            KafkaTopology::Single,
-            KafkaTopology::Cluster1,
-            KafkaTopology::Cluster3
-        ],
-        [Size::B1, Size::KB1, Size::KB100]
-    )
-    .map(|(shotover, topology, size)| {
-        Box::new(KafkaBench::new(shotover, topology, size)) as ShotoverBench
-    });
-    #[cfg(not(feature = "rdkafka-driver-tests"))]
-    let kafka_benches = std::iter::empty();
+    benches.extend(kafka::benches());
+    benches.extend(redis::benches());
 
-    let redis_benches = itertools::iproduct!(
-        [RedisTopology::Cluster3, RedisTopology::Single],
-        [
-            Shotover::None,
-            Shotover::Standard,
-            Shotover::ForcedMessageParsed
-        ],
-        [RedisOperation::Get, RedisOperation::Set],
-        [Encryption::None, Encryption::Tls]
-    )
-    .map(|(topology, shotover, operation, encryption)| {
-        Box::new(RedisBench::new(topology, shotover, operation, encryption)) as ShotoverBench
-    });
-
-    Windsock::new(
-        vec![
-            Box::new(CassandraBench::new(
-                CassandraDb::Mocked,
-                CassandraTopology::Single,
-                Shotover::None,
-                Compression::None,
-                Operation::ReadI64,
-                CassandraProtocol::V4,
-                CassandraDriver::Scylla,
-                10,
-            )) as ShotoverBench,
-            Box::new(CassandraBench::new(
-                CassandraDb::Mocked,
-                CassandraTopology::Single,
-                Shotover::Standard,
-                Compression::None,
-                Operation::ReadI64,
-                CassandraProtocol::V4,
-                CassandraDriver::Scylla,
-                10,
-            )),
-        ]
-        .into_iter()
-        .chain(cassandra_benches)
-        .chain(kafka_benches)
-        .chain(redis_benches)
-        .collect(),
-        cloud::AwsCloud::new_boxed(),
-        &["release"],
-    )
-    .run();
+    Windsock::new(benches, cloud::AwsCloud::new_boxed(), &["release"]).run();
 }
