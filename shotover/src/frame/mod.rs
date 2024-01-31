@@ -57,7 +57,7 @@ pub enum Frame {
     Cassandra(CassandraFrame),
     Redis(RedisFrame),
     Kafka(KafkaFrame),
-    /// Represents a message that has must exist due to shotovers requirement that every request has a corresponding response.
+    /// Represents a message that must exist due to shotovers requirement that every request has a corresponding response.
     /// It exists purely to keep transform invariants and codecs will completely ignore this frame when they receive it
     Dummy,
     OpenSearch(OpenSearchFrame),
