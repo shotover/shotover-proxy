@@ -2,7 +2,7 @@ use crate::config::chain::TransformChainConfig;
 use crate::frame::{Frame, RedisFrame};
 use crate::message::{Message, Messages, QueryType};
 use crate::transforms::chain::{BufferedChain, TransformChainBuilder};
-use crate::transforms::{Transform, TransformBuilder, TransformConfig, Transforms, Wrapper};
+use crate::transforms::{Transform, TransformBuilder, TransformConfig, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
 use futures::stream::FuturesUnordered;
@@ -19,6 +19,7 @@ pub struct TuneableConsistencyScatterConfig {
     pub read_consistency: i32,
 }
 
+const NAME: &str = "TuneableConsistencyScatter";
 #[typetag::serde(name = "TuneableConsistencyScatter")]
 #[async_trait(?Send)]
 impl TransformConfig for TuneableConsistencyScatterConfig {
@@ -46,8 +47,8 @@ pub struct TuneableConsistencyScatterBuilder {
 }
 
 impl TransformBuilder for TuneableConsistencyScatterBuilder {
-    fn build(&self) -> Transforms {
-        Transforms::TuneableConsistencyScatter(TuneableConsistentencyScatter {
+    fn build(&self) -> Box<dyn Transform> {
+        Box::new(TuneableConsistentencyScatter {
             route_map: self
                 .route_map
                 .iter()
@@ -59,7 +60,7 @@ impl TransformBuilder for TuneableConsistencyScatterBuilder {
     }
 
     fn get_name(&self) -> &'static str {
-        "TuneableConsistencyScatter"
+        NAME
     }
 
     fn is_terminating(&self) -> bool {
@@ -182,6 +183,10 @@ enum Resolver {
 
 #[async_trait]
 impl Transform for TuneableConsistentencyScatter {
+    fn get_name(&self) -> &'static str {
+        NAME
+    }
+
     async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Messages> {
         let consistency: Vec<_> = requests_wrapper
             .requests
@@ -287,7 +292,7 @@ mod scatter_transform_tests {
         TuneableConsistencyScatterBuilder, TuneableConsistentencyScatter,
     };
     use crate::transforms::null::NullSink;
-    use crate::transforms::{TransformBuilder, Transforms, Wrapper};
+    use crate::transforms::{Transform, TransformBuilder, Wrapper};
     use bytes::Bytes;
     use std::collections::HashMap;
 
@@ -337,12 +342,11 @@ mod scatter_transform_tests {
             TransformChainBuilder::new(vec![err_repeat.clone()], "three"),
         );
 
-        let mut tuneable_success_consistency =
-            Transforms::TuneableConsistencyScatter(TuneableConsistentencyScatter {
-                route_map: build_chains(two_of_three).await,
-                write_consistency: 2,
-                read_consistency: 2,
-            });
+        let mut tuneable_success_consistency = Box::new(TuneableConsistentencyScatter {
+            route_map: build_chains(two_of_three).await,
+            write_consistency: 2,
+            read_consistency: 2,
+        });
 
         let test = tuneable_success_consistency
             .transform(wrapper.clone())
@@ -365,12 +369,11 @@ mod scatter_transform_tests {
             TransformChainBuilder::new(vec![err_repeat.clone()], "three"),
         );
 
-        let mut tuneable_fail_consistency =
-            Transforms::TuneableConsistencyScatter(TuneableConsistentencyScatter {
-                route_map: build_chains(one_of_three).await,
-                write_consistency: 2,
-                read_consistency: 2,
-            });
+        let mut tuneable_fail_consistency = Box::new(TuneableConsistentencyScatter {
+            route_map: build_chains(one_of_three).await,
+            write_consistency: 2,
+            read_consistency: 2,
+        });
 
         let response_fail = tuneable_fail_consistency
             .transform(wrapper.clone())

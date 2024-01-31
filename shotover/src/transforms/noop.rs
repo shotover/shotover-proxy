@@ -3,6 +3,8 @@ use crate::transforms::{Transform, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
 
+const NAME: &str = "NoOp";
+
 #[derive(Debug, Clone)]
 pub struct NoOp {}
 
@@ -20,6 +22,10 @@ impl Default for NoOp {
 
 #[async_trait]
 impl Transform for NoOp {
+    fn get_name(&self) -> &'static str {
+        NAME
+    }
+
     async fn transform<'a>(&'a mut self, requests_wrapper: Wrapper<'a>) -> Result<Messages> {
         requests_wrapper.call_next_transform().await
     }

@@ -1,7 +1,5 @@
 use crate::tcp;
-use crate::transforms::{
-    Messages, Transform, TransformBuilder, TransformConfig, Transforms, Wrapper,
-};
+use crate::transforms::{Messages, Transform, TransformBuilder, TransformConfig, Wrapper};
 use crate::{
     codec::{opensearch::OpenSearchCodecBuilder, CodecBuilder, Direction},
     transforms::util::{
@@ -23,6 +21,7 @@ pub struct OpenSearchSinkSingleConfig {
     connect_timeout_ms: u64,
 }
 
+const NAME: &str = "OpenSearchSinkSingle";
 #[typetag::serde(name = "OpenSearchSinkSingle")]
 #[async_trait(?Send)]
 impl TransformConfig for OpenSearchSinkSingleConfig {
@@ -53,8 +52,8 @@ impl OpenSearchSinkSingleBuilder {
 }
 
 impl TransformBuilder for OpenSearchSinkSingleBuilder {
-    fn build(&self) -> Transforms {
-        Transforms::OpenSearchSinkSingle(OpenSearchSinkSingle {
+    fn build(&self) -> Box<dyn Transform> {
+        Box::new(OpenSearchSinkSingle {
             address: self.address.clone(),
             connect_timeout: self.connect_timeout,
             codec_builder: OpenSearchCodecBuilder::new(Direction::Sink, self.get_name().to_owned()),
@@ -63,7 +62,7 @@ impl TransformBuilder for OpenSearchSinkSingleBuilder {
     }
 
     fn get_name(&self) -> &'static str {
-        "OpenSearchSinkSingle"
+        NAME
     }
 
     fn is_terminating(&self) -> bool {
@@ -80,6 +79,10 @@ pub struct OpenSearchSinkSingle {
 
 #[async_trait]
 impl Transform for OpenSearchSinkSingle {
+    fn get_name(&self) -> &'static str {
+        NAME
+    }
+
     async fn transform<'a>(&'a mut self, requests_wrapper: Wrapper<'a>) -> Result<Messages> {
         // Return immediately if we have no messages.
         // If we tried to send no messages we would block forever waiting for a reply that will never come.

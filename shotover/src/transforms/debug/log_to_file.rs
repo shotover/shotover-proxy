@@ -1,5 +1,5 @@
 use crate::message::{Encodable, Message};
-use crate::transforms::{Transform, TransformBuilder, Transforms, Wrapper};
+use crate::transforms::{Transform, TransformBuilder, Wrapper};
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -12,6 +12,7 @@ use tracing::{error, info};
 #[serde(deny_unknown_fields)]
 pub struct DebugLogToFileConfig;
 
+const NAME: &str = "DebugLogToFile";
 #[cfg(feature = "alpha-transforms")]
 #[typetag::serde(name = "DebugLogToFile")]
 #[async_trait(?Send)]
@@ -31,7 +32,7 @@ pub struct DebugLogToFileBuilder {
 }
 
 impl TransformBuilder for DebugLogToFileBuilder {
-    fn build(&self) -> Transforms {
+    fn build(&self) -> Box<dyn Transform> {
         self.connection_counter.fetch_add(1, Ordering::Relaxed);
         let connection_current = self.connection_counter.load(Ordering::Relaxed);
 
@@ -50,7 +51,7 @@ impl TransformBuilder for DebugLogToFileBuilder {
             .context("failed to create directory for logging responses")
             .unwrap();
 
-        Transforms::DebugLogToFile(DebugLogToFile {
+        Box::new(DebugLogToFile {
             request_counter: 0,
             response_counter: 0,
             requests,
@@ -59,7 +60,7 @@ impl TransformBuilder for DebugLogToFileBuilder {
     }
 
     fn get_name(&self) -> &'static str {
-        "DebugLogToFile"
+        NAME
     }
 }
 
@@ -72,6 +73,10 @@ pub struct DebugLogToFile {
 
 #[async_trait]
 impl Transform for DebugLogToFile {
+    fn get_name(&self) -> &'static str {
+        NAME
+    }
+
     async fn transform<'a>(&'a mut self, requests_wrapper: Wrapper<'a>) -> Result<Vec<Message>> {
         for message in &requests_wrapper.requests {
             self.request_counter += 1;

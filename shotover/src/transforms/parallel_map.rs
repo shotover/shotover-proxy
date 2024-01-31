@@ -1,7 +1,7 @@
 use crate::config::chain::TransformChainConfig;
 use crate::message::Messages;
 use crate::transforms::chain::{TransformChain, TransformChainBuilder};
-use crate::transforms::{Transform, TransformBuilder, TransformConfig, Transforms, Wrapper};
+use crate::transforms::{Transform, TransformBuilder, TransformConfig, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
 use futures::stream::{FuturesOrdered, FuturesUnordered};
@@ -18,7 +18,6 @@ pub struct ParallelMapBuilder {
     ordered: bool,
 }
 
-#[derive(Debug)]
 pub struct ParallelMap {
     chains: Vec<TransformChain>,
     ordered: bool,
@@ -71,6 +70,7 @@ pub struct ParallelMapConfig {
     pub ordered_results: bool,
 }
 
+const NAME: &str = "ParallelMap";
 #[typetag::serde(name = "ParallelMap")]
 #[async_trait(?Send)]
 impl TransformConfig for ParallelMapConfig {
@@ -89,6 +89,10 @@ impl TransformConfig for ParallelMapConfig {
 
 #[async_trait]
 impl Transform for ParallelMap {
+    fn get_name(&self) -> &'static str {
+        NAME
+    }
+
     async fn transform<'a>(&'a mut self, requests_wrapper: Wrapper<'a>) -> Result<Messages> {
         let mut results = Vec::with_capacity(requests_wrapper.requests.len());
         let mut message_iter = requests_wrapper.requests.into_iter();
@@ -119,15 +123,15 @@ impl Transform for ParallelMap {
 }
 
 impl TransformBuilder for ParallelMapBuilder {
-    fn build(&self) -> Transforms {
-        Transforms::ParallelMap(ParallelMap {
+    fn build(&self) -> Box<dyn Transform> {
+        Box::new(ParallelMap {
             chains: self.chains.iter().map(|x| x.build()).collect(),
             ordered: self.ordered,
         })
     }
 
     fn get_name(&self) -> &'static str {
-        "ParallelMap"
+        NAME
     }
 
     fn validate(&self) -> Vec<String> {

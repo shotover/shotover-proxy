@@ -5,6 +5,29 @@ This assists us in knowing when to make the next release a breaking release and 
 
 ## 0.3.0
 
+## shotover rust API
+
+`TransformBuilder::build` now returns `Box<dyn Transform>` instead of `Transforms`.
+This means that custom transforms should implement the builder as:
+
+```rust
+impl TransformBuilder for CustomBuilder {
+  fn build(&self) -> Box<dyn Transform> {
+    Box::new(CustomTransform::new())
+  }
+}
+```
+
+Instead of:
+
+```rust
+impl TransformBuilder for CustomBuilder {
+  fn build(&self) -> Transforms {
+    Transforms::Custom(CustomTransform::new())
+  }
+}
+```
+
 ### metrics
 
 The prometheus metrics were renamed to better follow the official reccomended naming scheme: <https://prometheus.io/docs/practices/naming/>

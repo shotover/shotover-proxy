@@ -1,8 +1,7 @@
 use crate::frame::Frame;
-use crate::frame::RedisFrame;
 use crate::message::Messages;
 use crate::transforms::TransformConfig;
-use crate::transforms::{Transform, TransformBuilder, Transforms, Wrapper};
+use crate::transforms::{Transform, TransformBuilder, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
 use metrics::{counter, register_counter};
@@ -29,17 +28,21 @@ impl QueryCounter {
 }
 
 impl TransformBuilder for QueryCounter {
-    fn build(&self) -> Transforms {
-        Transforms::QueryCounter(self.clone())
+    fn build(&self) -> Box<dyn Transform> {
+        Box::new(self.clone())
     }
 
     fn get_name(&self) -> &'static str {
-        "QueryCounter"
+        NAME
     }
 }
 
 #[async_trait]
 impl Transform for QueryCounter {
+    fn get_name(&self) -> &'static str {
+        NAME
+    }
+
     async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Messages> {
         for m in &mut requests_wrapper.requests {
             match m.frame() {
@@ -49,7 +52,7 @@ impl Transform for QueryCounter {
                     }
                 }
                 Some(Frame::Redis(frame)) => {
-                    if let Some(query_type) = get_redis_query_type(frame) {
+                    if let Some(query_type) = crate::frame::redis::redis_query_name(frame) {
                         counter!("shotover_query_count", 1, "name" => self.counter_name.clone(), "query" => query_type, "type" => "redis");
                     } else {
                         counter!("shotover_query_count", 1, "name" => self.counter_name.clone(), "query" => "unknown", "type" => "redis");
@@ -74,26 +77,7 @@ impl Transform for QueryCounter {
     }
 }
 
-fn get_redis_query_type(frame: &RedisFrame) -> Option<String> {
-    if let RedisFrame::Array(array) = frame {
-        if let Some(RedisFrame::BulkString(v)) = array.first() {
-            let upper_bytes = v.to_ascii_uppercase();
-            match String::from_utf8(upper_bytes) {
-                Ok(query_type) => {
-                    return Some(query_type);
-                }
-                Err(err) => {
-                    tracing::error!(
-                        "Failed to convert redis bulkstring to string, err: {:?}",
-                        err
-                    )
-                }
-            }
-        }
-    }
-    None
-}
-
+const NAME: &str = "QueryCounter";
 #[typetag::serde(name = "QueryCounter")]
 #[async_trait(?Send)]
 impl TransformConfig for QueryCounterConfig {

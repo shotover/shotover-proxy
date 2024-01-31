@@ -1,34 +1,6 @@
 //! Various types required for defining a transform
 
 use crate::message::Messages;
-use crate::transforms::cassandra::peers_rewrite::CassandraPeersRewrite;
-use crate::transforms::cassandra::sink_cluster::CassandraSinkCluster;
-use crate::transforms::cassandra::sink_single::CassandraSinkSingle;
-use crate::transforms::coalesce::Coalesce;
-use crate::transforms::debug::force_parse::DebugForceParse;
-use crate::transforms::debug::log_to_file::DebugLogToFile;
-use crate::transforms::debug::printer::DebugPrinter;
-use crate::transforms::debug::random_delay::DebugRandomDelay;
-use crate::transforms::debug::returner::DebugReturner;
-use crate::transforms::distributed::tuneable_consistency_scatter::TuneableConsistentencyScatter;
-use crate::transforms::filter::QueryTypeFilter;
-use crate::transforms::kafka::sink_cluster::KafkaSinkCluster;
-use crate::transforms::kafka::sink_single::KafkaSinkSingle;
-use crate::transforms::load_balance::ConnectionBalanceAndPool;
-use crate::transforms::loopback::Loopback;
-use crate::transforms::null::NullSink;
-#[cfg(feature = "alpha-transforms")]
-use crate::transforms::opensearch::OpenSearchSinkSingle;
-use crate::transforms::parallel_map::ParallelMap;
-use crate::transforms::protect::Protect;
-use crate::transforms::query_counter::QueryCounter;
-use crate::transforms::redis::cache::SimpleRedisCache;
-use crate::transforms::redis::cluster_ports_rewrite::RedisClusterPortsRewrite;
-use crate::transforms::redis::sink_cluster::RedisSinkCluster;
-use crate::transforms::redis::sink_single::RedisSinkSingle;
-use crate::transforms::redis::timestamp_tagging::RedisTimestampTagger;
-use crate::transforms::tee::Tee;
-use crate::transforms::throttling::RequestThrottling;
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use core::fmt;
@@ -38,7 +10,6 @@ use std::iter::Rev;
 use std::net::SocketAddr;
 use std::pin::Pin;
 use std::slice::IterMut;
-use strum_macros::IntoStaticStr;
 use tokio::sync::mpsc;
 use tokio::time::Instant;
 
@@ -67,7 +38,7 @@ pub mod throttling;
 pub mod util;
 
 pub trait TransformBuilder: Send + Sync {
-    fn build(&self) -> Transforms;
+    fn build(&self) -> Box<dyn Transform>;
 
     fn get_name(&self) -> &'static str;
 
@@ -86,161 +57,6 @@ impl Debug for dyn TransformBuilder {
     }
 }
 
-//TODO Generate the trait implementation for this passthrough enum via a macro
-/// The [`crate::transforms::Transforms`] enum is responsible for [`crate::transforms::Transform`] registration and enum dispatch
-/// in the transform chain. This is largely a performance optimisation by using enum dispatch rather
-/// than using dynamic trait objects.
-#[derive(IntoStaticStr)]
-pub enum Transforms {
-    KafkaSinkSingle(KafkaSinkSingle),
-    KafkaSinkCluster(KafkaSinkCluster),
-    CassandraSinkSingle(CassandraSinkSingle),
-    CassandraSinkCluster(Box<CassandraSinkCluster>),
-    RedisSinkSingle(RedisSinkSingle),
-    CassandraPeersRewrite(CassandraPeersRewrite),
-    RedisCache(SimpleRedisCache),
-    Tee(Tee),
-    NullSink(NullSink),
-    Loopback(Loopback),
-    Protect(Box<Protect>),
-    TuneableConsistencyScatter(TuneableConsistentencyScatter),
-    RedisTimestampTagger(RedisTimestampTagger),
-    RedisSinkCluster(RedisSinkCluster),
-    RedisClusterPortsRewrite(RedisClusterPortsRewrite),
-    DebugReturner(DebugReturner),
-    DebugRandomDelay(DebugRandomDelay),
-    DebugPrinter(DebugPrinter),
-    DebugLogToFile(DebugLogToFile),
-    DebugForceParse(DebugForceParse),
-    ParallelMap(ParallelMap),
-    PoolConnections(ConnectionBalanceAndPool),
-    Coalesce(Coalesce),
-    QueryTypeFilter(QueryTypeFilter),
-    QueryCounter(QueryCounter),
-    RequestThrottling(RequestThrottling),
-    Custom(Box<dyn Transform>),
-    #[cfg(feature = "alpha-transforms")]
-    OpenSearchSinkSingle(OpenSearchSinkSingle),
-}
-
-impl Debug for Transforms {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "Transform: {}", self.get_name())
-    }
-}
-
-impl Transforms {
-    async fn transform<'a>(&'a mut self, requests_wrapper: Wrapper<'a>) -> Result<Messages> {
-        match self {
-            Transforms::KafkaSinkSingle(c) => c.transform(requests_wrapper).await,
-            Transforms::KafkaSinkCluster(c) => c.transform(requests_wrapper).await,
-            Transforms::CassandraSinkSingle(c) => c.transform(requests_wrapper).await,
-            Transforms::CassandraSinkCluster(c) => c.transform(requests_wrapper).await,
-            Transforms::CassandraPeersRewrite(c) => c.transform(requests_wrapper).await,
-            Transforms::RedisCache(r) => r.transform(requests_wrapper).await,
-            Transforms::Tee(m) => m.transform(requests_wrapper).await,
-            Transforms::DebugPrinter(p) => p.transform(requests_wrapper).await,
-            Transforms::DebugLogToFile(p) => p.transform(requests_wrapper).await,
-            Transforms::DebugForceParse(p) => p.transform(requests_wrapper).await,
-            Transforms::NullSink(n) => n.transform(requests_wrapper).await,
-            Transforms::Loopback(n) => n.transform(requests_wrapper).await,
-            Transforms::Protect(p) => p.transform(requests_wrapper).await,
-            Transforms::DebugReturner(p) => p.transform(requests_wrapper).await,
-            Transforms::DebugRandomDelay(p) => p.transform(requests_wrapper).await,
-            Transforms::TuneableConsistencyScatter(tc) => tc.transform(requests_wrapper).await,
-            Transforms::RedisSinkSingle(r) => r.transform(requests_wrapper).await,
-            Transforms::RedisTimestampTagger(r) => r.transform(requests_wrapper).await,
-            Transforms::RedisClusterPortsRewrite(r) => r.transform(requests_wrapper).await,
-            Transforms::RedisSinkCluster(r) => r.transform(requests_wrapper).await,
-            Transforms::ParallelMap(s) => s.transform(requests_wrapper).await,
-            Transforms::PoolConnections(s) => s.transform(requests_wrapper).await,
-            Transforms::Coalesce(s) => s.transform(requests_wrapper).await,
-            Transforms::QueryTypeFilter(s) => s.transform(requests_wrapper).await,
-            Transforms::QueryCounter(s) => s.transform(requests_wrapper).await,
-            Transforms::RequestThrottling(s) => s.transform(requests_wrapper).await,
-            Transforms::Custom(s) => s.transform(requests_wrapper).await,
-            #[cfg(feature = "alpha-transforms")]
-            Transforms::OpenSearchSinkSingle(s) => s.transform(requests_wrapper).await,
-        }
-    }
-
-    async fn transform_pushed<'a>(&'a mut self, requests_wrapper: Wrapper<'a>) -> Result<Messages> {
-        match self {
-            Transforms::KafkaSinkSingle(c) => c.transform_pushed(requests_wrapper).await,
-            Transforms::KafkaSinkCluster(c) => c.transform_pushed(requests_wrapper).await,
-            Transforms::CassandraSinkSingle(c) => c.transform_pushed(requests_wrapper).await,
-            Transforms::CassandraSinkCluster(c) => c.transform_pushed(requests_wrapper).await,
-            Transforms::CassandraPeersRewrite(c) => c.transform_pushed(requests_wrapper).await,
-            Transforms::RedisCache(r) => r.transform_pushed(requests_wrapper).await,
-            Transforms::Tee(m) => m.transform_pushed(requests_wrapper).await,
-            Transforms::DebugPrinter(p) => p.transform_pushed(requests_wrapper).await,
-            Transforms::DebugLogToFile(p) => p.transform_pushed(requests_wrapper).await,
-            Transforms::DebugForceParse(p) => p.transform_pushed(requests_wrapper).await,
-            Transforms::NullSink(n) => n.transform_pushed(requests_wrapper).await,
-            Transforms::Loopback(n) => n.transform_pushed(requests_wrapper).await,
-            Transforms::Protect(p) => p.transform_pushed(requests_wrapper).await,
-            Transforms::DebugReturner(p) => p.transform_pushed(requests_wrapper).await,
-            Transforms::DebugRandomDelay(p) => p.transform_pushed(requests_wrapper).await,
-            Transforms::TuneableConsistencyScatter(tc) => {
-                tc.transform_pushed(requests_wrapper).await
-            }
-            Transforms::RedisSinkSingle(r) => r.transform_pushed(requests_wrapper).await,
-            Transforms::RedisTimestampTagger(r) => r.transform_pushed(requests_wrapper).await,
-            Transforms::RedisClusterPortsRewrite(r) => r.transform_pushed(requests_wrapper).await,
-            Transforms::RedisSinkCluster(r) => r.transform_pushed(requests_wrapper).await,
-            Transforms::ParallelMap(s) => s.transform_pushed(requests_wrapper).await,
-            Transforms::PoolConnections(s) => s.transform_pushed(requests_wrapper).await,
-            Transforms::Coalesce(s) => s.transform_pushed(requests_wrapper).await,
-            Transforms::QueryTypeFilter(s) => s.transform_pushed(requests_wrapper).await,
-            Transforms::QueryCounter(s) => s.transform_pushed(requests_wrapper).await,
-            Transforms::RequestThrottling(s) => s.transform_pushed(requests_wrapper).await,
-            Transforms::Custom(s) => s.transform_pushed(requests_wrapper).await,
-            #[cfg(feature = "alpha-transforms")]
-            Transforms::OpenSearchSinkSingle(s) => s.transform_pushed(requests_wrapper).await,
-        }
-    }
-
-    fn get_name(&self) -> &'static str {
-        self.into()
-    }
-
-    fn set_pushed_messages_tx(&mut self, pushed_messages_tx: mpsc::UnboundedSender<Messages>) {
-        match self {
-            Transforms::KafkaSinkSingle(c) => c.set_pushed_messages_tx(pushed_messages_tx),
-            Transforms::KafkaSinkCluster(c) => c.set_pushed_messages_tx(pushed_messages_tx),
-            Transforms::CassandraSinkSingle(c) => c.set_pushed_messages_tx(pushed_messages_tx),
-            Transforms::CassandraSinkCluster(c) => c.set_pushed_messages_tx(pushed_messages_tx),
-            Transforms::CassandraPeersRewrite(c) => c.set_pushed_messages_tx(pushed_messages_tx),
-            Transforms::RedisCache(r) => r.set_pushed_messages_tx(pushed_messages_tx),
-            Transforms::Tee(t) => t.set_pushed_messages_tx(pushed_messages_tx),
-            Transforms::RedisSinkSingle(r) => r.set_pushed_messages_tx(pushed_messages_tx),
-            Transforms::TuneableConsistencyScatter(c) => {
-                c.set_pushed_messages_tx(pushed_messages_tx)
-            }
-            Transforms::RedisTimestampTagger(r) => r.set_pushed_messages_tx(pushed_messages_tx),
-            Transforms::RedisClusterPortsRewrite(r) => r.set_pushed_messages_tx(pushed_messages_tx),
-            Transforms::DebugPrinter(p) => p.set_pushed_messages_tx(pushed_messages_tx),
-            Transforms::DebugLogToFile(p) => p.set_pushed_messages_tx(pushed_messages_tx),
-            Transforms::DebugForceParse(p) => p.set_pushed_messages_tx(pushed_messages_tx),
-            Transforms::NullSink(n) => n.set_pushed_messages_tx(pushed_messages_tx),
-            Transforms::RedisSinkCluster(r) => r.set_pushed_messages_tx(pushed_messages_tx),
-            Transforms::ParallelMap(s) => s.set_pushed_messages_tx(pushed_messages_tx),
-            Transforms::PoolConnections(s) => s.set_pushed_messages_tx(pushed_messages_tx),
-            Transforms::Coalesce(s) => s.set_pushed_messages_tx(pushed_messages_tx),
-            Transforms::QueryTypeFilter(s) => s.set_pushed_messages_tx(pushed_messages_tx),
-            Transforms::QueryCounter(s) => s.set_pushed_messages_tx(pushed_messages_tx),
-            Transforms::Loopback(l) => l.set_pushed_messages_tx(pushed_messages_tx),
-            Transforms::Protect(p) => p.set_pushed_messages_tx(pushed_messages_tx),
-            Transforms::DebugReturner(d) => d.set_pushed_messages_tx(pushed_messages_tx),
-            Transforms::DebugRandomDelay(d) => d.set_pushed_messages_tx(pushed_messages_tx),
-            Transforms::RequestThrottling(d) => d.set_pushed_messages_tx(pushed_messages_tx),
-            Transforms::Custom(d) => d.set_pushed_messages_tx(pushed_messages_tx),
-            #[cfg(feature = "alpha-transforms")]
-            Transforms::OpenSearchSinkSingle(s) => s.set_pushed_messages_tx(pushed_messages_tx),
-        }
-    }
-}
-
 #[typetag::serde]
 #[async_trait(?Send)]
 pub trait TransformConfig: Debug {
@@ -250,7 +66,6 @@ pub trait TransformConfig: Debug {
 /// The [`Wrapper`] struct is passed into each transform and contains a list of mutable references to the
 /// remaining transforms that will process the messages attached to this [`Wrapper`].
 /// Most [`Transform`] authors will only be interested in [`wrapper.requests`].
-#[derive(Debug)]
 pub struct Wrapper<'a> {
     pub requests: Messages,
     transforms: TransformIter<'a>,
@@ -263,7 +78,6 @@ pub struct Wrapper<'a> {
     pub flush: bool,
 }
 
-#[derive(Debug)]
 enum TransformIter<'a> {
     Forwards(IterMut<'a, TransformAndMetrics>),
     Backwards(Rev<IterMut<'a, TransformAndMetrics>>),
@@ -447,12 +261,8 @@ impl<'a> Wrapper<'a> {
 /// then wrapping a member in an [`Arc<Mutex<_>>`](std::sync::Mutex) will achieve that,
 /// but make sure to copy the value from the TransformBuilder to ensure all instances are referring to the same value.
 ///
-/// Once you have created your [`Transform`], you will need to create
-/// new enum variants in [Transforms].
-/// And implement the [TransformBuilder] and [TransformConfig] traits to make them configurable in Shotover.
-/// Shotover uses a concept called enum dispatch to provide dynamic configuration of transform chains
-/// with minimal impact on performance.
-///
+/// Once you have created your [`Transform`], you will need to implement the [TransformBuilder] and [TransformConfig] traits
+/// to make them configurable in Shotover.
 /// Implementing this trait is usually done using `#[async_trait]` macros.
 #[async_trait]
 pub trait Transform: Send {
@@ -480,7 +290,7 @@ pub trait Transform: Send {
     /// [`crate::transforms::cassandra::sink_single::CassandraSinkSingle`]. This type of transform
     /// is called a Terminating transform (as no subsequent transforms in the chain will be called).
     /// * _Message count_ - requests_wrapper.requests will contain 0 or more messages.
-    /// Your transform should return the same number of responses as messages received in requests_wrapper.requests. Transforms that
+    /// Your transform should return the same number of responses as messages received in requests_wrapper.requests. Transform that
     /// don't do this explicitly for each call, should return the same number of responses as messages it receives over the lifetime
     /// of the transform chain. A good example of this is the [`crate::transforms::coalesce::Coalesce`] transform. The
     /// [`crate::transforms::sampler::Sampler`] transform is also another example of this, with a slightly different twist.
@@ -488,10 +298,10 @@ pub trait Transform: Send {
     /// changing the behavior of the main chain.
     ///
     /// ## Naming
-    /// Transforms also have different naming conventions.
-    /// * Transforms that interact with an external system are called Sinks.
-    /// * Transforms that don't call subsequent chains via `requests_wrapper.call_next_transform()` are called terminating transforms.
-    /// * Transforms that do call subsquent chains via `requests_wrapper.call_next_transform()` are non-terminating transforms.
+    /// Transform also have different naming conventions.
+    /// * Transform that interact with an external system are called Sinks.
+    /// * Transform that don't call subsequent chains via `requests_wrapper.call_next_transform()` are called terminating transforms.
+    /// * Transform that do call subsquent chains via `requests_wrapper.call_next_transform()` are non-terminating transforms.
     ///
     /// You can have have a transforms that is both non-terminating and a sink.
     async fn transform<'a>(&'a mut self, requests_wrapper: Wrapper<'a>) -> Result<Messages>;
@@ -514,6 +324,8 @@ pub trait Transform: Send {
         let response = requests_wrapper.call_next_transform_pushed().await?;
         Ok(response)
     }
+
+    fn get_name(&self) -> &'static str;
 
     fn set_pushed_messages_tx(&mut self, _pushed_messages_tx: mpsc::UnboundedSender<Messages>) {}
 }

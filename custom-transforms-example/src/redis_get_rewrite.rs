@@ -3,7 +3,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use shotover::frame::{Frame, RedisFrame};
 use shotover::message::Messages;
-use shotover::transforms::{Transform, TransformBuilder, TransformConfig, Transforms, Wrapper};
+use shotover::transforms::{Transform, TransformBuilder, TransformConfig, Wrapper};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(deny_unknown_fields)]
@@ -11,6 +11,7 @@ pub struct RedisGetRewriteConfig {
     pub result: String,
 }
 
+const NAME: &str = "RedisGetRewrite";
 #[typetag::serde(name = "RedisGetRewrite")]
 #[async_trait(?Send)]
 impl TransformConfig for RedisGetRewriteConfig {
@@ -27,14 +28,14 @@ pub struct RedisGetRewriteBuilder {
 }
 
 impl TransformBuilder for RedisGetRewriteBuilder {
-    fn build(&self) -> Transforms {
-        Transforms::Custom(Box::new(RedisGetRewrite {
+    fn build(&self) -> Box<dyn Transform> {
+        Box::new(RedisGetRewrite {
             result: self.result.clone(),
-        }))
+        })
     }
 
     fn get_name(&self) -> &'static str {
-        "RedisGetRewrite"
+        NAME
     }
 }
 
@@ -44,6 +45,10 @@ pub struct RedisGetRewrite {
 
 #[async_trait]
 impl Transform for RedisGetRewrite {
+    fn get_name(&self) -> &'static str {
+        NAME
+    }
+
     async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Messages> {
         let mut get_indices = vec![];
         for (i, message) in requests_wrapper.requests.iter_mut().enumerate() {

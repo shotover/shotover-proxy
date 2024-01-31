@@ -4365,7 +4365,6 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "string",
- "strum_macros 0.26.1",
  "thiserror",
  "tokio",
  "tokio-rustls 0.25.0",
