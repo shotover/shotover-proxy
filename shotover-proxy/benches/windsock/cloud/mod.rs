@@ -34,6 +34,7 @@ impl Cloud for AwsCloud {
             // AWS is not initialized, it'll be faster to cleanup resources skipping initialization
             None => AwsInstances::cleanup().await,
         }
+        println!("All AWS throwaway resources have been deleted");
     }
 
     async fn create_resources(&mut self, required: Vec<CloudResourcesRequired>) -> CloudResources {

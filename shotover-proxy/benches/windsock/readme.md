@@ -7,6 +7,8 @@ Refer to the windsock docs and `cargo windsock --help` for more flags.
 
 ## Running in AWS
 
+First ensure you have the [AWS CLI V2 installed locally](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html).
+
 ### Aws credentials
 
 Refer to the [aws-sdk docs](https://docs.aws.amazon.com/sdk-for-rust/latest/dg/credentials.html) for full information on credentials.

@@ -2,25 +2,21 @@ use self::{samply::Samply, shotover_metrics::ShotoverMetrics};
 use crate::common::Shotover;
 use anyhow::Result;
 use aws_throwaway::Ec2Instance;
-use perf_flamegraph::Perf;
 use std::{collections::HashMap, path::PathBuf};
 use test_helpers::shotover_process::BinProcess;
 use tokio::sync::mpsc::UnboundedReceiver;
 use windsock::Profiling;
 
-mod perf_flamegraph;
 mod samply;
 mod sar;
 mod shotover_metrics;
 
 pub struct ProfilerRunner {
     bench_name: String,
-    run_flamegraph: bool,
     run_samply: bool,
     run_shotover_metrics: bool,
     run_sys_monitor: bool,
     results_path: PathBuf,
-    perf: Option<Perf>,
     shotover_metrics: Option<ShotoverMetrics>,
     samply: Option<Samply>,
     sys_monitor: Option<UnboundedReceiver<Result<String>>>,
@@ -28,9 +24,6 @@ pub struct ProfilerRunner {
 
 impl ProfilerRunner {
     pub fn new(bench_name: String, profiling: Profiling) -> Self {
-        let run_flamegraph = profiling
-            .profilers_to_use
-            .contains(&"flamegraph".to_owned());
         let run_samply = profiling.profilers_to_use.contains(&"samply".to_owned());
         let run_sys_monitor = profiling
             .profilers_to_use
@@ -41,12 +34,10 @@ impl ProfilerRunner {
 
         ProfilerRunner {
             bench_name,
-            run_flamegraph,
             run_sys_monitor,
             run_samply,
             run_shotover_metrics,
             results_path: profiling.results_path,
-            perf: None,
             shotover_metrics: None,
             samply: None,
             sys_monitor: None,
@@ -54,18 +45,6 @@ impl ProfilerRunner {
     }
 
     pub async fn run(&mut self, shotover: &Option<BinProcess>) {
-        self.perf = if self.run_flamegraph {
-            if let Some(shotover) = &shotover {
-                Some(Perf::new(
-                    self.results_path.clone(),
-                    shotover.child().id().unwrap(),
-                ))
-            } else {
-                panic!("flamegraph not supported when benching without shotover")
-            }
-        } else {
-            None
-        };
         self.shotover_metrics = if self.run_shotover_metrics {
             if shotover.is_some() {
                 Some(ShotoverMetrics::new(self.bench_name.clone(), "localhost"))
@@ -92,7 +71,7 @@ impl ProfilerRunner {
     }
 
     pub fn shotover_profile(&self) -> Option<&'static str> {
-        if self.run_flamegraph || self.run_samply {
+        if self.run_samply {
             Some("profiling")
         } else {
             None
@@ -102,9 +81,6 @@ impl ProfilerRunner {
 
 impl Drop for ProfilerRunner {
     fn drop(&mut self) {
-        if let Some(perf) = self.perf.take() {
-            perf.flamegraph();
-        }
         if let Some(samply) = self.samply.take() {
             samply.wait();
         }

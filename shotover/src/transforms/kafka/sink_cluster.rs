@@ -817,7 +817,7 @@ fn deduplicate_metadata_brokers(metadata: &mut MetadataResponse) {
 
     // remove brokers with duplicate addresses
     for (original, _replacement) in replacement_broker_id.iter() {
-        metadata.brokers.remove(original);
+        metadata.brokers.swap_remove(original);
     }
 
     // In the previous step some broker id's were removed but we might be referring to those id's elsewhere in the message.
