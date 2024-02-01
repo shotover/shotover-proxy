@@ -1,4 +1,5 @@
-use crate::frame::value::{serialize_len, serialize_with_length_prefix, GenericValue};
+use crate::frame::value::cassandra::{serialize_len, serialize_with_length_prefix};
+use crate::frame::value::GenericValue;
 use crate::message::QueryType;
 use anyhow::{anyhow, Result};
 use bytes::Bytes;
