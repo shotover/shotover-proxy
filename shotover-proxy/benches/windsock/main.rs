@@ -1,9 +1,21 @@
+// Allow dead code if any of the protocol features are disabled
+#![cfg_attr(
+    any(
+        not(feature = "cassandra"),
+        not(feature = "redis"),
+        not(all(feature = "rdkafka-driver-tests", feature = "kafka"))
+    ),
+    allow(dead_code, unused_imports, unused_variables, unused_mut)
+)]
+
+#[cfg(feature = "cassandra")]
 mod cassandra;
 mod cloud;
 mod common;
-#[cfg(feature = "rdkafka-driver-tests")]
+#[cfg(all(feature = "rdkafka-driver-tests", feature = "kafka"))]
 mod kafka;
 mod profilers;
+#[cfg(feature = "redis")]
 mod redis;
 mod shotover;
 
@@ -38,9 +50,11 @@ fn main() {
 
     let mut benches = vec![];
 
+    #[cfg(feature = "cassandra")]
     benches.extend(cassandra::benches());
-    #[cfg(feature = "rdkafka-driver-tests")]
+    #[cfg(all(feature = "rdkafka-driver-tests", feature = "kafka"))]
     benches.extend(kafka::benches());
+    #[cfg(feature = "redis")]
     benches.extend(redis::benches());
 
     Windsock::new(benches, cloud::AwsCloud::new_boxed(), &["release"]).run();

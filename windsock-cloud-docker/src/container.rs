@@ -68,6 +68,9 @@ unzip awscliv2.zip
         // run windsock
         let mut args = std::env::args();
         args.next(); // skip binary name
+        let features = args
+            .next()
+            .expect("The first argument must be a list of features to compile shotover with");
         let args: Vec<String> = args
             .map(|x| {
                 if x.is_empty() {
@@ -83,7 +86,7 @@ unzip awscliv2.zip
         container_bash(&format!(
         r#"cd shotover-proxy;
 source "$HOME/.cargo/env";
-AWS_ACCESS_KEY_ID={access_key_id} AWS_SECRET_ACCESS_KEY={secret_access_key} CARGO_TERM_COLOR=always cargo test --target-dir /target --release --bench windsock --features alpha-transforms --features rdkafka-driver-tests -- {args}"#
+AWS_ACCESS_KEY_ID={access_key_id} AWS_SECRET_ACCESS_KEY={secret_access_key} CARGO_TERM_COLOR=always cargo test --target-dir /target --release --bench windsock --no-default-features --features alpha-transforms,rdkafka-driver-tests,{features} -- {args}"#
     )).await;
 
         // extract windsock results

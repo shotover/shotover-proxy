@@ -1,5 +1,4 @@
-use crate::frame::{Frame, RedisFrame};
-use crate::message::{Message, Messages};
+use crate::message::Messages;
 use crate::transforms::{Transform, TransformBuilder, TransformConfig, Wrapper};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
@@ -26,6 +25,7 @@ impl TransformConfig for DebugReturnerConfig {
 pub enum Response {
     #[serde(skip)]
     Message(Messages),
+    #[cfg(feature = "redis")]
     Redis(String),
     Fail,
 }
@@ -64,15 +64,20 @@ impl Transform for DebugReturner {
     async fn transform<'a>(&'a mut self, requests_wrapper: Wrapper<'a>) -> Result<Messages> {
         match &self.response {
             Response::Message(message) => Ok(message.clone()),
-            Response::Redis(string) => Ok(requests_wrapper
-                .requests
-                .iter()
-                .map(|_| {
-                    Message::from_frame(Frame::Redis(RedisFrame::BulkString(
-                        string.to_string().into(),
-                    )))
-                })
-                .collect()),
+            #[cfg(feature = "redis")]
+            Response::Redis(string) => {
+                use crate::frame::{Frame, RedisFrame};
+                use crate::message::Message;
+                Ok(requests_wrapper
+                    .requests
+                    .iter()
+                    .map(|_| {
+                        Message::from_frame(Frame::Redis(RedisFrame::BulkString(
+                            string.to_string().into(),
+                        )))
+                    })
+                    .collect())
+            }
             Response::Fail => Err(anyhow!("Intentional Fail")),
         }
     }

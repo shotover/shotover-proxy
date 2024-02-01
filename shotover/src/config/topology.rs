@@ -60,7 +60,7 @@ impl Topology {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "redis", feature = "cassandra"))]
 mod topology_tests {
     use crate::config::chain::TransformChainConfig;
     use crate::config::topology::Topology;

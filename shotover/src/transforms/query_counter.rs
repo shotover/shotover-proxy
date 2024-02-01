@@ -46,11 +46,13 @@ impl Transform for QueryCounter {
     async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Messages> {
         for m in &mut requests_wrapper.requests {
             match m.frame() {
+                #[cfg(feature = "cassandra")]
                 Some(Frame::Cassandra(frame)) => {
                     for statement in frame.operation.queries() {
                         counter!("shotover_query_count", 1, "name" => self.counter_name.clone(), "query" => statement.short_name(), "type" => "cassandra");
                     }
                 }
+                #[cfg(feature = "redis")]
                 Some(Frame::Redis(frame)) => {
                     if let Some(query_type) = crate::frame::redis::redis_query_name(frame) {
                         counter!("shotover_query_count", 1, "name" => self.counter_name.clone(), "query" => query_type, "type" => "redis");
@@ -58,12 +60,14 @@ impl Transform for QueryCounter {
                         counter!("shotover_query_count", 1, "name" => self.counter_name.clone(), "query" => "unknown", "type" => "redis");
                     }
                 }
+                #[cfg(feature = "kafka")]
                 Some(Frame::Kafka(_)) => {
                     counter!("shotover_query_count", 1, "name" => self.counter_name.clone(), "query" => "unknown", "type" => "kafka");
                 }
                 Some(Frame::Dummy) => {
                     // Dummy does not count as a message
                 }
+                #[cfg(feature = "opensearch")]
                 Some(Frame::OpenSearch(_)) => {
                     todo!();
                 }

@@ -1,15 +1,20 @@
-#[allow(clippy::single_component_path_imports)]
+#[allow(clippy::single_component_path_imports, unused_imports)]
 use rstest_reuse;
 
 use test_helpers::shotover_process::ShotoverProcessBuilder;
 use tokio_bin_process::bin_path;
 
+#[cfg(feature = "cassandra")]
 mod cassandra_int_tests;
+#[cfg(feature = "kafka")]
 mod kafka_int_tests;
-#[cfg(feature = "alpha-transforms")]
+#[cfg(all(feature = "alpha-transforms", feature = "opensearch"))]
 mod opensearch_int_tests;
+#[cfg(feature = "redis")]
 mod redis_int_tests;
+#[cfg(feature = "redis")]
 mod runner;
+#[cfg(feature = "redis")]
 mod transforms;
 
 pub fn shotover_process(topology_path: &str) -> ShotoverProcessBuilder {

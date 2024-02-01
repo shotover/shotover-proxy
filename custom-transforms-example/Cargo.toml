@@ -8,7 +8,7 @@ license = "Apache-2.0"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-shotover = { path = "../shotover" }
+shotover = { path = "../shotover", default-features = false}
 anyhow.workspace = true
 serde.workspace = true
 async-trait.workspace = true
@@ -20,3 +20,11 @@ typetag.workspace = true
 test-helpers = {path = "../test-helpers"}
 tokio.workspace = true
 redis.workspace = true
+
+[features]
+redis = ["shotover/redis"]
+default = ["redis"]
+
+[[test]]
+name = "test"
+required-features = ["redis"]

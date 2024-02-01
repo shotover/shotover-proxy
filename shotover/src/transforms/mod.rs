@@ -15,22 +15,27 @@ use tokio::time::Instant;
 
 use self::chain::TransformAndMetrics;
 
+#[cfg(feature = "cassandra")]
 pub mod cassandra;
 pub mod chain;
 pub mod coalesce;
 pub mod debug;
+#[cfg(feature = "redis")]
 pub mod distributed;
 pub mod filter;
+#[cfg(feature = "kafka")]
 pub mod kafka;
 pub mod load_balance;
 pub mod loopback;
 pub mod noop;
 pub mod null;
-#[cfg(feature = "alpha-transforms")]
+#[cfg(all(feature = "alpha-transforms", feature = "opensearch"))]
 pub mod opensearch;
 pub mod parallel_map;
+#[cfg(feature = "cassandra")]
 pub mod protect;
 pub mod query_counter;
+#[cfg(feature = "redis")]
 pub mod redis;
 pub mod sampler;
 pub mod tee;

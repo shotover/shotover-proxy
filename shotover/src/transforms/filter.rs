@@ -111,7 +111,7 @@ impl Transform for QueryTypeFilter {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "redis"))]
 mod test {
     use super::Filter;
     use crate::frame::Frame;
