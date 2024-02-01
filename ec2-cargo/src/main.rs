@@ -73,10 +73,6 @@ sudo /bin/docker1 "$@"
 ' | sudo dd of=/bin/docker
 sudo chmod +x /bin/docker
 
-curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
-unzip awscliv2.zip
-sudo ./aws/install
-
 echo "export RUST_BACKTRACE=1" >> .profile
 echo "export CARGO_TERM_COLOR=always" >> .profile
 echo 'source "$HOME/.cargo/env"' >> .profile
@@ -84,8 +80,16 @@ echo 'source "$HOME/.cargo/env"' >> .profile
 source .profile
 if [ "$(uname -m)" = "aarch64" ]; then
     curl -LsSf https://get.nexte.st/latest/linux-arm | tar zxf - -C ${CARGO_HOME:-~/.cargo}/bin
+
+    curl "https://awscli.amazonaws.com/awscli-exe-linux-aarch64.zip" -o "awscliv2.zip"
+    unzip awscliv2.zip
+    sudo ./aws/install
 else
     curl -LsSf https://get.nexte.st/latest/linux | tar zxf - -C ${CARGO_HOME:-~/.cargo}/bin
+
+    curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+    unzip awscliv2.zip
+    sudo ./aws/install
 fi
 "#).await;
     while let Some(line) = receiver.recv().await {
@@ -97,10 +101,15 @@ fi
 
     println!("Finished creating instance.");
 
+    let access_key_id = std::env::var("AWS_ACCESS_KEY_ID").unwrap();
+    let secret_access_key = std::env::var("AWS_SECRET_ACCESS_KEY").unwrap();
+
     let mut shell = Shell::new_with_async_handler(
         State {
             cargo_meta,
             instance,
+            access_key_id,
+            secret_access_key,
         },
         "ec2-cargo$ ",
         DefaultAsyncHandler::default(),
@@ -118,6 +127,27 @@ fi
         Command::new_async(
             "Uploads changes and runs `cargo windsock $args`. Windsock results are downloaded to target/windsock_data".to_owned(),
             async_fn!(State, windsock),
+        ),
+    );
+    shell.commands.insert(
+        "windsock-kafka",
+        Command::new_async(
+            "Uploads changes and runs `cargo windsock-kafka $args`. Windsock results are downloaded to target/windsock_data".to_owned(),
+            async_fn!(State, windsock_kafka),
+        ),
+    );
+    shell.commands.insert(
+        "windsock-cassandra",
+        Command::new_async(
+            "Uploads changes and runs `cargo windsock-cassandra $args`. Windsock results are downloaded to target/windsock_data".to_owned(),
+            async_fn!(State, windsock_cassandra),
+        ),
+    );
+    shell.commands.insert(
+        "windsock-redis",
+        Command::new_async(
+            "Uploads changes and runs `cargo windsock-redis $args`. Windsock results are downloaded to target/windsock_data".to_owned(),
+            async_fn!(State, windsock_redis),
         ),
     );
     shell.commands.insert(
@@ -160,6 +190,26 @@ cargo nextest run {} 2>&1
 }
 
 async fn windsock(state: &mut State, args: Vec<String>) -> Result<(), Box<dyn Error>> {
+    windsock_inner("windsock", state, args).await
+}
+
+async fn windsock_kafka(state: &mut State, args: Vec<String>) -> Result<(), Box<dyn Error>> {
+    windsock_inner("windsock-kafka", state, args).await
+}
+
+async fn windsock_cassandra(state: &mut State, args: Vec<String>) -> Result<(), Box<dyn Error>> {
+    windsock_inner("windsock-cassandra", state, args).await
+}
+
+async fn windsock_redis(state: &mut State, args: Vec<String>) -> Result<(), Box<dyn Error>> {
+    windsock_inner("windsock-redis", state, args).await
+}
+
+async fn windsock_inner(
+    command: &str,
+    state: &mut State,
+    args: Vec<String>,
+) -> Result<(), Box<dyn Error>> {
     rsync_push_shotover(state).await;
     let args = process_args(args);
     let mut receiver = state
@@ -171,9 +221,10 @@ source .profile
 cd shotover
 # ensure windsock_data exists so that fetching results still succeeds even if windsock never created the directory
 mkdir -p target/windsock_data
-cargo windsock {} 2>&1
+AWS_ACCESS_KEY_ID={} AWS_SECRET_ACCESS_KEY={} cargo {command} {args} 2>&1
 "#,
-            args
+            state.access_key_id,
+            state.secret_access_key
         ))
         .await;
     while let Some(line) = receiver.recv().await {
@@ -279,4 +330,6 @@ fn ssh_instructions(state: &mut State, mut _args: Vec<String>) -> Result<(), Box
 struct State {
     cargo_meta: Metadata,
     instance: Ec2Instance,
+    access_key_id: String,
+    secret_access_key: String,
 }
