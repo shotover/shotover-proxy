@@ -99,6 +99,36 @@ pub struct CassandraMetadata {
     pub opcode: Opcode,
 }
 
+impl CassandraMetadata {
+    pub fn backpressure_response(&self) -> CassandraFrame {
+        let body = CassandraOperation::Error(ErrorBody {
+            message: "Server overloaded".into(),
+            ty: ErrorType::Overloaded,
+        });
+
+        CassandraFrame {
+            version: self.version,
+            stream_id: self.stream_id,
+            tracing: Tracing::Response(None),
+            warnings: vec![],
+            operation: body,
+        }
+    }
+
+    pub fn to_error_response(&self, error: String) -> CassandraFrame {
+        CassandraFrame {
+            version: self.version,
+            stream_id: self.stream_id,
+            operation: CassandraOperation::Error(ErrorBody {
+                message: error,
+                ty: ErrorType::Server,
+            }),
+            tracing: Tracing::Response(None),
+            warnings: vec![],
+        }
+    }
+}
+
 #[derive(PartialEq, Debug, Clone, Copy)]
 pub enum Tracing {
     Request(bool),
