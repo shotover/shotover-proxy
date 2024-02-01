@@ -2,17 +2,12 @@
 
 use crate::codec::kafka::RequestHeader;
 use crate::codec::CodecState;
-use crate::frame::cassandra::Tracing;
 use crate::frame::redis::redis_query_type;
-use crate::frame::{
-    cassandra,
-    cassandra::{CassandraMetadata, CassandraOperation},
-};
-use crate::frame::{CassandraFrame, Frame, MessageType, RedisFrame};
+use crate::frame::{cassandra, cassandra::CassandraMetadata};
+use crate::frame::{Frame, MessageType, RedisFrame};
 use anyhow::{anyhow, Context, Result};
 use bytes::{Buf, Bytes};
 use cassandra_protocol::compression::Compression;
-use cassandra_protocol::frame::message_error::{ErrorBody, ErrorType};
 use derivative::Derivative;
 use nonzero_ext::nonzero;
 use serde::{Deserialize, Serialize};
@@ -299,16 +294,7 @@ impl Message {
                     .replace('\n', " ");
                 Frame::Redis(RedisFrame::Error(message.into()))
             }
-            Metadata::Cassandra(frame) => Frame::Cassandra(CassandraFrame {
-                version: frame.version,
-                stream_id: frame.stream_id,
-                operation: CassandraOperation::Error(ErrorBody {
-                    message: error,
-                    ty: ErrorType::Server,
-                }),
-                tracing: Tracing::Response(None),
-                warnings: vec![],
-            }),
+            Metadata::Cassandra(meta) => Frame::Cassandra(meta.to_error_response(error)),
             // In theory we could actually support kafka errors in some form here but:
             // * kafka errors are defined per response type and many response types only provide an error code without a field for a custom error message.
             //     + Implementing this per response type would add a lot of (localized) complexity but might be worth it.
@@ -351,20 +337,7 @@ impl Message {
 
         *self = Message::from_frame_at_instant(
             match metadata {
-                Metadata::Cassandra(metadata) => {
-                    let body = CassandraOperation::Error(ErrorBody {
-                        message: "Server overloaded".into(),
-                        ty: ErrorType::Overloaded,
-                    });
-
-                    Frame::Cassandra(CassandraFrame {
-                        version: metadata.version,
-                        stream_id: metadata.stream_id,
-                        tracing: Tracing::Response(None),
-                        warnings: vec![],
-                        operation: body,
-                    })
-                }
+                Metadata::Cassandra(metadata) => Frame::Cassandra(metadata.backpressure_response()),
                 Metadata::Redis => unimplemented!(),
                 Metadata::Kafka => unimplemented!(),
                 Metadata::OpenSearch => unimplemented!(),
