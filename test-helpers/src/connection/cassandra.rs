@@ -1,4 +1,3 @@
-use bigdecimal::BigDecimal;
 use bytes::BufMut;
 #[cfg(feature = "cassandra-cpp-driver-tests")]
 use cassandra_cpp::{
@@ -28,13 +27,12 @@ use cdrs_tokio::{
     query_values,
     transport::TransportTcp,
 };
-use num_bigint::BigInt;
 use openssl::ssl::{SslContext, SslMethod};
 use ordered_float::OrderedFloat;
 use scylla::batch::Batch as ScyllaBatch;
 use scylla::frame::response::result::CqlValue;
 use scylla::frame::types::Consistency as ScyllaConsistency;
-use scylla::frame::value::{CqlDate, CqlTime, CqlTimestamp};
+use scylla::frame::value::{CqlDate, CqlDecimal, CqlTime, CqlTimestamp};
 use scylla::prepared_statement::PreparedStatement as PreparedStatementScylla;
 use scylla::serialize::value::SerializeCql;
 use scylla::statement::query::Query as ScyllaQuery;
@@ -711,8 +709,10 @@ impl CassandraConnection {
                 ResultValue::Boolean(v) => Box::new(v),
                 ResultValue::Decimal(buf) => {
                     let scale = i32::from_be_bytes(buf[0..4].try_into().unwrap());
-                    let int_value = BigInt::from_signed_bytes_be(&buf[4..]);
-                    Box::new(BigDecimal::from((int_value, scale as i64)))
+                    let bytes = &buf[4..];
+                    Box::new(CqlDecimal::from_signed_be_bytes_slice_and_exponent(
+                        bytes, scale,
+                    ))
                 }
                 ResultValue::Double(v) => Box::new(*v.as_ref()),
                 ResultValue::Float(v) => Box::new(*v.as_ref()),
@@ -1105,24 +1105,18 @@ impl ResultValue {
                 CqlValue::Boolean(b) => Self::Boolean(b),
                 CqlValue::Counter(_counter) => todo!(),
                 CqlValue::Decimal(d) => {
-                    let (value, scale) = d.as_bigint_and_exponent();
+                    let (value, scale) = d.as_signed_be_bytes_slice_and_exponent();
                     let mut buf = vec![];
-                    let serialized = value.to_signed_bytes_be();
-                    buf.put_i32(scale.try_into().unwrap());
-                    buf.extend_from_slice(&serialized);
+                    buf.put_i32(scale);
+                    buf.extend_from_slice(value);
                     Self::Decimal(buf)
                 }
                 CqlValue::Float(float) => Self::Float(float.into()),
                 CqlValue::Int(int) => Self::Int(int),
                 CqlValue::Timestamp(timestamp) => Self::Timestamp(timestamp.0),
                 CqlValue::Uuid(uuid) => Self::Uuid(uuid),
-                CqlValue::Varint(var_int) => {
-                    let mut buf = vec![];
-                    let serialized = var_int.to_signed_bytes_be();
-                    buf.extend_from_slice(&serialized);
-                    Self::VarInt(buf)
-                }
-                CqlValue::Timeuuid(timeuuid) => Self::TimeUuid(timeuuid),
+                CqlValue::Varint(var_int) => Self::VarInt(var_int.into_signed_bytes_be()),
+                CqlValue::Timeuuid(timeuuid) => Self::TimeUuid(timeuuid.into()),
                 CqlValue::Inet(ip) => Self::Inet(ip),
                 CqlValue::Date(date) => Self::Date(date.0),
                 CqlValue::Time(time) => Self::Time(time.0),
