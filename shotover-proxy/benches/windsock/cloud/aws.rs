@@ -1,6 +1,8 @@
+use anyhow::Result;
 use aws_throwaway::{Aws, Ec2Instance, InstanceType};
 use aws_throwaway::{CleanupResources, Ec2InstanceDefinition};
 use regex::Regex;
+use serde::{Deserialize, Serialize};
 use std::fmt::Write;
 use std::time::Duration;
 use std::{
@@ -34,38 +36,47 @@ impl AwsInstances {
             .await
     }
 
-    pub async fn create_bencher_instances(&self, count: usize) -> Vec<Arc<Ec2InstanceWithBencher>> {
+    pub async fn create_bencher_instances(
+        &self,
+        benches_will_run: bool,
+        count: usize,
+    ) -> Vec<Arc<Ec2InstanceWithBencher>> {
         let mut futures = vec![];
         for _ in 0..count {
-            futures.push(self.create_bencher_instance());
+            futures.push(self.create_bencher_instance(benches_will_run));
         }
         futures::future::join_all(futures).await
     }
 
     pub async fn create_shotover_instances(
         &self,
+        benches_will_run: bool,
         count: usize,
     ) -> Vec<Arc<Ec2InstanceWithShotover>> {
         let mut futures = vec![];
         for _ in 0..count {
-            futures.push(self.create_shotover_instance());
+            futures.push(self.create_shotover_instance(benches_will_run));
         }
         futures::future::join_all(futures).await
     }
 
     pub async fn create_docker_instances(
         &self,
+        benches_will_run: bool,
         include_shotover: bool,
         count: usize,
     ) -> Vec<Arc<Ec2InstanceWithDocker>> {
         let mut futures = vec![];
         for _ in 0..count {
-            futures.push(self.create_docker_instance(include_shotover));
+            futures.push(self.create_docker_instance(benches_will_run, include_shotover));
         }
         futures::future::join_all(futures).await
     }
 
-    pub async fn create_bencher_instance(&self) -> Arc<Ec2InstanceWithBencher> {
+    pub async fn create_bencher_instance(
+        &self,
+        benches_will_run: bool,
+    ) -> Arc<Ec2InstanceWithBencher> {
         let instance = Arc::new(Ec2InstanceWithBencher {
             instance: self
                 .aws
@@ -84,19 +95,17 @@ sudo apt-get update
 sudo apt-get install -y sysstat"#,
             )
             .await;
-        instance
-            .instance
-            .ssh()
-            .push_file(
-                std::env::current_exe().unwrap().as_ref(),
-                Path::new("windsock"),
-            )
-            .await;
+
+        if benches_will_run {
+            instance.upload_bencher().await;
+        }
+
         instance
     }
 
     pub async fn create_docker_instance(
         &self,
+        benches_will_run: bool,
         include_shotover: bool,
     ) -> Arc<Ec2InstanceWithDocker> {
         let instance = self
@@ -121,22 +130,20 @@ curl -sSL https://get.docker.com/ | sudo sh"#,
             )
             .await;
 
-        let local_shotover_path = bin_path!("shotover-proxy");
-        if include_shotover {
-            instance
-                .ssh()
-                .push_file(local_shotover_path, Path::new("shotover-bin"))
-                .await;
-            instance
-                .ssh()
-                .push_file(Path::new("config/config.yaml"), Path::new("config.yaml"))
-                .await;
+        if include_shotover && benches_will_run {
+            upload_shotover(&instance).await;
         }
 
-        Arc::new(Ec2InstanceWithDocker { instance })
+        Arc::new(Ec2InstanceWithDocker {
+            instance,
+            include_shotover,
+        })
     }
 
-    pub async fn create_shotover_instance(&self) -> Arc<Ec2InstanceWithShotover> {
+    pub async fn create_shotover_instance(
+        &self,
+        benches_will_run: bool,
+    ) -> Arc<Ec2InstanceWithShotover> {
         let instance = Arc::new(Ec2InstanceWithShotover {
             instance: self
                 .aws
@@ -156,17 +163,9 @@ sudo apt-get install -y sysstat"#,
             )
             .await;
 
-        let local_shotover_path = bin_path!("shotover-proxy");
-        instance
-            .instance
-            .ssh()
-            .push_file(local_shotover_path, Path::new("shotover-bin"))
-            .await;
-        instance
-            .instance
-            .ssh()
-            .push_file(Path::new("config/config.yaml"), Path::new("config.yaml"))
-            .await;
+        if benches_will_run {
+            upload_shotover(&instance.instance).await;
+        }
 
         instance
     }
@@ -177,11 +176,22 @@ sudo apt-get install -y sysstat"#,
 }
 
 /// Despite the name can also run shotover
+#[derive(Serialize, Deserialize)]
 pub struct Ec2InstanceWithDocker {
     pub instance: Ec2Instance,
+    pub include_shotover: bool,
 }
 
 impl Ec2InstanceWithDocker {
+    pub async fn reinit(&mut self) -> Result<()> {
+        self.instance.init().await?;
+        if self.include_shotover {
+            upload_shotover(&self.instance).await;
+        }
+
+        Ok(())
+    }
+
     pub async fn run_container(&self, image: &str, envs: &[(String, String)]) {
         // cleanup old resources
         // TODO: we need a way to ensure there are no shotover resources running.
@@ -277,11 +287,28 @@ fn get_compatible_instance_type() -> InstanceType {
     }
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct Ec2InstanceWithBencher {
     pub instance: Ec2Instance,
 }
 
 impl Ec2InstanceWithBencher {
+    pub async fn reinit(&mut self) -> Result<()> {
+        self.instance.init().await?;
+        self.upload_bencher().await;
+        Ok(())
+    }
+
+    pub async fn upload_bencher(&self) {
+        self.instance
+            .ssh()
+            .push_file(
+                std::env::current_exe().unwrap().as_ref(),
+                Path::new("windsock"),
+            )
+            .await;
+    }
+
     pub async fn run_bencher(&self, args: &str, name: &str) {
         self.instance
             .ssh()
@@ -294,11 +321,19 @@ impl Ec2InstanceWithBencher {
     }
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct Ec2InstanceWithShotover {
     pub instance: Ec2Instance,
 }
 
 impl Ec2InstanceWithShotover {
+    pub async fn reinit(&mut self) -> Result<()> {
+        self.instance.init().await?;
+        upload_shotover(&self.instance).await;
+
+        Ok(())
+    }
+
     pub async fn run_shotover(self: Arc<Self>, topology: &str) -> RunningShotover {
         self.instance
             .ssh()
@@ -387,4 +422,24 @@ impl RunningShotover {
             }
         }
     }
+}
+
+pub async fn upload_shotover(instance: &Ec2Instance) {
+    let local_shotover_path = bin_path!("shotover-proxy");
+
+    // a leftover shotover-bin process can prevent uploading to shotover-bin
+    // so we need to kill any such processes before uploading
+    instance
+        .ssh()
+        .shell("killall -w shotover-bin > /dev/null || true")
+        .await;
+
+    instance
+        .ssh()
+        .push_file(local_shotover_path, Path::new("shotover-bin"))
+        .await;
+    instance
+        .ssh()
+        .push_file(Path::new("config/config.yaml"), Path::new("config.yaml"))
+        .await;
 }

@@ -196,7 +196,7 @@ fn base(reports: &[ReportColumn], table_type: &str) {
         .iter()
         .any(|x| x.current.operations_report.is_some())
     {
-        rows.push(Row::Heading("(Opns) Operations".to_owned()));
+        rows.push(Row::Heading("Opns (Operations)".to_owned()));
         rows.push(Row::measurements(reports, "Total Opns", |report| {
             report.operations_report.as_ref().map(|report| {
                 (

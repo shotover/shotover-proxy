@@ -8,6 +8,7 @@ mod report;
 mod tables;
 
 pub use bench::{Bench, BenchParameters, BenchTask, Profiling};
+use data::cloud_resources_path;
 pub use report::{
     ExternalReport, LatencyPercentile, Metric, OperationsReport, PubSubReport, Report,
     ReportArchive,
@@ -20,7 +21,7 @@ use clap::Parser;
 use cli::Args;
 use cloud::{BenchInfo, Cloud};
 use filter::Filter;
-use std::process::exit;
+use std::{path::Path, process::exit};
 use tokio::runtime::Runtime;
 
 pub struct Windsock<ResourcesRequired, Resources> {
@@ -156,35 +157,52 @@ impl<ResourcesRequired: Clone, Resources: Clone> Windsock<ResourcesRequired, Res
         running_in_release: bool,
     ) -> Result<()> {
         ReportArchive::clear_last_run();
+        let resources_path = cloud_resources_path();
 
-        match self.benches.iter_mut().find(|x| x.tags.get_name() == name) {
+        let bench = match self.benches.iter_mut().find(|x| x.tags.get_name() == name) {
             Some(bench) => {
                 if args
                     .profilers
                     .iter()
                     .all(|x| bench.supported_profilers.contains(x))
                 {
-                    let resources = if args.cloud {
-                        Some(
-                            self.cloud
-                                .create_resources(vec![bench.required_cloud_resources()])
-                                .await,
-                        )
-                    } else {
-                        None
-                    };
                     bench
-                        .orchestrate(&args, running_in_release, resources)
-                        .await;
                 } else {
                     return Err(anyhow!("Specified bench {name:?} was requested to run with the profilers {:?} but it only supports the profilers {:?}", args.profilers, bench.supported_profilers));
                 }
             }
             None => return Err(anyhow!("Specified bench {name:?} does not exist.")),
+        };
+
+        let resources = if args.cloud {
+            let resources = vec![bench.required_cloud_resources()];
+            Some(if args.load_cloud_resources_file {
+                self.cloud
+                    .load_resources_file(&resources_path, resources)
+                    .await
+            } else {
+                self.cloud
+                    .create_resources(resources, !args.store_cloud_resources_file)
+                    .await
+            })
+        } else {
+            None
+        };
+
+        if args.store_cloud_resources_file {
+            println!(
+                "Cloud resources have been created in preparation for running the bench:\n  {name}"
+            );
+            println!("Make sure to use `--cleanup-cloud-resources` when you are finished with these resources.");
+        } else {
+            bench
+                .orchestrate(&args, running_in_release, resources.clone())
+                .await;
         }
 
         if args.cloud {
-            self.cloud.cleanup_resources().await;
+            self.cleanup_cloud_resources(resources, &args, &resources_path)
+                .await;
         }
         Ok(())
     }
@@ -196,6 +214,7 @@ impl<ResourcesRequired: Clone, Resources: Clone> Windsock<ResourcesRequired, Res
     ) -> Result<()> {
         ReportArchive::clear_last_run();
         let filter = parse_filter(&args)?;
+        let resources_path = cloud_resources_path();
 
         let mut bench_infos = vec![];
         for bench in &mut self.benches {
@@ -219,33 +238,71 @@ impl<ResourcesRequired: Clone, Resources: Clone> Windsock<ResourcesRequired, Res
         bench_infos = self.cloud.order_benches(bench_infos);
 
         let mut resources = if !bench_infos.is_empty() {
-            Some(
+            let resources = bench_infos.iter().map(|x| x.resources.clone()).collect();
+            Some(if args.load_cloud_resources_file {
                 self.cloud
-                    .create_resources(bench_infos.iter().map(|x| x.resources.clone()).collect())
-                    .await,
-            )
+                    .load_resources_file(&resources_path, resources)
+                    .await
+            } else {
+                self.cloud
+                    .create_resources(resources, !args.store_cloud_resources_file)
+                    .await
+            })
         } else {
             None
         };
 
-        for (i, bench_info) in bench_infos.iter().enumerate() {
-            for bench in &mut self.benches {
-                if bench.tags.get_name() == bench_info.name {
-                    if let Some(resources) = &mut resources {
-                        self.cloud
-                            .adjust_resources(&bench_infos, i, resources)
+        if args.store_cloud_resources_file {
+            println!("Cloud resources have been created in preparation for running the following benches:");
+            for bench in bench_infos {
+                println!("  {}", bench.name);
+            }
+            println!("Make sure to use `--cleanup-cloud-resources` when you are finished with these resources");
+        } else {
+            for (i, bench_info) in bench_infos.iter().enumerate() {
+                for bench in &mut self.benches {
+                    if bench.tags.get_name() == bench_info.name {
+                        if let Some(resources) = &mut resources {
+                            self.cloud
+                                .adjust_resources(&bench_infos, i, resources)
+                                .await;
+                        }
+                        bench
+                            .orchestrate(&args, running_in_release, resources.clone())
                             .await;
+                        break;
                     }
-                    bench
-                        .orchestrate(&args, running_in_release, resources.clone())
-                        .await;
-                    break;
                 }
             }
         }
 
-        self.cloud.cleanup_resources().await;
+        self.cleanup_cloud_resources(resources, &args, &resources_path)
+            .await;
+
         Ok(())
+    }
+
+    async fn cleanup_cloud_resources(
+        &mut self,
+        resources: Option<Resources>,
+        args: &Args,
+        resources_path: &Path,
+    ) {
+        if args.store_cloud_resources_file {
+            if let Some(resources) = resources {
+                self.cloud
+                    .store_resources_file(resources_path, resources)
+                    .await;
+            }
+        } else if args.load_cloud_resources_file {
+            println!("Cloud resources have not been cleaned up.");
+            println!(
+                "Make sure to use `--cleanup-cloud-resources` when you are finished with them."
+            );
+        } else {
+            std::fs::remove_file(resources_path).ok();
+            self.cloud.cleanup_resources().await;
+        }
     }
 
     async fn run_filtered_benches_local(
