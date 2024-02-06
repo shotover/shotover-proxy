@@ -560,6 +560,9 @@ impl Bench for CassandraBench {
         let shotover_ip = shotover_instance
             .as_ref()
             .map(|x| x.instance.private_ip().to_string());
+        let shotover_connect_ip = shotover_instance
+            .as_ref()
+            .map(|x| x.instance.connect_ip().to_string());
 
         let mut profiler_instances: HashMap<String, &Ec2Instance> =
             [("bencher".to_owned(), &bench_instance.instance)].into();
@@ -582,9 +585,13 @@ impl Bench for CassandraBench {
                 profiler_instances.insert("cassandra".to_owned(), &cassandra_instances[0].instance);
             }
         }
-        let mut profiler =
-            CloudProfilerRunner::new(self.name(), profiling, profiler_instances, &shotover_ip)
-                .await;
+        let mut profiler = CloudProfilerRunner::new(
+            self.name(),
+            profiling,
+            profiler_instances,
+            &shotover_connect_ip,
+        )
+        .await;
 
         let cassandra_nodes = vec![
             AwsNodeInfo {
