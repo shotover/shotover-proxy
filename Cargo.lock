@@ -527,13 +527,14 @@ dependencies = [
 
 [[package]]
 name = "aws-throwaway"
-version = "0.6.0"
+version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "be0da812cb994ccf68233bb00551df33d55b6841f83ab35f98095316be82133c"
+checksum = "3d5955140d4b11b9e3cb8c21546885b68472a3f20f6d8af58f4fbea8747f2e5b"
 dependencies = [
  "anyhow",
  "async-trait",
  "base64",
+ "futures",
  "russh",
  "russh-keys",
  "serde",
@@ -2232,7 +2233,7 @@ dependencies = [
  "httpdate",
  "itoa",
  "pin-project-lite",
- "socket2 0.5.5",
+ "socket2 0.4.10",
  "tokio",
  "tower-service",
  "tracing",
