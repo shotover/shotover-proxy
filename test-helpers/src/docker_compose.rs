@@ -27,7 +27,7 @@ pub fn new_moto() -> DockerCompose {
     docker_compose("tests/transforms/docker-compose-moto.yaml")
 }
 
-pub static IMAGE_WAITERS: [Image; 10] = [
+pub static IMAGE_WAITERS: [Image; 12] = [
     Image {
         name: "motoserver/moto",
         log_regex_to_wait_for: r"Press CTRL\+C to quit",
@@ -78,6 +78,11 @@ pub static IMAGE_WAITERS: [Image; 10] = [
     Image {
         name: "opensearchproject/opensearch:2.9.0",
         log_regex_to_wait_for: r"Node started",
+        timeout: Duration::from_secs(120),
+    },
+    Image {
+        name: "cassandra:5.0",
+        log_regex_to_wait_for: r"Starting listening for CQL clients",
         timeout: Duration::from_secs(120),
     },
 ];
