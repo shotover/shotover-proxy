@@ -148,14 +148,15 @@ impl ShotoverMetrics {
             tokio::select! {
                 _ = shutdown_rx.recv() => break,
                 _ = interval.tick() => {
-                    match tokio::time::timeout(Duration::from_secs(3), reqwest::get(url)).await.unwrap() {
-                        Ok(response) => {
+                    match tokio::time::timeout(Duration::from_secs(3), reqwest::get(url)).await {
+                        Ok(Ok(response)) => {
                             results.push(RawPrometheusExposition {
                                 timestamp: OffsetDateTime::now_utc(),
                                 content: response.text().await.unwrap(),
                             });
                         }
-                        Err(err) => tracing::debug!("Failed to request from metrics endpoint, probably not up yet, error was {err:?}")
+                        Ok(Err(err)) => tracing::debug!("Failed to request from metrics endpoint {url}, probably not up yet, error was {err:?}"),
+                        Err(_) => panic!("Timed out request from metrics endpoint {url}")
                     }
                 }
             }
