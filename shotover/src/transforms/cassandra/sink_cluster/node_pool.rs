@@ -115,7 +115,7 @@ impl NodePool {
         }
     }
 
-    pub async fn update_keyspaces(&mut self, keyspaces_rx: &mut KeyspaceChanRx) {
+    pub fn update_keyspaces(&mut self, keyspaces_rx: &mut KeyspaceChanRx) {
         let updated_keyspaces = keyspaces_rx.borrow_and_update().clone();
         self.keyspace_metadata = updated_keyspaces;
     }

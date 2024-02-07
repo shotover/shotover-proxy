@@ -49,7 +49,7 @@ mod test_token_aware_router {
             )
             .unwrap();
 
-        router.update_keyspaces(&mut keyspaces_rx).await;
+        router.update_keyspaces(&mut keyspaces_rx);
 
         router
             .add_prepared_result(id.clone(), prepared_metadata())
