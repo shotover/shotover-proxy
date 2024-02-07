@@ -308,7 +308,7 @@ mod scatter_transform_tests {
         assert_eq!(message.frame().unwrap(), &expected);
     }
 
-    async fn build_chains(route_map: HashMap<String, TransformChainBuilder>) -> Vec<BufferedChain> {
+    fn build_chains(route_map: HashMap<String, TransformChainBuilder>) -> Vec<BufferedChain> {
         route_map
             .into_values()
             .map(|x| x.build_buffered(10))
@@ -343,7 +343,7 @@ mod scatter_transform_tests {
         );
 
         let mut tuneable_success_consistency = Box::new(TuneableConsistentencyScatter {
-            route_map: build_chains(two_of_three).await,
+            route_map: build_chains(two_of_three),
             write_consistency: 2,
             read_consistency: 2,
         });
@@ -370,7 +370,7 @@ mod scatter_transform_tests {
         );
 
         let mut tuneable_fail_consistency = Box::new(TuneableConsistentencyScatter {
-            route_map: build_chains(one_of_three).await,
+            route_map: build_chains(one_of_three),
             write_consistency: 2,
             read_consistency: 2,
         });

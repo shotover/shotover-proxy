@@ -269,7 +269,7 @@ impl CassandraSinkCluster {
         }
 
         if self.keyspaces_rx.has_changed()? {
-            self.pool.update_keyspaces(&mut self.keyspaces_rx).await;
+            self.pool.update_keyspaces(&mut self.keyspaces_rx);
         }
 
         // CAREFUL: indexes into messages are invalidated here
@@ -523,8 +523,7 @@ impl CassandraSinkCluster {
         }
 
         self.message_rewriter
-            .rewrite_responses(tables_to_rewrite, &mut responses)
-            .await?;
+            .rewrite_responses(tables_to_rewrite, &mut responses)?;
 
         for response in responses.iter_mut() {
             if let Some((id, metadata)) = get_prepared_result_message(response) {

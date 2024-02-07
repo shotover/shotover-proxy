@@ -20,7 +20,7 @@ pub struct DEKStructure {
 }
 
 impl LocalKeyManagement {
-    pub async fn get_key(&self, dek: Option<Vec<u8>>) -> Result<KeyMaterial> {
+    pub fn get_key(&self, dek: Option<Vec<u8>>) -> Result<KeyMaterial> {
         match dek {
             None => {
                 let plaintext_dek = gen_key();

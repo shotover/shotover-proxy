@@ -193,22 +193,18 @@ impl MessageRewriter {
 
     /// Rewrite responses using the `Vec<TableToRewrite>` returned by rewrite_requests.
     /// All extra responses are combined back into the amount of responses expected by the client.
-    pub async fn rewrite_responses(
+    pub fn rewrite_responses(
         &self,
         tables_to_rewrite: Vec<TableToRewrite>,
         responses: &mut Vec<Message>,
     ) -> Result<()> {
         for table_to_rewrite in tables_to_rewrite {
-            self.rewrite_response(table_to_rewrite, responses).await?;
+            self.rewrite_response(table_to_rewrite, responses)?;
         }
         Ok(())
     }
 
-    async fn rewrite_response(
-        &self,
-        table: TableToRewrite,
-        responses: &mut Vec<Message>,
-    ) -> Result<()> {
+    fn rewrite_response(&self, table: TableToRewrite, responses: &mut Vec<Message>) -> Result<()> {
         fn get_warnings(message: &mut Message) -> Vec<String> {
             if let Some(Frame::Cassandra(frame)) = message.frame() {
                 frame.warnings.clone()
@@ -237,8 +233,7 @@ impl MessageRewriter {
                         warnings.extend(get_warnings(&mut peers_response));
                         warnings.extend(get_warnings(local_response));
 
-                        self.rewrite_table_local(table, local_response, peers_response, warnings)
-                            .await?;
+                        self.rewrite_table_local(table, local_response, peers_response, warnings)?;
                         local_response.invalidate_cache();
                     }
                 }
@@ -275,8 +270,12 @@ impl MessageRewriter {
                                 Err(MessageParseError::ParseFailure(err)) => return Err(err),
                             };
 
-                            self.rewrite_table_peers(table, client_peers_response, nodes, warnings)
-                                .await?;
+                            self.rewrite_table_peers(
+                                table,
+                                client_peers_response,
+                                nodes,
+                                warnings,
+                            )?;
                             client_peers_response.invalidate_cache();
                         }
                     }
@@ -352,7 +351,7 @@ impl MessageRewriter {
         Ok(())
     }
 
-    async fn rewrite_table_peers(
+    fn rewrite_table_peers(
         &self,
         table: TableToRewrite,
         peers_response: &mut Message,
@@ -503,7 +502,7 @@ impl MessageRewriter {
         }
     }
 
-    async fn rewrite_table_local(
+    fn rewrite_table_local(
         &self,
         table: TableToRewrite,
         local_response: &mut Message,
