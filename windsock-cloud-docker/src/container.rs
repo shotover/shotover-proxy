@@ -83,10 +83,16 @@ unzip awscliv2.zip
         let args = args.join(" ");
         let access_key_id = std::env::var("AWS_ACCESS_KEY_ID").unwrap();
         let secret_access_key = std::env::var("AWS_SECRET_ACCESS_KEY").unwrap();
+        let rust_log = std::env::var("RUST_LOG").unwrap_or_default();
         container_bash(&format!(
         r#"cd shotover-proxy;
 source "$HOME/.cargo/env";
-AWS_ACCESS_KEY_ID={access_key_id} AWS_SECRET_ACCESS_KEY={secret_access_key} CARGO_TERM_COLOR=always cargo test --target-dir /target --release --bench windsock --no-default-features --features alpha-transforms,rdkafka-driver-tests,{features} -- {args}"#
+
+export RUST_LOG={rust_log}
+export AWS_ACCESS_KEY_ID={access_key_id}
+export AWS_SECRET_ACCESS_KEY={secret_access_key}
+export CARGO_TERM_COLOR=always
+cargo test --target-dir /target --release --bench windsock --no-default-features --features alpha-transforms,rdkafka-driver-tests,{features} -- {args}"#
     )).await;
 
         // extract windsock results
