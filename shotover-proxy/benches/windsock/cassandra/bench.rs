@@ -11,6 +11,7 @@ use async_trait::async_trait;
 use aws_throwaway::Ec2Instance;
 use cdrs_tokio::{
     cluster::{
+        connection_pool::ConnectionPoolConfigBuilder,
         session::{
             Session as CdrsTokioSession, SessionBuilder as CdrsTokioSessionBuilder,
             TcpSessionBuilder,
@@ -742,6 +743,12 @@ impl Bench for CassandraBench {
                             Compression::None => CdrsCompression::None,
                             Compression::Lz4 => CdrsCompression::Lz4,
                         })
+                        .with_connection_pool_config(
+                            ConnectionPoolConfigBuilder::new()
+                                .with_local_size(self.connection_count)
+                                .with_remote_size(self.connection_count)
+                                .build(),
+                        )
                         .build()
                         .await
                         .unwrap(),
