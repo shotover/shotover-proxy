@@ -53,7 +53,7 @@ where
     udt::test(&connection).await;
     native_types::test(&connection).await;
     collections::test(&connection, driver).await;
-    // functions::test(&connection).await;
+    functions::test(&connection).await;
     prepared_statements_simple::test(&connection, connection_creator, 1).await;
     prepared_statements_all::test(&connection, 1).await;
     batch_statements::test(&connection).await;
@@ -1021,9 +1021,19 @@ async fn cassandra_5(#[case] driver: CassandraDriver) {
         .start()
         .await;
 
-    let connection = || CassandraConnectionBuilder::new("127.0.0.1", 9042, driver).build();
+    let connection_creator = || CassandraConnectionBuilder::new("127.0.0.1", 9042, driver).build();
 
-    standard_test_suite(&connection, driver).await;
+    let connection = connection_creator().await;
+
+    keyspace::test(&connection).await;
+    table::test(&connection).await;
+    udt::test(&connection).await;
+    native_types::test(&connection).await;
+    collections::test(&connection, driver).await;
+    prepared_statements_simple::test(&connection, connection_creator, 1).await;
+    prepared_statements_all::test(&connection, 1).await;
+    batch_statements::test(&connection).await;
+    timestamp::test(&connection).await;
 
     shotover.shutdown_and_then_consume_events(&[]).await;
 }
