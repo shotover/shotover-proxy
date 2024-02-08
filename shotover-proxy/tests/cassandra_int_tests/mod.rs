@@ -56,7 +56,7 @@ where
     // functions::test(&connection).await;
     prepared_statements_simple::test(&connection, connection_creator, 1).await;
     prepared_statements_all::test(&connection, 1).await;
-    // batch_statements::test(&connection).await;
+    batch_statements::test(&connection).await;
     timestamp::test(&connection).await;
 }
 
