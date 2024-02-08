@@ -15,6 +15,7 @@ use shotover::message::Message;
 use tokio_util::codec::{Decoder, Encoder};
 
 fn criterion_benchmark(c: &mut Criterion) {
+    crate::init();
     let mut group = c.benchmark_group("cassandra_codec");
     group.noise_threshold(0.2);
 

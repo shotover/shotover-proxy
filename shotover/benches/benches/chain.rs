@@ -21,7 +21,7 @@ use shotover::transforms::throttling::RequestThrottlingConfig;
 use shotover::transforms::{TransformConfig, Wrapper};
 
 fn criterion_benchmark(c: &mut Criterion) {
-    super::init();
+    crate::init();
     let rt = tokio::runtime::Runtime::new().unwrap();
     let mut group = c.benchmark_group("transform");
     group.noise_threshold(0.2);
