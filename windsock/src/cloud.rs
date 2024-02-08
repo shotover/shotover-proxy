@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use async_trait::async_trait;
 
 /// Implement this to give windsock some control over your cloud.
@@ -16,8 +18,31 @@ pub trait Cloud {
     /// This is called once at start up before running any benches.
     /// The implementation must return an object containing all the requested cloud resources.
     /// The `required_resources` contains the `CloudResourcesRequired` returned by each bench that will be executed in this run.
+    ///
+    /// benches_will_run:
+    /// * true  - the benches will be run, ensure they have everything they need to complete succesfully.
+    /// * false - the benches will not be run, due to `--store-cloud-resources-file`, you can skip uploading anything that will be reuploaded when restoring the resources
     async fn create_resources(
         &mut self,
+        required_resources: Vec<Self::CloudResourcesRequired>,
+        benches_will_run: bool,
+    ) -> Self::CloudResources;
+
+    /// Construct a file at the provided path that will allow restoring the passed resources
+    ///
+    /// It is gauranteed this will be called after all the benches have completed.
+    async fn store_resources_file(&mut self, path: &Path, resources: Self::CloudResources);
+
+    /// Restore the resources from the data in the passed file.
+    /// It is the same file path that was passed to [`Cloud::store_resources_file`]
+    ///
+    /// The implementation should panic when the loaded messages cannot meet the requirements of the passed `required_sources`.
+    /// This is done rather than loading the required resources from disk as this case usually represents a user error.
+    /// Loading from disk is used for more consistent results across benches but the user cannot hope to get consistent results while changing the benches that will be run.
+    /// They are better off recreating the resources from scratch in this case.
+    async fn load_resources_file(
+        &mut self,
+        path: &Path,
         required_resources: Vec<Self::CloudResourcesRequired>,
     ) -> Self::CloudResources;
 
@@ -32,6 +57,7 @@ pub trait Cloud {
 
     /// This is called before running each bench.
     /// Use it to destroy or create resources as needed.
+    /// However, this method will not be called when `--save-resources-file` or `--load-resources-file` is set.
     ///
     /// It is recommended to create all resources within create_resources for faster completion time, but it may be desirable in some circumstances to create some of them here.
     /// It is recommended to always destroy resources that will never be used again here.
@@ -65,5 +91,12 @@ impl Cloud for NoCloud {
     type CloudResourcesRequired = ();
     type CloudResources = ();
     async fn cleanup_resources(&mut self) {}
-    async fn create_resources(&mut self, _requests: Vec<()>) {}
+    async fn create_resources(&mut self, _requests: Vec<()>, _benches_will_run: bool) {}
+    async fn store_resources_file(&mut self, _path: &Path, _resources: ()) {}
+    async fn load_resources_file(
+        &mut self,
+        _path: &Path,
+        _required_resources: Vec<Self::CloudResourcesRequired>,
+    ) {
+    }
 }

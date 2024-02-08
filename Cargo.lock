@@ -527,9 +527,9 @@ dependencies = [
 
 [[package]]
 name = "aws-throwaway"
-version = "0.6.1"
+version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3d5955140d4b11b9e3cb8c21546885b68472a3f20f6d8af58f4fbea8747f2e5b"
+checksum = "64948b59109942d202323bf8e091f167c598d10cca102d63c2b8c4d885d6f08d"
 dependencies = [
  "anyhow",
  "async-trait",

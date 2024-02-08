@@ -12,3 +12,7 @@ pub fn windsock_path() -> PathBuf {
 
     PathBuf::from("windsock_data")
 }
+
+pub fn cloud_resources_path() -> PathBuf {
+    windsock_path().join("cloud_resources")
+}

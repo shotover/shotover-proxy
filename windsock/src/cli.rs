@@ -68,6 +68,18 @@ pub struct Args {
     #[clap(long, verbatim_doc_comment)]
     pub cleanup_cloud_resources: bool,
 
+    /// Skip running of benches.
+    /// Skip automatic deletion of cloud resources on bench run completion.
+    /// Instead, just create cloud resources and write details of the resources to disk so they may be restored via `--load-cloud-resources-file`
+    #[clap(long, verbatim_doc_comment)]
+    pub store_cloud_resources_file: bool,
+
+    /// Skip automatic creation of cloud resources on bench run completion.
+    /// Skip automatic deletion of cloud resources on bench run completion.
+    /// Instead, details of the resources are loaded from disk as saved via a previous run using `--store-cloud-resources-file`
+    #[clap(long, verbatim_doc_comment)]
+    pub load_cloud_resources_file: bool,
+
     /// Display results from the last benchmark run by:
     ///     Comparing various benches against a specific base bench.
     ///
