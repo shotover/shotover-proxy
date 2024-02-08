@@ -94,7 +94,7 @@ fn get_length_of_full_message(src: &BytesMut) -> Option<usize> {
 }
 
 impl Decoder for KafkaDecoder {
-    type Item = Messages;
+    type Item = Message;
     type Error = CodecReadError;
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
@@ -128,7 +128,7 @@ impl Decoder for KafkaDecoder {
                     Some(received_at),
                 )
             };
-            Ok(Some(vec![message]))
+            Ok(Some(message))
         } else {
             Ok(None)
         }

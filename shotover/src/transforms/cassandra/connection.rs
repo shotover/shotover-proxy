@@ -282,22 +282,20 @@ async fn rx_process<T: AsyncRead>(
         tokio::select! {
             response = reader.next() => {
                 match response {
-                    Some(Ok(response)) => {
-                        for mut m in response {
-                            let meta = m.metadata();
-                            if let Ok(Metadata::Cassandra(CassandraMetadata { opcode: Opcode::Event, .. })) = meta {
-                                if let Some(pushed_messages_tx) = pushed_messages_tx.as_ref() {
-                                    pushed_messages_tx.send(vec![m]).ok();
-                                }
-                            } else if let Some(stream_id) = m.stream_id() {
-                                match from_tx_process.remove(&stream_id) {
-                                    None => {
-                                        from_server.insert(stream_id, m);
-                                    },
-                                    Some((return_tx, request_id)) => {
-                                        m.set_request_id(request_id);
-                                        return_tx.send(Ok(m)).ok();
-                                    }
+                    Some(Ok(mut m)) => {
+                        let meta = m.metadata();
+                        if let Ok(Metadata::Cassandra(CassandraMetadata { opcode: Opcode::Event, .. })) = meta {
+                            if let Some(pushed_messages_tx) = pushed_messages_tx.as_ref() {
+                                pushed_messages_tx.send(vec![m]).ok();
+                            }
+                        } else if let Some(stream_id) = m.stream_id() {
+                            match from_tx_process.remove(&stream_id) {
+                                None => {
+                                    from_server.insert(stream_id, m);
+                                },
+                                Some((return_tx, request_id)) => {
+                                    m.set_request_id(request_id);
+                                    return_tx.send(Ok(m)).ok();
                                 }
                             }
                         }

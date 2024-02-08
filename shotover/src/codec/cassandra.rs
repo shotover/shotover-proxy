@@ -18,6 +18,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
+use std::vec::IntoIter;
 use tokio_util::codec::{Decoder, Encoder};
 use tracing::info;
 
@@ -179,6 +180,7 @@ pub struct CassandraDecoder {
     version_counter: VersionCounter,
     expected_payload_len: Option<usize>,
     payload_buffer: BytesMut,
+    v5_envelopes: IntoIter<Message>,
 }
 
 impl CassandraDecoder {
@@ -198,6 +200,7 @@ impl CassandraDecoder {
             version_counter,
             payload_buffer: BytesMut::new(),
             expected_payload_len: None,
+            v5_envelopes: vec![].into_iter(),
         }
     }
 }
@@ -243,7 +246,7 @@ impl CassandraDecoder {
         compression: Compression,
         handshake_complete: bool,
         received_at: Instant,
-    ) -> Result<Vec<Message>> {
+    ) -> Result<Message> {
         match (version, handshake_complete) {
             (Version::V5, true) => match compression {
                 Compression::None => {
@@ -278,10 +281,10 @@ impl CassandraDecoder {
                     frame_bytes.advance(UNCOMPRESSED_FRAME_HEADER_LENGTH);
                     let payload = frame_bytes.split_to(payload_length).freeze();
 
-                    let envelopes =
-                        self.extract_envelopes_from_payload(payload, self_contained, received_at)?;
-
-                    Ok(envelopes)
+                    self.v5_envelopes = self
+                        .extract_envelopes_from_payload(payload, self_contained, received_at)?
+                        .into_iter();
+                    Ok(self.v5_envelopes.next().unwrap())
                 }
                 Compression::Lz4 => {
                     let mut frame_bytes = src.split_to(frame_len);
@@ -339,10 +342,10 @@ impl CassandraDecoder {
                         .into()
                     };
 
-                    let envelopes =
-                        self.extract_envelopes_from_payload(payload, self_contained, received_at)?;
-
-                    Ok(envelopes)
+                    self.v5_envelopes = self
+                        .extract_envelopes_from_payload(payload, self_contained, received_at)?
+                        .into_iter();
+                    Ok(self.v5_envelopes.next().unwrap())
                 }
                 _ => Err(anyhow!("Only Lz4 compression is supported for v5")),
             },
@@ -368,7 +371,7 @@ impl CassandraDecoder {
                     Some(received_at),
                 );
 
-                Ok(vec![message])
+                Ok(message)
             }
         }
     }
@@ -564,10 +567,14 @@ fn set_startup_state(
 }
 
 impl Decoder for CassandraDecoder {
-    type Item = Messages;
+    type Item = Message;
     type Error = CodecReadError;
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, CodecReadError> {
+        if let Some(message) = self.v5_envelopes.next() {
+            return Ok(Some(message));
+        }
+
         let version: Version = self.version.load(Ordering::Relaxed).into();
         let compression: Compression = self.compression.load(Ordering::Relaxed).into();
         let handshake_complete = self.handshake_complete.load(Ordering::Relaxed);
@@ -575,7 +582,7 @@ impl Decoder for CassandraDecoder {
 
         match self.check_size(src, version, compression, handshake_complete) {
             Ok(frame_len) => {
-                let mut messages = self
+                let mut message = self
                     .decode_frame(
                         src,
                         frame_len,
@@ -586,22 +593,20 @@ impl Decoder for CassandraDecoder {
                     )
                     .map_err(CodecReadError::Parser)?;
 
-                for message in messages.iter_mut() {
-                    if let Ok(Metadata::Cassandra(CassandraMetadata {
-                        opcode: Opcode::Query | Opcode::Batch,
-                        ..
-                    })) = message.metadata()
-                    {
-                        if let Some(keyspace) = get_use_keyspace(message) {
-                            self.current_use_keyspace = Some(keyspace);
-                        }
+                if let Ok(Metadata::Cassandra(CassandraMetadata {
+                    opcode: Opcode::Query | Opcode::Batch,
+                    ..
+                })) = message.metadata()
+                {
+                    if let Some(keyspace) = get_use_keyspace(&mut message) {
+                        self.current_use_keyspace = Some(keyspace);
+                    }
 
-                        if let Some(keyspace) = &self.current_use_keyspace {
-                            set_default_keyspace(message, keyspace);
-                        }
+                    if let Some(keyspace) = &self.current_use_keyspace {
+                        set_default_keyspace(&mut message, keyspace);
                     }
                 }
-                Ok(Some(messages))
+                Ok(Some(message))
             }
             Err(CheckFrameSizeError::NotEnoughBytes) => Ok(None),
             Err(CheckFrameSizeError::UnsupportedVersion(version)) => {
@@ -1019,10 +1024,10 @@ mod cassandra_protocol_tests {
     ) {
         let (mut decoder, mut encoder) = codec.build();
         // test decode
-        let decoded_messages = decoder
+        let decoded_messages = vec![decoder
             .decode(&mut BytesMut::from(raw_frame))
             .unwrap()
-            .unwrap();
+            .unwrap()];
 
         // test messages parse correctly
         let mut parsed_messages = decoded_messages.clone();

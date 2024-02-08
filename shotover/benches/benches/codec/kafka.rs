@@ -40,8 +40,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                         )
                     },
                     |((mut decoder, encoder), mut input)| {
-                        let mut message =
-                            decoder.decode(&mut input).unwrap().unwrap().pop().unwrap();
+                        let mut message = decoder.decode(&mut input).unwrap().unwrap();
                         message.frame();
 
                         // avoid measuring any drops
@@ -57,8 +56,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                         let (mut decoder, encoder) =
                             KafkaCodecBuilder::new(Direction::Source, "kafka".to_owned()).build();
                         let mut input = input.clone();
-                        let mut message =
-                            decoder.decode(&mut input).unwrap().unwrap().pop().unwrap();
+                        let mut message = decoder.decode(&mut input).unwrap().unwrap();
                         message.frame();
                         assert!(decoder.decode(&mut input).unwrap().is_none());
                         (decoder, encoder, message)

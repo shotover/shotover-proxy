@@ -92,7 +92,7 @@ impl RedisDecoder {
 }
 
 impl Decoder for RedisDecoder {
-    type Item = Messages;
+    type Item = Message;
     type Error = CodecReadError;
 
     // TODO: this duplicates a bunch of logic from sink_single.rs
@@ -184,7 +184,7 @@ impl Decoder for RedisDecoder {
                         }
                     }
                 }
-                Ok(Some(vec![message]))
+                Ok(Some(message))
             }
             None => Ok(None),
         }
@@ -291,10 +291,10 @@ mod redis_tests {
     fn test_frame(raw_frame: &[u8]) {
         let (mut decoder, mut encoder) =
             RedisCodecBuilder::new(Direction::Source, "redis".to_owned()).build();
-        let message = decoder
+        let message = vec![decoder
             .decode(&mut BytesMut::from(raw_frame))
             .unwrap()
-            .unwrap();
+            .unwrap()];
 
         let mut dest = BytesMut::new();
         encoder.encode(message, &mut dest).unwrap();

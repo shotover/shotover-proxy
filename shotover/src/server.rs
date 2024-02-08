@@ -28,6 +28,9 @@ use tokio_util::codec::{Decoder, Encoder, FramedRead, FramedWrite};
 use tracing::Instrument;
 use tracing::{debug, error, warn};
 
+// TODO: move into https://github.com/shotover/shotover-proxy/pull/1465
+const DECODE_BUFFER_LEN: usize = 10_000;
+
 pub struct TcpCodecListener<C: CodecBuilder> {
     chain_builder: TransformChainBuilder,
     source_name: String,
@@ -291,7 +294,7 @@ async fn spawn_websocket_read_write_tasks<
 >(
     codec: C,
     stream: S,
-    in_tx: mpsc::Sender<Messages>,
+    in_tx: mpsc::Sender<Message>,
     mut out_rx: UnboundedReceiver<Messages>,
     out_tx: UnboundedSender<Messages>,
     websocket_subprotocol: &str,
@@ -443,7 +446,7 @@ fn spawn_read_write_tasks<
     codec: C,
     rx: R,
     tx: W,
-    in_tx: mpsc::Sender<Messages>,
+    in_tx: mpsc::Sender<Message>,
     mut out_rx: UnboundedReceiver<Messages>,
     out_tx: UnboundedSender<Messages>,
 ) {
@@ -585,7 +588,7 @@ impl<C: CodecBuilder + 'static> Handler<C> {
         // A particular scenario we are concerned about is if it takes longer to send to the server
         // than for the client to send to us, the buffer will grow indefinitely, increasing latency until the buffer triggers an OoM.
         // To avoid that we have currently hardcoded a limit of 10,000 but if we start hitting that in production we should make this user configurable.
-        let (in_tx, in_rx) = mpsc::channel::<Messages>(10_000);
+        let (in_tx, in_rx) = mpsc::channel::<Message>(10_000);
         let (out_tx, out_rx) = mpsc::unbounded_channel::<Messages>();
 
         let local_addr = stream.local_addr()?;
@@ -674,19 +677,30 @@ impl<C: CodecBuilder + 'static> Handler<C> {
 
     async fn receive_with_timeout(
         timeout: Option<Duration>,
-        in_rx: &mut mpsc::Receiver<Vec<Message>>,
+        in_rx: &mut mpsc::Receiver<Message>,
         client_details: &str,
-    ) -> Option<Vec<Message>> {
+        last_received: usize,
+    ) -> Option<Messages> {
+        let mut messages = Vec::with_capacity((last_received * 2).min(DECODE_BUFFER_LEN).max(16));
         if let Some(timeout) = timeout {
-            match tokio::time::timeout(timeout, in_rx.recv()).await {
-                Ok(messages) => messages,
+            match tokio::time::timeout(timeout, in_rx.recv_many(&mut messages, DECODE_BUFFER_LEN))
+                .await
+            {
+                Ok(_) => {}
                 Err(_) => {
                     debug!("Dropping connection to {client_details} due to being idle for more than {timeout:?}");
-                    None
+                    return None;
                 }
             }
         } else {
-            in_rx.recv().await
+            in_rx.recv_many(&mut messages, DECODE_BUFFER_LEN).await;
+        }
+
+        if messages.is_empty() {
+            // No messages indicates that the channel has been closed
+            None
+        } else {
+            Some(messages)
         }
     }
 
@@ -694,21 +708,20 @@ impl<C: CodecBuilder + 'static> Handler<C> {
         &mut self,
         client_details: &str,
         local_addr: SocketAddr,
-        mut in_rx: mpsc::Receiver<Messages>,
+        mut in_rx: mpsc::Receiver<Message>,
         out_tx: mpsc::UnboundedSender<Messages>,
     ) -> Result<()> {
         // As long as the shutdown signal has not been received, try to read a
         // new request frame.
+        let mut last_received = 0;
         while !self.shutdown.is_shutdown() {
             // While reading a request frame, also listen for the shutdown signal
             debug!("Waiting for message {client_details}");
             let responses = tokio::select! {
-                requests = Self::receive_with_timeout(self.timeout, &mut in_rx, client_details) => {
+                requests = Self::receive_with_timeout(self.timeout, &mut in_rx, client_details,last_received) => {
                     match requests {
-                        Some(mut requests) => {
-                            while let Ok(x) = in_rx.try_recv() {
-                                requests.extend(x);
-                            }
+                        Some(requests) => {
+                            last_received = requests.len();
                             debug!("Received requests from client {:?}", requests);
                             self.process_forward(client_details, local_addr, &out_tx, requests).await?
                         }

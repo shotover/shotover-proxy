@@ -204,7 +204,7 @@ enum State {
 }
 
 impl Decoder for OpenSearchDecoder {
-    type Item = Messages;
+    type Item = Message;
     type Error = CodecReadError;
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, CodecReadError> {
@@ -236,13 +236,13 @@ impl Decoder for OpenSearchDecoder {
                 }
                 State::ReadingBody(http_headers, content_length) => {
                     if let Some(Method::HEAD) = *self.last_outgoing_method.lock().unwrap() {
-                        return Ok(Some(vec![Message::from_frame_at_instant(
+                        return Ok(Some(Message::from_frame_at_instant(
                             Frame::OpenSearch(OpenSearchFrame::new(
                                 http_headers,
                                 bytes::Bytes::new(),
                             )),
                             Some(received_at),
-                        )]));
+                        )));
                     }
 
                     if src.len() < content_length {
@@ -261,7 +261,7 @@ impl Decoder for OpenSearchDecoder {
                         })?;
                         message.set_request_id(id);
                     }
-                    return Ok(Some(vec![message]));
+                    return Ok(Some(message));
                 }
             }
         }
@@ -399,7 +399,7 @@ mod opensearch_tests {
             .unwrap();
 
         let mut dest = BytesMut::new();
-        encoder.encode(message, &mut dest).unwrap();
+        encoder.encode(vec![message], &mut dest).unwrap();
         assert_eq!(raw_frame, &dest);
     }
 
@@ -429,7 +429,7 @@ mod opensearch_tests {
             .unwrap();
 
         let mut dest = BytesMut::new();
-        encoder.encode(message, &mut dest).unwrap();
+        encoder.encode(vec![message], &mut dest).unwrap();
         assert_eq!(raw_frame, &dest);
     }
 

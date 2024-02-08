@@ -248,96 +248,94 @@ async fn server_response_processing_task(
 
 /// returns true when the task should shutdown
 async fn process_server_response(
-    responses: Option<Result<Messages, CodecReadError>>,
+    response: Option<Result<Message, CodecReadError>>,
     subscribe_tx: &Option<mpsc::UnboundedSender<Messages>>,
     response_messages_tx: &mpsc::UnboundedSender<Message>,
     is_subscribed: &mut bool,
     sent_message_type: &mut mpsc::UnboundedReceiver<MessageType>,
 ) -> bool {
-    match responses {
-        Some(Ok(messages)) => {
-            for mut message in messages {
-                // Notes on subscription responses
-                //
-                // There are 3 types of pubsub responses and the type is determined by the first value in the array:
-                // * `subscribe` - a response to a SUBSCRIBE, PSUBSCRIBE or SSUBSCRIBE request
-                // * `unsubscribe` - a response to an UNSUBSCRIBE, PUNSUBSCRIBE or SUNSUBSCRIBE request
-                // * `message` - a subscription message
-                //
-                // Additionally redis will:
-                // * accept a few regular commands while in pubsub mode: PING, RESET and QUIT
-                // * return an error response when a nonexistent or non pubsub compatible command is used
-                //
-                // Note: PING has a custom response when in pubsub mode.
-                //       It returns an array ['pong', $pingMessage] instead of directly returning $pingMessage.
-                //       But this doesnt cause any problems for us.
+    match response {
+        Some(Ok(mut message)) => {
+            // Notes on subscription responses
+            //
+            // There are 3 types of pubsub responses and the type is determined by the first value in the array:
+            // * `subscribe` - a response to a SUBSCRIBE, PSUBSCRIBE or SSUBSCRIBE request
+            // * `unsubscribe` - a response to an UNSUBSCRIBE, PUNSUBSCRIBE or SUNSUBSCRIBE request
+            // * `message` - a subscription message
+            //
+            // Additionally redis will:
+            // * accept a few regular commands while in pubsub mode: PING, RESET and QUIT
+            // * return an error response when a nonexistent or non pubsub compatible command is used
+            //
+            // Note: PING has a custom response when in pubsub mode.
+            //       It returns an array ['pong', $pingMessage] instead of directly returning $pingMessage.
+            //       But this doesnt cause any problems for us.
 
-                // Determine if message is a `message` subscription message
-                //
-                // Because PING, RESET, QUIT and error responses never return a RedisFrame::Array starting with `message`,
-                // they have no way to collide with the `message` value of a subscription message.
-                // So while we are in subscription mode we can use that to determine if an
-                // incoming message is a subscription message.
-                let is_subscription_message = if *is_subscribed {
-                    if let Some(Frame::Redis(RedisFrame::Array(array))) = message.frame() {
-                        if let [RedisFrame::BulkString(ty), ..] = array.as_slice() {
-                            ty.as_ref() == b"message"
-                        } else {
-                            false
-                        }
+            // Determine if message is a `message` subscription message
+            //
+            // Because PING, RESET, QUIT and error responses never return a RedisFrame::Array starting with `message`,
+            // they have no way to collide with the `message` value of a subscription message.
+            // So while we are in subscription mode we can use that to determine if an
+            // incoming message is a subscription message.
+            let is_subscription_message = if *is_subscribed {
+                if let Some(Frame::Redis(RedisFrame::Array(array))) = message.frame() {
+                    if let [RedisFrame::BulkString(ty), ..] = array.as_slice() {
+                        ty.as_ref() == b"message"
                     } else {
                         false
                     }
                 } else {
                     false
-                };
+                }
+            } else {
+                false
+            };
 
-                // Update is_subscribed state
-                //
-                // In order to make sense of a response we need the main task to
-                // send us the type of its corresponding request.
-                //
-                // In order to keep the incoming request MessageTypes in sync with their corresponding responses
-                // we must only process a MessageType when the message is not a subscription message.
-                // This is fine because subscription messages cannot affect the is_subscribed state.
-                if !is_subscription_message {
-                    match sent_message_type.recv().await {
-                        Some(MessageType::Subscribe) | Some(MessageType::Unsubscribe) => {
-                            if let Some(Frame::Redis(RedisFrame::Array(array))) = message.frame() {
-                                if let Some(RedisFrame::Integer(number_of_subscribed_channels)) =
-                                    array.get(2)
-                                {
-                                    *is_subscribed = *number_of_subscribed_channels != 0;
-                                }
+            // Update is_subscribed state
+            //
+            // In order to make sense of a response we need the main task to
+            // send us the type of its corresponding request.
+            //
+            // In order to keep the incoming request MessageTypes in sync with their corresponding responses
+            // we must only process a MessageType when the message is not a subscription message.
+            // This is fine because subscription messages cannot affect the is_subscribed state.
+            if !is_subscription_message {
+                match sent_message_type.recv().await {
+                    Some(MessageType::Subscribe) | Some(MessageType::Unsubscribe) => {
+                        if let Some(Frame::Redis(RedisFrame::Array(array))) = message.frame() {
+                            if let Some(RedisFrame::Integer(number_of_subscribed_channels)) =
+                                array.get(2)
+                            {
+                                *is_subscribed = *number_of_subscribed_channels != 0;
                             }
                         }
-                        Some(MessageType::Other) => {}
-                        Some(MessageType::Reset) => {
-                            *is_subscribed = false;
-                        }
-                        None => {
-                            tracing::debug!("RedisSinkSingle dropped after a message was received from server, RedisSinkSingle request processor task shutting down");
-                            return true;
-                        }
+                    }
+                    Some(MessageType::Other) => {}
+                    Some(MessageType::Reset) => {
+                        *is_subscribed = false;
+                    }
+                    None => {
+                        tracing::debug!("RedisSinkSingle dropped after a message was received from server, RedisSinkSingle request processor task shutting down");
+                        return true;
                     }
                 }
+            }
 
-                // Route the message down the correct path:
-                // * `message` subscription messages:
-                //    needs to be routed down the pushed_messages chain
-                // * everything else:
-                //    needs to be routed down the regular chain
-                if is_subscription_message {
-                    // subscribe_tx may not exist if we are e.g. in an alternate chain of a tee transform
-                    if let Some(subscribe_tx) = subscribe_tx {
-                        if let Err(mpsc::error::SendError(_)) = subscribe_tx.send(vec![message]) {
-                            tracing::debug!("shotover chain is terminated, will continue running until Transform is dropped");
-                        }
+            // Route the message down the correct path:
+            // * `message` subscription messages:
+            //    needs to be routed down the pushed_messages chain
+            // * everything else:
+            //    needs to be routed down the regular chain
+            if is_subscription_message {
+                // subscribe_tx may not exist if we are e.g. in an alternate chain of a tee transform
+                if let Some(subscribe_tx) = subscribe_tx {
+                    if let Err(mpsc::error::SendError(_)) = subscribe_tx.send(vec![message]) {
+                        tracing::debug!("shotover chain is terminated, will continue running until Transform is dropped");
                     }
-                } else if let Err(mpsc::error::SendError(_)) = response_messages_tx.send(message) {
-                    tracing::debug!("RedisSinkSingle dropped after a message was received from server, RedisSinkSingle request processor task shutting down");
-                    return true;
                 }
+            } else if let Err(mpsc::error::SendError(_)) = response_messages_tx.send(message) {
+                tracing::debug!("RedisSinkSingle dropped after a message was received from server, RedisSinkSingle request processor task shutting down");
+                return true;
             }
             false
         }
