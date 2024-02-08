@@ -6,9 +6,14 @@ pub use aws::{
     Ec2InstanceWithBencher, Ec2InstanceWithDocker, Ec2InstanceWithShotover, RunningShotover,
 };
 
+use anyhow::Result;
 use async_trait::async_trait;
 use aws::AwsInstances;
-use std::sync::Arc;
+use futures::StreamExt;
+use futures::{stream::FuturesUnordered, Future};
+use serde::{Deserialize, Serialize};
+use std::pin::Pin;
+use std::{path::Path, sync::Arc};
 use windsock::cloud::{BenchInfo, Cloud};
 
 pub struct AwsCloud {
@@ -37,7 +42,11 @@ impl Cloud for AwsCloud {
         println!("All AWS throwaway resources have been deleted");
     }
 
-    async fn create_resources(&mut self, required: Vec<CloudResourcesRequired>) -> CloudResources {
+    async fn create_resources(
+        &mut self,
+        required: Vec<CloudResourcesRequired>,
+        benches_will_run: bool,
+    ) -> CloudResources {
         let required = required.into_iter().fold(
             CloudResourcesRequired::default(),
             CloudResourcesRequired::combine,
@@ -51,17 +60,19 @@ impl Cloud for AwsCloud {
         let aws = self.aws.as_ref().unwrap();
         let (docker, mut bencher, shotover) = futures::join!(
             aws.create_docker_instances(
+                benches_will_run,
                 required.include_shotover_in_docker_instance,
                 required.docker_instance_count
             ),
-            aws.create_bencher_instances(1),
-            aws.create_shotover_instances(required.shotover_instance_count)
+            aws.create_bencher_instances(benches_will_run, 1),
+            aws.create_shotover_instances(benches_will_run, required.shotover_instance_count)
         );
         let bencher = bencher.pop();
         CloudResources {
             shotover,
             docker,
             bencher,
+            required,
         }
     }
 
@@ -97,9 +108,82 @@ impl Cloud for AwsCloud {
 
         // TODO: spin up background tokio task to delete unneeded EC2 instances once we add the functionality to aws_throwaway
     }
+
+    async fn store_resources_file(&mut self, path: &Path, resources: CloudResources) {
+        let resources = CloudResourcesDisk {
+            shotover: resources
+                .shotover
+                .into_iter()
+                .map(|x| {
+                    Arc::into_inner(x)
+                        .expect("A bench is still referencing an Ec2InstanceWithShotover")
+                })
+                .collect(),
+            docker: resources
+                .docker
+                .into_iter()
+                .map(|x| {
+                    Arc::into_inner(x)
+                        .expect("A bench is still referencing an Ec2InstanceWithDocker")
+                })
+                .collect(),
+            bencher: resources.bencher.map(|x| {
+                Arc::into_inner(x).expect("A bench is still referencing an Ec2InstanceWithBencher")
+            }),
+            required: resources.required,
+        };
+        std::fs::write(path, serde_json::to_string(&resources).unwrap()).unwrap();
+    }
+
+    async fn load_resources_file(
+        &mut self,
+        path: &Path,
+        required_resources: Vec<CloudResourcesRequired>,
+    ) -> CloudResources {
+        let required_resources = required_resources.into_iter().fold(
+            CloudResourcesRequired::default(),
+            CloudResourcesRequired::combine,
+        );
+        let mut resources: CloudResourcesDisk =
+            serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+
+        if resources.required != required_resources {
+            panic!(
+                "Stored resources do not meet the requirements of this bench run. Maybe try rerunning --store-cloud-resources-file\nloaded:\n{:?}\nrequired:\n{:?}",
+                resources.required,
+                required_resources
+            );
+        }
+
+        {
+            let mut futures =
+                FuturesUnordered::<Pin<Box<dyn Future<Output = Result<()>> + Send>>>::new();
+            for instance in &mut resources.bencher {
+                futures.push(Box::pin(instance.reinit()));
+            }
+            for instance in &mut resources.docker {
+                futures.push(Box::pin(instance.reinit()));
+            }
+
+            for instance in &mut resources.shotover {
+                futures.push(Box::pin(instance.reinit()));
+            }
+
+            while let Some(result) = futures.next().await {
+                let _: () = result.unwrap();
+            }
+        }
+
+        CloudResources {
+            shotover: resources.shotover.into_iter().map(Arc::new).collect(),
+            docker: resources.docker.into_iter().map(Arc::new).collect(),
+            bencher: resources.bencher.map(Arc::new),
+            required: resources.required,
+        }
+    }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct CloudResourcesRequired {
     pub shotover_instance_count: usize,
     pub docker_instance_count: usize,
@@ -125,4 +209,13 @@ pub struct CloudResources {
     pub shotover: Vec<Arc<Ec2InstanceWithShotover>>,
     pub docker: Vec<Arc<Ec2InstanceWithDocker>>,
     pub bencher: Option<Arc<Ec2InstanceWithBencher>>,
+    pub required: CloudResourcesRequired,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct CloudResourcesDisk {
+    pub shotover: Vec<Ec2InstanceWithShotover>,
+    pub docker: Vec<Ec2InstanceWithDocker>,
+    pub bencher: Option<Ec2InstanceWithBencher>,
+    pub required: CloudResourcesRequired,
 }

@@ -82,7 +82,7 @@ impl KeyManager {
     async fn get_key(&self, dek: Option<Vec<u8>>, kek_alt: Option<String>) -> Result<KeyMaterial> {
         match &self {
             KeyManager::AWSKms(aws) => aws.get_key(dek, kek_alt).await,
-            KeyManager::Local(local) => local.get_key(dek).await,
+            KeyManager::Local(local) => local.get_key(dek),
         }
     }
 }
