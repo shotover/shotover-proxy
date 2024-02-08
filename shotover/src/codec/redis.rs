@@ -5,7 +5,7 @@ use crate::codec::{CodecBuilder, CodecReadError};
 use crate::frame::{Frame, MessageType};
 use crate::message::{Encodable, Message, Messages};
 use anyhow::{anyhow, Result};
-use bytes::{Buf, BytesMut};
+use bytes::BytesMut;
 use metrics::Histogram;
 use redis_protocol::resp2::prelude::decode_mut;
 use redis_protocol::resp2::prelude::encode_bytes;
@@ -47,16 +47,12 @@ pub struct RedisEncoder {
 }
 
 pub struct RedisDecoder {
-    messages: Messages,
     direction: Direction,
 }
 
 impl RedisDecoder {
     pub fn new(direction: Direction) -> Self {
-        Self {
-            messages: Vec::new(),
-            direction,
-        }
+        Self { direction }
     }
 }
 
@@ -66,30 +62,22 @@ impl Decoder for RedisDecoder {
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
         let received_at = Instant::now();
-        loop {
-            match decode_mut(src).map_err(|e| {
-                CodecReadError::Parser(anyhow!(e).context("Error decoding redis frame"))
-            })? {
-                Some((frame, _size, bytes)) => {
-                    tracing::debug!(
-                        "{}: incoming redis message:\n{}",
-                        self.direction,
-                        pretty_hex::pretty_hex(&bytes)
-                    );
-                    self.messages.push(Message::from_bytes_and_frame_at_instant(
-                        bytes,
-                        Frame::Redis(frame),
-                        Some(received_at),
-                    ));
-                }
-                None => {
-                    if self.messages.is_empty() || src.remaining() != 0 {
-                        return Ok(None);
-                    } else {
-                        return Ok(Some(std::mem::take(&mut self.messages)));
-                    }
-                }
+        match decode_mut(src)
+            .map_err(|e| CodecReadError::Parser(anyhow!(e).context("Error decoding redis frame")))?
+        {
+            Some((frame, _size, bytes)) => {
+                tracing::debug!(
+                    "{}: incoming redis message:\n{}",
+                    self.direction,
+                    pretty_hex::pretty_hex(&bytes)
+                );
+                Ok(Some(vec![Message::from_bytes_and_frame_at_instant(
+                    bytes,
+                    Frame::Redis(frame),
+                    Some(received_at),
+                )]))
             }
+            None => Ok(None),
         }
     }
 }

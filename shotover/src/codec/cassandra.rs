@@ -174,7 +174,6 @@ pub struct CassandraDecoder {
     version: Arc<AtomicVersionState>,
     compression: Arc<AtomicCompressionState>,
     handshake_complete: Arc<AtomicBool>,
-    messages: Vec<Message>,
     current_use_keyspace: Option<Identifier>,
     direction: Direction,
     version_counter: VersionCounter,
@@ -194,7 +193,6 @@ impl CassandraDecoder {
             version,
             compression,
             handshake_complete,
-            messages: vec![],
             current_use_keyspace: None,
             direction,
             version_counter,
@@ -575,58 +573,47 @@ impl Decoder for CassandraDecoder {
         let handshake_complete = self.handshake_complete.load(Ordering::Relaxed);
         let received_at = Instant::now();
 
-        loop {
-            match self.check_size(src, version, compression, handshake_complete) {
-                Ok(frame_len) => {
-                    let mut messages = self
-                        .decode_frame(
-                            src,
-                            frame_len,
-                            version,
-                            compression,
-                            handshake_complete,
-                            received_at,
-                        )
-                        .map_err(CodecReadError::Parser)?;
+        match self.check_size(src, version, compression, handshake_complete) {
+            Ok(frame_len) => {
+                let mut messages = self
+                    .decode_frame(
+                        src,
+                        frame_len,
+                        version,
+                        compression,
+                        handshake_complete,
+                        received_at,
+                    )
+                    .map_err(CodecReadError::Parser)?;
 
-                    for message in messages.iter_mut() {
-                        if let Ok(Metadata::Cassandra(CassandraMetadata {
-                            opcode: Opcode::Query | Opcode::Batch,
-                            ..
-                        })) = message.metadata()
-                        {
-                            if let Some(keyspace) = get_use_keyspace(message) {
-                                self.current_use_keyspace = Some(keyspace);
-                            }
+                for message in messages.iter_mut() {
+                    if let Ok(Metadata::Cassandra(CassandraMetadata {
+                        opcode: Opcode::Query | Opcode::Batch,
+                        ..
+                    })) = message.metadata()
+                    {
+                        if let Some(keyspace) = get_use_keyspace(message) {
+                            self.current_use_keyspace = Some(keyspace);
+                        }
 
-                            if let Some(keyspace) = &self.current_use_keyspace {
-                                set_default_keyspace(message, keyspace);
-                            }
+                        if let Some(keyspace) = &self.current_use_keyspace {
+                            set_default_keyspace(message, keyspace);
                         }
                     }
-
-                    self.messages.append(&mut messages);
                 }
-                Err(CheckFrameSizeError::NotEnoughBytes) => {
-                    if self.messages.is_empty() || src.remaining() != 0 {
-                        return Ok(None);
-                    } else {
-                        return Ok(Some(std::mem::take(&mut self.messages)));
-                    }
-                }
-                Err(CheckFrameSizeError::UnsupportedVersion(version)) => {
-                    return Err(reject_protocol_version(version));
-                }
-                Err(CheckFrameSizeError::UnsupportedCompression(msg)) => {
-                    return Err(CodecReadError::Parser(anyhow!(msg)));
-                }
-                err => {
-                    return Err(CodecReadError::Parser(anyhow!(
-                        "Failed to parse frame {:?}",
-                        err
-                    )))
-                }
+                Ok(Some(messages))
             }
+            Err(CheckFrameSizeError::NotEnoughBytes) => Ok(None),
+            Err(CheckFrameSizeError::UnsupportedVersion(version)) => {
+                Err(reject_protocol_version(version))
+            }
+            Err(CheckFrameSizeError::UnsupportedCompression(msg)) => {
+                Err(CodecReadError::Parser(anyhow!(msg)))
+            }
+            err => Err(CodecReadError::Parser(anyhow!(
+                "Failed to parse frame {:?}",
+                err
+            ))),
         }
     }
 }
