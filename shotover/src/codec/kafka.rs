@@ -3,7 +3,7 @@ use crate::codec::{CodecBuilder, CodecReadError};
 use crate::frame::MessageType;
 use crate::message::{Encodable, Message, Messages, ProtocolType};
 use anyhow::{anyhow, Result};
-use bytes::{Buf, BytesMut};
+use bytes::BytesMut;
 use kafka_protocol::messages::ApiKey;
 use metrics::Histogram;
 use std::sync::mpsc;
@@ -59,7 +59,6 @@ impl CodecBuilder for KafkaCodecBuilder {
 
 pub struct KafkaDecoder {
     request_header_rx: Option<mpsc::Receiver<RequestHeader>>,
-    messages: Messages,
     direction: Direction,
 }
 
@@ -70,7 +69,6 @@ impl KafkaDecoder {
     ) -> Self {
         KafkaDecoder {
             request_header_rx,
-            messages: vec![],
             direction,
         }
     }
@@ -95,31 +93,28 @@ impl Decoder for KafkaDecoder {
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
         let received_at = Instant::now();
-        loop {
-            if let Some(size) = get_length_of_full_message(src) {
-                let bytes = src.split_to(size);
-                tracing::debug!(
-                    "{}: incoming kafka message:\n{}",
-                    self.direction,
-                    pretty_hex::pretty_hex(&bytes)
-                );
-                let request_header = if let Some(rx) = self.request_header_rx.as_ref() {
+        if let Some(size) = get_length_of_full_message(src) {
+            let bytes = src.split_to(size);
+            tracing::debug!(
+                "{}: incoming kafka message:\n{}",
+                self.direction,
+                pretty_hex::pretty_hex(&bytes)
+            );
+            let request_header =
+                if let Some(rx) = self.request_header_rx.as_ref() {
                     Some(rx.recv().map_err(|_| {
                         CodecReadError::Parser(anyhow!("kafka encoder half was lost"))
                     })?)
                 } else {
                     None
                 };
-                self.messages.push(Message::from_bytes_at_instant(
-                    bytes.freeze(),
-                    ProtocolType::Kafka { request_header },
-                    Some(received_at),
-                ));
-            } else if self.messages.is_empty() || src.remaining() != 0 {
-                return Ok(None);
-            } else {
-                return Ok(Some(std::mem::take(&mut self.messages)));
-            }
+            Ok(Some(vec![Message::from_bytes_at_instant(
+                bytes.freeze(),
+                ProtocolType::Kafka { request_header },
+                Some(received_at),
+            )]))
+        } else {
+            Ok(None)
         }
     }
 }

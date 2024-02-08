@@ -251,10 +251,17 @@ impl Bench for RedisBench {
         let shotover_ip = shotover_instance
             .as_ref()
             .map(|x| x.instance.private_ip().to_string());
+        let shotover_connect_ip = shotover_instance
+            .as_ref()
+            .map(|x| x.instance.connect_ip().to_string());
 
-        let mut profiler =
-            CloudProfilerRunner::new(self.name(), profiling, profiler_instances, &shotover_ip)
-                .await;
+        let mut profiler = CloudProfilerRunner::new(
+            self.name(),
+            profiling,
+            profiler_instances,
+            &shotover_connect_ip,
+        )
+        .await;
 
         let (_, running_shotover) = futures::join!(
             redis_instances.run(self.encryption),

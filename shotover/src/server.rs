@@ -699,9 +699,14 @@ impl<C: CodecBuilder + 'static> Handler<C> {
             debug!("Waiting for message {client_details}");
             let responses = tokio::select! {
                 requests = Self::receive_with_timeout(self.timeout, &mut in_rx, client_details) => {
-                    debug!("Received requests from client {:?}", requests);
                     match requests {
-                        Some(requests) => self.process_forward(client_details, local_addr, &out_tx, requests).await?,
+                        Some(mut requests) => {
+                            while let Ok(x) = in_rx.try_recv() {
+                                requests.extend(x);
+                            }
+                            debug!("Received requests from client {:?}", requests);
+                            self.process_forward(client_details, local_addr, &out_tx, requests).await?
+                        }
                         None => {
                             // Either we timed out the connection or the client disconnected, so terminate this connection
                             return Ok(())
