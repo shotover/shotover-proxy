@@ -3,7 +3,7 @@ use crate::transforms::{Transform, TransformBuilder, Wrapper};
 use anyhow::{anyhow, Result};
 use derivative::Derivative;
 use futures::TryFutureExt;
-use metrics::{histogram, register_counter, register_histogram, Counter, Histogram};
+use metrics::{counter, histogram, Counter, Histogram};
 use std::net::SocketAddr;
 use tokio::sync::{mpsc, oneshot};
 use tokio::time::{Duration, Instant};
@@ -168,7 +168,7 @@ impl TransformChain {
             self.chain_failures.increment(1);
         }
 
-        histogram!("shotover_chain_latency_seconds", start.elapsed(),  "chain" => self.name, "client_details" => client_details);
+        histogram!("shotover_chain_latency_seconds", "chain" => self.name, "client_details" => client_details).record(start.elapsed());
         result
     }
 
@@ -184,7 +184,7 @@ impl TransformChain {
             self.chain_failures.increment(1);
         }
 
-        histogram!("shotover_chain_latency_seconds", start.elapsed(),  "chain" => self.name, "client_details" => client_details);
+        histogram!("shotover_chain_latency_seconds", "chain" => self.name, "client_details" => client_details).record(start.elapsed());
         result
     }
 }
@@ -264,20 +264,20 @@ impl TransformChainBuilder {
     pub fn new(chain: Vec<Box<dyn TransformBuilder>>, name: &'static str) -> Self {
         let chain = chain.into_iter().map(|builder|
             TransformBuilderAndMetrics {
-                transform_total: register_counter!("shotover_transform_total_count", "transform" => builder.get_name()),
-                transform_failures: register_counter!("shotover_transform_failures_count", "transform" => builder.get_name()),
-                transform_latency: register_histogram!("shotover_transform_latency_seconds", "transform" => builder.get_name()),
-                transform_pushed_total: register_counter!("shotover_transform_pushed_total_count", "transform" => builder.get_name()),
-                transform_pushed_failures: register_counter!("shotover_transform_pushed_failures_count", "transform" => builder.get_name()),
-                transform_pushed_latency: register_histogram!("shotover_transform_pushed_latency_seconds", "transform" => builder.get_name()),
+                transform_total: counter!("shotover_transform_total_count", "transform" => builder.get_name()),
+                transform_failures: counter!("shotover_transform_failures_count", "transform" => builder.get_name()),
+                transform_latency: histogram!("shotover_transform_latency_seconds", "transform" => builder.get_name()),
+                transform_pushed_total: counter!("shotover_transform_pushed_total_count", "transform" => builder.get_name()),
+                transform_pushed_failures: counter!("shotover_transform_pushed_failures_count", "transform" => builder.get_name()),
+                transform_pushed_latency: histogram!("shotover_transform_pushed_latency_seconds", "transform" => builder.get_name()),
                 builder,
             }
         ).collect();
 
         let chain_batch_size =
-            register_histogram!("shotover_chain_messages_per_batch_count", "chain" => name);
-        let chain_total = register_counter!("shotover_chain_total_count", "chain" => name);
-        let chain_failures = register_counter!("shotover_chain_failures_count", "chain" => name);
+            histogram!("shotover_chain_messages_per_batch_count", "chain" => name);
+        let chain_total = counter!("shotover_chain_total_count", "chain" => name);
+        let chain_failures = counter!("shotover_chain_failures_count", "chain" => name);
         // Cant register shotover_chain_latency_seconds because a unique one is created for each client ip address
 
         TransformChainBuilder {

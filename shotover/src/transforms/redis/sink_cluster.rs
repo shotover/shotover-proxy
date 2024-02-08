@@ -17,7 +17,7 @@ use futures::stream::FuturesOrdered;
 use futures::stream::FuturesUnordered;
 use futures::{StreamExt, TryFutureExt};
 use itertools::Itertools;
-use metrics::{counter, register_counter};
+use metrics::counter;
 use rand::rngs::SmallRng;
 use rand::seq::IteratorRandom;
 use rand::SeedableRng;
@@ -159,7 +159,7 @@ impl RedisSinkCluster {
             token: None,
         };
 
-        register_counter!("shotover_failed_requests_count", "chain" => chain_name, "transform" => sink_cluster.get_name());
+        counter!("shotover_failed_requests_count", "chain" => chain_name, "transform" => sink_cluster.get_name());
 
         sink_cluster
     }
@@ -604,7 +604,7 @@ impl RedisSinkCluster {
 
     #[inline(always)]
     fn send_error_response(&self, message: &str) -> Result<ResponseFuture> {
-        counter!("shotover_failed_requests_count", 1, "chain" => self.chain_name.clone(), "transform" => self.get_name());
+        counter!("shotover_failed_requests_count", "chain" => self.chain_name.clone(), "transform" => self.get_name()).increment(1);
         short_circuit(RedisFrame::Error(message.into()))
     }
 

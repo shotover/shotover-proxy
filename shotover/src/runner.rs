@@ -129,7 +129,7 @@ impl Shotover {
             .unwrap()
             .build_recorder();
         let handle = recorder.handle();
-        metrics::set_boxed_recorder(Box::new(recorder))?;
+        metrics::set_global_recorder(recorder)?;
 
         let socket: SocketAddr = config.observability_interface.parse()?;
         let exporter = LogFilterHttpExporter::new(handle, socket, tracing.handle.clone());

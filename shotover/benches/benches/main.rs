@@ -9,7 +9,7 @@ fn init() {
     std::env::set_var("RUST_LIB_BACKTRACE", "0");
 
     let recorder = PrometheusBuilder::new().build_recorder();
-    metrics::set_boxed_recorder(Box::new(recorder)).ok();
+    metrics::set_global_recorder(recorder).ok();
 }
 
 criterion_main!(

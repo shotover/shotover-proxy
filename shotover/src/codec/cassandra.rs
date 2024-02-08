@@ -13,7 +13,7 @@ use cassandra_protocol::frame::{Flags, Opcode, Version, PAYLOAD_SIZE_LIMIT};
 use cql3_parser::cassandra_statement::CassandraStatement;
 use cql3_parser::common::Identifier;
 use lz4_flex::{block::get_maximum_output_size, compress_into, decompress};
-use metrics::{register_counter, Counter, Histogram};
+use metrics::{counter, Counter, Histogram};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -154,9 +154,9 @@ pub struct VersionCounter {
 impl VersionCounter {
     fn new() -> Self {
         Self {
-            v3: register_counter!("shotover_client_protocol_version_count", "version" => "v3"),
-            v4: register_counter!("shotover_client_protocol_version_count", "version" => "v4"),
-            v5: register_counter!("shotover_client_protocol_version_count", "version" => "v5"),
+            v3: counter!("shotover_client_protocol_version_count", "version" => "v3"),
+            v4: counter!("shotover_client_protocol_version_count", "version" => "v4"),
+            v5: counter!("shotover_client_protocol_version_count", "version" => "v5"),
         }
     }
 
