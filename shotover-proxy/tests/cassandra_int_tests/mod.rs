@@ -53,7 +53,7 @@ where
     udt::test(&connection).await;
     native_types::test(&connection).await;
     collections::test(&connection, driver).await;
-    // functions::test(&connection).await;
+    functions::test(&connection).await;
     prepared_statements_simple::test(&connection, connection_creator, 1).await;
     prepared_statements_all::test(&connection, 1).await;
     batch_statements::test(&connection).await;
