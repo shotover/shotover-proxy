@@ -9,7 +9,7 @@ use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use cassandra_protocol::frame::Version;
 use futures::stream::FuturesOrdered;
-use metrics::{register_counter, Counter};
+use metrics::{counter, Counter};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tokio::sync::{mpsc, oneshot};
@@ -60,7 +60,7 @@ impl CassandraSinkSingleBuilder {
         connect_timeout_ms: u64,
         timeout: Option<u64>,
     ) -> CassandraSinkSingleBuilder {
-        let failed_requests = register_counter!("shotover_failed_requests_count", "chain" => chain_name, "transform" => "CassandraSinkSingle");
+        let failed_requests = counter!("shotover_failed_requests_count", "chain" => chain_name, "transform" => "CassandraSinkSingle");
         let receive_timeout = timeout.map(Duration::from_secs);
         let codec_builder =
             CassandraCodecBuilder::new(Direction::Sink, "CassandraSinkSingle".to_owned());

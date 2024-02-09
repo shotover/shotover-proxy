@@ -10,7 +10,7 @@ use crate::transforms::{Transform, TransformBuilder, TransformConfig, Wrapper};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use futures::{FutureExt, SinkExt, StreamExt};
-use metrics::{register_counter, Counter};
+use metrics::{counter, Counter};
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 use std::pin::Pin;
@@ -59,7 +59,7 @@ impl RedisSinkSingleBuilder {
         chain_name: String,
         connect_timeout_ms: u64,
     ) -> Self {
-        let failed_requests = register_counter!("shotover_failed_requests_count", "chain" => chain_name, "transform" => "RedisSinkSingle");
+        let failed_requests = counter!("shotover_failed_requests_count", "chain" => chain_name, "transform" => "RedisSinkSingle");
         let connect_timeout = Duration::from_millis(connect_timeout_ms);
 
         RedisSinkSingleBuilder {

@@ -6,7 +6,7 @@ use cassandra_protocol::compression::Compression;
 use core::fmt;
 #[cfg(feature = "kafka")]
 use kafka::RequestHeader;
-use metrics::{register_histogram, Histogram};
+use metrics::{histogram, Histogram};
 use tokio_util::codec::{Decoder, Encoder};
 
 #[cfg(feature = "cassandra")]
@@ -36,10 +36,10 @@ impl fmt::Display for Direction {
 pub fn message_latency(direction: Direction, destination_name: String) -> Histogram {
     match direction {
         Direction::Source => {
-            register_histogram!("shotover_sink_to_source_latency_seconds", "source" => destination_name)
+            histogram!("shotover_sink_to_source_latency_seconds", "source" => destination_name)
         }
         Direction::Sink => {
-            register_histogram!("shotover_source_to_sink_latency_seconds", "sink" => destination_name)
+            histogram!("shotover_source_to_sink_latency_seconds", "sink" => destination_name)
         }
     }
 }

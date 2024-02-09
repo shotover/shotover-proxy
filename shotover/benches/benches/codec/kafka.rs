@@ -30,7 +30,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         {
             let mut input = BytesMut::new();
             input.extend_from_slice(message);
-            group.bench_function(format!("decode_{file_name}"), |b| {
+            group.bench_function(format!("decode_{file_name}_create"), |b| {
                 b.iter_batched(
                     || {
                         (
@@ -39,12 +39,35 @@ fn criterion_benchmark(c: &mut Criterion) {
                             input.clone(),
                         )
                     },
-                    |((mut decoder, _encoder), mut input)| {
-                        let mut result = decoder.decode(&mut input).unwrap().unwrap();
-                        for message in &mut result {
-                            message.frame();
-                        }
-                        black_box(result)
+                    |((mut decoder, encoder), mut input)| {
+                        let mut message =
+                            decoder.decode(&mut input).unwrap().unwrap().pop().unwrap();
+                        message.frame();
+
+                        // avoid measuring any drops
+                        (decoder, encoder, input, message)
+                    },
+                    BatchSize::SmallInput,
+                )
+            });
+            group.bench_function(format!("decode_{file_name}_drop"), |b| {
+                b.iter_batched(
+                    || {
+                        // Recreate everything from scratch to ensure that we dont have any `Bytes` references held onto preventing a full drop
+                        let (mut decoder, encoder) =
+                            KafkaCodecBuilder::new(Direction::Source, "kafka".to_owned()).build();
+                        let mut input = input.clone();
+                        let mut message =
+                            decoder.decode(&mut input).unwrap().unwrap().pop().unwrap();
+                        message.frame();
+                        assert!(decoder.decode(&mut input).unwrap().is_none());
+                        (decoder, encoder, message)
+                    },
+                    |(decoder, encoder, message)| {
+                        std::mem::drop(message);
+
+                        // avoid measuring any drops other than the message
+                        (decoder, encoder)
                     },
                     BatchSize::SmallInput,
                 )
@@ -72,41 +95,16 @@ fn criterion_benchmark(c: &mut Criterion) {
                             messages.clone(),
                         )
                     },
-                    |((_decoder, mut encoder), messages)| {
+                    |((decoder, mut encoder), messages)| {
                         let mut bytes = BytesMut::new();
                         encoder.encode(messages, &mut bytes).unwrap();
-                        black_box(bytes)
+                        std::mem::drop(black_box(bytes));
+                        (encoder, decoder)
                     },
                     BatchSize::SmallInput,
                 )
             });
         }
-    }
-
-    {
-        let mut input = BytesMut::new();
-        for (message, _) in KAFKA_REQUESTS {
-            input.extend_from_slice(message);
-        }
-        group.bench_function("decode_all", |b| {
-            b.iter_batched(
-                || {
-                    (
-                        // recreate codec since it is stateful
-                        KafkaCodecBuilder::new(Direction::Source, "kafka".to_owned()).build(),
-                        input.clone(),
-                    )
-                },
-                |((mut decoder, _encoder), mut input)| {
-                    let mut result = decoder.decode(&mut input).unwrap().unwrap();
-                    for message in &mut result {
-                        message.frame();
-                    }
-                    black_box(result)
-                },
-                BatchSize::SmallInput,
-            )
-        });
     }
 
     {
@@ -134,10 +132,11 @@ fn criterion_benchmark(c: &mut Criterion) {
                         messages.clone(),
                     )
                 },
-                |((_decoder, mut encoder), messages)| {
+                |((decoder, mut encoder), messages)| {
                     let mut bytes = BytesMut::new();
                     encoder.encode(messages, &mut bytes).unwrap();
-                    black_box(bytes)
+                    std::mem::drop(black_box(bytes));
+                    (encoder, decoder)
                 },
                 BatchSize::SmallInput,
             )

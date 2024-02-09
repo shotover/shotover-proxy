@@ -11,7 +11,7 @@ use cql3_parser::cassandra_statement::CassandraStatement;
 use cql3_parser::common::{FQName, Identifier, Operand, RelationElement, RelationOperator};
 use cql3_parser::select::Select;
 use itertools::Itertools;
-use metrics::{register_counter, Counter};
+use metrics::{counter, Counter};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 use std::net::SocketAddr;
@@ -86,7 +86,7 @@ const NAME: &str = "RedisCache";
 #[async_trait(?Send)]
 impl TransformConfig for RedisConfig {
     async fn get_builder(&self, _chain_name: String) -> Result<Box<dyn TransformBuilder>> {
-        let missed_requests = register_counter!("shotover_cache_miss_count");
+        let missed_requests = counter!("shotover_cache_miss_count");
 
         let caching_schema: HashMap<FQName, TableCacheSchema> = self
             .caching_schema
@@ -611,7 +611,7 @@ mod test {
     use crate::transforms::TransformBuilder;
     use bytes::Bytes;
     use cql3_parser::common::Identifier;
-    use metrics::register_counter;
+    use metrics::counter;
     use std::collections::HashMap;
 
     #[test]
@@ -811,7 +811,7 @@ mod test {
         let transform = SimpleRedisCacheBuilder {
             cache_chain: TransformChainBuilder::new(vec![], "test-chain"),
             caching_schema: HashMap::new(),
-            missed_requests: register_counter!("cache_miss"),
+            missed_requests: counter!("cache_miss"),
         };
 
         assert_eq!(
@@ -838,7 +838,7 @@ mod test {
         let transform = SimpleRedisCacheBuilder {
             cache_chain,
             caching_schema: HashMap::new(),
-            missed_requests: register_counter!("cache_miss"),
+            missed_requests: counter!("cache_miss"),
         };
 
         assert_eq!(transform.validate(), Vec::<String>::new());
