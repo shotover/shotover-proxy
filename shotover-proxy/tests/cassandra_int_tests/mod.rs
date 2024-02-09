@@ -1011,3 +1011,29 @@ async fn passthrough_tls_websockets() {
 
     shotover.shutdown_and_then_consume_events(&[]).await;
 }
+
+#[apply(all_cassandra_drivers)]
+#[tokio::test(flavor = "multi_thread")]
+async fn cassandra_5(#[case] driver: CassandraDriver) {
+    let _compose = docker_compose("tests/test-configs/cassandra/cassandra-5/docker-compose.yaml");
+
+    let shotover = shotover_process("tests/test-configs/cassandra/cassandra-5/topology.yaml")
+        .start()
+        .await;
+
+    let connection_creator = || CassandraConnectionBuilder::new("127.0.0.1", 9042, driver).build();
+
+    let connection = connection_creator().await;
+
+    keyspace::test(&connection).await;
+    table::test(&connection).await;
+    udt::test(&connection).await;
+    native_types::test(&connection).await;
+    collections::test(&connection, driver).await;
+    prepared_statements_simple::test(&connection, connection_creator, 1).await;
+    prepared_statements_all::test(&connection, 1).await;
+    batch_statements::test(&connection).await;
+    timestamp::test(&connection).await;
+
+    shotover.shutdown_and_then_consume_events(&[]).await;
+}
