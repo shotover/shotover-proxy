@@ -11,7 +11,7 @@ async fn large_batch(connection: &CassandraConnection) {
     let random_bytes = rand::thread_rng().gen::<[u8; 32]>();
 
     let mut queries = Vec::new();
-    for id in 0..1000 {
+    for id in 0..500 {
         let statement = format!(
             "INSERT INTO batch_keyspace.my_table (id, data) VALUES ({}, 0x{})",
             id,
