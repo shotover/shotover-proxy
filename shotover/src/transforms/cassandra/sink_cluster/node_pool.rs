@@ -6,7 +6,7 @@ use crate::transforms::cassandra::connection::CassandraConnection;
 use anyhow::{anyhow, Context, Error, Result};
 use cassandra_protocol::frame::message_execute::BodyReqExecuteOwned;
 use cassandra_protocol::types::CBytesShort;
-use metrics::{register_counter, Counter};
+use metrics::{counter, Counter};
 use rand::prelude::*;
 use std::sync::Arc;
 use std::{collections::HashMap, net::SocketAddr};
@@ -52,7 +52,7 @@ impl NodePoolBuilder {
     pub fn new(chain_name: String) -> Self {
         Self {
             prepared_metadata: Arc::new(RwLock::new(HashMap::new())),
-            out_of_rack_requests: register_counter!("shotover_out_of_rack_requests_count", "chain" => chain_name, "transform" => "CassandraSinkCluster"),
+            out_of_rack_requests: counter!("shotover_out_of_rack_requests_count", "chain" => chain_name, "transform" => "CassandraSinkCluster"),
         }
     }
 

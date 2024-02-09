@@ -10,7 +10,7 @@ use hyper::{
     service::{make_service_fn, service_fn},
     Method, Request, StatusCode, {Body, Response, Server},
 };
-use metrics::{register_counter, Counter};
+use metrics::{counter, Counter};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::sync::atomic::Ordering;
@@ -49,8 +49,7 @@ impl TeeBuilder {
             tokio::spawn(chain_switch_listener.async_run(result_source.clone()));
         }
 
-        let dropped_messages =
-            register_counter!("shotover_tee_dropped_messages_count", "chain" => "Tee");
+        let dropped_messages = counter!("shotover_tee_dropped_messages_count", "chain" => "Tee");
 
         TeeBuilder {
             tx,

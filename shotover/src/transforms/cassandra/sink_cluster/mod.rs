@@ -17,7 +17,7 @@ use cql3_parser::cassandra_statement::CassandraStatement;
 use cql3_parser::common::IdentifierRef;
 use futures::stream::FuturesOrdered;
 use futures::StreamExt;
-use metrics::{register_counter, Counter};
+use metrics::{counter, Counter};
 use node::{CassandraNode, ConnectionFactory};
 use node_pool::{GetReplicaErr, KeyspaceMetadata, NodePool};
 use rand::prelude::*;
@@ -116,7 +116,7 @@ impl CassandraSinkClusterBuilder {
         connect_timeout_ms: u64,
         timeout: Option<u64>,
     ) -> Self {
-        let failed_requests = register_counter!("shotover_failed_requests_count", "chain" => chain_name.clone(), "transform" => "CassandraSinkCluster");
+        let failed_requests = counter!("shotover_failed_requests_count", "chain" => chain_name.clone(), "transform" => "CassandraSinkCluster");
         let receive_timeout = timeout.map(Duration::from_secs);
         let connect_timeout = Duration::from_millis(connect_timeout_ms);
 

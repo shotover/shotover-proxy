@@ -9,7 +9,7 @@ use anyhow::{anyhow, Context, Result};
 use bytes::BytesMut;
 use futures::future::join_all;
 use futures::{SinkExt, StreamExt};
-use metrics::{register_gauge, Gauge};
+use metrics::{gauge, Gauge};
 use std::io::ErrorKind;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -88,7 +88,8 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
         timeout: Option<Duration>,
         transport: Transport,
     ) -> Result<Self, Vec<String>> {
-        let available_connections_gauge = register_gauge!("shotover_available_connections_count", "source" => source_name.clone());
+        let available_connections_gauge =
+            gauge!("shotover_available_connections_count", "source" => source_name.clone());
         available_connections_gauge.set(limit_connections.available_permits() as f64);
 
         let chain_builder = chain_config
