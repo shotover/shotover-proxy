@@ -291,7 +291,7 @@ async fn spawn_websocket_read_write_tasks<
 >(
     codec: C,
     stream: S,
-    in_tx: UnboundedSender<Messages>,
+    in_tx: mpsc::Sender<Messages>,
     mut out_rx: UnboundedReceiver<Messages>,
     out_tx: UnboundedSender<Messages>,
     websocket_subprotocol: &str,
@@ -327,7 +327,7 @@ async fn spawn_websocket_read_write_tasks<
                                 let message = decoder.decode(&mut BytesMut::from(ws_message_data.as_slice()));
                                 match message {
                                     Ok(Some(message)) => {
-                                        if in_tx.send(message).is_err() {
+                                        if in_tx.send(message).await.is_err() {
                                             // main task has shutdown, this task is no longer needed
                                             return;
                                         }
@@ -443,7 +443,7 @@ fn spawn_read_write_tasks<
     codec: C,
     rx: R,
     tx: W,
-    in_tx: UnboundedSender<Messages>,
+    in_tx: mpsc::Sender<Messages>,
     mut out_rx: UnboundedReceiver<Messages>,
     out_tx: UnboundedSender<Messages>,
 ) {
@@ -474,7 +474,7 @@ fn spawn_read_write_tasks<
                         if let Some(message) = result {
                             match message {
                                 Ok(messages) => {
-                                    if in_tx.send(messages).is_err() {
+                                    if in_tx.send(messages).await.is_err() {
                                         // main task has shutdown, this task is no longer needed
                                         return;
                                     }
@@ -581,7 +581,11 @@ impl<C: CodecBuilder + 'static> Handler<C> {
             .unwrap_or_else(|_| "Unknown peer".to_string());
         tracing::debug!("New connection from {}", client_details);
 
-        let (in_tx, in_rx) = mpsc::unbounded_channel::<Messages>();
+        // limit buffered incoming messages to 10,000 per connection.
+        // A particular scenario we are concerned about is if it takes longer to send to the server
+        // than for the client to send to us, the buffer will grow indefinitely, increasing latency until the buffer triggers an OoM.
+        // To avoid that we have currently hardcoded a limit of 10,000 but if we start hitting that in production we should make this user configurable.
+        let (in_tx, in_rx) = mpsc::channel::<Messages>(10_000);
         let (out_tx, out_rx) = mpsc::unbounded_channel::<Messages>();
 
         let local_addr = stream.local_addr()?;
@@ -670,7 +674,7 @@ impl<C: CodecBuilder + 'static> Handler<C> {
 
     async fn receive_with_timeout(
         timeout: Option<Duration>,
-        in_rx: &mut UnboundedReceiver<Vec<Message>>,
+        in_rx: &mut mpsc::Receiver<Vec<Message>>,
         client_details: &str,
     ) -> Option<Vec<Message>> {
         if let Some(timeout) = timeout {
@@ -690,7 +694,7 @@ impl<C: CodecBuilder + 'static> Handler<C> {
         &mut self,
         client_details: &str,
         local_addr: SocketAddr,
-        mut in_rx: mpsc::UnboundedReceiver<Messages>,
+        mut in_rx: mpsc::Receiver<Messages>,
         out_tx: mpsc::UnboundedSender<Messages>,
     ) -> Result<()> {
         // As long as the shutdown signal has not been received, try to read a
