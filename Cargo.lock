@@ -4288,7 +4288,7 @@ dependencies = [
 
 [[package]]
 name = "shotover"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4358,7 +4358,7 @@ dependencies = [
 
 [[package]]
 name = "shotover-proxy"
-version = "0.2.0"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "async-trait",
