@@ -1,10 +1,15 @@
 use std::path::PathBuf;
 use tokio::task::JoinHandle;
+use windsock::ReportArchive;
 
-pub struct Samply(JoinHandle<()>);
+pub struct Samply {
+    bench_name: String,
+    handle: JoinHandle<()>,
+    output_file: String,
+}
 
 impl Samply {
-    pub async fn run(results_path: PathBuf, pid: u32) -> Samply {
+    pub async fn run(bench_name: String, results_path: PathBuf, pid: u32) -> Samply {
         run_command(
             "cargo",
             &[
@@ -13,11 +18,16 @@ impl Samply {
                 "--git",
                 "https://github.com/mstange/samply",
                 "--rev",
-                "4c8d5eb164e44c4eda1b29de116f5ea546d64c65",
+                "59a03a716cadab7835e3a961d0107ec797e458ec",
             ],
         )
         .await;
-        let output_file = results_path.join("samply.json");
+        let output_file = results_path
+            .join("samply.json")
+            .as_os_str()
+            .to_str()
+            .unwrap()
+            .to_owned();
         let home = std::env::var("HOME").unwrap();
 
         // Run `sudo ls` so that we can get sudo to stop asking for password for a while.
@@ -26,28 +36,38 @@ impl Samply {
         //       But that would require a bunch of work so its out of scope for now.
         run_command("sudo", &["ls"]).await;
 
-        Samply(tokio::spawn(async move {
-            run_command(
-                "sudo",
-                &[
-                    // specify the full path as CI has trouble finding it for some reason.
-                    &format!("{home}/.cargo/bin/samply"),
-                    "record",
-                    "-p",
-                    &pid.to_string(),
-                    "--save-only",
-                    "--profile-name",
-                    results_path.file_name().unwrap().to_str().unwrap(),
-                    "--output",
-                    output_file.as_os_str().to_str().unwrap(),
-                ],
-            )
-            .await;
-        }))
+        Samply {
+            bench_name,
+            output_file: output_file.clone(),
+            handle: tokio::spawn(async move {
+                run_command(
+                    "sudo",
+                    &[
+                        // specify the full path as CI has trouble finding it for some reason.
+                        &format!("{home}/.cargo/bin/samply"),
+                        "record",
+                        "-p",
+                        &pid.to_string(),
+                        "--save-only",
+                        "--profile-name",
+                        results_path.file_name().unwrap().to_str().unwrap(),
+                        "--output",
+                        &output_file,
+                    ],
+                )
+                .await;
+            }),
+        }
     }
 
     pub fn wait(self) {
-        futures::executor::block_on(self.0).unwrap();
+        futures::executor::block_on(self.handle).unwrap();
+        let mut report = ReportArchive::load(&self.bench_name).unwrap();
+        report.info_messages.push(format!(
+            "To open profiler results run: samply load {}",
+            self.output_file
+        ));
+        report.save();
     }
 }
 

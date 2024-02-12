@@ -56,7 +56,14 @@ impl ProfilerRunner {
         };
         self.samply = if self.run_samply {
             if let Some(shotover) = &shotover {
-                Some(Samply::run(self.results_path.clone(), shotover.child().id().unwrap()).await)
+                Some(
+                    Samply::run(
+                        self.bench_name.clone(),
+                        self.results_path.clone(),
+                        shotover.child().id().unwrap(),
+                    )
+                    .await,
+                )
             } else {
                 panic!("samply not supported when benching without shotover")
             }

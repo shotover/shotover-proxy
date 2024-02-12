@@ -8,24 +8,45 @@ use tokio::sync::mpsc::UnboundedReceiver;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum Report {
+    /// Indicates the warmup is over and the benchmark has begun.
+    /// Any Completed/Errored Events received before this are considered warmups and discarded.
     Start,
+
+    /// Indicates a response came back from the service.
+    /// The Duration should be the time between the request being sent and the response being received
     QueryCompletedIn(Duration),
+
+    /// Indicates an an error response came back from the service.
     QueryErrored {
+        /// The time between the request being sent and the response being received
         completed_in: Duration,
+        /// The error message received from the service or the local error that occured while trying to communicate with the service.
         message: String,
     },
+
+    /// Indicates a pubsub produce ack came back from the service.
+    /// The Duration should be the time between the request being sent and the response being received
     ProduceCompletedIn(Duration),
+
+    /// Indicates a pubsub produce error response came back from the service.
     ProduceErrored {
         completed_in: Duration,
         message: String,
     },
+    /// Indicates a pubsub consume response comes back from the service.
     ConsumeCompleted,
-    ConsumeErrored {
-        message: String,
-    },
+
+    /// Indicates pubsub consume error response came back from the service.
+    ConsumeErrored { message: String },
+
+    /// Indicates a second has passed for the benchmarker
     SecondPassed(Duration),
-    /// contains the time that the test ran for
+
+    /// Contains the time that the test ran for
     FinishedIn(Duration),
+
+    /// Adds a note that will be visible to the user when viewing the benchmark results.
+    AddInfoMessage(String),
 
     /// Ignore all other reports and use the ManualReport as the only source of benchmark metrics.
     /// Do not use this under normal circumstances.
@@ -112,7 +133,8 @@ pub struct ReportArchive {
     pub(crate) operations_report: Option<OperationsReport>,
     pub(crate) pubsub_report: Option<PubSubReport>,
     pub metrics: Vec<Metric>,
-    pub(crate) error_messages: Vec<String>,
+    pub error_messages: Vec<String>,
+    pub info_messages: Vec<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
@@ -341,12 +363,14 @@ pub(crate) async fn report_builder(
     let mut total_operation_time = Duration::from_secs(0);
     let mut total_produce_time = Duration::from_secs(0);
     let mut error_messages = vec![];
+    let mut info_messages = vec![];
 
     while let Some(report) = rx.recv().await {
         match report {
             Report::Start => {
                 started = Some(OffsetDateTime::now_utc());
             }
+            Report::AddInfoMessage(message) => info_messages.push(message),
             Report::QueryCompletedIn(duration) => {
                 let report = operations_report.get_or_insert_with(OperationsReport::default);
                 if started.is_some() {
@@ -490,6 +514,7 @@ pub(crate) async fn report_builder(
         tags,
         pubsub_report,
         error_messages,
+        info_messages,
         operations_report,
         metrics: vec![],
     };
