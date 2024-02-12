@@ -1038,8 +1038,7 @@ async fn cassandra_5(#[case] driver: CassandraDriver) {
     shotover.shutdown_and_then_consume_events(&[]).await;
 }
 
-#[rstest]
-#[case::scylla(Scylla)]
+#[apply(all_cassandra_drivers)]
 #[tokio::test(flavor = "multi_thread")]
 async fn cassandra_5_cluster(#[case] driver: CassandraDriver) {
     let _compose = docker_compose("tests/test-configs/cassandra/cluster-v5/docker-compose.yaml");
@@ -1048,7 +1047,15 @@ async fn cassandra_5_cluster(#[case] driver: CassandraDriver) {
         .start()
         .await;
 
-    let connection_creator = || CassandraConnectionBuilder::new("172.16.1.2", 9044, driver).build();
+    let connection_creator = || async {
+        let mut connection = CassandraConnectionBuilder::new("127.0.0.1", 9042, driver)
+            .build()
+            .await;
+        connection
+            .enable_schema_awaiter("172.16.1.2:9044", None)
+            .await;
+        connection
+    };
 
     let connection = connection_creator().await;
 
