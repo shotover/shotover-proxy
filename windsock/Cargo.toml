@@ -15,9 +15,9 @@ console = "0.15.5"
 copy_dir = "0.1.2"
 serde = { workspace = true, features = ["derive"] }
 strum = { version = "0.26.0", features = ["derive"] }
-time = { version = "0.3.25", features = ["serde"] }
+time = { workspace = true, features = ["serde"] }
 tokio.workspace = true
 
 [dev-dependencies]
-scylla = { version = "0.12.0", features = ["ssl"] }
-docker-compose-runner = "0.3.0"
+scylla = { workspace = true, features = ["ssl"] }
+docker-compose-runner.workspace = true

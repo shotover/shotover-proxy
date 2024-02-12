@@ -66,3 +66,5 @@ tokio-bin-process = "0.4.0"
 ordered-float = { version = "4.0.0", features = ["serde"] }
 hyper = { version = "0.14.14", features = ["server", "tcp", "http1"] }
 shell-quote = { default-features = false, version = "0.5.0" }
+docker-compose-runner = "0.3.0"
+time = { version = "0.3.25" }
