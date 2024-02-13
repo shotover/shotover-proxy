@@ -15,16 +15,10 @@ resolver = "2"
 lto = "fat"
 codegen-units = 1
 
-[profile.bench]
-lto = "fat"
-codegen-units = 1
-
 # used for e.g. generating flamegraphs
 [profile.profiling]
 inherits = "release"
-lto = false
 debug = true
-codegen-units = 1
 
 [workspace.dependencies]
 scylla = { version = "0.12.0", features = ["ssl"] }
