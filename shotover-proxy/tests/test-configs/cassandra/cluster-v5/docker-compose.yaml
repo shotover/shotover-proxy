@@ -1,0 +1,53 @@
+version: "3.3"
+networks:
+  cluster_subnet:
+    name: cluster_subnet
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.16.1.0/24
+          gateway: 172.16.1.1
+
+services:
+  cassandra-one:
+    image: &image shotover/cassandra-test:5.0-beta1-r2
+    networks:
+      cluster_subnet:
+        ipv4_address: 172.16.1.2
+    environment: &environment
+      CASSANDRA_SEEDS: "cassandra-one,cassandra-two,cassandra-three"
+      CASSANDRA_CLUSTER_NAME: TestCluster
+      CASSANDRA_DC: datacenter1
+      CASSANDRA_RACK: rack1
+      CASSANDRA_ENDPOINT_SNITCH: GossipingPropertyFileSnitch
+      CASSANDRA_INITIAL_TOKENS: -1838347210670429836,-2934389110905368125,-4713023411728955254,-5691168864245069329,-7310192159942112627,-747050099978217576,-8900196712456011265,1537594777415527418,2609095393755560231,3626946798497987246,4444618731110338041,5520374612335917580,6256290305046811221,7335663112494412879,8579183118175004851,97326547512944180
+      CASSANDRA_NATIVE_TRANSPORT_PORT: 9044
+      MAX_HEAP_SIZE: "400M"
+      MIN_HEAP_SIZE: "400M"
+      HEAP_NEWSIZE: "48M"
+    volumes:
+      # Using volume instead of tmpfs adds 3 seconds to the runtime of the cassandra standard_test_suite but allows running tests that restart nodes
+      &volumes
+      - type: volume
+        target: /var/lib/cassandra
+
+  cassandra-two:
+    image: *image
+    networks:
+      cluster_subnet:
+        ipv4_address: 172.16.1.3
+    environment:
+      <<: *environment
+      CASSANDRA_INITIAL_TOKENS: -2006460884048279486,-3596465436562178124,-387437588351236189,-4563829679640713622,-5807349685321305596,-6886722492768907253,-7622638185479800894,-8698394066705380434,2369342164988465014,3465384065223403303,4556681175915615562,5401057823406777320,590707864164877886,6841326053309360558,7912826669649393371,8930678074391820386
+    volumes: *volumes
+
+  cassandra-three:
+    image: *image
+    networks:
+      cluster_subnet:
+        ipv4_address: 172.16.1.4
+    environment:
+      <<: *environment
+      CASSANDRA_INITIAL_TOKENS: -2141366384311565814,-3731370936825464452,-4698735179903999950,-522343088614522517,-5942255185584591924,-7021627993032193581,-7757543685743087222,-8833299566968666762,2234436664725178686,3330478564960116975,4421775675652329234,455802363901591558,5266152323143490992,6706420553046074230,7777921169386107043,8795772574128534058
+    volumes: *volumes
