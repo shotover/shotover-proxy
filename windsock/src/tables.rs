@@ -735,8 +735,7 @@ fn base(reports: &[ReportColumn], table_type: &str) {
             );
             println!("{}", style(error).red().bold());
             for (i, message) in report.current.error_messages.iter().enumerate() {
-                let line = format!("    {i}.  {message}");
-                println!("{}", line);
+                println!("    {i}.  {message}");
             }
         }
 
@@ -748,8 +747,7 @@ fn base(reports: &[ReportColumn], table_type: &str) {
                 );
                 println!("{}", style(error).red().bold());
                 for (i, message) in report.current.error_messages.iter().enumerate() {
-                    let line = format!("    {i}.  {message}");
-                    println!("{}", line);
+                    println!("    {i}.  {message}");
                 }
             }
         }
@@ -766,9 +764,17 @@ fn base(reports: &[ReportColumn], table_type: &str) {
         !x.current.running_in_release
             || x.baseline
                 .as_ref()
-                .map(|x| !x.error_messages.is_empty())
+                .map(|x| !x.running_in_release)
                 .unwrap_or(false)
     });
+    let info_found = reports.iter().any(|x| {
+        !x.current.info_messages.is_empty()
+            || x.baseline
+                .as_ref()
+                .map(|x| !x.info_messages.is_empty())
+                .unwrap_or(false)
+    });
+
     if errors_found && not_running_in_release_found {
         // ensure these two sections are kept apart
         println!();
@@ -790,6 +796,34 @@ fn base(reports: &[ReportColumn], table_type: &str) {
                     baseline.tags.get_name()
                 );
                 println!("{}", style(error).red().bold());
+            }
+        }
+    }
+
+    #[allow(clippy::nonminimal_bool)]
+    if info_found
+        && (not_running_in_release_found || (errors_found && !not_running_in_release_found))
+    {
+        // ensure these two sections are kept apart
+        println!();
+    }
+
+    for report in reports {
+        if !report.current.info_messages.is_empty() {
+            let error = format!("notes for {}", report.current.tags.get_name());
+            println!("{}", style(error).blue().bold());
+            for (i, message) in report.current.info_messages.iter().enumerate() {
+                println!("    {i}.  {message}");
+            }
+        }
+
+        if let Some(baseline) = &report.baseline {
+            if !baseline.info_messages.is_empty() {
+                let error = format!("notes for baseline {}", report.current.tags.get_name());
+                println!("{}", style(error).blue().bold());
+                for (i, message) in report.current.info_messages.iter().enumerate() {
+                    println!("    {i}.  {message}");
+                }
             }
         }
     }
