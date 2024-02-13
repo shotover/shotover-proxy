@@ -64,6 +64,9 @@ impl From<&ProtocolType> for CodecState {
 
 pub type Messages = Vec<Message>;
 
+/// Unique identifier for the message assigned by shotover at creation time.
+pub type MessageId = u128;
+
 /// Message holds a single message/query/result going between the client and database.
 /// It is designed to efficiently abstract over the message being in various states of processing.
 ///
@@ -98,6 +101,12 @@ pub struct Message {
     pub(crate) received_from_source_or_sink_at: Option<Instant>,
 
     pub(crate) codec_state: CodecState,
+
+    // TODO: Consider removing the "ignore" down the line, we we need it for now for compatibility with logic using the old style "in order protocol" assumption.
+    #[derivative(PartialEq = "ignore")]
+    pub(crate) id: MessageId,
+    #[derivative(PartialEq = "ignore")]
+    pub(crate) request_id: Option<MessageId>,
 }
 
 // `from_*` methods for `Message`
@@ -118,6 +127,8 @@ impl Message {
             meta_timestamp: None,
             codec_state: CodecState::from(&protocol_type),
             received_from_source_or_sink_at,
+            id: rand::random(),
+            request_id: None,
         }
     }
 
@@ -134,6 +145,8 @@ impl Message {
             inner: Some(MessageInner::Parsed { bytes, frame }),
             meta_timestamp: None,
             received_from_source_or_sink_at,
+            id: rand::random(),
+            request_id: None,
         }
     }
 
@@ -149,6 +162,8 @@ impl Message {
             inner: Some(MessageInner::Modified { frame }),
             meta_timestamp: None,
             received_from_source_or_sink_at,
+            id: rand::random(),
+            request_id: None,
         }
     }
 
@@ -192,6 +207,23 @@ impl Message {
             MessageInner::Parsed { frame, .. } => Some(frame),
             MessageInner::Modified { frame } => Some(frame),
         }
+    }
+
+    /// Return the shotover assigned MessageId
+    pub fn id(&self) -> MessageId {
+        self.id
+    }
+
+    /// Return the MessageId of the request that resulted in this message
+    /// Returns None when:
+    /// * The message is a request
+    /// * The message is a response but was not created in response to a request. e.g. Cassandra events and redis pubsub
+    pub fn request_id(&self) -> Option<MessageId> {
+        self.request_id
+    }
+
+    pub fn set_request_id(&mut self, request_id: MessageId) {
+        self.request_id = Some(request_id);
     }
 
     pub fn ensure_message_type(&self, expected_message_type: MessageType) -> Result<()> {
@@ -401,6 +433,7 @@ impl Message {
     // Used for ordering out of order messages without parsing their contents.
     // TODO: We will have a better idea of how to make this generic once we have multiple out of order protocols
     //       For now its just written to match cassandra's stream_id field
+    // TODO: deprecated, just call `metadata()` instead
     pub fn stream_id(&self) -> Option<i16> {
         match &self.inner {
             #[cfg(feature = "cassandra")]

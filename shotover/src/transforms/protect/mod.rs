@@ -1,7 +1,7 @@
 use crate::frame::{
     value::GenericValue, CassandraFrame, CassandraOperation, CassandraResult, Frame,
 };
-use crate::message::Messages;
+use crate::message::{Message, MessageId, Messages};
 use crate::transforms::protect::key_management::KeyManager;
 pub use crate::transforms::protect::key_management::KeyManagerConfig;
 use crate::transforms::{Transform, TransformBuilder, Wrapper};
@@ -56,6 +56,7 @@ impl TransformConfig for ProtectConfig {
                 .collect(),
             key_source: self.key_manager.build().await?,
             key_id: "XXXXXXX".to_string(),
+            requests: HashMap::new(),
         }))
     }
 }
@@ -68,6 +69,7 @@ pub struct Protect {
     // TODO this should be a function to create key_ids based on "something", e.g. primary key
     // for the moment this is just a string
     key_id: String,
+    requests: HashMap<MessageId, Message>,
 }
 
 impl TransformBuilder for Protect {
@@ -187,27 +189,31 @@ impl Transform for Protect {
             }
         }
 
-        let mut original_messages = requests_wrapper.requests.clone();
-        let mut result = requests_wrapper.call_next_transform().await?;
+        requests_wrapper.clone_requests_into_hashmap(&mut self.requests);
+        let mut responses = requests_wrapper.call_next_transform().await?;
 
-        for (response, request) in result.iter_mut().zip(original_messages.iter_mut()) {
-            let mut invalidate_cache = false;
-            if let Some(Frame::Cassandra(CassandraFrame { operation, .. })) = request.frame() {
-                if let Some(Frame::Cassandra(CassandraFrame {
-                    operation: CassandraOperation::Result(CassandraResult::Rows { rows, .. }),
-                    ..
-                })) = response.frame()
-                {
-                    for statement in operation.queries() {
-                        invalidate_cache |= self.decrypt_results(statement, rows).await?
+        for response in &mut responses {
+            if let Some(request_id) = response.request_id() {
+                let mut request = self.requests.remove(&request_id).unwrap();
+
+                let mut invalidate_cache = false;
+                if let Some(Frame::Cassandra(CassandraFrame { operation, .. })) = request.frame() {
+                    if let Some(Frame::Cassandra(CassandraFrame {
+                        operation: CassandraOperation::Result(CassandraResult::Rows { rows, .. }),
+                        ..
+                    })) = response.frame()
+                    {
+                        for statement in operation.queries() {
+                            invalidate_cache |= self.decrypt_results(statement, rows).await?
+                        }
                     }
                 }
-            }
-            if invalidate_cache {
-                response.invalidate_cache();
+                if invalidate_cache {
+                    response.invalidate_cache();
+                }
             }
         }
 
-        Ok(result)
+        Ok(responses)
     }
 }
