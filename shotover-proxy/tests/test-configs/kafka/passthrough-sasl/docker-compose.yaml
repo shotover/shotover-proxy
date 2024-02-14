@@ -2,7 +2,7 @@ version: '2'
 
 services:
   kafka:
-    image: 'bitnami/kafka:3.6.1-debian-11-r24'
+    image: 'bitnami/kafka:latest'
     ports:
       - '9092:9092'
       - '9093:9093'
@@ -23,4 +23,10 @@ services:
       - KAFKA_CFG_SASL_MECHANISM_INTER_BROKER_PROTOCOL=PLAIN
       - KAFKA_INTER_BROKER_USER=controller_user
       - KAFKA_INTER_BROKER_PASSWORD=controller_password
-
+      - KAFKA_CERTIFICATE_PASSWORD=123456
+      - KAFKA_TLS_TYPE=JKS # or PEM
+      - KAFKA_CFG_SSL_ENDPOINT_IDENTIFICATION_ALGORITHM=""
+      - BITNAMI_DEBUG=true
+    volumes:
+      - './certs/kafka.keystore.jks:/opt/bitnami/kafka/config/certs/kafka.keystore.jks:ro'
+      - './certs/kafka.truststore.jks:/opt/bitnami/kafka/config/certs/kafka.truststore.jks:ro'
