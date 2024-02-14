@@ -139,14 +139,13 @@ impl KafkaFrame {
     fn parse_request(mut bytes: Bytes) -> Result<Self> {
         let api_key = i16::from_be_bytes(bytes[0..2].try_into().unwrap());
         let api_version = i16::from_be_bytes(bytes[2..4].try_into().unwrap());
-        let header_version = ApiKey::try_from(api_key)
-            .unwrap()
-            .request_header_version(api_version);
+        let api_key =
+            ApiKey::try_from(api_key).map_err(|_| anyhow!("unknown api key {api_key}"))?;
+
+        let header_version = api_key.request_header_version(api_version);
         let header = RequestHeader::decode(&mut bytes, header_version)
             .context("Failed to decode request header")?;
 
-        let api_key = ApiKey::try_from(header.request_api_key)
-            .map_err(|_| anyhow!("unknown api key {}", header.request_api_key))?;
         let version = header.request_api_version;
         let body = match api_key {
             ApiKey::ProduceKey => RequestBody::Produce(decode(&mut bytes, version)?),
