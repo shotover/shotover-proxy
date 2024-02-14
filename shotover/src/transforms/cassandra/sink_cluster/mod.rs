@@ -1,5 +1,5 @@
 use self::node_pool::{get_accessible_owned_connection, NodePoolBuilder, PreparedMetadata};
-use self::rewrite::{MessageRewriter, RewriteTableTy};
+use self::rewrite::MessageRewriter;
 use crate::frame::cassandra::{CassandraMetadata, Tracing};
 use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame};
 use crate::message::{Message, Messages, Metadata};
@@ -136,6 +136,8 @@ impl CassandraSinkClusterBuilder {
         let message_rewriter = MessageRewriter {
             shotover_peers,
             local_shotover_node,
+            to_rewrite: vec![],
+            prepare_requests_to_destination_nodes: HashMap::new(),
         };
 
         Self {
@@ -272,9 +274,7 @@ impl CassandraSinkCluster {
             self.pool.update_keyspaces(&mut self.keyspaces_rx);
         }
 
-        // CAREFUL: indexes into messages are invalidated here
-        let tables_to_rewrite = self
-            .message_rewriter
+        self.message_rewriter
             .rewrite_requests(
                 &mut messages,
                 &self.connection_factory,
@@ -343,9 +343,7 @@ impl CassandraSinkCluster {
 
         let mut responses_future_use = FuturesOrdered::new();
         let mut use_future_index_to_node_index = vec![];
-        let mut nodes_to_prepare_on: Vec<Uuid> = vec![];
-
-        for (i, mut message) in messages.into_iter().enumerate() {
+        for mut message in messages.into_iter() {
             let return_chan_rx = if self.pool.nodes().is_empty()
                 || !self.init_handshake_complete
                 // system.local and system.peers must be routed to the same node otherwise the system.local node will be amongst the system.peers nodes and a node will be missing
@@ -370,14 +368,7 @@ impl CassandraSinkCluster {
                 // Send the USE statement to the handshake connection and use the response as shotovers response
                 self.control_connection.as_mut().unwrap().send(message)?
             } else if is_prepare_message(&mut message) {
-                if let Some(rewrite) = tables_to_rewrite.iter().find(|x| x.outgoing_index == i) {
-                    if let RewriteTableTy::Prepare { destination_nodes } = &rewrite.ty {
-                        nodes_to_prepare_on = destination_nodes.clone();
-                    }
-                }
-                let next_host_id = nodes_to_prepare_on
-                    .pop()
-                    .ok_or_else(|| anyhow!("ran out of nodes to send prepare messages to"))?;
+                let next_host_id = self.message_rewriter.get_destination_for_prepare(&message);
                 match self
                     .pool
                     .nodes_mut()
@@ -522,8 +513,7 @@ impl CassandraSinkCluster {
             }
         }
 
-        self.message_rewriter
-            .rewrite_responses(tables_to_rewrite, &mut responses)?;
+        self.message_rewriter.rewrite_responses(&mut responses)?;
 
         for response in responses.iter_mut() {
             if let Some((id, metadata)) = get_prepared_result_message(response) {

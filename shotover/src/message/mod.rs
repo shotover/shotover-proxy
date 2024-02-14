@@ -226,6 +226,17 @@ impl Message {
         self.request_id = Some(request_id);
     }
 
+    pub fn clone_with_new_id(&self) -> Self {
+        Message {
+            inner: self.inner.clone(),
+            meta_timestamp: self.meta_timestamp,
+            received_from_source_or_sink_at: None,
+            codec_state: self.codec_state,
+            id: rand::random(),
+            request_id: self.request_id,
+        }
+    }
+
     pub fn ensure_message_type(&self, expected_message_type: MessageType) -> Result<()> {
         match self.inner.as_ref().unwrap() {
             MessageInner::RawBytes { message_type, .. } => {

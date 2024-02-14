@@ -1,12 +1,15 @@
 use super::node::ConnectionFactory;
 use super::node_pool::NodePool;
 use super::ShotoverNode;
-use crate::frame::{
-    cassandra::{parse_statement_single, Tracing},
-    value::{GenericValue, IntSize},
-};
 use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame};
 use crate::message::{Message, Messages};
+use crate::{
+    frame::{
+        cassandra::{parse_statement_single, Tracing},
+        value::{GenericValue, IntSize},
+    },
+    message::MessageId,
+};
 use anyhow::{anyhow, Result};
 use cassandra_protocol::frame::message_result::BodyResResultPrepared;
 use cassandra_protocol::frame::Version;
@@ -17,6 +20,7 @@ use cql3_parser::common::{
 use cql3_parser::select::{Select, SelectElement};
 use futures::future::try_join_all;
 use itertools::Itertools;
+use std::collections::HashMap;
 use std::fmt::Write;
 use std::net::{IpAddr, Ipv4Addr};
 use uuid::Uuid;
@@ -52,6 +56,8 @@ const PEERS_V2_TABLE: FQNameRef = FQNameRef {
 pub struct MessageRewriter {
     pub shotover_peers: Vec<ShotoverNode>,
     pub local_shotover_node: ShotoverNode,
+    pub to_rewrite: Vec<TableToRewrite>,
+    pub prepare_requests_to_destination_nodes: HashMap<MessageId, Uuid>,
 }
 
 impl MessageRewriter {
@@ -59,61 +65,74 @@ impl MessageRewriter {
     /// A Vec<TableToRewrite> is returned which keeps track of the requests added
     /// so that rewrite_responses can restore the responses received into the responses expected by the client
     pub async fn rewrite_requests(
-        &self,
+        &mut self,
         messages: &mut Vec<Message>,
         connection_factory: &ConnectionFactory,
         pool: &mut NodePool,
         version: Version,
-    ) -> Result<Vec<TableToRewrite>> {
-        let mut outgoing_index_offset = 0;
-        let tables_to_rewrite: Vec<TableToRewrite> = messages
-            .iter_mut()
-            .enumerate()
-            .filter_map(|(i, m)| {
-                let table = self.get_rewrite_table(m, i, outgoing_index_offset, pool);
-                if let Some(table) = &table {
-                    outgoing_index_offset += table.ty.extra_messages_needed();
-                }
-                table
-            })
-            .collect();
+    ) -> Result<()> {
+        for (i, message) in messages.iter_mut().enumerate() {
+            if let Some(rewrite) = self.get_rewrite_table(i, message) {
+                self.to_rewrite.push(rewrite);
+            }
+        }
 
         // Insert the extra messages required by table rewrites.
-        // After this the incoming_index values are now invalid and the outgoing_index values should be used instead
-        for table_to_rewrite in tables_to_rewrite.iter().rev() {
+        for table_to_rewrite in &mut self.to_rewrite {
             match &table_to_rewrite.ty {
                 RewriteTableTy::Local => {
                     let query = "SELECT rack, data_center, schema_version, tokens, release_version FROM system.peers";
-                    messages.insert(
-                        table_to_rewrite.incoming_index + 1,
-                        create_query(messages, query, version)?,
-                    );
+                    let message = create_query(messages, query, version)?;
+                    table_to_rewrite
+                        .collected_messages
+                        .push(MessageOrId::Id(message.id()));
+                    messages.push(message);
                 }
                 RewriteTableTy::Peers => {
                     let query = "SELECT rack, data_center, schema_version, tokens, release_version FROM system.peers";
-                    messages.insert(
-                        table_to_rewrite.incoming_index + 1,
-                        create_query(messages, query, version)?,
-                    );
+                    let message = create_query(messages, query, version)?;
+                    table_to_rewrite
+                        .collected_messages
+                        .push(MessageOrId::Id(message.id()));
+                    messages.push(message);
+
                     let query = "SELECT rack, data_center, schema_version, tokens, release_version FROM system.local";
-                    messages.insert(
-                        table_to_rewrite.incoming_index + 2,
-                        create_query(messages, query, version)?,
-                    );
+                    let message = create_query(messages, query, version)?;
+                    table_to_rewrite
+                        .collected_messages
+                        .push(MessageOrId::Id(message.id()));
+                    messages.push(message);
                 }
-                RewriteTableTy::Prepare { destination_nodes } => {
-                    for i in 1..destination_nodes.len() {
-                        messages.insert(
-                            table_to_rewrite.incoming_index + i,
-                            messages[table_to_rewrite.incoming_index].clone(),
-                        );
+                RewriteTableTy::Prepare { clone_index } => {
+                    let mut first = true;
+                    for node in pool.nodes().iter() {
+                        if node.is_up && node.rack == self.local_shotover_node.rack {
+                            if first {
+                                let message_id = messages[*clone_index].id();
+                                self.prepare_requests_to_destination_nodes
+                                    .insert(message_id, node.host_id);
+                            } else {
+                                let message = messages[*clone_index].clone_with_new_id();
+                                self.prepare_requests_to_destination_nodes
+                                    .insert(message.id(), node.host_id);
+                                table_to_rewrite
+                                    .collected_messages
+                                    .push(MessageOrId::Id(message.id()));
+                                messages.push(message);
+                            }
+                            first = false;
+                        }
                     }
 
                     // This is purely an optimization: To avoid opening these connections sequentially later on, we open them concurrently now.
                     try_join_all(
                         pool.nodes_mut()
                             .iter_mut()
-                            .filter(|x| destination_nodes.contains(&x.host_id))
+                            .filter(|x| {
+                                self.prepare_requests_to_destination_nodes
+                                    .values()
+                                    .any(|y| y == &x.host_id)
+                            })
                             .map(|node| node.get_connection(connection_factory)),
                     )
                     .await?;
@@ -121,18 +140,17 @@ impl MessageRewriter {
             }
         }
 
-        Ok(tables_to_rewrite)
+        Ok(())
     }
 
     /// Returns any information required to correctly rewrite the response.
     /// Will also perform minor modifications to the query required for the rewrite.
     fn get_rewrite_table(
         &self,
+        request_index: usize,
         request: &mut Message,
-        incoming_index: usize,
-        outgoing_index_offset: usize,
-        pool: &mut NodePool,
     ) -> Option<TableToRewrite> {
+        let request_id = request.id();
         if let Some(Frame::Cassandra(cassandra)) = request.frame() {
             // No need to handle Batch as selects can only occur on Query
             match &mut cassandra.operation {
@@ -159,8 +177,7 @@ impl MessageRewriter {
                         };
 
                         return Some(TableToRewrite {
-                            incoming_index,
-                            outgoing_index: incoming_index + outgoing_index_offset,
+                            collected_messages: vec![MessageOrId::Id(request_id)],
                             ty,
                             warnings,
                             selects: select.columns.clone(),
@@ -169,17 +186,9 @@ impl MessageRewriter {
                 }
                 CassandraOperation::Prepare(_) => {
                     return Some(TableToRewrite {
-                        incoming_index,
-                        outgoing_index: incoming_index + outgoing_index_offset,
+                        collected_messages: vec![MessageOrId::Id(request_id)],
                         ty: RewriteTableTy::Prepare {
-                            destination_nodes: pool
-                                .nodes()
-                                .iter()
-                                .filter(|node| {
-                                    node.is_up && node.rack == self.local_shotover_node.rack
-                                })
-                                .map(|node| node.host_id)
-                                .collect(),
+                            clone_index: request_index,
                         },
                         warnings: vec![],
                         selects: vec![],
@@ -191,20 +200,34 @@ impl MessageRewriter {
         None
     }
 
+    pub fn get_destination_for_prepare(&mut self, message: &Message) -> Uuid {
+        if let Some(node) = self
+            .prepare_requests_to_destination_nodes
+            .remove(&message.id())
+        {
+            return node;
+        }
+
+        unreachable!()
+    }
+
     /// Rewrite responses using the `Vec<TableToRewrite>` returned by rewrite_requests.
     /// All extra responses are combined back into the amount of responses expected by the client.
-    pub fn rewrite_responses(
-        &self,
-        tables_to_rewrite: Vec<TableToRewrite>,
-        responses: &mut Vec<Message>,
-    ) -> Result<()> {
-        for table_to_rewrite in tables_to_rewrite {
-            self.rewrite_response(table_to_rewrite, responses)?;
+    pub fn rewrite_responses(&mut self, responses: &mut Vec<Message>) -> Result<()> {
+        for mut table_to_rewrite in std::mem::take(&mut self.to_rewrite) {
+            if !self.rewrite_response(&mut table_to_rewrite, responses)? {
+                self.to_rewrite.push(table_to_rewrite);
+            }
         }
         Ok(())
     }
 
-    fn rewrite_response(&self, table: TableToRewrite, responses: &mut Vec<Message>) -> Result<()> {
+    /// Returns true when the TableToRewrite is completed and should be destroyed.
+    fn rewrite_response(
+        &self,
+        table: &mut TableToRewrite,
+        responses: &mut Vec<Message>,
+    ) -> Result<bool> {
         fn get_warnings(message: &mut Message) -> Vec<String> {
             if let Some(Frame::Cassandra(frame)) = message.frame() {
                 frame.warnings.clone()
@@ -213,147 +236,150 @@ impl MessageRewriter {
             }
         }
 
-        fn remove_extra_message(
-            table: &TableToRewrite,
-            responses: &mut Vec<Message>,
-        ) -> Option<Message> {
-            if table.incoming_index + 1 < responses.len() {
-                Some(responses.remove(table.incoming_index + 1))
-            } else {
-                None
+        for message_or_id in table.collected_messages.iter_mut() {
+            let MessageOrId::Id(id) = message_or_id else {
+                break;
+            };
+            if let Some(i) = responses.iter().position(|x| x.request_id() == Some(*id)) {
+                *message_or_id = MessageOrId::Message(responses.swap_remove(i));
             }
         }
 
-        match &table.ty {
-            RewriteTableTy::Local => {
-                if let Some(mut peers_response) = remove_extra_message(&table, responses) {
-                    if let Some(local_response) = responses.get_mut(table.incoming_index) {
-                        // Include warnings from every message that gets combined into the final message + any extra warnings noted in the TableToRewrite
-                        let mut warnings = table.warnings.clone();
-                        warnings.extend(get_warnings(&mut peers_response));
-                        warnings.extend(get_warnings(local_response));
+        if table
+            .collected_messages
+            .iter()
+            .all(|x| matches!(x, MessageOrId::Message(_)))
+        {
+            // We have all the messages we need now.
+            // Consume the TableToRewrite and return the resulting message to the client.
 
-                        self.rewrite_table_local(table, local_response, peers_response, warnings)?;
-                        local_response.invalidate_cache();
-                    }
+            let mut collected_messages: Vec<Message> = table
+                .collected_messages
+                .drain(..)
+                .map(|x| match x {
+                    MessageOrId::Message(m) => m,
+                    MessageOrId::Id(_) => unreachable!(),
+                })
+                .collect();
+
+            match &table.ty {
+                RewriteTableTy::Local => {
+                    let mut peers_response = collected_messages.pop().unwrap();
+                    let mut local_response = collected_messages.pop().unwrap();
+                    // Include warnings from every message that gets combined into the final message + any extra warnings noted in the TableToRewrite
+                    let mut warnings = table.warnings.clone();
+                    warnings.extend(get_warnings(&mut peers_response));
+                    warnings.extend(get_warnings(&mut local_response));
+
+                    self.rewrite_table_local(table, &mut local_response, peers_response, warnings)?;
+                    local_response.invalidate_cache();
+                    responses.push(local_response);
                 }
-            }
-            RewriteTableTy::Peers => {
-                if let Some(mut peers_response) = remove_extra_message(&table, responses) {
-                    if let Some(mut local_response) = remove_extra_message(&table, responses) {
-                        if let Some(client_peers_response) = responses.get_mut(table.incoming_index)
-                        {
-                            // Include warnings from every message that gets combined into the final message + any extra warnings noted in the TableToRewrite
-                            let mut warnings = table.warnings.clone();
-                            warnings.extend(get_warnings(&mut peers_response));
-                            warnings.extend(get_warnings(&mut local_response));
-                            warnings.extend(get_warnings(client_peers_response));
+                RewriteTableTy::Peers => {
+                    let mut peers_response = collected_messages.pop().unwrap();
+                    let mut local_response = collected_messages.pop().unwrap();
+                    let mut client_peers_response = collected_messages.pop().unwrap();
+                    // Include warnings from every message that gets combined into the final message + any extra warnings noted in the TableToRewrite
+                    let mut warnings = table.warnings.clone();
+                    warnings.extend(get_warnings(&mut peers_response));
+                    warnings.extend(get_warnings(&mut local_response));
+                    warnings.extend(get_warnings(&mut client_peers_response));
 
-                            let mut nodes = match parse_system_nodes(peers_response) {
-                                Ok(x) => x,
-                                Err(MessageParseError::CassandraError(err)) => {
-                                    *client_peers_response = client_peers_response
+                    let mut nodes = match parse_system_nodes(peers_response) {
+                        Ok(x) => x,
+                        Err(MessageParseError::CassandraError(err)) => {
+                            client_peers_response = client_peers_response
                                         .to_error_response(format!("{:?}", err.context("Shotover failed to generate system.peers, an error occured when an internal system.peers query was run.")))
                                         .expect("This must succeed because it is a cassandra message and we already know it to be parseable");
-                                    return Ok(());
-                                }
-                                Err(MessageParseError::ParseFailure(err)) => return Err(err),
-                            };
-                            match parse_system_nodes(local_response) {
-                                Ok(x) => nodes.extend(x),
-                                Err(MessageParseError::CassandraError(err)) => {
-                                    *client_peers_response = client_peers_response
+                            responses.push(client_peers_response);
+                            return Ok(true);
+                        }
+                        Err(MessageParseError::ParseFailure(err)) => return Err(err),
+                    };
+                    match parse_system_nodes(local_response) {
+                        Ok(x) => nodes.extend(x),
+                        Err(MessageParseError::CassandraError(err)) => {
+                            client_peers_response = client_peers_response
                                         .to_error_response(format!("{:?}", err.context("Shotover failed to generate system.peers, an error occured when an internal system.local query was run.")))
                                         .expect("This must succeed because it is a cassandra message and we already know it to be parseable");
-                                    return Ok(());
-                                }
-                                Err(MessageParseError::ParseFailure(err)) => return Err(err),
-                            };
-
-                            self.rewrite_table_peers(
-                                table,
-                                client_peers_response,
-                                nodes,
-                                warnings,
-                            )?;
-                            client_peers_response.invalidate_cache();
+                            responses.push(client_peers_response);
+                            return Ok(true);
                         }
-                    }
+                        Err(MessageParseError::ParseFailure(err)) => return Err(err),
+                    };
+
+                    self.rewrite_table_peers(table, &mut client_peers_response, nodes, warnings)?;
+                    client_peers_response.invalidate_cache();
+                    responses.push(client_peers_response);
                 }
-            }
-            RewriteTableTy::Prepare { destination_nodes } => {
-                let prepared_responses = &mut responses
-                    [table.incoming_index..table.incoming_index + destination_nodes.len()];
+                RewriteTableTy::Prepare { .. } => {
+                    let mut warnings: Vec<String> = collected_messages
+                        .iter_mut()
+                        .flat_map(get_warnings)
+                        .collect();
 
-                let mut warnings: Vec<String> = prepared_responses
-                    .iter_mut()
-                    .flat_map(get_warnings)
-                    .collect();
+                    {
+                        let prepared_results: Vec<&mut Box<BodyResResultPrepared>> = collected_messages
+                            .iter_mut()
+                            .filter_map(|message| match message.frame() {
+                                Some(Frame::Cassandra(CassandraFrame {
+                                    operation:
+                                        CassandraOperation::Result(CassandraResult::Prepared(prepared)),
+                                    ..
+                                })) => Some(prepared),
+                                other => {
+                                    tracing::error!("Response to Prepare query was not a Prepared, was instead: {other:?}");
+                                    warnings.push(format!("Shotover: Response to Prepare query was not a Prepared, was instead: {other:?}"));
+                                    None
+                                }
+                            })
+                            .collect();
+                        if !prepared_results.windows(2).all(|w| w[0] == w[1]) {
+                            let err_str =
+                                prepared_results
+                                    .iter()
+                                    .fold(String::new(), |mut output, b| {
+                                        let _ = write!(output, "\n{b:?}");
+                                        output
+                                    });
 
-                {
-                    let prepared_results: Vec<&mut Box<BodyResResultPrepared>> = prepared_responses
-                    .iter_mut()
-                    .filter_map(|message| match message.frame() {
-                        Some(Frame::Cassandra(CassandraFrame {
-                            operation:
-                                CassandraOperation::Result(CassandraResult::Prepared(prepared)),
-                            ..
-                        })) => Some(prepared),
-                        other => {
-                            tracing::error!("Response to Prepare query was not a Prepared, was instead: {other:?}");
-                            warnings.push(format!("Shotover: Response to Prepare query was not a Prepared, was instead: {other:?}"));
-                            None
-                        }
-                    })
-                    .collect();
-                    if !prepared_results.windows(2).all(|w| w[0] == w[1]) {
-                        let err_str =
-                            prepared_results
-                                .iter()
-                                .fold(String::new(), |mut output, b| {
-                                    let _ = write!(output, "\n{b:?}");
-                                    output
-                                });
-
-                        tracing::error!(
+                            tracing::error!(
                             "Nodes did not return the same response to PREPARE statement {err_str}"
                         );
-                        warnings.push(format!(
+                            warnings.push(format!(
                             "Shotover: Nodes did not return the same response to PREPARE statement {err_str}"
                         ));
+                        }
                     }
-                }
 
-                // If there is a succesful response, use that as our response by moving it to the beginning
-                for (i, response) in prepared_responses.iter_mut().enumerate() {
-                    if let Some(Frame::Cassandra(CassandraFrame {
-                        operation: CassandraOperation::Result(CassandraResult::Prepared(_)),
-                        ..
-                    })) = response.frame()
-                    {
-                        prepared_responses.swap(0, i);
-                        break;
+                    // If there is a succesful response, use that as our response by moving it to the beginning
+                    for (i, response) in collected_messages.iter_mut().enumerate() {
+                        if let Some(Frame::Cassandra(CassandraFrame {
+                            operation: CassandraOperation::Result(CassandraResult::Prepared(_)),
+                            ..
+                        })) = response.frame()
+                        {
+                            collected_messages.swap(0, i);
+                            break;
+                        }
                     }
-                }
 
-                // Finalize our response by setting its warnings list to all the warnings we have accumulated
-                if let Some(Frame::Cassandra(frame)) = prepared_responses[0].frame() {
-                    frame.warnings = warnings;
+                    // Finalize our response by setting its warnings list to all the warnings we have accumulated
+                    if let Some(Frame::Cassandra(frame)) = collected_messages[0].frame() {
+                        frame.warnings = warnings;
+                    }
+                    responses.push(collected_messages.remove(0));
                 }
-
-                // Remove all unused messages so we are only left with the one message that will be used as the response
-                responses.drain(
-                    table.incoming_index + 1..table.incoming_index + destination_nodes.len(),
-                );
             }
+            Ok(true)
+        } else {
+            Ok(false)
         }
-
-        Ok(())
     }
 
     fn rewrite_table_peers(
         &self,
-        table: TableToRewrite,
+        table: &TableToRewrite,
         peers_response: &mut Message,
         nodes: Vec<NodeInfo>,
         warnings: Vec<String>,
@@ -504,7 +530,7 @@ impl MessageRewriter {
 
     fn rewrite_table_local(
         &self,
-        table: TableToRewrite,
+        table: &TableToRewrite,
         local_response: &mut Message,
         peers_response: Message,
         warnings: Vec<String>,
@@ -673,32 +699,26 @@ fn has_no_where_clause(ty: &RewriteTableTy, select: &Select) -> bool {
                 }])
 }
 
+#[derive(Clone, Debug)]
 pub struct TableToRewrite {
-    incoming_index: usize,
-    pub outgoing_index: usize,
+    pub collected_messages: Vec<MessageOrId>,
     pub ty: RewriteTableTy,
     selects: Vec<SelectElement>,
     warnings: Vec<String>,
 }
 
-#[derive(PartialEq, Clone)]
+#[derive(Clone, Debug)]
+pub enum MessageOrId {
+    Message(Message),
+    Id(MessageId),
+}
+
+#[derive(PartialEq, Clone, Debug)]
 pub enum RewriteTableTy {
     Local,
     Peers,
     // We need to know which nodes we are sending to early on so that we can create the appropriate number of messages early and keep our rewrite indexes intact
-    Prepare { destination_nodes: Vec<Uuid> },
-}
-
-impl RewriteTableTy {
-    fn extra_messages_needed(&self) -> usize {
-        match self {
-            RewriteTableTy::Local => 1,
-            RewriteTableTy::Peers => 2,
-            RewriteTableTy::Prepare { destination_nodes } => {
-                destination_nodes.len().saturating_sub(1)
-            }
-        }
-    }
+    Prepare { clone_index: usize },
 }
 
 struct NodeInfo {
