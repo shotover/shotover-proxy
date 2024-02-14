@@ -15,8 +15,13 @@ async fn drop_function(session: &CassandraConnection) {
 async fn create_function(session: &CassandraConnection) {
     run_query(
         session,
-        "CREATE FUNCTION test_function_keyspace.my_function (a int, b int) RETURNS NULL ON NULL INPUT RETURNS int LANGUAGE javascript AS 'a * b';"
-    ).await;
+        "CREATE FUNCTION test_function_keyspace.my_function (a int, b int) 
+RETURNS NULL ON NULL INPUT 
+RETURNS int 
+LANGUAGE java 
+AS $$ return a * b; $$;",
+    )
+    .await;
 
     assert_query_result(
         session,

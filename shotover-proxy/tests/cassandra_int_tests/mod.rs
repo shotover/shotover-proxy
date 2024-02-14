@@ -1021,19 +1021,9 @@ async fn cassandra_5(#[case] driver: CassandraDriver) {
         .start()
         .await;
 
-    let connection_creator = || CassandraConnectionBuilder::new("127.0.0.1", 9042, driver).build();
+    let connection = || CassandraConnectionBuilder::new("127.0.0.1", 9042, driver).build();
 
-    let connection = connection_creator().await;
-
-    keyspace::test(&connection).await;
-    table::test(&connection).await;
-    udt::test(&connection).await;
-    native_types::test(&connection).await;
-    collections::test(&connection, driver).await;
-    prepared_statements_simple::test(&connection, connection_creator, 1).await;
-    prepared_statements_all::test(&connection, 1).await;
-    batch_statements::test(&connection).await;
-    timestamp::test(&connection).await;
+    standard_test_suite(&connection, driver).await;
 
     shotover.shutdown_and_then_consume_events(&[]).await;
 }
@@ -1047,7 +1037,7 @@ async fn cassandra_5_cluster(#[case] driver: CassandraDriver) {
         .start()
         .await;
 
-    let connection_creator = || async {
+    let connection = || async {
         let mut connection = CassandraConnectionBuilder::new("127.0.0.1", 9042, driver)
             .build()
             .await;
@@ -1057,17 +1047,7 @@ async fn cassandra_5_cluster(#[case] driver: CassandraDriver) {
         connection
     };
 
-    let connection = connection_creator().await;
-
-    keyspace::test(&connection).await;
-    table::test(&connection).await;
-    udt::test(&connection).await;
-    native_types::test(&connection).await;
-    collections::test(&connection, driver).await;
-    prepared_statements_simple::test(&connection, connection_creator, 1).await;
-    prepared_statements_all::test(&connection, 1).await;
-    batch_statements::test(&connection).await;
-    timestamp::test(&connection).await;
+    standard_test_suite(&connection, driver).await;
 
     shotover.shutdown_and_then_consume_events(&[]).await;
 }
