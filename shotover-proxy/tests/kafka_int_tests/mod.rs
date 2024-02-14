@@ -64,6 +64,34 @@ async fn passthrough_encode() {
 
 #[cfg(feature = "rdkafka-driver-tests")]
 #[tokio::test]
+async fn passthrough_sasl() {
+    let _docker_compose =
+        docker_compose("tests/test-configs/kafka/passthrough-sasl/docker-compose.yaml");
+    let shotover = shotover_process("tests/test-configs/kafka/passthrough-sasl/topology.yaml")
+        .start()
+        .await;
+
+    test_cases::basic_sasl("127.0.0.1:9192").await;
+
+    shotover.shutdown_and_then_consume_events(&[]).await;
+}
+
+#[cfg(feature = "rdkafka-driver-tests")]
+#[tokio::test]
+async fn passthrough_sasl_encode() {
+    let _docker_compose =
+        docker_compose("tests/test-configs/kafka/passthrough-sasl/docker-compose.yaml");
+    let shotover = shotover_process("tests/test-configs/kafka/passthrough-sasl/topology.yaml")
+        .start()
+        .await;
+
+    test_cases::basic_sasl("127.0.0.1:9192").await;
+
+    shotover.shutdown_and_then_consume_events(&[]).await;
+}
+
+#[cfg(feature = "rdkafka-driver-tests")]
+#[tokio::test]
 async fn cluster_single_shotover() {
     let _docker_compose = docker_compose("tests/test-configs/kafka/cluster/docker-compose.yaml");
     let shotover = shotover_process("tests/test-configs/kafka/cluster/topology-single.yaml")

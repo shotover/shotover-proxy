@@ -1,0 +1,12 @@
+---
+sources:
+  - Kafka:
+      name: "kafka"
+      listen_addr: "127.0.0.1:9192"
+      chain:
+        - DebugForceEncode:
+            encode_requests: true
+            encode_responses: true
+        - KafkaSinkSingle:
+            destination_port: 9092
+            connect_timeout_ms: 3000

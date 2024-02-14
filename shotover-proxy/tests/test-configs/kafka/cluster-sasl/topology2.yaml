@@ -1,0 +1,13 @@
+---
+sources:
+  - Kafka:
+      name: "kafka"
+      listen_addr: "127.0.0.1:9192"
+      chain:
+        - KafkaSinkCluster:
+            shotover_nodes: 
+              - "127.0.0.1:9191"
+              - "127.0.0.1:9192"
+              - "127.0.0.1:9193"
+            first_contact_points: ["172.16.1.2:9092"]
+            connect_timeout_ms: 3000
