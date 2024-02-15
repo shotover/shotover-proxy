@@ -1,5 +1,56 @@
 use anyhow::{anyhow, Error};
-use clap::Parser;
+use clap::{Parser, Subcommand};
+
+#[derive(Subcommand, Clone)]
+pub enum Command {
+    /// List the name of every bench.
+    #[clap(verbatim_doc_comment)]
+    List,
+
+    /// The results of the last benchmarks run becomes the new baseline from which future benchmark runs will be compared.
+    #[clap(verbatim_doc_comment)]
+    BaselineSet,
+
+    /// Removes the stored baseline. Following runs will no longer compare against a baseline.
+    #[clap(verbatim_doc_comment)]
+    BaselineClear,
+
+    /// Generate graphs webpage from the last benchmarks run.
+    #[clap(verbatim_doc_comment)]
+    GenerateWebpage,
+
+    /// Display results from the last benchmark run by:
+    ///     Listing bench results matching tag filters.
+    ///
+    /// Usage: Provide tag filters
+    #[clap(verbatim_doc_comment)]
+    // TODO: get trailing_var_arg(true) working so user can avoid having to wrap in ""
+    Results {
+        /// Do not compare against the set baseline.
+        #[clap(long, verbatim_doc_comment)]
+        ignore_baseline: bool,
+
+        /// e.g. "db=kafka OPS=10000"
+        #[clap(verbatim_doc_comment)]
+        filter: Option<String>,
+    },
+
+    /// Display results from the last benchmark run by:
+    ///     Comparing various benches against a specific base bench.
+    ///
+    /// Usage: First provide the base benchmark name then provide benchmark names to compare against the base.
+    ///     --compare_by_name "base_name other_name1 other_name2"
+    #[clap(verbatim_doc_comment)]
+    CompareByName { filter: String },
+
+    /// Display results from the last benchmark run by:
+    ///     Comparing benches matching tag filters against a specific base bench.
+    ///
+    /// Usage: First provide the base benchmark name then provide tag filters
+    ///     --compare_by_tags "base_name db=kafka OPS=10000"
+    #[clap(verbatim_doc_comment)]
+    CompareByTags { filter: String },
+}
 
 const ABOUT: &str = r#"Bench Names:
     Each benchmark has a unique name, this name is used by many options listed below.
@@ -22,9 +73,8 @@ pub struct Args {
     #[clap(verbatim_doc_comment)]
     pub filter: Option<String>,
 
-    /// List the name of every bench.
-    #[clap(long, verbatim_doc_comment)]
-    pub list: bool,
+    #[command(subcommand)]
+    pub command: Option<Command>,
 
     /// Run a specific bench with the name produced via `--list`.
     #[clap(long, verbatim_doc_comment)]
@@ -44,19 +94,6 @@ pub struct Args {
     /// By default the benches will run with unlimited operations per second.
     #[clap(long, verbatim_doc_comment)]
     pub operations_per_second: Option<u64>,
-
-    /// The results of the last benchmarks run becomes the new baseline from which following benchmark runs will be compared.
-    /// Baseline bench results are merged with the results of following results under a `baseline=true` tag.
-    #[clap(long, verbatim_doc_comment)]
-    pub set_baseline: bool,
-
-    /// Removes the stored baseline. Following runs will no longer compare against a baseline.
-    #[clap(long, verbatim_doc_comment)]
-    pub clear_baseline: bool,
-
-    /// Generate graphs webpage from the last benchmarks run.
-    #[clap(long, verbatim_doc_comment)]
-    pub generate_webpage: bool,
 
     /// By default windsock will run benches on your local machine.
     /// Set this flag to have windsock run the benches in your configured cloud.
@@ -80,64 +117,23 @@ pub struct Args {
     #[clap(long, verbatim_doc_comment)]
     pub load_cloud_resources_file: bool,
 
-    /// Display results from the last benchmark run by:
-    ///     Comparing various benches against a specific base bench.
-    ///
-    /// Usage: First provide the base benchmark name then provide benchmark names to compare against the base.
-    ///     --compare_by_name "base_name other_name1 other_name2"
-    #[clap(long, verbatim_doc_comment)]
-    pub compare_by_name: Option<String>,
-
-    /// Display results from the last benchmark run by:
-    ///     Comparing benches matching tag filters against a specific base bench.
-    ///
-    /// Usage: First provide the base benchmark name then provide tag filters
-    ///     --compare_by_tags "base_name db=kafka OPS=10000"
-    #[clap(long, verbatim_doc_comment)]
-    pub compare_by_tags: Option<String>,
-
-    /// Display results from the last benchmark run by:
-    ///     Comparing benches with specified bench names.
-    ///
-    /// Usage: Provide benchmark names to include
-    ///     --results-by-name "name1 name2 name3"
-    #[clap(long, verbatim_doc_comment)]
-    pub results_by_name: Option<String>,
-
-    /// Display results from the last benchmark run by:
-    ///     Listing bench results matching tag filters.
-    ///
-    /// Usage: Provide tag filters
-    ///     --results-by-tags "db=kafka OPS=10000"
-    #[clap(long, verbatim_doc_comment)]
-    pub results_by_tags: Option<String>,
-
-    /// Display results from the last benchmark run by:
-    ///     Comparing all benches matching tag filters against their results in the stored baseline from `--set-baseline`.
-    ///
-    /// Usage: Provide tag filters
-    ///     --baseline-compare-by-tags "db=kafka OPS=10000"
-    #[clap(long, verbatim_doc_comment)]
-    pub baseline_compare_by_tags: Option<String>,
-
     /// Not for human use. Call this from your bench orchestration method to launch your bencher.
     #[clap(long, verbatim_doc_comment)]
     pub internal_run: Option<String>,
 
-    /// Not for human use. For nextest compatibility only.
-    #[clap(long, verbatim_doc_comment)]
+    #[clap(long, hide(true))]
+    list: bool,
+
+    #[clap(long, hide(true))]
     format: Option<NextestFormat>,
 
-    /// Not for human use. For nextest compatibility only.
-    #[clap(long, verbatim_doc_comment)]
+    #[clap(long, hide(true))]
     ignored: bool,
 
-    /// Not for human use. For nextest compatibility only.
-    #[clap(long, verbatim_doc_comment)]
+    #[clap(long, hide(true))]
     exact: bool,
 
-    /// Not for human use. For nextest compatibility only.
-    #[clap(long, verbatim_doc_comment)]
+    #[clap(long, hide(true))]
     nocapture: bool,
 }
 
@@ -147,6 +143,10 @@ enum NextestFormat {
 }
 
 impl Args {
+    pub fn nextest_list(&self) -> bool {
+        self.list
+    }
+
     pub fn nextest_list_all(&self) -> bool {
         self.list && matches!(&self.format, Some(NextestFormat::Terse)) && !self.ignored
     }

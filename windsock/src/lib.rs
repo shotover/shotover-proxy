@@ -18,7 +18,7 @@ pub use tables::Goal;
 use anyhow::{anyhow, Result};
 use bench::BenchState;
 use clap::Parser;
-use cli::Args;
+use cli::{Args, Command};
 use cloud::{BenchInfo, Cloud};
 use filter::Filter;
 use std::{path::Path, process::exit};
@@ -73,27 +73,34 @@ impl<ResourcesRequired: Clone, Resources: Clone> Windsock<ResourcesRequired, Res
         let args = cli::Args::parse();
 
         let running_in_release = self.running_in_release;
+        if let Some(command) = args.command {
+            match command {
+                Command::List => list::list(&self.benches),
+                Command::BaselineSet => {
+                    ReportArchive::set_baseline();
+                    println!("Baseline set");
+                }
+                Command::BaselineClear => {
+                    ReportArchive::clear_baseline();
+                    println!("Baseline cleared");
+                }
+                Command::GenerateWebpage => {
+                    println!("Webpage generation is not implemented yet!")
+                }
+                Command::Results {
+                    ignore_baseline,
+                    filter,
+                } => tables::results(ignore_baseline, filter.as_deref().unwrap_or(""))?,
+                Command::CompareByName { filter } => tables::compare_by_name(&filter)?,
+                Command::CompareByTags { filter } => tables::compare_by_tags(&filter)?,
+            }
+            return Ok(());
+        }
         if args.cleanup_cloud_resources {
             let rt = create_runtime(None);
             rt.block_on(self.cloud.cleanup_resources());
-        } else if let Some(compare_by_name) = &args.compare_by_name {
-            tables::compare_by_name(compare_by_name)?;
-        } else if let Some(compare_by_name) = &args.results_by_name {
-            tables::results_by_name(compare_by_name)?;
-        } else if let Some(compare_by_tags) = &args.compare_by_tags {
-            tables::compare_by_tags(compare_by_tags)?;
-        } else if let Some(results_by_tags) = &args.results_by_tags {
-            tables::results_by_tags(results_by_tags)?;
-        } else if let Some(filter) = &args.baseline_compare_by_tags {
-            tables::baseline_compare_by_tags(filter)?;
-        } else if args.set_baseline {
-            ReportArchive::set_baseline();
-            println!("Baseline set");
-        } else if args.clear_baseline {
-            ReportArchive::clear_baseline();
-            println!("Baseline cleared");
-        } else if args.list {
-            list::list(&args, &self.benches);
+        } else if args.nextest_list() {
+            list::nextest_list(&args, &self.benches);
         } else if args.nextest_run_by_name() {
             create_runtime(None).block_on(self.run_nextest(args, running_in_release))?;
         } else if let Some(err) = args.nextest_invalid_args() {
