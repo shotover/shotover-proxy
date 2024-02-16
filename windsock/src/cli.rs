@@ -1,11 +1,57 @@
 use anyhow::{anyhow, Error};
-use clap::{Parser, Subcommand};
+use clap::{Args, Parser, Subcommand};
+
+const ABOUT: &str = r#"Bench Names:
+    Each benchmark has a unique name, this name is used by many options listed below.
+    The name is derived from an alphabetical sorting of its tags so you wont find it directly in the bench
+    implementation but it will be listed in the `list` command.
+
+Tag Filters:
+    Many options below take tag filters that specify which benches to include.
+    Tag filters specify which benches to include and the filter results are unioned.
+
+    So:
+    * The filter "foo=some_value" will include only benches with the tag key `foo` and the tag value `some_value`
+    * The filter "foo=some_value bar=another_value" will include only benches that match "foo=some_value" and "bar=another_value"
+    * The filter "" will include all benches
+
+    A filters tags can also be separated by commas allowing names to function as filters.
+    So: foo=some_value,bar=another_value is a name but it can also be used where a filter is accepted."#;
 
 #[derive(Subcommand, Clone)]
 pub enum Command {
     /// List the name of every bench.
     #[clap(verbatim_doc_comment)]
     List,
+
+    /// Create cloud resources for running benches
+    #[clap(verbatim_doc_comment)]
+    CloudSetup {
+        /// e.g. "db=kafka connection_count=100"
+        #[clap(verbatim_doc_comment)]
+        filter: String,
+    },
+
+    /// Run benches in the cloud using the resources created by cloud-setup
+    #[clap(verbatim_doc_comment)]
+    CloudRun(RunArgs),
+
+    /// cleanup cloud resources created by cloud-setup
+    /// Make sure to call this when your benchmarking session is finished!
+    #[clap(verbatim_doc_comment)]
+    CloudCleanup,
+
+    /// cloud-setup, cloud-run and cloud-cleanup combined into a single command.
+    /// Convenient for getting a quick understanding of performance.
+    /// However, if you are performing optimization work prefer the individual commands as you will get:
+    /// * more stable results (same cloud instance)
+    /// * faster results (skip recreating and destroying cloud resources)
+    #[clap(verbatim_doc_comment)]
+    CloudSetupRunCleanup(RunArgs),
+
+    /// Run benches entirely on your local machine
+    #[clap(verbatim_doc_comment)]
+    LocalRun(RunArgs),
 
     /// The results of the last benchmarks run becomes the new baseline from which future benchmark runs will be compared.
     #[clap(verbatim_doc_comment)]
@@ -30,7 +76,7 @@ pub enum Command {
         #[clap(long, verbatim_doc_comment)]
         ignore_baseline: bool,
 
-        /// e.g. "db=kafka OPS=10000"
+        /// e.g. "db=kafka connection_count=100"
         #[clap(verbatim_doc_comment)]
         filter: Option<String>,
     },
@@ -39,7 +85,7 @@ pub enum Command {
     ///     Comparing various benches against a specific base bench.
     ///
     /// Usage: First provide the base benchmark name then provide benchmark names to compare against the base.
-    ///     --compare_by_name "base_name other_name1 other_name2"
+    ///     "base_name other_name1 other_name2"
     #[clap(verbatim_doc_comment)]
     CompareByName { filter: String },
 
@@ -47,39 +93,17 @@ pub enum Command {
     ///     Comparing benches matching tag filters against a specific base bench.
     ///
     /// Usage: First provide the base benchmark name then provide tag filters
-    ///     --compare_by_tags "base_name db=kafka OPS=10000"
+    ///     "base_name db=kafka connection_count=10"
     #[clap(verbatim_doc_comment)]
     CompareByTags { filter: String },
+
+    /// Not for human use. Call this from your bench orchestration method to launch your bencher.
+    #[clap(verbatim_doc_comment)]
+    InternalRun(RunArgs),
 }
 
-const ABOUT: &str = r#"Bench Names:
-    Each benchmark has a unique name, this name is used by many options listed below.
-    The name is derived from its tags so you wont find it directly in the bench implementation but it will be listed in `--list`.
-
-Tag Filters:
-    Many options below take tag filters that specify which benches to include.
-    Tag filters specify which benches to include and the filter results are unioned.
-
-    So:
-    * The filter "foo=some_value" will include only benches with the tag key `foo` and the tag value `some_value`
-    * The filter "foo=some_value bar=another_value" will include only benches that match "foo=some_value" and "bar=another_value"
-    * The filter "" will include all benches"#;
-
-#[derive(Parser, Clone)]
-#[clap(about=ABOUT)]
-pub struct Args {
-    /// Run all benches that match the specified tag key/values.
-    /// `tag_key=tag_value foo=bar`
-    #[clap(verbatim_doc_comment)]
-    pub filter: Option<String>,
-
-    #[command(subcommand)]
-    pub command: Option<Command>,
-
-    /// Run a specific bench with the name produced via `--list`.
-    #[clap(long, verbatim_doc_comment)]
-    pub name: Option<String>,
-
+#[derive(Args, Clone)]
+pub struct RunArgs {
     /// Instruct benches to profile the application under test with the specified profilers.
     /// Benches that do not support the specified profilers will be skipped.
     #[clap(long, verbatim_doc_comment, value_delimiter = ',')]
@@ -95,31 +119,28 @@ pub struct Args {
     #[clap(long, verbatim_doc_comment)]
     pub operations_per_second: Option<u64>,
 
-    /// By default windsock will run benches on your local machine.
-    /// Set this flag to have windsock run the benches in your configured cloud.
-    #[clap(long, verbatim_doc_comment)]
-    pub cloud: bool,
+    /// Run all benches that match the specified tag key/values.
+    /// `tag_key=tag_value foo=bar`
+    #[clap(verbatim_doc_comment)]
+    pub filter: Option<String>,
+}
 
-    /// Windsock will automatically cleanup cloud resources after benches have been run.
-    /// However this command exists to force cleanup in case windsock panicked before automatic cleanup could occur.
-    #[clap(long, verbatim_doc_comment)]
-    pub cleanup_cloud_resources: bool,
+impl RunArgs {
+    pub fn filter(&self) -> String {
+        match &self.filter {
+            // convert a name into a filter by swapping commas for spaces
+            Some(filter) => filter.replace(',', " "),
+            // If not provided use the empty filter
+            None => String::new(),
+        }
+    }
+}
 
-    /// Skip running of benches.
-    /// Skip automatic deletion of cloud resources on bench run completion.
-    /// Instead, just create cloud resources and write details of the resources to disk so they may be restored via `--load-cloud-resources-file`
-    #[clap(long, verbatim_doc_comment)]
-    pub store_cloud_resources_file: bool,
-
-    /// Skip automatic creation of cloud resources on bench run completion.
-    /// Skip automatic deletion of cloud resources on bench run completion.
-    /// Instead, details of the resources are loaded from disk as saved via a previous run using `--store-cloud-resources-file`
-    #[clap(long, verbatim_doc_comment)]
-    pub load_cloud_resources_file: bool,
-
-    /// Not for human use. Call this from your bench orchestration method to launch your bencher.
-    #[clap(long, verbatim_doc_comment)]
-    pub internal_run: Option<String>,
+#[derive(Parser)]
+#[clap(about=ABOUT)]
+pub struct WindsockArgs {
+    #[command(subcommand)]
+    pub command: Option<Command>,
 
     #[clap(long, hide(true))]
     list: bool,
@@ -131,7 +152,7 @@ pub struct Args {
     ignored: bool,
 
     #[clap(long, hide(true))]
-    exact: bool,
+    pub exact: Option<String>,
 
     #[clap(long, hide(true))]
     nocapture: bool,
@@ -142,7 +163,7 @@ enum NextestFormat {
     Terse,
 }
 
-impl Args {
+impl WindsockArgs {
     pub fn nextest_list(&self) -> bool {
         self.list
     }
@@ -155,17 +176,21 @@ impl Args {
         self.list && matches!(&self.format, Some(NextestFormat::Terse)) && self.ignored
     }
 
-    pub fn nextest_run_by_name(&self) -> bool {
-        self.nocapture && self.exact
+    pub fn nextest_run_by_name(&self) -> Option<&str> {
+        if self.nocapture {
+            self.exact.as_deref()
+        } else {
+            None
+        }
     }
 
     pub fn nextest_invalid_args(&self) -> Option<Error> {
         if self.format.is_some() && self.list {
             Some(anyhow!("`--format` only exists for nextest compatibility and is not supported without `--list`"))
-        } else if self.nocapture && !self.exact {
+        } else if self.nocapture && self.exact.is_none() {
             Some(anyhow!("`--nocapture` only exists for nextest compatibility and is not supported without `--exact`"))
-        } else if self.exact && !self.nocapture {
-            Some(anyhow!("`--nocapture` only exists for nextest compatibility and is not supported without `--nocapture`"))
+        } else if self.exact.is_some() && !self.nocapture {
+            Some(anyhow!("`--exact` only exists for nextest compatibility and is not supported without `--nocapture`"))
         } else {
             None
         }

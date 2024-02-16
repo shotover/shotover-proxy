@@ -1,4 +1,4 @@
-use crate::cli::Args;
+use crate::cli::RunArgs;
 use crate::report::{report_builder, Report, ReportArchive};
 use crate::tables::ReportColumn;
 use anyhow::Result;
@@ -34,7 +34,7 @@ impl<ResourcesRequired, Resources> BenchState<ResourcesRequired, Resources> {
 
     pub async fn orchestrate(
         &mut self,
-        args: &Args,
+        args: &RunArgs,
         running_in_release: bool,
         cloud_resources: Option<Resources>,
     ) {
@@ -52,10 +52,10 @@ impl<ResourcesRequired, Resources> BenchState<ResourcesRequired, Resources> {
             PathBuf::new()
         };
 
-        if args.cloud {
+        if let Some(cloud_resources) = cloud_resources {
             self.bench
                 .orchestrate_cloud(
-                    cloud_resources.unwrap(),
+                    cloud_resources,
                     running_in_release,
                     Profiling {
                         results_path,
@@ -85,7 +85,7 @@ impl<ResourcesRequired, Resources> BenchState<ResourcesRequired, Resources> {
         }]);
     }
 
-    pub async fn run(&mut self, args: &Args, running_in_release: bool, resources: &str) {
+    pub async fn run(&mut self, args: &RunArgs, running_in_release: bool, resources: &str) {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
         let process = tokio::spawn(report_builder(
             self.tags.clone(),
@@ -173,9 +173,9 @@ pub trait Bench {
 
     /// Call within `Bench::orchestrate_local` to call `Bench::run`
     async fn execute_run(&self, resources: &str, bench_parameters: &BenchParameters) {
-        let internal_run = format!("{} {}", self.name(), resources);
+        let name_and_resources = format!("{} {}", self.name(), resources);
         let output = tokio::process::Command::new(std::env::current_exe().unwrap().as_os_str())
-            .args(run_args_vec(internal_run, bench_parameters))
+            .args(run_args_vec(name_and_resources, bench_parameters))
             .output()
             .await
             .unwrap();
@@ -188,8 +188,8 @@ pub trait Bench {
 
     /// Call within `Bench::orchestrate_cloud` to determine how to invoke the uploaded windsock executable
     fn run_args(&self, resources: &str, bench_parameters: &BenchParameters) -> String {
-        let internal_run = format!("\"{} {}\"", self.name(), resources);
-        run_args_vec(internal_run, bench_parameters).join(" ")
+        let name_and_resources = format!("\"{} {}\"", self.name(), resources);
+        run_args_vec(name_and_resources, bench_parameters).join(" ")
     }
 
     fn name(&self) -> String {
@@ -197,8 +197,9 @@ pub trait Bench {
     }
 }
 
-fn run_args_vec(internal_run: String, bench_parameters: &BenchParameters) -> Vec<String> {
+fn run_args_vec(name_and_resources: String, bench_parameters: &BenchParameters) -> Vec<String> {
     let mut args = vec![];
+    args.push("internal-run".to_owned());
     args.push("--bench-length-seconds".to_owned());
     args.push(bench_parameters.runtime_seconds.to_string());
 
@@ -207,8 +208,7 @@ fn run_args_vec(internal_run: String, bench_parameters: &BenchParameters) -> Vec
         args.push(ops.to_string());
     };
 
-    args.push("--internal-run".to_owned());
-    args.push(internal_run);
+    args.push(name_and_resources);
 
     args
 }
@@ -219,7 +219,7 @@ pub struct BenchParameters {
 }
 
 impl BenchParameters {
-    fn from_args(args: &Args) -> Self {
+    fn from_args(args: &RunArgs) -> Self {
         BenchParameters {
             runtime_seconds: args.bench_length_seconds.unwrap_or(15),
             operations_per_second: args.operations_per_second,
@@ -237,21 +237,15 @@ pub(crate) struct Tags(pub HashMap<String, String>);
 
 impl Tags {
     pub fn get_name(&self) -> String {
-        let mut result = if let Some(name) = self.0.get("name") {
-            name.clone()
-        } else {
-            "".to_string()
-        };
+        let mut result = String::new();
 
         let mut tags: Vec<(&String, &String)> = self.0.iter().collect();
         tags.sort_by_key(|x| x.0);
         for (key, value) in tags {
-            if key != "name" {
-                if !result.is_empty() {
-                    write!(result, ",").unwrap();
-                }
-                write!(result, "{key}={value}").unwrap();
+            if !result.is_empty() {
+                write!(result, ",").unwrap();
             }
+            write!(result, "{key}={value}").unwrap();
         }
         result
     }
@@ -265,10 +259,8 @@ impl Tags {
                 let key = pair.next().unwrap().to_owned();
                 let value = pair.next().unwrap().to_owned();
                 map.insert(key, value);
-            } else if map.contains_key("name") {
-                panic!("The name tag was already set and a tag without an '=' was found")
             } else {
-                map.insert("name".to_owned(), tag.to_owned());
+                panic!("tag without an '=' was found")
             }
         }
         Tags(map)

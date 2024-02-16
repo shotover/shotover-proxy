@@ -1,4 +1,4 @@
-use crate::{bench::BenchState, cli::Args};
+use crate::{bench::BenchState, cli::WindsockArgs};
 
 pub fn list<ResourcesRequired, Resources>(benches: &[BenchState<ResourcesRequired, Resources>]) {
     // regular usage
@@ -9,7 +9,7 @@ pub fn list<ResourcesRequired, Resources>(benches: &[BenchState<ResourcesRequire
 }
 
 pub fn nextest_list<ResourcesRequired, Resources>(
-    args: &Args,
+    args: &WindsockArgs,
     benches: &[BenchState<ResourcesRequired, Resources>],
 ) {
     if args.nextest_list_all() {
