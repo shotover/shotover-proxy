@@ -1,7 +1,7 @@
 use super::{message_latency, CodecWriteError, Direction};
 use crate::codec::{CodecBuilder, CodecReadError};
 use crate::frame::MessageType;
-use crate::message::{Encodable, Message, Messages, ProtocolType};
+use crate::message::{Encodable, Message, MessageId, Messages, ProtocolType};
 use anyhow::{anyhow, Result};
 use bytes::BytesMut;
 use kafka_protocol::messages::ApiKey;
@@ -57,14 +57,20 @@ impl CodecBuilder for KafkaCodecBuilder {
     }
 }
 
+pub struct RequestInfo {
+    header: RequestHeader,
+    id: MessageId,
+}
+
 pub struct KafkaDecoder {
-    request_header_rx: Option<mpsc::Receiver<RequestHeader>>,
+    // Some when Sink (because it receives responses)
+    request_header_rx: Option<mpsc::Receiver<RequestInfo>>,
     direction: Direction,
 }
 
 impl KafkaDecoder {
     pub fn new(
-        request_header_rx: Option<mpsc::Receiver<RequestHeader>>,
+        request_header_rx: Option<mpsc::Receiver<RequestInfo>>,
         direction: Direction,
     ) -> Self {
         KafkaDecoder {
@@ -100,19 +106,29 @@ impl Decoder for KafkaDecoder {
                 self.direction,
                 pretty_hex::pretty_hex(&bytes)
             );
-            let request_header =
-                if let Some(rx) = self.request_header_rx.as_ref() {
-                    Some(rx.recv().map_err(|_| {
-                        CodecReadError::Parser(anyhow!("kafka encoder half was lost"))
-                    })?)
-                } else {
-                    None
-                };
-            Ok(Some(vec![Message::from_bytes_at_instant(
-                bytes.freeze(),
-                ProtocolType::Kafka { request_header },
-                Some(received_at),
-            )]))
+            let message = if let Some(rx) = self.request_header_rx.as_ref() {
+                let RequestInfo { header, id } = rx
+                    .recv()
+                    .map_err(|_| CodecReadError::Parser(anyhow!("kafka encoder half was lost")))?;
+                let mut message = Message::from_bytes_at_instant(
+                    bytes.freeze(),
+                    ProtocolType::Kafka {
+                        request_header: Some(header),
+                    },
+                    Some(received_at),
+                );
+                message.set_request_id(id);
+                message
+            } else {
+                Message::from_bytes_at_instant(
+                    bytes.freeze(),
+                    ProtocolType::Kafka {
+                        request_header: None,
+                    },
+                    Some(received_at),
+                )
+            };
+            Ok(Some(vec![message]))
         } else {
             Ok(None)
         }
@@ -121,13 +137,14 @@ impl Decoder for KafkaDecoder {
 
 pub struct KafkaEncoder {
     message_latency: Histogram,
-    request_header_tx: Option<mpsc::Sender<RequestHeader>>,
+    // Some when Sink (because it sends requests)
+    request_header_tx: Option<mpsc::Sender<RequestInfo>>,
     direction: Direction,
 }
 
 impl KafkaEncoder {
     pub fn new(
-        request_header_tx: Option<mpsc::Sender<RequestHeader>>,
+        request_header_tx: Option<mpsc::Sender<RequestInfo>>,
         direction: Direction,
         message_latency: Histogram,
     ) -> Self {
@@ -147,6 +164,7 @@ impl Encoder<Messages> for KafkaEncoder {
             let start = dst.len();
             m.ensure_message_type(MessageType::Kafka)
                 .map_err(CodecWriteError::Encoder)?;
+            let id = m.id();
             let received_at = m.received_from_source_or_sink_at;
             let result = match m.into_encodable() {
                 Encodable::Bytes(bytes) => {
@@ -161,8 +179,11 @@ impl Encoder<Messages> for KafkaEncoder {
                 let version = i16::from_be_bytes(dst[start + 6..start + 8].try_into().unwrap());
                 let api_key = ApiKey::try_from(api_key)
                     .map_err(|_| CodecWriteError::Encoder(anyhow!("unknown api key {api_key}")))?;
-                tx.send(RequestHeader { api_key, version })
-                    .map_err(|e| CodecWriteError::Encoder(anyhow!(e)))?;
+                tx.send(RequestInfo {
+                    header: RequestHeader { api_key, version },
+                    id,
+                })
+                .map_err(|e| CodecWriteError::Encoder(anyhow!(e)))?;
             }
             if let Some(received_at) = received_at {
                 self.message_latency.record(received_at.elapsed());

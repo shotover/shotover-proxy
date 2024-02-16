@@ -1,15 +1,18 @@
 use super::{CodecBuilder, CodecReadError, CodecWriteError, Direction};
-use crate::frame::{
-    opensearch::{HttpHead, RequestParts, ResponseParts},
-    Frame, MessageType, OpenSearchFrame,
-};
 use crate::message::{Encodable, Message, Messages};
+use crate::{
+    frame::{
+        opensearch::{HttpHead, RequestParts, ResponseParts},
+        Frame, MessageType, OpenSearchFrame,
+    },
+    message::MessageId,
+};
 use anyhow::{anyhow, Result};
 use bytes::{Buf, BytesMut};
 use http::{header, HeaderName, HeaderValue, Method, Request, Response};
 use metrics::Histogram;
 use std::{
-    sync::{Arc, Mutex},
+    sync::{mpsc, Arc, Mutex},
     time::Instant,
 };
 use tokio_util::codec::{Decoder, Encoder};
@@ -35,9 +38,17 @@ impl CodecBuilder for OpenSearchCodecBuilder {
     fn build(&self) -> (OpenSearchDecoder, OpenSearchEncoder) {
         let last_outgoing_method = Arc::new(Mutex::new(None));
 
+        let (tx, rx) = match self.direction {
+            Direction::Source => (None, None),
+            Direction::Sink => {
+                let (tx, rx) = mpsc::channel();
+                (Some(tx), Some(rx))
+            }
+        };
         (
-            OpenSearchDecoder::new(self.direction, last_outgoing_method.clone()),
+            OpenSearchDecoder::new(rx, self.direction, last_outgoing_method.clone()),
             OpenSearchEncoder::new(
+                tx,
                 self.direction,
                 last_outgoing_method,
                 self.message_latency.clone(),
@@ -51,6 +62,8 @@ impl CodecBuilder for OpenSearchCodecBuilder {
 }
 
 pub struct OpenSearchDecoder {
+    // Some when Sink (because it receives responses)
+    request_header_rx: Option<mpsc::Receiver<MessageId>>,
     direction: Direction,
     state: State,
     last_outgoing_method: Arc<Mutex<Option<Method>>>,
@@ -63,8 +76,13 @@ struct DecodeResult {
 }
 
 impl OpenSearchDecoder {
-    pub fn new(direction: Direction, last_outgoing_method: Arc<Mutex<Option<Method>>>) -> Self {
+    pub fn new(
+        request_header_rx: Option<mpsc::Receiver<MessageId>>,
+        direction: Direction,
+        last_outgoing_method: Arc<Mutex<Option<Method>>>,
+    ) -> Self {
         Self {
+            request_header_rx,
             direction,
             state: State::ParsingResponse,
             last_outgoing_method,
@@ -233,10 +251,17 @@ impl Decoder for OpenSearchDecoder {
                     }
 
                     let body = src.split_to(content_length).freeze();
-                    return Ok(Some(vec![Message::from_frame_at_instant(
+                    let mut message = Message::from_frame_at_instant(
                         Frame::OpenSearch(OpenSearchFrame::new(http_headers, body)),
                         Some(received_at),
-                    )]));
+                    );
+                    if let Some(rx) = self.request_header_rx.as_ref() {
+                        let id = rx.recv().map_err(|_| {
+                            CodecReadError::Parser(anyhow!("opensearch encoder half was lost"))
+                        })?;
+                        message.set_request_id(id);
+                    }
+                    return Ok(Some(vec![message]));
                 }
             }
         }
@@ -247,15 +272,19 @@ pub struct OpenSearchEncoder {
     direction: Direction,
     last_outgoing_method: Arc<Mutex<Option<Method>>>,
     message_latency: Histogram,
+    // Some when Sink (because it sends requests)
+    request_header_tx: Option<mpsc::Sender<MessageId>>,
 }
 
 impl OpenSearchEncoder {
     pub fn new(
+        request_header_tx: Option<mpsc::Sender<MessageId>>,
         direction: Direction,
         last_outgoing_method: Arc<Mutex<Option<Method>>>,
         message_latency: Histogram,
     ) -> Self {
         Self {
+            request_header_tx,
             direction,
             last_outgoing_method,
             message_latency,
@@ -276,6 +305,10 @@ impl Encoder<Messages> for OpenSearchEncoder {
             m.ensure_message_type(MessageType::OpenSearch)
                 .map_err(CodecWriteError::Encoder)?;
             let received_at = m.received_from_source_or_sink_at;
+            if let Some(tx) = self.request_header_tx.as_ref() {
+                tx.send(m.id())
+                    .map_err(|e| CodecWriteError::Encoder(anyhow!(e)))?;
+            }
             let result = match m.into_encodable() {
                 Encodable::Bytes(bytes) => {
                     dst.extend_from_slice(&bytes);
@@ -344,13 +377,52 @@ impl Encoder<Messages> for OpenSearchEncoder {
 
 #[cfg(test)]
 mod opensearch_tests {
-    use crate::codec::{opensearch::OpenSearchCodecBuilder, CodecBuilder, Direction};
-    use bytes::BytesMut;
+    use crate::{
+        codec::{opensearch::OpenSearchCodecBuilder, CodecBuilder, Direction},
+        frame::{
+            opensearch::{HttpHead, RequestParts},
+            Frame, OpenSearchFrame,
+        },
+        message::Message,
+    };
+    use bytes::{Bytes, BytesMut};
+    use http::{Method, Version};
     use tokio_util::codec::{Decoder, Encoder};
 
-    fn test_frame(raw_frame: &[u8], direction: Direction) {
+    fn assert_decode_encode_request(raw_frame: &[u8]) {
         let (mut decoder, mut encoder) =
-            OpenSearchCodecBuilder::new(direction, "opensearch".to_owned()).build();
+            OpenSearchCodecBuilder::new(Direction::Source, "opensearch".to_owned()).build();
+
+        let message = decoder
+            .decode(&mut BytesMut::from(raw_frame))
+            .unwrap()
+            .unwrap();
+
+        let mut dest = BytesMut::new();
+        encoder.encode(message, &mut dest).unwrap();
+        assert_eq!(raw_frame, &dest);
+    }
+
+    fn assert_decode_encode_response(raw_frame: &[u8]) {
+        let (mut decoder, mut encoder) =
+            OpenSearchCodecBuilder::new(Direction::Sink, "opensearch".to_owned()).build();
+
+        // set the required state for decoding a response
+        encoder
+            .encode(
+                vec![Message::from_frame(Frame::OpenSearch(OpenSearchFrame {
+                    headers: HttpHead::Request(RequestParts {
+                        method: Method::GET,
+                        uri: "/foo".parse().unwrap(),
+                        version: Version::HTTP_11,
+                        headers: Default::default(),
+                    }),
+                    body: Bytes::new(),
+                }))],
+                &mut BytesMut::new(),
+            )
+            .unwrap();
+
         let message = decoder
             .decode(&mut BytesMut::from(raw_frame))
             .unwrap()
@@ -378,11 +450,11 @@ mod opensearch_tests {
 
     #[test]
     fn test_request() {
-        test_frame(&REQUEST, Direction::Source);
+        assert_decode_encode_request(&REQUEST);
     }
 
     #[test]
     fn test_response() {
-        test_frame(&RESPONSE, Direction::Sink);
+        assert_decode_encode_response(&RESPONSE);
     }
 }
