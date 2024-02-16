@@ -2,7 +2,7 @@ use crate::codec::cassandra::{CassandraCodecBuilder, CassandraDecoder, Cassandra
 use crate::codec::{CodecBuilder, CodecReadError};
 use crate::frame::cassandra::CassandraMetadata;
 use crate::frame::{CassandraFrame, Frame};
-use crate::message::{Message, Metadata};
+use crate::message::{Message, MessageId, Metadata};
 use crate::tcp;
 use crate::tls::{TlsConnector, ToHostname};
 use crate::transforms::Messages;
@@ -52,6 +52,7 @@ impl ResponseError {
 #[derive(Debug)]
 struct ReturnChannel {
     return_chan: oneshot::Sender<Response>,
+    request_id: MessageId,
     stream_id: i16,
 }
 
@@ -185,6 +186,7 @@ async fn tx_process<T: AsyncWrite>(
     let mut connection_dead_error: Option<String> = None;
     loop {
         if let Some(request) = out_rx.recv().await {
+            let request_id = request.message.id();
             if let Some(error) = &connection_dead_error {
                 send_error_to_request(request.return_chan, request.stream_id, destination, error);
             } else if let Err(error) = in_w.send(vec![request.message]).await {
@@ -194,6 +196,7 @@ async fn tx_process<T: AsyncWrite>(
             } else if let Err(mpsc::error::SendError(return_chan)) = return_tx.send(ReturnChannel {
                 return_chan: request.return_chan,
                 stream_id: request.stream_id,
+                request_id,
             }) {
                 let error = rx_process_has_shutdown_rx
                     .try_recv()
@@ -270,7 +273,7 @@ async fn rx_process<T: AsyncRead>(
     // In order to handle that we have two seperate maps.
     //
     // We store the sender here if we receive from the tx_process task first
-    let mut from_tx_process: HashMap<i16, oneshot::Sender<Response>> = HashMap::new();
+    let mut from_tx_process: HashMap<i16, (oneshot::Sender<Response>, MessageId)> = HashMap::new();
 
     // We store the response message here if we receive from the server first.
     let mut from_server: HashMap<i16, Message> = HashMap::new();
@@ -280,7 +283,7 @@ async fn rx_process<T: AsyncRead>(
             response = reader.next() => {
                 match response {
                     Some(Ok(response)) => {
-                        for m in response {
+                        for mut m in response {
                             let meta = m.metadata();
                             if let Ok(Metadata::Cassandra(CassandraMetadata { opcode: Opcode::Event, .. })) = meta {
                                 if let Some(pushed_messages_tx) = pushed_messages_tx.as_ref() {
@@ -291,7 +294,8 @@ async fn rx_process<T: AsyncRead>(
                                     None => {
                                         from_server.insert(stream_id, m);
                                     },
-                                    Some(return_tx) => {
+                                    Some((return_tx, request_id)) => {
+                                        m.set_request_id(request_id);
                                         return_tx.send(Ok(m)).ok();
                                     }
                                 }
@@ -318,12 +322,13 @@ async fn rx_process<T: AsyncRead>(
                 }
             },
             original_request = return_rx.recv() => {
-                if let Some(ReturnChannel { return_chan, stream_id }) = original_request {
+                if let Some(ReturnChannel { return_chan, stream_id,request_id }) = original_request {
                     match from_server.remove(&stream_id) {
                         None => {
-                            from_tx_process.insert(stream_id, return_chan);
+                            from_tx_process.insert(stream_id, (return_chan, request_id));
                         }
-                        Some(m) => {
+                        Some(mut m) => {
+                            m.set_request_id(request_id);
                             return_chan.send(Ok(m)).ok();
                         }
                     }
@@ -341,7 +346,7 @@ async fn rx_process<T: AsyncRead>(
 
 async fn send_errors_and_shutdown(
     mut return_rx: mpsc::UnboundedReceiver<ReturnChannel>,
-    mut waiting: HashMap<i16, oneshot::Sender<Response>>,
+    mut waiting: HashMap<i16, (oneshot::Sender<Response>, MessageId)>,
     rx_process_has_shutdown_tx: oneshot::Sender<String>,
     destination: SocketAddr,
     message: &str,
@@ -355,7 +360,7 @@ async fn send_errors_and_shutdown(
 
     return_rx.close();
 
-    for (stream_id, return_tx) in waiting.drain() {
+    for (stream_id, (return_tx, _)) in waiting.drain() {
         return_tx
             .send(Err(ResponseError {
                 cause: anyhow!(message.to_owned()),

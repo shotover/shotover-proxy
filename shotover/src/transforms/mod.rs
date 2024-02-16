@@ -1,10 +1,11 @@
 //! Various types required for defining a transform
 
-use crate::message::Messages;
+use crate::message::{Message, MessageId, Messages};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use core::fmt;
 use futures::Future;
+use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 use std::iter::Rev;
 use std::net::SocketAddr;
@@ -187,6 +188,12 @@ impl<'a> Wrapper<'a> {
         result
     }
 
+    pub fn clone_requests_into_hashmap(&self, destination: &mut HashMap<MessageId, Message>) {
+        for request in &self.requests {
+            destination.insert(request.id(), request.clone());
+        }
+    }
+
     #[cfg(test)]
     pub fn new_test(requests: Messages) -> Self {
         Wrapper {
@@ -271,46 +278,58 @@ impl<'a> Wrapper<'a> {
 /// Implementing this trait is usually done using `#[async_trait]` macros.
 #[async_trait]
 pub trait Transform: Send {
-    /// This method should be implemented by your transform. The wrapper object contains the queries/
-    /// frames in a [`Vec<Message>`](crate::message::Message). Some protocols support multiple queries before a response is expected
-    /// for example pipelined Redis queries or batched Cassandra queries.
+    /// In order to implement your transform you can modify the messages:
+    /// * contained in requests_wrapper.requests
+    ///     + these are the requests that will flow into the next transform in the chain.
+    /// * contained in the return value of `requests_wrapper.call_next_transform()`
+    ///     + These are the responses that will flow back to the previous transform in the chain.
     ///
-    /// Shotover expects the same number of messages in [`wrapper.requests`](crate::transforms::Wrapper) to be returned as was passed
-    /// into the method via the parameter requests_wrapper. For in order protocols (such as Redis) you will
-    /// also need to ensure the order of responses matches the order of the queries.
+    /// But while doing so, also make sure to follow the below invariants when modifying the messages.
     ///
-    /// You can modify the messages in the wrapper struct to achieve your own designs. Your transform
-    /// can also modify the response from `requests_wrapper.call_next_transform()` if it needs
-    /// to. As long as you return the same number of messages as you received, you won't break behavior
-    /// from other transforms.
+    /// # Invariants
     ///
-    /// ## Invariants
-    /// Your transform method at a minimum needs to
-    /// * _Non-terminating_ - If your transform does not send the message to an external system or generate its own response to the query,
-    /// it will need to call and return the response from `requests_wrapper.call_next_transform()`. This ensures that your
-    /// transform will call any subsequent downstream transforms without needing to know about what they
-    /// do. This type of transform is called an non-terminating transform.
-    /// * _Terminating_ - Your transform can also choose not to call `requests_wrapper.call_next_transform()` if it sends the
+    /// * Non-terminating specific invariants
+    ///     + If your transform does not send the message to an external system or generate its own response to the query,
+    /// it will need to call and return the response from `requests_wrapper.call_next_transform()`.
+    ///     + This ensures that your transform will call any subsequent downstream transforms without needing to know about what they
+    /// do. This type of transform is called a non-terminating transform.
+    ///
+    /// * Terminating specific invariants
+    ///     + Your transform can also choose not to call `requests_wrapper.call_next_transform()` if it sends the
     /// messages to an external system or generates its own response to the query e.g.
-    /// [`crate::transforms::cassandra::sink_single::CassandraSinkSingle`]. This type of transform
-    /// is called a Terminating transform (as no subsequent transforms in the chain will be called).
-    /// * _Message count_ - requests_wrapper.requests will contain 0 or more messages.
-    /// Your transform should return the same number of responses as messages received in requests_wrapper.requests. Transform that
-    /// don't do this explicitly for each call, should return the same number of responses as messages it receives over the lifetime
-    /// of the transform chain. A good example of this is the [`crate::transforms::coalesce::Coalesce`] transform. The
-    /// [`crate::transforms::sampler::Sampler`] transform is also another example of this, with a slightly different twist.
-    /// The number of responses will be the sames as the number of messages, as the sampled messages are sent to a subchain rather than
-    /// changing the behavior of the main chain.
+    /// [`crate::transforms::cassandra::sink_single::CassandraSinkSingle`].
+    ///     + This type of transform is called a Terminating transform (as no subsequent transforms in the chain will be called).
     ///
-    /// ## Naming
+    /// * Request/Response invariants:
+    ///     + Transforms must ensure that each request that passes through the transform has a corresponding response returned for it.
+    ///         - A response/request pair can be identified by calling `request_id()` on a response and matching that to the `id()` of a previous request.
+    ///         - The response does not need to be returned within the same call to [`Transform::transform`] that the request was encountered.
+    ///           But it must be returned eventually over the lifetime of the transform.
+    ///         - If a transform deletes a request it must return a simulated response message with its request_id set to the deleted request.
+    ///             * For in order protocols: this simulated message must be in the correct location within the list of responses
+    ///                 - The best way to achieve this is storing the [`MessageId`] of the message before the deleted message.
+    ///         - If a transform introduces a new request into the requests_wrapper the response must be located and
+    ///           removed from the list of returned responses.
+    ///     + For in order protocols, transforms must ensure that responses are kept in the same order in which they are received.
+    ///         - When writing protocol generic transforms: always ensure this is upheld.
+    ///         - When writing a transform specific to a protocol that is out of order: you can disregard this requirement
+    ///             * This is currently only cassandra
+    /// * Deprecated invariants:
+    ///     + Many transforms rely on the number of responses equalling the number of requests and that requests will be in the same order as the responses.
+    ///       Currently shotover maintains this gaurantee for backwards compatibility
+    ///       but the gaurantee will be removed as soon as the transforms have been altered to no longer rely on it.
+    ///
+    /// # Naming
     /// Transform also have different naming conventions.
     /// * Transform that interact with an external system are called Sinks.
     /// * Transform that don't call subsequent chains via `requests_wrapper.call_next_transform()` are called terminating transforms.
     /// * Transform that do call subsquent chains via `requests_wrapper.call_next_transform()` are non-terminating transforms.
     ///
-    /// You can have have a transforms that is both non-terminating and a sink.
+    /// You can have have a transform that is both non-terminating and a sink.
     async fn transform<'a>(&'a mut self, requests_wrapper: Wrapper<'a>) -> Result<Messages>;
 
+    /// TODO: This method should be removed and integrated with `Transform::transform` once we properly support out of order protocols.
+    ///
     /// This method should be should be implemented by your transform if it is required to process pushed messages (typically events
     /// or messages that your source is subscribed to. The wrapper object contains the queries/frames
     /// in a [`Vec<Message`](crate::message::Message).
@@ -323,7 +342,7 @@ pub trait Transform: Send {
     /// carries on through the chain, it will function correctly. You are able to add or remove messages as this method is not expecting
     /// request/response pairs.
     ///
-    /// ## Invariants
+    /// # Invariants
     /// * _Non-terminating_ - Your `transform_pushed` method should not be terminating as the messages should get passed back to the source, where they will terminate.
     async fn transform_pushed<'a>(&'a mut self, requests_wrapper: Wrapper<'a>) -> Result<Messages> {
         let response = requests_wrapper.call_next_transform_pushed().await?;

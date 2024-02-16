@@ -1,9 +1,10 @@
+use std::sync::mpsc;
 use std::time::Instant;
 
 use super::{CodecWriteError, Direction};
 use crate::codec::{CodecBuilder, CodecReadError};
-use crate::frame::{Frame, MessageType};
-use crate::message::{Encodable, Message, Messages};
+use crate::frame::{Frame, MessageType, RedisFrame};
+use crate::message::{Encodable, Message, MessageId, Messages};
 use anyhow::{anyhow, Result};
 use bytes::BytesMut;
 use metrics::Histogram;
@@ -30,9 +31,16 @@ impl CodecBuilder for RedisCodecBuilder {
     }
 
     fn build(&self) -> (RedisDecoder, RedisEncoder) {
+        let (tx, rx) = match self.direction {
+            Direction::Source => (None, None),
+            Direction::Sink => {
+                let (tx, rx) = mpsc::channel();
+                (Some(tx), Some(rx))
+            }
+        };
         (
-            RedisDecoder::new(self.direction),
-            RedisEncoder::new(self.direction, self.message_latency.clone()),
+            RedisDecoder::new(rx, self.direction),
+            RedisEncoder::new(tx, self.direction, self.message_latency.clone()),
         )
     }
 
@@ -41,18 +49,45 @@ impl CodecBuilder for RedisCodecBuilder {
     }
 }
 
+pub struct RequestInfo {
+    ty: RequestType,
+    id: MessageId,
+}
+pub enum RequestType {
+    /// a pubsub subscribe
+    Subscribe,
+    /// a unsubscribe
+    Unsubscribe,
+    /// redis reset
+    Reset,
+    /// Everything else
+    Other,
+}
+
 pub struct RedisEncoder {
+    // Some when Sink (because it sends requests)
+    request_header_tx: Option<mpsc::Sender<RequestInfo>>,
     direction: Direction,
     message_latency: Histogram,
 }
 
 pub struct RedisDecoder {
+    // Some when Sink (because it receives responses)
+    request_header_rx: Option<mpsc::Receiver<RequestInfo>>,
     direction: Direction,
+    is_subscribed: bool,
 }
 
 impl RedisDecoder {
-    pub fn new(direction: Direction) -> Self {
-        Self { direction }
+    pub fn new(
+        request_header_rx: Option<mpsc::Receiver<RequestInfo>>,
+        direction: Direction,
+    ) -> Self {
+        Self {
+            direction,
+            request_header_rx,
+            is_subscribed: false,
+        }
     }
 }
 
@@ -60,6 +95,9 @@ impl Decoder for RedisDecoder {
     type Item = Messages;
     type Error = CodecReadError;
 
+    // TODO: this duplicates a bunch of logic from sink_single.rs
+    //       As soon as we remove `Transforms::transform_pushed` we can remove the duplication on the RedisSinkSingle side.
+    //       Once thats done we will have pubsub support for both RedisSinkSingle AND RedisSinkCluster. Progress!
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
         let received_at = Instant::now();
         match decode_mut(src)
@@ -71,11 +109,82 @@ impl Decoder for RedisDecoder {
                     self.direction,
                     pretty_hex::pretty_hex(&bytes)
                 );
-                Ok(Some(vec![Message::from_bytes_and_frame_at_instant(
+                let mut message = Message::from_bytes_and_frame_at_instant(
                     bytes,
                     Frame::Redis(frame),
                     Some(received_at),
-                )]))
+                );
+
+                // Notes on subscription responses
+                //
+                // There are 3 types of pubsub responses and the type is determined by the first value in the array:
+                // * `subscribe` - a response to a SUBSCRIBE, PSUBSCRIBE or SSUBSCRIBE request
+                // * `unsubscribe` - a response to an UNSUBSCRIBE, PUNSUBSCRIBE or SUNSUBSCRIBE request
+                // * `message` - a subscription message
+                //
+                // Additionally redis will:
+                // * accept a few regular commands while in pubsub mode: PING, RESET and QUIT
+                // * return an error response when a nonexistent or non pubsub compatible command is used
+                //
+                // Note: PING has a custom response when in pubsub mode.
+                //       It returns an array ['pong', $pingMessage] instead of directly returning $pingMessage.
+                //       But this doesnt cause any problems for us.
+
+                // Determine if message is a `message` subscription message
+                //
+                // Because PING, RESET, QUIT and error responses never return a RedisFrame::Array starting with `message`,
+                // they have no way to collide with the `message` value of a subscription message.
+                // So while we are in subscription mode we can use that to determine if an
+                // incoming message is a subscription message.
+                let is_subscription_message = if self.is_subscribed {
+                    if let Some(Frame::Redis(RedisFrame::Array(array))) = message.frame() {
+                        if let [RedisFrame::BulkString(ty), ..] = array.as_slice() {
+                            ty.as_ref() == b"message"
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                };
+
+                // Update is_subscribed state
+                //
+                // In order to make sense of a response we need the main task to
+                // send us the type of its corresponding request.
+                //
+                // In order to keep the incoming request MessageTypes in sync with their corresponding responses
+                // we must only process a MessageType when the message is not a subscription message.
+                // This is fine because subscription messages cannot affect the is_subscribed state.
+                if !is_subscription_message {
+                    if let Some(rx) = self.request_header_rx.as_ref() {
+                        let request_info = rx.recv().map_err(|_| {
+                            CodecReadError::Parser(anyhow!("redis encoder half was lost"))
+                        })?;
+                        message.set_request_id(request_info.id);
+                        match request_info.ty {
+                            RequestType::Subscribe | RequestType::Unsubscribe => {
+                                if let Some(Frame::Redis(RedisFrame::Array(array))) =
+                                    message.frame()
+                                {
+                                    if let Some(RedisFrame::Integer(
+                                        number_of_subscribed_channels,
+                                    )) = array.get(2)
+                                    {
+                                        self.is_subscribed = *number_of_subscribed_channels != 0;
+                                    }
+                                }
+                            }
+                            RequestType::Reset => {
+                                self.is_subscribed = false;
+                            }
+                            RequestType::Other => {}
+                        }
+                    }
+                }
+                Ok(Some(vec![message]))
             }
             None => Ok(None),
         }
@@ -83,8 +192,13 @@ impl Decoder for RedisDecoder {
 }
 
 impl RedisEncoder {
-    pub fn new(direction: Direction, message_latency: Histogram) -> Self {
+    pub fn new(
+        request_header_tx: Option<mpsc::Sender<RequestInfo>>,
+        direction: Direction,
+        message_latency: Histogram,
+    ) -> Self {
         Self {
+            request_header_tx,
             direction,
             message_latency,
         }
@@ -95,11 +209,31 @@ impl Encoder<Messages> for RedisEncoder {
     type Error = CodecWriteError;
 
     fn encode(&mut self, item: Messages, dst: &mut BytesMut) -> Result<(), Self::Error> {
-        item.into_iter().try_for_each(|m| {
+        item.into_iter().try_for_each(|mut m| {
             let start = dst.len();
             m.ensure_message_type(MessageType::Redis)
                 .map_err(CodecWriteError::Encoder)?;
             let received_at = m.received_from_source_or_sink_at;
+            if let Some(tx) = self.request_header_tx.as_ref() {
+                let ty = if let Some(Frame::Redis(RedisFrame::Array(array))) = m.frame() {
+                    if let Some(RedisFrame::BulkString(bytes)) = array.first() {
+                        match bytes.to_ascii_uppercase().as_slice() {
+                            b"SUBSCRIBE" | b"PSUBSCRIBE" | b"SSUBSCRIBE" => RequestType::Subscribe,
+                            b"UNSUBSCRIBE" | b"PUNSUBSCRIBE" | b"SUNSUBSCRIBE" => {
+                                RequestType::Unsubscribe
+                            }
+                            b"RESET" => RequestType::Reset,
+                            _ => RequestType::Other,
+                        }
+                    } else {
+                        RequestType::Other
+                    }
+                } else {
+                    RequestType::Other
+                };
+                tx.send(RequestInfo { ty, id: m.id() })
+                    .map_err(|e| CodecWriteError::Encoder(anyhow!(e)))?;
+            }
             let result = match m.into_encodable() {
                 Encodable::Bytes(bytes) => {
                     dst.extend_from_slice(&bytes);
@@ -156,7 +290,7 @@ mod redis_tests {
 
     fn test_frame(raw_frame: &[u8]) {
         let (mut decoder, mut encoder) =
-            RedisCodecBuilder::new(Direction::Sink, "redis".to_owned()).build();
+            RedisCodecBuilder::new(Direction::Source, "redis".to_owned()).build();
         let message = decoder
             .decode(&mut BytesMut::from(raw_frame))
             .unwrap()
