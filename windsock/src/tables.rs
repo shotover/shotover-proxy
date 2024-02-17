@@ -45,26 +45,6 @@ pub fn compare_by_name(names: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn results_by_name(names: &str) -> Result<()> {
-    let archives: Result<Vec<ReportColumn>> =
-        names.split_whitespace().map(ReportColumn::load).collect();
-    display_results_table(&archives?);
-    Ok(())
-}
-
-pub fn baseline_compare_by_tags(arg: &str) -> Result<()> {
-    let filter = Filter::from_query(arg)
-        .with_context(|| format!("Failed to parse tag filter from {:?}", arg))?;
-    let archives: Result<Vec<ReportColumn>> = ReportArchive::reports_in_last_run()
-        .iter()
-        .filter(|name| filter.matches(&Tags::from_name(name)))
-        .map(|x| ReportColumn::load_with_baseline(x))
-        .collect();
-    display_baseline_compare_table(&archives?);
-
-    Ok(())
-}
-
 pub fn compare_by_tags(arg: &str) -> Result<()> {
     let mut split = arg.split_whitespace();
     let base_name = split.next().unwrap().to_owned();
@@ -100,15 +80,28 @@ pub fn compare_by_tags(arg: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn results_by_tags(arg: &str) -> Result<()> {
-    let filter = Filter::from_query(arg)
-        .with_context(|| format!("Failed to parse tag filter from {:?}", arg))?;
+pub fn results(ignore_baseline: bool, filter: &str) -> Result<()> {
+    let filter = Filter::from_query(filter)
+        .with_context(|| format!("Failed to parse tag filter from {:?}", filter))?;
     let archives: Result<Vec<ReportColumn>> = ReportArchive::reports_in_last_run()
         .iter()
         .filter(|name| filter.matches(&Tags::from_name(name)))
-        .map(|x| ReportColumn::load(x))
+        .map(|x| {
+            if ignore_baseline {
+                ReportColumn::load(x)
+            } else {
+                ReportColumn::load_with_baseline(x)
+            }
+        })
         .collect();
-    display_results_table(&archives?);
+    let archives = archives?;
+    if archives.iter().any(|x| x.baseline.is_some()) {
+        // If there are any baselines then compare against baselines
+        display_baseline_compare_table(&archives);
+    } else {
+        // Otherwise display just results without any comparison
+        display_results_table(&archives);
+    }
 
     Ok(())
 }

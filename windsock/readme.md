@@ -102,6 +102,8 @@ impl BenchTask for BenchTaskCassandra {
 }
 ```
 
+**TODO:** document running windsock as both a standalone crate and as a cargo bench.
+
 This example is simplified for demonstration purposes, refer to `examples/cassandra.rs` for a full working example.
 
 ## Running benches
@@ -109,9 +111,9 @@ This example is simplified for demonstration purposes, refer to `examples/cassan
 Then we run our crate to run the benchmarks and view results like:
 
 ```none
-> cargo run
+> cargo windsock run-local
 ... benchmark running logs
-> cargo run -- --results-by-name "cassandra,topology=single cassandra,topology=cluster3"
+> cargo windsock results
 Results for cassandra
            topology   ──single ─cluster3
 Measurements ═══════════════════════════
@@ -142,26 +144,56 @@ and graphs: TODO
 ### Just run every bench
 
 ```shell
-> cargo run
+> cargo windsock
 ```
 
 ### Run benches with matching tags and view all the results in one table
 
 ```shell
-> cargo run -- db=kafka OPS=1000 topology=single # run benchmarks matching some tags
-> cargo run -- --results-by-tag db=kafka OPS=1000 topology=single # view the results of the benchmarks with the same tags in a single table
+> cargo windsock run-local db=kafka OPS=1000 topology=single # run benchmarks matching some tags
+> cargo windsock results # view the results of the benchmarks with the same tags in a single table
 ```
 
 ### Iteratively compare results against a previous implementation
 
 ```shell
 > git checkout main # checkout original implementation
-> cargo run # run all benchmarks
-> cargo run -- --set-baseline # set the last benchmark run as the baseline
+> cargo windsock run-local # run all benchmarks
+> cargo windsock baseline-set # set the last benchmark run as the baseline
 > vim src/main.rs # modify implementation
-> cargo run # run all benchmarks, every result is compared against the baseline
+> cargo windsock run-local # run all benchmarks, every result is compared against the baseline
+> cargo windsock results # view those results in a nice table
 > vim src/main.rs # modify implementation again
-> cargo run # run all benchmarks, every result is compared against the baseline
+> cargo windsock run-local # run all benchmarks, every result is compared against the baseline
+```
+
+### Run benchmarks in the cloud (simple)
+
+```shell
+# create cloud resources, run benchmarks and then cleanup - all in one command
+> cargo windsock cloud-setup-run-cleanup
+```
+
+### Iteratively compare results against a previous implementation (running in a remote cloud)
+
+```shell
+# Setup the cloud resources and then form a baseline
+> git checkout main # checkout original implementation
+> cargo windsock cloud-setup db=kafka # setup the cloud resources required to run all kafka benchmarks
+> cargo windsock cloud-run db=kafka # run all the kafka benchmarks in the cloud
+> cargo windsock baseline-set # set the last benchmark run as the baseline
+
+# Make a change and and measure the effect
+> vim src/main.rs # modify implementation
+> cargo windsock cloud-run db=kafka # run all benchmarks, every result is compared against the baseline
+> cargo windsock results # view those results in a nice table, compared against the baseline
+
+# And again
+> vim src/main.rs # modify implementation again
+> cargo windsock cloud-run db=kafka # run all benchmarks, every result is compared against the baseline
+
+# And finally...
+> cargo windsock cloud-cleanup # Terminate all the cloud resources now that we are done
 ```
 
 ### Generate graph webpage
@@ -169,6 +201,6 @@ and graphs: TODO
 TODO: not yet implemented
 
 ```shell
-> cargo run # run all benches
-> cargo run -- --generate_webpage # generate a webpage from the results
+> cargo windsock local-run # run all benches
+> cargo windsock generate-webpage # generate a webpage from the results
 ```

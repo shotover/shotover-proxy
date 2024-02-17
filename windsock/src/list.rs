@@ -1,7 +1,15 @@
-use crate::{bench::BenchState, cli::Args};
+use crate::{bench::BenchState, cli::WindsockArgs};
 
-pub fn list<ResourcesRequired, Resources>(
-    args: &Args,
+pub fn list<ResourcesRequired, Resources>(benches: &[BenchState<ResourcesRequired, Resources>]) {
+    // regular usage
+    println!("Benches:");
+    for bench in benches {
+        println!("{}", bench.tags.get_name());
+    }
+}
+
+pub fn nextest_list<ResourcesRequired, Resources>(
+    args: &WindsockArgs,
     benches: &[BenchState<ResourcesRequired, Resources>],
 ) {
     if args.nextest_list_all() {
@@ -12,10 +20,7 @@ pub fn list<ResourcesRequired, Resources>(
     } else if args.nextest_list_ignored() {
         // windsock does not support ignored tests
     } else {
-        // regular usage
-        println!("Benches:");
-        for bench in benches {
-            println!("{}", bench.tags.get_name());
-        }
+        // in case the user accidentally runs `--list` just give them the regular `list` output.
+        list(benches);
     }
 }
