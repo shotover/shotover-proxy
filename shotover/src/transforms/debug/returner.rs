@@ -1,4 +1,4 @@
-use crate::message::Messages;
+use crate::message::{Message, Messages};
 use crate::transforms::{Transform, TransformBuilder, TransformConfig, Wrapper};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
@@ -24,7 +24,7 @@ impl TransformConfig for DebugReturnerConfig {
 #[serde(deny_unknown_fields)]
 pub enum Response {
     #[serde(skip)]
-    Message(Messages),
+    Message(Message),
     #[cfg(feature = "redis")]
     Redis(String),
     Fail,
@@ -61,24 +61,28 @@ impl Transform for DebugReturner {
         NAME
     }
 
-    async fn transform<'a>(&'a mut self, requests_wrapper: Wrapper<'a>) -> Result<Messages> {
-        match &self.response {
-            Response::Message(message) => Ok(message.clone()),
-            #[cfg(feature = "redis")]
-            Response::Redis(string) => {
-                use crate::frame::{Frame, RedisFrame};
-                use crate::message::Message;
-                Ok(requests_wrapper
-                    .requests
-                    .iter()
-                    .map(|_| {
-                        Message::from_frame(Frame::Redis(RedisFrame::BulkString(
-                            string.to_string().into(),
-                        )))
-                    })
-                    .collect())
-            }
-            Response::Fail => Err(anyhow!("Intentional Fail")),
-        }
+    async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Messages> {
+        requests_wrapper
+            .requests
+            .iter_mut()
+            .map(|request| match &self.response {
+                Response::Message(message) => {
+                    let mut message = message.clone();
+                    message.set_request_id(request.id());
+                    Ok(message)
+                }
+                #[cfg(feature = "redis")]
+                Response::Redis(string) => {
+                    use crate::frame::{Frame, RedisFrame};
+                    use crate::message::Message;
+                    let mut message = Message::from_frame(Frame::Redis(RedisFrame::BulkString(
+                        string.to_string().into(),
+                    )));
+                    message.set_request_id(request.id());
+                    Ok(message)
+                }
+                Response::Fail => Err(anyhow!("Intentional Fail")),
+            })
+            .collect()
     }
 }

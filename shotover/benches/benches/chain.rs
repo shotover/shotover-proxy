@@ -6,7 +6,7 @@ use hex_literal::hex;
 use shotover::frame::cassandra::{parse_statement_single, Tracing};
 use shotover::frame::RedisFrame;
 use shotover::frame::{CassandraFrame, CassandraOperation, Frame};
-use shotover::message::{Message, ProtocolType, QueryType};
+use shotover::message::{Message, MessageIdMap, ProtocolType, QueryType};
 use shotover::transforms::cassandra::peers_rewrite::CassandraPeersRewrite;
 use shotover::transforms::chain::{TransformChain, TransformChainBuilder};
 use shotover::transforms::debug::returner::{DebugReturner, Response};
@@ -70,6 +70,7 @@ fn criterion_benchmark(c: &mut Criterion) {
             vec![
                 Box::new(QueryTypeFilter {
                     filter: Filter::DenyList(vec![QueryType::Read]),
+                    filtered_requests: MessageIdMap::default(),
                 }),
                 Box::new(DebugReturner::new(Response::Redis("a".into()))),
             ],
@@ -106,12 +107,12 @@ fn criterion_benchmark(c: &mut Criterion) {
         let chain = TransformChainBuilder::new(
             vec![
                 Box::new(RedisTimestampTagger::new()),
-                Box::new(DebugReturner::new(Response::Message(vec![
-                    Message::from_frame(Frame::Redis(RedisFrame::Array(vec![
+                Box::new(DebugReturner::new(Response::Message(Message::from_frame(
+                    Frame::Redis(RedisFrame::Array(vec![
                         RedisFrame::BulkString(Bytes::from_static(b"1")), // real frame
                         RedisFrame::BulkString(Bytes::from_static(b"1")), // timestamp
-                    ]))),
-                ]))),
+                    ])),
+                )))),
             ],
             "bench",
         );

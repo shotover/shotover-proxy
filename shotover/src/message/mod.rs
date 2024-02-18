@@ -421,12 +421,30 @@ impl Message {
             },
         }
     }
+    /// Set this `Message` to a dummy frame so that the message will never reach the client or DB.
+    /// For requests, the dummy frame will be dropped when it reaches the Sink.
+    ///     Additionally a corresponding dummy response will be generated with its request_id set to the requests id.
+    /// For responses, the dummy frame will be dropped when it reaches the Source.
+    pub fn replace_with_dummy(&mut self) {
+        self.inner = Some(MessageInner::Modified {
+            frame: Frame::Dummy,
+        });
+    }
+
+    pub fn is_dummy(&self) -> bool {
+        matches!(
+            self.inner,
+            Some(MessageInner::Modified {
+                frame: Frame::Dummy
+            })
+        )
+    }
 
     /// Set this `Message` to a backpressure response
-    pub fn set_backpressure(&mut self) -> Result<()> {
+    pub fn to_backpressure(&mut self) -> Result<Message> {
         let metadata = self.metadata()?;
 
-        *self = Message::from_frame_at_instant(
+        Ok(Message::from_frame_at_instant(
             match metadata {
                 #[cfg(feature = "cassandra")]
                 Metadata::Cassandra(metadata) => Frame::Cassandra(metadata.backpressure_response()),
@@ -440,9 +458,7 @@ impl Message {
             // reachable with feature = cassandra
             #[allow(unreachable_code)]
             self.received_from_source_or_sink_at,
-        );
-
-        Ok(())
+        ))
     }
 
     // Retrieves the stream_id without parsing the rest of the frame.
