@@ -2,8 +2,9 @@ use anyhow::Result;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use shotover::frame::{Frame, RedisFrame};
-use shotover::message::Messages;
+use shotover::message::{MessageId, Messages};
 use shotover::transforms::{Transform, TransformBuilder, TransformConfig, Wrapper};
+use std::collections::HashSet;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(deny_unknown_fields)]
@@ -30,6 +31,7 @@ pub struct RedisGetRewriteBuilder {
 impl TransformBuilder for RedisGetRewriteBuilder {
     fn build(&self) -> Box<dyn Transform> {
         Box::new(RedisGetRewrite {
+            get_requests: HashSet::new(),
             result: self.result.clone(),
         })
     }
@@ -40,6 +42,7 @@ impl TransformBuilder for RedisGetRewriteBuilder {
 }
 
 pub struct RedisGetRewrite {
+    get_requests: HashSet<MessageId>,
     result: String,
 }
 
@@ -50,20 +53,25 @@ impl Transform for RedisGetRewrite {
     }
 
     async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Messages> {
-        let mut get_indices = vec![];
-        for (i, message) in requests_wrapper.requests.iter_mut().enumerate() {
+        for message in requests_wrapper.requests.iter_mut() {
             if let Some(frame) = message.frame() {
                 if is_get(frame) {
-                    get_indices.push(i);
+                    self.get_requests.insert(message.id());
                 }
             }
         }
         let mut responses = requests_wrapper.call_next_transform().await?;
 
-        for i in get_indices {
-            if let Some(frame) = responses[i].frame() {
-                rewrite_get(frame, &self.result);
-                responses[i].invalidate_cache();
+        for response in responses.iter_mut() {
+            if response
+                .request_id()
+                .map(|id| self.get_requests.remove(&id))
+                .unwrap_or(false)
+            {
+                if let Some(frame) = response.frame() {
+                    rewrite_get(frame, &self.result);
+                    response.invalidate_cache();
+                }
             }
         }
 
