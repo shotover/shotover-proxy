@@ -2,9 +2,8 @@ use anyhow::Result;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use shotover::frame::{Frame, RedisFrame};
-use shotover::message::{MessageId, Messages};
+use shotover::message::{MessageIdSet, Messages};
 use shotover::transforms::{Transform, TransformBuilder, TransformConfig, Wrapper};
-use std::collections::HashSet;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(deny_unknown_fields)]
@@ -31,7 +30,7 @@ pub struct RedisGetRewriteBuilder {
 impl TransformBuilder for RedisGetRewriteBuilder {
     fn build(&self) -> Box<dyn Transform> {
         Box::new(RedisGetRewrite {
-            get_requests: HashSet::new(),
+            get_requests: MessageIdSet::default(),
             result: self.result.clone(),
         })
     }
@@ -42,7 +41,7 @@ impl TransformBuilder for RedisGetRewriteBuilder {
 }
 
 pub struct RedisGetRewrite {
-    get_requests: HashSet<MessageId>,
+    get_requests: MessageIdSet,
     result: String,
 }
 

@@ -4313,6 +4313,7 @@ dependencies = [
  "csv",
  "dashmap",
  "derivative",
+ "fnv",
  "futures",
  "generic-array",
  "governor",

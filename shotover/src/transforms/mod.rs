@@ -1,11 +1,11 @@
 //! Various types required for defining a transform
 
-use crate::message::{Message, MessageId, Messages};
+use self::chain::TransformAndMetrics;
+use crate::message::{Message, MessageIdMap, Messages};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use core::fmt;
 use futures::Future;
-use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 use std::iter::Rev;
 use std::net::SocketAddr;
@@ -13,8 +13,6 @@ use std::pin::Pin;
 use std::slice::IterMut;
 use tokio::sync::mpsc;
 use tokio::time::Instant;
-
-use self::chain::TransformAndMetrics;
 
 #[cfg(feature = "cassandra")]
 pub mod cassandra;
@@ -188,7 +186,7 @@ impl<'a> Wrapper<'a> {
         result
     }
 
-    pub fn clone_requests_into_hashmap(&self, destination: &mut HashMap<MessageId, Message>) {
+    pub fn clone_requests_into_hashmap(&self, destination: &mut MessageIdMap<Message>) {
         for request in &self.requests {
             destination.insert(request.id(), request.clone());
         }
