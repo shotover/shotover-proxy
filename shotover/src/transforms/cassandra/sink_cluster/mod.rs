@@ -5,7 +5,9 @@ use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame};
 use crate::message::{Message, MessageIdMap, Messages, Metadata};
 use crate::tls::{TlsConnector, TlsConnectorConfig};
 use crate::transforms::cassandra::connection::{CassandraConnection, Response, ResponseError};
-use crate::transforms::{Transform, TransformBuilder, TransformConfig, Wrapper};
+use crate::transforms::{
+    Transform, TransformBuilder, TransformConfig, TransformContextConfig, Wrapper,
+};
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use cassandra_protocol::events::ServerEvent;
@@ -66,7 +68,10 @@ const NAME: &str = "CassandraSinkCluster";
 #[typetag::serde(name = "CassandraSinkCluster")]
 #[async_trait(?Send)]
 impl TransformConfig for CassandraSinkClusterConfig {
-    async fn get_builder(&self, chain_name: String) -> Result<Box<dyn TransformBuilder>> {
+    async fn get_builder(
+        &self,
+        transform_context: TransformContextConfig,
+    ) -> Result<Box<dyn TransformBuilder>> {
         let tls = self.tls.clone().map(TlsConnector::new).transpose()?;
         let mut shotover_nodes = self.shotover_nodes.clone();
         let index = self
@@ -84,7 +89,7 @@ impl TransformConfig for CassandraSinkClusterConfig {
         Ok(Box::new(CassandraSinkClusterBuilder::new(
             self.first_contact_points.clone(),
             shotover_nodes,
-            chain_name,
+            transform_context.chain_name,
             local_node,
             tls,
             self.connect_timeout_ms,

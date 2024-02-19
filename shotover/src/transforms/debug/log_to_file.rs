@@ -17,7 +17,10 @@ const NAME: &str = "DebugLogToFile";
 #[typetag::serde(name = "DebugLogToFile")]
 #[async_trait(?Send)]
 impl crate::transforms::TransformConfig for DebugLogToFileConfig {
-    async fn get_builder(&self, _chain_name: String) -> Result<Box<dyn TransformBuilder>> {
+    async fn get_builder(
+        &self,
+        _transform_context: crate::transforms::TransformContextConfig,
+    ) -> Result<Box<dyn TransformBuilder>> {
         // This transform is used for debugging a specific run, so we clean out any logs left over from the previous run
         std::fs::remove_dir_all("message-log").ok();
 

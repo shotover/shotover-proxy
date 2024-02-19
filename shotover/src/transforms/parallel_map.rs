@@ -12,6 +12,8 @@ use serde::{Deserialize, Serialize};
 use std::future::Future;
 use std::pin::Pin;
 
+use super::TransformContextConfig;
+
 #[derive(Debug)]
 pub struct ParallelMapBuilder {
     chains: Vec<TransformChainBuilder>,
@@ -74,10 +76,17 @@ const NAME: &str = "ParallelMap";
 #[typetag::serde(name = "ParallelMap")]
 #[async_trait(?Send)]
 impl TransformConfig for ParallelMapConfig {
-    async fn get_builder(&self, _chain_name: String) -> Result<Box<dyn TransformBuilder>> {
+    async fn get_builder(
+        &self,
+        transform_context: TransformContextConfig,
+    ) -> Result<Box<dyn TransformBuilder>> {
         let mut chains = vec![];
         for _ in 0..self.parallelism {
-            chains.push(self.chain.get_builder("parallel_map_chain".into()).await?);
+            let transform_context_config = TransformContextConfig {
+                chain_name: "parallel_map_chain".into(),
+                protocol: transform_context.protocol,
+            };
+            chains.push(self.chain.get_builder(transform_context_config).await?);
         }
 
         Ok(Box::new(ParallelMapBuilder {

@@ -1,3 +1,4 @@
+use super::TransformContextConfig;
 use crate::message::Messages;
 use crate::transforms::{Transform, TransformBuilder, TransformConfig, Wrapper};
 use anyhow::Result;
@@ -24,7 +25,10 @@ const NAME: &str = "Coalesce";
 #[typetag::serde(name = "Coalesce")]
 #[async_trait(?Send)]
 impl TransformConfig for CoalesceConfig {
-    async fn get_builder(&self, _chain_name: String) -> Result<Box<dyn TransformBuilder>> {
+    async fn get_builder(
+        &self,
+        _transform_context: TransformContextConfig,
+    ) -> Result<Box<dyn TransformBuilder>> {
         Ok(Box::new(Coalesce {
             buffer: Vec::with_capacity(self.flush_when_buffered_message_count.unwrap_or(0)),
             flush_when_buffered_message_count: self.flush_when_buffered_message_count,

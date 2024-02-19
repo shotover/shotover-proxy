@@ -1,3 +1,4 @@
+use super::TransformContextConfig;
 use crate::config::chain::TransformChainConfig;
 use crate::message::Messages;
 use crate::transforms::chain::{BufferedChain, TransformChainBuilder};
@@ -20,8 +21,11 @@ const NAME: &str = "ConnectionBalanceAndPool";
 #[typetag::serde(name = "ConnectionBalanceAndPool")]
 #[async_trait(?Send)]
 impl TransformConfig for ConnectionBalanceAndPoolConfig {
-    async fn get_builder(&self, _chain_name: String) -> Result<Box<dyn TransformBuilder>> {
-        let chain = Arc::new(self.chain.get_builder(self.name.clone()).await?);
+    async fn get_builder(
+        &self,
+        transform_context: TransformContextConfig,
+    ) -> Result<Box<dyn TransformBuilder>> {
+        let chain = Arc::new(self.chain.get_builder(transform_context).await?);
 
         Ok(Box::new(ConnectionBalanceAndPoolBuilder {
             max_connections: self.max_connections,

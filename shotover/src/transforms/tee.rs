@@ -1,3 +1,4 @@
+use super::TransformContextConfig;
 use crate::config::chain::TransformChainConfig;
 use crate::message::Messages;
 use crate::transforms::chain::{BufferedChain, TransformChainBuilder};
@@ -166,7 +167,10 @@ const NAME: &str = "Tee";
 #[typetag::serde(name = "Tee")]
 #[async_trait(?Send)]
 impl TransformConfig for TeeConfig {
-    async fn get_builder(&self, _chain_name: String) -> Result<Box<dyn TransformBuilder>> {
+    async fn get_builder(
+        &self,
+        transform_context: TransformContextConfig,
+    ) -> Result<Box<dyn TransformBuilder>> {
         let buffer_size = self.buffer_size.unwrap_or(5);
         let behavior = match &self.behavior {
             Some(ConsistencyBehaviorConfig::Ignore) => ConsistencyBehaviorBuilder::Ignore,
@@ -179,13 +183,22 @@ impl TransformConfig for TeeConfig {
             Some(ConsistencyBehaviorConfig::SubchainOnMismatch(mismatch_chain)) => {
                 ConsistencyBehaviorBuilder::SubchainOnMismatch(
                     mismatch_chain
-                        .get_builder("mismatch_chain".to_string())
+                        .get_builder(TransformContextConfig {
+                            chain_name: "mismatch_chain".to_string(),
+                            protocol: transform_context.protocol,
+                        })
                         .await?,
                 )
             }
             None => ConsistencyBehaviorBuilder::Ignore,
         };
-        let tee_chain = self.chain.get_builder("tee_chain".to_string()).await?;
+        let tee_chain = self
+            .chain
+            .get_builder(TransformContextConfig {
+                chain_name: "tee_chain".to_string(),
+                protocol: transform_context.protocol,
+            })
+            .await?;
 
         Ok(Box::new(TeeBuilder::new(
             tee_chain,
@@ -429,10 +442,10 @@ impl ChainSwitchListener {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "redis"))]
 mod tests {
     use super::*;
-    use crate::transforms::null::NullSinkConfig;
+    use crate::{frame::MessageType, transforms::null::NullSinkConfig};
 
     #[tokio::test]
     async fn test_validate_subchain_valid() {
@@ -444,7 +457,11 @@ mod tests {
             switch_port: None,
         };
 
-        let transform = config.get_builder("".to_owned()).await.unwrap();
+        let transform_context_config = TransformContextConfig {
+            chain_name: "".into(),
+            protocol: MessageType::Redis,
+        };
+        let transform = config.get_builder(transform_context_config).await.unwrap();
         let result = transform.validate();
         assert_eq!(result, Vec::<String>::new());
     }
@@ -459,7 +476,11 @@ mod tests {
             switch_port: None,
         };
 
-        let transform = config.get_builder("".to_owned()).await.unwrap();
+        let transform_context_config = TransformContextConfig {
+            chain_name: "".into(),
+            protocol: MessageType::Redis,
+        };
+        let transform = config.get_builder(transform_context_config).await.unwrap();
         let result = transform.validate().join("\n");
         let expected = r#"Tee:
   tee_chain chain:
@@ -476,7 +497,11 @@ mod tests {
             buffer_size: None,
             switch_port: None,
         };
-        let transform = config.get_builder("".to_owned()).await.unwrap();
+        let transform_context_config = TransformContextConfig {
+            chain_name: "".into(),
+            protocol: MessageType::Redis,
+        };
+        let transform = config.get_builder(transform_context_config).await.unwrap();
         let result = transform.validate();
         assert_eq!(result, Vec::<String>::new());
     }
@@ -490,7 +515,11 @@ mod tests {
             buffer_size: None,
             switch_port: None,
         };
-        let transform = config.get_builder("".to_owned()).await.unwrap();
+        let transform_context_config = TransformContextConfig {
+            chain_name: "".into(),
+            protocol: MessageType::Redis,
+        };
+        let transform = config.get_builder(transform_context_config).await.unwrap();
         let result = transform.validate();
         assert_eq!(result, Vec::<String>::new());
     }
@@ -507,7 +536,11 @@ mod tests {
             switch_port: None,
         };
 
-        let transform = config.get_builder("".to_owned()).await.unwrap();
+        let transform_context_config = TransformContextConfig {
+            chain_name: "".into(),
+            protocol: MessageType::Redis,
+        };
+        let transform = config.get_builder(transform_context_config).await.unwrap();
         let result = transform.validate().join("\n");
         let expected = r#"Tee:
   mismatch_chain chain:
@@ -527,7 +560,11 @@ mod tests {
             switch_port: None,
         };
 
-        let transform = config.get_builder("".to_owned()).await.unwrap();
+        let transform_context_config = TransformContextConfig {
+            chain_name: "".into(),
+            protocol: MessageType::Redis,
+        };
+        let transform = config.get_builder(transform_context_config).await.unwrap();
         let result = transform.validate();
         assert_eq!(result, Vec::<String>::new());
     }

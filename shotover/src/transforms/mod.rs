@@ -1,6 +1,7 @@
 //! Various types required for defining a transform
 
 use self::chain::TransformAndMetrics;
+use crate::frame::MessageType;
 use crate::message::{Message, MessageIdMap, Messages};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
@@ -64,7 +65,17 @@ impl Debug for dyn TransformBuilder {
 #[typetag::serde]
 #[async_trait(?Send)]
 pub trait TransformConfig: Debug {
-    async fn get_builder(&self, chain_name: String) -> Result<Box<dyn TransformBuilder>>;
+    async fn get_builder(
+        &self,
+        transform_context: TransformContextConfig,
+    ) -> Result<Box<dyn TransformBuilder>>;
+}
+
+/// Provides extra context that may be needed when creating a TransformBuilder
+#[derive(Clone)]
+pub struct TransformContextConfig {
+    pub chain_name: String,
+    pub protocol: MessageType,
 }
 
 /// The [`Wrapper`] struct is passed into each transform and contains a list of mutable references to the

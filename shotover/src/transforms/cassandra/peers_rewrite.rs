@@ -1,10 +1,13 @@
-use crate::frame::{
-    value::{GenericValue, IntSize},
-    CassandraOperation, CassandraResult, Frame,
-};
 use crate::message::{Message, Messages};
 use crate::transforms::cassandra::peers_rewrite::CassandraOperation::Event;
 use crate::transforms::{Transform, TransformBuilder, TransformConfig, Wrapper};
+use crate::{
+    frame::{
+        value::{GenericValue, IntSize},
+        CassandraOperation, CassandraResult, Frame,
+    },
+    transforms::TransformContextConfig,
+};
 use anyhow::Result;
 use async_trait::async_trait;
 use cassandra_protocol::frame::events::{ServerEvent, StatusChange};
@@ -23,7 +26,10 @@ const NAME: &str = "CassandraPeersRewrite";
 #[typetag::serde(name = "CassandraPeersRewrite")]
 #[async_trait(?Send)]
 impl TransformConfig for CassandraPeersRewriteConfig {
-    async fn get_builder(&self, _chain_name: String) -> Result<Box<dyn TransformBuilder>> {
+    async fn get_builder(
+        &self,
+        _transform_context: TransformContextConfig,
+    ) -> Result<Box<dyn TransformBuilder>> {
         Ok(Box::new(CassandraPeersRewrite::new(self.port)))
     }
 }

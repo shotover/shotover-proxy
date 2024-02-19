@@ -3,7 +3,9 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use shotover::frame::{Frame, RedisFrame};
 use shotover::message::{MessageIdSet, Messages};
-use shotover::transforms::{Transform, TransformBuilder, TransformConfig, Wrapper};
+use shotover::transforms::{
+    Transform, TransformBuilder, TransformConfig, TransformContextConfig, Wrapper,
+};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(deny_unknown_fields)]
@@ -15,7 +17,10 @@ const NAME: &str = "RedisGetRewrite";
 #[typetag::serde(name = "RedisGetRewrite")]
 #[async_trait(?Send)]
 impl TransformConfig for RedisGetRewriteConfig {
-    async fn get_builder(&self, _chain_name: String) -> Result<Box<dyn TransformBuilder>> {
+    async fn get_builder(
+        &self,
+        _transform_context: TransformContextConfig,
+    ) -> Result<Box<dyn TransformBuilder>> {
         Ok(Box::new(RedisGetRewriteBuilder {
             result: self.result.clone(),
         }))

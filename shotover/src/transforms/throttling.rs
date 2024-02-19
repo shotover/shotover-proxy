@@ -1,3 +1,4 @@
+use super::TransformContextConfig;
 use crate::message::{Message, MessageIdMap, Messages};
 use crate::transforms::{Transform, TransformBuilder, TransformConfig, Wrapper};
 use anyhow::Result;
@@ -23,7 +24,10 @@ const NAME: &str = "RequestThrottling";
 #[typetag::serde(name = "RequestThrottling")]
 #[async_trait(?Send)]
 impl TransformConfig for RequestThrottlingConfig {
-    async fn get_builder(&self, _chain_name: String) -> Result<Box<dyn TransformBuilder>> {
+    async fn get_builder(
+        &self,
+        _transform_context: TransformContextConfig,
+    ) -> Result<Box<dyn TransformBuilder>> {
         Ok(Box::new(RequestThrottling {
             limiter: Arc::new(RateLimiter::direct(Quota::per_second(
                 self.max_requests_per_second,
