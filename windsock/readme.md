@@ -144,7 +144,7 @@ and graphs: TODO
 ### Just run every bench
 
 ```shell
-> cargo windsock
+> cargo windsock run-local
 ```
 
 ### Run benches with matching tags and view all the results in one table

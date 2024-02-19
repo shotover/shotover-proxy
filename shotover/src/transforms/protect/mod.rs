@@ -1,7 +1,7 @@
 use crate::frame::{
     value::GenericValue, CassandraFrame, CassandraOperation, CassandraResult, Frame,
 };
-use crate::message::{Message, MessageId, Messages};
+use crate::message::{Message, MessageIdMap, Messages};
 use crate::transforms::protect::key_management::KeyManager;
 pub use crate::transforms::protect::key_management::KeyManagerConfig;
 use crate::transforms::{Transform, TransformBuilder, Wrapper};
@@ -56,7 +56,7 @@ impl TransformConfig for ProtectConfig {
                 .collect(),
             key_source: self.key_manager.build().await?,
             key_id: "XXXXXXX".to_string(),
-            requests: HashMap::new(),
+            requests: MessageIdMap::default(),
         }))
     }
 }
@@ -69,7 +69,7 @@ pub struct Protect {
     // TODO this should be a function to create key_ids based on "something", e.g. primary key
     // for the moment this is just a string
     key_id: String,
-    requests: HashMap<MessageId, Message>,
+    requests: MessageIdMap<Message>,
 }
 
 impl TransformBuilder for Protect {

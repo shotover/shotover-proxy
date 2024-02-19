@@ -1,9 +1,6 @@
-use std::collections::HashMap;
-
 use crate::frame::Frame;
 use crate::frame::RedisFrame;
-use crate::message::MessageId;
-use crate::message::Messages;
+use crate::message::{MessageIdMap, Messages};
 use crate::transforms::{Transform, TransformBuilder, TransformConfig, Wrapper};
 use anyhow::{anyhow, bail, Context, Result};
 use async_trait::async_trait;
@@ -39,7 +36,7 @@ impl TransformBuilder for RedisClusterPortsRewrite {
 #[derive(Clone)]
 pub struct RedisClusterPortsRewrite {
     new_port: u16,
-    request_type: HashMap<MessageId, RequestType>,
+    request_type: MessageIdMap<RequestType>,
 }
 
 #[derive(Clone)]
@@ -52,7 +49,7 @@ impl RedisClusterPortsRewrite {
     pub fn new(new_port: u16) -> Self {
         RedisClusterPortsRewrite {
             new_port,
-            request_type: HashMap::new(),
+            request_type: MessageIdMap::default(),
         }
     }
 }

@@ -13,10 +13,15 @@ use bytes::Bytes;
 #[cfg(feature = "cassandra")]
 use cassandra_protocol::compression::Compression;
 use derivative::Derivative;
+use fnv::FnvBuildHasher;
 use nonzero_ext::nonzero;
 use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
 use std::num::NonZeroU32;
 use std::time::Instant;
+
+pub type MessageIdMap<T> = HashMap<MessageId, T, FnvBuildHasher>;
+pub type MessageIdSet = HashSet<MessageId, FnvBuildHasher>;
 
 pub enum Metadata {
     #[cfg(feature = "cassandra")]

@@ -2,7 +2,7 @@ use super::node::ConnectionFactory;
 use super::node_pool::NodePool;
 use super::ShotoverNode;
 use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame};
-use crate::message::{Message, Messages};
+use crate::message::{Message, MessageIdMap, Messages};
 use crate::{
     frame::{
         cassandra::{parse_statement_single, Tracing},
@@ -20,7 +20,6 @@ use cql3_parser::common::{
 use cql3_parser::select::{Select, SelectElement};
 use futures::future::try_join_all;
 use itertools::Itertools;
-use std::collections::HashMap;
 use std::fmt::Write;
 use std::net::{IpAddr, Ipv4Addr};
 use uuid::Uuid;
@@ -57,7 +56,7 @@ pub struct MessageRewriter {
     pub shotover_peers: Vec<ShotoverNode>,
     pub local_shotover_node: ShotoverNode,
     pub to_rewrite: Vec<TableToRewrite>,
-    pub prepare_requests_to_destination_nodes: HashMap<MessageId, Uuid>,
+    pub prepare_requests_to_destination_nodes: MessageIdMap<Uuid>,
 }
 
 impl MessageRewriter {
