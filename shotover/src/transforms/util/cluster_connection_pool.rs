@@ -258,18 +258,16 @@ async fn rx_process<C: DecoderHalf, R: AsyncRead + Unpin + Send + 'static>(
     // TODO: This reader.next() may perform reads after tx_process has shutdown the write half.
     //       This may result in unexpected ConnectionReset errors.
     //       refer to the cassandra connection logic.
-    while let Some(responses) = reader.next().await {
-        match responses {
-            Ok(responses) => {
-                for response_message in responses {
-                    loop {
-                        if let Some(Some(ret)) = return_rx.recv().await {
-                            // If the receiver hangs up, just silently ignore
-                            let _ = ret.send(Response {
-                                response: Ok(response_message),
-                            });
-                            break;
-                        }
+    while let Some(response) = reader.next().await {
+        match response {
+            Ok(response_message) => {
+                loop {
+                    if let Some(Some(ret)) = return_rx.recv().await {
+                        // If the receiver hangs up, just silently ignore
+                        let _ = ret.send(Response {
+                            response: Ok(response_message),
+                        });
+                        break;
                     }
                 }
             }

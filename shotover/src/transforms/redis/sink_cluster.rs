@@ -1147,12 +1147,7 @@ mod test {
 
         let mut codec = RedisDecoder::new(None, Direction::Sink);
 
-        let mut message = codec
-            .decode(&mut slots_pcap.into())
-            .unwrap()
-            .unwrap()
-            .pop()
-            .unwrap();
+        let mut message = codec.decode(&mut slots_pcap.into()).unwrap().unwrap();
 
         let slots_frames = match message.frame().unwrap() {
             Frame::Redis(RedisFrame::Array(frames)) => frames,

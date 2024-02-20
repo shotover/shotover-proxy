@@ -1,6 +1,6 @@
 //! Codec types to use for connecting to a DB in a sink transform
 
-use crate::message::Messages;
+use crate::message::{Message, Messages};
 #[cfg(feature = "cassandra")]
 use cassandra_protocol::compression::Compression;
 use core::fmt;
@@ -114,8 +114,8 @@ impl From<std::io::Error> for CodecWriteError {
 }
 
 // TODO: Replace with trait_alias (rust-lang/rust#41517).
-pub trait DecoderHalf: Decoder<Item = Messages, Error = CodecReadError> + Send {}
-impl<T: Decoder<Item = Messages, Error = CodecReadError> + Send> DecoderHalf for T {}
+pub trait DecoderHalf: Decoder<Item = Message, Error = CodecReadError> + Send {}
+impl<T: Decoder<Item = Message, Error = CodecReadError> + Send> DecoderHalf for T {}
 
 // TODO: Replace with trait_alias (rust-lang/rust#41517).
 pub trait EncoderHalf: Encoder<Messages, Error = CodecWriteError> + Send {}
