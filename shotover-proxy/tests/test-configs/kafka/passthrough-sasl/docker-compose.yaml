@@ -23,10 +23,10 @@ services:
       - KAFKA_CFG_SASL_MECHANISM_INTER_BROKER_PROTOCOL=PLAIN
       - KAFKA_INTER_BROKER_USER=controller_user
       - KAFKA_INTER_BROKER_PASSWORD=controller_password
-      - KAFKA_CERTIFICATE_PASSWORD=123456
-      - KAFKA_TLS_TYPE=JKS # or PEM
-      - KAFKA_CFG_SSL_ENDPOINT_IDENTIFICATION_ALGORITHM=""
+      # - KAFKA_CERTIFICATE_PASSWORD=123456
+      # - KAFKA_TLS_TYPE=JKS # or PEM
+      # - KAFKA_CFG_SSL_ENDPOINT_IDENTIFICATION_ALGORITHM=""
       - BITNAMI_DEBUG=true
-    volumes:
-      - './certs/kafka.keystore.jks:/opt/bitnami/kafka/config/certs/kafka.keystore.jks:ro'
-      - './certs/kafka.truststore.jks:/opt/bitnami/kafka/config/certs/kafka.truststore.jks:ro'
+    # volumes:
+    #   - './certs/kafka.keystore.jks:/opt/bitnami/kafka/config/certs/kafka.keystore.jks:ro'
+    #   - './certs/kafka.truststore.jks:/opt/bitnami/kafka/config/certs/kafka.truststore.jks:ro'
