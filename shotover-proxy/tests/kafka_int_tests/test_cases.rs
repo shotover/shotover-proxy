@@ -132,6 +132,62 @@ async fn admin_cleanup(config: ClientConfig) {
     }
 }
 
+async fn assert_produce(
+    producer: &FutureProducer,
+    record: Record<'_>,
+    expected_offset: Option<i64>,
+) {
+    let send = match record.key {
+        Some(key) => producer
+            .send_result(
+                FutureRecord::to(record.topic_name)
+                    .payload(record.payload)
+                    .key(key),
+            )
+            .unwrap(),
+        None => producer
+            .send_result(FutureRecord::<(), _>::to(record.topic_name).payload(record.payload))
+            .unwrap(),
+    };
+    let delivery_status = tokio::time::timeout(Duration::from_secs(30), send)
+        .await
+        .expect("Timeout while receiving from producer")
+        .unwrap()
+        .unwrap();
+
+    if let Some(offset) = expected_offset {
+        assert_eq!(delivery_status.1, offset, "Unexpected offset");
+    }
+}
+
+struct Record<'a> {
+    payload: &'a str,
+    topic_name: &'a str,
+    key: Option<&'a str>,
+}
+
+async fn assert_consume(consumer: &StreamConsumer, response: ExpectedResponse<'_>) {
+    let message = tokio::time::timeout(Duration::from_secs(30), consumer.recv())
+        .await
+        .expect("Timeout while receiving from consumer")
+        .unwrap();
+    let contents = message.payload_view::<str>().unwrap().unwrap();
+    assert_eq!(response.message, contents);
+    assert_eq!(
+        response.key,
+        message.key().map(|x| std::str::from_utf8(x).unwrap())
+    );
+    assert_eq!(response.topic_name, message.topic());
+    assert_eq!(response.offset, message.offset());
+}
+
+struct ExpectedResponse<'a> {
+    message: &'a str,
+    key: Option<&'a str>,
+    topic_name: &'a str,
+    offset: i64,
+}
+
 async fn produce_consume(client: ClientConfig, topic_name: &str, i: i64) {
     let producer: FutureProducer = client
         .clone()
@@ -139,22 +195,26 @@ async fn produce_consume(client: ClientConfig, topic_name: &str, i: i64) {
         .create()
         .unwrap();
 
-    let delivery_status = producer
-        .send_result(FutureRecord::to(topic_name).payload("Message").key("Key"))
-        .unwrap()
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(delivery_status.1, i * 2);
-
-    let record: FutureRecord<(), _> = FutureRecord::to(topic_name).payload("Message");
-    let delivery_status = producer
-        .send_result(record)
-        .unwrap()
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(delivery_status.1, i * 2 + 1);
+    assert_produce(
+        &producer,
+        Record {
+            payload: "Message1",
+            topic_name,
+            key: Some("Key"),
+        },
+        Some(i * 2),
+    )
+    .await;
+    assert_produce(
+        &producer,
+        Record {
+            payload: "Message2",
+            topic_name,
+            key: None,
+        },
+        Some(i * 2 + 1),
+    )
+    .await;
 
     let consumer: StreamConsumer = client
         .clone()
@@ -166,25 +226,26 @@ async fn produce_consume(client: ClientConfig, topic_name: &str, i: i64) {
         .unwrap();
     consumer.subscribe(&[topic_name]).unwrap();
 
-    let message = tokio::time::timeout(Duration::from_secs(30), consumer.recv())
-        .await
-        .expect("Timeout while receiving from consumer")
-        .unwrap();
-    let contents = message.payload_view::<str>().unwrap().unwrap();
-    assert_eq!("Message", contents);
-    assert_eq!(b"Key", message.key().unwrap());
-    assert_eq!(topic_name, message.topic());
-    assert_eq!(0, message.offset());
-
-    let message = tokio::time::timeout(Duration::from_secs(30), consumer.recv())
-        .await
-        .expect("Timeout while receiving from consumer")
-        .unwrap();
-    let contents = message.payload_view::<str>().unwrap().unwrap();
-    assert_eq!("Message", contents);
-    assert_eq!(None, message.key());
-    assert_eq!(topic_name, message.topic());
-    assert_eq!(1, message.offset());
+    assert_consume(
+        &consumer,
+        ExpectedResponse {
+            message: "Message1",
+            key: Some("Key"),
+            topic_name,
+            offset: 0,
+        },
+    )
+    .await;
+    assert_consume(
+        &consumer,
+        ExpectedResponse {
+            message: "Message2",
+            key: None,
+            topic_name,
+            offset: 1,
+        },
+    )
+    .await;
 }
 
 async fn produce_consume_acks0(client: ClientConfig) {
@@ -197,20 +258,16 @@ async fn produce_consume_acks0(client: ClientConfig) {
         .unwrap();
 
     for _ in 0..10 {
-        tokio::time::timeout(
-            Duration::from_secs(30),
-            producer
-                .send_result(
-                    FutureRecord::to(topic_name)
-                        .payload("MessageAcks0")
-                        .key("KeyAcks0"),
-                )
-                .unwrap(),
+        assert_produce(
+            &producer,
+            Record {
+                payload: "MessageAcks0",
+                topic_name,
+                key: Some("KeyAcks0"),
+            },
+            None,
         )
-        .await
-        .expect("Timeout while receiving from producer")
-        .unwrap()
-        .unwrap();
+        .await;
     }
 
     let consumer: StreamConsumer = client
@@ -223,17 +280,17 @@ async fn produce_consume_acks0(client: ClientConfig) {
         .unwrap();
     consumer.subscribe(&[topic_name]).unwrap();
 
-    for i in 0..10 {
-        let message = tokio::time::timeout(Duration::from_secs(30), consumer.recv())
-            .await
-            .expect("Timeout while receiving from consumer")
-            .unwrap();
-        let contents = message.payload_view::<str>().unwrap().unwrap();
-        assert_eq!("MessageAcks0", contents);
-        assert_eq!(b"KeyAcks0", message.key().unwrap());
-        assert_eq!("acks0", message.topic());
-        assert_eq!(i, message.offset());
-        assert_eq!(0, message.partition());
+    for j in 0..10 {
+        assert_consume(
+            &consumer,
+            ExpectedResponse {
+                message: "MessageAcks0",
+                key: Some("KeyAcks0"),
+                topic_name,
+                offset: j,
+            },
+        )
+        .await;
     }
 }
 
