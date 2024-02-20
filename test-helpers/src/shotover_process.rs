@@ -18,6 +18,9 @@ pub struct ShotoverProcessBuilder {
 
 impl ShotoverProcessBuilder {
     pub fn new_with_topology(topology_path: &str) -> Self {
+        // Run setup here to ensure any test that calls this gets tracing
+        crate::test_tracing::setup_tracing_subscriber_for_test();
+
         Self {
             topology_path: topology_path.to_owned(),
             config_path: None,

@@ -1,19 +1,12 @@
 use docker_compose_runner::*;
 use std::{env, time::Duration};
-use tracing_subscriber::fmt::TestWriter;
 
 pub use docker_compose_runner::DockerCompose;
 
-fn setup_tracing_subscriber_for_test_logic() {
-    tracing_subscriber::fmt()
-        .with_writer(TestWriter::new())
-        .with_env_filter("warn")
-        .try_init()
-        .ok();
-}
-
 pub fn docker_compose(file_path: &str) -> DockerCompose {
-    setup_tracing_subscriber_for_test_logic();
+    // Run setup here to ensure any test that calls this gets tracing
+    crate::test_tracing::setup_tracing_subscriber_for_test();
+
     DockerCompose::new(&IMAGE_WAITERS, |_| {}, file_path)
 }
 
