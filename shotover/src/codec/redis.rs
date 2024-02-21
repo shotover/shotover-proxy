@@ -44,8 +44,8 @@ impl CodecBuilder for RedisCodecBuilder {
         )
     }
 
-    fn websocket_subprotocol(&self) -> &'static str {
-        "redis"
+    fn protocol(&self) -> MessageType {
+        MessageType::Redis
     }
 }
 

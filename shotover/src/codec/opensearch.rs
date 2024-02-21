@@ -56,8 +56,8 @@ impl CodecBuilder for OpenSearchCodecBuilder {
         )
     }
 
-    fn websocket_subprotocol(&self) -> &'static str {
-        "opensearch"
+    fn protocol(&self) -> MessageType {
+        MessageType::OpenSearch
     }
 }
 
