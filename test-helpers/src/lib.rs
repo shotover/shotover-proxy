@@ -4,6 +4,7 @@ pub mod docker_compose;
 pub mod metrics;
 pub mod mock_cassandra;
 pub mod shotover_process;
+mod test_tracing;
 
 use anyhow::{anyhow, Result};
 use subprocess::{Exec, Redirection};
