@@ -3,6 +3,7 @@ use crate::frame::kafka::{KafkaFrame, RequestBody, ResponseBody};
 use crate::frame::Frame;
 use crate::message::{Message, Messages};
 use crate::tcp;
+use crate::tls::{TlsConnector, TlsConnectorConfig};
 use crate::transforms::kafka::common::produce_channel;
 use crate::transforms::util::cluster_connection_pool::{spawn_read_write_tasks, Connection};
 use crate::transforms::util::{Request, Response};
@@ -11,6 +12,7 @@ use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
+use tokio::io::split;
 use tokio::sync::{mpsc, oneshot};
 use tokio::time::timeout;
 
@@ -22,6 +24,7 @@ pub struct KafkaSinkSingleConfig {
     pub destination_port: u16,
     pub connect_timeout_ms: u64,
     pub read_timeout: Option<u64>,
+    pub tls: Option<TlsConnectorConfig>,
 }
 
 use crate::transforms::TransformConfig;
@@ -31,11 +34,13 @@ const NAME: &str = "KafkaSinkSingle";
 #[async_trait(?Send)]
 impl TransformConfig for KafkaSinkSingleConfig {
     async fn get_builder(&self, chain_name: String) -> Result<Box<dyn TransformBuilder>> {
+        let tls = self.tls.clone().map(TlsConnector::new).transpose()?;
         Ok(Box::new(KafkaSinkSingleBuilder::new(
             self.destination_port,
             chain_name,
             self.connect_timeout_ms,
             self.read_timeout,
+            tls,
         )))
     }
 }
@@ -45,6 +50,7 @@ pub struct KafkaSinkSingleBuilder {
     address_port: u16,
     connect_timeout: Duration,
     read_timeout: Option<Duration>,
+    tls: Option<TlsConnector>,
 }
 
 impl KafkaSinkSingleBuilder {
@@ -53,6 +59,7 @@ impl KafkaSinkSingleBuilder {
         _chain_name: String,
         connect_timeout_ms: u64,
         timeout: Option<u64>,
+        tls: Option<TlsConnector>,
     ) -> KafkaSinkSingleBuilder {
         let receive_timeout = timeout.map(Duration::from_secs);
 
@@ -60,6 +67,7 @@ impl KafkaSinkSingleBuilder {
             address_port,
             connect_timeout: Duration::from_millis(connect_timeout_ms),
             read_timeout: receive_timeout,
+            tls,
         }
     }
 }
@@ -71,6 +79,7 @@ impl TransformBuilder for KafkaSinkSingleBuilder {
             address_port: self.address_port,
             pushed_messages_tx: None,
             connect_timeout: self.connect_timeout,
+            tls: self.tls.clone(),
             read_timeout: self.read_timeout,
         })
     }
@@ -90,6 +99,7 @@ pub struct KafkaSinkSingle {
     pushed_messages_tx: Option<mpsc::UnboundedSender<Messages>>,
     connect_timeout: Duration,
     read_timeout: Option<Duration>,
+    tls: Option<TlsConnector>,
 }
 
 #[async_trait]
@@ -101,13 +111,24 @@ impl Transform for KafkaSinkSingle {
     async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Messages> {
         if self.outbound.is_none() {
             let codec = KafkaCodecBuilder::new(Direction::Sink, "KafkaSinkSingle".to_owned());
-            let tcp_stream = tcp::tcp_stream(
-                self.connect_timeout,
-                (requests_wrapper.local_addr.ip(), self.address_port),
-            )
-            .await?;
-            let (rx, tx) = tcp_stream.into_split();
-            self.outbound = Some(spawn_read_write_tasks(&codec, rx, tx));
+            if let Some(tls) = self.tls.as_mut() {
+                let tls_stream = tls
+                    .connect(
+                        self.connect_timeout,
+                        (requests_wrapper.local_addr.ip(), self.address_port),
+                    )
+                    .await?;
+                let (rx, tx) = split(tls_stream);
+                self.outbound = Some(spawn_read_write_tasks(&codec, rx, tx));
+            } else {
+                let tcp_stream = tcp::tcp_stream(
+                    self.connect_timeout,
+                    (requests_wrapper.local_addr.ip(), self.address_port),
+                )
+                .await?;
+                let (rx, tx) = tcp_stream.into_split();
+                self.outbound = Some(spawn_read_write_tasks(&codec, rx, tx));
+            }
         }
 
         // Rewrite requests to use kafkas port instead of shotovers port
