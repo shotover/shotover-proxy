@@ -81,9 +81,10 @@ async fn passthrough_sasl() {
 async fn passthrough_sasl_encode() {
     let _docker_compose =
         docker_compose("tests/test-configs/kafka/passthrough-sasl/docker-compose.yaml");
-    let shotover = shotover_process("tests/test-configs/kafka/passthrough-sasl/topology.yaml")
-        .start()
-        .await;
+    let shotover =
+        shotover_process("tests/test-configs/kafka/passthrough-sasl/topology-encode.yaml")
+            .start()
+            .await;
 
     test_cases::basic_sasl("127.0.0.1:9192").await;
 
