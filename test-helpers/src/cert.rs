@@ -92,3 +92,55 @@ pub fn generate_cassandra_test_certs() {
 pub fn generate_redis_test_certs() {
     generate_test_certs(Path::new("tests/test-configs/redis/tls/certs"));
 }
+
+pub fn generate_kafka_test_certs() {
+    let path = Path::new("tests/test-configs/kafka/tls/certs");
+    generate_test_certs(path);
+    std::fs::remove_file(path.join("kafka.keystore.p12")).ok();
+    std::fs::remove_file(path.join("kafka.keystore.jks")).ok();
+    std::fs::remove_file(path.join("kafka.truststore.jks")).ok();
+    run_command(
+        "openssl",
+        &[
+            "pkcs12",
+            "-export",
+            "-out",
+            path.join("kafka.keystore.p12").to_str().unwrap(),
+            "-inkey",
+            path.join("localhost.key").to_str().unwrap(),
+            "-in",
+            path.join("localhost.crt").to_str().unwrap(),
+            "-passout",
+            "pass:password",
+        ],
+    )
+    .unwrap();
+
+    run_command(
+        "keytool",
+        &[
+            "-importkeystore",
+            "-srckeystore",
+            path.join("kafka.keystore.p12").to_str().unwrap(),
+            "-srcstoretype",
+            "pkcs12",
+            "-destkeystore",
+            path.join("kafka.keystore.jks").to_str().unwrap(),
+            "-deststoretype",
+            "JKS",
+            "-storepass",
+            "password",
+            "-srcstorepass",
+            "password",
+        ],
+    )
+    .unwrap();
+
+    // Bitnami or kafka insists on having a truststore, but I dont think it actually uses it at all since client auth is disabled.
+    // So instead lets just give it a truststore shaped file.
+    std::fs::copy(
+        path.join("kafka.keystore.jks").to_str().unwrap(),
+        path.join("kafka.truststore.jks").to_str().unwrap(),
+    )
+    .unwrap();
+}

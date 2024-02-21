@@ -29,6 +29,27 @@ async fn passthrough_standard() {
 
 #[cfg(feature = "rdkafka-driver-tests")]
 #[tokio::test]
+async fn passthrough_tls() {
+    test_helpers::cert::generate_kafka_test_certs();
+
+    let _docker_compose =
+        docker_compose("tests/test-configs/kafka/passthrough-tls/docker-compose.yaml");
+    let shotover = shotover_process("tests/test-configs/kafka/passthrough-tls/topology.yaml")
+        .start()
+        .await;
+
+    test_cases::basic("127.0.0.1:9192").await;
+
+    tokio::time::timeout(
+        Duration::from_secs(10),
+        shotover.shutdown_and_then_consume_events(&[]),
+    )
+    .await
+    .expect("Shotover did not shutdown within 10s");
+}
+
+#[cfg(feature = "rdkafka-driver-tests")]
+#[tokio::test]
 async fn passthrough_encode() {
     let _docker_compose =
         docker_compose("tests/test-configs/kafka/passthrough/docker-compose.yaml");

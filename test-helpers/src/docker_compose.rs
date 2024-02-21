@@ -71,7 +71,7 @@ pub static IMAGE_WAITERS: [Image; 11] = [
         timeout: Duration::from_secs(120),
     },
     Image {
-        name: "bitnami/kafka:3.4.0-debian-11-r22",
+        name: "bitnami/kafka:3.6.1-debian-11-r24",
         log_regex_to_wait_for: r"Kafka Server started",
         timeout: Duration::from_secs(120),
     },

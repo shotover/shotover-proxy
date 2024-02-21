@@ -84,6 +84,7 @@ impl KafkaBench {
                 destination_port: 9192,
                 connect_timeout_ms: 3000,
                 read_timeout: None,
+                tls: None,
             }),
             KafkaTopology::Cluster1 | KafkaTopology::Cluster3 => Box::new(KafkaSinkClusterConfig {
                 connect_timeout_ms: 3000,
@@ -126,16 +127,32 @@ impl KafkaBench {
 
             tasks.push(tokio::spawn(async move {
                 node.run_container(
-                    "bitnami/kafka:3.4.0-debian-11-r22",
+                    "bitnami/kafka:3.6.1-debian-11-r24",
                     &[
                         ("ALLOW_PLAINTEXT_LISTENER".to_owned(), "yes".to_owned()),
                         (
                             "KAFKA_CFG_ADVERTISED_LISTENERS".to_owned(),
-                            format!("PLAINTEXT://{ip}:{port}"),
+                            format!("BROKER://{ip}:{port}"),
                         ),
                         (
                             "KAFKA_CFG_LISTENERS".to_owned(),
-                            format!("PLAINTEXT://:{port},CONTROLLER://:9093"),
+                            format!("BROKER://:{port},CONTROLLER://:9093"),
+                        ),
+                        (
+                            "KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP".to_owned(),
+                            "CONTROLLER:PLAINTEXT,BROKER:PLAINTEXT".to_owned(),
+                        ),
+                        (
+                            "KAFKA_CFG_INTER_BROKER_LISTENER_NAME".to_owned(),
+                            "BROKER".to_owned(),
+                        ),
+                        (
+                            "KAFKA_CFG_CONTROLLER_LISTENER_NAMES".to_owned(),
+                            "CONTROLLER".to_owned(),
+                        ),
+                        (
+                            "KAFKA_CFG_PROCESS_ROLES".to_owned(),
+                            "controller,broker".to_owned(),
                         ),
                         (
                             "KAFKA_HEAP_OPTS".to_owned(),
