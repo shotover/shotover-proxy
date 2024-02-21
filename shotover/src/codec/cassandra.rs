@@ -139,8 +139,8 @@ impl CodecBuilder for CassandraCodecBuilder {
         )
     }
 
-    fn websocket_subprotocol(&self) -> &'static str {
-        "cql"
+    fn protocol(&self) -> MessageType {
+        MessageType::Cassandra
     }
 }
 

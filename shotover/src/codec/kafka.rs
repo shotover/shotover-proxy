@@ -52,8 +52,8 @@ impl CodecBuilder for KafkaCodecBuilder {
         )
     }
 
-    fn websocket_subprotocol(&self) -> &'static str {
-        "kafka"
+    fn protocol(&self) -> MessageType {
+        MessageType::Kafka
     }
 }
 

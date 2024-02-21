@@ -1,6 +1,6 @@
 //! Codec types to use for connecting to a DB in a sink transform
 
-use crate::message::Messages;
+use crate::{frame::MessageType, message::Messages};
 #[cfg(feature = "cassandra")]
 use cassandra_protocol::compression::Compression;
 use core::fmt;
@@ -128,5 +128,5 @@ pub trait CodecBuilder: Clone + Send {
 
     fn new(direction: Direction, destination_name: String) -> Self;
 
-    fn websocket_subprotocol(&self) -> &'static str;
+    fn protocol(&self) -> MessageType;
 }

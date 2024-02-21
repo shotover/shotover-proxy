@@ -594,7 +594,7 @@ impl<C: CodecBuilder + 'static> Handler<C> {
 
         match transport {
             Transport::WebSocket => {
-                let websocket_subprotocol = codec_builder.websocket_subprotocol();
+                let websocket_subprotocol = codec_builder.protocol().websocket_subprotocol();
 
                 if let Some(tls) = &self.tls {
                     let tls_stream = match tls.accept(stream).await {

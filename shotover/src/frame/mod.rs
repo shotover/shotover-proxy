@@ -38,6 +38,36 @@ pub enum MessageType {
     OpenSearch,
 }
 
+impl MessageType {
+    pub fn is_inorder(&self) -> bool {
+        match self {
+            #[cfg(feature = "cassandra")]
+            MessageType::Cassandra => false,
+            #[cfg(feature = "redis")]
+            MessageType::Redis => true,
+            #[cfg(feature = "kafka")]
+            MessageType::Kafka => true,
+            #[cfg(feature = "opensearch")]
+            MessageType::OpenSearch => true,
+            MessageType::Dummy => false,
+        }
+    }
+
+    pub fn websocket_subprotocol(&self) -> &'static str {
+        match self {
+            #[cfg(feature = "cassandra")]
+            MessageType::Cassandra => "cql",
+            #[cfg(feature = "redis")]
+            MessageType::Redis => "redis",
+            #[cfg(feature = "kafka")]
+            MessageType::Kafka => "kafka",
+            #[cfg(feature = "opensearch")]
+            MessageType::OpenSearch => "opensearch",
+            MessageType::Dummy => "dummy",
+        }
+    }
+}
+
 impl From<&ProtocolType> for MessageType {
     fn from(value: &ProtocolType) -> Self {
         match value {
