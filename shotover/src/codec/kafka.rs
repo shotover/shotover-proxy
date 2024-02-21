@@ -1,7 +1,7 @@
 use super::{message_latency, CodecWriteError, Direction};
-use crate::codec::{CodecBuilder, CodecReadError};
+use crate::codec::{CodecBuilder, CodecReadError, CodecState};
 use crate::frame::MessageType;
-use crate::message::{Encodable, Message, MessageId, Messages, ProtocolType};
+use crate::message::{Encodable, Message, MessageId, Messages};
 use anyhow::{anyhow, Result};
 use bytes::BytesMut;
 use kafka_protocol::messages::ApiKey;
@@ -112,7 +112,7 @@ impl Decoder for KafkaDecoder {
                     .map_err(|_| CodecReadError::Parser(anyhow!("kafka encoder half was lost")))?;
                 let mut message = Message::from_bytes_at_instant(
                     bytes.freeze(),
-                    ProtocolType::Kafka {
+                    CodecState::Kafka {
                         request_header: Some(header),
                     },
                     Some(received_at),
@@ -122,7 +122,7 @@ impl Decoder for KafkaDecoder {
             } else {
                 Message::from_bytes_at_instant(
                     bytes.freeze(),
-                    ProtocolType::Kafka {
+                    CodecState::Kafka {
                         request_header: None,
                     },
                     Some(received_at),

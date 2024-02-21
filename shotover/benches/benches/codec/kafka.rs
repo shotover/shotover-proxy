@@ -1,8 +1,8 @@
 use bytes::{Bytes, BytesMut};
 use criterion::{black_box, criterion_group, BatchSize, Criterion};
 use shotover::codec::kafka::KafkaCodecBuilder;
-use shotover::codec::{CodecBuilder, Direction};
-use shotover::message::{Message, ProtocolType};
+use shotover::codec::{CodecBuilder, CodecState, Direction};
+use shotover::message::Message;
 use tokio_util::codec::{Decoder, Encoder};
 
 const KAFKA_REQUESTS: &[(&[u8], &str)] = &[
@@ -76,7 +76,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         {
             let mut message = Message::from_bytes(
                 Bytes::from(message.to_vec()),
-                ProtocolType::Kafka {
+                CodecState::Kafka {
                     request_header: None,
                 },
             );
@@ -112,7 +112,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         for (message, _) in KAFKA_REQUESTS {
             let mut message = Message::from_bytes(
                 Bytes::from(message.to_vec()),
-                ProtocolType::Kafka {
+                CodecState::Kafka {
                     request_header: None,
                 },
             );
