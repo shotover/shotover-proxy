@@ -4,6 +4,7 @@
 /.vscode
 /shotover-proxy/tests/test-configs/redis/tls/certs
 /shotover-proxy/tests/test-configs/cassandra/tls/certs
+/shotover-proxy/tests/test-configs/kafka/tls/certs
 .workspace.code-workspace
 **/.DS_Store
 /.project

@@ -84,6 +84,7 @@ impl KafkaBench {
                 destination_port: 9192,
                 connect_timeout_ms: 3000,
                 read_timeout: None,
+                tls: None,
             }),
             KafkaTopology::Cluster1 | KafkaTopology::Cluster3 => Box::new(KafkaSinkClusterConfig {
                 connect_timeout_ms: 3000,
