@@ -734,20 +734,18 @@ impl KafkaSinkCluster {
         self.controller_broker.set(metadata.controller_id);
 
         for topic in &metadata.topics {
-            self.topics.insert(
-                topic.0.clone(),
-                Topic {
-                    partitions: topic
-                        .1
-                        .partitions
-                        .iter()
-                        .map(|partition| Partition {
-                            leader_id: *partition.leader_id,
-                            replica_nodes: partition.replica_nodes.iter().map(|x| x.0).collect(),
-                        })
-                        .collect(),
-                },
-            );
+            let mut partitions: Vec<_> = topic
+                .1
+                .partitions
+                .iter()
+                .map(|partition| Partition {
+                    index: partition.partition_index,
+                    leader_id: *partition.leader_id,
+                    replica_nodes: partition.replica_nodes.iter().map(|x| x.0).collect(),
+                })
+                .collect();
+            partitions.sort_by_key(|x| x.index);
+            self.topics.insert(topic.0.clone(), Topic { partitions });
         }
     }
 
@@ -890,10 +888,13 @@ impl KafkaNode {
     }
 }
 
+#[derive(Debug)]
 struct Topic {
     partitions: Vec<Partition>,
 }
+#[derive(Debug)]
 struct Partition {
+    index: i32,
     leader_id: i32,
     replica_nodes: Vec<i32>,
 }
