@@ -19,6 +19,8 @@ use shotover::transforms::TransformConfig;
 use std::sync::Arc;
 use std::{collections::HashMap, time::Duration};
 use test_helpers::docker_compose::docker_compose;
+use test_helpers::rdkafka::admin::{AdminClient, AdminOptions, NewTopic, TopicReplication};
+use test_helpers::rdkafka::client::DefaultClientContext;
 use test_helpers::rdkafka::config::ClientConfig;
 use test_helpers::rdkafka::consumer::{Consumer, StreamConsumer};
 use test_helpers::rdkafka::producer::{FutureProducer, FutureRecord};
@@ -402,8 +404,11 @@ impl Bench for KafkaBench {
         // only one string field so we just directly store the value in resources
         let broker_address = resources;
 
+        setup_topic(broker_address).await;
+
         let producer: FutureProducer = ClientConfig::new()
             .set("bootstrap.servers", broker_address)
+            .set("debug", "all")
             .set("message.timeout.ms", "5000")
             .create()
             .unwrap();
@@ -468,13 +473,10 @@ struct BenchTaskProducerKafka {
 #[async_trait]
 impl BenchTaskProducer for BenchTaskProducerKafka {
     async fn produce_one(&self) -> Result<(), String> {
+        // key is set to None which will result in round robin routing between all brokers
+        let record: FutureRecord<(), _> = FutureRecord::to("topic_foo").payload(&self.message);
         self.producer
-            .send(
-                FutureRecord::to("topic_foo")
-                    .payload(&self.message)
-                    .key("Key"),
-                Timeout::Never,
-            )
+            .send(record, Timeout::Never)
             .await
             // Take just the error, ignoring the message contents because large messages result in unreadable noise in the logs.
             .map_err(|e| format!("{:?}", e.0))
@@ -568,4 +570,29 @@ pub trait BenchTaskProducer: Clone + Send + Sync + 'static {
 
         tasks
     }
+}
+
+async fn setup_topic(broker_address: &str) {
+    let admin: AdminClient<DefaultClientContext> = ClientConfig::new()
+        .set("bootstrap.servers", broker_address)
+        .create()
+        .unwrap();
+    for topic in admin
+        .create_topics(
+            &[NewTopic {
+                name: "topic_foo",
+                num_partitions: 3,
+                replication: TopicReplication::Fixed(1),
+                config: vec![],
+            }],
+            &AdminOptions::new().operation_timeout(Some(Timeout::After(Duration::from_secs(60)))),
+        )
+        .await
+        .unwrap()
+    {
+        assert_eq!("topic_foo", topic.unwrap());
+    }
+
+    // Need to delay starting bench to avoid UnknownPartition errors
+    tokio::time::sleep(Duration::from_secs(5)).await;
 }
