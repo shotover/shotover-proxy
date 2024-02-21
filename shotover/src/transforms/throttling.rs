@@ -1,4 +1,4 @@
-use crate::message::{Message, Messages};
+use crate::message::{Message, MessageIdMap, Messages};
 use crate::transforms::{Transform, TransformBuilder, TransformConfig, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
@@ -29,6 +29,7 @@ impl TransformConfig for RequestThrottlingConfig {
                 self.max_requests_per_second,
             ))),
             max_requests_per_second: self.max_requests_per_second,
+            throttled_requests: MessageIdMap::default(),
         }))
     }
 }
@@ -37,6 +38,7 @@ impl TransformConfig for RequestThrottlingConfig {
 pub struct RequestThrottling {
     limiter: Arc<RateLimiter<NotKeyed, InMemoryState, DefaultClock, NoOpMiddleware>>,
     max_requests_per_second: NonZeroU32,
+    throttled_requests: MessageIdMap<Message>,
 }
 
 impl TransformBuilder for RequestThrottling {
@@ -67,43 +69,37 @@ impl Transform for RequestThrottling {
     }
 
     async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Messages> {
-        // extract throttled messages from the requests_wrapper
-        let throttled_messages: Vec<(Message, usize)> = (0..requests_wrapper.requests.len())
-            .rev()
-            .filter_map(|i| {
-                match self
-                    .limiter
-                    .check_n(requests_wrapper.requests[i].cell_count().ok()?)
-                {
-                    // occurs if all cells can be accommodated and 
-                    Ok(Ok(())) => None,
+        for request in &mut requests_wrapper.requests {
+            if let Ok(cell_count) = request.cell_count() {
+                let throttle = match self.limiter.check_n(cell_count) {
+                    // occurs if all cells can be accommodated
+                    Ok(Ok(())) => false,
                     // occurs if not all cells can be accommodated.
-                    Ok(Err(_)) => {
-                        let message = requests_wrapper.requests.remove(i);
-                        Some((message, i))
-                    }
+                    Ok(Err(_)) => true,
                     // occurs when the batch can never go through, meaning the rate limiter's quota's burst size is too low for the given number of cells to be ever allowed through
                     Err(_) => {
                         tracing::warn!("A message was received that could never have been successfully delivered since it contains more sub messages than can ever be allowed through via the `RequestThrottling` transforms `max_requests_per_second` configuration.");
-                        let message = requests_wrapper.requests.remove(i);
-                        Some((message, i))
+                        true
                     }
+                };
+                if throttle {
+                    self.throttled_requests
+                        .insert(request.id(), request.to_backpressure()?);
+                    request.replace_with_dummy();
                 }
-            })
-            .collect();
+            }
+        }
 
-        // if every message got backpressured we can skip this
-        let mut responses = if !requests_wrapper.requests.is_empty() {
-            // send allowed messages to Cassandra
-            requests_wrapper.call_next_transform().await?
-        } else {
-            vec![]
-        };
+        // send allowed messages to Cassandra
+        let mut responses = requests_wrapper.call_next_transform().await?;
 
-        // reinsert backpressure error responses back into responses
-        for (mut message, i) in throttled_messages.into_iter().rev() {
-            message.set_backpressure()?;
-            responses.insert(i, message);
+        // replace dummy responses with throttle messages
+        for response in responses.iter_mut() {
+            if let Some(request_id) = response.request_id() {
+                if let Some(error_response) = self.throttled_requests.remove(&request_id) {
+                    *response = error_response;
+                }
+            }
         }
 
         Ok(responses)
@@ -124,6 +120,7 @@ mod test {
                     Box::new(RequestThrottling {
                         limiter: Arc::new(RateLimiter::direct(Quota::per_second(nonzero!(20u32)))),
                         max_requests_per_second: nonzero!(20u32),
+                        throttled_requests: MessageIdMap::default(),
                     }),
                     Box::<NullSink>::default(),
                 ],
@@ -146,6 +143,7 @@ mod test {
                     Box::new(RequestThrottling {
                         limiter: Arc::new(RateLimiter::direct(Quota::per_second(nonzero!(100u32)))),
                         max_requests_per_second: nonzero!(100u32),
+                        throttled_requests: MessageIdMap::default(),
                     }),
                     Box::<NullSink>::default(),
                 ],

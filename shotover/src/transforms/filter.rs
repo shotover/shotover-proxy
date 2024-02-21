@@ -1,11 +1,8 @@
-use crate::message::{Message, Messages, QueryType};
+use crate::message::{Message, MessageIdMap, Messages, QueryType};
 use crate::transforms::{Transform, TransformBuilder, TransformConfig, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use std::sync::atomic::{AtomicBool, Ordering};
-
-static SHOWN_ERROR: AtomicBool = AtomicBool::new(false);
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(deny_unknown_fields)]
@@ -17,6 +14,7 @@ pub enum Filter {
 #[derive(Debug, Clone)]
 pub struct QueryTypeFilter {
     pub filter: Filter,
+    pub filtered_requests: MessageIdMap<Message>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -33,6 +31,7 @@ impl TransformConfig for QueryTypeFilterConfig {
     async fn get_builder(&self, _chain_name: String) -> Result<Box<dyn TransformBuilder>> {
         Ok(Box::new(QueryTypeFilter {
             filter: self.filter.clone(),
+            filtered_requests: MessageIdMap::default(),
         }))
     }
 }
@@ -54,60 +53,33 @@ impl Transform for QueryTypeFilter {
     }
 
     async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Messages> {
-        let removed_indexes: Result<Vec<(usize, Message)>> = requests_wrapper
-            .requests
-            .iter_mut()
-            .enumerate()
-            .filter_map(|(i, m)| match self.filter {
-                Filter::AllowList(ref allow_list) => {
-                    if allow_list.contains(&m.get_query_type()) {
-                        None
-                    } else {
-                        Some((i, m))
-                    }
-                }
-                Filter::DenyList(ref deny_list) => {
-                    if deny_list.contains(&m.get_query_type()) {
-                        Some((i, m))
-                    } else {
-                        None
-                    }
-                }
-            })
-            .map(|(i, m)| {
-                Ok((
-                    i,
-                    m.to_error_response("Message was filtered out by shotover".to_owned())
-                        .map_err(|e| e.context("Failed to filter message {e:?}"))?,
-                ))
-            })
-            .collect();
+        for request in requests_wrapper.requests.iter_mut() {
+            let filter_out = match &self.filter {
+                Filter::AllowList(allow_list) => !allow_list.contains(&request.get_query_type()),
+                Filter::DenyList(deny_list) => deny_list.contains(&request.get_query_type()),
+            };
 
-        let removed_indexes = removed_indexes?;
-
-        for (i, _) in removed_indexes.iter().rev() {
-            requests_wrapper.requests.remove(*i);
+            if filter_out {
+                self.filtered_requests.insert(
+                    request.id(),
+                    request
+                        .to_error_response("Message was filtered out by shotover".to_owned())
+                        .map_err(|e| e.context("Failed to filter message"))?,
+                );
+                request.replace_with_dummy();
+            }
         }
 
-        let mut shown_error = SHOWN_ERROR.load(Ordering::Relaxed);
-
-        requests_wrapper
-            .call_next_transform()
-            .await
-            .map(|mut messages| {
-
-                for (i, message) in removed_indexes.into_iter() {
-                    if i <= messages.len() {
-                        messages.insert(i, message);
-                    }
-                    else if !shown_error{
-                        tracing::error!("The current filter transform implementation does not obey the current transform invariants. see https://github.com/shotover/shotover-proxy/issues/499");
-                        shown_error = true;
-                        SHOWN_ERROR.store(true , Ordering::Relaxed);
-                    }
+        let mut responses = requests_wrapper.call_next_transform().await?;
+        for response in responses.iter_mut() {
+            if let Some(request_id) = response.request_id() {
+                if let Some(error_response) = self.filtered_requests.remove(&request_id) {
+                    *response = error_response;
                 }
-                messages
-            })
+            }
+        }
+
+        Ok(responses)
     }
 }
 
@@ -116,6 +88,7 @@ mod test {
     use super::Filter;
     use crate::frame::Frame;
     use crate::frame::RedisFrame;
+    use crate::message::MessageIdMap;
     use crate::message::{Message, QueryType};
     use crate::transforms::chain::TransformAndMetrics;
     use crate::transforms::filter::QueryTypeFilter;
@@ -126,6 +99,7 @@ mod test {
     async fn test_filter_denylist() {
         let mut filter_transform = QueryTypeFilter {
             filter: Filter::DenyList(vec![QueryType::Read]),
+            filtered_requests: MessageIdMap::default(),
         };
 
         let mut chain = vec![TransformAndMetrics::new(Box::new(Loopback::default()))];
@@ -180,6 +154,7 @@ mod test {
     async fn test_filter_allowlist() {
         let mut filter_transform = QueryTypeFilter {
             filter: Filter::AllowList(vec![QueryType::Write]),
+            filtered_requests: MessageIdMap::default(),
         };
 
         let mut chain = vec![TransformAndMetrics::new(Box::new(Loopback::default()))];

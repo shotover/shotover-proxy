@@ -1,5 +1,7 @@
 use super::Response;
 use crate::codec::{CodecBuilder, CodecWriteError, DecoderHalf, EncoderHalf};
+use crate::frame::Frame;
+use crate::message::{Message, MessageId};
 use crate::tcp;
 use crate::tls::{TlsConnector, TlsConnectorConfig};
 use crate::transforms::util::{ConnectionError, Request};
@@ -193,6 +195,7 @@ pub fn spawn_read_write_tasks<
     stream_rx: R,
     stream_tx: W,
 ) -> Connection {
+    let (dummy_request_tx, dummy_request_rx) = tokio::sync::mpsc::unbounded_channel();
     let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel();
     let (return_tx, return_rx) = tokio::sync::mpsc::unbounded_channel();
     let (closed_tx, closed_rx) = tokio::sync::oneshot::channel();
@@ -201,7 +204,7 @@ pub fn spawn_read_write_tasks<
 
     tokio::spawn(async move {
         tokio::select! {
-            result = tx_process(stream_tx, out_rx, return_tx, encoder) => if let Err(e) = result {
+            result = tx_process(dummy_request_tx, stream_tx, out_rx, return_tx, encoder) => if let Err(e) = result {
                 trace!("connection write-closed with error: {:?}", e);
             } else {
                 trace!("connection write-closed gracefully");
@@ -214,7 +217,7 @@ pub fn spawn_read_write_tasks<
 
     tokio::spawn(
         async move {
-            if let Err(e) = rx_process(stream_rx, return_rx, decoder).await {
+            if let Err(e) = rx_process(dummy_request_rx, stream_rx, return_rx, decoder).await {
                 trace!("connection read-closed with error: {:?}", e);
             } else {
                 trace!("connection read-closed gracefully");
@@ -230,6 +233,7 @@ pub fn spawn_read_write_tasks<
 }
 
 async fn tx_process<C: EncoderHalf, W: AsyncWrite + Unpin + Send + 'static>(
+    dummy_request_tx: UnboundedSender<MessageId>,
     write: W,
     out_rx: UnboundedReceiver<Request>,
     return_tx: UnboundedSender<ReturnChan>,
@@ -237,6 +241,9 @@ async fn tx_process<C: EncoderHalf, W: AsyncWrite + Unpin + Send + 'static>(
 ) -> Result<(), CodecWriteError> {
     let writer = FramedWrite::new(write, codec);
     let rx_stream = UnboundedReceiverStream::new(out_rx).map(|x| {
+        if x.message.is_dummy() {
+            dummy_request_tx.send(x.message.id()).ok();
+        }
         let ret = Ok(vec![x.message]);
         return_tx
             .send(x.return_chan)
@@ -249,6 +256,7 @@ async fn tx_process<C: EncoderHalf, W: AsyncWrite + Unpin + Send + 'static>(
 type ReturnChan = Option<oneshot::Sender<Response>>;
 
 async fn rx_process<C: DecoderHalf, R: AsyncRead + Unpin + Send + 'static>(
+    mut dummy_request_rx: UnboundedReceiver<MessageId>,
     read: R,
     mut return_rx: UnboundedReceiver<ReturnChan>,
     codec: C,
@@ -258,29 +266,40 @@ async fn rx_process<C: DecoderHalf, R: AsyncRead + Unpin + Send + 'static>(
     // TODO: This reader.next() may perform reads after tx_process has shutdown the write half.
     //       This may result in unexpected ConnectionReset errors.
     //       refer to the cassandra connection logic.
-    while let Some(responses) = reader.next().await {
-        match responses {
-            Ok(responses) => {
-                for response_message in responses {
-                    loop {
-                        if let Some(Some(ret)) = return_rx.recv().await {
-                            // If the receiver hangs up, just silently ignore
-                            let _ = ret.send(Response {
-                                response: Ok(response_message),
-                            });
-                            break;
+    loop {
+        tokio::select!(
+            responses = reader.next() => {
+                match responses {
+                    Some(Ok(responses)) => {
+                        for response_message in responses {
+                            if let Some(Some(ret)) = return_rx.recv().await {
+                                // If the receiver hangs up, just silently ignore
+                                ret.send(Response {
+                                    response: Ok(response_message),
+                                }).ok();
+                            }
                         }
+                    }
+                    Some(Err(e)) => return Err(anyhow!("Couldn't decode message from upstream host {e:?}")),
+                    None => {
+                        // connection closed
+                        break;
                     }
                 }
             }
-            Err(e) => {
-                debug!("Couldn't decode message from upstream host {:?}", e);
-                return Err(anyhow!(
-                    "Couldn't decode message from upstream host {:?}",
-                    e
-                ));
+            request_id = dummy_request_rx.recv() => {
+                match request_id {
+                    Some(request_id) => if let Some(Some(ret)) = return_rx.recv().await {
+                        let mut response= Message::from_frame(Frame::Dummy);
+                        response.set_request_id(request_id);
+                        ret.send(Response { response: Ok(response) }).ok();
+                    }
+                    None => {
+                        break;
+                    }
+                }
             }
-        }
+        )
     }
 
     Ok(())

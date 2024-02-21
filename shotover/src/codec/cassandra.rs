@@ -779,6 +779,11 @@ impl CassandraEncoder {
         compression: Compression,
         handshake_complete: bool,
     ) -> Result<()> {
+        if m.is_dummy() {
+            // skip dummy messages
+            return Ok(());
+        }
+
         match (version, handshake_complete) {
             (Version::V5, true) => {
                 match compression {

@@ -25,7 +25,7 @@ use tracing::Instrument;
 struct Request {
     message: Message,
     return_chan: oneshot::Sender<Response>,
-    stream_id: i16,
+    stream_id: Option<i16>,
 }
 
 pub type Response = Result<Message, ResponseError>;
@@ -36,16 +36,17 @@ pub struct ResponseError {
     #[source]
     pub cause: anyhow::Error,
     pub destination: SocketAddr,
-    pub stream_id: i16,
+    pub stream_id: Option<i16>,
 }
 
 impl ResponseError {
     pub fn to_response(&self, version: Version) -> Message {
-        Message::from_frame(Frame::Cassandra(CassandraFrame::shotover_error(
-            self.stream_id,
-            version,
-            &format!("{}", self),
-        )))
+        match self.stream_id {
+            Some(stream_id) => Message::from_frame(Frame::Cassandra(
+                CassandraFrame::shotover_error(stream_id, version, &format!("{}", self)),
+            )),
+            None => Message::from_frame(Frame::Dummy),
+        }
     }
 }
 
@@ -53,7 +54,8 @@ impl ResponseError {
 struct ReturnChannel {
     return_chan: oneshot::Sender<Response>,
     request_id: MessageId,
-    stream_id: i16,
+    stream_id: Option<i16>,
+    is_dummy: bool,
 }
 
 #[derive(Clone, Derivative)]
@@ -148,19 +150,16 @@ impl CassandraConnection {
     /// But this indicates a bug within CassandraConnection and should be fixed here.
     pub fn send(&self, message: Message) -> Result<oneshot::Receiver<Response>> {
         let (return_chan_tx, return_chan_rx) = oneshot::channel();
-        // Convert the message to `Request` and send upstream
-        if let Some(stream_id) = message.stream_id() {
-            self.connection
-                .send(Request {
-                    message,
-                    return_chan: return_chan_tx,
-                    stream_id,
-                })
-                .map(|_| return_chan_rx)
-                .map_err(|x| x.into())
-        } else {
-            Err(anyhow!("no cassandra frame found"))
-        }
+        let stream_id = message.stream_id();
+        self.connection
+            .send(Request {
+                message,
+                return_chan: return_chan_tx,
+                // TODO: delete the stream_id field, we wont need it when we are handling cassandra out of order
+                stream_id,
+            })
+            .map(|_| return_chan_rx)
+            .map_err(|x| x.into())
     }
 }
 
@@ -187,6 +186,7 @@ async fn tx_process<T: AsyncWrite>(
     loop {
         if let Some(request) = out_rx.recv().await {
             let request_id = request.message.id();
+            let is_dummy = request.message.is_dummy();
             if let Some(error) = &connection_dead_error {
                 send_error_to_request(request.return_chan, request.stream_id, destination, error);
             } else if let Err(error) = in_w.send(vec![request.message]).await {
@@ -197,6 +197,7 @@ async fn tx_process<T: AsyncWrite>(
                 return_chan: request.return_chan,
                 stream_id: request.stream_id,
                 request_id,
+                is_dummy,
             }) {
                 let error = rx_process_has_shutdown_rx
                     .try_recv()
@@ -235,7 +236,7 @@ async fn tx_process<T: AsyncWrite>(
 
 fn send_error_to_request(
     return_chan: oneshot::Sender<Response>,
-    stream_id: i16,
+    stream_id: Option<i16>,
     destination: SocketAddr,
     error: &str,
 ) {
@@ -273,10 +274,11 @@ async fn rx_process<T: AsyncRead>(
     // In order to handle that we have two seperate maps.
     //
     // We store the sender here if we receive from the tx_process task first
-    let mut from_tx_process: HashMap<i16, (oneshot::Sender<Response>, MessageId)> = HashMap::new();
+    let mut from_tx_process: HashMap<Option<i16>, (oneshot::Sender<Response>, MessageId)> =
+        HashMap::new();
 
     // We store the response message here if we receive from the server first.
-    let mut from_server: HashMap<i16, Message> = HashMap::new();
+    let mut from_server: HashMap<Option<i16>, Message> = HashMap::new();
 
     loop {
         tokio::select! {
@@ -289,7 +291,8 @@ async fn rx_process<T: AsyncRead>(
                                 if let Some(pushed_messages_tx) = pushed_messages_tx.as_ref() {
                                     pushed_messages_tx.send(vec![m]).ok();
                                 }
-                            } else if let Some(stream_id) = m.stream_id() {
+                            } else {
+                                let stream_id = m.stream_id();
                                 match from_tx_process.remove(&stream_id) {
                                     None => {
                                         from_server.insert(stream_id, m);
@@ -322,14 +325,21 @@ async fn rx_process<T: AsyncRead>(
                 }
             },
             original_request = return_rx.recv() => {
-                if let Some(ReturnChannel { return_chan, stream_id,request_id }) = original_request {
-                    match from_server.remove(&stream_id) {
-                        None => {
-                            from_tx_process.insert(stream_id, (return_chan, request_id));
-                        }
-                        Some(mut m) => {
-                            m.set_request_id(request_id);
-                            return_chan.send(Ok(m)).ok();
+                if let Some(ReturnChannel { return_chan, stream_id, request_id, is_dummy }) = original_request {
+                    if is_dummy {
+                        // There will be no response from the DB for this message so we need to generate a dummy response instead.
+                        let mut response = Message::from_frame(Frame::Dummy);
+                        response.set_request_id(request_id);
+                        return_chan.send(Ok(response)).ok();
+                    } else {
+                        match from_server.remove(&stream_id) {
+                            None => {
+                                from_tx_process.insert(stream_id, (return_chan, request_id));
+                            }
+                            Some(mut m) => {
+                                m.set_request_id(request_id);
+                                return_chan.send(Ok(m)).ok();
+                            }
                         }
                     }
                 } else {
@@ -346,7 +356,7 @@ async fn rx_process<T: AsyncRead>(
 
 async fn send_errors_and_shutdown(
     mut return_rx: mpsc::UnboundedReceiver<ReturnChannel>,
-    mut waiting: HashMap<i16, (oneshot::Sender<Response>, MessageId)>,
+    mut waiting: HashMap<Option<i16>, (oneshot::Sender<Response>, MessageId)>,
     rx_process_has_shutdown_tx: oneshot::Sender<String>,
     destination: SocketAddr,
     message: &str,

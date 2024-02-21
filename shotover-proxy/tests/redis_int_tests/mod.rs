@@ -334,11 +334,5 @@ async fn cluster_dr() {
     test_dr_auth().await;
     run_all_cluster_hiding(&mut connection, &mut flusher).await;
 
-    shotover
-        .shutdown_and_then_consume_events(&[EventMatcher::new()
-            .with_level(Level::Error)
-            .with_target("shotover::transforms::filter")
-            .with_message("The current filter transform implementation does not obey the current transform invariants. see https://github.com/shotover/shotover-proxy/issues/499")
-        ])
-        .await;
+    shotover.shutdown_and_then_consume_events(&[]).await;
 }

@@ -1161,7 +1161,7 @@ pub async fn test_cluster_replication(
     replication_connection: &mut ClusterConnection,
 ) {
     // According to the coalesce config the writes are only flushed to the replication cluster after 2000 total writes pass through shotover
-    for i in 0..1000 {
+    for i in 0..500 {
         // 2000 writes havent occured yet so this must be true
         assert!(
             replication_connection.get::<&str, i32>("foo").is_err(),
@@ -1189,7 +1189,7 @@ pub async fn test_cluster_replication(
     // although we do need to account for the race condition of shotover returning a response before flushing to the replication cluster
     let mut value1 = Ok(1); // These dummy values are fine because they get overwritten on the first loop
     let mut value2 = Ok(b"".to_vec());
-    for _ in 0..100 {
+    for _ in 0..200 {
         sleep(Duration::from_millis(100));
         value1 = replication_connection.get("foo");
         value2 = replication_connection.get("bar");

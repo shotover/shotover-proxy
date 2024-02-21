@@ -317,9 +317,7 @@ mod scatter_transform_tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_scatter_success() {
-        let response = vec![Message::from_frame(Frame::Redis(RedisFrame::BulkString(
-            "OK".into(),
-        )))];
+        let response = Message::from_frame(Frame::Redis(RedisFrame::BulkString("OK".into())));
 
         let wrapper = Wrapper::new_test(vec![Message::from_frame(Frame::Redis(
             RedisFrame::BulkString(Bytes::from_static(b"foo")),
