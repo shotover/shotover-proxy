@@ -9,6 +9,9 @@ use test_helpers::docker_compose::docker_compose;
 mod test_cases;
 
 #[cfg(feature = "rdkafka-driver-tests")]
+use test_helpers::connection::kafka::KafkaConnectionBuilder;
+
+#[cfg(feature = "rdkafka-driver-tests")]
 #[tokio::test]
 async fn passthrough_standard() {
     let _docker_compose =
@@ -17,7 +20,8 @@ async fn passthrough_standard() {
         .start()
         .await;
 
-    test_cases::basic("127.0.0.1:9192").await;
+    let connection_builder = KafkaConnectionBuilder::new("127.0.0.1:9192");
+    test_cases::basic(connection_builder).await;
 
     tokio::time::timeout(
         Duration::from_secs(10),
@@ -38,7 +42,8 @@ async fn passthrough_tls() {
         .start()
         .await;
 
-    test_cases::basic("127.0.0.1:9192").await;
+    let connection_builder = KafkaConnectionBuilder::new("127.0.0.1:9192");
+    test_cases::basic(connection_builder).await;
 
     tokio::time::timeout(
         Duration::from_secs(10),
@@ -57,7 +62,8 @@ async fn passthrough_encode() {
         .start()
         .await;
 
-    test_cases::basic("127.0.0.1:9192").await;
+    let connection_builder = KafkaConnectionBuilder::new("127.0.0.1:9192");
+    test_cases::basic(connection_builder).await;
 
     shotover.shutdown_and_then_consume_events(&[]).await;
 }
@@ -71,7 +77,9 @@ async fn passthrough_sasl() {
         .start()
         .await;
 
-    test_cases::basic_sasl("127.0.0.1:9192").await;
+    let connection_builder =
+        KafkaConnectionBuilder::new("127.0.0.1:9192").use_sasl("user", "password");
+    test_cases::basic(connection_builder).await;
 
     shotover.shutdown_and_then_consume_events(&[]).await;
 }
@@ -86,7 +94,9 @@ async fn passthrough_sasl_encode() {
             .start()
             .await;
 
-    test_cases::basic_sasl("127.0.0.1:9192").await;
+    let connection_builder =
+        KafkaConnectionBuilder::new("127.0.0.1:9192").use_sasl("user", "password");
+    test_cases::basic(connection_builder).await;
 
     shotover.shutdown_and_then_consume_events(&[]).await;
 }
@@ -99,7 +109,8 @@ async fn cluster_single_shotover() {
         .start()
         .await;
 
-    test_cases::basic("127.0.0.1:9192").await;
+    let connection_builder = KafkaConnectionBuilder::new("127.0.0.1:9192");
+    test_cases::basic(connection_builder).await;
 
     tokio::time::timeout(
         Duration::from_secs(10),
@@ -128,7 +139,8 @@ async fn cluster_multi_shotover() {
         );
     }
 
-    test_cases::basic("127.0.0.1:9192").await;
+    let connection_builder = KafkaConnectionBuilder::new("127.0.0.1:9192");
+    test_cases::basic(connection_builder).await;
 
     for shotover in shotovers {
         tokio::time::timeout(
