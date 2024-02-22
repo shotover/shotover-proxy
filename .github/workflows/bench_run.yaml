@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-20.04
     name: Benchmarks
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - uses: Swatinem/rust-cache@v2
       with:
         # PRs do not share caches, instead each PR initially pulls from the cache of the main branch for the first run.
@@ -27,7 +27,7 @@ jobs:
         shared-key: "ubuntu-20.04 - --release-build_check_and_upload"
         save-if: false
     - name: cache custom ubuntu packages
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       with:
         path: shotover-proxy/build/packages
         key: ubuntu-20.04-packages
@@ -36,7 +36,7 @@ jobs:
     - name: Run benchmarks
       run: shotover-proxy/tests/scripts/bench_against_master.sh ${{ github.event.number }}
     - name: Upload comment artifact
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v4
       with:
         name: comment_info
         path: comment_info/
