@@ -3,10 +3,11 @@ use cassandra_protocol::compression::Compression;
 use cassandra_protocol::{consistency::Consistency, frame::Version, query::QueryParams};
 use criterion::{criterion_group, BatchSize, Criterion};
 use hex_literal::hex;
+use shotover::codec::CodecState;
 use shotover::frame::cassandra::{parse_statement_single, Tracing};
 use shotover::frame::RedisFrame;
 use shotover::frame::{CassandraFrame, CassandraOperation, Frame};
-use shotover::message::{Message, MessageIdMap, ProtocolType, QueryType};
+use shotover::message::{Message, MessageIdMap, QueryType};
 use shotover::transforms::cassandra::peers_rewrite::CassandraPeersRewrite;
 use shotover::transforms::chain::{TransformChain, TransformChainBuilder};
 use shotover::transforms::debug::returner::{DebugReturner, Response};
@@ -210,7 +211,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                     )
                     .to_vec(),
                 ),
-                ProtocolType::Cassandra {
+                CodecState::Cassandra {
                     compression: Compression::None,
                 },
             )],
@@ -264,7 +265,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                 }
                 .encode(Compression::None)
                 .into(),
-                ProtocolType::Cassandra {
+                CodecState::Cassandra {
                     compression: Compression::None,
                 },
             )],

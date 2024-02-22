@@ -1,4 +1,5 @@
 use super::{CodecBuilder, CodecReadError, CodecWriteError, Direction};
+use crate::codec::CodecState;
 use crate::frame::cassandra::{CassandraMetadata, CassandraOperation, Tracing};
 use crate::frame::{CassandraFrame, Frame, MessageType};
 use crate::message::{Encodable, Message, Messages, Metadata};
@@ -358,7 +359,7 @@ impl CassandraDecoder {
 
                 let message = Message::from_bytes_at_instant(
                     bytes.freeze(),
-                    crate::message::ProtocolType::Cassandra {
+                    CodecState::Cassandra {
                         compression: if compressed {
                             compression
                         } else {
@@ -510,7 +511,7 @@ impl CassandraDecoder {
 
             envelopes.push(Message::from_bytes_at_instant(
                 envelope,
-                crate::message::ProtocolType::Cassandra {
+                CodecState::Cassandra {
                     compression: Compression::None,
                 },
                 Some(received_at),

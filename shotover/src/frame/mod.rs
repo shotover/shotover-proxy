@@ -1,6 +1,6 @@
 //! parsed AST-like representations of messages
 
-use crate::{codec::CodecState, message::ProtocolType};
+use crate::codec::CodecState;
 use anyhow::{anyhow, Result};
 use bytes::Bytes;
 #[cfg(feature = "cassandra")]
@@ -33,9 +33,9 @@ pub enum MessageType {
     Cassandra,
     #[cfg(feature = "kafka")]
     Kafka,
-    Dummy,
     #[cfg(feature = "opensearch")]
     OpenSearch,
+    Dummy,
 }
 
 impl MessageType {
@@ -68,17 +68,18 @@ impl MessageType {
     }
 }
 
-impl From<&ProtocolType> for MessageType {
-    fn from(value: &ProtocolType) -> Self {
+impl From<&CodecState> for MessageType {
+    fn from(value: &CodecState) -> Self {
         match value {
             #[cfg(feature = "cassandra")]
-            ProtocolType::Cassandra { .. } => Self::Cassandra,
+            CodecState::Cassandra { .. } => Self::Cassandra,
             #[cfg(feature = "redis")]
-            ProtocolType::Redis => Self::Redis,
+            CodecState::Redis => Self::Redis,
             #[cfg(feature = "kafka")]
-            ProtocolType::Kafka { .. } => Self::Kafka,
+            CodecState::Kafka { .. } => Self::Kafka,
             #[cfg(feature = "opensearch")]
-            ProtocolType::OpenSearch => Self::OpenSearch,
+            CodecState::OpenSearch => Self::OpenSearch,
+            CodecState::Dummy => Self::Dummy,
         }
     }
 }
