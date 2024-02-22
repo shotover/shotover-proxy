@@ -1,7 +1,5 @@
 //! Message and supporting types - used to hold a message/query/result going between the client and database
 
-#[cfg(feature = "kafka")]
-use crate::codec::kafka::RequestHeader;
 use crate::codec::CodecState;
 #[cfg(feature = "cassandra")]
 use crate::frame::{cassandra, cassandra::CassandraMetadata};
@@ -10,8 +8,6 @@ use crate::frame::{redis::redis_query_type, RedisFrame};
 use crate::frame::{Frame, MessageType};
 use anyhow::{anyhow, Context, Result};
 use bytes::Bytes;
-#[cfg(feature = "cassandra")]
-use cassandra_protocol::compression::Compression;
 use derivative::Derivative;
 use fnv::FnvBuildHasher;
 use nonzero_ext::nonzero;
@@ -32,39 +28,6 @@ pub enum Metadata {
     Kafka,
     #[cfg(feature = "opensearch")]
     OpenSearch,
-}
-
-#[derive(PartialEq)]
-pub enum ProtocolType {
-    #[cfg(feature = "cassandra")]
-    Cassandra { compression: Compression },
-    #[cfg(feature = "redis")]
-    Redis,
-    #[cfg(feature = "kafka")]
-    Kafka {
-        request_header: Option<RequestHeader>,
-    },
-    #[cfg(feature = "opensearch")]
-    OpenSearch,
-}
-
-impl From<&ProtocolType> for CodecState {
-    fn from(value: &ProtocolType) -> Self {
-        match value {
-            #[cfg(feature = "cassandra")]
-            ProtocolType::Cassandra { compression } => Self::Cassandra {
-                compression: *compression,
-            },
-            #[cfg(feature = "redis")]
-            ProtocolType::Redis => Self::Redis,
-            #[cfg(feature = "kafka")]
-            ProtocolType::Kafka { request_header } => Self::Kafka {
-                request_header: *request_header,
-            },
-            #[cfg(feature = "opensearch")]
-            ProtocolType::OpenSearch => Self::OpenSearch,
-        }
-    }
 }
 
 pub type Messages = Vec<Message>;
@@ -121,16 +84,16 @@ impl Message {
     /// Providing just the bytes results in better performance when only the raw bytes are available.
     pub fn from_bytes_at_instant(
         bytes: Bytes,
-        protocol_type: ProtocolType,
+        codec_state: CodecState,
         received_from_source_or_sink_at: Option<Instant>,
     ) -> Self {
         Message {
             inner: Some(MessageInner::RawBytes {
                 bytes,
-                message_type: MessageType::from(&protocol_type),
+                message_type: MessageType::from(&codec_state),
             }),
             meta_timestamp: None,
-            codec_state: CodecState::from(&protocol_type),
+            codec_state,
             received_from_source_or_sink_at,
             id: rand::random(),
             request_id: None,
@@ -173,8 +136,8 @@ impl Message {
     }
 
     /// Same as [`Message::from_bytes`] but `received_from_source_or_sink_at` is set to None.
-    pub fn from_bytes(bytes: Bytes, protocol_type: ProtocolType) -> Self {
-        Self::from_bytes_at_instant(bytes, protocol_type, None)
+    pub fn from_bytes(bytes: Bytes, codec_state: CodecState) -> Self {
+        Self::from_bytes_at_instant(bytes, codec_state, None)
     }
 
     /// Same as [`Message::from_frame`] but `received_from_source_or_sink_at` is set to None.
