@@ -9,9 +9,6 @@ mod test_tracing;
 use anyhow::{anyhow, Result};
 use subprocess::{Exec, Redirection};
 
-#[cfg(feature = "rdkafka-driver-tests")]
-pub use rdkafka;
-
 /// Runs a command and returns the output as a string.
 ///
 /// Both stderr and stdout are returned in the result.
