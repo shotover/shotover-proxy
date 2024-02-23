@@ -103,9 +103,10 @@ async fn passthrough_sasl_encode() {
 
 #[cfg(feature = "rdkafka-driver-tests")]
 #[tokio::test]
-async fn cluster_single_shotover() {
-    let _docker_compose = docker_compose("tests/test-configs/kafka/cluster/docker-compose.yaml");
-    let shotover = shotover_process("tests/test-configs/kafka/cluster/topology-single.yaml")
+async fn cluster_1_rack_single_shotover() {
+    let _docker_compose =
+        docker_compose("tests/test-configs/kafka/cluster-1-rack/docker-compose.yaml");
+    let shotover = shotover_process("tests/test-configs/kafka/cluster-1-rack/topology-single.yaml")
         .start()
         .await;
 
@@ -122,13 +123,70 @@ async fn cluster_single_shotover() {
 
 #[cfg(feature = "rdkafka-driver-tests")]
 #[tokio::test]
-async fn cluster_multi_shotover() {
-    let _docker_compose = docker_compose("tests/test-configs/kafka/cluster/docker-compose.yaml");
+async fn cluster_1_rack_multi_shotover() {
+    let _docker_compose =
+        docker_compose("tests/test-configs/kafka/cluster-1-rack/docker-compose.yaml");
     let mut shotovers = vec![];
     for i in 1..4 {
         shotovers.push(
             shotover_process(&format!(
-                "tests/test-configs/kafka/cluster/topology{i}.yaml"
+                "tests/test-configs/kafka/cluster-1-rack/topology{i}.yaml"
+            ))
+            .with_config(&format!(
+                "tests/test-configs/shotover-config/config{i}.yaml"
+            ))
+            .with_log_name(&format!("shotover{i}"))
+            .start()
+            .await,
+        );
+    }
+
+    let connection_builder = KafkaConnectionBuilder::new("127.0.0.1:9192");
+    test_cases::basic(connection_builder).await;
+
+    for shotover in shotovers {
+        tokio::time::timeout(
+            Duration::from_secs(10),
+            shotover.shutdown_and_then_consume_events(&[]),
+        )
+        .await
+        .expect("Shotover did not shutdown within 10s");
+    }
+}
+
+#[cfg(feature = "rdkafka-driver-tests")]
+#[tokio::test]
+async fn cluster_2_racks_single_shotover() {
+    let _docker_compose =
+        docker_compose("tests/test-configs/kafka/cluster-2-racks/docker-compose.yaml");
+    let shotover =
+        shotover_process("tests/test-configs/kafka/cluster-2-racks/topology-single.yaml")
+            .start()
+            .await;
+
+    let connection_builder = KafkaConnectionBuilder::new("127.0.0.1:9192");
+    test_cases::basic(connection_builder).await;
+
+    tokio::time::timeout(
+        Duration::from_secs(10),
+        shotover.shutdown_and_then_consume_events(&[]),
+    )
+    .await
+    .expect("Shotover did not shutdown within 10s");
+}
+
+#[cfg(feature = "rdkafka-driver-tests")]
+#[tokio::test]
+async fn cluster_2_racks_multi_shotover() {
+    let _docker_compose =
+        docker_compose("tests/test-configs/kafka/cluster-2-racks/docker-compose.yaml");
+
+    // One shotover instance per rack
+    let mut shotovers = vec![];
+    for i in 1..3 {
+        shotovers.push(
+            shotover_process(&format!(
+                "tests/test-configs/kafka/cluster-2-racks/topology-rack{i}.yaml"
             ))
             .with_config(&format!(
                 "tests/test-configs/shotover-config/config{i}.yaml"
