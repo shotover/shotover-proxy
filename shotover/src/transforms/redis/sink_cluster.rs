@@ -7,7 +7,9 @@ use crate::transforms::redis::RedisError;
 use crate::transforms::redis::TransformError;
 use crate::transforms::util::cluster_connection_pool::{Authenticator, ConnectionPool};
 use crate::transforms::util::{Request, Response};
-use crate::transforms::{ResponseFuture, Transform, TransformBuilder, TransformConfig, Wrapper};
+use crate::transforms::{
+    ResponseFuture, Transform, TransformBuilder, TransformConfig, TransformContextConfig, Wrapper,
+};
 use anyhow::{anyhow, bail, ensure, Context, Result};
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -48,7 +50,10 @@ const NAME: &str = "RedisSinkCluster";
 #[typetag::serde(name = "RedisSinkCluster")]
 #[async_trait(?Send)]
 impl TransformConfig for RedisSinkClusterConfig {
-    async fn get_builder(&self, chain_name: String) -> Result<Box<dyn TransformBuilder>> {
+    async fn get_builder(
+        &self,
+        transform_context: TransformContextConfig,
+    ) -> Result<Box<dyn TransformBuilder>> {
         let connection_pool = ConnectionPool::new_with_auth(
             Duration::from_millis(self.connect_timeout_ms),
             RedisCodecBuilder::new(Direction::Sink, "RedisSinkCluster".to_owned()),
@@ -60,7 +65,7 @@ impl TransformConfig for RedisSinkClusterConfig {
             direct_destination: self.direct_destination.clone(),
             connection_count: self.connection_count.unwrap_or(1),
             connection_pool,
-            chain_name,
+            chain_name: transform_context.chain_name,
             shared_topology: Arc::new(RwLock::new(Topology::new())),
         }))
     }

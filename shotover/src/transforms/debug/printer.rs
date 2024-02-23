@@ -1,5 +1,7 @@
 use crate::message::Messages;
-use crate::transforms::{Transform, TransformBuilder, TransformConfig, Wrapper};
+use crate::transforms::{
+    Transform, TransformBuilder, TransformConfig, TransformContextConfig, Wrapper,
+};
 use anyhow::Result;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -13,7 +15,10 @@ const NAME: &str = "DebugPrinter";
 #[typetag::serde(name = "DebugPrinter")]
 #[async_trait(?Send)]
 impl TransformConfig for DebugPrinterConfig {
-    async fn get_builder(&self, _chain_name: String) -> Result<Box<dyn TransformBuilder>> {
+    async fn get_builder(
+        &self,
+        _transform_context: TransformContextConfig,
+    ) -> Result<Box<dyn TransformBuilder>> {
         Ok(Box::new(DebugPrinter::new()))
     }
 }

@@ -8,6 +8,8 @@ use metrics::counter;
 use serde::Deserialize;
 use serde::Serialize;
 
+use super::TransformContextConfig;
+
 #[derive(Debug, Clone)]
 pub struct QueryCounter {
     counter_name: String,
@@ -85,7 +87,10 @@ const NAME: &str = "QueryCounter";
 #[typetag::serde(name = "QueryCounter")]
 #[async_trait(?Send)]
 impl TransformConfig for QueryCounterConfig {
-    async fn get_builder(&self, _chain_name: String) -> Result<Box<dyn TransformBuilder>> {
+    async fn get_builder(
+        &self,
+        _transform_context: TransformContextConfig,
+    ) -> Result<Box<dyn TransformBuilder>> {
         Ok(Box::new(QueryCounter::new(self.name.clone())))
     }
 }

@@ -1,3 +1,4 @@
+use super::TransformContextConfig;
 use crate::message::Messages;
 use crate::transforms::{Transform, TransformBuilder, TransformConfig, Wrapper};
 use anyhow::Result;
@@ -12,7 +13,10 @@ const NAME: &str = "NullSink";
 #[typetag::serde(name = "NullSink")]
 #[async_trait(?Send)]
 impl TransformConfig for NullSinkConfig {
-    async fn get_builder(&self, _chain_name: String) -> Result<Box<dyn TransformBuilder>> {
+    async fn get_builder(
+        &self,
+        _transform_context: TransformContextConfig,
+    ) -> Result<Box<dyn TransformBuilder>> {
         Ok(Box::new(NullSink {}))
     }
 }

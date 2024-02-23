@@ -7,7 +7,7 @@ use crate::tls::{TlsConnector, TlsConnectorConfig};
 use crate::transforms::kafka::common::produce_channel;
 use crate::transforms::util::cluster_connection_pool::{spawn_read_write_tasks, Connection};
 use crate::transforms::util::{Request, Response};
-use crate::transforms::{Transform, TransformBuilder, Wrapper};
+use crate::transforms::{Transform, TransformBuilder, TransformContextConfig, Wrapper};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -33,11 +33,14 @@ const NAME: &str = "KafkaSinkSingle";
 #[typetag::serde(name = "KafkaSinkSingle")]
 #[async_trait(?Send)]
 impl TransformConfig for KafkaSinkSingleConfig {
-    async fn get_builder(&self, chain_name: String) -> Result<Box<dyn TransformBuilder>> {
+    async fn get_builder(
+        &self,
+        transform_context: TransformContextConfig,
+    ) -> Result<Box<dyn TransformBuilder>> {
         let tls = self.tls.clone().map(TlsConnector::new).transpose()?;
         Ok(Box::new(KafkaSinkSingleBuilder::new(
             self.destination_port,
-            chain_name,
+            transform_context.chain_name,
             self.connect_timeout_ms,
             self.read_timeout,
             tls,

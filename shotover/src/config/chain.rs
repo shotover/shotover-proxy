@@ -1,5 +1,5 @@
 use crate::transforms::chain::TransformChainBuilder;
-use crate::transforms::{TransformBuilder, TransformConfig};
+use crate::transforms::{TransformBuilder, TransformConfig, TransformContextConfig};
 use anyhow::Result;
 use serde::de::{DeserializeSeed, Deserializer, MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Serialize};
@@ -14,12 +14,18 @@ pub struct TransformChainConfig(
 );
 
 impl TransformChainConfig {
-    pub async fn get_builder(&self, name: String) -> Result<TransformChainBuilder> {
+    pub async fn get_builder(
+        &self,
+        transform_context: TransformContextConfig,
+    ) -> Result<TransformChainBuilder> {
         let mut transforms: Vec<Box<dyn TransformBuilder>> = Vec::new();
         for tc in &self.0 {
-            transforms.push(tc.get_builder(name.clone()).await?)
+            transforms.push(tc.get_builder(transform_context.clone()).await?)
         }
-        Ok(TransformChainBuilder::new(transforms, name.leak()))
+        Ok(TransformChainBuilder::new(
+            transforms,
+            transform_context.chain_name.leak(),
+        ))
     }
 }
 
