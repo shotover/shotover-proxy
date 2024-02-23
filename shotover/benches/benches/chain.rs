@@ -5,8 +5,8 @@ use criterion::{criterion_group, BatchSize, Criterion};
 use hex_literal::hex;
 use shotover::codec::CodecState;
 use shotover::frame::cassandra::{parse_statement_single, Tracing};
-use shotover::frame::RedisFrame;
 use shotover::frame::{CassandraFrame, CassandraOperation, Frame};
+use shotover::frame::{MessageType, RedisFrame};
 use shotover::message::{Message, MessageIdMap, QueryType};
 use shotover::transforms::cassandra::peers_rewrite::CassandraPeersRewrite;
 use shotover::transforms::chain::{TransformChain, TransformChainBuilder};
@@ -19,7 +19,7 @@ use shotover::transforms::protect::{KeyManagerConfig, ProtectConfig};
 use shotover::transforms::redis::cluster_ports_rewrite::RedisClusterPortsRewrite;
 use shotover::transforms::redis::timestamp_tagging::RedisTimestampTagger;
 use shotover::transforms::throttling::RequestThrottlingConfig;
-use shotover::transforms::{TransformConfig, Wrapper};
+use shotover::transforms::{TransformConfig, TransformContextConfig, Wrapper};
 
 fn criterion_benchmark(c: &mut Criterion) {
     crate::init();
@@ -194,7 +194,10 @@ fn criterion_benchmark(c: &mut Criterion) {
                         // an absurdly large value is given so that all messages will pass through
                         max_requests_per_second: std::num::NonZeroU32::new(100_000_000).unwrap(),
                     }
-                    .get_builder("".to_owned()),
+                    .get_builder(TransformContextConfig {
+                        chain_name: "".into(),
+                        protocol: MessageType::Redis,
+                    }),
                 )
                 .unwrap(),
                 Box::<NullSink>::default(),
@@ -303,7 +306,10 @@ fn criterion_benchmark(c: &mut Criterion) {
                             kek_id: "".to_string(),
                         },
                     }
-                    .get_builder("".to_owned()),
+                    .get_builder(TransformContextConfig {
+                        chain_name: "".into(),
+                        protocol: MessageType::Redis,
+                    }),
                 )
                 .unwrap(),
                 Box::<NullSink>::default(),

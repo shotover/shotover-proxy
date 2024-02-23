@@ -4,7 +4,7 @@ use crate::message::{Message, Messages};
 use crate::sources::Transport;
 use crate::tls::{AcceptError, TlsAcceptor};
 use crate::transforms::chain::{TransformChain, TransformChainBuilder};
-use crate::transforms::Wrapper;
+use crate::transforms::{TransformContextConfig, Wrapper};
 use anyhow::{anyhow, Context, Result};
 use bytes::BytesMut;
 use futures::future::join_all;
@@ -92,8 +92,12 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
             gauge!("shotover_available_connections_count", "source" => source_name.clone());
         available_connections_gauge.set(limit_connections.available_permits() as f64);
 
+        let chain_usage_config = TransformContextConfig {
+            chain_name: source_name.clone(),
+            protocol: codec.protocol(),
+        };
         let chain_builder = chain_config
-            .get_builder(source_name.clone())
+            .get_builder(chain_usage_config)
             .await
             .map_err(|x| vec![format!("{x:?}")])?;
 

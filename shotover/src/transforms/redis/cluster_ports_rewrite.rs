@@ -1,6 +1,7 @@
 use crate::frame::Frame;
 use crate::frame::RedisFrame;
 use crate::message::{MessageIdMap, Messages};
+use crate::transforms::TransformContextConfig;
 use crate::transforms::{Transform, TransformBuilder, TransformConfig, Wrapper};
 use anyhow::{anyhow, bail, Context, Result};
 use async_trait::async_trait;
@@ -18,7 +19,10 @@ const NAME: &str = "RedisClusterPortsRewrite";
 #[typetag::serde(name = "RedisClusterPortsRewrite")]
 #[async_trait(?Send)]
 impl TransformConfig for RedisClusterPortsRewriteConfig {
-    async fn get_builder(&self, _chain_name: String) -> Result<Box<dyn TransformBuilder>> {
+    async fn get_builder(
+        &self,
+        _transform_context: TransformContextConfig,
+    ) -> Result<Box<dyn TransformBuilder>> {
         Ok(Box::new(RedisClusterPortsRewrite::new(self.new_port)))
     }
 }
