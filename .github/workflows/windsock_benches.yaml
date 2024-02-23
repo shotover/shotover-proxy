@@ -20,7 +20,7 @@ jobs:
     name: "Windsock benches"
     runs-on: ubuntu-22.04
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - uses: Swatinem/rust-cache@v2
       with:
         # this line means that only the main branch writes to the cache
