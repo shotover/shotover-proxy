@@ -55,6 +55,28 @@ async fn passthrough_tls() {
 
 #[cfg(feature = "rdkafka-driver-tests")]
 #[tokio::test]
+async fn cluster_tls() {
+    test_helpers::cert::generate_kafka_test_certs();
+
+    let _docker_compose =
+        docker_compose("tests/test-configs/kafka/cluster-tls/docker-compose.yaml");
+    let shotover = shotover_process("tests/test-configs/kafka/cluster-tls/topology.yaml")
+        .start()
+        .await;
+
+    let connection_builder = KafkaConnectionBuilder::new("127.0.0.1:9192");
+    test_cases::basic(connection_builder).await;
+
+    tokio::time::timeout(
+        Duration::from_secs(10),
+        shotover.shutdown_and_then_consume_events(&[]),
+    )
+    .await
+    .expect("Shotover did not shutdown within 10s");
+}
+
+#[cfg(feature = "rdkafka-driver-tests")]
+#[tokio::test]
 async fn passthrough_encode() {
     let _docker_compose =
         docker_compose("tests/test-configs/kafka/passthrough/docker-compose.yaml");

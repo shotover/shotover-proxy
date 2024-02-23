@@ -114,21 +114,13 @@ impl Transform for KafkaSinkSingle {
     async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Messages> {
         if self.outbound.is_none() {
             let codec = KafkaCodecBuilder::new(Direction::Sink, "KafkaSinkSingle".to_owned());
+            let address = (requests_wrapper.local_addr.ip(), self.address_port);
             if let Some(tls) = self.tls.as_mut() {
-                let tls_stream = tls
-                    .connect(
-                        self.connect_timeout,
-                        (requests_wrapper.local_addr.ip(), self.address_port),
-                    )
-                    .await?;
+                let tls_stream = tls.connect(self.connect_timeout, address).await?;
                 let (rx, tx) = split(tls_stream);
                 self.outbound = Some(spawn_read_write_tasks(&codec, rx, tx));
             } else {
-                let tcp_stream = tcp::tcp_stream(
-                    self.connect_timeout,
-                    (requests_wrapper.local_addr.ip(), self.address_port),
-                )
-                .await?;
+                let tcp_stream = tcp::tcp_stream(self.connect_timeout, address).await?;
                 let (rx, tx) = tcp_stream.into_split();
                 self.outbound = Some(spawn_read_write_tasks(&codec, rx, tx));
             }

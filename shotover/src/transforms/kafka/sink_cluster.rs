@@ -4,6 +4,7 @@ use crate::frame::kafka::{strbytes, KafkaFrame, RequestBody, ResponseBody};
 use crate::frame::Frame;
 use crate::message::{Message, Messages};
 use crate::tcp;
+use crate::tls::{TlsConnector, TlsConnectorConfig};
 use crate::transforms::util::cluster_connection_pool::{spawn_read_write_tasks, Connection};
 use crate::transforms::util::{Request, Response};
 use crate::transforms::{Transform, TransformBuilder, Wrapper};
@@ -29,6 +30,7 @@ use std::net::SocketAddr;
 use std::sync::atomic::AtomicI64;
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::io::split;
 use tokio::sync::{mpsc, oneshot, RwLock};
 use tokio::time::timeout;
 
@@ -39,6 +41,7 @@ pub struct KafkaSinkClusterConfig {
     pub shotover_nodes: Vec<String>,
     pub connect_timeout_ms: u64,
     pub read_timeout: Option<u64>,
+    pub tls: Option<TlsConnectorConfig>,
 }
 
 const NAME: &str = "KafkaSinkCluster";
@@ -49,12 +52,14 @@ impl TransformConfig for KafkaSinkClusterConfig {
         &self,
         transform_context: TransformContextConfig,
     ) -> Result<Box<dyn TransformBuilder>> {
+        let tls = self.tls.clone().map(TlsConnector::new).transpose()?;
         Ok(Box::new(KafkaSinkClusterBuilder::new(
             self.first_contact_points.clone(),
             self.shotover_nodes.clone(),
             transform_context.chain_name,
             self.connect_timeout_ms,
             self.read_timeout,
+            tls,
         )))
     }
 }
@@ -69,6 +74,7 @@ pub struct KafkaSinkClusterBuilder {
     group_to_coordinator_broker: Arc<DashMap<GroupId, BrokerId>>,
     topics: Arc<DashMap<TopicName, Topic>>,
     nodes_shared: Arc<RwLock<Vec<KafkaNode>>>,
+    tls: Option<TlsConnector>,
 }
 
 impl KafkaSinkClusterBuilder {
@@ -78,6 +84,7 @@ impl KafkaSinkClusterBuilder {
         _chain_name: String,
         connect_timeout_ms: u64,
         timeout: Option<u64>,
+        tls: Option<TlsConnector>,
     ) -> KafkaSinkClusterBuilder {
         let receive_timeout = timeout.map(Duration::from_secs);
 
@@ -101,6 +108,7 @@ impl KafkaSinkClusterBuilder {
             group_to_coordinator_broker: Arc::new(DashMap::new()),
             topics: Arc::new(DashMap::new()),
             nodes_shared: Arc::new(RwLock::new(vec![])),
+            tls,
         }
     }
 }
@@ -119,6 +127,7 @@ impl TransformBuilder for KafkaSinkClusterBuilder {
             group_to_coordinator_broker: self.group_to_coordinator_broker.clone(),
             topics: self.topics.clone(),
             rng: SmallRng::from_rng(rand::thread_rng()).unwrap(),
+            tls: self.tls.clone(),
         })
     }
 
@@ -165,6 +174,7 @@ pub struct KafkaSinkCluster {
     group_to_coordinator_broker: Arc<DashMap<GroupId, BrokerId>>,
     topics: Arc<DashMap<TopicName, Topic>>,
     rng: SmallRng,
+    tls: Option<TlsConnector>,
 }
 
 #[async_trait]
@@ -336,8 +346,11 @@ impl KafkaSinkCluster {
                             as usize];
                         for node in &mut self.nodes {
                             if node.broker_id == partition.leader_id {
-                                connection =
-                                    Some(node.get_connection(self.connect_timeout).await?.clone());
+                                connection = Some(
+                                    node.get_connection(self.connect_timeout, &self.tls)
+                                        .await?
+                                        .clone(),
+                                );
                             }
                         }
                     }
@@ -348,7 +361,7 @@ impl KafkaSinkCluster {
                             self.nodes
                                 .choose_mut(&mut self.rng)
                                 .unwrap()
-                                .get_connection(self.connect_timeout)
+                                .get_connection(self.connect_timeout, &self.tls)
                                 .await?
                                 .clone()
                         }
@@ -388,7 +401,7 @@ impl KafkaSinkCluster {
                             .filter(|node| partition.replica_nodes.contains(&node.broker_id))
                             .choose(&mut self.rng)
                             .unwrap()
-                            .get_connection(self.connect_timeout)
+                            .get_connection(self.connect_timeout, &self.tls)
                             .await?
                             .clone()
                     } else {
@@ -397,7 +410,7 @@ impl KafkaSinkCluster {
                         self.nodes
                             .choose_mut(&mut self.rng)
                             .unwrap()
-                            .get_connection(self.connect_timeout)
+                            .get_connection(self.connect_timeout, &self.tls)
                             .await?
                             .clone()
                     };
@@ -461,7 +474,7 @@ impl KafkaSinkCluster {
                         .nodes
                         .choose_mut(&mut self.rng)
                         .unwrap()
-                        .get_connection(self.connect_timeout)
+                        .get_connection(self.connect_timeout, &self.tls)
                         .await?;
                     let (tx, rx) = oneshot::channel();
                     connection
@@ -498,7 +511,7 @@ impl KafkaSinkCluster {
             .nodes
             .choose_mut(&mut self.rng)
             .unwrap()
-            .get_connection(self.connect_timeout)
+            .get_connection(self.connect_timeout, &self.tls)
             .await?;
         let (tx, rx) = oneshot::channel();
         connection
@@ -556,7 +569,7 @@ impl KafkaSinkCluster {
             .nodes
             .choose_mut(&mut self.rng)
             .unwrap()
-            .get_connection(self.connect_timeout)
+            .get_connection(self.connect_timeout, &self.tls)
             .await?;
         let (tx, rx) = oneshot::channel();
         connection
@@ -665,13 +678,15 @@ impl KafkaSinkCluster {
         let connection = if let Some(node) =
             self.nodes.iter_mut().find(|x| x.broker_id == *broker_id)
         {
-            node.get_connection(self.connect_timeout).await?.clone()
+            node.get_connection(self.connect_timeout, &self.tls)
+                .await?
+                .clone()
         } else {
             tracing::warn!("no known broker with id {broker_id:?}, routing message to a random node so that a NOT_CONTROLLER or similar error is returned to the client");
             self.nodes
                 .choose_mut(&mut self.rng)
                 .unwrap()
-                .get_connection(self.connect_timeout)
+                .get_connection(self.connect_timeout, &self.tls)
                 .await?
                 .clone()
         };
@@ -695,7 +710,11 @@ impl KafkaSinkCluster {
         for node in &mut self.nodes {
             if let Some(broker_id) = self.group_to_coordinator_broker.get(&group_id) {
                 if node.broker_id == *broker_id {
-                    connection = Some(node.get_connection(self.connect_timeout).await?.clone());
+                    connection = Some(
+                        node.get_connection(self.connect_timeout, &self.tls)
+                            .await?
+                            .clone(),
+                    );
                 }
             }
         }
@@ -706,7 +725,7 @@ impl KafkaSinkCluster {
                 self.nodes
                     .choose_mut(&mut self.rng)
                     .unwrap()
-                    .get_connection(self.connect_timeout)
+                    .get_connection(self.connect_timeout, &self.tls)
                     .await?
                     .clone()
             }
@@ -873,19 +892,26 @@ struct KafkaNode {
 }
 
 impl KafkaNode {
-    async fn get_connection(&mut self, connect_timeout: Duration) -> Result<&Connection> {
+    async fn get_connection(
+        &mut self,
+        connect_timeout: Duration,
+        tls: &Option<TlsConnector>,
+    ) -> Result<&Connection> {
         if self.connection.is_none() {
             let codec = KafkaCodecBuilder::new(Direction::Sink, "KafkaSinkCluster".to_owned());
-            let tcp_stream = tcp::tcp_stream(
-                connect_timeout,
-                (
-                    self.kafka_address.host.to_string(),
-                    self.kafka_address.port as u16,
-                ),
-            )
-            .await?;
-            let (rx, tx) = tcp_stream.into_split();
-            self.connection = Some(spawn_read_write_tasks(&codec, rx, tx));
+            let address = (
+                self.kafka_address.host.to_string(),
+                self.kafka_address.port as u16,
+            );
+            if let Some(tls) = tls.as_ref() {
+                let tls_stream = tls.connect(connect_timeout, address).await?;
+                let (rx, tx) = split(tls_stream);
+                self.connection = Some(spawn_read_write_tasks(&codec, rx, tx));
+            } else {
+                let tcp_stream = tcp::tcp_stream(connect_timeout, address).await?;
+                let (rx, tx) = tcp_stream.into_split();
+                self.connection = Some(spawn_read_write_tasks(&codec, rx, tx));
+            }
         }
         Ok(self.connection.as_ref().unwrap())
     }
