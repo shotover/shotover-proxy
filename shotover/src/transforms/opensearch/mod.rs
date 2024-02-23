@@ -1,3 +1,4 @@
+use super::TransformContextConfig;
 use crate::tcp;
 use crate::transforms::{Messages, Transform, TransformBuilder, TransformConfig, Wrapper};
 use crate::{
@@ -25,10 +26,13 @@ const NAME: &str = "OpenSearchSinkSingle";
 #[typetag::serde(name = "OpenSearchSinkSingle")]
 #[async_trait(?Send)]
 impl TransformConfig for OpenSearchSinkSingleConfig {
-    async fn get_builder(&self, chain_name: String) -> Result<Box<dyn TransformBuilder>> {
+    async fn get_builder(
+        &self,
+        transform_context: TransformContextConfig,
+    ) -> Result<Box<dyn TransformBuilder>> {
         Ok(Box::new(OpenSearchSinkSingleBuilder::new(
             self.address.clone(),
-            chain_name,
+            transform_context.chain_name,
             self.connect_timeout_ms,
         )))
     }

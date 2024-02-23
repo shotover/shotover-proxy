@@ -1,12 +1,15 @@
-use crate::codec::{
-    redis::{RedisCodecBuilder, RedisDecoder, RedisEncoder},
-    CodecBuilder, CodecReadError, Direction,
-};
 use crate::frame::{Frame, RedisFrame};
 use crate::message::{Message, Messages};
 use crate::tcp;
 use crate::tls::{AsyncStream, TlsConnector, TlsConnectorConfig};
 use crate::transforms::{Transform, TransformBuilder, TransformConfig, Wrapper};
+use crate::{
+    codec::{
+        redis::{RedisCodecBuilder, RedisDecoder, RedisEncoder},
+        CodecBuilder, CodecReadError, Direction,
+    },
+    transforms::TransformContextConfig,
+};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use futures::{FutureExt, SinkExt, StreamExt};
@@ -33,12 +36,15 @@ const NAME: &str = "RedisSinkSingle";
 #[typetag::serde(name = "RedisSinkSingle")]
 #[async_trait(?Send)]
 impl TransformConfig for RedisSinkSingleConfig {
-    async fn get_builder(&self, chain_name: String) -> Result<Box<dyn TransformBuilder>> {
+    async fn get_builder(
+        &self,
+        transform_context: TransformContextConfig,
+    ) -> Result<Box<dyn TransformBuilder>> {
         let tls = self.tls.clone().map(TlsConnector::new).transpose()?;
         Ok(Box::new(RedisSinkSingleBuilder::new(
             self.address.clone(),
             tls,
-            chain_name,
+            transform_context.chain_name,
             self.connect_timeout_ms,
         )))
     }

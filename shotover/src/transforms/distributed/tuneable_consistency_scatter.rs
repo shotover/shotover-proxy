@@ -2,7 +2,9 @@ use crate::config::chain::TransformChainConfig;
 use crate::frame::{Frame, RedisFrame};
 use crate::message::{Message, Messages, QueryType};
 use crate::transforms::chain::{BufferedChain, TransformChainBuilder};
-use crate::transforms::{Transform, TransformBuilder, TransformConfig, Wrapper};
+use crate::transforms::{
+    Transform, TransformBuilder, TransformConfig, TransformContextConfig, Wrapper,
+};
 use anyhow::Result;
 use async_trait::async_trait;
 use futures::stream::FuturesUnordered;
@@ -23,12 +25,19 @@ const NAME: &str = "TuneableConsistencyScatter";
 #[typetag::serde(name = "TuneableConsistencyScatter")]
 #[async_trait(?Send)]
 impl TransformConfig for TuneableConsistencyScatterConfig {
-    async fn get_builder(&self, _chain_name: String) -> Result<Box<dyn TransformBuilder>> {
+    async fn get_builder(
+        &self,
+        transform_context: TransformContextConfig,
+    ) -> Result<Box<dyn TransformBuilder>> {
         let mut route_map = Vec::with_capacity(self.route_map.len());
         warn!("Using this transform is considered unstable - Does not work with REDIS pipelines");
 
         for (key, value) in &self.route_map {
-            route_map.push(value.get_builder(key.clone()).await?);
+            let chain_config = TransformContextConfig {
+                chain_name: key.clone(),
+                protocol: transform_context.protocol,
+            };
+            route_map.push(value.get_builder(chain_config).await?);
         }
         route_map.sort_by_key(|x| x.name);
 

@@ -6,8 +6,8 @@ use crate::message::{Message, Messages};
 use crate::tcp;
 use crate::transforms::util::cluster_connection_pool::{spawn_read_write_tasks, Connection};
 use crate::transforms::util::{Request, Response};
-use crate::transforms::TransformConfig;
 use crate::transforms::{Transform, TransformBuilder, Wrapper};
+use crate::transforms::{TransformConfig, TransformContextConfig};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use dashmap::DashMap;
@@ -45,11 +45,14 @@ const NAME: &str = "KafkaSinkCluster";
 #[typetag::serde(name = "KafkaSinkCluster")]
 #[async_trait(?Send)]
 impl TransformConfig for KafkaSinkClusterConfig {
-    async fn get_builder(&self, chain_name: String) -> Result<Box<dyn TransformBuilder>> {
+    async fn get_builder(
+        &self,
+        transform_context: TransformContextConfig,
+    ) -> Result<Box<dyn TransformBuilder>> {
         Ok(Box::new(KafkaSinkClusterBuilder::new(
             self.first_contact_points.clone(),
             self.shotover_nodes.clone(),
-            chain_name,
+            transform_context.chain_name,
             self.connect_timeout_ms,
             self.read_timeout,
         )))

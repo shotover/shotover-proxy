@@ -1,5 +1,7 @@
 use crate::message::{Message, Messages};
-use crate::transforms::{Transform, TransformBuilder, TransformConfig, Wrapper};
+use crate::transforms::{
+    Transform, TransformBuilder, TransformConfig, TransformContextConfig, Wrapper,
+};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -15,7 +17,10 @@ const NAME: &str = "DebugReturner";
 #[typetag::serde(name = "DebugReturner")]
 #[async_trait(?Send)]
 impl TransformConfig for DebugReturnerConfig {
-    async fn get_builder(&self, _chain_name: String) -> Result<Box<dyn TransformBuilder>> {
+    async fn get_builder(
+        &self,
+        _transform_context: TransformContextConfig,
+    ) -> Result<Box<dyn TransformBuilder>> {
         Ok(Box::new(DebugReturner::new(self.response.clone())))
     }
 }

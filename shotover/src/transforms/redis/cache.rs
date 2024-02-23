@@ -1,8 +1,10 @@
 use crate::config::chain::TransformChainConfig;
-use crate::frame::{CassandraFrame, CassandraOperation, Frame, RedisFrame};
+use crate::frame::{CassandraFrame, CassandraOperation, Frame, MessageType, RedisFrame};
 use crate::message::{Message, Messages};
 use crate::transforms::chain::{TransformChain, TransformChainBuilder};
-use crate::transforms::{Transform, TransformBuilder, TransformConfig, Wrapper};
+use crate::transforms::{
+    Transform, TransformBuilder, TransformConfig, TransformContextConfig, Wrapper,
+};
 use anyhow::{bail, Result};
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -85,7 +87,10 @@ const NAME: &str = "RedisCache";
 #[typetag::serde(name = "RedisCache")]
 #[async_trait(?Send)]
 impl TransformConfig for RedisConfig {
-    async fn get_builder(&self, _chain_name: String) -> Result<Box<dyn TransformBuilder>> {
+    async fn get_builder(
+        &self,
+        _transform_context: TransformContextConfig,
+    ) -> Result<Box<dyn TransformBuilder>> {
         let missed_requests = counter!("shotover_cache_miss_count");
 
         let caching_schema: HashMap<FQName, TableCacheSchema> = self
@@ -94,8 +99,13 @@ impl TransformConfig for RedisConfig {
             .map(|(k, v)| (FQName::parse(k), v.into()))
             .collect();
 
+        let transform_context_config = TransformContextConfig {
+            chain_name: "cache_chain".into(),
+            protocol: MessageType::Redis,
+        };
+
         Ok(Box::new(SimpleRedisCacheBuilder {
-            cache_chain: self.chain.get_builder("cache_chain".to_string()).await?,
+            cache_chain: self.chain.get_builder(transform_context_config).await?,
             caching_schema,
             missed_requests,
         }))
