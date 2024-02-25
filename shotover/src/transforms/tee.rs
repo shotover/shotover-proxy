@@ -1,22 +1,21 @@
 use super::{TransformContextBuilder, TransformContextConfig};
 use crate::config::chain::TransformChainConfig;
+use crate::http::HttpServerError;
 use crate::message::{Message, MessageIdMap, Messages};
 use crate::transforms::chain::{BufferedChain, TransformChainBuilder};
 use crate::transforms::{Transform, TransformBuilder, TransformConfig, Wrapper};
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use atomic_enum::atomic_enum;
-use bytes::Bytes;
-use hyper::{
-    service::{make_service_fn, service_fn},
-    Method, Request, StatusCode, {Body, Response, Server},
-};
+use axum::extract::State;
+use axum::response::Html;
+use axum::Router;
 use metrics::{counter, Counter};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::fmt;
 use std::sync::atomic::Ordering;
-use std::{convert::Infallible, net::SocketAddr, str, sync::Arc};
+use std::{net::SocketAddr, str, sync::Arc};
 use tracing::{debug, error, trace, warn};
 
 pub struct TeeBuilder {
@@ -515,36 +514,6 @@ impl ChainSwitchListener {
         Self { address }
     }
 
-    fn rsp(status: StatusCode, body: impl Into<Body>) -> Response<Body> {
-        Response::builder()
-            .status(status)
-            .body(body.into())
-            .expect("builder with known status code must not fail")
-    }
-
-    async fn set_result_source_chain(
-        body: Bytes,
-        result_source: Arc<AtomicResultSource>,
-    ) -> Result<()> {
-        let new_result_source = str::from_utf8(body.as_ref())?;
-
-        let new_value = match new_result_source {
-            "tee-chain" => ResultSource::TeeChain,
-            "regular-chain" => ResultSource::RegularChain,
-            _ => {
-                return Err(anyhow!(
-                    r"Invalid value for result source: {}, should be 'tee-chain' or 'regular-chain'",
-                    new_result_source
-                ))
-            }
-        };
-
-        debug!("Setting result source to {}", new_value);
-
-        result_source.store(new_value, Ordering::Relaxed);
-        Ok(())
-    }
-
     async fn async_run(self, result_source: Arc<AtomicResultSource>) {
         if let Err(err) = self.async_run_inner(result_source).await {
             error!("Error in ChainSwitchListener: {}", err);
@@ -552,65 +521,59 @@ impl ChainSwitchListener {
     }
 
     async fn async_run_inner(self, result_source: Arc<AtomicResultSource>) -> Result<()> {
-        let make_svc = make_service_fn(move |_| {
-            let result_source = result_source.clone();
-            async move {
-                Ok::<_, Infallible>(service_fn(move |req: Request<Body>| {
-                    let result_source = result_source.clone();
-                    async move {
-                        let response = match (req.method(), req.uri().path()) {
-                            (&Method::GET, "/transform/tee/result-source") => {
-                                let result_source: ResultSource =
-                                    result_source.load(Ordering::Relaxed);
-                                Self::rsp(StatusCode::OK, result_source.to_string())
-                            }
-                            (&Method::PUT, "/transform/tee/result-source") => {
-                                match hyper::body::to_bytes(req.into_body()).await {
-                                    Ok(body) => {
-                                        match Self::set_result_source_chain(
-                                            body,
-                                            result_source.clone(),
-                                        )
-                                        .await
-                                        {
-                                            Err(error) => {
-                                                error!(?error, "setting result source failed");
-                                                Self::rsp(
-                                                    StatusCode::BAD_REQUEST,
-                                                    format!(
-                                                        "setting result source failed: {error}"
-                                                    ),
-                                                )
-                                            }
-                                            Ok(()) => Self::rsp(StatusCode::OK, Body::empty()),
-                                        }
-                                    }
-                                    Err(error) => {
-                                        error!(%error, "setting result source failed - Couldn't read bytes");
-                                        Self::rsp(
-                                            StatusCode::INTERNAL_SERVER_ERROR,
-                                            format!("{error:?}"),
-                                        )
-                                    }
-                                }
-                            }
-                            _ => {
-                                Self::rsp(StatusCode::NOT_FOUND, "try /tranform/tee/result-source")
-                            }
-                        };
-                        Ok::<_, Infallible>(response)
-                    }
-                }))
-            }
-        });
+        let app = Router::new()
+            .route("/", axum::routing::get(root))
+            .route(
+                "/transform/tee/result-source",
+                axum::routing::get(get_result_source),
+            )
+            .route(
+                "/transform/tee/result-source",
+                axum::routing::put(put_result_source),
+            )
+            .with_state(AppState { result_source });
 
         let address = self.address;
-        Server::try_bind(&address)
-            .with_context(|| format!("Failed to bind to {}", address))?
-            .serve(make_svc)
+        let listener = tokio::net::TcpListener::bind(address)
             .await
-            .map_err(|e| anyhow!(e))
+            .with_context(|| format!("Failed to bind to {}", address))?;
+        axum::serve(listener, app).await.map_err(|e| anyhow!(e))
     }
+}
+
+async fn root() -> Html<&'static str> {
+    Html("try /transform/tee/result-source")
+}
+
+async fn get_result_source(State(state): State<AppState>) -> Html<String> {
+    let result_source: ResultSource = state.result_source.load(Ordering::Relaxed);
+    Html(result_source.to_string())
+}
+
+async fn put_result_source(
+    State(state): State<AppState>,
+    new_result_source: String,
+) -> Result<(), HttpServerError> {
+    let new_value = match new_result_source.as_str() {
+        "tee-chain" => ResultSource::TeeChain,
+        "regular-chain" => ResultSource::RegularChain,
+        _ => {
+            return Err(HttpServerError(anyhow!(
+                r"Invalid value for result source: {:?}, should be 'tee-chain' or 'regular-chain'",
+                new_result_source
+            )));
+        }
+    };
+
+    state.result_source.store(new_value, Ordering::Relaxed);
+    tracing::info!("result source set to {new_value}");
+
+    Ok(())
+}
+
+#[derive(Clone)]
+struct AppState {
+    result_source: Arc<AtomicResultSource>,
 }
 
 #[cfg(all(test, feature = "redis"))]
