@@ -13,7 +13,6 @@ services:
       - KAFKA_CFG_PROCESS_ROLES=controller,broker
       - KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=0@kafka0:9093
       - KAFKA_CFG_NODE_ID=0
-      - ALLOW_PLAINTEXT_LISTENER=yes
       - KAFKA_CERTIFICATE_PASSWORD=password
       - KAFKA_TLS_CLIENT_AUTH=none
     volumes:

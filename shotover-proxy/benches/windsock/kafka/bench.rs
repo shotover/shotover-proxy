@@ -93,6 +93,7 @@ impl KafkaBench {
                 read_timeout: None,
                 first_contact_points: vec![kafka_address],
                 shotover_nodes: vec![host_address.clone()],
+                tls: None,
             }),
         });
         common::generate_topology(SourceConfig::Kafka(shotover::sources::kafka::KafkaConfig {
