@@ -308,6 +308,18 @@ This is achieved by rewriting the FindCoordinator, Metadata and DescribeCluster 
     # This field is optional, if not provided, timeout will never occur.
     # When a timeout occurs the connection to the client is immediately closed.
     # read_timeout: 60
+
+    # When this field is provided TLS is used when connecting to the remote address.
+    # Removing this field will disable TLS.
+    #tls:
+    #  # Path to the certificate authority file, typically named with a .crt extension.
+    #  certificate_authority_path: "tls/localhost_CA.crt"
+    #  # Path to the certificate file, typically named with a .crt extension.
+    #  certificate_path: "tls/localhost.crt"
+    #  # Path to the private key file, typically named with a .key extension.
+    #  private_key_path: "tls/localhost.key"
+    #  # Enable/disable verifying the hostname of the certificate provided by the destination.
+    #  #verify_hostname: true
 ```
 
 ### KafkaSinkSingle
@@ -332,6 +344,18 @@ In order to force clients to connect through shotover the FindCoordinator, Metad
     # This field is optional, if not provided, timeout will never occur.
     # When a timeout occurs the connection to the client is immediately closed.
     # read_timeout: 60
+
+    # When this field is provided TLS is used when connecting to the remote address.
+    # Removing this field will disable TLS.
+    #tls:
+    #  # Path to the certificate authority file, typically named with a .crt extension.
+    #  certificate_authority_path: "tls/localhost_CA.crt"
+    #  # Path to the certificate file, typically named with a .crt extension.
+    #  certificate_path: "tls/localhost.crt"
+    #  # Path to the private key file, typically named with a .key extension.
+    #  private_key_path: "tls/localhost.key"
+    #  # Enable/disable verifying the hostname of the certificate provided by the destination.
+    #  #verify_hostname: true
 ```
 
 This transfrom emits a metrics [counter](user-guide/observability.md#counter) named `failed_requests` and the labels `transform` defined as `CassandraSinkSingle` and `chain` as the name of the chain that this transform is in.
