@@ -43,8 +43,10 @@ use kafka_protocol::messages::{
     UpdateMetadataResponse, VoteRequest, VoteResponse, WriteTxnMarkersRequest,
     WriteTxnMarkersResponse,
 };
-use kafka_protocol::protocol::{Decodable, Encodable, HeaderVersion, StrBytes};
+use kafka_protocol::protocol::{Decodable, Encodable, HeaderVersion};
 use std::fmt::{Display, Formatter, Result as FmtResult};
+
+pub use kafka_protocol::protocol::StrBytes;
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum KafkaFrame {
@@ -871,16 +873,4 @@ fn encode<T: Encodable>(encodable: T, bytes: &mut BytesMut, version: i16) -> Res
             version
         )
     })
-}
-
-/// This function is a helper to workaround a really degenerate rust compiler case.
-/// The problem is that the string crate defines a TryFrom which collides with the stdlib TryFrom
-/// and then naming the correct TryFrom becomes really annoying.
-pub fn strbytes(str: &str) -> StrBytes {
-    <StrBytes as string::TryFrom<Bytes>>::try_from(Bytes::copy_from_slice(str.as_bytes())).unwrap()
-}
-
-/// Allocationless version of kafka_strbytes
-pub fn strbytes_static(str: &'static str) -> StrBytes {
-    <StrBytes as string::TryFrom<Bytes>>::try_from(Bytes::from(str)).unwrap()
 }

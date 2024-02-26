@@ -1,5 +1,4 @@
 use crate::codec::{kafka::KafkaCodecBuilder, CodecBuilder, Direction};
-use crate::frame::kafka::strbytes;
 use crate::tcp;
 use crate::tls::TlsConnector;
 use crate::transforms::util::cluster_connection_pool::{spawn_read_write_tasks, Connection};
@@ -23,10 +22,11 @@ impl KafkaAddress {
     pub fn from_str(address: &str) -> Result<Self> {
         let mut address_iter = address.split(':');
         Ok(KafkaAddress {
-            host: strbytes(
+            host: StrBytes::from_string(
                 address_iter
                     .next()
-                    .ok_or_else(|| anyhow!("Address must include ':' seperator"))?,
+                    .ok_or_else(|| anyhow!("Address must include ':' seperator"))?
+                    .to_owned(),
             ),
             port: address_iter
                 .next()
