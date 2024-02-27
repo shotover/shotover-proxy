@@ -379,7 +379,7 @@ impl Bench for KafkaBench {
     ) -> Result<()> {
         let config_dir = match self.topology {
             KafkaTopology::Single | KafkaTopology::Cluster1 => "tests/test-configs/kafka/bench",
-            KafkaTopology::Cluster3 => "tests/test-configs/kafka/cluster",
+            KafkaTopology::Cluster3 => "tests/test-configs/kafka/cluster-1-rack",
         };
         let _compose = docker_compose(&format!("{}/docker-compose.yaml", config_dir));
 
