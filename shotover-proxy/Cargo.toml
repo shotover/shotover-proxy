@@ -28,7 +28,6 @@ serde.workspace = true
 csv.workspace = true
 uuid.workspace = true
 itertools.workspace = true
-nix.workspace = true
 cdrs-tokio.workspace = true
 redis-protocol.workspace = true
 tokio-util.workspace = true

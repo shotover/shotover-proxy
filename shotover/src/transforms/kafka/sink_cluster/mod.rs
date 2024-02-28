@@ -1,5 +1,5 @@
 use super::common::produce_channel;
-use crate::frame::kafka::{strbytes, KafkaFrame, RequestBody, ResponseBody};
+use crate::frame::kafka::{KafkaFrame, RequestBody, ResponseBody};
 use crate::frame::Frame;
 use crate::message::{Message, Messages};
 use crate::tls::{TlsConnector, TlsConnectorConfig};
@@ -92,7 +92,7 @@ impl KafkaSinkClusterBuilder {
             .map(|node| {
                 let address: SocketAddr = node.parse().unwrap();
                 KafkaAddress {
-                    host: strbytes(&address.ip().to_string()),
+                    host: StrBytes::from_string(address.ip().to_string()),
                     port: address.port() as i32,
                 }
             })

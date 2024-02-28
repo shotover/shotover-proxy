@@ -9,7 +9,7 @@ pub struct Samply {
 }
 
 impl Samply {
-    pub async fn run(bench_name: String, results_path: PathBuf, pid: u32) -> Samply {
+    pub async fn run(bench_name: String, results_path: PathBuf, pid: i32) -> Samply {
         run_command(
             "cargo",
             &[
