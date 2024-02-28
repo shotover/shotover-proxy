@@ -1,6 +1,6 @@
 use super::TransformContextConfig;
 use crate::config::chain::TransformChainConfig;
-use crate::message::Messages;
+use crate::message::{Message, MessageIdMap, Messages};
 use crate::transforms::chain::{BufferedChain, TransformChainBuilder};
 use crate::transforms::{Transform, TransformBuilder, TransformConfig, Wrapper};
 use anyhow::{anyhow, Context, Result};
@@ -13,6 +13,7 @@ use hyper::{
 };
 use metrics::{counter, Counter};
 use serde::{Deserialize, Serialize};
+use std::collections::VecDeque;
 use std::fmt;
 use std::sync::atomic::Ordering;
 use std::{convert::Infallible, net::SocketAddr, str, sync::Arc};
@@ -25,6 +26,7 @@ pub struct TeeBuilder {
     pub timeout_micros: Option<u64>,
     dropped_messages: Counter,
     result_source: Arc<AtomicResultSource>,
+    protocol_is_inorder: bool,
 }
 
 pub enum ConsistencyBehaviorBuilder {
@@ -41,6 +43,7 @@ impl TeeBuilder {
         behavior: ConsistencyBehaviorBuilder,
         timeout_micros: Option<u64>,
         switch_port: Option<u16>,
+        protocol_is_inorder: bool,
     ) -> Self {
         let result_source = Arc::new(AtomicResultSource::new(ResultSource::RegularChain));
 
@@ -59,6 +62,7 @@ impl TeeBuilder {
             timeout_micros,
             dropped_messages,
             result_source,
+            protocol_is_inorder,
         }
     }
 }
@@ -74,13 +78,27 @@ impl TransformBuilder for TeeBuilder {
                 }
                 ConsistencyBehaviorBuilder::FailOnMismatch => ConsistencyBehavior::FailOnMismatch,
                 ConsistencyBehaviorBuilder::SubchainOnMismatch(chain) => {
-                    ConsistencyBehavior::SubchainOnMismatch(chain.build_buffered(self.buffer_size))
+                    ConsistencyBehavior::SubchainOnMismatch(
+                        chain.build_buffered(self.buffer_size),
+                        Default::default(),
+                    )
                 }
             },
             buffer_size: self.buffer_size,
             timeout_micros: self.timeout_micros,
             dropped_messages: self.dropped_messages.clone(),
             result_source: self.result_source.clone(),
+            incoming_responses: if self.protocol_is_inorder {
+                IncomingResponses::InOrder {
+                    tee: VecDeque::new(),
+                    chain: VecDeque::new(),
+                }
+            } else {
+                IncomingResponses::OutOfOrder {
+                    tee_by_request_id: Default::default(),
+                    chain_by_request_id: Default::default(),
+                }
+            },
         })
     }
 
@@ -120,6 +138,7 @@ pub struct Tee {
     pub timeout_micros: Option<u64>,
     dropped_messages: Counter,
     result_source: Arc<AtomicResultSource>,
+    incoming_responses: IncomingResponses,
 }
 
 #[atomic_enum]
@@ -141,7 +160,7 @@ pub enum ConsistencyBehavior {
     Ignore,
     LogWarningOnMismatch,
     FailOnMismatch,
-    SubchainOnMismatch(BufferedChain),
+    SubchainOnMismatch(BufferedChain, MessageIdMap<Message>),
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -206,6 +225,7 @@ impl TransformConfig for TeeConfig {
             behavior,
             self.timeout_micros,
             self.switch_port,
+            transform_context.protocol.is_inorder(),
         )))
     }
 }
@@ -225,46 +245,54 @@ impl Transform for Tee {
                         .process_request(requests_wrapper.clone(), self.timeout_micros),
                     requests_wrapper.call_next_transform()
                 );
-                let mut tee_response = tee_result?;
-                let mut chain_response = chain_result?;
 
-                if !chain_response.eq(&tee_response) {
-                    debug!(
-                        "Tee mismatch:\nchain response: {:?}\ntee response: {:?}",
-                        chain_response
-                            .iter_mut()
-                            .map(|m| m.to_high_level_string())
-                            .collect::<Vec<_>>(),
-                        tee_response
-                            .iter_mut()
-                            .map(|m| m.to_high_level_string())
-                            .collect::<Vec<_>>()
-                    );
+                let keep: ResultSource = self.result_source.load(Ordering::Relaxed);
+                let responses = self.incoming_responses.new_responses(
+                    tee_result?,
+                    chain_result?,
+                    keep,
+                    |keep_message, mut other_message| {
+                        debug!(
+                            "Tee mismatch:\nresult-source response: {}\nother response: {}",
+                            keep_message.to_high_level_string(),
+                            other_message.to_high_level_string()
+                        );
+                        *keep_message = keep_message.to_error_response(
+                            "ERR The responses from the Tee subchain and down-chain did not match and behavior is set to fail on mismatch".into()
+                        ).unwrap();
+                    },
+                );
 
-                    for message in &mut chain_response {
-                        *message = message.to_error_response(
-                            "ERR The responses from the Tee subchain and down-chain did not match and behavior is set to fail on mismatch".into())?;
-                    }
-                }
-
-                Ok(self.return_response(tee_response, chain_response).await)
+                Ok(responses)
             }
-            ConsistencyBehavior::SubchainOnMismatch(mismatch_chain) => {
-                let failed_message = requests_wrapper.clone();
+            ConsistencyBehavior::SubchainOnMismatch(mismatch_chain, requests) => {
+                let address = requests_wrapper.local_addr;
+                for request in &requests_wrapper.requests {
+                    requests.insert(request.id(), request.clone());
+                }
                 let (tee_result, chain_result) = tokio::join!(
                     self.tx
                         .process_request(requests_wrapper.clone(), self.timeout_micros),
                     requests_wrapper.call_next_transform()
                 );
 
-                let tee_response = tee_result?;
-                let chain_response = chain_result?;
+                let mut mismatched_requests = vec![];
+                let keep: ResultSource = self.result_source.load(Ordering::Relaxed);
+                let responses = self.incoming_responses.new_responses(
+                    tee_result?,
+                    chain_result?,
+                    keep,
+                    |keep_message, _| {
+                        if let Some(id) = keep_message.request_id() {
+                            mismatched_requests.push(requests.remove(&id).unwrap());
+                        }
+                    },
+                );
+                mismatch_chain
+                    .process_request(Wrapper::new_with_addr(mismatched_requests, address), None)
+                    .await?;
 
-                if !chain_response.eq(&tee_response) {
-                    mismatch_chain.process_request(failed_message, None).await?;
-                }
-
-                Ok(self.return_response(tee_response, chain_response).await)
+                Ok(responses)
             }
             ConsistencyBehavior::LogWarningOnMismatch => {
                 let (tee_result, chain_result) = tokio::join!(
@@ -273,37 +301,178 @@ impl Transform for Tee {
                     requests_wrapper.call_next_transform()
                 );
 
-                let mut tee_response = tee_result?;
-                let mut chain_response = chain_result?;
+                let keep: ResultSource = self.result_source.load(Ordering::Relaxed);
+                let responses = self.incoming_responses.new_responses(
+                    tee_result?,
+                    chain_result?,
+                    keep,
+                    |keep_message, mut other_message| {
+                        warn!(
+                            "Tee mismatch:\nresult-source response: {}\nother response: {}",
+                            keep_message.to_high_level_string(),
+                            other_message.to_high_level_string()
+                        );
+                    },
+                );
 
-                if !chain_response.eq(&tee_response) {
-                    warn!(
-                        "Tee mismatch:\nchain response: {:?}\ntee response: {:?}",
-                        chain_response
-                            .iter_mut()
-                            .map(|m| m.to_high_level_string())
-                            .collect::<Vec<_>>(),
-                        tee_response
-                            .iter_mut()
-                            .map(|m| m.to_high_level_string())
-                            .collect::<Vec<_>>()
-                    );
-                }
-                Ok(self.return_response(tee_response, chain_response).await)
+                Ok(responses)
             }
         }
     }
 }
 
-impl Tee {
-    async fn return_response(&mut self, tee_result: Messages, chain_result: Messages) -> Messages {
-        let result_source: ResultSource = self.result_source.load(Ordering::Relaxed);
-        match result_source {
-            ResultSource::RegularChain => chain_result,
-            ResultSource::TeeChain => tee_result,
-        }
-    }
+enum IncomingResponses {
+    /// We must handle in order protocols seperately because we must maintain their order
+    InOrder {
+        tee: VecDeque<Message>,
+        chain: VecDeque<Message>,
+    },
+    /// We must handle out of order protocols seperately because they could arrive in any order.
+    OutOfOrder {
+        tee_by_request_id: MessageIdMap<Message>,
+        chain_by_request_id: MessageIdMap<Message>,
+    },
+}
 
+impl IncomingResponses {
+    /// Processes incoming responses.
+    /// If we have a complete response pair then immediately process and return them.
+    /// Otherwise store the individual response so that we may eventually match it up with its pair.
+    /// Responses with no corresponding request are immediately returned or dropped as they will not have any pair.
+    fn new_responses<F>(
+        &mut self,
+        tee_responses: Vec<Message>,
+        chain_responses: Vec<Message>,
+        keep: ResultSource,
+        mut on_mismatch: F,
+    ) -> Vec<Message>
+    where
+        F: FnMut(&mut Message, Message),
+    {
+        let mut result = vec![];
+        match self {
+            IncomingResponses::InOrder { tee, chain } => {
+                tee.extend(tee_responses);
+                chain.extend(chain_responses);
+
+                // process all responses where we have received from tee and chain
+                while !tee.is_empty() && !chain.is_empty() {
+                    // handle responses with no request
+                    if tee.front().unwrap().request_id().is_none() {
+                        result.push(tee.pop_front().unwrap());
+                        // need to start the loop again otherwise we might find there are no responses to pop!
+                        continue;
+                    }
+                    if chain.front().unwrap().request_id().is_none() {
+                        result.push(chain.pop_front().unwrap());
+                        continue;
+                    }
+
+                    let mut tee_response = tee.pop_front().unwrap();
+                    let mut chain_response = chain.pop_front().unwrap();
+                    match keep {
+                        ResultSource::RegularChain => {
+                            if tee_response != chain_response {
+                                on_mismatch(&mut chain_response, tee_response);
+                            }
+                            result.push(chain_response);
+                        }
+                        ResultSource::TeeChain => {
+                            if tee_response != chain_response {
+                                on_mismatch(&mut tee_response, chain_response);
+                            }
+                            result.push(tee_response);
+                        }
+                    }
+                }
+
+                // once again, handle responses with no request
+                // we need to recheck to ensure we havent left any requestless responses lingering
+                if tee
+                    .front()
+                    .map(|x| x.request_id().is_none())
+                    .unwrap_or(false)
+                {
+                    result.push(tee.pop_front().unwrap());
+                }
+                if chain
+                    .front()
+                    .map(|x| x.request_id().is_none())
+                    .unwrap_or(false)
+                {
+                    result.push(chain.pop_front().unwrap());
+                }
+            }
+            IncomingResponses::OutOfOrder {
+                tee_by_request_id,
+                chain_by_request_id,
+            } => {
+                // Handle all incoming tee responses that have a matching stored chain response
+                for mut tee_response in tee_responses {
+                    if let Some(request_id) = tee_response.request_id() {
+                        // a requested response, compare against the other chain before sending it on.
+                        if let Some(mut chain_response) = chain_by_request_id.remove(&request_id) {
+                            match keep {
+                                ResultSource::TeeChain => {
+                                    if tee_response != chain_response {
+                                        on_mismatch(&mut tee_response, chain_response);
+                                    }
+                                    result.push(tee_response);
+                                }
+                                ResultSource::RegularChain => {
+                                    if tee_response != chain_response {
+                                        on_mismatch(&mut chain_response, tee_response);
+                                    }
+                                    result.push(chain_response);
+                                }
+                            }
+                        } else {
+                            tee_by_request_id.insert(request_id, tee_response);
+                        }
+                    } else {
+                        // unrequested response, so just send it on if its from the keep chain.
+                        if let ResultSource::TeeChain = keep {
+                            result.push(tee_response);
+                        }
+                    }
+                }
+
+                // Handle all incoming chain responses that have a matching tee response which was just added in the previous block
+                for mut chain_response in chain_responses {
+                    if let Some(request_id) = chain_response.request_id() {
+                        // a requested response, compare against the other chain before sending it on.
+                        if let Some(mut tee_response) = tee_by_request_id.remove(&request_id) {
+                            match keep {
+                                ResultSource::RegularChain => {
+                                    if tee_response != chain_response {
+                                        on_mismatch(&mut chain_response, tee_response);
+                                    }
+                                    result.push(chain_response);
+                                }
+                                ResultSource::TeeChain => {
+                                    if tee_response != chain_response {
+                                        on_mismatch(&mut tee_response, chain_response);
+                                    }
+                                    result.push(tee_response);
+                                }
+                            }
+                        } else {
+                            chain_by_request_id.insert(request_id, chain_response);
+                        }
+                    } else {
+                        // unrequested response, so just send it on if its from the keep chain.
+                        if let ResultSource::RegularChain = keep {
+                            result.push(chain_response);
+                        }
+                    }
+                }
+            }
+        }
+        result
+    }
+}
+
+impl Tee {
     async fn ignore_behaviour<'a>(&'a mut self, requests_wrapper: Wrapper<'a>) -> Result<Messages> {
         let result_source: ResultSource = self.result_source.load(Ordering::Relaxed);
         match result_source {

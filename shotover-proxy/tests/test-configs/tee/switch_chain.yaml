@@ -15,7 +15,7 @@ sources:
         - DebugReturner:
             Redis: "a"
   - Redis:
-      name: "redis-3"
+      name: "redis-2"
       listen_addr: "127.0.0.1:6372"
       connection_limit: 
       chain:
