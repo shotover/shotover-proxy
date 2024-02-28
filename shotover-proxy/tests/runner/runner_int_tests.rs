@@ -95,13 +95,13 @@ async fn test_shotover_shutdown_when_topology_invalid_topology_subchains() {
 
 Caused by:
     Topology errors
-    redis source:
-      redis chain:
+    redis1 source:
+      redis1 chain:
         Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
         Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
         Non-terminating transform "DebugPrinter" is last in chain. Last transform must be terminating.
-    redis source:
-      redis chain:
+    redis2 source:
+      redis2 chain:
         TuneableConsistencyScatter:
           a_chain_1 chain:
             Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
