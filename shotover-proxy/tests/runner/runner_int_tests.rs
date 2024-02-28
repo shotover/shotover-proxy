@@ -17,7 +17,7 @@ async fn test_shotover_responds_sigterm() {
         let shotover_process = shotover_process("tests/test-configs/null-redis/topology.yaml")
             .start()
             .await;
-        shotover_process.signal(nix::sys::signal::Signal::SIGTERM);
+        shotover_process.send_sigterm();
 
         let events = shotover_process.consume_remaining_events(&[]).await;
         events.assert_contains(
@@ -34,7 +34,7 @@ async fn test_shotover_responds_sigint() {
     let shotover_process = shotover_process("tests/test-configs/null-redis/topology.yaml")
         .start()
         .await;
-    shotover_process.signal(nix::sys::signal::Signal::SIGINT);
+    shotover_process.send_sigint();
 
     let events = shotover_process.consume_remaining_events(&[]).await;
     events.assert_contains(

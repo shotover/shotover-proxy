@@ -60,7 +60,7 @@ impl ProfilerRunner {
                     Samply::run(
                         self.bench_name.clone(),
                         self.results_path.clone(),
-                        shotover.child().id().unwrap(),
+                        shotover.pid(),
                     )
                     .await,
                 )
