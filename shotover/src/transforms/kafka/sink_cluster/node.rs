@@ -1,18 +1,15 @@
 use crate::codec::{kafka::KafkaCodecBuilder, CodecBuilder, Direction};
-use crate::frame::kafka::{KafkaFrame, RequestBody};
-use crate::frame::Frame;
 use crate::message::Message;
 use crate::tcp;
 use crate::tls::TlsConnector;
 use crate::transforms::util::cluster_connection_pool::{spawn_read_write_tasks, Connection};
-use crate::transforms::util::{Request, Response};
+use crate::transforms::util::Request;
 use anyhow::{anyhow, Result};
 use kafka_protocol::messages::BrokerId;
-use kafka_protocol::messages::SaslHandshakeRequest;
 use kafka_protocol::protocol::StrBytes;
 use std::time::Duration;
 use tokio::io::split;
-use tokio::sync::{mpsc, oneshot, RwLock};
+use tokio::sync::oneshot;
 
 pub struct ConnectionFactory {
     tls: Option<TlsConnector>,
@@ -29,14 +26,6 @@ impl ConnectionFactory {
             handshake_message: None,
             auth_message: None,
         }
-    }
-
-    pub fn add_handshake_message(&mut self, message: Message) {
-        self.handshake_message = Some(message);
-    }
-
-    pub fn add_auth_message(&mut self, message: Message) {
-        self.auth_message = Some(message);
     }
 
     pub async fn create_connection(&self, kafka_address: &KafkaAddress) -> Result<Connection> {
