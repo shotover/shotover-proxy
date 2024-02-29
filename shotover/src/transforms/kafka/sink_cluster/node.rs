@@ -3,13 +3,11 @@ use crate::message::Message;
 use crate::tcp;
 use crate::tls::TlsConnector;
 use crate::transforms::util::cluster_connection_pool::{spawn_read_write_tasks, Connection};
-use crate::transforms::util::Request;
 use anyhow::{anyhow, Result};
 use kafka_protocol::messages::BrokerId;
 use kafka_protocol::protocol::StrBytes;
 use std::time::Duration;
 use tokio::io::split;
-use tokio::sync::oneshot;
 
 pub struct ConnectionFactory {
     tls: Option<TlsConnector>,
@@ -46,35 +44,6 @@ impl ConnectionFactory {
             let tcp_stream = tcp::tcp_stream(self.connect_timeout, address).await?;
             let (rx, tx) = tcp_stream.into_split();
             let connection = spawn_read_write_tasks(&codec, rx, tx);
-
-            if let Some(message) = self.auth_message.as_ref() {
-                let handshake_msg = self.handshake_message.as_ref().unwrap();
-
-                let (tx, rx) = oneshot::channel();
-                connection
-                    .send(Request {
-                        message: handshake_msg.clone(),
-                        return_chan: Some(tx),
-                    })
-                    .map_err(|_| anyhow!("Failed to send"))?;
-
-                let response = rx.await.map_err(|_| anyhow!("Failed to receive"))?;
-
-                tracing::info!("Received response {:?}", response);
-
-                let (tx, rx) = oneshot::channel();
-                connection
-                    .send(Request {
-                        message: message.clone(),
-                        return_chan: Some(tx),
-                    })
-                    .map_err(|_| anyhow!("Failed to send"))?;
-
-                let response = rx.await.map_err(|_| anyhow!("Failed to receive"))?;
-
-                tracing::info!("Received response {:?}", response);
-            }
-
             Ok(connection)
         }
     }
