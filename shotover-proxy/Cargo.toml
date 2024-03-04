@@ -20,7 +20,7 @@ tracing.workspace = true
 clap.workspace = true
 rstest = "0.18.0"
 rstest_reuse = "0.6.0"
-cassandra-cpp = { version = "2.0.0", default-features = false }
+cassandra-cpp = { version = "3.0.0", default-features = false }
 test-helpers = { path = "../test-helpers" }
 redis.workspace = true
 chacha20poly1305.workspace = true
