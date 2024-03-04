@@ -814,10 +814,11 @@ dependencies = [
 
 [[package]]
 name = "cassandra-cpp"
-version = "2.0.1"
+version = "3.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c2fbdfbcd8d1b9554fb3fcfe00dc729346f853ac2f984d227936ed2e4abf28dd"
+checksum = "c9ed77e0aea6277ef2b625559fb2b89ce58ab5dd4565fa00309b903e20c05894"
 dependencies = [
+ "bigdecimal",
  "cassandra-cpp-sys",
  "error-chain",
  "libc",
