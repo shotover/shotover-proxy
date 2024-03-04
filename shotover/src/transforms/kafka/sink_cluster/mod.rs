@@ -125,6 +125,7 @@ impl TransformBuilder for KafkaSinkClusterBuilder {
             group_to_coordinator_broker: self.group_to_coordinator_broker.clone(),
             topics: self.topics.clone(),
             rng: SmallRng::from_rng(rand::thread_rng()).unwrap(),
+            handshake_complete: false,
             connection_factory: ConnectionFactory::new(self.tls.clone(), self.connect_timeout),
         })
     }
@@ -171,6 +172,7 @@ pub struct KafkaSinkCluster {
     group_to_coordinator_broker: Arc<DashMap<GroupId, BrokerId>>,
     topics: Arc<DashMap<TopicName, Topic>>,
     rng: SmallRng,
+    handshake_complete: bool,
     connection_factory: ConnectionFactory,
 }
 
@@ -183,6 +185,17 @@ impl Transform for KafkaSinkCluster {
     async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Messages> {
         if requests_wrapper.requests.is_empty() {
             return Ok(vec![]);
+        }
+
+        for request in &mut requests_wrapper.requests {
+            let request = request.frame().unwrap();
+            let k = request.clone().into_kafka();
+            match k {
+                Ok(KafkaFrame::Request { body, .. }) => {
+                    tracing::info!("Request: {:?}", body);
+                }
+                _ => {}
+            }
         }
 
         if self.nodes.is_empty() {
@@ -302,7 +315,8 @@ impl KafkaSinkCluster {
         }
 
         // request and process metadata if we are missing topics or the controller broker id
-        if !topics.is_empty() || self.controller_broker.get().is_none() {
+        if (!topics.is_empty() || self.controller_broker.get().is_none()) && self.handshake_complete
+        {
             let mut metadata = self.get_metadata_of_topics(topics).await?;
             match metadata.frame() {
                 Some(Frame::Kafka(KafkaFrame::Response {
@@ -461,6 +475,56 @@ impl KafkaSinkCluster {
                     body: RequestBody::CreateTopics(_),
                     ..
                 })) => results.push(self.route_to_controller(message).await?),
+
+                Some(Frame::Kafka(KafkaFrame::Request {
+                    body: RequestBody::SaslHandshake(_),
+                    ..
+                })) => {
+                    tracing::info!("routing sasl handshake request to one node");
+
+                    let connection = self
+                        .nodes
+                        .get_mut(0)
+                        .unwrap()
+                        .get_connection(&self.connection_factory)
+                        .await?;
+                    let (tx, rx) = oneshot::channel();
+                    connection
+                        .send(Request {
+                            message: message.clone(),
+                            return_chan: Some(tx),
+                        })
+                        .map_err(|_| anyhow!("Failed to send"))?;
+
+                    self.connection_factory
+                        .add_handshake_message(message.clone());
+
+                    results.push(rx);
+                }
+
+                Some(Frame::Kafka(KafkaFrame::Request {
+                    body: RequestBody::SaslAuthenticate(_),
+                    ..
+                })) => {
+                    tracing::info!("routing sasl authentiate request to one nodes");
+
+                    let connection = self
+                        .nodes
+                        .get_mut(0)
+                        .unwrap()
+                        .get_connection(&self.connection_factory)
+                        .await?;
+                    let (tx, rx) = oneshot::channel();
+                    connection
+                        .send(Request {
+                            message: message.clone(),
+                            return_chan: Some(tx),
+                        })
+                        .map_err(|_| anyhow!("Failed to send"))?;
+
+                    self.connection_factory.add_auth_message(message.clone());
+                    results.push(rx);
+                }
 
                 // route to random node
                 _ => {
@@ -651,6 +715,17 @@ impl KafkaSinkCluster {
                         )
                     }
                     response.invalidate_cache();
+                }
+                _ => {}
+            }
+        }
+
+        for request in &mut responses {
+            let request = request.frame().unwrap();
+            let k = request.clone().into_kafka();
+            match k {
+                Ok(KafkaFrame::Response { body, .. }) => {
+                    tracing::info!("Response: {:?}", body);
                 }
                 _ => {}
             }

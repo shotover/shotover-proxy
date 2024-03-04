@@ -123,22 +123,22 @@ pub async fn basic(connection_builder: KafkaConnectionBuilder) {
     }
     connection_builder.admin_cleanup().await;
 }
-
-pub async fn basic_sasl(address: &str) {
-    let mut client = ClientConfig::new();
-    client
-        .set("bootstrap.servers", address)
-        .set("sasl.mechanisms", "PLAIN")
-        .set("sasl.username", "user")
-        .set("sasl.password", "password")
-        .set("security.protocol", "SASL_PLAINTEXT")
-        // internal driver debug logs are emitted to tokio tracing, assuming the appropriate filter is used by the tracing subscriber
-        .set("debug", "all");
-    admin(client.clone()).await;
-    for i in 0..2 {
-        produce_consume(client.clone(), "partitions1", i).await;
-        produce_consume(client.clone(), "partitions3", i).await;
-        produce_consume_acks0(client.clone()).await;
-    }
-    admin_cleanup(client.clone()).await;
-}
+//
+// pub async fn basic_sasl(connection_builder: KafkaConnectionBuilder) {
+//     // let mut client = ClientConfig::new();
+//     // client
+//     //     .set("bootstrap.servers", address)
+//     //     .set("sasl.mechanisms", "PLAIN")
+//     //     .set("sasl.username", "user")
+//     //     .set("sasl.password", "password")
+//     //     .set("security.protocol", "SASL_PLAINTEXT")
+//     //     // internal driver debug logs are emitted to tokio tracing, assuming the appropriate filter is used by the tracing subscriber
+//     //     .set("debug", "all");
+//     admin(&connection_builder).await;
+//     for i in 0..2 {
+//         produce_consume(&connection_builder, "partitions1", i).await;
+//         produce_consume(&connection_builder, "partitions3", i).await;
+//         produce_consume_acks0(&connection_builder).await;
+//     }
+//     admin_cleanup(&connection_builder).await;
+// }
