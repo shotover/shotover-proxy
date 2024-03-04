@@ -1,5 +1,4 @@
 use crate::codec::{kafka::KafkaCodecBuilder, CodecBuilder, Direction};
-use crate::message::Message;
 use crate::tcp;
 use crate::tls::TlsConnector;
 use crate::transforms::util::cluster_connection_pool::{spawn_read_write_tasks, Connection};
@@ -12,8 +11,6 @@ use tokio::io::split;
 pub struct ConnectionFactory {
     tls: Option<TlsConnector>,
     connect_timeout: Duration,
-    handshake_message: Option<Message>,
-    auth_message: Option<Message>,
 }
 
 impl ConnectionFactory {
@@ -21,18 +18,10 @@ impl ConnectionFactory {
         ConnectionFactory {
             tls,
             connect_timeout,
-            handshake_message: None,
-            auth_message: None,
         }
     }
 
     pub async fn create_connection(&self, kafka_address: &KafkaAddress) -> Result<Connection> {
-        tracing::info!(
-            "creating connection with {:?} {:?}",
-            self.handshake_message,
-            self.auth_message
-        );
-
         let codec = KafkaCodecBuilder::new(Direction::Sink, "KafkaSinkCluster".to_owned());
         let address = (kafka_address.host.to_string(), kafka_address.port as u16);
         if let Some(tls) = self.tls.as_ref() {
