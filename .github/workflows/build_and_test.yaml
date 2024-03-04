@@ -57,10 +57,11 @@ jobs:
         key: ubuntu-20.04-packages
     - name: Install ubuntu packages
       run: shotover-proxy/build/install_ubuntu_packages.sh
-    - name: Install nextest
-      uses: taiki-e/install-action@v2
-      with:
-        tool: nextest@0.9.57
+    #- name: Install nextest
+    #  uses: taiki-e/install-action@v2
+    #  with:
+    #    tool: nextest@0.9.57
+    - run: cargo install --git https://github.com/rukai/nextest --branch archive-include-legacy cargo-nextest
     - name: Build tests
       run: |
         cargo test --doc ${{ matrix.cargo_flags }} --all-features -- --show-output --nocapture

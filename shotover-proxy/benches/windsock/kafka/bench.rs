@@ -18,14 +18,14 @@ use shotover::transforms::kafka::sink_single::KafkaSinkSingleConfig;
 use shotover::transforms::TransformConfig;
 use std::sync::Arc;
 use std::{collections::HashMap, time::Duration};
-use test_helpers::connection::kafka::rdkafka::admin::{
+use test_helpers::connection::kafka::cpp::rdkafka::admin::{
     AdminClient, AdminOptions, NewTopic, TopicReplication,
 };
-use test_helpers::connection::kafka::rdkafka::client::DefaultClientContext;
-use test_helpers::connection::kafka::rdkafka::config::ClientConfig;
-use test_helpers::connection::kafka::rdkafka::consumer::{Consumer, StreamConsumer};
-use test_helpers::connection::kafka::rdkafka::producer::{FutureProducer, FutureRecord};
-use test_helpers::connection::kafka::rdkafka::util::Timeout;
+use test_helpers::connection::kafka::cpp::rdkafka::client::DefaultClientContext;
+use test_helpers::connection::kafka::cpp::rdkafka::config::ClientConfig;
+use test_helpers::connection::kafka::cpp::rdkafka::consumer::{Consumer, StreamConsumer};
+use test_helpers::connection::kafka::cpp::rdkafka::producer::{FutureProducer, FutureRecord};
+use test_helpers::connection::kafka::cpp::rdkafka::util::Timeout;
 use test_helpers::docker_compose::docker_compose;
 use tokio::{sync::mpsc::UnboundedSender, task::JoinHandle, time::Instant};
 use windsock::{Bench, BenchParameters, Profiling, Report};
