@@ -76,6 +76,7 @@ async fn cluster_tls(#[case] driver: KafkaDriver) {
     .expect("Shotover did not shutdown within 10s");
 }
 
+#[cfg(feature = "alpha-transforms")]
 #[rstest]
 #[cfg_attr(feature = "rdkafka-driver-tests", case::cpp(KafkaDriver::Cpp))]
 #[case::java(KafkaDriver::Java)]
@@ -111,6 +112,7 @@ async fn passthrough_sasl(#[case] driver: KafkaDriver) {
     shotover.shutdown_and_then_consume_events(&[]).await;
 }
 
+#[cfg(feature = "alpha-transforms")]
 #[rstest]
 #[cfg_attr(feature = "rdkafka-driver-tests", case::cpp(KafkaDriver::Cpp))]
 #[case::java(KafkaDriver::Java)]
