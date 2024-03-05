@@ -317,6 +317,7 @@ impl KafkaSinkCluster {
         // request and process metadata if we are missing topics or the controller broker id
         if (!topics.is_empty() || self.controller_broker.get().is_none()) && self.handshake_complete
         {
+            tracing::info!("HERE");
             let mut metadata = self.get_metadata_of_topics(topics).await?;
             match metadata.frame() {
                 Some(Frame::Kafka(KafkaFrame::Response {
@@ -524,6 +525,11 @@ impl KafkaSinkCluster {
 
                     self.connection_factory.add_auth_message(message.clone());
                     results.push(rx);
+                    self.handshake_complete = true;
+
+                    for node in &mut self.nodes {
+                        node.get_connection(&self.connection_factory).await?;
+                    }
                 }
 
                 // route to random node
