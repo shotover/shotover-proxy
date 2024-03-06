@@ -3,13 +3,13 @@ use crate::message::Message;
 use crate::tcp;
 use crate::tls::TlsConnector;
 use crate::transforms::util::cluster_connection_pool::{spawn_read_write_tasks, Connection};
-use crate::transforms::util::{Request, Response};
+use crate::transforms::util::Request;
 use anyhow::{anyhow, Result};
 use kafka_protocol::messages::BrokerId;
 use kafka_protocol::protocol::StrBytes;
 use std::time::Duration;
 use tokio::io::split;
-use tokio::sync::{mpsc, oneshot, RwLock};
+use tokio::sync::oneshot;
 
 pub struct ConnectionFactory {
     tls: Option<TlsConnector>,
@@ -38,12 +38,6 @@ impl ConnectionFactory {
 
     pub async fn create_connection(&self, kafka_address: &KafkaAddress) -> Result<Connection> {
         let codec = KafkaCodecBuilder::new(Direction::Sink, "KafkaSinkCluster".to_owned());
-        tracing::info!(
-            "creating connection to {:?} with {:?} {:?}",
-            kafka_address,
-            self.handshake_message,
-            self.auth_message
-        );
 
         let address = (kafka_address.host.to_string(), kafka_address.port as u16);
         if let Some(tls) = self.tls.as_ref() {
@@ -67,9 +61,7 @@ impl ConnectionFactory {
                     })
                     .map_err(|_| anyhow!("Failed to send"))?;
 
-                let response = rx.await.map_err(|_| anyhow!("Failed to receive"))?;
-
-                tracing::info!("Received response {:?}", response);
+                let _response = rx.await.map_err(|_| anyhow!("Failed to receive"))?;
 
                 let (tx, rx) = oneshot::channel();
                 connection
@@ -79,9 +71,7 @@ impl ConnectionFactory {
                     })
                     .map_err(|_| anyhow!("Failed to send"))?;
 
-                let response = rx.await.map_err(|_| anyhow!("Failed to receive"))?;
-
-                tracing::info!("Received response {:?}", response);
+                let _response = rx.await.map_err(|_| anyhow!("Failed to receive"))?;
             }
 
             Ok(connection)

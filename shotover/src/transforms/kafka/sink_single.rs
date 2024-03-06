@@ -112,17 +112,6 @@ impl Transform for KafkaSinkSingle {
     }
 
     async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Messages> {
-        for request in &mut requests_wrapper.requests {
-            let request = request.frame().unwrap();
-            let k = request.clone().into_kafka();
-            match k {
-                Ok(KafkaFrame::Request { body, .. }) => {
-                    tracing::info!("Request: {:?}", body);
-                }
-                _ => {}
-            }
-        }
-
         if self.outbound.is_none() {
             let codec = KafkaCodecBuilder::new(Direction::Sink, "KafkaSinkSingle".to_owned());
             let address = (requests_wrapper.local_addr.ip(), self.address_port);
@@ -195,17 +184,6 @@ impl Transform for KafkaSinkSingle {
                         broker.1.port = port;
                     }
                     response.invalidate_cache();
-                }
-                _ => {}
-            }
-        }
-
-        for request in &mut responses {
-            let request = request.frame().unwrap();
-            let k = request.clone().into_kafka();
-            match k {
-                Ok(KafkaFrame::Response { body, .. }) => {
-                    tracing::info!("Response: {:?}", body);
                 }
                 _ => {}
             }
