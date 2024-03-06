@@ -1,4 +1,4 @@
-use super::{ExpectedResponse, Record};
+use super::{ExpectedResponse, NewPartition, NewTopic, Record};
 use j4rs::{Instance, InvocationArg, Jvm, JvmBuilder, MavenArtifact};
 use std::{collections::HashMap, rc::Rc};
 
@@ -82,158 +82,19 @@ impl KafkaConnectionBuilderJava {
         KafkaConsumerJava {}
     }
 
-    pub async fn connect_admin(&self) -> Instance {
+    pub async fn connect_admin(&self) -> KafkaAdminJava {
         let properties = properties(&self.jvm, &self.base_config);
-        self.jvm
+        let admin = self
+            .jvm
             .invoke_static(
                 "org.apache.kafka.clients.admin.Admin",
                 "create",
                 &[properties.into()],
             )
-            .unwrap()
+            .unwrap();
+        let jvm = self.jvm.clone();
+        KafkaAdminJava { jvm, admin }
     }
-
-    pub async fn admin_setup(&self) {
-        let admin = self.connect_admin().await;
-        create_topics(
-            &self.jvm,
-            &admin,
-            &[
-                NewTopic {
-                    name: "partitions1",
-                    num_partitions: 1,
-                    replication_factor: 1,
-                },
-                NewTopic {
-                    name: "paritions3",
-                    num_partitions: 3,
-                    replication_factor: 1,
-                },
-                NewTopic {
-                    name: "acks0",
-                    num_partitions: 1,
-                    replication_factor: 1,
-                },
-                NewTopic {
-                    name: "to_delete",
-                    num_partitions: 1,
-                    replication_factor: 1,
-                },
-            ],
-        )
-        .await;
-
-        create_partitions(
-            &self.jvm,
-            &admin,
-            &[NewPartition {
-                topic_name: "to_delete",
-                new_partition_count: 2,
-            }],
-        )
-        .await;
-    }
-
-    pub async fn admin_cleanup(&self) {
-        self.connect_admin().await;
-    }
-}
-
-struct NewTopic<'a> {
-    name: &'a str,
-    num_partitions: i32,
-    replication_factor: i16,
-}
-
-struct NewPartition<'a> {
-    topic_name: &'a str,
-    new_partition_count: i32,
-}
-
-async fn create_topics(jvm: &Jvm, admin_client: &Instance, topics: &[NewTopic<'_>]) {
-    let topics: Vec<_> = topics
-        .iter()
-        .map(|topic| {
-            jvm.create_instance(
-                "org.apache.kafka.clients.admin.NewTopic",
-                &[
-                    topic.name.try_into().unwrap(),
-                    jvm.invoke_static(
-                        "java.util.Optional",
-                        "of",
-                        &[InvocationArg::try_from(topic.num_partitions).unwrap()],
-                    )
-                    .unwrap()
-                    .into(),
-                    jvm.invoke_static(
-                        "java.util.Optional",
-                        "of",
-                        &[InvocationArg::try_from(topic.replication_factor).unwrap()],
-                    )
-                    .unwrap()
-                    .into(),
-                    // TODO: can simplify to this once https://github.com/astonbitecode/j4rs/issues/91 is resolved
-                    // InvocationArg::try_from(topic.num_partitions)
-                    //     .unwrap()
-                    //     .into_primitive()
-                    //     .unwrap(),
-                    // InvocationArg::try_from(topic.replication_factor)
-                    //     .unwrap()
-                    //     .into_primitive()
-                    //     .unwrap(),
-                ],
-            )
-        })
-        .collect();
-    let topics = jvm
-        .java_list("org.apache.kafka.clients.admin.NewTopic", topics)
-        .unwrap();
-
-    jvm.chain(admin_client)
-        .unwrap()
-        .invoke("createTopics", &[topics.into()])
-        .unwrap()
-        .invoke("all", &[])
-        .unwrap()
-        .invoke("get", &[])
-        .unwrap()
-        .collect();
-}
-
-async fn create_partitions(jvm: &Jvm, admin_client: &Instance, partitions: &[NewPartition<'_>]) {
-    let partitions: HashMap<_, _> = partitions
-        .iter()
-        .map(|partition| {
-            (
-                partition.topic_name,
-                jvm.invoke_static(
-                    "org.apache.kafka.clients.admin.NewPartitions",
-                    "increaseTo",
-                    &[InvocationArg::try_from(partition.new_partition_count)
-                        .unwrap()
-                        .into_primitive()
-                        .unwrap()],
-                ),
-            )
-        })
-        .collect();
-    let partitions = jvm
-        .java_map(
-            "java.lang.String",
-            "org.apache.kafka.clients.admin.NewTopic",
-            partitions,
-        )
-        .unwrap();
-
-    jvm.chain(admin_client)
-        .unwrap()
-        .invoke("createPartitions", &[partitions.into()])
-        .unwrap()
-        .invoke("all", &[])
-        .unwrap()
-        .invoke("get", &[])
-        .unwrap()
-        .collect();
 }
 
 pub struct KafkaProducerJava {
@@ -251,5 +112,104 @@ pub struct KafkaConsumerJava {}
 impl KafkaConsumerJava {
     pub async fn assert_consume(&self, _response: ExpectedResponse<'_>) {
         tracing::error!("Unimplemented assert");
+    }
+}
+
+pub struct KafkaAdminJava {
+    jvm: Rc<Jvm>,
+    admin: Instance,
+}
+
+impl KafkaAdminJava {
+    pub async fn create_topics(&self, topics: &[NewTopic<'_>]) {
+        let topics: Vec<_> = topics
+            .iter()
+            .map(|topic| {
+                self.jvm.create_instance(
+                    "org.apache.kafka.clients.admin.NewTopic",
+                    &[
+                        topic.name.try_into().unwrap(),
+                        self.jvm
+                            .invoke_static(
+                                "java.util.Optional",
+                                "of",
+                                &[InvocationArg::try_from(topic.num_partitions).unwrap()],
+                            )
+                            .unwrap()
+                            .into(),
+                        self.jvm
+                            .invoke_static(
+                                "java.util.Optional",
+                                "of",
+                                &[InvocationArg::try_from(topic.replication_factor).unwrap()],
+                            )
+                            .unwrap()
+                            .into(),
+                        // TODO: can simplify to this once https://github.com/astonbitecode/j4rs/issues/91 is resolved
+                        // InvocationArg::try_from(topic.num_partitions)
+                        //     .unwrap()
+                        //     .into_primitive()
+                        //     .unwrap(),
+                        // InvocationArg::try_from(topic.replication_factor)
+                        //     .unwrap()
+                        //     .into_primitive()
+                        //     .unwrap(),
+                    ],
+                )
+            })
+            .collect();
+        let topics = self
+            .jvm
+            .java_list("org.apache.kafka.clients.admin.NewTopic", topics)
+            .unwrap();
+
+        self.jvm
+            .chain(&self.admin)
+            .unwrap()
+            .invoke("createTopics", &[topics.into()])
+            .unwrap()
+            .invoke("all", &[])
+            .unwrap()
+            .invoke("get", &[])
+            .unwrap()
+            .collect();
+    }
+
+    pub async fn create_partitions(&self, partitions: &[NewPartition<'_>]) {
+        let partitions: HashMap<_, _> = partitions
+            .iter()
+            .map(|partition| {
+                (
+                    partition.topic_name,
+                    self.jvm.invoke_static(
+                        "org.apache.kafka.clients.admin.NewPartitions",
+                        "increaseTo",
+                        &[InvocationArg::try_from(partition.new_partition_count)
+                            .unwrap()
+                            .into_primitive()
+                            .unwrap()],
+                    ),
+                )
+            })
+            .collect();
+        let partitions = self
+            .jvm
+            .java_map(
+                "java.lang.String",
+                "org.apache.kafka.clients.admin.NewTopic",
+                partitions,
+            )
+            .unwrap();
+
+        self.jvm
+            .chain(&self.admin)
+            .unwrap()
+            .invoke("createPartitions", &[partitions.into()])
+            .unwrap()
+            .invoke("all", &[])
+            .unwrap()
+            .invoke("get", &[])
+            .unwrap()
+            .collect();
     }
 }
