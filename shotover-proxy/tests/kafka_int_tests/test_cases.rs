@@ -1,4 +1,42 @@
-use test_helpers::connection::kafka::{ExpectedResponse, KafkaConnectionBuilder, Record};
+use test_helpers::connection::kafka::{
+    ExpectedResponse, KafkaConnectionBuilder, NewPartition, NewTopic, Record,
+};
+
+async fn admin_setup(connection_builder: &KafkaConnectionBuilder) {
+    let admin = connection_builder.connect_admin().await;
+    admin
+        .create_topics(&[
+            NewTopic {
+                name: "partitions1",
+                num_partitions: 1,
+                replication_factor: 1,
+            },
+            NewTopic {
+                name: "paritions3",
+                num_partitions: 3,
+                replication_factor: 1,
+            },
+            NewTopic {
+                name: "acks0",
+                num_partitions: 1,
+                replication_factor: 1,
+            },
+            NewTopic {
+                name: "to_delete",
+                num_partitions: 1,
+                replication_factor: 1,
+            },
+        ])
+        .await;
+
+    admin
+        .create_partitions(&[NewPartition {
+            // TODO: modify topic "foo" instead so that we can test our handling of that with interesting partition + replication count
+            topic_name: "to_delete",
+            new_partition_count: 2,
+        }])
+        .await;
+}
 
 async fn produce_consume(connection_builder: &KafkaConnectionBuilder, topic_name: &str, i: i64) {
     let producer = connection_builder.connect_producer(1).await;
@@ -76,6 +114,7 @@ async fn produce_consume_acks0(connection_builder: &KafkaConnectionBuilder) {
 }
 
 pub async fn basic(connection_builder: KafkaConnectionBuilder) {
+    admin_setup(&connection_builder).await;
     connection_builder.admin_setup().await;
     for i in 0..2 {
         produce_consume(&connection_builder, "partitions1", i).await;

@@ -1,7 +1,7 @@
 // Allow direct usage of the APIs when the feature is enabled
 pub use rdkafka;
 
-use super::{ExpectedResponse, Record};
+use super::{ExpectedResponse, NewPartition, Record};
 use rdkafka::admin::AdminClient;
 use rdkafka::admin::{
     AdminOptions, AlterConfig, NewPartitions, NewTopic, OwnedResourceSpecifier, ResourceSpecifier,
@@ -64,63 +64,14 @@ impl KafkaConnectionBuilderCpp {
         KafkaConsumerCpp { consumer }
     }
 
-    pub async fn connect_admin(&self) -> AdminClient<DefaultClientContext> {
-        self.client.create().unwrap()
+    pub async fn connect_admin(&self) -> KafkaAdminCpp {
+        let admin = self.client.create().unwrap();
+        KafkaAdminCpp { admin }
     }
 
+    // TODO: support for these admin operations needs to be added to the java driver wrapper and then this method can be deleted
     pub async fn admin_setup(&self) {
-        let admin = self.connect_admin().await;
-        admin
-            .create_topics(
-                &[
-                    NewTopic {
-                        name: "partitions1",
-                        num_partitions: 1,
-                        replication: TopicReplication::Fixed(1),
-                        config: vec![],
-                    },
-                    NewTopic {
-                        name: "paritions3",
-                        num_partitions: 3,
-                        replication: TopicReplication::Fixed(1),
-                        config: vec![],
-                    },
-                    NewTopic {
-                        name: "acks0",
-                        num_partitions: 1,
-                        replication: TopicReplication::Fixed(1),
-                        config: vec![],
-                    },
-                    NewTopic {
-                        name: "to_delete",
-                        num_partitions: 1,
-                        replication: TopicReplication::Fixed(1),
-                        config: vec![],
-                    },
-                ],
-                &AdminOptions::new()
-                    .operation_timeout(Some(Timeout::After(Duration::from_secs(30)))),
-            )
-            .await
-            .unwrap();
-
-        let results = admin
-            .create_partitions(
-                &[NewPartitions {
-                    // TODO: modify topic "foo" instead so that we can test our handling of that with interesting partiton + replication count
-                    topic_name: "to_delete",
-                    new_partition_count: 2,
-                    assignment: None,
-                }],
-                &AdminOptions::new()
-                    .operation_timeout(Some(Timeout::After(Duration::from_secs(30)))),
-            )
-            .await
-            .unwrap();
-        for result in results {
-            let result = result.unwrap();
-            assert_eq!(result, "to_delete")
-        }
+        let admin = self.connect_admin().await.admin;
 
         let results = admin
             .describe_configs(
@@ -171,8 +122,9 @@ impl KafkaConnectionBuilderCpp {
         }
     }
 
+    // TODO: support for these admin operations needs to be added to the java driver wrapper and then this method can be deleted
     pub async fn admin_cleanup(&self) {
-        let admin = self.connect_admin().await;
+        let admin = self.connect_admin().await.admin;
         let results = admin
             // The cpp driver will lock up when running certain commands after a delete_groups if the delete_groups is targeted at a group that doesnt exist.
             // So just make sure to run it against a group that does exist.
@@ -246,5 +198,56 @@ impl KafkaConsumerCpp {
         );
         assert_eq!(response.topic_name, message.topic());
         assert_eq!(response.offset, message.offset());
+    }
+}
+
+pub struct KafkaAdminCpp {
+    // TODO: make private
+    pub admin: AdminClient<DefaultClientContext>,
+}
+
+impl KafkaAdminCpp {
+    pub async fn create_topics(&self, topics: &[super::NewTopic<'_>]) {
+        let topics: Vec<_> = topics
+            .iter()
+            .map(|topic| NewTopic {
+                name: topic.name,
+                num_partitions: topic.num_partitions,
+                replication: TopicReplication::Fixed(topic.replication_factor as i32),
+                config: vec![],
+            })
+            .collect();
+        self.admin
+            .create_topics(
+                &topics,
+                &AdminOptions::new()
+                    .operation_timeout(Some(Timeout::After(Duration::from_secs(30)))),
+            )
+            .await
+            .unwrap();
+    }
+
+    pub async fn create_partitions(&self, partitions: &[NewPartition<'_>]) {
+        let partitions: Vec<_> = partitions
+            .iter()
+            .map(|partition| NewPartitions {
+                topic_name: partition.topic_name,
+                new_partition_count: partition.new_partition_count as usize,
+                assignment: None,
+            })
+            .collect();
+        let results = self
+            .admin
+            .create_partitions(
+                &partitions,
+                &AdminOptions::new()
+                    .operation_timeout(Some(Timeout::After(Duration::from_secs(30)))),
+            )
+            .await
+            .unwrap();
+        for result in results {
+            let result = result.unwrap();
+            assert_eq!(result, "to_delete")
+        }
     }
 }
