@@ -1,5 +1,6 @@
 use test_helpers::connection::kafka::{
-    ExpectedResponse, KafkaConnectionBuilder, NewPartition, NewTopic, Record,
+    AlterConfig, ConfigEntry, ExpectedResponse, KafkaConnectionBuilder, NewPartition, NewTopic,
+    Record, ResourceSpecifier,
 };
 
 async fn admin_setup(connection_builder: &KafkaConnectionBuilder) {
@@ -36,6 +37,24 @@ async fn admin_setup(connection_builder: &KafkaConnectionBuilder) {
             new_partition_count: 2,
         }])
         .await;
+
+    admin
+        // TODO: test ResourceSpecifier::Broker and ResourceSpecifier::Group as well.
+        //       Will need to find a way to get a valid broker id and to create a group.
+        .describe_configs(&[ResourceSpecifier::Topic("to_delete")])
+        .await;
+
+    admin
+        .alter_configs(&[AlterConfig {
+            specifier: ResourceSpecifier::Topic("to_delete"),
+            entries: &[ConfigEntry {
+                key: "delete.retention.ms".to_owned(),
+                value: "86400001".to_owned(),
+            }],
+        }])
+        .await;
+
+    admin.delete_topics(&["to_delete"]).await
 }
 
 async fn produce_consume(connection_builder: &KafkaConnectionBuilder, topic_name: &str, i: i64) {
@@ -115,7 +134,6 @@ async fn produce_consume_acks0(connection_builder: &KafkaConnectionBuilder) {
 
 pub async fn basic(connection_builder: KafkaConnectionBuilder) {
     admin_setup(&connection_builder).await;
-    connection_builder.admin_setup().await;
     for i in 0..2 {
         produce_consume(&connection_builder, "partitions1", i).await;
         produce_consume(&connection_builder, "partitions3", i).await;
