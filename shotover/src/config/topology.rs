@@ -1,6 +1,8 @@
 use crate::sources::{Source, SourceConfig};
 use anyhow::{anyhow, Context, Result};
+use itertools::Itertools;
 use serde::{Deserialize, Serialize};
+use std::fmt::Write;
 use tokio::sync::watch;
 use tracing::info;
 
@@ -36,6 +38,21 @@ impl Topology {
         let mut sources: Vec<Source> = Vec::new();
 
         let mut topology_errors = String::new();
+
+        let mut duplicated_names = vec![];
+        for source in &self.sources {
+            let name = source.get_name();
+            if self.sources.iter().filter(|x| x.get_name() == name).count() > 1 {
+                duplicated_names.push(name);
+            }
+        }
+        for name in duplicated_names.iter().unique() {
+            writeln!(
+                topology_errors,
+                "Source name {name:?} occurred more than once. Make sure all source names are unique. The names will be used in logging and metrics."
+            )?;
+        }
+
         for source in &self.sources {
             match source.get_source(trigger_shutdown_rx.clone()).await {
                 Ok(source) => sources.push(source),
@@ -482,6 +499,26 @@ foo source:
     }
 
     #[tokio::test]
+    async fn test_validate_repeated_source_names() {
+        let expected = r#"Topology errors
+Source name "foo" occurred more than once. Make sure all source names are unique. The names will be used in logging and metrics.
+"#;
+
+        let mut sources = create_source_from_chain(vec![Box::new(NullSinkConfig)]);
+        sources.extend(create_source_from_chain(vec![Box::new(NullSinkConfig)]));
+
+        let topology = Topology { sources };
+        let (_sender, trigger_shutdown_rx) = watch::channel::<bool>(false);
+        let error = topology
+            .run_chains(trigger_shutdown_rx)
+            .await
+            .unwrap_err()
+            .to_string();
+
+        assert_eq!(error, expected);
+    }
+
+    #[tokio::test]
     async fn test_validate_chain_multiple_subchains() {
         let (_sender, trigger_shutdown_rx) = watch::channel::<bool>(false);
 
@@ -495,13 +532,13 @@ foo source:
             .to_string();
 
         let expected = r#"Topology errors
-redis source:
-  redis chain:
+redis1 source:
+  redis1 chain:
     Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
     Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
     Non-terminating transform "DebugPrinter" is last in chain. Last transform must be terminating.
-redis source:
-  redis chain:
+redis2 source:
+  redis2 chain:
     TuneableConsistencyScatter:
       a_chain_1 chain:
         Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.

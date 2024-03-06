@@ -1,14 +1,14 @@
 ---
 sources:
   - Redis:
-      name: "redis"
+      name: "redis1"
       listen_addr: "127.0.0.1:6379"
       chain:
         - NullSink
         - NullSink
         - DebugPrinter
   - Redis:
-      name: "redis"
+      name: "redis2"
       listen_addr: "127.0.0.1:6379"
       chain:
         - DebugPrinter

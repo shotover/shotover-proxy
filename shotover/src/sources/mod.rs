@@ -85,4 +85,17 @@ impl SourceConfig {
             SourceConfig::OpenSearch(r) => r.get_source(trigger_shutdown_rx).await,
         }
     }
+
+    pub(crate) fn get_name(&self) -> &str {
+        match self {
+            #[cfg(feature = "cassandra")]
+            SourceConfig::Cassandra(c) => &c.name,
+            #[cfg(feature = "redis")]
+            SourceConfig::Redis(r) => &r.name,
+            #[cfg(feature = "kafka")]
+            SourceConfig::Kafka(r) => &r.name,
+            #[cfg(feature = "opensearch")]
+            SourceConfig::OpenSearch(r) => &r.name,
+        }
+    }
 }
