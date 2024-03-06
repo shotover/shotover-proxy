@@ -16,7 +16,7 @@ subprocess.workspace = true
 tokio-bin-process.workspace = true
 cdrs-tokio.workspace = true
 cassandra-protocol.workspace = true
-cassandra-cpp = { version = "2.0.0", default-features = false, features = ["log"], optional = true }
+cassandra-cpp = { version = "3.0.0", default-features = false, features = ["log"], optional = true }
 scylla.workspace = true
 openssl.workspace = true
 bytes.workspace = true
@@ -33,3 +33,4 @@ anyhow.workspace = true
 rcgen.workspace = true
 rdkafka = { version = "0.36", features = ["cmake-build"], optional = true }
 docker-compose-runner = "0.3.0"
+j4rs = "0.17.2"

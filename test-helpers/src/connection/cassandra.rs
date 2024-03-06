@@ -2,8 +2,8 @@ use bytes::BufMut;
 #[cfg(feature = "cassandra-cpp-driver-tests")]
 use cassandra_cpp::{
     BatchType, CassErrorCode, CassResult, Cluster, Consistency as DatastaxConsistency, Error,
-    ErrorKind, PreparedStatement as PreparedStatementCpp, Session as DatastaxSession, Ssl,
-    Statement as StatementCpp, Value, ValueType,
+    ErrorKind, LendingIterator, PreparedStatement as PreparedStatementCpp,
+    Session as DatastaxSession, Ssl, Statement as StatementCpp, Value, ValueType,
 };
 use cassandra_protocol::frame::message_error::ErrorType;
 use cassandra_protocol::query::QueryValues;
@@ -814,10 +814,19 @@ impl CassandraConnection {
         response: Result<CassResult, cassandra_cpp::Error>,
     ) -> Result<Vec<Vec<ResultValue>>, ErrorBody> {
         match response {
-            Ok(result) => Ok(result
-                .into_iter()
-                .map(|x| x.into_iter().map(ResultValue::new_from_cpp).collect())
-                .collect()),
+            Ok(response) => {
+                let mut response_result = vec![];
+                let mut iter = response.iter();
+                while let Some(row) = iter.next() {
+                    let mut row_result = vec![];
+                    let mut iter = row.iter();
+                    while let Some(value) = iter.next() {
+                        row_result.push(ResultValue::new_from_cpp(value));
+                    }
+                    response_result.push(row_result)
+                }
+                Ok(response_result)
+            }
             Err(Error(ErrorKind::CassErrorResult(code, message, ..), _)) => Err(ErrorBody {
                 ty: match code {
                     CassErrorCode::SERVER_OVERLOADED => ErrorType::Overloaded,
@@ -1001,41 +1010,35 @@ impl ResultValue {
                 ValueType::COUNTER => ResultValue::Counter(value.get_i64().unwrap()),
                 ValueType::VARINT => ResultValue::VarInt(value.get_bytes().unwrap().to_vec()),
                 ValueType::TINY_INT => ResultValue::TinyInt(value.get_i8().unwrap()),
-                ValueType::SET => ResultValue::Set(
-                    value
-                        .get_set()
-                        .unwrap()
-                        .map(ResultValue::new_from_cpp)
-                        .collect(),
-                ),
-                // despite the name get_set is used by SET, LIST and TUPLE
-                ValueType::LIST => ResultValue::List(
-                    value
-                        .get_set()
-                        .unwrap()
-                        .map(ResultValue::new_from_cpp)
-                        .collect(),
-                ),
-                ValueType::TUPLE => ResultValue::Tuple(
-                    value
-                        .get_set()
-                        .unwrap()
-                        .map(ResultValue::new_from_cpp)
-                        .collect(),
-                ),
-                ValueType::MAP => ResultValue::Map(
-                    value
-                        .get_map()
-                        .unwrap()
-                        .map(|(k, v)| (ResultValue::new_from_cpp(k), ResultValue::new_from_cpp(v)))
-                        .collect(),
-                ),
+                ValueType::SET => ResultValue::Set(Self::new_from_cpp_set_list_or_tuple(value)),
+                ValueType::LIST => ResultValue::List(Self::new_from_cpp_set_list_or_tuple(value)),
+                ValueType::TUPLE => ResultValue::Tuple(Self::new_from_cpp_set_list_or_tuple(value)),
+                ValueType::MAP => {
+        let mut result = vec![];
+        let mut iter = value.get_map().unwrap();
+        while let Some((k, v)) = iter.next() {
+            result.push((ResultValue::new_from_cpp(k), ResultValue::new_from_cpp(v)));
+        }
+        ResultValue::Map(result)
+                },
                 ValueType::UNKNOWN => todo!(),
                 ValueType::CUSTOM => todo!(),
                 ValueType::UDT => todo!(),
                 ValueType::TEXT => unimplemented!("text is represented by the same id as varchar at the protocol level and therefore will never be instantiated by the datastax cpp driver. https://github.com/apache/cassandra/blob/703ccdee29f7e8c39aeb976e72e516415d609cf4/doc/native_protocol_v5.spec#L1184"),
             }
         }
+    }
+
+    /// value must be a SET, LIST or TUPLE
+    #[cfg(feature = "cassandra-cpp-driver-tests")]
+    fn new_from_cpp_set_list_or_tuple(value: Value<'_>) -> Vec<Self> {
+        let mut result = vec![];
+        // despite the name set_to_vec is used by SET, LIST and TUPLE
+        let mut iter = value.get_set().unwrap();
+        while let Some(value) = iter.next() {
+            result.push(ResultValue::new_from_cpp(value));
+        }
+        result
     }
 
     pub fn new_from_cdrs(value: CassandraType, version: Version) -> Self {
