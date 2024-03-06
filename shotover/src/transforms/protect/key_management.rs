@@ -156,7 +156,7 @@ mod key_manager_tests {
         let result = futures::executor::block_on(config.build()).unwrap_err();
         assert_eq!(
             result.to_string(),
-            "Invalid byte 61, offset 43.".to_string()
+            "Invalid symbol 61, offset 43.".to_string()
         );
     }
 }

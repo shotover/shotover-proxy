@@ -8,40 +8,44 @@ use kafka_protocol::messages::{
     AlterPartitionReassignmentsRequest, AlterPartitionReassignmentsResponse, AlterPartitionRequest,
     AlterPartitionResponse, AlterReplicaLogDirsRequest, AlterReplicaLogDirsResponse,
     AlterUserScramCredentialsRequest, AlterUserScramCredentialsResponse, ApiKey,
-    ApiVersionsRequest, ApiVersionsResponse, BeginQuorumEpochRequest, BeginQuorumEpochResponse,
+    ApiVersionsRequest, ApiVersionsResponse, AssignReplicasToDirsRequest,
+    AssignReplicasToDirsResponse, BeginQuorumEpochRequest, BeginQuorumEpochResponse,
     BrokerHeartbeatRequest, BrokerHeartbeatResponse, BrokerRegistrationRequest,
-    BrokerRegistrationResponse, ControlledShutdownRequest, ControlledShutdownResponse,
-    CreateAclsRequest, CreateAclsResponse, CreateDelegationTokenRequest,
-    CreateDelegationTokenResponse, CreatePartitionsRequest, CreatePartitionsResponse,
-    CreateTopicsRequest, CreateTopicsResponse, DeleteAclsRequest, DeleteAclsResponse,
-    DeleteGroupsRequest, DeleteGroupsResponse, DeleteRecordsRequest, DeleteRecordsResponse,
-    DeleteTopicsRequest, DeleteTopicsResponse, DescribeAclsRequest, DescribeAclsResponse,
-    DescribeClientQuotasRequest, DescribeClientQuotasResponse, DescribeClusterRequest,
-    DescribeClusterResponse, DescribeConfigsRequest, DescribeConfigsResponse,
-    DescribeDelegationTokenRequest, DescribeDelegationTokenResponse, DescribeGroupsRequest,
-    DescribeGroupsResponse, DescribeLogDirsRequest, DescribeLogDirsResponse,
+    BrokerRegistrationResponse, ConsumerGroupHeartbeatRequest, ConsumerGroupHeartbeatResponse,
+    ControlledShutdownRequest, ControlledShutdownResponse, ControllerRegistrationRequest,
+    ControllerRegistrationResponse, CreateAclsRequest, CreateAclsResponse,
+    CreateDelegationTokenRequest, CreateDelegationTokenResponse, CreatePartitionsRequest,
+    CreatePartitionsResponse, CreateTopicsRequest, CreateTopicsResponse, DeleteAclsRequest,
+    DeleteAclsResponse, DeleteGroupsRequest, DeleteGroupsResponse, DeleteRecordsRequest,
+    DeleteRecordsResponse, DeleteTopicsRequest, DeleteTopicsResponse, DescribeAclsRequest,
+    DescribeAclsResponse, DescribeClientQuotasRequest, DescribeClientQuotasResponse,
+    DescribeClusterRequest, DescribeClusterResponse, DescribeConfigsRequest,
+    DescribeConfigsResponse, DescribeDelegationTokenRequest, DescribeDelegationTokenResponse,
+    DescribeGroupsRequest, DescribeGroupsResponse, DescribeLogDirsRequest, DescribeLogDirsResponse,
     DescribeProducersRequest, DescribeProducersResponse, DescribeQuorumRequest,
     DescribeQuorumResponse, DescribeTransactionsRequest, DescribeTransactionsResponse,
     DescribeUserScramCredentialsRequest, DescribeUserScramCredentialsResponse, ElectLeadersRequest,
     ElectLeadersResponse, EndQuorumEpochRequest, EndQuorumEpochResponse, EndTxnRequest,
     EndTxnResponse, EnvelopeRequest, EnvelopeResponse, ExpireDelegationTokenRequest,
     ExpireDelegationTokenResponse, FetchRequest, FetchResponse, FetchSnapshotRequest,
-    FetchSnapshotResponse, FindCoordinatorRequest, FindCoordinatorResponse, HeartbeatRequest,
+    FetchSnapshotResponse, FindCoordinatorRequest, FindCoordinatorResponse,
+    GetTelemetrySubscriptionsRequest, GetTelemetrySubscriptionsResponse, HeartbeatRequest,
     HeartbeatResponse, IncrementalAlterConfigsRequest, IncrementalAlterConfigsResponse,
     InitProducerIdRequest, InitProducerIdResponse, JoinGroupRequest, JoinGroupResponse,
     LeaderAndIsrRequest, LeaderAndIsrResponse, LeaveGroupRequest, LeaveGroupResponse,
-    ListGroupsRequest, ListGroupsResponse, ListOffsetsRequest, ListOffsetsResponse,
-    ListPartitionReassignmentsRequest, ListPartitionReassignmentsResponse, ListTransactionsRequest,
-    ListTransactionsResponse, MetadataRequest, MetadataResponse, OffsetCommitRequest,
-    OffsetCommitResponse, OffsetDeleteRequest, OffsetDeleteResponse, OffsetFetchRequest,
-    OffsetFetchResponse, OffsetForLeaderEpochRequest, OffsetForLeaderEpochResponse, ProduceRequest,
-    ProduceResponse, RenewDelegationTokenRequest, RenewDelegationTokenResponse, RequestHeader,
-    ResponseHeader, SaslAuthenticateRequest, SaslAuthenticateResponse, SaslHandshakeRequest,
-    SaslHandshakeResponse, StopReplicaRequest, StopReplicaResponse, SyncGroupRequest,
-    SyncGroupResponse, TxnOffsetCommitRequest, TxnOffsetCommitResponse, UnregisterBrokerRequest,
-    UnregisterBrokerResponse, UpdateFeaturesRequest, UpdateFeaturesResponse, UpdateMetadataRequest,
-    UpdateMetadataResponse, VoteRequest, VoteResponse, WriteTxnMarkersRequest,
-    WriteTxnMarkersResponse,
+    ListClientMetricsResourcesRequest, ListClientMetricsResourcesResponse, ListGroupsRequest,
+    ListGroupsResponse, ListOffsetsRequest, ListOffsetsResponse, ListPartitionReassignmentsRequest,
+    ListPartitionReassignmentsResponse, ListTransactionsRequest, ListTransactionsResponse,
+    MetadataRequest, MetadataResponse, OffsetCommitRequest, OffsetCommitResponse,
+    OffsetDeleteRequest, OffsetDeleteResponse, OffsetFetchRequest, OffsetFetchResponse,
+    OffsetForLeaderEpochRequest, OffsetForLeaderEpochResponse, ProduceRequest, ProduceResponse,
+    PushTelemetryRequest, PushTelemetryResponse, RenewDelegationTokenRequest,
+    RenewDelegationTokenResponse, RequestHeader, ResponseHeader, SaslAuthenticateRequest,
+    SaslAuthenticateResponse, SaslHandshakeRequest, SaslHandshakeResponse, StopReplicaRequest,
+    StopReplicaResponse, SyncGroupRequest, SyncGroupResponse, TxnOffsetCommitRequest,
+    TxnOffsetCommitResponse, UnregisterBrokerRequest, UnregisterBrokerResponse,
+    UpdateFeaturesRequest, UpdateFeaturesResponse, UpdateMetadataRequest, UpdateMetadataResponse,
+    VoteRequest, VoteResponse, WriteTxnMarkersRequest, WriteTxnMarkersResponse,
 };
 use kafka_protocol::protocol::{Decodable, Encodable, HeaderVersion};
 use std::fmt::{Display, Formatter, Result as FmtResult};
@@ -177,6 +181,12 @@ pub enum RequestBody {
     AlterClientQuotas(AlterClientQuotasRequest),
     DescribeQuorum(DescribeQuorumRequest),
     AlterUserScramCredentials(AlterUserScramCredentialsRequest),
+    ConsumerGroupHeartbeat(ConsumerGroupHeartbeatRequest),
+    ControllerRegistration(ControllerRegistrationRequest),
+    GetTelemetrySubscriptions(GetTelemetrySubscriptionsRequest),
+    PushTelemetry(PushTelemetryRequest),
+    AssignReplicasToDirs(AssignReplicasToDirsRequest),
+    ListClientMetricsResources(ListClientMetricsResourcesRequest),
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -249,6 +259,12 @@ pub enum ResponseBody {
     DescribeConfigs(DescribeConfigsResponse),
     OffsetDelete(OffsetDeleteResponse),
     DeleteGroups(DeleteGroupsResponse),
+    ConsumerGroupHeartbeat(ConsumerGroupHeartbeatResponse),
+    ControllerRegistration(ControllerRegistrationResponse),
+    GetTelemetrySubscriptions(GetTelemetrySubscriptionsResponse),
+    PushTelemetry(PushTelemetryResponse),
+    AssignReplicasToDirs(AssignReplicasToDirsResponse),
+    ListClientMetricsResources(ListClientMetricsResourcesResponse),
 }
 
 impl ResponseBody {
@@ -360,6 +376,22 @@ impl ResponseBody {
             ResponseBody::DescribeConfigs(_) => DescribeConfigsResponse::header_version(version),
             ResponseBody::OffsetDelete(_) => OffsetDeleteResponse::header_version(version),
             ResponseBody::DeleteGroups(_) => DeleteGroupsResponse::header_version(version),
+            ResponseBody::ConsumerGroupHeartbeat(_) => {
+                ConsumerGroupHeartbeatResponse::header_version(version)
+            }
+            ResponseBody::ControllerRegistration(_) => {
+                ControllerRegistrationResponse::header_version(version)
+            }
+            ResponseBody::GetTelemetrySubscriptions(_) => {
+                GetTelemetrySubscriptionsResponse::header_version(version)
+            }
+            ResponseBody::PushTelemetry(_) => PushTelemetryResponse::header_version(version),
+            ResponseBody::AssignReplicasToDirs(_) => {
+                AssignReplicasToDirsResponse::header_version(version)
+            }
+            ResponseBody::ListClientMetricsResources(_) => {
+                ListClientMetricsResourcesResponse::header_version(version)
+            }
         }
     }
 }
@@ -523,6 +555,22 @@ impl KafkaFrame {
             ApiKey::DescribeClusterKey => {
                 RequestBody::DescribeCluster(decode(&mut bytes, version)?)
             }
+            ApiKey::ConsumerGroupHeartbeatKey => {
+                RequestBody::ConsumerGroupHeartbeat(decode(&mut bytes, version)?)
+            }
+            ApiKey::ControllerRegistrationKey => {
+                RequestBody::ControllerRegistration(decode(&mut bytes, version)?)
+            }
+            ApiKey::GetTelemetrySubscriptionsKey => {
+                RequestBody::GetTelemetrySubscriptions(decode(&mut bytes, version)?)
+            }
+            ApiKey::PushTelemetryKey => RequestBody::PushTelemetry(decode(&mut bytes, version)?),
+            ApiKey::AssignReplicasToDirsKey => {
+                RequestBody::AssignReplicasToDirs(decode(&mut bytes, version)?)
+            }
+            ApiKey::ListClientMetricsResourcesKey => {
+                RequestBody::ListClientMetricsResources(decode(&mut bytes, version)?)
+            }
         };
 
         Ok(KafkaFrame::Request { header, body })
@@ -672,6 +720,22 @@ impl KafkaFrame {
             ApiKey::AllocateProducerIdsKey => {
                 ResponseBody::AllocateProducerIds(decode(&mut bytes, version)?)
             }
+            ApiKey::ConsumerGroupHeartbeatKey => {
+                ResponseBody::ConsumerGroupHeartbeat(decode(&mut bytes, version)?)
+            }
+            ApiKey::ControllerRegistrationKey => {
+                ResponseBody::ControllerRegistration(decode(&mut bytes, version)?)
+            }
+            ApiKey::GetTelemetrySubscriptionsKey => {
+                ResponseBody::GetTelemetrySubscriptions(decode(&mut bytes, version)?)
+            }
+            ApiKey::PushTelemetryKey => ResponseBody::PushTelemetry(decode(&mut bytes, version)?),
+            ApiKey::AssignReplicasToDirsKey => {
+                ResponseBody::AssignReplicasToDirs(decode(&mut bytes, version)?)
+            }
+            ApiKey::ListClientMetricsResourcesKey => {
+                ResponseBody::ListClientMetricsResources(decode(&mut bytes, version)?)
+            }
         };
 
         Ok(KafkaFrame::Response {
@@ -766,6 +830,12 @@ impl KafkaFrame {
                     RequestBody::AllocateProducerIds(x) => encode(x, bytes, version)?,
                     RequestBody::DescribeCluster(x) => encode(x, bytes, version)?,
                     RequestBody::AlterScramCredentials(x) => encode(x, bytes, version)?,
+                    RequestBody::ConsumerGroupHeartbeat(x) => encode(x, bytes, version)?,
+                    RequestBody::ControllerRegistration(x) => encode(x, bytes, version)?,
+                    RequestBody::GetTelemetrySubscriptions(x) => encode(x, bytes, version)?,
+                    RequestBody::PushTelemetry(x) => encode(x, bytes, version)?,
+                    RequestBody::AssignReplicasToDirs(x) => encode(x, bytes, version)?,
+                    RequestBody::ListClientMetricsResources(x) => encode(x, bytes, version)?,
                 }
             }
             KafkaFrame::Response {
@@ -843,6 +913,12 @@ impl KafkaFrame {
                     ResponseBody::AllocateProducerIds(x) => encode(x, bytes, version)?,
                     ResponseBody::DescribeConfigs(x) => encode(x, bytes, version)?,
                     ResponseBody::DeleteGroups(x) => encode(x, bytes, version)?,
+                    ResponseBody::ConsumerGroupHeartbeat(x) => encode(x, bytes, version)?,
+                    ResponseBody::ControllerRegistration(x) => encode(x, bytes, version)?,
+                    ResponseBody::GetTelemetrySubscriptions(x) => encode(x, bytes, version)?,
+                    ResponseBody::PushTelemetry(x) => encode(x, bytes, version)?,
+                    ResponseBody::AssignReplicasToDirs(x) => encode(x, bytes, version)?,
+                    ResponseBody::ListClientMetricsResources(x) => encode(x, bytes, version)?,
                 }
             }
         }
