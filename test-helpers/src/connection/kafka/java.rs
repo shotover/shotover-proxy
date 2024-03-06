@@ -41,8 +41,15 @@ impl KafkaConnectionBuilderJava {
         KafkaConnectionBuilderJava { jvm, base_config }
     }
 
-    pub fn use_sasl(self, _user: &str, _pass: &str) -> Self {
-        tracing::error!("Unimplemented test case");
+    pub fn use_sasl(mut self, user: &str, pass: &str) -> Self {
+        let conf = &mut self.base_config;
+        conf.insert("sasl.mechanism".to_owned(), "PLAIN".to_owned());
+        conf.insert("security.protocol".to_owned(), "SASL_PLAINTEXT".to_owned());
+        conf.insert(
+            "sasl.jaas.config".to_owned(),
+            format!(r#"org.apache.kafka.common.security.plain.PlainLoginModule required username="{user}" password="{pass}";"#)
+        );
+
         self
     }
 
@@ -115,6 +122,16 @@ impl KafkaConnectionBuilderJava {
             ],
         )
         .await;
+
+        create_partitions(
+            &self.jvm,
+            &admin,
+            &[NewPartition {
+                topic_name: "to_delete",
+                new_partition_count: 2,
+            }],
+        )
+        .await;
     }
 
     pub async fn admin_cleanup(&self) {
@@ -126,6 +143,11 @@ struct NewTopic<'a> {
     name: &'a str,
     num_partitions: i32,
     replication_factor: i16,
+}
+
+struct NewPartition<'a> {
+    topic_name: &'a str,
+    new_partition_count: i32,
 }
 
 async fn create_topics(jvm: &Jvm, admin_client: &Instance, topics: &[NewTopic<'_>]) {
@@ -167,8 +189,51 @@ async fn create_topics(jvm: &Jvm, admin_client: &Instance, topics: &[NewTopic<'_
         .java_list("org.apache.kafka.clients.admin.NewTopic", topics)
         .unwrap();
 
-    jvm.invoke(admin_client, "createTopics", &[topics.into()])
+    jvm.chain(admin_client)
+        .unwrap()
+        .invoke("createTopics", &[topics.into()])
+        .unwrap()
+        .invoke("all", &[])
+        .unwrap()
+        .invoke("get", &[])
+        .unwrap()
+        .collect();
+}
+
+async fn create_partitions(jvm: &Jvm, admin_client: &Instance, partitions: &[NewPartition<'_>]) {
+    let partitions: HashMap<_, _> = partitions
+        .iter()
+        .map(|partition| {
+            (
+                partition.topic_name,
+                jvm.invoke_static(
+                    "org.apache.kafka.clients.admin.NewPartitions",
+                    "increaseTo",
+                    &[InvocationArg::try_from(partition.new_partition_count)
+                        .unwrap()
+                        .into_primitive()
+                        .unwrap()],
+                ),
+            )
+        })
+        .collect();
+    let partitions = jvm
+        .java_map(
+            "java.lang.String",
+            "org.apache.kafka.clients.admin.NewTopic",
+            partitions,
+        )
         .unwrap();
+
+    jvm.chain(admin_client)
+        .unwrap()
+        .invoke("createPartitions", &[partitions.into()])
+        .unwrap()
+        .invoke("all", &[])
+        .unwrap()
+        .invoke("get", &[])
+        .unwrap()
+        .collect();
 }
 
 pub struct KafkaProducerJava {
