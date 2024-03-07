@@ -51,11 +51,19 @@ impl KafkaConnectionBuilder {
         }
     }
 
+    pub async fn connect_admin(&self) -> KafkaAdmin {
+        match self {
+            #[cfg(feature = "rdkafka-driver-tests")]
+            Self::Cpp(cpp) => KafkaAdmin::Cpp(cpp.connect_admin().await),
+            Self::Java(java) => KafkaAdmin::Java(java.connect_admin().await),
+        }
+    }
+
     pub async fn admin_setup(&self) {
         match self {
             #[cfg(feature = "rdkafka-driver-tests")]
             Self::Cpp(cpp) => cpp.admin_setup().await,
-            Self::Java(java) => java.admin_setup().await,
+            Self::Java(_) => {}
         }
     }
 
@@ -63,7 +71,7 @@ impl KafkaConnectionBuilder {
         match self {
             #[cfg(feature = "rdkafka-driver-tests")]
             Self::Cpp(cpp) => cpp.admin_cleanup().await,
-            Self::Java(java) => java.admin_cleanup().await,
+            Self::Java(_) => {}
         }
     }
 }
@@ -111,4 +119,39 @@ pub struct ExpectedResponse<'a> {
     pub key: Option<&'a str>,
     pub topic_name: &'a str,
     pub offset: i64,
+}
+
+pub enum KafkaAdmin {
+    #[cfg(feature = "rdkafka-driver-tests")]
+    Cpp(KafkaAdminCpp),
+    Java(KafkaAdminJava),
+}
+
+impl KafkaAdmin {
+    pub async fn create_topics(&self, topics: &[NewTopic<'_>]) {
+        match self {
+            #[cfg(feature = "rdkafka-driver-tests")]
+            KafkaAdmin::Cpp(cpp) => cpp.create_topics(topics).await,
+            KafkaAdmin::Java(java) => java.create_topics(topics).await,
+        }
+    }
+
+    pub async fn create_partitions(&self, partitions: &[NewPartition<'_>]) {
+        match self {
+            #[cfg(feature = "rdkafka-driver-tests")]
+            KafkaAdmin::Cpp(cpp) => cpp.create_partitions(partitions).await,
+            KafkaAdmin::Java(java) => java.create_partitions(partitions).await,
+        }
+    }
+}
+
+pub struct NewTopic<'a> {
+    pub name: &'a str,
+    pub num_partitions: i32,
+    pub replication_factor: i16,
+}
+
+pub struct NewPartition<'a> {
+    pub topic_name: &'a str,
+    pub new_partition_count: i32,
 }
