@@ -70,59 +70,6 @@ impl KafkaConnectionBuilderCpp {
     }
 
     // TODO: support for these admin operations needs to be added to the java driver wrapper and then this method can be deleted
-    pub async fn admin_setup(&self) {
-        let admin = self.connect_admin().await.admin;
-
-        let results = admin
-            .describe_configs(
-                // TODO: test ResourceSpecifier::Broker and ResourceSpecifier::Group as well.
-                //       Will need to find a way to get a valid broker id and to create a group.
-                &[ResourceSpecifier::Topic("to_delete")],
-                &AdminOptions::new()
-                    .operation_timeout(Some(Timeout::After(Duration::from_secs(30)))),
-            )
-            .await
-            .unwrap();
-        for result in results {
-            let result = result.unwrap();
-            assert_eq!(
-                result.specifier,
-                OwnedResourceSpecifier::Topic("to_delete".to_owned())
-            );
-        }
-
-        let results = admin
-            .alter_configs(
-                &[AlterConfig {
-                    specifier: ResourceSpecifier::Topic("to_delete"),
-                    entries: [("foo", "bar")].into(),
-                }],
-                &AdminOptions::new()
-                    .operation_timeout(Some(Timeout::After(Duration::from_secs(30)))),
-            )
-            .await
-            .unwrap();
-        for result in results {
-            assert_eq!(
-                result.unwrap(),
-                OwnedResourceSpecifier::Topic("to_delete".to_owned())
-            );
-        }
-
-        let results = admin
-            .delete_topics(
-                &["to_delete"],
-                &AdminOptions::new()
-                    .operation_timeout(Some(Timeout::After(Duration::from_secs(30)))),
-            )
-            .await
-            .unwrap();
-        for result in results {
-            assert_eq!(result.unwrap(), "to_delete");
-        }
-    }
-
-    // TODO: support for these admin operations needs to be added to the java driver wrapper and then this method can be deleted
     pub async fn admin_cleanup(&self) {
         let admin = self.connect_admin().await.admin;
         let results = admin
@@ -245,9 +192,113 @@ impl KafkaAdminCpp {
             )
             .await
             .unwrap();
-        for result in results {
-            let result = result.unwrap();
-            assert_eq!(result, "to_delete")
+
+        let mut results: Vec<_> = results.into_iter().map(|x| x.unwrap()).collect();
+        for partition in partitions {
+            if let Some(i) = results.iter().position(|x| x == partition.topic_name) {
+                results.remove(i);
+            } else {
+                panic!("topic {} not in results", partition.topic_name)
+            }
         }
+        assert!(results.is_empty());
+    }
+
+    pub async fn describe_configs(&self, resources: &[super::ResourceSpecifier<'_>]) {
+        let resources: Vec<_> = resources.iter().map(resource_specifier).collect();
+        let results = self
+            .admin
+            .describe_configs(
+                &resources,
+                &AdminOptions::new()
+                    .operation_timeout(Some(Timeout::After(Duration::from_secs(30)))),
+            )
+            .await
+            .unwrap();
+
+        let mut results: Vec<_> = results.into_iter().map(|x| x.unwrap()).collect();
+        for resource in resources {
+            if let Some(i) = results
+                .iter()
+                .position(|x| resource_specifier_ref(&x.specifier) == resource)
+            {
+                results.remove(i);
+            } else {
+                panic!("resource {:?} not in results", resource)
+            }
+        }
+        assert!(results.is_empty());
+    }
+
+    pub async fn alter_configs(&self, alter_configs: &[super::AlterConfig<'_>]) {
+        let alter_configs: Vec<_> = alter_configs
+            .iter()
+            .map(|alter_config| AlterConfig {
+                specifier: resource_specifier(&alter_config.specifier),
+                entries: alter_config
+                    .entries
+                    .iter()
+                    .map(|entry| (entry.key.as_str(), entry.value.as_str()))
+                    .collect(),
+            })
+            .collect();
+        let results = self
+            .admin
+            .alter_configs(
+                &alter_configs,
+                &AdminOptions::new()
+                    .operation_timeout(Some(Timeout::After(Duration::from_secs(30)))),
+            )
+            .await
+            .unwrap();
+
+        let mut results: Vec<_> = results.into_iter().map(|x| x.unwrap()).collect();
+        for alter_config in alter_configs {
+            if let Some(i) = results
+                .iter()
+                .position(|x| resource_specifier_ref(x) == alter_config.specifier)
+            {
+                results.remove(i);
+            } else {
+                panic!("resource {:?} not in results", alter_config.specifier)
+            }
+        }
+        assert!(results.is_empty());
+    }
+
+    pub async fn delete_topics(&self, to_delete: &[&str]) {
+        let results = self
+            .admin
+            .delete_topics(
+                to_delete,
+                &AdminOptions::new()
+                    .operation_timeout(Some(Timeout::After(Duration::from_secs(30)))),
+            )
+            .await
+            .unwrap();
+
+        let mut results: Vec<_> = results.into_iter().map(|x| x.unwrap()).collect();
+        for to_delete in to_delete {
+            if let Some(i) = results.iter().position(|x| x == to_delete) {
+                results.remove(i);
+            } else {
+                panic!("topic {} not in results", to_delete)
+            }
+        }
+        assert!(results.is_empty());
+    }
+}
+
+fn resource_specifier<'a>(specifier: &'a super::ResourceSpecifier<'a>) -> ResourceSpecifier<'a> {
+    match specifier {
+        super::ResourceSpecifier::Topic(topic) => ResourceSpecifier::Topic(topic),
+    }
+}
+
+fn resource_specifier_ref(specifier: &OwnedResourceSpecifier) -> ResourceSpecifier {
+    match specifier {
+        OwnedResourceSpecifier::Topic(topic) => ResourceSpecifier::Topic(topic),
+        OwnedResourceSpecifier::Group(group) => ResourceSpecifier::Group(group),
+        OwnedResourceSpecifier::Broker(broker) => ResourceSpecifier::Broker(*broker),
     }
 }

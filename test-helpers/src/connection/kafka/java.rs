@@ -1,5 +1,5 @@
-use super::{ExpectedResponse, NewPartition, NewTopic, Record};
-use j4rs::{Instance, InvocationArg, Jvm, JvmBuilder, MavenArtifact};
+use super::{AlterConfig, ExpectedResponse, NewPartition, NewTopic, Record, ResourceSpecifier};
+use j4rs::{errors::J4RsError, Instance, InvocationArg, Jvm, JvmBuilder, MavenArtifact};
 use std::{collections::HashMap, rc::Rc};
 
 fn properties(jvm: &Jvm, props: &HashMap<String, String>) -> Instance {
@@ -96,7 +96,6 @@ impl KafkaConnectionBuilderJava {
         KafkaAdminJava { jvm, admin }
     }
 }
-
 pub struct KafkaProducerJava {
     _producer: Instance,
 }
@@ -175,6 +174,24 @@ impl KafkaAdminJava {
             .collect();
     }
 
+    pub async fn delete_topics(&self, to_delete: &[&str]) {
+        let topics = self
+            .jvm
+            .java_list("java.lang.String", to_delete.to_vec())
+            .unwrap();
+
+        self.jvm
+            .chain(&self.admin)
+            .unwrap()
+            .invoke("deleteTopics", &[topics.into()])
+            .unwrap()
+            .invoke("all", &[])
+            .unwrap()
+            .invoke("get", &[])
+            .unwrap()
+            .collect();
+    }
+
     pub async fn create_partitions(&self, partitions: &[NewPartition<'_>]) {
         let partitions: HashMap<_, _> = partitions
             .iter()
@@ -211,5 +228,113 @@ impl KafkaAdminJava {
             .invoke("get", &[])
             .unwrap()
             .collect();
+    }
+
+    pub async fn describe_configs(&self, resources: &[ResourceSpecifier<'_>]) {
+        let resource_type = self
+            .jvm
+            .static_class("org.apache.kafka.common.config.ConfigResource$Type")
+            .unwrap();
+
+        let resources: Vec<_> = resources
+            .iter()
+            .map(|resource| {
+                self.jvm.create_instance(
+                    "org.apache.kafka.common.config.ConfigResource",
+                    &match resource {
+                        ResourceSpecifier::Topic(topic) => [
+                            self.jvm.field(&resource_type, "TOPIC").unwrap().into(),
+                            InvocationArg::try_from(*topic).unwrap(),
+                        ],
+                    },
+                )
+            })
+            .collect();
+
+        let resources = self
+            .jvm
+            .java_list("org.apache.kafka.common.config.ConfigResource", resources)
+            .unwrap();
+
+        self.jvm
+            .chain(&self.admin)
+            .unwrap()
+            .invoke("describeConfigs", &[resources.into()])
+            .unwrap()
+            .invoke("all", &[])
+            .unwrap()
+            .invoke("get", &[])
+            .unwrap()
+            .collect();
+    }
+
+    pub async fn alter_configs(&self, alter_configs: &[AlterConfig<'_>]) {
+        let resource_type = self
+            .jvm
+            .static_class("org.apache.kafka.common.config.ConfigResource$Type")
+            .unwrap();
+
+        let alter_configs: Vec<_> = alter_configs
+            .iter()
+            .map(|alter_config| {
+                let entries: Vec<Result<Instance, J4RsError>> = alter_config
+                    .entries
+                    .iter()
+                    .map(|entry| {
+                        self.jvm.create_instance(
+                            "org.apache.kafka.clients.admin.ConfigEntry",
+                            &[
+                                InvocationArg::try_from(entry.key.as_str()).unwrap(),
+                                InvocationArg::try_from(entry.value.as_str()).unwrap(),
+                            ],
+                        )
+                    })
+                    .collect();
+                (
+                    self.jvm
+                        .create_instance(
+                            "org.apache.kafka.common.config.ConfigResource",
+                            &match &alter_config.specifier {
+                                ResourceSpecifier::Topic(topic) => [
+                                    self.jvm.field(&resource_type, "TOPIC").unwrap().into(),
+                                    InvocationArg::try_from(*topic).unwrap(),
+                                ],
+                            },
+                        )
+                        .unwrap(),
+                    self.jvm
+                        .create_instance(
+                            "org.apache.kafka.clients.admin.Config",
+                            &[self
+                                .jvm
+                                .java_list("org.apache.kafka.clients.admin.ConfigEntry", entries)
+                                .unwrap()
+                                .into()],
+                        )
+                        .unwrap(),
+                )
+            })
+            .collect();
+
+        let alter_configs = self.java_map(alter_configs);
+
+        self.jvm
+            .chain(&self.admin)
+            .unwrap()
+            .invoke("alterConfigs", &[alter_configs.into()])
+            .unwrap()
+            .invoke("all", &[])
+            .unwrap()
+            .invoke("get", &[])
+            .unwrap()
+            .collect();
+    }
+
+    fn java_map(&self, key_values: Vec<(Instance, Instance)>) -> Instance {
+        let map = self.jvm.create_instance("java.util.HashMap", &[]).unwrap();
+        for (k, v) in key_values {
+            self.jvm.invoke(&map, "put", &[k.into(), v.into()]).unwrap();
+        }
+        map
     }
 }
