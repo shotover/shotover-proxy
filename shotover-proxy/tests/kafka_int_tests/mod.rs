@@ -249,9 +249,11 @@ async fn cluster_2_racks_multi_shotover(#[case] driver: KafkaDriver) {
     }
 }
 
-#[cfg(feature = "rdkafka-driver-tests")]
+#[rstest]
+#[cfg_attr(feature = "rdkafka-driver-tests", case::cpp(KafkaDriver::Cpp))]
+#[case::java(KafkaDriver::Java)]
 #[tokio::test]
-async fn cluster_sasl_multi_shotover() {
+async fn cluster_sasl_multi_shotover(#[case] driver: KafkaDriver) {
     let _docker_compose =
         docker_compose("tests/test-configs/kafka/cluster-sasl/docker-compose.yaml");
     let mut shotovers = vec![];
@@ -270,7 +272,7 @@ async fn cluster_sasl_multi_shotover() {
     }
 
     let connection_builder =
-        KafkaConnectionBuilder::new("127.0.0.1:9192").use_sasl("user", "password");
+        KafkaConnectionBuilder::new(driver, "127.0.0.1:9192").use_sasl("user", "password");
     test_cases::basic(connection_builder).await;
 
     for shotover in shotovers {

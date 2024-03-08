@@ -5,6 +5,7 @@ sources:
       listen_addr: "127.0.0.1:9191"
       chain:
         - KafkaSinkCluster:
+            sasl_enabled: true
             shotover_nodes: 
               - "127.0.0.1:9191"
               - "127.0.0.1:9192"

@@ -41,6 +41,7 @@ pub struct KafkaSinkClusterConfig {
     pub connect_timeout_ms: u64,
     pub read_timeout: Option<u64>,
     pub tls: Option<TlsConnectorConfig>,
+    pub sasl_enabled: Option<bool>,
 }
 
 const NAME: &str = "KafkaSinkCluster";
@@ -59,6 +60,7 @@ impl TransformConfig for KafkaSinkClusterConfig {
             self.connect_timeout_ms,
             self.read_timeout,
             tls,
+            self.sasl_enabled.unwrap_or(false),
         )))
     }
 }
@@ -74,6 +76,7 @@ pub struct KafkaSinkClusterBuilder {
     topics: Arc<DashMap<TopicName, Topic>>,
     nodes_shared: Arc<RwLock<Vec<KafkaNode>>>,
     tls: Option<TlsConnector>,
+    sasl_enabled: bool,
 }
 
 impl KafkaSinkClusterBuilder {
@@ -84,8 +87,10 @@ impl KafkaSinkClusterBuilder {
         connect_timeout_ms: u64,
         timeout: Option<u64>,
         tls: Option<TlsConnector>,
+        sasl_enabled: bool,
     ) -> KafkaSinkClusterBuilder {
         let receive_timeout = timeout.map(Duration::from_secs);
+        tracing::info!("{:?}", sasl_enabled);
 
         let shotover_nodes = shotover_nodes
             .into_iter()
@@ -108,6 +113,7 @@ impl KafkaSinkClusterBuilder {
             topics: Arc::new(DashMap::new()),
             nodes_shared: Arc::new(RwLock::new(vec![])),
             tls,
+            sasl_enabled,
         }
     }
 }
@@ -125,7 +131,7 @@ impl TransformBuilder for KafkaSinkClusterBuilder {
             group_to_coordinator_broker: self.group_to_coordinator_broker.clone(),
             topics: self.topics.clone(),
             rng: SmallRng::from_rng(rand::thread_rng()).unwrap(),
-            handshake_complete: false,
+            sasl_status: SaslStatus::new(self.sasl_enabled),
             connection_factory: ConnectionFactory::new(self.tls.clone(), self.connect_timeout),
         })
     }
@@ -161,6 +167,33 @@ impl AtomicBrokerId {
     }
 }
 
+#[derive(Debug)]
+struct SaslStatus {
+    enabled: bool,
+    handshake_complete: bool,
+}
+
+impl SaslStatus {
+    fn new(enabled: bool) -> Self {
+        Self {
+            enabled,
+            handshake_complete: false,
+        }
+    }
+
+    fn set_handshake_complete(&mut self) {
+        self.handshake_complete = true;
+    }
+
+    fn is_handshake_complete(&self) -> bool {
+        if self.enabled {
+            self.handshake_complete
+        } else {
+            true
+        }
+    }
+}
+
 pub struct KafkaSinkCluster {
     first_contact_points: Vec<String>,
     shotover_nodes: Vec<KafkaAddress>,
@@ -172,7 +205,7 @@ pub struct KafkaSinkCluster {
     group_to_coordinator_broker: Arc<DashMap<GroupId, BrokerId>>,
     topics: Arc<DashMap<TopicName, Topic>>,
     rng: SmallRng,
-    handshake_complete: bool,
+    sasl_status: SaslStatus,
     connection_factory: ConnectionFactory,
 }
 
@@ -304,7 +337,8 @@ impl KafkaSinkCluster {
         }
 
         // request and process metadata if we are missing topics or the controller broker id
-        if (!topics.is_empty() || self.controller_broker.get().is_none()) && self.handshake_complete
+        if (!topics.is_empty() || self.controller_broker.get().is_none())
+            && self.sasl_status.is_handshake_complete()
         {
             let mut metadata = self.get_metadata_of_topics(topics).await?;
             match metadata.frame() {
@@ -508,7 +542,7 @@ impl KafkaSinkCluster {
                     self.route_to_first_node(message.clone(), Some(tx)).await?;
                     self.connection_factory.add_auth_message(message.clone());
                     results.push(rx);
-                    self.handshake_complete = true;
+                    self.sasl_status.set_handshake_complete();
 
                     // now that we have the full handshake, open a connection to all nodes
                     for node in &mut self.nodes {
