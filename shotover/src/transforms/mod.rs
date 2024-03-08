@@ -323,10 +323,6 @@ pub trait Transform: Send {
     ///         - When writing protocol generic transforms: always ensure this is upheld.
     ///         - When writing a transform specific to a protocol that is out of order: you can disregard this requirement
     ///             * This is currently only cassandra
-    /// * Deprecated invariants:
-    ///     + Many transforms rely on the number of responses equalling the number of requests and that requests will be in the same order as the responses.
-    ///       Currently shotover maintains this gaurantee for backwards compatibility
-    ///       but the gaurantee will be removed as soon as the transforms have been altered to no longer rely on it.
     ///
     /// # Naming
     /// Transform also have different naming conventions.

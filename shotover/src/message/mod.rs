@@ -135,6 +135,19 @@ impl Message {
         }
     }
 
+    /// This method should be called when generating a new request travelling down a seperate chain to an original request.
+    /// The generated request will share the same MessageId as the message it is diverged from.
+    pub fn from_frame_diverged(frame: Frame, diverged_from: &Message) -> Self {
+        Message {
+            codec_state: frame.as_codec_state(),
+            inner: Some(MessageInner::Modified { frame }),
+            meta_timestamp: None,
+            received_from_source_or_sink_at: diverged_from.received_from_source_or_sink_at,
+            id: diverged_from.id(),
+            request_id: None,
+        }
+    }
+
     /// Same as [`Message::from_bytes`] but `received_from_source_or_sink_at` is set to None.
     pub fn from_bytes(bytes: Bytes, codec_state: CodecState) -> Self {
         Self::from_bytes_at_instant(bytes, codec_state, None)
