@@ -1,6 +1,7 @@
 use crate::frame::Frame;
 use crate::message::Messages;
 use crate::transforms::TransformConfig;
+use crate::transforms::TransformContextBuilder;
 use crate::transforms::{Transform, TransformBuilder, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
@@ -30,7 +31,7 @@ impl QueryCounter {
 }
 
 impl TransformBuilder for QueryCounter {
-    fn build(&self) -> Box<dyn Transform> {
+    fn build(&self, _transform_context: TransformContextBuilder) -> Box<dyn Transform> {
         Box::new(self.clone())
     }
 

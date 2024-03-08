@@ -2,7 +2,8 @@ use crate::frame::redis::redis_query_type;
 use crate::frame::{Frame, RedisFrame};
 use crate::message::{Message, Messages, QueryType};
 use crate::transforms::{
-    Transform, TransformBuilder, TransformConfig, TransformContextConfig, Wrapper,
+    Transform, TransformBuilder, TransformConfig, TransformContextBuilder, TransformContextConfig,
+    Wrapper,
 };
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
@@ -39,7 +40,7 @@ impl RedisTimestampTagger {
 }
 
 impl TransformBuilder for RedisTimestampTagger {
-    fn build(&self) -> Box<dyn Transform> {
+    fn build(&self, _transform_context: TransformContextBuilder) -> Box<dyn Transform> {
         Box::new(self.clone())
     }
 

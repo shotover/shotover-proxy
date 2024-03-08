@@ -3,6 +3,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use shotover::frame::{Frame, RedisFrame};
 use shotover::message::{MessageIdSet, Messages};
+use shotover::transforms::TransformContextBuilder;
 use shotover::transforms::{
     Transform, TransformBuilder, TransformConfig, TransformContextConfig, Wrapper,
 };
@@ -33,7 +34,7 @@ pub struct RedisGetRewriteBuilder {
 }
 
 impl TransformBuilder for RedisGetRewriteBuilder {
-    fn build(&self) -> Box<dyn Transform> {
+    fn build(&self, _transform_context: TransformContextBuilder) -> Box<dyn Transform> {
         Box::new(RedisGetRewrite {
             get_requests: MessageIdSet::default(),
             result: self.result.clone(),

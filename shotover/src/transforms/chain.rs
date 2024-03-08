@@ -9,6 +9,8 @@ use tokio::sync::{mpsc, oneshot};
 use tokio::time::{Duration, Instant};
 use tracing::{debug, error, info, trace, Instrument};
 
+use super::TransformContextBuilder;
+
 type InnerChain = Vec<TransformAndMetrics>;
 
 #[derive(Debug)]
@@ -233,9 +235,9 @@ pub struct TransformBuilderAndMetrics {
 }
 
 impl TransformBuilderAndMetrics {
-    fn build(&self) -> TransformAndMetrics {
+    fn build(&self, context: TransformContextBuilder) -> TransformAndMetrics {
         TransformAndMetrics {
-            transform: self.builder.build(),
+            transform: self.builder.build(context),
             transform_total: self.transform_total.clone(),
             transform_failures: self.transform_failures.clone(),
             transform_latency: self.transform_latency.clone(),
@@ -331,7 +333,11 @@ impl TransformChainBuilder {
         errors
     }
 
-    pub fn build_buffered(&self, buffer_size: usize) -> BufferedChain {
+    pub fn build_buffered(
+        &self,
+        buffer_size: usize,
+        context: TransformContextBuilder,
+    ) -> BufferedChain {
         let (tx, mut rx) = mpsc::channel::<BufferedChainMessages>(buffer_size);
 
         #[cfg(test)]
@@ -341,7 +347,7 @@ impl TransformChainBuilder {
 
         // Even though we don't keep the join handle, this thread will wrap up once all corresponding senders have been dropped.
 
-        let mut chain = self.build();
+        let mut chain = self.build(context);
         let _jh = tokio::spawn(
             async move {
                 while let Some(BufferedChainMessages {
@@ -398,8 +404,12 @@ impl TransformChainBuilder {
     }
 
     /// Clone the chain while adding a producer for the pushed messages channel
-    pub fn build(&self) -> TransformChain {
-        let chain = self.chain.iter().map(|x| x.build()).collect();
+    pub fn build(&self, context: TransformContextBuilder) -> TransformChain {
+        let chain = self
+            .chain
+            .iter()
+            .map(|x| x.build(context.clone()))
+            .collect();
 
         TransformChain {
             name: self.name,
@@ -414,12 +424,13 @@ impl TransformChainBuilder {
     pub fn build_with_pushed_messages(
         &self,
         pushed_messages_tx: mpsc::UnboundedSender<Messages>,
+        context: TransformContextBuilder,
     ) -> TransformChain {
         let chain = self
             .chain
             .iter()
             .map(|x| {
-                let mut transform = x.build();
+                let mut transform = x.build(context.clone());
                 transform
                     .transform
                     .set_pushed_messages_tx(pushed_messages_tx.clone());

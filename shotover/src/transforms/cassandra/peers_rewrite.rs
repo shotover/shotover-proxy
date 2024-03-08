@@ -1,6 +1,8 @@
 use crate::message::{Message, MessageIdMap, Messages};
 use crate::transforms::cassandra::peers_rewrite::CassandraOperation::Event;
-use crate::transforms::{Transform, TransformBuilder, TransformConfig, Wrapper};
+use crate::transforms::{
+    Transform, TransformBuilder, TransformConfig, TransformContextBuilder, Wrapper,
+};
 use crate::{
     frame::{
         value::{GenericValue, IntSize},
@@ -52,7 +54,7 @@ impl CassandraPeersRewrite {
 }
 
 impl TransformBuilder for CassandraPeersRewrite {
-    fn build(&self) -> Box<dyn Transform> {
+    fn build(&self, _transform_context: TransformContextBuilder) -> Box<dyn Transform> {
         Box::new(self.clone())
     }
 

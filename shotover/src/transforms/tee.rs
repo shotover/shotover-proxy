@@ -1,4 +1,4 @@
-use super::TransformContextConfig;
+use super::{TransformContextBuilder, TransformContextConfig};
 use crate::config::chain::TransformChainConfig;
 use crate::message::{Message, MessageIdMap, Messages};
 use crate::transforms::chain::{BufferedChain, TransformChainBuilder};
@@ -68,9 +68,11 @@ impl TeeBuilder {
 }
 
 impl TransformBuilder for TeeBuilder {
-    fn build(&self) -> Box<dyn Transform> {
+    fn build(&self, transform_context: TransformContextBuilder) -> Box<dyn Transform> {
         Box::new(Tee {
-            tx: self.tx.build_buffered(self.buffer_size),
+            tx: self
+                .tx
+                .build_buffered(self.buffer_size, transform_context.clone()),
             behavior: match &self.behavior {
                 ConsistencyBehaviorBuilder::Ignore => ConsistencyBehavior::Ignore,
                 ConsistencyBehaviorBuilder::LogWarningOnMismatch => {
@@ -79,7 +81,7 @@ impl TransformBuilder for TeeBuilder {
                 ConsistencyBehaviorBuilder::FailOnMismatch => ConsistencyBehavior::FailOnMismatch,
                 ConsistencyBehaviorBuilder::SubchainOnMismatch(chain) => {
                     ConsistencyBehavior::SubchainOnMismatch(
-                        chain.build_buffered(self.buffer_size),
+                        chain.build_buffered(self.buffer_size, transform_context),
                         Default::default(),
                     )
                 }

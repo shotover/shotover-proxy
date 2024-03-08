@@ -8,7 +8,8 @@ use crate::transforms::redis::TransformError;
 use crate::transforms::util::cluster_connection_pool::{Authenticator, ConnectionPool};
 use crate::transforms::util::{Request, Response};
 use crate::transforms::{
-    ResponseFuture, Transform, TransformBuilder, TransformConfig, TransformContextConfig, Wrapper,
+    ResponseFuture, Transform, TransformBuilder, TransformConfig, TransformContextBuilder,
+    TransformContextConfig, Wrapper,
 };
 use anyhow::{anyhow, bail, ensure, Context, Result};
 use async_trait::async_trait;
@@ -81,7 +82,7 @@ pub struct RedisSinkClusterBuilder {
 }
 
 impl TransformBuilder for RedisSinkClusterBuilder {
-    fn build(&self) -> Box<dyn Transform> {
+    fn build(&self, _transform_context: TransformContextBuilder) -> Box<dyn Transform> {
         Box::new(RedisSinkCluster::new(
             self.first_contact_points.clone(),
             self.direct_destination.clone(),

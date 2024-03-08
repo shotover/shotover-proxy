@@ -1,4 +1,4 @@
-use super::TransformContextConfig;
+use super::{TransformContextBuilder, TransformContextConfig};
 use crate::tcp;
 use crate::transforms::{Messages, Transform, TransformBuilder, TransformConfig, Wrapper};
 use crate::{
@@ -56,7 +56,7 @@ impl OpenSearchSinkSingleBuilder {
 }
 
 impl TransformBuilder for OpenSearchSinkSingleBuilder {
-    fn build(&self) -> Box<dyn Transform> {
+    fn build(&self, _transform_context: TransformContextBuilder) -> Box<dyn Transform> {
         Box::new(OpenSearchSinkSingle {
             address: self.address.clone(),
             connect_timeout: self.connect_timeout,

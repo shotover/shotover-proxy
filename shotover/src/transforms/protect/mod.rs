@@ -14,6 +14,8 @@ use cql3_parser::select::SelectElement;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+use super::TransformContextBuilder;
+
 mod aws_kms;
 mod crypto;
 mod key_management;
@@ -73,7 +75,7 @@ pub struct Protect {
 }
 
 impl TransformBuilder for Protect {
-    fn build(&self) -> Box<dyn Transform> {
+    fn build(&self, _transform_context: TransformContextBuilder) -> Box<dyn Transform> {
         Box::new(self.clone())
     }
 

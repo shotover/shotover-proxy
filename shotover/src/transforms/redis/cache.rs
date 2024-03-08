@@ -3,7 +3,8 @@ use crate::frame::{CassandraFrame, CassandraOperation, Frame, MessageType, Redis
 use crate::message::{Message, MessageIdMap, Messages, Metadata};
 use crate::transforms::chain::{TransformChain, TransformChainBuilder};
 use crate::transforms::{
-    Transform, TransformBuilder, TransformConfig, TransformContextConfig, Wrapper,
+    Transform, TransformBuilder, TransformConfig, TransformContextBuilder, TransformContextConfig,
+    Wrapper,
 };
 use anyhow::{bail, Result};
 use async_trait::async_trait;
@@ -119,9 +120,9 @@ pub struct SimpleRedisCacheBuilder {
 }
 
 impl TransformBuilder for SimpleRedisCacheBuilder {
-    fn build(&self) -> Box<dyn Transform> {
+    fn build(&self, transform_context: TransformContextBuilder) -> Box<dyn Transform> {
         Box::new(SimpleRedisCache {
-            cache_chain: self.cache_chain.build(),
+            cache_chain: self.cache_chain.build(transform_context.clone()),
             caching_schema: self.caching_schema.clone(),
             missed_requests: self.missed_requests.clone(),
             pending_cache_requests: Default::default(),

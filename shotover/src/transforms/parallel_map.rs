@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use std::future::Future;
 use std::pin::Pin;
 
-use super::TransformContextConfig;
+use super::{TransformContextBuilder, TransformContextConfig};
 
 #[derive(Debug)]
 pub struct ParallelMapBuilder {
@@ -132,9 +132,13 @@ impl Transform for ParallelMap {
 }
 
 impl TransformBuilder for ParallelMapBuilder {
-    fn build(&self) -> Box<dyn Transform> {
+    fn build(&self, transform_context: TransformContextBuilder) -> Box<dyn Transform> {
         Box::new(ParallelMap {
-            chains: self.chains.iter().map(|x| x.build()).collect(),
+            chains: self
+                .chains
+                .iter()
+                .map(|x| x.build(transform_context.clone()))
+                .collect(),
             ordered: self.ordered,
         })
     }

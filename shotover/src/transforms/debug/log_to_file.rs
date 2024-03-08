@@ -1,5 +1,5 @@
 use crate::message::{Encodable, Message};
-use crate::transforms::{Transform, TransformBuilder, Wrapper};
+use crate::transforms::{Transform, TransformBuilder, TransformContextBuilder, Wrapper};
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -35,7 +35,7 @@ pub struct DebugLogToFileBuilder {
 }
 
 impl TransformBuilder for DebugLogToFileBuilder {
-    fn build(&self) -> Box<dyn Transform> {
+    fn build(&self, _transform_context: TransformContextBuilder) -> Box<dyn Transform> {
         self.connection_counter.fetch_add(1, Ordering::Relaxed);
         let connection_current = self.connection_counter.load(Ordering::Relaxed);
 

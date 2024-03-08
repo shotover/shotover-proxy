@@ -12,7 +12,8 @@ use std::iter::Rev;
 use std::net::SocketAddr;
 use std::pin::Pin;
 use std::slice::IterMut;
-use tokio::sync::mpsc;
+use std::sync::Arc;
+use tokio::sync::{mpsc, Notify};
 use tokio::time::Instant;
 
 #[cfg(feature = "cassandra")]
@@ -42,8 +43,30 @@ pub mod tee;
 pub mod throttling;
 pub mod util;
 
+/// Provides extra context that may be needed when creating a Transform
+#[derive(Clone, Debug)]
+pub struct TransformContextBuilder {
+    /// The chain is run naturally whenever messages are received from the client.
+    /// However, for various reasons, a transform may want to force a chain run.
+    /// This can be done by calling `notify_one` on this field.
+    ///
+    /// For example:
+    /// * This must be used when a sink transform has asynchronously received responses in the background
+    /// * This should be used when a transform needs to generate or flush messages after some kind of timeout or background process completes.
+    pub force_run_chain: Arc<Notify>,
+}
+
+#[allow(clippy::new_without_default)]
+impl TransformContextBuilder {
+    pub fn new() -> Self {
+        TransformContextBuilder {
+            force_run_chain: Arc::new(Notify::new()),
+        }
+    }
+}
+
 pub trait TransformBuilder: Send + Sync {
-    fn build(&self) -> Box<dyn Transform>;
+    fn build(&self, transform_context: TransformContextBuilder) -> Box<dyn Transform>;
 
     fn get_name(&self) -> &'static str;
 

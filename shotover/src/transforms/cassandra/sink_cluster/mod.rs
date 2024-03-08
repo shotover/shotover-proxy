@@ -6,7 +6,8 @@ use crate::message::{Message, MessageIdMap, Messages, Metadata};
 use crate::tls::{TlsConnector, TlsConnectorConfig};
 use crate::transforms::cassandra::connection::{CassandraConnection, Response, ResponseError};
 use crate::transforms::{
-    Transform, TransformBuilder, TransformConfig, TransformContextConfig, Wrapper,
+    Transform, TransformBuilder, TransformConfig, TransformContextBuilder, TransformContextConfig,
+    Wrapper,
 };
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
@@ -160,7 +161,7 @@ impl CassandraSinkClusterBuilder {
 }
 
 impl TransformBuilder for CassandraSinkClusterBuilder {
-    fn build(&self) -> Box<dyn Transform> {
+    fn build(&self, _transform_context: TransformContextBuilder) -> Box<dyn Transform> {
         Box::new(CassandraSinkCluster {
             contact_points: self.contact_points.clone(),
             message_rewriter: self.message_rewriter.clone(),

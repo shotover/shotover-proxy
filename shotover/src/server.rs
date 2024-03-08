@@ -4,7 +4,7 @@ use crate::message::{Message, Messages};
 use crate::sources::Transport;
 use crate::tls::{AcceptError, TlsAcceptor};
 use crate::transforms::chain::{TransformChain, TransformChainBuilder};
-use crate::transforms::{TransformContextConfig, Wrapper};
+use crate::transforms::{TransformContextBuilder, TransformContextConfig, Wrapper};
 use anyhow::{anyhow, Context, Result};
 use bytes::BytesMut;
 use futures::future::join_all;
@@ -16,7 +16,7 @@ use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
-use tokio::sync::{mpsc, watch, OwnedSemaphorePermit, Semaphore};
+use tokio::sync::{mpsc, watch, Notify, OwnedSemaphorePermit, Semaphore};
 use tokio::task::JoinHandle;
 use tokio::time;
 use tokio::time::Duration;
@@ -190,10 +190,15 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                 let (pushed_messages_tx, pushed_messages_rx) =
                     tokio::sync::mpsc::unbounded_channel::<Messages>();
 
+                let force_run_chain = Arc::new(Notify::new());
+                let context = TransformContextBuilder {
+                    force_run_chain: force_run_chain.clone(),
+                };
+
                 let handler = Handler {
                     chain: self
                         .chain_builder
-                        .build_with_pushed_messages(pushed_messages_tx),
+                        .build_with_pushed_messages(pushed_messages_tx, context),
                     codec: self.codec.clone(),
                     shutdown: Shutdown::new(self.trigger_shutdown_rx.clone()),
                     tls: self.tls.clone(),
@@ -206,7 +211,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                 self.connection_handles.push(tokio::spawn(
                     async move {
                         // Process the connection. If an error is encountered, log it.
-                        if let Err(err) = handler.run(stream, transport).await {
+                        if let Err(err) = handler.run(stream, transport, force_run_chain).await {
                             error!(
                                 "{:?}",
                                 err.context("connection was unexpectedly terminated")
@@ -576,7 +581,12 @@ impl<C: CodecBuilder + 'static> Handler<C> {
     ///
     /// When the shutdown signal is received, the connection is processed until
     /// it reaches a safe state, at which point it is terminated.
-    pub async fn run(mut self, stream: TcpStream, transport: Transport) -> Result<()> {
+    pub async fn run(
+        mut self,
+        stream: TcpStream,
+        transport: Transport,
+        force_run_chain: Arc<Notify>,
+    ) -> Result<()> {
         stream.set_nodelay(true)?;
 
         let client_details = stream
@@ -658,7 +668,7 @@ impl<C: CodecBuilder + 'static> Handler<C> {
         };
 
         let result = self
-            .process_messages(&client_details, local_addr, in_rx, out_tx)
+            .process_messages(&client_details, local_addr, in_rx, out_tx, force_run_chain)
             .await;
 
         // Flush messages regardless of if we are shutting down due to a failure or due to application shutdown
@@ -700,6 +710,7 @@ impl<C: CodecBuilder + 'static> Handler<C> {
         local_addr: SocketAddr,
         mut in_rx: mpsc::Receiver<Messages>,
         out_tx: mpsc::UnboundedSender<Messages>,
+        force_run_chain: Arc<Notify>,
     ) -> Result<()> {
         // As long as the shutdown signal has not been received, try to read a
         // new request frame.
@@ -707,6 +718,24 @@ impl<C: CodecBuilder + 'static> Handler<C> {
             // While reading a request frame, also listen for the shutdown signal
             debug!("Waiting for message {client_details}");
             let responses = tokio::select! {
+                biased;
+                _ = self.shutdown.recv() => {
+                    // If a shutdown signal is received, return from `run`.
+                    // This will result in the task terminating.
+                    return Ok(());
+                }
+                Some(responses) = self.pushed_messages_rx.recv() => {
+                    debug!("Received unrequested responses from destination {:?}", responses);
+                    self.process_backward(client_details, local_addr, responses).await?
+                }
+                () = force_run_chain.notified() => {
+                    let mut requests = vec!();
+                    while let Ok(x) = in_rx.try_recv() {
+                        requests.extend(x);
+                    }
+                    debug!("A transform in the chain requested that a chain run occur, requests {:?}", requests);
+                    self.process_forward(client_details, local_addr, &out_tx, requests).await?
+                },
                 requests = Self::receive_with_timeout(self.timeout, &mut in_rx, client_details) => {
                     match requests {
                         Some(mut requests) => {
@@ -722,15 +751,6 @@ impl<C: CodecBuilder + 'static> Handler<C> {
                         }
                     }
                 },
-                Some(responses) = self.pushed_messages_rx.recv() => {
-                    debug!("Received unrequested responses from destination {:?}", responses);
-                    self.process_backward(client_details, local_addr, responses).await?
-                }
-                _ = self.shutdown.recv() => {
-                    // If a shutdown signal is received, return from `run`.
-                    // This will result in the task terminating.
-                    return Ok(());
-                }
             };
 
             debug!("sending response to client: {:?}", responses);
