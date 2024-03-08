@@ -59,14 +59,6 @@ impl KafkaConnectionBuilder {
         }
     }
 
-    pub async fn admin_setup(&self) {
-        match self {
-            #[cfg(feature = "rdkafka-driver-tests")]
-            Self::Cpp(cpp) => cpp.admin_setup().await,
-            Self::Java(_) => {}
-        }
-    }
-
     pub async fn admin_cleanup(&self) {
         match self {
             #[cfg(feature = "rdkafka-driver-tests")]
@@ -136,11 +128,35 @@ impl KafkaAdmin {
         }
     }
 
+    pub async fn delete_topics(&self, to_delete: &[&str]) {
+        match self {
+            #[cfg(feature = "rdkafka-driver-tests")]
+            Self::Cpp(cpp) => cpp.delete_topics(to_delete).await,
+            Self::Java(java) => java.delete_topics(to_delete).await,
+        }
+    }
+
     pub async fn create_partitions(&self, partitions: &[NewPartition<'_>]) {
         match self {
             #[cfg(feature = "rdkafka-driver-tests")]
             KafkaAdmin::Cpp(cpp) => cpp.create_partitions(partitions).await,
             KafkaAdmin::Java(java) => java.create_partitions(partitions).await,
+        }
+    }
+
+    pub async fn describe_configs(&self, resources: &[ResourceSpecifier<'_>]) {
+        match self {
+            #[cfg(feature = "rdkafka-driver-tests")]
+            KafkaAdmin::Cpp(cpp) => cpp.describe_configs(resources).await,
+            KafkaAdmin::Java(java) => java.describe_configs(resources).await,
+        }
+    }
+
+    pub async fn alter_configs(&self, alter_configs: &[AlterConfig<'_>]) {
+        match self {
+            #[cfg(feature = "rdkafka-driver-tests")]
+            KafkaAdmin::Cpp(cpp) => cpp.alter_configs(alter_configs).await,
+            KafkaAdmin::Java(java) => java.alter_configs(alter_configs).await,
         }
     }
 }
@@ -154,4 +170,18 @@ pub struct NewTopic<'a> {
 pub struct NewPartition<'a> {
     pub topic_name: &'a str,
     pub new_partition_count: i32,
+}
+
+pub enum ResourceSpecifier<'a> {
+    Topic(&'a str),
+}
+
+pub struct AlterConfig<'a> {
+    pub specifier: ResourceSpecifier<'a>,
+    pub entries: &'a [ConfigEntry],
+}
+
+pub struct ConfigEntry {
+    pub key: String,
+    pub value: String,
 }
