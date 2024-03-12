@@ -13,10 +13,12 @@ bincode.workspace = true
 clap.workspace = true
 console = "0.15.5"
 copy_dir = "0.1.2"
+futures.workspace = true
 serde = { workspace = true, features = ["derive"] }
 strum = { version = "0.26.0", features = ["derive"] }
 time = { version = "0.3.25", features = ["serde"] }
 tokio.workspace = true
+tokio-stream = "0.1.14"
 
 [dev-dependencies]
 scylla = { version = "0.12.0", features = ["ssl"] }

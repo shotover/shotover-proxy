@@ -3,6 +3,7 @@ use crate::report::{report_builder, Report, ReportArchive};
 use crate::tables::ReportColumn;
 use anyhow::Result;
 use async_trait::async_trait;
+use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
@@ -10,6 +11,8 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::task::JoinHandle;
+use tokio_stream::wrappers::IntervalStream;
+use tokio_stream::Stream;
 
 pub struct BenchState<ResourcesRequired, Resources> {
     bench: Box<dyn Bench<CloudResourcesRequired = ResourcesRequired, CloudResources = Resources>>,
@@ -299,45 +302,71 @@ pub trait BenchTask: Clone + Send + Sync + 'static {
         reporter: UnboundedSender<Report>,
         operations_per_second: Option<u64>,
     ) -> Vec<JoinHandle<()>> {
-        let mut tasks = vec![];
-        // 100 is a generally nice amount of tasks to have, but if we have more tasks than OPS the throughput is very unstable
-        let task_count = operations_per_second.map(|x| x.min(100)).unwrap_or(100);
-
-        let allocated_time_per_op = operations_per_second
-            .map(|ops| (Duration::from_secs(1) * task_count as u32) / ops as u32);
-        for i in 0..task_count {
-            let task = self.clone();
-            let reporter = reporter.clone();
-            tasks.push(tokio::spawn(async move {
-                // spread load out over a second
-                tokio::time::sleep(Duration::from_nanos((1_000_000_000 / task_count) * i)).await;
-
-                let mut interval = allocated_time_per_op.map(tokio::time::interval);
-
-                loop {
-                    if let Some(interval) = &mut interval {
-                        interval.tick().await;
-                    }
-
-                    let operation_start = Instant::now();
-                    let report = match task.run_one_operation().await {
-                        Ok(()) => Report::QueryCompletedIn(operation_start.elapsed()),
-                        Err(message) => Report::QueryErrored {
-                            completed_in: operation_start.elapsed(),
-                            message,
-                        },
-                    };
-                    if reporter.send(report).is_err() {
-                        // The benchmark has completed and the reporter no longer wants to receive reports so just shutdown
-                        return;
-                    }
-                }
-            }));
+        match operations_per_second {
+            Some(ops) => {
+                spawn_tasks_inner(
+                    self.clone(),
+                    interval_stream(ops),
+                    reporter,
+                    operations_per_second,
+                )
+                .await
+            }
+            None => {
+                spawn_tasks_inner(
+                    self.clone(),
+                    futures::stream::repeat_with(|| ()),
+                    reporter,
+                    operations_per_second,
+                )
+                .await
+            }
         }
-
-        // sleep until all tasks have started running
-        tokio::time::sleep(Duration::from_secs(1)).await;
-
-        tasks
     }
+}
+
+async fn spawn_tasks_inner<T: BenchTask, I>(
+    task: T,
+    stream: impl Stream<Item = I> + std::marker::Unpin + Send + 'static,
+    reporter: UnboundedSender<Report>,
+    operations_per_second: Option<u64>,
+) -> Vec<JoinHandle<()>> {
+    // TODO: remove vec
+    vec![tokio::spawn(async move {
+        // 100 is a generally nice amount of tasks to have, but if we have more tasks than OPS the throughput is very unstable
+        let task_count = operations_per_second.map(|x| x.min(500)).unwrap_or(500);
+
+        let mut result_stream = stream
+            .map(|_| async {
+                let start = Instant::now();
+                let task = task.clone();
+                let result = tokio::task::spawn(async move { task.run_one_operation().await })
+                    .await
+                    .unwrap();
+                (result, start.elapsed())
+            })
+            .buffer_unordered(task_count as usize);
+
+        while let Some((res, elapsed)) = result_stream.next().await {
+            let report = match res {
+                Ok(()) => Report::QueryCompletedIn(elapsed),
+                Err(message) => Report::QueryErrored {
+                    completed_in: elapsed,
+                    message,
+                },
+            };
+            if reporter.send(report).is_err() {
+                // The benchmark has completed and the reporter no longer wants to receive reports so just shutdown
+                break;
+            }
+        }
+    })]
+}
+
+/// Create a stream that emits the configured events per second
+fn interval_stream(events_per_second: u64) -> IntervalStream {
+    let mut interval =
+        tokio::time::interval(Duration::from_nanos(1_000_000_000 / events_per_second));
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    IntervalStream::new(interval)
 }

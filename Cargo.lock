@@ -5647,11 +5647,13 @@ dependencies = [
  "console",
  "copy_dir",
  "docker-compose-runner",
+ "futures",
  "scylla",
  "serde",
  "strum 0.26.1",
  "time",
  "tokio",
+ "tokio-stream",
 ]
 
 [[package]]
