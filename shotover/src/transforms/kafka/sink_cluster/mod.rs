@@ -90,7 +90,6 @@ impl KafkaSinkClusterBuilder {
         sasl_enabled: bool,
     ) -> KafkaSinkClusterBuilder {
         let receive_timeout = timeout.map(Duration::from_secs);
-        tracing::info!("{:?}", sasl_enabled);
 
         let shotover_nodes = shotover_nodes
             .into_iter()
@@ -503,20 +502,8 @@ impl KafkaSinkCluster {
                     body: RequestBody::ApiVersions(_),
                     ..
                 })) => {
-                    let connection = self
-                        .nodes
-                        .get_mut(0)
-                        .unwrap()
-                        .get_connection(&self.connection_factory)
-                        .await?;
-
                     let (tx, rx) = oneshot::channel();
-                    connection
-                        .send(Request {
-                            message: message.clone(),
-                            return_chan: Some(tx),
-                        })
-                        .map_err(|_| anyhow!("Failed to send"))?;
+                    self.route_to_first_node(message.clone(), Some(tx)).await?;
 
                     results.push(rx);
                 }
@@ -543,11 +530,6 @@ impl KafkaSinkCluster {
                     self.connection_factory.add_auth_message(message.clone());
                     results.push(rx);
                     self.sasl_status.set_handshake_complete();
-
-                    // now that we have the full handshake, open a connection to all nodes
-                    for node in &mut self.nodes {
-                        node.get_connection(&self.connection_factory).await?;
-                    }
                 }
 
                 // route to random node
