@@ -81,7 +81,7 @@ async fn produce_consume(connection_builder: &KafkaConnectionBuilder, topic_name
         )
         .await;
 
-    let consumer = connection_builder.connect_consumer(topic_name).await;
+    let mut consumer = connection_builder.connect_consumer(topic_name).await;
 
     consumer
         .assert_consume(ExpectedResponse {
@@ -118,7 +118,7 @@ async fn produce_consume_acks0(connection_builder: &KafkaConnectionBuilder) {
             .await;
     }
 
-    let consumer = connection_builder.connect_consumer(topic_name).await;
+    let mut consumer = connection_builder.connect_consumer(topic_name).await;
 
     for j in 0..10 {
         consumer

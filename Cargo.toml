@@ -1,6 +1,5 @@
 [workspace]
 members = [
-    "windsock",
     "shotover",
     "shotover-proxy",
     "test-helpers",

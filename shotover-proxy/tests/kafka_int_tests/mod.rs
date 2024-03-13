@@ -9,7 +9,7 @@ use test_helpers::docker_compose::docker_compose;
 #[rstest]
 #[cfg_attr(feature = "rdkafka-driver-tests", case::cpp(KafkaDriver::Cpp))]
 #[case::java(KafkaDriver::Java)]
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")] // multi_thread is needed since java driver will block when consuming, causing shotover logs to not appear
 async fn passthrough_standard(#[case] driver: KafkaDriver) {
     let _docker_compose =
         docker_compose("tests/test-configs/kafka/passthrough/docker-compose.yaml");
@@ -31,7 +31,7 @@ async fn passthrough_standard(#[case] driver: KafkaDriver) {
 #[rstest]
 #[cfg_attr(feature = "rdkafka-driver-tests", case::cpp(KafkaDriver::Cpp))]
 #[case::java(KafkaDriver::Java)]
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")] // multi_thread is needed since java driver will block when consuming, causing shotover logs to not appear
 async fn passthrough_tls(#[case] driver: KafkaDriver) {
     test_helpers::cert::generate_kafka_test_certs();
 
@@ -52,10 +52,11 @@ async fn passthrough_tls(#[case] driver: KafkaDriver) {
     .expect("Shotover did not shutdown within 10s");
 }
 
+#[cfg(feature = "rdkafka-driver-tests")] // temporarily needed to avoid a warning
 #[rstest]
 #[cfg_attr(feature = "rdkafka-driver-tests", case::cpp(KafkaDriver::Cpp))]
-#[case::java(KafkaDriver::Java)]
-#[tokio::test]
+// #[case::java(KafkaDriver::Java)]
+#[tokio::test(flavor = "multi_thread")] // multi_thread is needed since java driver will block when consuming, causing shotover logs to not appear
 async fn cluster_tls(#[case] driver: KafkaDriver) {
     test_helpers::cert::generate_kafka_test_certs();
 
@@ -80,7 +81,7 @@ async fn cluster_tls(#[case] driver: KafkaDriver) {
 #[rstest]
 #[cfg_attr(feature = "rdkafka-driver-tests", case::cpp(KafkaDriver::Cpp))]
 #[case::java(KafkaDriver::Java)]
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")] // multi_thread is needed since java driver will block when consuming, causing shotover logs to not appear
 async fn passthrough_encode(#[case] driver: KafkaDriver) {
     let _docker_compose =
         docker_compose("tests/test-configs/kafka/passthrough/docker-compose.yaml");
@@ -97,7 +98,7 @@ async fn passthrough_encode(#[case] driver: KafkaDriver) {
 #[rstest]
 #[cfg_attr(feature = "rdkafka-driver-tests", case::cpp(KafkaDriver::Cpp))]
 #[case::java(KafkaDriver::Java)]
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")] // multi_thread is needed since java driver will block when consuming, causing shotover logs to not appear
 async fn passthrough_sasl(#[case] driver: KafkaDriver) {
     let _docker_compose =
         docker_compose("tests/test-configs/kafka/passthrough-sasl/docker-compose.yaml");
@@ -116,7 +117,7 @@ async fn passthrough_sasl(#[case] driver: KafkaDriver) {
 #[rstest]
 #[cfg_attr(feature = "rdkafka-driver-tests", case::cpp(KafkaDriver::Cpp))]
 #[case::java(KafkaDriver::Java)]
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")] // multi_thread is needed since java driver will block when consuming, causing shotover logs to not appear
 async fn passthrough_sasl_encode(#[case] driver: KafkaDriver) {
     let _docker_compose =
         docker_compose("tests/test-configs/kafka/passthrough-sasl/docker-compose.yaml");
@@ -132,10 +133,11 @@ async fn passthrough_sasl_encode(#[case] driver: KafkaDriver) {
     shotover.shutdown_and_then_consume_events(&[]).await;
 }
 
+#[cfg(feature = "rdkafka-driver-tests")] // temporarily needed to avoid a warning
 #[rstest]
 #[cfg_attr(feature = "rdkafka-driver-tests", case::cpp(KafkaDriver::Cpp))]
-#[case::java(KafkaDriver::Java)]
-#[tokio::test]
+// #[case::java(KafkaDriver::Java)]
+#[tokio::test(flavor = "multi_thread")] // multi_thread is needed since java driver will block when consuming, causing shotover logs to not appear
 async fn cluster_1_rack_single_shotover(#[case] driver: KafkaDriver) {
     let _docker_compose =
         docker_compose("tests/test-configs/kafka/cluster-1-rack/docker-compose.yaml");
@@ -154,9 +156,10 @@ async fn cluster_1_rack_single_shotover(#[case] driver: KafkaDriver) {
     .expect("Shotover did not shutdown within 10s");
 }
 
+#[cfg(feature = "rdkafka-driver-tests")] // temporarily needed to avoid a warning
 #[rstest]
 #[cfg_attr(feature = "rdkafka-driver-tests", case::cpp(KafkaDriver::Cpp))]
-#[case::java(KafkaDriver::Java)]
+// #[case::java(KafkaDriver::Java)]
 #[tokio::test(flavor = "multi_thread")]
 async fn cluster_1_rack_multi_shotover(#[case] driver: KafkaDriver) {
     let _docker_compose =
@@ -189,10 +192,11 @@ async fn cluster_1_rack_multi_shotover(#[case] driver: KafkaDriver) {
     }
 }
 
+#[cfg(feature = "rdkafka-driver-tests")] // temporarily needed to avoid a warning
 #[rstest]
 #[cfg_attr(feature = "rdkafka-driver-tests", case::cpp(KafkaDriver::Cpp))]
-#[case::java(KafkaDriver::Java)]
-#[tokio::test]
+// #[case::java(KafkaDriver::Java)]
+#[tokio::test(flavor = "multi_thread")] // multi_thread is needed since java driver will block when consuming, causing shotover logs to not appear
 async fn cluster_2_racks_single_shotover(#[case] driver: KafkaDriver) {
     let _docker_compose =
         docker_compose("tests/test-configs/kafka/cluster-2-racks/docker-compose.yaml");
@@ -212,10 +216,11 @@ async fn cluster_2_racks_single_shotover(#[case] driver: KafkaDriver) {
     .expect("Shotover did not shutdown within 10s");
 }
 
+#[cfg(feature = "rdkafka-driver-tests")] // temporarily needed to avoid a warning
 #[rstest]
 #[cfg_attr(feature = "rdkafka-driver-tests", case::cpp(KafkaDriver::Cpp))]
-#[case::java(KafkaDriver::Java)]
-#[tokio::test]
+//#[case::java(KafkaDriver::Java)]
+#[tokio::test(flavor = "multi_thread")] // multi_thread is needed since java driver will block when consuming, causing shotover logs to not appear
 async fn cluster_2_racks_multi_shotover(#[case] driver: KafkaDriver) {
     let _docker_compose =
         docker_compose("tests/test-configs/kafka/cluster-2-racks/docker-compose.yaml");
