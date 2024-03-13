@@ -13,7 +13,7 @@ use itertools::Itertools;
 use shotover::config::chain::TransformChainConfig;
 use shotover::sources::SourceConfig;
 use shotover::transforms::debug::force_parse::DebugForceEncodeConfig;
-use shotover::transforms::kafka::sink_cluster::KafkaSinkClusterConfig;
+use shotover::transforms::kafka::sink_cluster::{KafkaSinkClusterConfig, ShotoverNodeConfig};
 use shotover::transforms::kafka::sink_single::KafkaSinkSingleConfig;
 use shotover::transforms::TransformConfig;
 use std::sync::Arc;
@@ -92,7 +92,11 @@ impl KafkaBench {
                 connect_timeout_ms: 3000,
                 read_timeout: None,
                 first_contact_points: vec![kafka_address],
-                shotover_nodes: vec![host_address.clone()],
+                shotover_nodes: vec![ShotoverNodeConfig {
+                    address: host_address.parse().unwrap(),
+                    rack: "rack1".into(),
+                    broker_id: 0,
+                }],
                 tls: None,
                 sasl_enabled: Some(false),
             }),

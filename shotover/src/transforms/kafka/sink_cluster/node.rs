@@ -108,18 +108,20 @@ impl KafkaAddress {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct KafkaNode {
     pub broker_id: BrokerId,
+    pub rack: Option<StrBytes>,
     pub kafka_address: KafkaAddress,
     connection: Option<Connection>,
 }
 
 impl KafkaNode {
-    pub fn new(broker_id: BrokerId, kafka_address: KafkaAddress) -> Self {
+    pub fn new(broker_id: BrokerId, kafka_address: KafkaAddress, rack: Option<StrBytes>) -> Self {
         KafkaNode {
             broker_id,
             kafka_address,
+            rack,
             connection: None,
         }
     }
