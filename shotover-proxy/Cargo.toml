@@ -47,7 +47,7 @@ tokio-bin-process.workspace = true
 rustls-pemfile = "2.0.0"
 rustls-pki-types = "1.1.0"
 aws-throwaway.workspace = true
-windsock = { path = "../windsock" }
+windsock = "0.1.0"
 regex = "1.7.0"
 cql-ws = { git = "https://github.com/shotover/cql-ws" }
 opensearch = "2.1.0"
