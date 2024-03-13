@@ -97,7 +97,7 @@ pub enum KafkaConsumer {
 }
 
 impl KafkaConsumer {
-    pub async fn assert_consume(&self, response: ExpectedResponse<'_>) {
+    pub async fn assert_consume(&mut self, response: ExpectedResponse<'_>) {
         match self {
             #[cfg(feature = "rdkafka-driver-tests")]
             Self::Cpp(cpp) => cpp.assert_consume(response).await,

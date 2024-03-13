@@ -1,6 +1,9 @@
 use super::{AlterConfig, ExpectedResponse, NewPartition, NewTopic, Record, ResourceSpecifier};
 use j4rs::{errors::J4RsError, Instance, InvocationArg, Jvm, JvmBuilder, MavenArtifact};
-use std::{collections::HashMap, rc::Rc};
+use std::{
+    collections::{HashMap, VecDeque},
+    rc::Rc,
+};
 
 fn properties(jvm: &Jvm, props: &HashMap<String, String>) -> Instance {
     let properties = jvm.create_instance("java.util.Properties", &[]).unwrap();
@@ -73,13 +76,52 @@ impl KafkaConnectionBuilderJava {
                 &[properties.into()],
             )
             .unwrap();
-        KafkaProducerJava {
-            _producer: producer,
-        }
+
+        let jvm = self.jvm.clone();
+        KafkaProducerJava { jvm, producer }
     }
 
-    pub async fn connect_consumer(&self, _topic_name: &str) -> KafkaConsumerJava {
-        KafkaConsumerJava {}
+    pub async fn connect_consumer(&self, topic_name: &str) -> KafkaConsumerJava {
+        let mut config = self.base_config.clone();
+        config.insert("group.id".to_owned(), "some_group".to_owned());
+        config.insert("session.timeout.ms".to_owned(), "6000".to_owned());
+        config.insert("auto.offset.reset".to_owned(), "earliest".to_owned());
+        config.insert("enable.auto.commit".to_owned(), "false".to_owned());
+        config.insert(
+            "key.deserializer".to_owned(),
+            "org.apache.kafka.common.serialization.StringDeserializer".to_owned(),
+        );
+        config.insert(
+            "value.deserializer".to_owned(),
+            "org.apache.kafka.common.serialization.StringDeserializer".to_owned(),
+        );
+
+        let properties = properties(&self.jvm, &config);
+        let consumer = self
+            .jvm
+            .create_instance(
+                "org.apache.kafka.clients.consumer.KafkaConsumer",
+                &[properties.into()],
+            )
+            .unwrap();
+        self.jvm
+            .invoke(
+                &consumer,
+                "subscribe",
+                &[self
+                    .jvm
+                    .java_list("java.lang.String", vec![topic_name])
+                    .unwrap()
+                    .into()],
+            )
+            .unwrap();
+
+        let jvm = self.jvm.clone();
+        KafkaConsumerJava {
+            jvm,
+            consumer,
+            waiting_records: VecDeque::new(),
+        }
     }
 
     pub async fn connect_admin(&self) -> KafkaAdminJava {
@@ -97,20 +139,156 @@ impl KafkaConnectionBuilderJava {
     }
 }
 pub struct KafkaProducerJava {
-    _producer: Instance,
+    jvm: Rc<Jvm>,
+    producer: Instance,
 }
 
 impl KafkaProducerJava {
-    pub async fn assert_produce(&self, _record: Record<'_>, _expected_offset: Option<i64>) {
-        tracing::error!("Unimplemented assert");
+    pub async fn assert_produce(&self, record: Record<'_>, expected_offset: Option<i64>) {
+        let record = match record.key {
+            Some(key) => self
+                .jvm
+                .create_instance(
+                    "org.apache.kafka.clients.producer.ProducerRecord",
+                    &[
+                        InvocationArg::try_from(record.topic_name).unwrap(),
+                        InvocationArg::try_from(key).unwrap(),
+                        InvocationArg::try_from(record.payload).unwrap(),
+                    ],
+                )
+                .unwrap(),
+            None => self
+                .jvm
+                .create_instance(
+                    "org.apache.kafka.clients.producer.ProducerRecord",
+                    &[
+                        InvocationArg::try_from(record.topic_name).unwrap(),
+                        InvocationArg::try_from(record.payload).unwrap(),
+                    ],
+                )
+                .unwrap(),
+        };
+        let result = self
+            .jvm
+            .invoke_async(&self.producer, "send", &[record.into()])
+            .await
+            .unwrap();
+        let actual_offset: i64 = self
+            .jvm
+            .chain(&result)
+            .unwrap()
+            .cast("org.apache.kafka.clients.producer.RecordMetadata")
+            .unwrap()
+            .invoke("offset", &[])
+            .unwrap()
+            .to_rust()
+            .unwrap();
+
+        if let Some(expected_offset) = expected_offset {
+            assert_eq!(expected_offset, actual_offset);
+        }
     }
 }
 
-pub struct KafkaConsumerJava {}
+pub struct KafkaConsumerJava {
+    jvm: Rc<Jvm>,
+    consumer: Instance,
+    waiting_records: VecDeque<Instance>,
+}
 
 impl KafkaConsumerJava {
-    pub async fn assert_consume(&self, _response: ExpectedResponse<'_>) {
-        tracing::error!("Unimplemented assert");
+    pub async fn assert_consume(&mut self, expected_response: ExpectedResponse<'_>) {
+        // This method asserts that we have consumed a single record from the broker.
+        // Internally we may have actually received multiple records from the broker.
+        // But that is hidden from the test by storing any extra messages for use in the next call to `assert_consume`
+
+        if self.waiting_records.is_empty() {
+            self.fetch_from_broker();
+        }
+
+        self.process_one_fetched_record(expected_response);
+    }
+
+    fn fetch_from_broker(&mut self) {
+        let timeout = self
+            .jvm
+            .invoke_static(
+                "java.time.Duration",
+                "ofSeconds",
+                &[InvocationArg::try_from(30_i64)
+                    .unwrap()
+                    .into_primitive()
+                    .unwrap()],
+            )
+            .unwrap();
+
+        let result = tokio::task::block_in_place(|| {
+            self.jvm
+                .invoke(&self.consumer, "poll", &[timeout.into()])
+                .unwrap()
+        });
+
+        let iterator = JavaIterator::new(self.jvm.invoke(&result, "iterator", &[]).unwrap());
+        while let Some(record) = iterator.next(&self.jvm) {
+            let record = self
+                .jvm
+                .cast(&record, "org.apache.kafka.clients.consumer.ConsumerRecord")
+                .unwrap();
+            self.waiting_records.push_front(record);
+        }
+    }
+
+    fn process_one_fetched_record(&mut self, expected_response: ExpectedResponse<'_>) {
+        let record = self
+            .waiting_records
+            .pop_back()
+            .expect("KafkaConsumer.poll timed out");
+
+        let offset: i64 = self
+            .jvm
+            .chain(&record)
+            .unwrap()
+            .invoke("offset", &[])
+            .unwrap()
+            .to_rust()
+            .unwrap();
+        assert_eq!(expected_response.offset, offset);
+
+        let topic: String = self
+            .jvm
+            .chain(&record)
+            .unwrap()
+            .invoke("topic", &[])
+            .unwrap()
+            .to_rust()
+            .unwrap();
+        assert_eq!(expected_response.topic_name, topic);
+
+        let value: String = self
+            .jvm
+            .chain(&record)
+            .unwrap()
+            .invoke("value", &[])
+            .unwrap()
+            .to_rust()
+            .unwrap();
+        assert_eq!(expected_response.message, value);
+
+        let key: Option<String> = self
+            .jvm
+            .chain(&record)
+            .unwrap()
+            .invoke("key", &[])
+            .unwrap()
+            .to_rust()
+            .unwrap();
+        assert_eq!(expected_response.key, key.as_deref());
+    }
+}
+
+impl Drop for KafkaConsumerJava {
+    fn drop(&mut self) {
+        tokio::task::block_in_place(|| self.jvm.invoke(&self.consumer, "close", &[]).unwrap());
     }
 }
 
@@ -162,16 +340,11 @@ impl KafkaAdminJava {
             .java_list("org.apache.kafka.clients.admin.NewTopic", topics)
             .unwrap();
 
-        self.jvm
-            .chain(&self.admin)
-            .unwrap()
-            .invoke("createTopics", &[topics.into()])
-            .unwrap()
-            .invoke("all", &[])
-            .unwrap()
-            .invoke("get", &[])
-            .unwrap()
-            .collect();
+        let result = self
+            .jvm
+            .invoke(&self.admin, "createTopics", &[topics.into()])
+            .unwrap();
+        self.jvm.invoke_async(&result, "all", &[]).await.unwrap();
     }
 
     pub async fn delete_topics(&self, to_delete: &[&str]) {
@@ -180,16 +353,11 @@ impl KafkaAdminJava {
             .java_list("java.lang.String", to_delete.to_vec())
             .unwrap();
 
-        self.jvm
-            .chain(&self.admin)
-            .unwrap()
-            .invoke("deleteTopics", &[topics.into()])
-            .unwrap()
-            .invoke("all", &[])
-            .unwrap()
-            .invoke("get", &[])
-            .unwrap()
-            .collect();
+        let result = self
+            .jvm
+            .invoke(&self.admin, "deleteTopics", &[topics.into()])
+            .unwrap();
+        self.jvm.invoke_async(&result, "all", &[]).await.unwrap();
     }
 
     pub async fn create_partitions(&self, partitions: &[NewPartition<'_>]) {
@@ -218,16 +386,11 @@ impl KafkaAdminJava {
             )
             .unwrap();
 
-        self.jvm
-            .chain(&self.admin)
-            .unwrap()
-            .invoke("createPartitions", &[partitions.into()])
-            .unwrap()
-            .invoke("all", &[])
-            .unwrap()
-            .invoke("get", &[])
-            .unwrap()
-            .collect();
+        let result = self
+            .jvm
+            .invoke(&self.admin, "createPartitions", &[partitions.into()])
+            .unwrap();
+        self.jvm.invoke_async(&result, "all", &[]).await.unwrap();
     }
 
     pub async fn describe_configs(&self, resources: &[ResourceSpecifier<'_>]) {
@@ -256,16 +419,11 @@ impl KafkaAdminJava {
             .java_list("org.apache.kafka.common.config.ConfigResource", resources)
             .unwrap();
 
-        self.jvm
-            .chain(&self.admin)
-            .unwrap()
-            .invoke("describeConfigs", &[resources.into()])
-            .unwrap()
-            .invoke("all", &[])
-            .unwrap()
-            .invoke("get", &[])
-            .unwrap()
-            .collect();
+        let result = self
+            .jvm
+            .invoke(&self.admin, "describeConfigs", &[resources.into()])
+            .unwrap();
+        self.jvm.invoke_async(&result, "all", &[]).await.unwrap();
     }
 
     pub async fn alter_configs(&self, alter_configs: &[AlterConfig<'_>]) {
@@ -318,16 +476,11 @@ impl KafkaAdminJava {
 
         let alter_configs = self.java_map(alter_configs);
 
-        self.jvm
-            .chain(&self.admin)
-            .unwrap()
-            .invoke("alterConfigs", &[alter_configs.into()])
-            .unwrap()
-            .invoke("all", &[])
-            .unwrap()
-            .invoke("get", &[])
-            .unwrap()
-            .collect();
+        let result = self
+            .jvm
+            .invoke(&self.admin, "alterConfigs", &[alter_configs.into()])
+            .unwrap();
+        self.jvm.invoke_async(&result, "all", &[]).await.unwrap();
     }
 
     fn java_map(&self, key_values: Vec<(Instance, Instance)>) -> Instance {
@@ -336,5 +489,24 @@ impl KafkaAdminJava {
             self.jvm.invoke(&map, "put", &[k.into(), v.into()]).unwrap();
         }
         map
+    }
+}
+
+struct JavaIterator(Instance);
+
+impl JavaIterator {
+    fn new(iterator_instance: Instance) -> Self {
+        JavaIterator(iterator_instance)
+    }
+
+    fn next(&self, jvm: &Jvm) -> Option<Instance> {
+        let has_next: bool = jvm
+            .to_rust(jvm.invoke(&self.0, "hasNext", &[]).unwrap())
+            .unwrap();
+        if has_next {
+            Some(jvm.invoke(&self.0, "next", &[]).unwrap())
+        } else {
+            None
+        }
     }
 }
