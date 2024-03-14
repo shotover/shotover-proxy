@@ -1,4 +1,4 @@
-use super::TransformContextConfig;
+use super::{TransformContextBuilder, TransformContextConfig};
 use crate::message::{Message, MessageIdMap, Messages, QueryType};
 use crate::transforms::{Transform, TransformBuilder, TransformConfig, Wrapper};
 use anyhow::Result;
@@ -41,7 +41,7 @@ impl TransformConfig for QueryTypeFilterConfig {
 }
 
 impl TransformBuilder for QueryTypeFilter {
-    fn build(&self) -> Box<dyn Transform> {
+    fn build(&self, _transform_context: TransformContextBuilder) -> Box<dyn Transform> {
         Box::new(self.clone())
     }
 

@@ -1,6 +1,7 @@
 use crate::message::Messages;
 use crate::transforms::{
-    Transform, TransformBuilder, TransformConfig, TransformContextConfig, Wrapper,
+    Transform, TransformBuilder, TransformConfig, TransformContextBuilder, TransformContextConfig,
+    Wrapper,
 };
 use anyhow::Result;
 use async_trait::async_trait;
@@ -41,7 +42,7 @@ impl DebugPrinter {
 }
 
 impl TransformBuilder for DebugPrinter {
-    fn build(&self) -> Box<dyn Transform> {
+    fn build(&self, _transform_context: TransformContextBuilder) -> Box<dyn Transform> {
         Box::new(self.clone())
     }
 

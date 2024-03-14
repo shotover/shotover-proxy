@@ -1,4 +1,4 @@
-use super::TransformContextConfig;
+use super::{TransformContextBuilder, TransformContextConfig};
 use crate::message::Messages;
 use crate::transforms::{Transform, TransformBuilder, TransformConfig, Wrapper};
 use anyhow::Result;
@@ -25,7 +25,7 @@ impl TransformConfig for NullSinkConfig {
 pub struct NullSink {}
 
 impl TransformBuilder for NullSink {
-    fn build(&self) -> Box<dyn Transform> {
+    fn build(&self, _transform_context: TransformContextBuilder) -> Box<dyn Transform> {
         Box::new(self.clone())
     }
 

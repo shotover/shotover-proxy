@@ -1,4 +1,4 @@
-use super::TransformContextConfig;
+use super::{TransformContextBuilder, TransformContextConfig};
 use crate::config::chain::TransformChainConfig;
 use crate::message::Messages;
 use crate::transforms::chain::{BufferedChain, TransformChainBuilder};
@@ -43,12 +43,13 @@ pub struct ConnectionBalanceAndPoolBuilder {
 }
 
 impl TransformBuilder for ConnectionBalanceAndPoolBuilder {
-    fn build(&self) -> Box<dyn Transform> {
+    fn build(&self, transform_context: TransformContextBuilder) -> Box<dyn Transform> {
         Box::new(ConnectionBalanceAndPool {
             active_connection: None,
             max_connections: self.max_connections,
             all_connections: self.all_connections.clone(),
             chain_to_clone: self.chain_to_clone.clone(),
+            transform_context,
         })
     }
 
@@ -69,6 +70,7 @@ pub struct ConnectionBalanceAndPool {
     max_connections: usize,
     all_connections: Arc<Mutex<Vec<BufferedChain>>>,
     chain_to_clone: Arc<TransformChainBuilder>,
+    transform_context: TransformContextBuilder,
 }
 
 #[async_trait]
@@ -81,7 +83,9 @@ impl Transform for ConnectionBalanceAndPool {
         if self.active_connection.is_none() {
             let mut all_connections = self.all_connections.lock().await;
             if all_connections.len() < self.max_connections {
-                let chain = self.chain_to_clone.build_buffered(5);
+                let chain = self
+                    .chain_to_clone
+                    .build_buffered(5, self.transform_context.clone());
                 self.active_connection = Some(chain.clone());
                 all_connections.push(chain);
             } else {

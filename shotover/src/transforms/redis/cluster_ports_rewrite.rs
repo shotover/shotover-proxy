@@ -1,6 +1,7 @@
 use crate::frame::Frame;
 use crate::frame::RedisFrame;
 use crate::message::{MessageIdMap, Messages};
+use crate::transforms::TransformContextBuilder;
 use crate::transforms::TransformContextConfig;
 use crate::transforms::{Transform, TransformBuilder, TransformConfig, Wrapper};
 use anyhow::{anyhow, bail, Context, Result};
@@ -28,7 +29,7 @@ impl TransformConfig for RedisClusterPortsRewriteConfig {
 }
 
 impl TransformBuilder for RedisClusterPortsRewrite {
-    fn build(&self) -> Box<dyn Transform> {
+    fn build(&self, _transform_context: TransformContextBuilder) -> Box<dyn Transform> {
         Box::new(self.clone())
     }
 

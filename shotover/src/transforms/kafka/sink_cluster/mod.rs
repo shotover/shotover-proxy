@@ -4,7 +4,7 @@ use crate::frame::Frame;
 use crate::message::{Message, Messages};
 use crate::tls::{TlsConnector, TlsConnectorConfig};
 use crate::transforms::util::{Request, Response};
-use crate::transforms::{Transform, TransformBuilder, Wrapper};
+use crate::transforms::{Transform, TransformBuilder, TransformContextBuilder, Wrapper};
 use crate::transforms::{TransformConfig, TransformContextConfig};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
@@ -143,7 +143,7 @@ impl KafkaSinkClusterBuilder {
 }
 
 impl TransformBuilder for KafkaSinkClusterBuilder {
-    fn build(&self) -> Box<dyn Transform> {
+    fn build(&self, _transform_context: TransformContextBuilder) -> Box<dyn Transform> {
         Box::new(KafkaSinkCluster {
             first_contact_points: self.first_contact_points.clone(),
             shotover_nodes: self.shotover_nodes.clone(),

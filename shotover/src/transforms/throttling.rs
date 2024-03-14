@@ -1,4 +1,4 @@
-use super::TransformContextConfig;
+use super::{TransformContextBuilder, TransformContextConfig};
 use crate::message::{Message, MessageIdMap, Messages};
 use crate::transforms::{Transform, TransformBuilder, TransformConfig, Wrapper};
 use anyhow::Result;
@@ -46,7 +46,7 @@ pub struct RequestThrottling {
 }
 
 impl TransformBuilder for RequestThrottling {
-    fn build(&self) -> Box<dyn Transform> {
+    fn build(&self, _transform_context: TransformContextBuilder) -> Box<dyn Transform> {
         Box::new(self.clone())
     }
 

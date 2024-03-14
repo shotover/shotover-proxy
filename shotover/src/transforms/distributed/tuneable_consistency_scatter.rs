@@ -3,7 +3,8 @@ use crate::frame::{Frame, RedisFrame};
 use crate::message::{Message, Messages, QueryType};
 use crate::transforms::chain::{BufferedChain, TransformChainBuilder};
 use crate::transforms::{
-    Transform, TransformBuilder, TransformConfig, TransformContextConfig, Wrapper,
+    Transform, TransformBuilder, TransformConfig, TransformContextBuilder, TransformContextConfig,
+    Wrapper,
 };
 use anyhow::Result;
 use async_trait::async_trait;
@@ -56,12 +57,12 @@ pub struct TuneableConsistencyScatterBuilder {
 }
 
 impl TransformBuilder for TuneableConsistencyScatterBuilder {
-    fn build(&self) -> Box<dyn Transform> {
+    fn build(&self, transform_context: TransformContextBuilder) -> Box<dyn Transform> {
         Box::new(TuneableConsistentencyScatter {
             route_map: self
                 .route_map
                 .iter()
-                .map(|x| x.build_buffered(10))
+                .map(|x| x.build_buffered(10, transform_context.clone()))
                 .collect(),
             write_consistency: self.write_consistency,
             read_consistency: self.read_consistency,
@@ -301,7 +302,7 @@ mod scatter_transform_tests {
         TuneableConsistencyScatterBuilder, TuneableConsistentencyScatter,
     };
     use crate::transforms::null::NullSink;
-    use crate::transforms::{Transform, TransformBuilder, Wrapper};
+    use crate::transforms::{Transform, TransformBuilder, TransformContextBuilder, Wrapper};
     use bytes::Bytes;
     use std::collections::HashMap;
 
@@ -318,9 +319,10 @@ mod scatter_transform_tests {
     }
 
     fn build_chains(route_map: HashMap<String, TransformChainBuilder>) -> Vec<BufferedChain> {
+        let context = TransformContextBuilder::new();
         route_map
             .into_values()
-            .map(|x| x.build_buffered(10))
+            .map(|x| x.build_buffered(10, context.clone()))
             .collect()
     }
 

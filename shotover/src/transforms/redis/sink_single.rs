@@ -2,7 +2,9 @@ use crate::frame::{Frame, RedisFrame};
 use crate::message::{Message, Messages};
 use crate::tcp;
 use crate::tls::{AsyncStream, TlsConnector, TlsConnectorConfig};
-use crate::transforms::{Transform, TransformBuilder, TransformConfig, Wrapper};
+use crate::transforms::{
+    Transform, TransformBuilder, TransformConfig, TransformContextBuilder, Wrapper,
+};
 use crate::{
     codec::{
         redis::{RedisCodecBuilder, RedisDecoder, RedisEncoder},
@@ -78,7 +80,7 @@ impl RedisSinkSingleBuilder {
 }
 
 impl TransformBuilder for RedisSinkSingleBuilder {
-    fn build(&self) -> Box<dyn Transform> {
+    fn build(&self, _transform_context: TransformContextBuilder) -> Box<dyn Transform> {
         Box::new(RedisSinkSingle {
             address: self.address.clone(),
             tls: self.tls.clone(),

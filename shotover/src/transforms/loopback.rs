@@ -3,13 +3,15 @@ use crate::transforms::{Transform, TransformBuilder, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
 
+use super::TransformContextBuilder;
+
 const NAME: &str = "Loopback";
 
 #[derive(Debug, Clone, Default)]
 pub struct Loopback {}
 
 impl TransformBuilder for Loopback {
-    fn build(&self) -> Box<dyn Transform> {
+    fn build(&self, _transform_context: TransformContextBuilder) -> Box<dyn Transform> {
         Box::new(self.clone())
     }
 

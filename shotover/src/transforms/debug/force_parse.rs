@@ -7,6 +7,7 @@ use crate::message::Messages;
 /// It could also be used to ensure that messages round trip correctly when parsed.
 #[cfg(feature = "alpha-transforms")]
 use crate::transforms::TransformConfig;
+use crate::transforms::TransformContextBuilder;
 #[cfg(feature = "alpha-transforms")]
 use crate::transforms::TransformContextConfig;
 use crate::transforms::{Transform, TransformBuilder, Wrapper};
@@ -76,7 +77,7 @@ pub struct DebugForceParse {
 }
 
 impl TransformBuilder for DebugForceParse {
-    fn build(&self) -> Box<dyn Transform> {
+    fn build(&self, _transform_context: TransformContextBuilder) -> Box<dyn Transform> {
         Box::new(self.clone())
     }
 

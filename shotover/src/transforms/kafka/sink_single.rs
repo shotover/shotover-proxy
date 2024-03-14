@@ -7,7 +7,9 @@ use crate::tls::{TlsConnector, TlsConnectorConfig};
 use crate::transforms::kafka::common::produce_channel;
 use crate::transforms::util::cluster_connection_pool::{spawn_read_write_tasks, Connection};
 use crate::transforms::util::{Request, Response};
-use crate::transforms::{Transform, TransformBuilder, TransformContextConfig, Wrapper};
+use crate::transforms::{
+    Transform, TransformBuilder, TransformContextBuilder, TransformContextConfig, Wrapper,
+};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -76,7 +78,7 @@ impl KafkaSinkSingleBuilder {
 }
 
 impl TransformBuilder for KafkaSinkSingleBuilder {
-    fn build(&self) -> Box<dyn Transform> {
+    fn build(&self, _transform_context: TransformContextBuilder) -> Box<dyn Transform> {
         Box::new(KafkaSinkSingle {
             outbound: None,
             address_port: self.address_port,
