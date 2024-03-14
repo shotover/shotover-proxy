@@ -1,16 +1,21 @@
 use crate::codec::{kafka::KafkaCodecBuilder, CodecBuilder, Direction};
+use crate::message::Message;
 use crate::tcp;
 use crate::tls::TlsConnector;
 use crate::transforms::util::cluster_connection_pool::{spawn_read_write_tasks, Connection};
+use crate::transforms::util::Request;
 use anyhow::{anyhow, Result};
 use kafka_protocol::messages::BrokerId;
 use kafka_protocol::protocol::StrBytes;
 use std::time::Duration;
 use tokio::io::split;
+use tokio::sync::oneshot;
 
 pub struct ConnectionFactory {
     tls: Option<TlsConnector>,
     connect_timeout: Duration,
+    handshake_message: Option<Message>,
+    auth_message: Option<Message>,
 }
 
 impl ConnectionFactory {
@@ -18,11 +23,22 @@ impl ConnectionFactory {
         ConnectionFactory {
             tls,
             connect_timeout,
+            handshake_message: None,
+            auth_message: None,
         }
+    }
+
+    pub fn add_handshake_message(&mut self, message: Message) {
+        self.handshake_message = Some(message);
+    }
+
+    pub fn add_auth_message(&mut self, message: Message) {
+        self.auth_message = Some(message);
     }
 
     pub async fn create_connection(&self, kafka_address: &KafkaAddress) -> Result<Connection> {
         let codec = KafkaCodecBuilder::new(Direction::Sink, "KafkaSinkCluster".to_owned());
+
         let address = (kafka_address.host.to_string(), kafka_address.port as u16);
         if let Some(tls) = self.tls.as_ref() {
             let tls_stream = tls.connect(self.connect_timeout, address).await?;
@@ -33,12 +49,37 @@ impl ConnectionFactory {
             let tcp_stream = tcp::tcp_stream(self.connect_timeout, address).await?;
             let (rx, tx) = tcp_stream.into_split();
             let connection = spawn_read_write_tasks(&codec, rx, tx);
+
+            if let Some(message) = self.auth_message.as_ref() {
+                let handshake_msg = self.handshake_message.as_ref().unwrap();
+
+                let (tx, rx) = oneshot::channel();
+                connection
+                    .send(Request {
+                        message: handshake_msg.clone(),
+                        return_chan: Some(tx),
+                    })
+                    .map_err(|_| anyhow!("Failed to send"))?;
+
+                let _response = rx.await.map_err(|_| anyhow!("Failed to receive"))?;
+
+                let (tx, rx) = oneshot::channel();
+                connection
+                    .send(Request {
+                        message: message.clone(),
+                        return_chan: Some(tx),
+                    })
+                    .map_err(|_| anyhow!("Failed to send"))?;
+
+                let _response = rx.await.map_err(|_| anyhow!("Failed to receive"))?;
+            }
+
             Ok(connection)
         }
     }
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Debug)]
 pub struct KafkaAddress {
     pub host: StrBytes,
     pub port: i32,
