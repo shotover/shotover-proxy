@@ -2,9 +2,10 @@
 sources:
   - Kafka:
       name: "kafka"
-      listen_addr: "127.0.0.1:9193"
+      listen_addr: "127.0.0.1:9192"
       chain:
         - KafkaSinkCluster:
+            sasl_enabled: true
             shotover_nodes:
               - address: "127.0.0.1:9191"
                 rack: "rack0"

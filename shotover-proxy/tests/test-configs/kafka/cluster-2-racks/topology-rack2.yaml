@@ -5,8 +5,12 @@ sources:
       listen_addr: "127.0.0.1:9192"
       chain:
         - KafkaSinkCluster:
-            shotover_nodes: 
-              - "127.0.0.1:9191"
-              - "127.0.0.1:9192"
+            shotover_nodes:
+              - address: "127.0.0.1:9191"
+                rack: "rack1"
+                broker_id: 0
+              - address: "127.0.0.1:9192"
+                rack: "rack2"
+                broker_id: 1
             first_contact_points: ["172.16.1.5:9092"]
             connect_timeout_ms: 3000

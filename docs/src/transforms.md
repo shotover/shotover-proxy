@@ -284,7 +284,7 @@ Instead Shotover will pretend to be either a single Kafka node or part of a clus
 This is achieved by rewriting the FindCoordinator, Metadata and DescribeCluster messages to contain the nodes in the shotover cluster instead of the kafka cluster.
 
 ```yaml
-- CassandraSinkCluster:
+- KafkaSinkCluster:
     # Addresses of the initial kafka brokers to connect to.
     first_contact_points: ["172.16.1.2:9042", "172.16.1.3:9042"]
 
@@ -308,6 +308,9 @@ This is achieved by rewriting the FindCoordinator, Metadata and DescribeCluster 
     # This field is optional, if not provided, timeout will never occur.
     # When a timeout occurs the connection to the client is immediately closed.
     # read_timeout: 60
+
+    # When this field is enabled it allows the use of SASL authentication. If you intend to use SASL this field must be enabled, it is false by default.
+    sasl_enabled: false
 
     # When this field is provided TLS is used when connecting to the remote address.
     # Removing this field will disable TLS.

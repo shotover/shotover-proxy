@@ -5639,6 +5639,8 @@ checksum = "32b752e52a2da0ddfbdbcc6fceadfeede4c939ed16d13e648833a61dfb611ed8"
 [[package]]
 name = "windsock"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5730a5bb3421d2422b41fc14e51e8dd191294f3de9eeccc6568eebf9644ee027"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5646,8 +5648,6 @@ dependencies = [
  "clap",
  "console",
  "copy_dir",
- "docker-compose-runner",
- "scylla",
  "serde",
  "strum 0.26.1",
  "time",
