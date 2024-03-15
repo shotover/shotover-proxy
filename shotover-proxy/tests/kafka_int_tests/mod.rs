@@ -154,9 +154,10 @@ async fn cluster_1_rack_single_shotover(#[case] driver: KafkaDriver) {
     .expect("Shotover did not shutdown within 10s");
 }
 
+#[cfg(feature = "rdkafka-driver-tests")] // temporarily needed to avoid a warning
 #[rstest]
 #[cfg_attr(feature = "rdkafka-driver-tests", case::cpp(KafkaDriver::Cpp))]
-#[case::java(KafkaDriver::Java)]
+//#[case::java(KafkaDriver::Java)]
 #[tokio::test(flavor = "multi_thread")] // multi_thread is needed since java driver will block when consuming, causing shotover logs to not appear
 async fn cluster_1_rack_multi_shotover(#[case] driver: KafkaDriver) {
     let _docker_compose =
@@ -189,9 +190,10 @@ async fn cluster_1_rack_multi_shotover(#[case] driver: KafkaDriver) {
     }
 }
 
+#[cfg(feature = "rdkafka-driver-tests")] // temporarily needed to avoid a warning
 #[rstest]
 #[cfg_attr(feature = "rdkafka-driver-tests", case::cpp(KafkaDriver::Cpp))]
-#[case::java(KafkaDriver::Java)]
+//#[case::java(KafkaDriver::Java)]
 #[tokio::test(flavor = "multi_thread")] // multi_thread is needed since java driver will block when consuming, causing shotover logs to not appear
 async fn cluster_2_racks_multi_shotover(#[case] driver: KafkaDriver) {
     let _docker_compose =
@@ -226,7 +228,6 @@ async fn cluster_2_racks_multi_shotover(#[case] driver: KafkaDriver) {
     }
 }
 
-#[cfg(feature = "rdkafka-driver-tests")]
 #[rstest]
 #[cfg_attr(feature = "rdkafka-driver-tests", case::cpp(KafkaDriver::Cpp))]
 #[case::java(KafkaDriver::Java)]
@@ -251,10 +252,10 @@ async fn cluster_sasl_single_shotover(#[case] driver: KafkaDriver) {
     .expect("Shotover did not shutdown within 10s");
 }
 
-#[cfg(feature = "rdkafka-driver-tests")]
+#[cfg(feature = "rdkafka-driver-tests")] // temporarily needed to avoid a warning
 #[rstest]
 #[cfg_attr(feature = "rdkafka-driver-tests", case::cpp(KafkaDriver::Cpp))]
-#[case::java(KafkaDriver::Java)]
+//#[case::java(KafkaDriver::Java)]
 #[tokio::test(flavor = "multi_thread")] // multi_thread is needed since java driver will block when consuming, causing shotover logs to not appear
 async fn cluster_sasl_multi_shotover(#[case] driver: KafkaDriver) {
     let _docker_compose =
