@@ -444,7 +444,7 @@ async fn spawn_websocket_read_write_tasks<
     );
 }
 
-fn spawn_read_write_tasks<
+pub fn spawn_read_write_tasks<
     C: CodecBuilder + 'static,
     R: AsyncRead + Unpin + Send + 'static,
     W: AsyncWrite + Unpin + Send + 'static,
