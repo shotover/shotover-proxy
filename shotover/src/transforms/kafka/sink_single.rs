@@ -15,7 +15,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tokio::io::split;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::oneshot;
 use tokio::time::timeout;
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -82,7 +82,6 @@ impl TransformBuilder for KafkaSinkSingleBuilder {
         Box::new(KafkaSinkSingle {
             outbound: None,
             address_port: self.address_port,
-            pushed_messages_tx: None,
             connect_timeout: self.connect_timeout,
             tls: self.tls.clone(),
             read_timeout: self.read_timeout,
@@ -101,7 +100,6 @@ impl TransformBuilder for KafkaSinkSingleBuilder {
 pub struct KafkaSinkSingle {
     address_port: u16,
     outbound: Option<Connection>,
-    pushed_messages_tx: Option<mpsc::UnboundedSender<Messages>>,
     connect_timeout: Duration,
     read_timeout: Option<Duration>,
     tls: Option<TlsConnector>,
@@ -192,10 +190,6 @@ impl Transform for KafkaSinkSingle {
         }
 
         Ok(responses)
-    }
-
-    fn set_pushed_messages_tx(&mut self, pushed_messages_tx: mpsc::UnboundedSender<Messages>) {
-        self.pushed_messages_tx = Some(pushed_messages_tx);
     }
 }
 
