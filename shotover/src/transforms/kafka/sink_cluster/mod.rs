@@ -247,7 +247,7 @@ pub struct KafkaSinkCluster {
     rng: SmallRng,
     sasl_status: SaslStatus,
     connection_factory: ConnectionFactory,
-    first_contact_node: Option<BrokerId>,
+    first_contact_node: Option<KafkaAddress>,
     // its not clear from the docs if this cache needs to be accessed cross connection:
     // https://cwiki.apache.org/confluence/display/KAFKA/KIP-227%3A+Introduce+Incremental+FetchRequests+to+Increase+Partition+Scalability
     fetch_session_id_to_broker: HashMap<i32, BrokerId>,
@@ -661,14 +661,14 @@ impl KafkaSinkCluster {
         message: Message,
         return_chan: Option<oneshot::Sender<Response>>,
     ) -> Result<()> {
-        let node = if let Some(first_contact_node) = self.first_contact_node {
+        let node = if let Some(first_contact_node) = &self.first_contact_node {
             self.nodes
                 .iter_mut()
-                .find(|node| node.broker_id == first_contact_node)
+                .find(|node| node.kafka_address == *first_contact_node)
                 .unwrap()
         } else {
             let node = self.nodes.get_mut(0).unwrap();
-            self.first_contact_node = Some(node.broker_id);
+            self.first_contact_node = Some(node.kafka_address.clone());
             node
         };
 
