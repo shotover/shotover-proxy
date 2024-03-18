@@ -67,6 +67,22 @@ impl Cloud for AwsCloud {
             aws.create_bencher_instances(benches_will_run, 1),
             aws.create_shotover_instances(benches_will_run, required.shotover_instance_count)
         );
+
+        println!();
+        println!("In order to investigate bench failures you may want to ssh into the instances:");
+        for (i, docker) in docker.iter().enumerate() {
+            println!("Docker instance #{i}");
+            println!("{}\n", docker.instance.ssh_instructions());
+        }
+        for (i, shotover) in shotover.iter().enumerate() {
+            println!("Shotover instance #{i}");
+            println!("{}\n", shotover.instance.ssh_instructions());
+        }
+        for (i, bencher) in bencher.iter().enumerate() {
+            println!("Bencher instance #{i}");
+            println!("{}\n", bencher.instance.ssh_instructions());
+        }
+
         let bencher = bencher.pop();
         CloudResources {
             shotover,
