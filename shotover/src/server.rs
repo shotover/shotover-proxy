@@ -455,6 +455,7 @@ pub fn spawn_read_write_tasks<
     in_tx: mpsc::Sender<Messages>,
     mut out_rx: UnboundedReceiver<Messages>,
     out_tx: UnboundedSender<Messages>,
+    force_run_chain: Option<Arc<Notify>>,
 ) {
     let (decoder, encoder) = codec.build();
     let mut reader = FramedRead::new(rx, decoder);
@@ -486,6 +487,9 @@ pub fn spawn_read_write_tasks<
                                     if in_tx.send(messages).await.is_err() {
                                         // main task has shutdown, this task is no longer needed
                                         return;
+                                    }
+                                    if let Some(force_run_chain) = force_run_chain.as_ref() {
+                                        force_run_chain.notify_one();
                                     }
                                 }
                                 Err(CodecReadError::RespondAndThenCloseConnection(messages)) => {
@@ -652,6 +656,7 @@ impl<C: CodecBuilder + 'static> Handler<C> {
                         in_tx,
                         out_rx,
                         out_tx.clone(),
+                        None,
                     );
                 } else {
                     let (rx, tx) = stream.into_split();
@@ -662,6 +667,7 @@ impl<C: CodecBuilder + 'static> Handler<C> {
                         in_tx,
                         out_rx,
                         out_tx.clone(),
+                        None,
                     );
                 };
             }

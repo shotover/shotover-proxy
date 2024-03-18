@@ -1,4 +1,4 @@
-use std::sync::{mpsc, Arc};
+use std::sync::mpsc;
 use std::time::Instant;
 
 use super::{CodecWriteError, Direction};
@@ -10,26 +10,12 @@ use bytes::BytesMut;
 use metrics::Histogram;
 use redis_protocol::resp2::prelude::decode_mut;
 use redis_protocol::resp2::prelude::encode_bytes;
-use tokio::sync::Notify;
 use tokio_util::codec::{Decoder, Encoder};
 
 #[derive(Clone)]
 pub struct RedisCodecBuilder {
     direction: Direction,
     message_latency: Histogram,
-    force_run_chain: Option<Arc<Notify>>,
-}
-
-impl RedisCodecBuilder {
-    pub fn new_sink(destination_name: String, force_run_chain: Arc<Notify>) -> Self {
-        let direction = Direction::Sink;
-        let message_latency = super::message_latency(direction, destination_name);
-        Self {
-            direction,
-            message_latency,
-            force_run_chain: Some(force_run_chain),
-        }
-    }
 }
 
 impl CodecBuilder for RedisCodecBuilder {
@@ -41,7 +27,6 @@ impl CodecBuilder for RedisCodecBuilder {
         Self {
             direction,
             message_latency,
-            force_run_chain: None,
         }
     }
 
@@ -54,7 +39,7 @@ impl CodecBuilder for RedisCodecBuilder {
             }
         };
         (
-            RedisDecoder::new(rx, self.direction, self.force_run_chain.clone()),
+            RedisDecoder::new(rx, self.direction),
             RedisEncoder::new(tx, self.direction, self.message_latency.clone()),
         )
     }
@@ -89,7 +74,6 @@ pub struct RedisEncoder {
 pub struct RedisDecoder {
     // Some when Sink (because it receives responses)
     request_header_rx: Option<mpsc::Receiver<RequestInfo>>,
-    force_run_chain: Option<Arc<Notify>>,
     direction: Direction,
     is_subscribed: bool,
 }
@@ -98,13 +82,11 @@ impl RedisDecoder {
     pub fn new(
         request_header_rx: Option<mpsc::Receiver<RequestInfo>>,
         direction: Direction,
-        force_run_chain: Option<Arc<Notify>>,
     ) -> Self {
         Self {
             direction,
             request_header_rx,
             is_subscribed: false,
-            force_run_chain,
         }
     }
 }
