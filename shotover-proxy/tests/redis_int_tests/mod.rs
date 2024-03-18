@@ -62,6 +62,7 @@ async fn passthrough_redis_down() {
 
     shotover
         .shutdown_and_then_consume_events(&[
+            // Error occurs when client sends a message to shotover
             EventMatcher::new()
                 .with_level(Level::Error)
                 .with_target("shotover::server")
@@ -75,6 +76,19 @@ Caused by:
     3: Connection refused (os error 111)"#,
                 )
                 .with_count(Count::Times(2)),
+            // When the chain is flushed on client connection close we hit the same error again
+            EventMatcher::new()
+                .with_level(Level::Error)
+                .with_target("shotover::server")
+                .with_message(
+                    r#"encountered an error when flushing the chain redis for shutdown
+
+Caused by:
+    0: RedisSinkSingle transform failed
+    1: Failed to connect to destination "127.0.0.1:1111"
+    2: Connection refused (os error 111)"#,
+                )
+                .with_count(Count::Times(3)),
             invalid_frame_event(),
         ])
         .await;
