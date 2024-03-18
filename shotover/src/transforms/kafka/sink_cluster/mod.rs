@@ -29,7 +29,7 @@ use std::net::SocketAddr;
 use std::sync::atomic::AtomicI64;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::{mpsc, oneshot, RwLock};
+use tokio::sync::{oneshot, RwLock};
 use tokio::time::timeout;
 use uuid::Uuid;
 
@@ -158,7 +158,6 @@ impl TransformBuilder for KafkaSinkClusterBuilder {
         Box::new(KafkaSinkCluster {
             first_contact_points: self.first_contact_points.clone(),
             shotover_nodes: self.shotover_nodes.clone(),
-            pushed_messages_tx: None,
             read_timeout: self.read_timeout,
             nodes: vec![],
             nodes_shared: self.nodes_shared.clone(),
@@ -236,7 +235,6 @@ impl SaslStatus {
 pub struct KafkaSinkCluster {
     first_contact_points: Vec<String>,
     shotover_nodes: Vec<ShotoverNode>,
-    pushed_messages_tx: Option<mpsc::UnboundedSender<Messages>>,
     read_timeout: Option<Duration>,
     nodes: Vec<KafkaNode>,
     nodes_shared: Arc<RwLock<Vec<KafkaNode>>>,
@@ -301,10 +299,6 @@ impl Transform for KafkaSinkCluster {
         let responses = self.send_requests(requests_wrapper.requests).await?;
         self.receive_responses(&find_coordinator_requests, responses)
             .await
-    }
-
-    fn set_pushed_messages_tx(&mut self, pushed_messages_tx: mpsc::UnboundedSender<Messages>) {
-        self.pushed_messages_tx = Some(pushed_messages_tx);
     }
 }
 
