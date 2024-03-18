@@ -72,7 +72,7 @@ async fn passthrough_redis_down() {
 Caused by:
     0: Chain failed to send and/or receive messages, the connection will now be closed.
     1: RedisSinkSingle transform failed
-    2: Failed to connect to destination "127.0.0.1:1111"
+    2: Failed to connect to destination 127.0.0.1:1111
     3: Connection refused (os error 111)"#,
                 )
                 .with_count(Count::Times(2)),
@@ -85,7 +85,7 @@ Caused by:
 
 Caused by:
     0: RedisSinkSingle transform failed
-    1: Failed to connect to destination "127.0.0.1:1111"
+    1: Failed to connect to destination 127.0.0.1:1111
     2: Connection refused (os error 111)"#,
                 )
                 .with_count(Count::Times(3)),

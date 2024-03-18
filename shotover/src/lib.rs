@@ -53,6 +53,7 @@ compile_error!(
 
 pub mod codec;
 pub mod config;
+pub mod connection;
 mod connection_span;
 pub mod frame;
 pub mod message;
