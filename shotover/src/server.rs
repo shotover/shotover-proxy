@@ -410,33 +410,13 @@ async fn spawn_websocket_read_write_tasks<
                         }
                     }
                 } else {
-                    // Main task has ended.
-                    // First flush out any remaining messages.
-                    // Then end the task thus closing the connection by dropping the write half
-                    while let Ok(message) = out_rx.try_recv() {
-                        let mut bytes = BytesMut::new();
-                        match encoder.encode(message, &mut bytes) {
-                            Err(err) => {
-                                error!("failed to encode message destined for client: {err:?}")
-                            }
-                            Ok(_) => {
-                                let message = WsMessage::binary(bytes);
-                                match writer.send(message).await {
-                                    Ok(_) => {}
-                                    Err(err) => {
-                                        panic!("{err}"); // TODO
-                                    }
-                                }
-                            }
+                    match writer.send(WsMessage::Close(None)).await {
+                        Ok(_) => {}
+                        Err(err) => {
+                            panic!("{err}"); // TODO
                         }
                     }
-                    break;
-                }
-            }
-            match writer.send(WsMessage::Close(None)).await {
-                Ok(_) => {}
-                Err(err) => {
-                    panic!("{err}"); // TODO
+                    return;
                 }
             }
         }
@@ -538,7 +518,10 @@ pub fn spawn_read_write_tasks<
                             error!("failed to encode message destined for client: {err:?}")
                         }
                         Err(CodecWriteError::Io(err)) => {
-                            if matches!(err.kind(), ErrorKind::BrokenPipe | ErrorKind::ConnectionReset) {
+                            if matches!(
+                                err.kind(),
+                                ErrorKind::BrokenPipe | ErrorKind::ConnectionReset
+                            ) {
                                 debug!("client disconnected before it could receive a response");
                                 return;
                             } else {
@@ -548,28 +531,7 @@ pub fn spawn_read_write_tasks<
                         Ok(_) => {}
                     }
                 } else {
-                    // Main task has ended.
-                    // First flush out any remaining messages.
-                    // Then end the task thus closing the connection by dropping the write half
-                    while let Ok(message) = out_rx.try_recv() {
-                        match writer.send(message).await {
-                            Err(CodecWriteError::Encoder(err)) => {
-                                error!("while flushing messages: failed to encode message destined for client: {err:?}")
-                            }
-                            Err(CodecWriteError::Io(err)) => {
-                                if matches!(err.kind(), ErrorKind::BrokenPipe | ErrorKind::ConnectionReset) {
-                                    debug!("while flushing messages: client disconnected before it could receive a response");
-                                    return;
-                                } else {
-                                    error!(
-                                        "while flushing messages: failed to send message to client: {err:?}"
-                                    );
-                                }
-                            }
-                            Ok(_) => {}
-                        }
-                    }
-                    break;
+                    return;
                 }
             }
         }
