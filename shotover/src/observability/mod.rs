@@ -1,12 +1,8 @@
+use crate::http::HttpServerError;
 use crate::runner::ReloadHandle;
 use anyhow::{anyhow, Context, Result};
-use bytes::Bytes;
-use hyper::{
-    service::{make_service_fn, service_fn},
-    Method, Request, StatusCode, {Body, Response, Server},
-};
+use axum::{extract::State, response::Html, Router};
 use metrics_exporter_prometheus::PrometheusHandle;
-use std::convert::Infallible;
 use std::str;
 use std::{net::SocketAddr, sync::Arc};
 use tracing::{error, trace};
@@ -16,21 +12,6 @@ pub(crate) struct LogFilterHttpExporter {
     recorder_handle: PrometheusHandle,
     address: SocketAddr,
     tracing_handle: ReloadHandle,
-}
-
-/// Sets the `tracing_suscriber` filter level to the value of `bytes` on `handle`
-fn set_filter(bytes: Bytes, handle: &ReloadHandle) -> Result<()> {
-    let body = str::from_utf8(bytes.as_ref())?;
-    trace!(request.body = ?body);
-    let new_filter = body.parse::<tracing_subscriber::filter::EnvFilter>()?;
-    handle.reload(new_filter)
-}
-
-fn rsp(status: StatusCode, body: impl Into<Body>) -> Response<Body> {
-    Response::builder()
-        .status(status)
-        .body(body.into())
-        .expect("builder with known status code must not fail")
 }
 
 impl LogFilterHttpExporter {
@@ -58,55 +39,46 @@ impl LogFilterHttpExporter {
     }
 
     async fn async_run_inner(self) -> Result<()> {
-        let recorder_handle = Arc::new(self.recorder_handle);
-        let tracing_handle = Arc::new(self.tracing_handle);
+        let state = AppState {
+            recorder_handle: Arc::new(self.recorder_handle),
+            tracing_handle: Arc::new(self.tracing_handle),
+        };
 
-        let make_svc = make_service_fn(move |_| {
-            let recorder_handle = recorder_handle.clone();
-            let tracing_handle = tracing_handle.clone();
-
-            async move {
-                Ok::<_, Infallible>(service_fn(move |req: Request<Body>| {
-                    let recorder_handle = recorder_handle.clone();
-                    let tracing_handle = tracing_handle.clone();
-
-                    async move {
-                        let response = match (req.method(), req.uri().path()) {
-                            (&Method::GET, "/metrics") => {
-                                Response::new(Body::from(recorder_handle.as_ref().render()))
-                            }
-                            (&Method::PUT, "/filter") => {
-                                trace!("setting filter");
-                                match hyper::body::to_bytes(req).await {
-                                    Ok(body) => match set_filter(body, &tracing_handle) {
-                                        Err(error) => {
-                                            error!(?error, "setting filter failed!");
-                                            rsp(
-                                                StatusCode::INTERNAL_SERVER_ERROR,
-                                                format!("{:?}", error),
-                                            )
-                                        }
-                                        Ok(()) => rsp(StatusCode::NO_CONTENT, Body::empty()),
-                                    },
-                                    Err(error) => {
-                                        error!(%error, "setting filter failed - Couldn't read bytes");
-                                        rsp(StatusCode::INTERNAL_SERVER_ERROR, format!("{error:?}"))
-                                    }
-                                }
-                            }
-                            _ => rsp(StatusCode::NOT_FOUND, "try '/filter' or `/metrics`"),
-                        };
-                        Ok::<_, Infallible>(response)
-                    }
-                }))
-            }
-        });
+        let app = Router::new()
+            .route("/", axum::routing::get(root))
+            .route("/metrics", axum::routing::get(serve_metrics))
+            .route("/filter", axum::routing::put(put_filter))
+            .with_state(state);
 
         let address = self.address;
-        Server::try_bind(&address)
-            .with_context(|| format!("Failed to bind to {}", address))?
-            .serve(make_svc)
+        let listener = tokio::net::TcpListener::bind(address)
             .await
-            .map_err(|e| anyhow!(e))
+            .with_context(|| format!("Failed to bind to {}", address))?;
+        axum::serve(listener, app).await.map_err(|e| anyhow!(e))
     }
+}
+
+async fn root() -> Html<&'static str> {
+    Html("try /filter or /metrics")
+}
+
+async fn serve_metrics(State(state): State<AppState>) -> Html<String> {
+    Html(state.recorder_handle.as_ref().render())
+}
+
+async fn put_filter(
+    State(state): State<AppState>,
+    new_filter_string: String,
+) -> Result<Html<&'static str>, HttpServerError> {
+    trace!("setting filter to: {new_filter_string}");
+    let new_filter = new_filter_string.parse::<tracing_subscriber::filter::EnvFilter>()?;
+    state.tracing_handle.reload(new_filter)?;
+    tracing::info!("filter set to: {new_filter_string}");
+    Ok(Html("Filter set"))
+}
+
+#[derive(Clone)]
+struct AppState {
+    tracing_handle: Arc<ReloadHandle>,
+    recorder_handle: Arc<PrometheusHandle>,
 }

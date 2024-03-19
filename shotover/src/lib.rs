@@ -55,6 +55,7 @@ pub mod codec;
 pub mod config;
 mod connection_span;
 pub mod frame;
+mod http;
 pub mod message;
 mod observability;
 pub mod runner;
