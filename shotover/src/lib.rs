@@ -56,6 +56,7 @@ pub mod config;
 pub mod connection;
 mod connection_span;
 pub mod frame;
+mod http;
 pub mod message;
 mod observability;
 pub mod runner;
