@@ -3,7 +3,8 @@
     any(
         not(feature = "cassandra"),
         not(feature = "redis"),
-        not(all(feature = "rdkafka-driver-tests", feature = "kafka"))
+        not(all(feature = "rdkafka-driver-tests", feature = "kafka")),
+        not(feature = "opensearch"),
     ),
     allow(dead_code, unused_imports, unused_variables, unused_mut)
 )]
