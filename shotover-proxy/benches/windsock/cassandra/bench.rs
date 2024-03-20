@@ -473,7 +473,7 @@ impl Bench for CassandraBench {
     fn tags(&self) -> HashMap<String, String> {
         [
             (
-                "name".to_owned(),
+                "db".to_owned(),
                 match &self.db {
                     CassandraDb::Cassandra => "cassandra".to_owned(),
                     CassandraDb::Mocked => "cassandra-mocked".to_owned(),
