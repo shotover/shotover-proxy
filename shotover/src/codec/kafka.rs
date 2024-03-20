@@ -174,17 +174,22 @@ impl Encoder<Messages> for KafkaEncoder {
                 Encodable::Frame(frame) => frame.into_kafka().unwrap().encode(dst),
             };
 
-            if let Some(tx) = self.request_header_tx.as_ref() {
-                let api_key = i16::from_be_bytes(dst[start + 4..start + 6].try_into().unwrap());
-                let version = i16::from_be_bytes(dst[start + 6..start + 8].try_into().unwrap());
-                let api_key = ApiKey::try_from(api_key)
-                    .map_err(|_| CodecWriteError::Encoder(anyhow!("unknown api key {api_key}")))?;
-                tx.send(RequestInfo {
-                    header: RequestHeader { api_key, version },
-                    id,
-                })
-                .map_err(|e| CodecWriteError::Encoder(anyhow!(e)))?;
+            // Skip if the message wrote nothing to dst, possibly due to being a dummy message.
+            if !dst[start..].is_empty() {
+                if let Some(tx) = self.request_header_tx.as_ref() {
+                    let api_key = i16::from_be_bytes(dst[start + 4..start + 6].try_into().unwrap());
+                    let version = i16::from_be_bytes(dst[start + 6..start + 8].try_into().unwrap());
+                    let api_key = ApiKey::try_from(api_key).map_err(|_| {
+                        CodecWriteError::Encoder(anyhow!("unknown api key {api_key}"))
+                    })?;
+                    tx.send(RequestInfo {
+                        header: RequestHeader { api_key, version },
+                        id,
+                    })
+                    .map_err(|e| CodecWriteError::Encoder(anyhow!(e)))?;
+                }
             }
+
             if let Some(received_at) = received_at {
                 self.message_latency.record(received_at.elapsed());
             }
