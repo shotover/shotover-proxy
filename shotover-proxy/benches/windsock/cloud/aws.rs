@@ -193,21 +193,43 @@ impl Ec2InstanceWithDocker {
     }
 
     pub async fn run_container(&self, image: &str, envs: &[(String, String)]) {
-        // cleanup old resources
-        // TODO: we need a way to ensure there are no shotover resources running.
-        //       Maybe `.run_shotover` could start both shotover and docker so that we are free to kill shotover in this function
+        self.run_container_inner(image, envs, "killall -w shotover-bin")
+            .await;
+    }
+
+    // Shotover is always instantiated alongside a container to avoid race conditions when cleaning up any existing shotover.
+    pub async fn run_container_and_shotover(
+        self: Arc<Self>,
+        image: &str,
+        envs: &[(String, String)],
+        topology: &str,
+    ) -> RunningShotover {
+        let self2 = self.clone();
+        tokio::join!(
+            self2.run_container_inner(image, envs, ""),
+            self.run_shotover_inner(topology),
+        )
+        .1
+    }
+
+    async fn run_container_inner(
+        &self,
+        image: &str,
+        envs: &[(String, String)],
+        extra_cleanup: &str,
+    ) {
         self.instance
             .ssh()
-            .shell(
-                r#"
+            .shell(&format!(
+                r#"{extra_cleanup}
 CONTAINERS=$(sudo docker ps -a -q)
 if [ -n "$CONTAINERS" ]
 then
     sudo docker stop $CONTAINERS
     sudo docker rm $CONTAINERS
 fi
-sudo docker system prune -af"#,
-            )
+sudo docker system prune -af"#
+            ))
             .await;
 
         // start container
@@ -267,8 +289,7 @@ sudo docker system prune -af"#,
         }
     }
 
-    #[cfg(all(feature = "rdkafka-driver-tests", feature = "kafka"))]
-    pub async fn run_shotover(self: Arc<Self>, topology: &str) -> RunningShotover {
+    pub async fn run_shotover_inner(self: Arc<Self>, topology: &str) -> RunningShotover {
         self.instance
             .ssh()
             .push_file_from_bytes(topology.as_bytes(), Path::new("topology.yaml"))

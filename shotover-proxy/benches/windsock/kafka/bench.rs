@@ -136,43 +136,7 @@ impl KafkaBench {
             tasks.push(tokio::spawn(async move {
                 node.run_container(
                     "bitnami/kafka:3.6.1-debian-11-r24",
-                    &[
-                        ("ALLOW_PLAINTEXT_LISTENER".to_owned(), "yes".to_owned()),
-                        (
-                            "KAFKA_CFG_ADVERTISED_LISTENERS".to_owned(),
-                            format!("BROKER://{ip}:{port}"),
-                        ),
-                        (
-                            "KAFKA_CFG_LISTENERS".to_owned(),
-                            format!("BROKER://:{port},CONTROLLER://:9093"),
-                        ),
-                        (
-                            "KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP".to_owned(),
-                            "CONTROLLER:PLAINTEXT,BROKER:PLAINTEXT".to_owned(),
-                        ),
-                        (
-                            "KAFKA_CFG_INTER_BROKER_LISTENER_NAME".to_owned(),
-                            "BROKER".to_owned(),
-                        ),
-                        (
-                            "KAFKA_CFG_CONTROLLER_LISTENER_NAMES".to_owned(),
-                            "CONTROLLER".to_owned(),
-                        ),
-                        (
-                            "KAFKA_CFG_PROCESS_ROLES".to_owned(),
-                            "controller,broker".to_owned(),
-                        ),
-                        (
-                            "KAFKA_HEAP_OPTS".to_owned(),
-                            "-Xmx4096M -Xms4096M".to_owned(),
-                        ),
-                        ("KAFKA_CFG_NODE_ID".to_owned(), i.to_string()),
-                        (
-                            "KAFKA_KRAFT_CLUSTER_ID".to_owned(),
-                            "abcdefghijklmnopqrstuv".to_owned(),
-                        ),
-                        ("KAFKA_CFG_CONTROLLER_QUORUM_VOTERS".to_owned(), voters),
-                    ],
+                    &Self::kafka_config(i, ip, port, voters),
                 )
                 .await;
             }));
@@ -180,6 +144,47 @@ impl KafkaBench {
         for task in tasks {
             task.await.unwrap();
         }
+    }
+
+    fn kafka_config(id: usize, ip: String, port: i16, voters: String) -> Vec<(String, String)> {
+        let ip = ip.to_string();
+        vec![
+            ("ALLOW_PLAINTEXT_LISTENER".to_owned(), "yes".to_owned()),
+            (
+                "KAFKA_CFG_ADVERTISED_LISTENERS".to_owned(),
+                format!("BROKER://{ip}:{port}"),
+            ),
+            (
+                "KAFKA_CFG_LISTENERS".to_owned(),
+                format!("BROKER://:{port},CONTROLLER://:9093"),
+            ),
+            (
+                "KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP".to_owned(),
+                "CONTROLLER:PLAINTEXT,BROKER:PLAINTEXT".to_owned(),
+            ),
+            (
+                "KAFKA_CFG_INTER_BROKER_LISTENER_NAME".to_owned(),
+                "BROKER".to_owned(),
+            ),
+            (
+                "KAFKA_CFG_CONTROLLER_LISTENER_NAMES".to_owned(),
+                "CONTROLLER".to_owned(),
+            ),
+            (
+                "KAFKA_CFG_PROCESS_ROLES".to_owned(),
+                "controller,broker".to_owned(),
+            ),
+            (
+                "KAFKA_HEAP_OPTS".to_owned(),
+                "-Xmx4096M -Xms4096M".to_owned(),
+            ),
+            ("KAFKA_CFG_NODE_ID".to_owned(), id.to_string()),
+            (
+                "KAFKA_KRAFT_CLUSTER_ID".to_owned(),
+                "abcdefghijklmnopqrstuv".to_owned(),
+            ),
+            ("KAFKA_CFG_CONTROLLER_QUORUM_VOTERS".to_owned(), voters),
+        ]
     }
 
     async fn run_aws_shotover_on_own_instance(
@@ -204,16 +209,30 @@ impl KafkaBench {
 
     async fn run_aws_shotover_colocated_with_kafka(
         &self,
-        instance: Arc<Ec2InstanceWithDocker>,
+        instances: Vec<Arc<Ec2InstanceWithDocker>>,
     ) -> Option<RunningShotover> {
+        let instance = instances[0].clone();
+        let id = 0;
         let ip = instance.instance.private_ip().to_string();
+        let port = 9192;
+        let voters = format!("{id}@{ip}:9093");
+        let config = Self::kafka_config(id, ip.clone(), port, voters);
+        let image = "bitnami/kafka:3.6.1-debian-11-r24";
+
         match self.shotover {
             Shotover::Standard | Shotover::ForcedMessageParsed => {
                 let topology =
                     self.generate_topology_yaml(format!("{ip}:9092"), format!("{ip}:9192"));
-                Some(instance.run_shotover(&topology).await)
+                Some(
+                    instance
+                        .run_container_and_shotover(image, &config, &topology)
+                        .await,
+                )
             }
-            Shotover::None => None,
+            Shotover::None => {
+                instance.run_container(image, &config).await;
+                None
+            }
         }
     }
 
@@ -332,22 +351,22 @@ impl Bench for KafkaBench {
         )
         .await;
 
-        let (_, running_shotover) =
-            futures::join!(self.run_aws_kafka(kafka_instances.clone()), async {
-                match self.topology {
-                    KafkaTopology::Single => {
-                        self.run_aws_shotover_colocated_with_kafka(kafka_instances[0].clone())
-                            .await
-                    }
-                    KafkaTopology::Cluster1 | KafkaTopology::Cluster3 => {
-                        self.run_aws_shotover_on_own_instance(
-                            shotover_instance,
-                            kafka_instances[0].clone(),
-                        )
-                        .await
-                    }
-                }
-            });
+        let (_, running_shotover) = match self.topology {
+            KafkaTopology::Single => (
+                (),
+                self.run_aws_shotover_colocated_with_kafka(kafka_instances)
+                    .await,
+            ),
+            KafkaTopology::Cluster1 | KafkaTopology::Cluster3 => {
+                futures::join!(
+                    self.run_aws_kafka(kafka_instances.clone()),
+                    self.run_aws_shotover_on_own_instance(
+                        shotover_instance,
+                        kafka_instances[0].clone(),
+                    )
+                )
+            }
+        };
 
         let destination_address =
             if let Shotover::Standard | Shotover::ForcedMessageParsed = self.shotover {
