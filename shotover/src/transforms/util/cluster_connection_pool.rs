@@ -268,6 +268,20 @@ async fn rx_process<C: DecoderHalf, R: AsyncRead + Unpin + Send + 'static>(
     //       refer to the cassandra connection logic.
     loop {
         tokio::select!(
+            biased;
+            // check for dummy requests first, to ensure correct message ordering
+            request_id = dummy_request_rx.recv() => {
+                match request_id {
+                    Some(request_id) => if let Some(Some(ret)) = return_rx.recv().await {
+                        let mut response= Message::from_frame(Frame::Dummy);
+                        response.set_request_id(request_id);
+                        ret.send(Response { response: Ok(response) }).ok();
+                    }
+                    None => {
+                        break;
+                    }
+                }
+            }
             responses = reader.next() => {
                 match responses {
                     Some(Ok(responses)) => {
@@ -283,18 +297,6 @@ async fn rx_process<C: DecoderHalf, R: AsyncRead + Unpin + Send + 'static>(
                     Some(Err(e)) => return Err(anyhow!("Couldn't decode message from upstream host {e:?}")),
                     None => {
                         // connection closed
-                        break;
-                    }
-                }
-            }
-            request_id = dummy_request_rx.recv() => {
-                match request_id {
-                    Some(request_id) => if let Some(Some(ret)) = return_rx.recv().await {
-                        let mut response= Message::from_frame(Frame::Dummy);
-                        response.set_request_id(request_id);
-                        ret.send(Response { response: Ok(response) }).ok();
-                    }
-                    None => {
                         break;
                     }
                 }
