@@ -51,7 +51,6 @@ pub struct KafkaSinkClusterConfig {
     pub connect_timeout_ms: u64,
     pub read_timeout: Option<u64>,
     pub tls: Option<TlsConnectorConfig>,
-    pub sasl_enabled: Option<bool>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -99,7 +98,6 @@ impl TransformConfig for KafkaSinkClusterConfig {
             self.connect_timeout_ms,
             self.read_timeout,
             tls,
-            self.sasl_enabled.unwrap_or(false),
         )))
     }
 }
@@ -116,7 +114,6 @@ pub struct KafkaSinkClusterBuilder {
     topic_by_id: Arc<DashMap<Uuid, Topic>>,
     nodes_shared: Arc<RwLock<Vec<KafkaNode>>>,
     tls: Option<TlsConnector>,
-    sasl_enabled: bool,
 }
 
 impl KafkaSinkClusterBuilder {
@@ -127,7 +124,6 @@ impl KafkaSinkClusterBuilder {
         connect_timeout_ms: u64,
         timeout: Option<u64>,
         tls: Option<TlsConnector>,
-        sasl_enabled: bool,
     ) -> KafkaSinkClusterBuilder {
         let receive_timeout = timeout.map(Duration::from_secs);
 
@@ -148,7 +144,6 @@ impl KafkaSinkClusterBuilder {
             topic_by_id: Arc::new(DashMap::new()),
             nodes_shared: Arc::new(RwLock::new(vec![])),
             tls,
-            sasl_enabled,
         }
     }
 }
@@ -166,7 +161,7 @@ impl TransformBuilder for KafkaSinkClusterBuilder {
             topic_by_name: self.topic_by_name.clone(),
             topic_by_id: self.topic_by_id.clone(),
             rng: SmallRng::from_rng(rand::thread_rng()).unwrap(),
-            sasl_status: SaslStatus::new(self.sasl_enabled),
+            sasl_status: SaslStatus::new(),
             connection_factory: ConnectionFactory::new(self.tls.clone(), self.connect_timeout),
             first_contact_node: None,
             fetch_session_id_to_broker: HashMap::new(),
@@ -207,28 +202,22 @@ impl AtomicBrokerId {
 
 #[derive(Debug)]
 struct SaslStatus {
-    enabled: bool,
-    handshake_complete: bool,
+    auth_complete: bool,
 }
 
 impl SaslStatus {
-    fn new(enabled: bool) -> Self {
+    fn new() -> Self {
         Self {
-            enabled,
-            handshake_complete: false,
+            auth_complete: false,
         }
     }
 
-    fn set_handshake_complete(&mut self) {
-        self.handshake_complete = true;
+    fn set_auth_complete(&mut self, v: bool) {
+        self.auth_complete = v;
     }
 
     fn is_handshake_complete(&self) -> bool {
-        if self.enabled {
-            self.handshake_complete
-        } else {
-            true
-        }
+        self.auth_complete
     }
 }
 
@@ -369,6 +358,10 @@ impl KafkaSinkCluster {
                 }
                 _ => {}
             }
+        }
+
+        if !self.sasl_status.is_handshake_complete() {
+            self.requests_contain_non_handshake_message(&mut requests);
         }
 
         for group in groups {
@@ -625,7 +618,6 @@ impl KafkaSinkCluster {
                         .await?;
                     self.connection_factory.add_auth_message(message.clone());
                     results.push(rx);
-                    self.sasl_status.set_handshake_complete();
                 }
 
                 // route to random node
@@ -772,6 +764,29 @@ impl KafkaSinkCluster {
             })
             .map_err(|_| anyhow!("Failed to send"))?;
         Ok(rx.await.unwrap().response.unwrap())
+    }
+
+    fn requests_contain_non_handshake_message(&mut self, requests: &mut [Message]) {
+        for requests in requests.iter_mut() {
+            match requests.frame() {
+                Some(Frame::Kafka(KafkaFrame::Request {
+                    body: RequestBody::ApiVersions(_),
+                    ..
+                })) => {}
+                Some(Frame::Kafka(KafkaFrame::Request {
+                    body: RequestBody::SaslHandshake(_),
+                    ..
+                })) => {}
+                Some(Frame::Kafka(KafkaFrame::Request {
+                    body: RequestBody::SaslAuthenticate(_),
+                    ..
+                })) => {}
+                _ => {
+                    self.sasl_status.set_auth_complete(true);
+                    return;
+                }
+            }
+        }
     }
 
     async fn receive_responses(
