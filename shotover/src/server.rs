@@ -721,11 +721,13 @@ impl<C: CodecBuilder + 'static> Handler<C> {
                 },
             };
 
-            debug!("sending response to client: {:?}", responses);
             // send the result of the process up stream
-            if out_tx.send(responses).is_err() {
-                // the client has disconnected so we should terminate this connection
-                return Ok(());
+            if !responses.is_empty() {
+                debug!("sending response to client: {:?}", responses);
+                if out_tx.send(responses).is_err() {
+                    // the client has disconnected so we should terminate this connection
+                    return Ok(());
+                }
             }
         }
 

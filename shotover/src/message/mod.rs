@@ -473,7 +473,7 @@ impl Message {
     // TODO: We will have a better idea of how to make this generic once we have multiple out of order protocols
     //       For now its just written to match cassandra's stream_id field
     // TODO: deprecated, just call `metadata()` instead
-    pub fn stream_id(&self) -> Option<i16> {
+    pub(crate) fn stream_id(&self) -> Option<i16> {
         match &self.inner {
             #[cfg(feature = "cassandra")]
             Some(MessageInner::RawBytes {

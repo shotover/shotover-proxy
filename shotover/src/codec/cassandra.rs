@@ -1,8 +1,8 @@
 use super::{CodecBuilder, CodecReadError, CodecWriteError, Direction};
 use crate::codec::CodecState;
-use crate::frame::cassandra::{CassandraMetadata, CassandraOperation, Tracing};
+use crate::frame::cassandra::{CassandraOperation, Tracing};
 use crate::frame::{CassandraFrame, Frame, MessageType};
-use crate::message::{Encodable, Message, Messages, Metadata};
+use crate::message::{Encodable, Message, MessageId, Messages, Metadata};
 use anyhow::{anyhow, Result};
 use atomic_enum::atomic_enum;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
@@ -17,6 +17,7 @@ use lz4_flex::{block::get_maximum_output_size, compress_into, decompress};
 use metrics::{counter, Counter, Histogram};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc;
 use std::sync::Arc;
 use std::time::Instant;
 use tokio_util::codec::{Decoder, Encoder};
@@ -120,6 +121,13 @@ impl CodecBuilder for CassandraCodecBuilder {
     fn build(&self) -> (CassandraDecoder, CassandraEncoder) {
         let version = Arc::new(AtomicVersionState::new(VersionState::V4));
         let compression = Arc::new(AtomicCompressionState::new(CompressionState::None));
+        let (stream_id_to_request_id_tx, stream_id_to_request_id_rx) = match self.direction {
+            Direction::Source => (None, None),
+            Direction::Sink => {
+                let (tx, rx) = std::sync::mpsc::channel();
+                (Some(tx), Some(rx))
+            }
+        };
 
         let handshake_complete = Arc::new(AtomicBool::from(false));
         (
@@ -129,6 +137,7 @@ impl CodecBuilder for CassandraCodecBuilder {
                 self.direction,
                 handshake_complete.clone(),
                 self.version_counter.clone(),
+                stream_id_to_request_id_rx,
             ),
             CassandraEncoder::new(
                 version,
@@ -136,6 +145,7 @@ impl CodecBuilder for CassandraCodecBuilder {
                 self.direction,
                 handshake_complete,
                 self.message_latency.clone(),
+                stream_id_to_request_id_tx,
             ),
         )
     }
@@ -180,15 +190,18 @@ pub struct CassandraDecoder {
     version_counter: VersionCounter,
     expected_payload_len: Option<usize>,
     payload_buffer: BytesMut,
+    stream_id_to_request_id_rx: Option<mpsc::Receiver<StreamIdToRequestId>>,
+    stream_id_to_request_id: HashMap<i16, MessageId>,
 }
 
 impl CassandraDecoder {
-    pub fn new(
+    fn new(
         version: Arc<AtomicVersionState>,
         compression: Arc<AtomicCompressionState>,
         direction: Direction,
         handshake_complete: Arc<AtomicBool>,
         version_counter: VersionCounter,
+        stream_id_to_request_id_rx: Option<mpsc::Receiver<StreamIdToRequestId>>,
     ) -> CassandraDecoder {
         CassandraDecoder {
             version,
@@ -199,6 +212,8 @@ impl CassandraDecoder {
             version_counter,
             payload_buffer: BytesMut::new(),
             expected_payload_len: None,
+            stream_id_to_request_id_rx,
+            stream_id_to_request_id: HashMap::new(),
         }
     }
 }
@@ -587,18 +602,33 @@ impl Decoder for CassandraDecoder {
                     )
                     .map_err(CodecReadError::Parser)?;
 
+                if let Some(rx) = &self.stream_id_to_request_id_rx {
+                    while let Ok(pair) = rx.try_recv() {
+                        self.stream_id_to_request_id
+                            .insert(pair.stream_id, pair.request_id);
+                    }
+                }
+
                 for message in messages.iter_mut() {
-                    if let Ok(Metadata::Cassandra(CassandraMetadata {
-                        opcode: Opcode::Query | Opcode::Batch,
-                        ..
-                    })) = message.metadata()
-                    {
+                    let Ok(Metadata::Cassandra(meta)) = message.metadata() else {
+                        continue;
+                    };
+
+                    if let Opcode::Query | Opcode::Batch = meta.opcode {
                         if let Some(keyspace) = get_use_keyspace(message) {
                             self.current_use_keyspace = Some(keyspace);
                         }
 
                         if let Some(keyspace) = &self.current_use_keyspace {
                             set_default_keyspace(message, keyspace);
+                        }
+                    }
+
+                    if !matches!(meta.opcode, Opcode::Event) {
+                        if let Some(request_id) =
+                            self.stream_id_to_request_id.remove(&meta.stream_id)
+                        {
+                            message.set_request_id(request_id);
                         }
                     }
                 }
@@ -617,6 +647,11 @@ impl Decoder for CassandraDecoder {
             ))),
         }
     }
+}
+
+struct StreamIdToRequestId {
+    stream_id: i16,
+    request_id: MessageId,
 }
 
 fn get_use_keyspace(message: &mut Message) -> Option<Identifier> {
@@ -711,15 +746,17 @@ pub struct CassandraEncoder {
     direction: Direction,
     handshake_complete: Arc<AtomicBool>,
     message_latency: Histogram,
+    stream_id_to_request_id_tx: Option<mpsc::Sender<StreamIdToRequestId>>,
 }
 
 impl CassandraEncoder {
-    pub fn new(
+    fn new(
         version: Arc<AtomicVersionState>,
         compression: Arc<AtomicCompressionState>,
         direction: Direction,
         handshake_complete: Arc<AtomicBool>,
         message_latency: Histogram,
+        stream_id_to_request_id_tx: Option<mpsc::Sender<StreamIdToRequestId>>,
     ) -> CassandraEncoder {
         CassandraEncoder {
             message_latency,
@@ -727,6 +764,7 @@ impl CassandraEncoder {
             compression,
             direction,
             handshake_complete,
+            stream_id_to_request_id_tx,
         }
     }
 }
@@ -783,6 +821,17 @@ impl CassandraEncoder {
         if m.is_dummy() {
             // skip dummy messages
             return Ok(());
+        }
+
+        if let Some(tx) = &self.stream_id_to_request_id_tx {
+            let Ok(Metadata::Cassandra(meta)) = m.metadata() else {
+                unreachable!("Gauranteed to be cassandra")
+            };
+            tx.send(StreamIdToRequestId {
+                stream_id: meta.stream_id,
+                request_id: m.id,
+            })
+            .ok();
         }
 
         match (version, handshake_complete) {

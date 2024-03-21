@@ -30,7 +30,7 @@ impl Connection {
     pub async fn new<A: ToSocketAddrs + ToHostname + std::fmt::Debug, C: CodecBuilder + 'static>(
         host: A,
         codec_builder: C,
-        tls: &mut Option<TlsConnector>,
+        tls: &Option<TlsConnector>,
         connect_timeout: Duration,
         force_run_chain: Option<Arc<Notify>>,
         direction: Direction,
@@ -40,7 +40,7 @@ impl Connection {
         let (out_tx, out_rx) = mpsc::unbounded_channel::<Messages>();
         let (connection_closed_tx, connection_closed_rx) = mpsc::channel(1);
 
-        if let Some(tls) = tls.as_mut() {
+        if let Some(tls) = tls.as_ref() {
             let tls_stream = tls.connect(connect_timeout, host).await?;
             let (rx, tx) = split(tls_stream);
             spawn_read_write_tasks(
@@ -111,7 +111,8 @@ impl Connection {
         } else {
             // first process any immediately pending dummy responses
             if let Some(dummy_response_inserter) = &mut self.dummy_response_inserter {
-                let mut messages = vec![];
+                // ensure we include any received messages so we dont leave them hanging after using up a force_run_chain.
+                let mut messages = self.in_rx.try_recv().unwrap_or_default();
                 dummy_response_inserter.process_responses(&mut messages);
                 if !messages.is_empty() {
                     return Ok(messages);
