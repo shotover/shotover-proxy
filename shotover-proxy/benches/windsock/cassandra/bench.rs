@@ -74,7 +74,9 @@ pub enum CassandraDb {
 }
 
 enum CassandraDbInstance {
+    #[allow(dead_code)] // must be held to delay drop
     Compose(DockerCompose),
+    #[allow(dead_code)]
     Mocked(MockHandle),
 }
 
