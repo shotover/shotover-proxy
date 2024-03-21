@@ -163,7 +163,7 @@ impl Bench for RedisBench {
 
     fn tags(&self) -> HashMap<String, String> {
         [
-            ("name".to_owned(), "redis".to_owned()),
+            ("db".to_owned(), "redis".to_owned()),
             (
                 "topology".to_owned(),
                 match &self.topology {
