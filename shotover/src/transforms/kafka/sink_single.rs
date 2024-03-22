@@ -1,21 +1,19 @@
 use crate::codec::{kafka::KafkaCodecBuilder, CodecBuilder, Direction};
+use crate::connection::Connection;
 use crate::frame::kafka::{KafkaFrame, RequestBody, ResponseBody};
 use crate::frame::Frame;
-use crate::message::{Message, Messages};
-use crate::tcp;
+use crate::message::Messages;
 use crate::tls::{TlsConnector, TlsConnectorConfig};
-use crate::transforms::kafka::common::produce_channel;
-use crate::transforms::util::cluster_connection_pool::{spawn_read_write_tasks, Connection};
-use crate::transforms::util::{Request, Response};
+use crate::transforms::TransformConfig;
 use crate::transforms::{
     Transform, TransformBuilder, TransformContextBuilder, TransformContextConfig, Wrapper,
 };
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use std::time::Duration;
-use tokio::io::split;
-use tokio::sync::oneshot;
+use tokio::sync::Notify;
 use tokio::time::timeout;
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -28,8 +26,6 @@ pub struct KafkaSinkSingleConfig {
     pub read_timeout: Option<u64>,
     pub tls: Option<TlsConnectorConfig>,
 }
-
-use crate::transforms::TransformConfig;
 
 const NAME: &str = "KafkaSinkSingle";
 #[typetag::serde(name = "KafkaSinkSingle")]
@@ -78,13 +74,14 @@ impl KafkaSinkSingleBuilder {
 }
 
 impl TransformBuilder for KafkaSinkSingleBuilder {
-    fn build(&self, _transform_context: TransformContextBuilder) -> Box<dyn Transform> {
+    fn build(&self, transform_context: TransformContextBuilder) -> Box<dyn Transform> {
         Box::new(KafkaSinkSingle {
-            outbound: None,
+            connection: None,
             address_port: self.address_port,
             connect_timeout: self.connect_timeout,
             tls: self.tls.clone(),
             read_timeout: self.read_timeout,
+            force_run_chain: transform_context.force_run_chain,
         })
     }
 
@@ -99,10 +96,11 @@ impl TransformBuilder for KafkaSinkSingleBuilder {
 
 pub struct KafkaSinkSingle {
     address_port: u16,
-    outbound: Option<Connection>,
+    connection: Option<Connection>,
     connect_timeout: Duration,
     read_timeout: Option<Duration>,
     tls: Option<TlsConnector>,
+    force_run_chain: Arc<Notify>,
 }
 
 #[async_trait]
@@ -112,42 +110,66 @@ impl Transform for KafkaSinkSingle {
     }
 
     async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Messages> {
-        if self.outbound.is_none() {
+        if self.connection.is_none() {
             let codec = KafkaCodecBuilder::new(Direction::Sink, "KafkaSinkSingle".to_owned());
             let address = (requests_wrapper.local_addr.ip(), self.address_port);
-            if let Some(tls) = self.tls.as_mut() {
-                let tls_stream = tls.connect(self.connect_timeout, address).await?;
-                let (rx, tx) = split(tls_stream);
-                self.outbound = Some(spawn_read_write_tasks(&codec, rx, tx));
+            self.connection = Some(
+                Connection::new(
+                    address,
+                    codec,
+                    &mut self.tls,
+                    self.connect_timeout,
+                    Some(self.force_run_chain.clone()),
+                    Direction::Sink,
+                )
+                .await?,
+            );
+        }
+
+        let mut responses = if requests_wrapper.requests.is_empty() {
+            // there are no requests, so no point sending any, but we should check for any responses without awaiting
+            if let Ok(responses) = self.connection.as_mut().unwrap().try_recv() {
+                responses
             } else {
-                let tcp_stream = tcp::tcp_stream(self.connect_timeout, address).await?;
-                let (rx, tx) = tcp_stream.into_split();
-                self.outbound = Some(spawn_read_write_tasks(&codec, rx, tx));
+                vec![]
             }
-        }
-
-        // Rewrite requests to use kafkas port instead of shotovers port
-        for request in &mut requests_wrapper.requests {
-            if let Some(Frame::Kafka(KafkaFrame::Request {
-                body: RequestBody::LeaderAndIsr(leader_and_isr),
-                ..
-            })) = request.frame()
-            {
-                for leader in &mut leader_and_isr.live_leaders {
-                    leader.port = self.address_port as i32;
-                }
-                request.invalidate_cache();
-            }
-        }
-
-        let responses = self.send_requests(requests_wrapper.requests)?;
-
-        // TODO: since kafka will never send requests out of order I wonder if it would be faster to use an mpsc instead of a oneshot or maybe just directly run the sending/receiving here?
-        let mut responses = if let Some(read_timeout) = self.read_timeout {
-            timeout(read_timeout, read_responses(responses)).await?
         } else {
-            read_responses(responses).await
-        }?;
+            // send requests and wait until we have responses for all of them
+
+            // Rewrite requests to use kafkas port instead of shotovers port
+            for request in &mut requests_wrapper.requests {
+                if let Some(Frame::Kafka(KafkaFrame::Request {
+                    body: RequestBody::LeaderAndIsr(leader_and_isr),
+                    ..
+                })) = request.frame()
+                {
+                    for leader in &mut leader_and_isr.live_leaders {
+                        leader.port = self.address_port as i32;
+                    }
+                    request.invalidate_cache();
+                }
+            }
+
+            // send
+            let connection = self.connection.as_mut().unwrap();
+            let requests_count = requests_wrapper.requests.len();
+            connection.send(requests_wrapper.requests)?;
+
+            // receive
+            let mut result = vec![];
+            let mut responses_count = 0;
+            while responses_count < requests_count {
+                let responses = if let Some(read_timeout) = self.read_timeout {
+                    timeout(read_timeout, connection.recv()).await?
+                } else {
+                    connection.recv().await
+                }?;
+
+                responses_count += responses.len();
+                result.extend(responses);
+            }
+            result
+        };
 
         // Rewrite responses to use shotovers port instead of kafkas port
         for response in &mut responses {
@@ -191,43 +213,4 @@ impl Transform for KafkaSinkSingle {
 
         Ok(responses)
     }
-}
-
-impl KafkaSinkSingle {
-    pub fn send_requests(
-        &self,
-        messages: Vec<Message>,
-    ) -> Result<Vec<oneshot::Receiver<Response>>> {
-        let outbound = self.outbound.as_ref().unwrap();
-        messages
-            .into_iter()
-            .map(|mut message| {
-                let (return_chan, rx) = if let Some(Frame::Kafka(KafkaFrame::Request {
-                    body: RequestBody::Produce(produce),
-                    ..
-                })) = message.frame()
-                {
-                    produce_channel(produce)
-                } else {
-                    let (tx, rx) = oneshot::channel();
-                    (Some(tx), rx)
-                };
-                outbound
-                    .send(Request {
-                        message,
-                        return_chan,
-                    })
-                    .map(|_| rx)
-                    .map_err(|_| anyhow!("Failed to send"))
-            })
-            .collect()
-    }
-}
-
-async fn read_responses(responses: Vec<oneshot::Receiver<Response>>) -> Result<Messages> {
-    let mut result = Vec::with_capacity(responses.len());
-    for response in responses {
-        result.push(response.await.unwrap().response?);
-    }
-    Ok(result)
 }

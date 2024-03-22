@@ -218,6 +218,15 @@ impl Message {
         }
     }
 
+    pub fn message_type(&self) -> MessageType {
+        match self.inner.as_ref().unwrap() {
+            MessageInner::RawBytes { message_type, .. } => *message_type,
+            MessageInner::Parsed { frame, .. } | MessageInner::Modified { frame } => {
+                frame.get_type()
+            }
+        }
+    }
+
     pub fn ensure_message_type(&self, expected_message_type: MessageType) -> Result<()> {
         match self.inner.as_ref().unwrap() {
             MessageInner::RawBytes { message_type, .. } => {
@@ -397,6 +406,7 @@ impl Message {
             },
         }
     }
+
     /// Set this `Message` to a dummy frame so that the message will never reach the client or DB.
     /// For requests, the dummy frame will be dropped when it reaches the Sink.
     ///     Additionally a corresponding dummy response will be generated with its request_id set to the requests id.
@@ -405,6 +415,27 @@ impl Message {
         self.inner = Some(MessageInner::Modified {
             frame: Frame::Dummy,
         });
+    }
+
+    /// Returns true iff it is known that the server will not send a response to this request, instead we need to generate a dummy response
+    pub(crate) fn response_is_dummy(&mut self) -> bool {
+        match self.message_type() {
+            #[cfg(feature = "redis")]
+            MessageType::Redis => false,
+            #[cfg(feature = "cassandra")]
+            MessageType::Cassandra => false,
+            #[cfg(feature = "kafka")]
+            MessageType::Kafka => match self.frame() {
+                Some(Frame::Kafka(crate::frame::kafka::KafkaFrame::Request {
+                    body: crate::frame::kafka::RequestBody::Produce(produce),
+                    ..
+                })) => produce.acks == 0,
+                _ => false,
+            },
+            #[cfg(feature = "opensearch")]
+            MessageType::OpenSearch => false,
+            MessageType::Dummy => true,
+        }
     }
 
     pub fn is_dummy(&self) -> bool {

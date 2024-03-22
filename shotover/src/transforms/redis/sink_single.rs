@@ -116,6 +116,7 @@ impl Transform for RedisSinkSingle {
                     &mut self.tls,
                     self.connect_timeout,
                     Some(self.force_run_chain.clone()),
+                    Direction::Sink,
                 )
                 .await?,
             );

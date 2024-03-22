@@ -1,7 +1,8 @@
 //! This is the one true connection implementation that all other transforms + server.rs should be ported to.
 
-use crate::codec::{CodecBuilder, CodecReadError, CodecWriteError};
-use crate::message::{Message, Messages};
+use crate::codec::{CodecBuilder, CodecReadError, CodecWriteError, Direction};
+use crate::frame::Frame;
+use crate::message::{Message, MessageId, Messages};
 use crate::tcp;
 use crate::tls::{TlsConnector, ToHostname};
 use futures::{SinkExt, StreamExt};
@@ -22,6 +23,7 @@ pub struct Connection {
     out_tx: mpsc::UnboundedSender<Vec<Message>>,
     connection_closed_rx: mpsc::Receiver<ConnectionError>,
     error: Option<ConnectionError>,
+    dummy_response_inserter: Option<DummyResponseInserter>,
 }
 
 impl Connection {
@@ -31,6 +33,7 @@ impl Connection {
         tls: &mut Option<TlsConnector>,
         connect_timeout: Duration,
         force_run_chain: Option<Arc<Notify>>,
+        direction: Direction,
     ) -> anyhow::Result<Self> {
         let destination = tokio::net::lookup_host(&host).await?.next().unwrap();
         let (in_tx, in_rx) = mpsc::channel::<Messages>(10_000);
@@ -65,11 +68,20 @@ impl Connection {
             );
         }
 
+        let dummy_response_inserter = match direction {
+            Direction::Source => None,
+            Direction::Sink => Some(DummyResponseInserter {
+                dummy_requests: vec![],
+                pending_requests_count: 0,
+            }),
+        };
+
         Ok(Connection {
             in_rx,
             out_tx,
             connection_closed_rx,
             error: None,
+            dummy_response_inserter,
         })
     }
 
@@ -80,7 +92,10 @@ impl Connection {
 
     /// Send messages.
     /// If there is a problem with the connection an error is returned.
-    pub fn send(&mut self, messages: Vec<Message>) -> Result<(), ConnectionError> {
+    pub fn send(&mut self, mut messages: Vec<Message>) -> Result<(), ConnectionError> {
+        if let Some(dummy_response_inserter) = &mut self.dummy_response_inserter {
+            dummy_response_inserter.process_requests(&mut messages);
+        }
         if let Some(error) = &self.error {
             Err(error.clone())
         } else {
@@ -94,8 +109,22 @@ impl Connection {
         if let Some(error) = &self.error {
             Err(error.clone())
         } else {
+            // first process any immediately pending dummy responses
+            if let Some(dummy_response_inserter) = &mut self.dummy_response_inserter {
+                let mut messages = vec![];
+                dummy_response_inserter.process_responses(&mut messages);
+                if !messages.is_empty() {
+                    return Ok(messages);
+                }
+            }
+
             match self.in_rx.recv().await {
-                Some(value) => Ok(value),
+                Some(mut messages) => {
+                    if let Some(dummy_response_inserter) = &mut self.dummy_response_inserter {
+                        dummy_response_inserter.process_responses(&mut messages);
+                    }
+                    Ok(messages)
+                }
                 None => Err(self.set_get_error()),
             }
         }
@@ -108,7 +137,12 @@ impl Connection {
             Err(error.clone())
         } else {
             match self.in_rx.try_recv() {
-                Ok(value) => Ok(value),
+                Ok(mut messages) => {
+                    if let Some(dummy_response_inserter) = &mut self.dummy_response_inserter {
+                        dummy_response_inserter.process_responses(&mut messages);
+                    }
+                    Ok(messages)
+                }
                 Err(TryRecvError::Disconnected) => Err(self.set_get_error()),
                 Err(TryRecvError::Empty) => Ok(vec![]),
             }
@@ -175,7 +209,7 @@ fn spawn_read_write_tasks<
     // 2.  The writer task attempts to send the mesage to the writer but it returns a BrokenPipe or ConnectionReset error.
     // 3.1 The writer task task sends an OtherSideClosed error to the Connection.
     // 3.2 The writer task terminates.
-    // 4.  Connection::send sends a message to the writer task via out_tx but detects the writer task terminated due due to out_tx returning None.
+    // 4.  Connection::send sends a message to the writer task via out_tx but detects the writer task terminated due to out_tx returning None.
     // 4.1 Connection::send checks connection_closed_rx for the error, stores it and returns it to the caller.
 
     let connection_closed_tx2 = connection_closed_tx.clone();
@@ -218,8 +252,8 @@ async fn reader_task<C: CodecBuilder + 'static, R: AsyncRead + Unpin + Send + 's
                 return Ok(());
             }
             result = reader.next() => {
-                if let Some(message) = result {
-                    match message {
+                if let Some(messages) = result {
+                    match messages {
                         Ok(messages) => {
                             if in_tx.send(messages).await.is_err() {
                                 // main task has shutdown, this task is no longer needed
@@ -255,8 +289,8 @@ async fn writer_task<C: CodecBuilder + 'static, W: AsyncWrite + Unpin + Send + '
     mut out_rx: UnboundedReceiver<Messages>,
 ) -> Result<(), ConnectionError> {
     loop {
-        if let Some(message) = out_rx.recv().await {
-            match writer.send(message).await {
+        if let Some(messages) = out_rx.recv().await {
+            match writer.send(messages).await {
                 Err(CodecWriteError::Encoder(err)) => {
                     return Err(ConnectionError::MessageEncode(Arc::new(err)));
                 }
@@ -276,5 +310,69 @@ async fn writer_task<C: CodecBuilder + 'static, W: AsyncWrite + Unpin + Send + '
             // shotover is no longer sending responses, this task is no longer needed
             return Ok(());
         }
+    }
+}
+
+/// Keeps track of all dummy requests that pass through this connection and inserts a dummy response at the same index as the request.
+struct DummyResponseInserter {
+    dummy_requests: Vec<DummyRequest>,
+    pending_requests_count: usize,
+}
+
+#[derive(Debug)]
+struct DummyRequest {
+    request_id: MessageId,
+    request_index: usize,
+}
+
+impl DummyResponseInserter {
+    pub fn process_requests(&mut self, requests: &mut [Message]) {
+        for (i, request) in requests.iter_mut().enumerate() {
+            if request.response_is_dummy() {
+                self.dummy_requests.push(DummyRequest {
+                    request_id: request.id(),
+                    request_index: self.pending_requests_count + i,
+                });
+            }
+        }
+        self.pending_requests_count += requests.len();
+    }
+
+    pub fn process_responses(&mut self, responses: &mut Vec<Message>) {
+        // responses with no request will invalidate our indexes, so we need to fix them up here.
+        for (response_i, response) in responses.iter().enumerate() {
+            if response.request_id().is_none() {
+                for (dummy_request_i, dummy_request) in
+                    &mut self.dummy_requests.iter_mut().enumerate()
+                {
+                    // Either of `<` or `<=` could work here.
+                    // If its `<` then the dummy response comes before the unrequested response
+                    // If its `<=` then the dummy response comes after the unrequested response
+                    if response_i <= dummy_request.request_index + dummy_request_i {
+                        dummy_request.request_index += 1;
+                    }
+                }
+                self.pending_requests_count += 1;
+            }
+        }
+
+        // It is important that retain_mut iterates in the order of the vec.
+        // This is because it is only once the previous insert_index is inserted that the following insert_index becomes valid again.
+        self.dummy_requests.retain_mut(|dummy_request| {
+            if dummy_request.request_index <= responses.len() {
+                let mut dummy = Message::from_frame(Frame::Dummy);
+                dummy.set_request_id(dummy_request.request_id);
+                responses.insert(dummy_request.request_index, dummy);
+                false
+            } else {
+                true
+            }
+        });
+
+        // Decrement indexes so that they will be offset from 0 the next time responses come in.
+        for dummy_request in &mut self.dummy_requests {
+            dummy_request.request_index -= responses.len();
+        }
+        self.pending_requests_count -= responses.len();
     }
 }
