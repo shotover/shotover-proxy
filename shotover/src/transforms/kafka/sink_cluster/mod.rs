@@ -1,9 +1,8 @@
-use super::common::produce_channel;
+use crate::connection::Connection;
 use crate::frame::kafka::{KafkaFrame, RequestBody, ResponseBody};
 use crate::frame::Frame;
 use crate::message::{Message, MessageIdMap, Messages};
 use crate::tls::{TlsConnector, TlsConnectorConfig};
-use crate::transforms::util::{Request, Response};
 use crate::transforms::{Transform, TransformBuilder, TransformContextBuilder, Wrapper};
 use crate::transforms::{TransformConfig, TransformContextConfig};
 use anyhow::{anyhow, Result};
@@ -23,15 +22,17 @@ use rand::rngs::SmallRng;
 use rand::seq::{IteratorRandom, SliceRandom};
 use rand::SeedableRng;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::hash::Hasher;
 use std::net::SocketAddr;
 use std::sync::atomic::AtomicI64;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::{oneshot, RwLock};
+use tokio::sync::RwLock;
 use tokio::time::timeout;
 use uuid::Uuid;
+
+mod node;
 
 #[derive(thiserror::Error, Debug)]
 enum FindCoordinatorError {
@@ -40,8 +41,6 @@ enum FindCoordinatorError {
     #[error("{0:?}")]
     Unrecoverable(#[from] anyhow::Error),
 }
-
-mod node;
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
@@ -154,7 +153,7 @@ impl KafkaSinkClusterBuilder {
 }
 
 impl TransformBuilder for KafkaSinkClusterBuilder {
-    fn build(&self, _transform_context: TransformContextBuilder) -> Box<dyn Transform> {
+    fn build(&self, transform_context: TransformContextBuilder) -> Box<dyn Transform> {
         Box::new(KafkaSinkCluster {
             first_contact_points: self.first_contact_points.clone(),
             shotover_nodes: self.shotover_nodes.clone(),
@@ -167,10 +166,16 @@ impl TransformBuilder for KafkaSinkClusterBuilder {
             topic_by_id: self.topic_by_id.clone(),
             rng: SmallRng::from_rng(rand::thread_rng()).unwrap(),
             sasl_status: SaslStatus::new(self.sasl_enabled),
-            connection_factory: ConnectionFactory::new(self.tls.clone(), self.connect_timeout),
+            connection_factory: ConnectionFactory::new(
+                self.tls.clone(),
+                self.connect_timeout,
+                transform_context.force_run_chain,
+            ),
             first_contact_node: None,
+            control_connection: None,
             fetch_session_id_to_broker: HashMap::new(),
             fetch_request_destinations: Default::default(),
+            pending_requests: Default::default(),
         })
     }
 
@@ -246,11 +251,37 @@ pub struct KafkaSinkCluster {
     sasl_status: SaslStatus,
     connection_factory: ConnectionFactory,
     first_contact_node: Option<KafkaAddress>,
+    control_connection: Option<Connection>,
     // its not clear from the docs if this cache needs to be accessed cross connection:
     // https://cwiki.apache.org/confluence/display/KAFKA/KIP-227%3A+Introduce+Incremental+FetchRequests+to+Increase+Partition+Scalability
     fetch_session_id_to_broker: HashMap<i32, BrokerId>,
     // for use with fetch_session_id_to_broker
     fetch_request_destinations: MessageIdMap<BrokerId>,
+    /// Maintains the state of each request/response pair.
+    /// Ordering must be maintained to ensure responses match up with their request.
+    pending_requests: VecDeque<PendingRequest>,
+}
+
+/// State of a Request/Response is maintained by this enum.
+/// The state progresses from Routed -> Sent -> Received
+#[derive(Debug)]
+enum PendingRequest {
+    /// A route has been determined for this request but it has not yet been sent.
+    Routed {
+        destination: BrokerId,
+        request: Message,
+    },
+    /// The request has been sent to the specified broker and we are now awaiting a response from that broker.
+    Sent {
+        destination: BrokerId,
+        /// How many responses must be received before this respose is received.
+        /// When this is 0 the next response from the broker will be for this request.
+        /// This field must be manually decremented when another response for this broker comes through.
+        index: usize,
+    },
+    /// The broker has returned a Response to this request.
+    /// Returning this response may be delayed until a response to an earlier request comes back from another broker.
+    Received { response: Message },
 }
 
 #[async_trait]
@@ -279,30 +310,54 @@ impl Transform for KafkaSinkCluster {
             self.nodes = nodes?;
         }
 
-        self.update_local_nodes().await;
-
         let mut find_coordinator_requests = vec![];
-        for (index, request) in requests_wrapper.requests.iter_mut().enumerate() {
-            if let Some(Frame::Kafka(KafkaFrame::Request {
-                body: RequestBody::FindCoordinator(find_coordinator),
-                ..
-            })) = request.frame()
-            {
-                find_coordinator_requests.push(FindCoordinator {
-                    index,
-                    key: find_coordinator.key.clone(),
-                    key_type: find_coordinator.key_type,
-                });
-            }
-        }
 
-        let responses = self.send_requests(requests_wrapper.requests).await?;
-        self.receive_responses(&find_coordinator_requests, responses)
-            .await
+        let mut responses = if requests_wrapper.requests.is_empty() {
+            // there are no requests, so no point sending any, but we should check for any responses without awaiting
+            self.recv_responses_no_await()?
+        } else {
+            self.update_local_nodes().await;
+
+            for (index, request) in requests_wrapper.requests.iter_mut().enumerate() {
+                if let Some(Frame::Kafka(KafkaFrame::Request {
+                    body: RequestBody::FindCoordinator(find_coordinator),
+                    ..
+                })) = request.frame()
+                {
+                    find_coordinator_requests.push(FindCoordinator {
+                        index,
+                        key: find_coordinator.key.clone(),
+                        key_type: find_coordinator.key_type,
+                    });
+                }
+            }
+
+            let request_count = requests_wrapper.requests.len();
+            self.route_requests(requests_wrapper.requests).await?;
+            self.send_requests().await?;
+            self.recv_responses(request_count).await?
+        };
+
+        self.process_responses(&find_coordinator_requests, &mut responses)
+            .await?;
+        Ok(responses)
     }
 }
 
 impl KafkaSinkCluster {
+    /// Send a request over the control connection and immediately receive the response.
+    /// Since we always await the response we know for sure that the response will not get mixed up with any other incoming responses.
+    async fn control_send_receive(&mut self, requests: Message) -> Result<Message> {
+        if self.control_connection.is_none() {
+            let address = &self.nodes.choose(&mut self.rng).unwrap().kafka_address;
+            self.control_connection =
+                Some(self.connection_factory.create_connection(address).await?);
+        }
+        let connection = self.control_connection.as_mut().unwrap();
+        connection.send(vec![requests])?;
+        Ok(connection.recv().await?.remove(0))
+    }
+
     fn store_topic(&self, topics: &mut Vec<TopicName>, topic: TopicName) {
         if self.topic_by_name.get(&topic).is_none() && !topics.contains(&topic) {
             topics.push(topic);
@@ -331,11 +386,7 @@ impl KafkaSinkCluster {
         }
     }
 
-    async fn send_requests(
-        &mut self,
-        mut requests: Vec<Message>,
-    ) -> Result<Vec<oneshot::Receiver<Response>>> {
-        let mut results = Vec::with_capacity(requests.len());
+    async fn route_requests(&mut self, mut requests: Vec<Message>) -> Result<()> {
         let mut topics = vec![];
         let mut groups = vec![];
         for request in &mut requests {
@@ -431,34 +482,22 @@ impl KafkaSinkCluster {
                             as usize];
                         for node in &mut self.nodes {
                             if node.broker_id == partition.leader_id {
-                                connection = Some(
-                                    node.get_connection(&self.connection_factory).await?.clone(),
-                                );
+                                connection = Some(node.broker_id);
                             }
                         }
                     }
-                    let connection = match connection {
+                    let destination = match connection {
                         Some(connection) => connection,
                         None => {
                             tracing::warn!("no known partition leader for {topic_name:?}, routing message to a random node so that a NOT_LEADER_OR_FOLLOWER or similar error is returned to the client");
-                            self.nodes
-                                .choose_mut(&mut self.rng)
-                                .unwrap()
-                                .get_connection(&self.connection_factory)
-                                .await?
-                                .clone()
+                            self.nodes.choose(&mut self.rng).unwrap().broker_id
                         }
                     };
 
-                    let (return_chan, rx) = produce_channel(produce);
-
-                    connection
-                        .send(Request {
-                            message,
-                            return_chan,
-                        })
-                        .map_err(|_| anyhow!("Failed to send"))?;
-                    results.push(rx);
+                    self.pending_requests.push_back(PendingRequest::Routed {
+                        destination,
+                        request: message,
+                    })
                 }
 
                 // route to random partition replica
@@ -466,7 +505,7 @@ impl KafkaSinkCluster {
                     body: RequestBody::Fetch(fetch),
                     ..
                 })) => {
-                    let node = if fetch.session_id == 0 {
+                    let destination = if fetch.session_id == 0 {
                         // assume that all topics in this message have the same routing requirements
                         let topic = fetch
                             .topics
@@ -485,7 +524,7 @@ impl KafkaSinkCluster {
                             topic_meta = topic_by_name.as_deref();
                         }
 
-                        let node = if let Some(topic_meta) = topic_meta {
+                        let destination = if let Some(topic_meta) = topic_meta {
                             let partition_index = topic
                                 .partitions
                                 .first()
@@ -501,41 +540,33 @@ impl KafkaSinkCluster {
                                     })
                                     .choose(&mut self.rng)
                                     .unwrap()
+                                    .broker_id
                             } else {
                                 let partition_len = topic_meta.partitions.len();
                                 tracing::warn!("no known partition replica for {topic_name:?} at partition index {partition_index} out of {partition_len} partitions, routing message to a random node so that a NOT_LEADER_OR_FOLLOWER or similar error is returned to the client");
-                                self.nodes.choose_mut(&mut self.rng).unwrap()
+                                self.nodes.choose(&mut self.rng).unwrap().broker_id
                             }
                         } else {
                             tracing::warn!("no known partition replica for {topic_name:?}, routing message to a random node so that a NOT_LEADER_OR_FOLLOWER or similar error is returned to the client");
-                            self.nodes.choose_mut(&mut self.rng).unwrap()
+                            self.nodes.choose(&mut self.rng).unwrap().broker_id
                         };
                         self.fetch_request_destinations
-                            .insert(message.id(), node.broker_id);
-                        node
+                            .insert(message.id(), destination);
+                        destination
                     } else {
                         // route via session id
                         if let Some(destination) =
                             self.fetch_session_id_to_broker.get(&fetch.session_id)
                         {
-                            self.nodes
-                                .iter_mut()
-                                .find(|x| &x.broker_id == destination)
-                                .unwrap()
+                            *destination
                         } else {
                             todo!()
                         }
                     };
-                    let connection = node.get_connection(&self.connection_factory).await?.clone();
-
-                    let (tx, rx) = oneshot::channel();
-                    connection
-                        .send(Request {
-                            message,
-                            return_chan: Some(tx),
-                        })
-                        .map_err(|_| anyhow!("Failed to send"))?;
-                    results.push(rx);
+                    self.pending_requests.push_back(PendingRequest::Routed {
+                        destination,
+                        request: message,
+                    })
                 }
 
                 // route to group coordinator
@@ -544,14 +575,14 @@ impl KafkaSinkCluster {
                     ..
                 })) => {
                     let group_id = heartbeat.group_id.clone();
-                    results.push(self.route_to_coordinator(message, group_id).await?);
+                    self.route_to_coordinator(message, group_id);
                 }
                 Some(Frame::Kafka(KafkaFrame::Request {
                     body: RequestBody::SyncGroup(sync_group),
                     ..
                 })) => {
                     let group_id = sync_group.group_id.clone();
-                    results.push(self.route_to_coordinator(message, group_id).await?);
+                    self.route_to_coordinator(message, group_id);
                 }
                 Some(Frame::Kafka(KafkaFrame::Request {
                     body: RequestBody::OffsetFetch(offset_fetch),
@@ -568,113 +599,82 @@ impl KafkaSinkCluster {
                         // For now just pick the first group as that is sufficient for the simple cases.
                         offset_fetch.groups.first().unwrap().group_id.clone()
                     };
-                    results.push(self.route_to_coordinator(message, group_id).await?);
+                    self.route_to_coordinator(message, group_id);
                 }
                 Some(Frame::Kafka(KafkaFrame::Request {
                     body: RequestBody::JoinGroup(join_group),
                     ..
                 })) => {
                     let group_id = join_group.group_id.clone();
-                    results.push(self.route_to_coordinator(message, group_id).await?);
+                    self.route_to_coordinator(message, group_id);
                 }
                 Some(Frame::Kafka(KafkaFrame::Request {
                     body: RequestBody::DeleteGroups(groups),
                     ..
                 })) => {
                     let group_id = groups.groups_names.first().unwrap().clone();
-                    results.push(self.route_to_coordinator(message, group_id).await?);
+                    self.route_to_coordinator(message, group_id);
                 }
 
                 // route to controller broker
                 Some(Frame::Kafka(KafkaFrame::Request {
                     body: RequestBody::CreateTopics(_),
                     ..
-                })) => results.push(self.route_to_controller(message).await?),
+                })) => self.route_to_controller(message),
 
                 Some(Frame::Kafka(KafkaFrame::Request {
                     body: RequestBody::ApiVersions(_),
                     ..
-                })) => {
-                    let (tx, rx) = oneshot::channel();
-                    self.route_to_first_contact_node(message.clone(), Some(tx))
-                        .await?;
-
-                    results.push(rx);
-                }
+                })) => self.route_to_first_contact_node(message.clone()),
 
                 Some(Frame::Kafka(KafkaFrame::Request {
                     body: RequestBody::SaslHandshake(_),
                     ..
                 })) => {
-                    let (tx, rx) = oneshot::channel();
-                    self.route_to_first_contact_node(message.clone(), Some(tx))
-                        .await?;
-
+                    self.route_to_first_contact_node(message.clone());
                     self.connection_factory
                         .add_handshake_message(message.clone());
-
-                    results.push(rx);
                 }
 
                 Some(Frame::Kafka(KafkaFrame::Request {
                     body: RequestBody::SaslAuthenticate(_),
                     ..
                 })) => {
-                    let (tx, rx) = oneshot::channel();
-                    self.route_to_first_contact_node(message.clone(), Some(tx))
-                        .await?;
+                    self.route_to_first_contact_node(message.clone());
                     self.connection_factory.add_auth_message(message.clone());
-                    results.push(rx);
                     self.sasl_status.set_handshake_complete();
                 }
 
                 // route to random node
                 _ => {
-                    let connection = self
-                        .nodes
-                        .choose_mut(&mut self.rng)
-                        .unwrap()
-                        .get_connection(&self.connection_factory)
-                        .await?;
-                    let (tx, rx) = oneshot::channel();
-                    connection
-                        .send(Request {
-                            message,
-                            return_chan: Some(tx),
-                        })
-                        .map_err(|_| anyhow!("Failed to send"))?;
-                    results.push(rx);
+                    let destination = self.nodes.choose(&mut self.rng).unwrap().broker_id;
+                    self.pending_requests.push_back(PendingRequest::Routed {
+                        destination,
+                        request: message,
+                    });
                 }
             }
         }
-        Ok(results)
+        Ok(())
     }
 
-    async fn route_to_first_contact_node(
-        &mut self,
-        message: Message,
-        return_chan: Option<oneshot::Sender<Response>>,
-    ) -> Result<()> {
-        let node = if let Some(first_contact_node) = &self.first_contact_node {
+    fn route_to_first_contact_node(&mut self, message: Message) {
+        let destination = if let Some(first_contact_node) = &self.first_contact_node {
             self.nodes
                 .iter_mut()
                 .find(|node| node.kafka_address == *first_contact_node)
                 .unwrap()
+                .broker_id
         } else {
             let node = self.nodes.get_mut(0).unwrap();
             self.first_contact_node = Some(node.kafka_address.clone());
-            node
+            node.broker_id
         };
 
-        node.get_connection(&self.connection_factory)
-            .await?
-            .send(Request {
-                message,
-                return_chan,
-            })
-            .map_err(|_| anyhow!("Failed to send"))?;
-
-        Ok(())
+        self.pending_requests.push_back(PendingRequest::Routed {
+            destination,
+            request: message,
+        });
     }
 
     async fn find_coordinator_of_group(
@@ -697,20 +697,7 @@ impl KafkaSinkCluster {
             ),
         }));
 
-        let connection = self
-            .nodes
-            .choose_mut(&mut self.rng)
-            .unwrap()
-            .get_connection(&self.connection_factory)
-            .await?;
-        let (tx, rx) = oneshot::channel();
-        connection
-            .send(Request {
-                message: request,
-                return_chan: Some(tx),
-            })
-            .map_err(|_| anyhow!("Failed to send"))?;
-        let mut response = rx.await.unwrap().response.unwrap();
+        let mut response = self.control_send_receive(request).await?;
         match response.frame() {
             Some(Frame::Kafka(KafkaFrame::Response {
                 body: ResponseBody::FindCoordinator(coordinator),
@@ -758,36 +745,172 @@ impl KafkaSinkCluster {
             ),
         }));
 
-        let connection = self
-            .nodes
-            .choose_mut(&mut self.rng)
-            .unwrap()
-            .get_connection(&self.connection_factory)
-            .await?;
-        let (tx, rx) = oneshot::channel();
-        connection
-            .send(Request {
-                message: request,
-                return_chan: Some(tx),
-            })
-            .map_err(|_| anyhow!("Failed to send"))?;
-        Ok(rx.await.unwrap().response.unwrap())
+        self.control_send_receive(request).await
     }
 
-    async fn receive_responses(
+    /// Convert all PendingRequest::Routed into PendingRequest::Sent
+    async fn send_requests(&mut self) -> Result<()> {
+        struct RoutedRequests {
+            requests: Vec<Message>,
+            already_pending: usize,
+        }
+
+        let mut broker_to_routed_requests: HashMap<BrokerId, RoutedRequests> = HashMap::new();
+        for i in 0..self.pending_requests.len() {
+            if let PendingRequest::Routed { destination, .. } = &self.pending_requests[i] {
+                let routed_requests = broker_to_routed_requests
+                    .entry(*destination)
+                    .or_insert_with(|| RoutedRequests {
+                        requests: vec![],
+                        already_pending: self
+                            .pending_requests
+                            .iter()
+                            .filter(|pending_request| {
+                                if let PendingRequest::Sent {
+                                    destination: check_destination,
+                                    ..
+                                } = pending_request
+                                {
+                                    check_destination == destination
+                                } else {
+                                    false
+                                }
+                            })
+                            .count(),
+                    });
+                let mut value = PendingRequest::Sent {
+                    destination: *destination,
+                    index: routed_requests.requests.len() + routed_requests.already_pending,
+                };
+                std::mem::swap(&mut self.pending_requests[i], &mut value);
+                if let PendingRequest::Routed { request, .. } = value {
+                    routed_requests.requests.push(request);
+                }
+            }
+        }
+
+        for (destination, requests) in broker_to_routed_requests {
+            self.nodes
+                .iter_mut()
+                .find(|x| x.broker_id == destination)
+                .unwrap()
+                .get_connection(&self.connection_factory)
+                .await?
+                .send(requests.requests)?;
+        }
+
+        Ok(())
+    }
+
+    /// Convert some PendingRequest::Sent into PendingRequest::Received
+    fn recv_responses_no_await(&mut self) -> Result<Vec<Message>> {
+        for node in &mut self.nodes {
+            if let Some(connection) = node.get_connection_if_open() {
+                if let Ok(responses) = connection.try_recv() {
+                    for response in responses {
+                        let mut response = Some(response);
+                        for pending_request in &mut self.pending_requests {
+                            if let PendingRequest::Sent { destination, index } = pending_request {
+                                if *destination == node.broker_id {
+                                    if *index == 0 {
+                                        *pending_request = PendingRequest::Received {
+                                            response: response.take().unwrap(),
+                                        };
+                                    } else {
+                                        *index -= 1;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        let mut responses = vec![];
+        while let Some(pending_request) = self.pending_requests.front() {
+            if let PendingRequest::Received { .. } = pending_request {
+                // The next response we are waiting on has been received, add it to responses
+                if let Some(PendingRequest::Received { response }) =
+                    self.pending_requests.pop_front()
+                {
+                    responses.push(response);
+                }
+            } else {
+                // The pending_request is not received, we need to break to maintain response ordering.
+                break;
+            }
+        }
+        Ok(responses)
+    }
+
+    /// Convert some PendingRequest::Sent into PendingRequest::Received
+    // TODO: This function duplicates a lot of logic from recv_responses_no_await,
+    // but I plan to delete this function in the near future,
+    // so there is no point factoring out the common bits.
+    async fn recv_responses(&mut self, request_count: usize) -> Result<Vec<Message>> {
+        let mut responses = vec![];
+        while responses.len() < request_count {
+            for node in &mut self.nodes {
+                let broker_id = node.broker_id;
+                if let Some(connection) = node.get_connection_if_open() {
+                    let connection_is_pending = self.pending_requests.iter().any(|x| {
+                        if let PendingRequest::Sent { destination, .. } = x {
+                            *destination == broker_id
+                        } else {
+                            false
+                        }
+                    });
+                    if connection_is_pending {
+                        let responses = if let Some(read_timeout) = self.read_timeout {
+                            timeout(read_timeout, connection.recv()).await?
+                        } else {
+                            connection.recv().await
+                        }?;
+                        for response in responses {
+                            let mut response = Some(response);
+                            for pending_request in &mut self.pending_requests {
+                                if let PendingRequest::Sent { destination, index } = pending_request
+                                {
+                                    if *destination == node.broker_id {
+                                        if *index == 0 {
+                                            *pending_request = PendingRequest::Received {
+                                                response: response.take().unwrap(),
+                                            };
+                                        } else {
+                                            *index -= 1;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            while let Some(pending_request) = self.pending_requests.front() {
+                if let PendingRequest::Received { .. } = pending_request {
+                    // The next response we are waiting on has been received, add it to responses
+                    if let Some(PendingRequest::Received { response }) =
+                        self.pending_requests.pop_front()
+                    {
+                        responses.push(response);
+                    }
+                } else {
+                    // The pending_request is not received, we need to break to maintain response ordering.
+                    break;
+                }
+            }
+        }
+        Ok(responses)
+    }
+
+    async fn process_responses(
         &mut self,
         find_coordinator_requests: &[FindCoordinator],
-        responses: Vec<oneshot::Receiver<Response>>,
-    ) -> Result<Vec<Message>> {
-        // TODO: since kafka will never send requests out of order I wonder if it would be faster to use an mpsc instead of a oneshot or maybe just directly run the sending/receiving here?
-        let mut responses = if let Some(read_timeout) = self.read_timeout {
-            timeout(read_timeout, read_responses(responses)).await?
-        } else {
-            read_responses(responses).await
-        }?;
-
+        responses: &mut [Message],
+    ) -> Result<()> {
         // TODO: Handle errors like NOT_COORDINATOR by removing element from self.topics and self.coordinator_broker_id
-
         for (i, response) in responses.iter_mut().enumerate() {
             let request_id = response.request_id();
             match response.frame() {
@@ -838,73 +961,40 @@ impl KafkaSinkCluster {
             }
         }
 
-        Ok(responses)
+        Ok(())
     }
 
-    async fn route_to_controller(
-        &mut self,
-        message: Message,
-    ) -> Result<oneshot::Receiver<Response>> {
+    fn route_to_controller(&mut self, message: Message) {
         let broker_id = self.controller_broker.get().unwrap();
 
-        let connection = if let Some(node) =
+        let destination = if let Some(node) =
             self.nodes.iter_mut().find(|x| x.broker_id == *broker_id)
         {
-            node.get_connection(&self.connection_factory).await?.clone()
+            node.broker_id
         } else {
             tracing::warn!("no known broker with id {broker_id:?}, routing message to a random node so that a NOT_CONTROLLER or similar error is returned to the client");
-            self.nodes
-                .choose_mut(&mut self.rng)
-                .unwrap()
-                .get_connection(&self.connection_factory)
-                .await?
-                .clone()
+            self.nodes.choose(&mut self.rng).unwrap().broker_id
         };
 
-        let (tx, rx) = oneshot::channel();
-        connection
-            .send(Request {
-                message,
-                return_chan: Some(tx),
-            })
-            .map_err(|_| anyhow!("Failed to send"))?;
-        Ok(rx)
+        self.pending_requests.push_back(PendingRequest::Routed {
+            destination,
+            request: message,
+        });
     }
 
-    async fn route_to_coordinator(
-        &mut self,
-        message: Message,
-        group_id: GroupId,
-    ) -> Result<oneshot::Receiver<Response>> {
-        let mut connection = None;
-        for node in &mut self.nodes {
-            if let Some(broker_id) = self.group_to_coordinator_broker.get(&group_id) {
-                if node.broker_id == *broker_id {
-                    connection = Some(node.get_connection(&self.connection_factory).await?.clone());
-                    break;
-                }
-            }
-        }
-        let connection = match connection {
-            Some(connection) => connection,
+    fn route_to_coordinator(&mut self, message: Message, group_id: GroupId) {
+        let destination = self.group_to_coordinator_broker.get(&group_id);
+        let destination = match destination {
+            Some(destination) => *destination,
             None => {
                 tracing::warn!("no known coordinator for {group_id:?}, routing message to a random node so that a NOT_COORDINATOR or similar error is returned to the client");
-                self.nodes
-                    .choose_mut(&mut self.rng)
-                    .unwrap()
-                    .get_connection(&self.connection_factory)
-                    .await?
-                    .clone()
+                self.nodes.choose(&mut self.rng).unwrap().broker_id
             }
         };
-        let (tx, rx) = oneshot::channel();
-        connection
-            .send(Request {
-                message,
-                return_chan: Some(tx),
-            })
-            .map_err(|_| anyhow!("Failed to send"))?;
-        Ok(rx)
+        self.pending_requests.push_back(PendingRequest::Routed {
+            destination,
+            request: message,
+        });
     }
 
     async fn process_metadata_response(&mut self, metadata: &MetadataResponse) {
@@ -1159,14 +1249,6 @@ impl KafkaSinkCluster {
             self.update_local_nodes().await;
         }
     }
-}
-
-async fn read_responses(responses: Vec<oneshot::Receiver<Response>>) -> Result<Messages> {
-    let mut result = Vec::with_capacity(responses.len());
-    for response in responses {
-        result.push(response.await.unwrap().response?);
-    }
-    Ok(result)
 }
 
 fn hash_partition(topic_id: Uuid, partition_index: i32) -> usize {
