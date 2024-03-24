@@ -825,7 +825,7 @@ impl CassandraEncoder {
 
         if let Some(tx) = &self.stream_id_to_request_id_tx {
             let Ok(Metadata::Cassandra(meta)) = m.metadata() else {
-                unreachable!("Gauranteed to be cassandra")
+                unreachable!("Guaranteed to be cassandra")
             };
             tx.send(StreamIdToRequestId {
                 stream_id: meta.stream_id,

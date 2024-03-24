@@ -754,7 +754,7 @@ impl<C: CodecBuilder + 'static> Handler<C> {
             Ok(x) => Ok(x),
             Err(err) => {
                 // An internal error occured and we need to terminate the connection because we can no
-                // longer make any gaurantees about the state its in.
+                // longer make any guarantees about the state its in.
                 // However before we do that we need to return errors for all the messages in this batch for two reasons:
                 // * Poorly programmed clients may hang forever waiting for a response
                 // * We want to give the user a hint as to what went wrong
