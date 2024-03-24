@@ -721,11 +721,13 @@ impl<C: CodecBuilder + 'static> Handler<C> {
                 },
             };
 
-            debug!("sending response to client: {:?}", responses);
             // send the result of the process up stream
-            if out_tx.send(responses).is_err() {
-                // the client has disconnected so we should terminate this connection
-                return Ok(());
+            if !responses.is_empty() {
+                debug!("sending response to client: {:?}", responses);
+                if out_tx.send(responses).is_err() {
+                    // the client has disconnected so we should terminate this connection
+                    return Ok(());
+                }
             }
         }
 
@@ -752,7 +754,7 @@ impl<C: CodecBuilder + 'static> Handler<C> {
             Ok(x) => Ok(x),
             Err(err) => {
                 // An internal error occured and we need to terminate the connection because we can no
-                // longer make any gaurantees about the state its in.
+                // longer make any guarantees about the state its in.
                 // However before we do that we need to return errors for all the messages in this batch for two reasons:
                 // * Poorly programmed clients may hang forever waiting for a response
                 // * We want to give the user a hint as to what went wrong

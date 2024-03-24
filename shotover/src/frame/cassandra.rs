@@ -944,8 +944,8 @@ impl Display for CassandraFrame {
                     }
                     Ok(())
                 }
-                CassandraResult::Void => write!(f, "Result Void"),
-                _ => write!(f, "Result {:?}", result),
+                CassandraResult::Void => write!(f, " Result Void"),
+                _ => write!(f, " Result {:?}", result),
             },
             CassandraOperation::Ready(_) => write!(f, " Ready"),
             _ => write!(f, " {:?}", self.operation),
