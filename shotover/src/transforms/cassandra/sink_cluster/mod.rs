@@ -1,6 +1,6 @@
 use self::connection::CassandraConnection;
 use self::node_pool::{get_accessible_owned_connection, NodePoolBuilder, PreparedMetadata};
-use self::rewrite::MessageRewriter;
+use self::rewrite::{BatchMode, MessageRewriter};
 use crate::frame::cassandra::{CassandraMetadata, Tracing};
 use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame};
 use crate::message::{Message, MessageIdMap, Messages, Metadata};
@@ -279,7 +279,8 @@ impl CassandraSinkCluster {
 
         let mut responses = vec![];
 
-        self.message_rewriter
+        let batch_mode = self
+            .message_rewriter
             .rewrite_requests(
                 &mut messages,
                 &self.connection_factory,
@@ -287,6 +288,19 @@ impl CassandraSinkCluster {
                 self.version.unwrap(),
             )
             .await?;
+
+        if let BatchMode::Isolated = batch_mode {
+            if let Some(connection) = self.control_connection.as_mut() {
+                connection
+                    .recv_all_pending(&mut responses, self.version.unwrap())
+                    .await
+                    .ok();
+            }
+            for node in self.pool.nodes_mut().iter_mut() {
+                node.recv_all_pending(&mut responses, self.version.unwrap())
+                    .await;
+            }
+        }
 
         // Create the initial connection.
         // Messages will be sent through this connection until we have extracted the handshake.
@@ -486,15 +500,29 @@ impl CassandraSinkCluster {
         }
 
         // receive messages from all connections
-        if let Some(connection) = self.control_connection.as_mut() {
-            connection
-                .recv_all_pending(&mut responses, self.version.unwrap())
-                .await
-                .ok();
-        }
-        for node in self.pool.nodes_mut().iter_mut() {
-            node.recv_all_pending(&mut responses, self.version.unwrap())
-                .await;
+        match batch_mode {
+            BatchMode::Isolated => {
+                if let Some(connection) = self.control_connection.as_mut() {
+                    connection
+                        .recv_all_pending(&mut responses, self.version.unwrap())
+                        .await
+                        .ok();
+                }
+                for node in self.pool.nodes_mut().iter_mut() {
+                    node.recv_all_pending(&mut responses, self.version.unwrap())
+                        .await;
+                }
+            }
+            BatchMode::Pipelined => {
+                if let Some(connection) = self.control_connection.as_mut() {
+                    connection
+                        .try_recv(&mut responses, self.version.unwrap())
+                        .ok();
+                }
+                for node in self.pool.nodes_mut().iter_mut() {
+                    node.try_recv(&mut responses, self.version.unwrap());
+                }
+            }
         }
 
         // When the server indicates that it is ready for normal operation via Ready or AuthSuccess,
