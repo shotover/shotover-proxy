@@ -29,7 +29,6 @@ use std::sync::atomic::AtomicI64;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
-use tokio::time::timeout;
 use uuid::Uuid;
 
 mod node;
@@ -176,6 +175,7 @@ impl TransformBuilder for KafkaSinkClusterBuilder {
             fetch_session_id_to_broker: HashMap::new(),
             fetch_request_destinations: Default::default(),
             pending_requests: Default::default(),
+            find_coordinator_requests: Default::default(),
         })
     }
 
@@ -260,6 +260,7 @@ pub struct KafkaSinkCluster {
     /// Maintains the state of each request/response pair.
     /// Ordering must be maintained to ensure responses match up with their request.
     pending_requests: VecDeque<PendingRequest>,
+    find_coordinator_requests: MessageIdMap<FindCoordinator>,
 }
 
 /// State of a Request/Response is maintained by this enum.
@@ -291,10 +292,6 @@ impl Transform for KafkaSinkCluster {
     }
 
     async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Messages> {
-        if requests_wrapper.requests.is_empty() {
-            return Ok(vec![]);
-        }
-
         if self.nodes.is_empty() {
             let nodes: Result<Vec<KafkaNode>> = self
                 .first_contact_points
@@ -310,36 +307,36 @@ impl Transform for KafkaSinkCluster {
             self.nodes = nodes?;
         }
 
-        let mut find_coordinator_requests = vec![];
 
         let mut responses = if requests_wrapper.requests.is_empty() {
             // there are no requests, so no point sending any, but we should check for any responses without awaiting
-            self.recv_responses_no_await()?
+            self.recv_responses()?
         } else {
             self.update_local_nodes().await;
 
-            for (index, request) in requests_wrapper.requests.iter_mut().enumerate() {
+            for request in &mut requests_wrapper.requests {
+                let id = request.id();
                 if let Some(Frame::Kafka(KafkaFrame::Request {
                     body: RequestBody::FindCoordinator(find_coordinator),
                     ..
                 })) = request.frame()
                 {
-                    find_coordinator_requests.push(FindCoordinator {
-                        index,
-                        key: find_coordinator.key.clone(),
-                        key_type: find_coordinator.key_type,
-                    });
+                    self.find_coordinator_requests.insert(
+                        id,
+                        FindCoordinator {
+                            key: find_coordinator.key.clone(),
+                            key_type: find_coordinator.key_type,
+                        },
+                    );
                 }
             }
 
-            let request_count = requests_wrapper.requests.len();
             self.route_requests(requests_wrapper.requests).await?;
             self.send_requests().await?;
-            self.recv_responses(request_count).await?
+            self.recv_responses()?
         };
 
-        self.process_responses(&find_coordinator_requests, &mut responses)
-            .await?;
+        self.process_responses(&mut responses).await?;
         Ok(responses)
     }
 }
@@ -803,7 +800,7 @@ impl KafkaSinkCluster {
     }
 
     /// Convert some PendingRequest::Sent into PendingRequest::Received
-    fn recv_responses_no_await(&mut self) -> Result<Vec<Message>> {
+    fn recv_responses(&mut self) -> Result<Vec<Message>> {
         for node in &mut self.nodes {
             if let Some(connection) = node.get_connection_if_open() {
                 if let Ok(responses) = connection.try_recv() {
@@ -844,84 +841,19 @@ impl KafkaSinkCluster {
         Ok(responses)
     }
 
-    /// Convert some PendingRequest::Sent into PendingRequest::Received
-    // TODO: This function duplicates a lot of logic from recv_responses_no_await,
-    // but I plan to delete this function in the near future,
-    // so there is no point factoring out the common bits.
-    async fn recv_responses(&mut self, request_count: usize) -> Result<Vec<Message>> {
-        let mut responses = vec![];
-        while responses.len() < request_count {
-            for node in &mut self.nodes {
-                let broker_id = node.broker_id;
-                if let Some(connection) = node.get_connection_if_open() {
-                    let connection_is_pending = self.pending_requests.iter().any(|x| {
-                        if let PendingRequest::Sent { destination, .. } = x {
-                            *destination == broker_id
-                        } else {
-                            false
-                        }
-                    });
-                    if connection_is_pending {
-                        let responses = if let Some(read_timeout) = self.read_timeout {
-                            timeout(read_timeout, connection.recv()).await?
-                        } else {
-                            connection.recv().await
-                        }?;
-                        for response in responses {
-                            let mut response = Some(response);
-                            for pending_request in &mut self.pending_requests {
-                                if let PendingRequest::Sent { destination, index } = pending_request
-                                {
-                                    if *destination == node.broker_id {
-                                        if *index == 0 {
-                                            *pending_request = PendingRequest::Received {
-                                                response: response.take().unwrap(),
-                                            };
-                                        } else {
-                                            *index -= 1;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            while let Some(pending_request) = self.pending_requests.front() {
-                if let PendingRequest::Received { .. } = pending_request {
-                    // The next response we are waiting on has been received, add it to responses
-                    if let Some(PendingRequest::Received { response }) =
-                        self.pending_requests.pop_front()
-                    {
-                        responses.push(response);
-                    }
-                } else {
-                    // The pending_request is not received, we need to break to maintain response ordering.
-                    break;
-                }
-            }
-        }
-        Ok(responses)
-    }
-
-    async fn process_responses(
-        &mut self,
-        find_coordinator_requests: &[FindCoordinator],
-        responses: &mut [Message],
-    ) -> Result<()> {
+    async fn process_responses(&mut self, responses: &mut [Message]) -> Result<()> {
         // TODO: Handle errors like NOT_COORDINATOR by removing element from self.topics and self.coordinator_broker_id
-        for (i, response) in responses.iter_mut().enumerate() {
-            let request_id = response.request_id();
+        for response in responses.iter_mut() {
+            let request_id = response.request_id().unwrap();
             match response.frame() {
                 Some(Frame::Kafka(KafkaFrame::Response {
                     body: ResponseBody::FindCoordinator(find_coordinator),
                     version,
                     ..
                 })) => {
-                    let request = find_coordinator_requests
-                        .iter()
-                        .find(|x| x.index == i)
+                    let request = self
+                        .find_coordinator_requests
+                        .remove(&request_id)
                         .ok_or_else(|| anyhow!("Received find_coordinator but not requested"))?;
 
                     self.process_find_coordinator_response(*version, request, find_coordinator);
@@ -940,9 +872,7 @@ impl KafkaSinkCluster {
                     body: ResponseBody::Fetch(fetch),
                     ..
                 })) => {
-                    if let Some(destination) =
-                        self.fetch_request_destinations.remove(&request_id.unwrap())
-                    {
+                    if let Some(destination) = self.fetch_request_destinations.remove(&request_id) {
                         self.fetch_session_id_to_broker
                             .insert(fetch.session_id, destination);
                     }
@@ -1039,7 +969,7 @@ impl KafkaSinkCluster {
     fn process_find_coordinator_response(
         &mut self,
         version: i16,
-        request: &FindCoordinator,
+        request: FindCoordinator,
         find_coordinator: &FindCoordinatorResponse,
     ) {
         if request.key_type == 0 {
@@ -1271,7 +1201,6 @@ struct Partition {
 }
 
 struct FindCoordinator {
-    index: usize,
     key: StrBytes,
     key_type: i8,
 }
