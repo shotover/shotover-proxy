@@ -161,7 +161,7 @@ impl TransformBuilder for KafkaSinkClusterBuilder {
             topic_by_name: self.topic_by_name.clone(),
             topic_by_id: self.topic_by_id.clone(),
             rng: SmallRng::from_rng(rand::thread_rng()).unwrap(),
-            sasl_status: SaslStatus::new(),
+            auth_complete: false,
             connection_factory: ConnectionFactory::new(self.tls.clone(), self.connect_timeout),
             first_contact_node: None,
             fetch_session_id_to_broker: HashMap::new(),
@@ -200,27 +200,6 @@ impl AtomicBrokerId {
     }
 }
 
-#[derive(Debug)]
-struct SaslStatus {
-    auth_complete: bool,
-}
-
-impl SaslStatus {
-    fn new() -> Self {
-        Self {
-            auth_complete: false,
-        }
-    }
-
-    fn set_auth_complete(&mut self, v: bool) {
-        self.auth_complete = v;
-    }
-
-    fn is_handshake_complete(&self) -> bool {
-        self.auth_complete
-    }
-}
-
 pub struct KafkaSinkCluster {
     first_contact_points: Vec<String>,
     shotover_nodes: Vec<ShotoverNode>,
@@ -232,7 +211,7 @@ pub struct KafkaSinkCluster {
     topic_by_name: Arc<DashMap<TopicName, Topic>>,
     topic_by_id: Arc<DashMap<Uuid, Topic>>,
     rng: SmallRng,
-    sasl_status: SaslStatus,
+    auth_complete: bool,
     connection_factory: ConnectionFactory,
     first_contact_node: Option<KafkaAddress>,
     // its not clear from the docs if this cache needs to be accessed cross connection:
@@ -360,7 +339,7 @@ impl KafkaSinkCluster {
             }
         }
 
-        if !self.sasl_status.is_handshake_complete() {
+        if !self.auth_complete {
             self.requests_contain_non_handshake_message(&mut requests);
         }
 
@@ -382,9 +361,7 @@ impl KafkaSinkCluster {
         }
 
         // request and process metadata if we are missing topics or the controller broker id
-        if (!topics.is_empty() || self.controller_broker.get().is_none())
-            && self.sasl_status.is_handshake_complete()
-        {
+        if (!topics.is_empty() || self.controller_broker.get().is_none()) && self.auth_complete {
             let mut metadata = self.get_metadata_of_topics(topics).await?;
             match metadata.frame() {
                 Some(Frame::Kafka(KafkaFrame::Response {
@@ -782,7 +759,7 @@ impl KafkaSinkCluster {
                     ..
                 })) => {}
                 _ => {
-                    self.sasl_status.set_auth_complete(true);
+                    self.auth_complete = true;
                     return;
                 }
             }
