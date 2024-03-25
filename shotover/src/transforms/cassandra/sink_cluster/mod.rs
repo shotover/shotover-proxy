@@ -1,10 +1,10 @@
 use self::node_pool::{get_accessible_owned_connection, NodePoolBuilder, PreparedMetadata};
 use self::rewrite::MessageRewriter;
+use crate::connection::{ConnectionError, SinkConnection};
 use crate::frame::cassandra::{CassandraMetadata, Tracing};
 use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame};
 use crate::message::{Message, MessageIdMap, Messages, Metadata};
 use crate::tls::{TlsConnector, TlsConnectorConfig};
-use crate::transforms::cassandra::connection::{CassandraConnection, Response, ResponseError};
 use crate::transforms::{
     Transform, TransformBuilder, TransformConfig, TransformContextBuilder, TransformContextConfig,
     Wrapper,
@@ -104,7 +104,6 @@ pub struct CassandraSinkClusterBuilder {
     contact_points: Vec<String>,
     connection_factory: ConnectionFactory,
     failed_requests: Counter,
-    read_timeout: Option<Duration>,
     message_rewriter: MessageRewriter,
     nodes_rx: watch::Receiver<Vec<CassandraNode>>,
     keyspaces_rx: KeyspaceChanRx,
@@ -123,7 +122,7 @@ impl CassandraSinkClusterBuilder {
         timeout: Option<u64>,
     ) -> Self {
         let failed_requests = counter!("shotover_failed_requests_count", "chain" => chain_name.clone(), "transform" => "CassandraSinkCluster");
-        let receive_timeout = timeout.map(Duration::from_secs);
+        let read_timeout = timeout.map(Duration::from_secs);
         let connect_timeout = Duration::from_millis(connect_timeout_ms);
 
         let (local_nodes_tx, local_nodes_rx) = watch::channel(vec![]);
@@ -148,10 +147,9 @@ impl CassandraSinkClusterBuilder {
 
         Self {
             contact_points,
-            connection_factory: ConnectionFactory::new(connect_timeout, tls),
+            connection_factory: ConnectionFactory::new(connect_timeout, read_timeout, tls),
             message_rewriter,
             failed_requests,
-            read_timeout: receive_timeout,
             nodes_rx: local_nodes_rx,
             keyspaces_rx,
             task_handshake_tx,
@@ -161,17 +159,18 @@ impl CassandraSinkClusterBuilder {
 }
 
 impl TransformBuilder for CassandraSinkClusterBuilder {
-    fn build(&self, _transform_context: TransformContextBuilder) -> Box<dyn Transform> {
+    fn build(&self, transform_context: TransformContextBuilder) -> Box<dyn Transform> {
+        let mut connection_factory = self.connection_factory.new_with_same_config();
+        connection_factory.set_force_run_chain(transform_context.force_run_chain);
         Box::new(CassandraSinkCluster {
             contact_points: self.contact_points.clone(),
             message_rewriter: self.message_rewriter.clone(),
             control_connection: None,
-            connection_factory: self.connection_factory.new_with_same_config(),
+            connection_factory,
             control_connection_address: None,
             init_handshake_complete: false,
             version: None,
             failed_requests: self.failed_requests.clone(),
-            read_timeout: self.read_timeout,
             pool: self.pool.build(),
             // Because the self.nodes_rx is always copied from the original nodes_rx created before any node lists were sent,
             // once a single node list has been sent all new connections will immediately recognize it as a change.
@@ -210,13 +209,12 @@ pub struct CassandraSinkCluster {
     // * The initial handshake
     // * DDL queries
     // * system queries
-    control_connection: Option<CassandraConnection>,
+    control_connection: Option<SinkConnection>,
     control_connection_address: Option<SocketAddr>,
     init_handshake_complete: bool,
 
     version: Option<Version>,
     failed_requests: Counter,
-    read_timeout: Option<Duration>,
     /// The nodes list is populated as soon as nodes_rx makes one available, but once a confirmed succesful handshake is reached
     /// we await nodes_rx to ensure that we have a nodes list from that point forward.
     /// Addditionally any changes to nodes_rx is observed and copied over.
@@ -243,7 +241,7 @@ impl CassandraSinkCluster {
             } else {
                 // It's an invariant that self.version is Some.
                 // Since we were unable to set it, we need to return immediately.
-                // This is ok because if there are no messages then we have no work to do anyway.
+                // We can continue once the client sends its first message.
                 return Ok(vec![]);
             }
         }
@@ -344,151 +342,152 @@ impl CassandraSinkCluster {
                 }
             }
         }
+        let mut responses: Messages = vec![];
 
-        let mut responses_future = FuturesOrdered::new();
+        // let mut responses_future = FuturesOrdered::new();
 
-        let mut responses_future_use = FuturesOrdered::new();
-        let mut use_future_index_to_node_index = vec![];
+        // let mut responses_future_use = FuturesOrdered::new();
+        // let mut use_future_index_to_node_index = vec![];
+        let mut control_connection_sent = 0;
         for mut message in messages.into_iter() {
-            let return_chan_rx = if self.pool.nodes().is_empty()
-                || !self.init_handshake_complete
-                // system.local and system.peers must be routed to the same node otherwise the system.local node will be amongst the system.peers nodes and a node will be missing
-                // DDL statements and system.local must be routed through the same connection, so that schema_version changes appear immediately in system.local
-                || is_ddl_statement(&mut message)
-                || self.is_system_query(&mut message)
+            if self.pool.nodes().is_empty()
+                    || !self.init_handshake_complete
+                    // system.local and system.peers must be routed to the same node otherwise the system.local node will be amongst the system.peers nodes and a node will be missing
+                    // DDL statements and system.local must be routed through the same connection, so that schema_version changes appear immediately in system.local
+                    || is_ddl_statement(&mut message)
+                    || self.is_system_query(&mut message)
             {
-                self.control_connection.as_mut().unwrap().send(message)?
-            } else if is_use_statement(&mut message) {
-                // Adding the USE statement to the handshake ensures that any new connection
-                // created will have the correct keyspace setup.
-                self.connection_factory.set_use_message(message.clone());
+                self.control_connection
+                    .as_mut()
+                    .unwrap()
+                    .send(vec![message])?;
+                control_connection_sent += 1;
+            }
+            // TODO: moving use statement handling into prereq
+            // } else if is_use_statement(&mut message) {
+            //     // Adding the USE statement to the handshake ensures that any new connection
+            //     // created will have the correct keyspace setup.
+            //     self.connection_factory.set_use_message(message.clone());
 
-                // Send the USE statement to all open connections to ensure they are all in sync
-                for (node_index, node) in self.pool.nodes().iter().enumerate() {
-                    if let Some(connection) = &node.outbound {
-                        responses_future_use.push_back(connection.send(message.clone())?);
-                        use_future_index_to_node_index.push(node_index);
-                    }
-                }
+            //     // Send the USE statement to all open connections to ensure they are all in sync
+            //     for node in self.pool.nodes() {
+            //         if node.is_up && node.outbound.is_some() {
+            //             node.send(message.clone())?;
+            //         }
+            //     }
 
-                // Send the USE statement to the handshake connection and use the response as shotovers response
-                self.control_connection.as_mut().unwrap().send(message)?
-            } else if is_prepare_message(&mut message) {
-                let next_host_id = self.message_rewriter.get_destination_for_prepare(&message);
-                match self
-                    .pool
-                    .nodes_mut()
-                    .iter_mut()
-                    .find(|node| node.host_id == next_host_id)
-                    .ok_or_else(|| anyhow!("node {next_host_id} has dissapeared"))?
-                    .get_connection(&self.connection_factory)
-                    .await
-                {
-                    Ok(connection) => connection.send(message)?,
-                    Err(err) => send_error_in_response_to_message(&message, &format!("{err}"))?,
-                }
-            } else if let Some((execute, metadata)) = get_execute_message(&mut message) {
-                // If the message is an execute we should perform token aware routing
-                let rack = &self.message_rewriter.local_shotover_node.rack;
-                let connection = self
-                    .pool
-                    .get_replica_connection_in_dc(
-                        execute,
-                        rack,
-                        &mut self.rng,
-                        &self.connection_factory,
-                    )
-                    .await;
+            //     // Send the USE statement to the handshake connection and use the response as shotovers response
+            //     self.control_connection.as_mut().unwrap().send(message)?
+            // }
+            //      else if is_prepare_message(&mut message) {
+            //         let next_host_id = self.message_rewriter.get_destination_for_prepare(&message);
+            //         match self
+            //             .pool
+            //             .nodes_mut()
+            //             .iter_mut()
+            //             .find(|node| node.host_id == next_host_id)
+            //             .ok_or_else(|| anyhow!("node {next_host_id} has dissapeared"))?
+            //             .get_connection(&self.connection_factory)
+            //             .await
+            //         {
+            //             Ok(connection) => connection.send(message)?,
+            //             Err(err) => send_error_in_response_to_message(&message, &format!("{err}"))?,
+            //         }
+            //     } else if let Some((execute, metadata)) = get_execute_message(&mut message) {
+            //         // If the message is an execute we should perform token aware routing
+            //         let rack = &self.message_rewriter.local_shotover_node.rack;
+            //         let connection = self
+            //             .pool
+            //             .get_replica_connection_in_dc(
+            //                 execute,
+            //                 rack,
+            //                 &mut self.rng,
+            //                 &self.connection_factory,
+            //             )
+            //             .await;
 
-                match connection {
-                    Ok(connection) => connection.send(message)?,
-                    Err(
-                        err @ GetReplicaErr::NoKeyspaceMetadata | err @ GetReplicaErr::NoRoutingKey,
-                    ) => {
-                        if matches!(err, GetReplicaErr::NoRoutingKey)
-                            && self.version.unwrap() != Version::V3
-                        {
-                            tracing::error!(
-                                "No routing key found for message on version: {}",
-                                self.version.unwrap()
-                            );
-                        };
+            //         match connection {
+            //             Ok(connection) => connection.send(message)?,
+            //             Err(
+            //                 err @ GetReplicaErr::NoKeyspaceMetadata | err @ GetReplicaErr::NoRoutingKey,
+            //             ) => {
+            //                 if matches!(err, GetReplicaErr::NoRoutingKey)
+            //                     && self.version.unwrap() != Version::V3
+            //                 {
+            //                     tracing::error!(
+            //                         "No routing key found for message on version: {}",
+            //                         self.version.unwrap()
+            //                     );
+            //                 };
 
-                        match self
-                            .pool
-                            .get_random_connection_in_dc_rack(
-                                rack,
-                                &mut self.rng,
-                                &self.connection_factory,
-                            )
-                            .await
-                        {
-                            Ok(connection) => connection.send(message)?,
-                            Err(err) => {
-                                send_error_in_response_to_metadata(&metadata, &format!("{err}"))
-                            }
-                        }
-                    }
-                    Err(GetReplicaErr::NoPreparedMetadata) => {
-                        let (return_chan_tx, return_chan_rx) = oneshot::channel();
-                        let id = execute.id.clone();
-                        tracing::info!("forcing re-prepare on {:?}", id);
-                        // this shotover node doesn't have the metadata.
-                        // send an unprepared error in response to force
-                        // the client to reprepare the query
-                        return_chan_tx
-                            .send(Ok(Message::from_frame(Frame::Cassandra(
-                                CassandraFrame {
-                                    operation: CassandraOperation::Error(ErrorBody {
-                                        message: "Shotover does not have this query's metadata. Please re-prepare on this Shotover host before sending again.".into(),
-                                        ty: ErrorType::Unprepared(UnpreparedError { id }),
-                                    }),
-                                    stream_id: metadata.stream_id,
-                                    tracing: Tracing::Response(None), // We didn't actually hit a node so we don't have a tracing id
-                                    version: self.version.unwrap(),
-                                    warnings: vec![],
-                                },
-                            ),
-                        ))).expect("the receiver is guaranteed to be alive, so this must succeed");
-                        return_chan_rx
-                    }
-                    Err(GetReplicaErr::NoNodeAvailable(err)) => {
-                        send_error_in_response_to_metadata(&metadata, &format!("{err}"))
-                    }
-                    Err(GetReplicaErr::Other(err)) => {
-                        return Err(err);
-                    }
-                }
-            } else {
+            //                 match self
+            //                     .pool
+            //                     .get_random_connection_in_dc_rack(
+            //                         rack,
+            //                         &mut self.rng,
+            //                         &self.connection_factory,
+            //                     )
+            //                     .await
+            //                 {
+            //                     Ok(connection) => connection.send(message)?,
+            //                     Err(err) => {
+            //                         send_error_in_response_to_metadata(&metadata, &format!("{err}"))
+            //                     }
+            //                 }
+            //             }
+            //             Err(GetReplicaErr::NoPreparedMetadata) => {
+            //                 let (return_chan_tx, return_chan_rx) = oneshot::channel();
+            //                 let id = execute.id.clone();
+            //                 tracing::info!("forcing re-prepare on {:?}", id);
+            //                 // this shotover node doesn't have the metadata.
+            //                 // send an unprepared error in response to force
+            //                 // the client to reprepare the query
+            //                 return_chan_tx
+            //                     .send(Ok(Message::from_frame(Frame::Cassandra(
+            //                         CassandraFrame {
+            //                             operation: CassandraOperation::Error(ErrorBody {
+            //                                 message: "Shotover does not have this query's metadata. Please re-prepare on this Shotover host before sending again.".into(),
+            //                                 ty: ErrorType::Unprepared(UnpreparedError { id }),
+            //                             }),
+            //                             stream_id: metadata.stream_id,
+            //                             tracing: Tracing::Response(None), // We didn't actually hit a node so we don't have a tracing id
+            //                             version: self.version.unwrap(),
+            //                             warnings: vec![],
+            //                         },
+            //                     ),
+            //                 ))).expect("the receiver is guaranteed to be alive, so this must succeed");
+            //                 return_chan_rx
+            //             }
+            //             Err(GetReplicaErr::NoNodeAvailable(err)) => {
+            //                 send_error_in_response_to_metadata(&metadata, &format!("{err}"))
+            //             }
+            //             Err(GetReplicaErr::Other(err)) => {
+            //                 return Err(err);
+            //             }
+            //         }
+            else {
                 // otherwise just send to a random node
                 match self
                     .pool
-                    .get_random_connection_in_dc_rack(
+                    .get_random_node_in_dc_rack(
                         &self.message_rewriter.local_shotover_node.rack,
                         &mut self.rng,
                         &self.connection_factory,
                     )
                     .await
                 {
-                    Ok(connection) => connection.send(message)?,
-                    Err(err) => send_error_in_response_to_message(&message, &format!("{err}"))?,
+                    Ok(node) => node.send(vec![message])?,
+                    Err(err) => responses.push(send_error_in_response_to_message(
+                        &message,
+                        &format!("{err}"),
+                    )?),
                 }
             };
-
-            responses_future.push_back(return_chan_rx)
         }
 
-        let response_results =
-            super::connection::receive(self.read_timeout, &self.failed_requests, responses_future)
-                .await?;
-        let mut responses = vec![];
-        for response in response_results {
-            match response {
-                Ok(response) => responses.push(response),
-                Err(error) => {
-                    self.pool.report_issue_with_node(error.destination);
-                    responses.push(error.to_response(self.version.unwrap()));
-                }
+        for node in self.pool.nodes_mut() {
+            if let Some(value) = node.try_recv(self.version.unwrap()) {
+                responses.extend(value)
             }
         }
 
@@ -507,17 +506,17 @@ impl CassandraSinkCluster {
             }
         }
 
-        for node_index in use_future_index_to_node_index {
-            let response = responses_future_use
-                .next()
-                .await
-                .map(|x| x.map_err(|e| anyhow!(e)));
-            // If any errors occurred close the connection as we can no
-            // longer make any guarantees about the current state of the connection
-            if !is_use_statement_successful(response) {
-                self.pool.nodes_mut()[node_index].outbound = None;
-            }
-        }
+        // for node_index in use_future_index_to_node_index {
+        //     let response = responses_future_use
+        //         .next()
+        //         .await
+        //         .map(|x| x.map_err(|e| anyhow!(e)));
+        //     // If any errors occurred close the connection as we can no
+        //     // longer make any guarantees about the current state of the connection
+        //     if !is_use_statement_successful(response) {
+        //         self.pool.nodes_mut()[node_index].outbound = None;
+        //     }
+        // }
 
         self.message_rewriter.rewrite_responses(&mut responses)?;
 
@@ -526,6 +525,23 @@ impl CassandraSinkCluster {
                 self.pool.add_prepared_result(id, metadata).await;
             }
         }
+
+        responses.retain_mut(|message| {
+            if let Some(Frame::Cassandra(CassandraFrame {
+                operation: CassandraOperation::Event(event),
+                ..
+            })) = message.frame()
+            {
+                match event {
+                    ServerEvent::TopologyChange(_) => false,
+                    ServerEvent::StatusChange(_) => false,
+                    ServerEvent::SchemaChange(_) => true,
+                    _ => unreachable!(),
+                }
+            } else {
+                true
+            }
+        });
 
         Ok(responses)
     }
@@ -564,7 +580,7 @@ impl CassandraSinkCluster {
         Ok(())
     }
 
-    fn set_control_connection(&mut self, connection: CassandraConnection, address: SocketAddr) {
+    fn set_control_connection(&mut self, connection: SinkConnection, address: SocketAddr) {
         self.control_connection = Some(connection);
         self.control_connection_address = Some(address);
     }
@@ -583,22 +599,15 @@ impl CassandraSinkCluster {
     }
 }
 
-fn send_error_in_response_to_metadata(
-    metadata: &CassandraMetadata,
-    error: &str,
-) -> oneshot::Receiver<Result<Message, ResponseError>> {
-    let (tx, rx) = oneshot::channel();
-    tx.send(Ok(Message::from_frame(Frame::Cassandra(
-        CassandraFrame::shotover_error(metadata.stream_id, metadata.version, error),
-    ))))
-    .unwrap();
-    rx
+fn send_error_in_response_to_metadata(metadata: &CassandraMetadata, error: &str) -> Message {
+    Message::from_frame(Frame::Cassandra(CassandraFrame::shotover_error(
+        metadata.stream_id,
+        metadata.version,
+        error,
+    )))
 }
 
-fn send_error_in_response_to_message(
-    message: &Message,
-    error: &str,
-) -> Result<oneshot::Receiver<Result<Message, ResponseError>>> {
+fn send_error_in_response_to_message(message: &Message, error: &str) -> Result<Message> {
     if let Ok(Metadata::Cassandra(metadata)) = message.metadata() {
         Ok(send_error_in_response_to_metadata(&metadata, error))
     } else {
@@ -699,15 +708,13 @@ fn is_ddl_statement(request: &mut Message) -> bool {
     false
 }
 
-fn is_use_statement_successful(response: Option<Result<Response>>) -> bool {
-    if let Some(Ok(Ok(mut response))) = response {
-        if let Some(Frame::Cassandra(CassandraFrame {
-            operation: CassandraOperation::Result(CassandraResult::SetKeyspace(_)),
-            ..
-        })) = response.frame()
-        {
-            return true;
-        }
+fn is_use_statement_successful(response: &mut Message) -> bool {
+    if let Some(Frame::Cassandra(CassandraFrame {
+        operation: CassandraOperation::Result(CassandraResult::SetKeyspace(_)),
+        ..
+    })) = response.frame()
+    {
+        return true;
     }
     false
 }
@@ -720,33 +727,5 @@ impl Transform for CassandraSinkCluster {
 
     async fn transform<'a>(&'a mut self, requests_wrapper: Wrapper<'a>) -> Result<Messages> {
         self.send_message(requests_wrapper.requests).await
-    }
-
-    async fn transform_pushed<'a>(
-        &'a mut self,
-        mut requests_wrapper: Wrapper<'a>,
-    ) -> Result<Messages> {
-        requests_wrapper.requests.retain_mut(|message| {
-            if let Some(Frame::Cassandra(CassandraFrame {
-                operation: CassandraOperation::Event(event),
-                ..
-            })) = message.frame()
-            {
-                match event {
-                    ServerEvent::TopologyChange(_) => false,
-                    ServerEvent::StatusChange(_) => false,
-                    ServerEvent::SchemaChange(_) => true,
-                    _ => unreachable!(),
-                }
-            } else {
-                true
-            }
-        });
-        requests_wrapper.call_next_transform_pushed().await
-    }
-
-    fn set_pushed_messages_tx(&mut self, pushed_messages_tx: mpsc::UnboundedSender<Messages>) {
-        self.connection_factory
-            .set_pushed_messages_tx(pushed_messages_tx);
     }
 }
