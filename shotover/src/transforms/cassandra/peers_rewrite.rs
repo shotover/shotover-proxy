@@ -80,6 +80,15 @@ impl Transform for CassandraPeersRewrite {
         let mut responses = requests_wrapper.call_next_transform().await?;
 
         for response in &mut responses {
+            if let Some(Frame::Cassandra(frame)) = response.frame() {
+                if let Event(ServerEvent::StatusChange(StatusChange { addr, .. })) =
+                    &mut frame.operation
+                {
+                    addr.set_port(self.port);
+                    response.invalidate_cache();
+                }
+            }
+
             if let Some(id) = response.request_id() {
                 let name_list = self.column_names_to_rewrite.remove(&id).unwrap();
                 rewrite_port(response, &name_list, self.port);
@@ -87,25 +96,6 @@ impl Transform for CassandraPeersRewrite {
         }
 
         Ok(responses)
-    }
-
-    async fn transform_pushed<'a>(
-        &'a mut self,
-        mut requests_wrapper: Wrapper<'a>,
-    ) -> Result<Messages> {
-        for message in &mut requests_wrapper.requests {
-            if let Some(Frame::Cassandra(frame)) = message.frame() {
-                if let Event(ServerEvent::StatusChange(StatusChange { addr, .. })) =
-                    &mut frame.operation
-                {
-                    addr.set_port(self.port);
-                    message.invalidate_cache();
-                }
-            }
-        }
-
-        let response = requests_wrapper.call_next_transform_pushed().await?;
-        Ok(response)
     }
 }
 

@@ -32,7 +32,7 @@ jobs:
       - name: 'Download results'
         uses: actions/download-artifact@v4
         with:
-          name: 'comment-info'
+          name: 'comment_info'
           github-token: ${{ secrets.GITHUB_TOKEN }}
           run-id: ${{ github.event.workflow_run.id }}
       - run: unzip comment_info.zip

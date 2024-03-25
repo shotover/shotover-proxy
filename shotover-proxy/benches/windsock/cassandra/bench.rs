@@ -74,7 +74,9 @@ pub enum CassandraDb {
 }
 
 enum CassandraDbInstance {
+    #[allow(dead_code)] // must be held to delay drop
     Compose(DockerCompose),
+    #[allow(dead_code)]
     Mocked(MockHandle),
 }
 
@@ -473,7 +475,7 @@ impl Bench for CassandraBench {
     fn tags(&self) -> HashMap<String, String> {
         [
             (
-                "name".to_owned(),
+                "db".to_owned(),
                 match &self.db {
                     CassandraDb::Cassandra => "cassandra".to_owned(),
                     CassandraDb::Mocked => "cassandra-mocked".to_owned(),

@@ -697,7 +697,7 @@ impl CassandraConnection {
             .build()
     }
 
-    // TODO: lets return Vec<CqlValue> instead, as it provides better gaurantees for correctness
+    // TODO: lets return Vec<CqlValue> instead, as it provides better guarantees for correctness
     fn build_values_scylla(values: &[ResultValue]) -> Vec<Box<dyn SerializeCql + '_>> {
         values
             .iter()

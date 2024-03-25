@@ -1,21 +1,22 @@
-use super::connection::CassandraConnection;
 use crate::codec::{cassandra::CassandraCodecBuilder, CodecBuilder, Direction};
+use crate::connection::Connection;
 use crate::frame::cassandra::CassandraMetadata;
 use crate::message::{Messages, Metadata};
 use crate::tls::{TlsConnector, TlsConnectorConfig};
-use crate::transforms::cassandra::connection::Response;
 use crate::transforms::{
     Transform, TransformBuilder, TransformConfig, TransformContextBuilder, TransformContextConfig,
     Wrapper,
 };
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
-use cassandra_protocol::frame::Version;
-use futures::stream::FuturesOrdered;
+use cassandra_protocol::frame::{Opcode, Version};
+
 use metrics::{counter, Counter};
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::Notify;
+use tokio::time::timeout;
 use tracing::trace;
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -84,17 +85,17 @@ impl CassandraSinkSingleBuilder {
 }
 
 impl TransformBuilder for CassandraSinkSingleBuilder {
-    fn build(&self, _transform_context: TransformContextBuilder) -> Box<dyn Transform> {
+    fn build(&self, transform_context: TransformContextBuilder) -> Box<dyn Transform> {
         Box::new(CassandraSinkSingle {
-            outbound: None,
+            connection: None,
             version: self.version,
             address: self.address.clone(),
             tls: self.tls.clone(),
             failed_requests: self.failed_requests.clone(),
-            pushed_messages_tx: None,
             connect_timeout: self.connect_timeout,
             read_timeout: self.read_timeout,
             codec_builder: self.codec_builder.clone(),
+            force_run_chain: transform_context.force_run_chain,
         })
     }
 
@@ -110,19 +111,19 @@ impl TransformBuilder for CassandraSinkSingleBuilder {
 pub struct CassandraSinkSingle {
     version: Option<Version>,
     address: String,
-    outbound: Option<CassandraConnection>,
+    connection: Option<Connection>,
     failed_requests: Counter,
     tls: Option<TlsConnector>,
-    pushed_messages_tx: Option<mpsc::UnboundedSender<Messages>>,
     connect_timeout: Duration,
     read_timeout: Option<Duration>,
     codec_builder: CassandraCodecBuilder,
+    force_run_chain: Arc<Notify>,
 }
 
 impl CassandraSinkSingle {
-    async fn send_message(&mut self, messages: Messages) -> Result<Messages> {
+    async fn send_message(&mut self, requests: Messages) -> Result<Messages> {
         if self.version.is_none() {
-            if let Some(message) = messages.first() {
+            if let Some(message) = requests.first() {
                 if let Ok(Metadata::Cassandra(CassandraMetadata { version, .. })) =
                     message.metadata()
                 {
@@ -140,36 +141,63 @@ impl CassandraSinkSingle {
             }
         }
 
-        if self.outbound.is_none() {
+        if self.connection.is_none() {
             trace!("creating outbound connection {:?}", self.address);
-            self.outbound = Some(
-                CassandraConnection::new(
-                    self.connect_timeout,
+            self.connection = Some(
+                Connection::new(
                     self.address.clone(),
                     self.codec_builder.clone(),
-                    self.tls.clone(),
-                    self.pushed_messages_tx.clone(),
+                    &self.tls,
+                    self.connect_timeout,
+                    Some(self.force_run_chain.clone()),
+                    Direction::Sink,
                 )
                 .await?,
             );
         }
-        trace!("sending frame upstream");
 
-        let outbound = self.outbound.as_mut().unwrap();
-        let responses_future: Result<FuturesOrdered<oneshot::Receiver<Response>>> =
-            messages.into_iter().map(|m| outbound.send(m)).collect();
+        let result = if requests.is_empty() {
+            // there are no requests, so no point sending any, but we should check for any responses without awaiting
+            self.connection
+                .as_mut()
+                .unwrap()
+                .try_recv()
+                .unwrap_or_default()
+        } else {
+            let connection = self.connection.as_mut().unwrap();
 
-        super::connection::receive(self.read_timeout, &self.failed_requests, responses_future?)
-            .await
-            .map(|responses| {
-                responses
-                    .into_iter()
-                    .map(|response| match response {
-                        Ok(response) => response,
-                        Err(error) => error.to_response(self.version.unwrap()),
-                    })
-                    .collect()
-            })
+            let requests_count = requests.len();
+            connection.send(requests)?;
+
+            let mut result = vec![];
+            let mut responses_count = 0;
+            while responses_count < requests_count {
+                let mut responses = if let Some(read_timeout) = self.read_timeout {
+                    timeout(read_timeout, connection.recv()).await?
+                } else {
+                    connection.recv().await
+                }?;
+                for response in &mut responses {
+                    if response.request_id().is_some() {
+                        responses_count += 1;
+                    }
+                }
+                result.extend(responses);
+            }
+            result
+        };
+
+        for response in &result {
+            if let Ok(Metadata::Cassandra(CassandraMetadata {
+                opcode: Opcode::Error,
+                ..
+            })) = response.metadata()
+            {
+                self.failed_requests.increment(1);
+            }
+        }
+
+        Ok(result)
     }
 }
 
@@ -181,9 +209,5 @@ impl Transform for CassandraSinkSingle {
 
     async fn transform<'a>(&'a mut self, requests_wrapper: Wrapper<'a>) -> Result<Messages> {
         self.send_message(requests_wrapper.requests).await
-    }
-
-    fn set_pushed_messages_tx(&mut self, pushed_messages_tx: mpsc::UnboundedSender<Messages>) {
-        self.pushed_messages_tx = Some(pushed_messages_tx);
     }
 }

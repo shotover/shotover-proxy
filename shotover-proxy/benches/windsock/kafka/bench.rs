@@ -245,7 +245,7 @@ impl Bench for KafkaBench {
 
     fn tags(&self) -> HashMap<String, String> {
         [
-            ("name".to_owned(), "kafka".to_owned()),
+            ("db".to_owned(), "kafka".to_owned()),
             self.topology.to_tag(),
             self.shotover.to_tag(),
             match self.message_size {

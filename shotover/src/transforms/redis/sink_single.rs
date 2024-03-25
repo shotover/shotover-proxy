@@ -113,9 +113,10 @@ impl Transform for RedisSinkSingle {
                 Connection::new(
                     &self.address,
                     codec,
-                    &mut self.tls,
+                    &self.tls,
                     self.connect_timeout,
                     Some(self.force_run_chain.clone()),
+                    Direction::Sink,
                 )
                 .await?,
             );
