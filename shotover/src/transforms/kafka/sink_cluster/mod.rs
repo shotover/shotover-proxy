@@ -304,6 +304,58 @@ impl KafkaSinkCluster {
         mut requests: Vec<Message>,
     ) -> Result<Vec<oneshot::Receiver<Response>>> {
         let mut results = Vec::with_capacity(requests.len());
+
+        if !self.auth_complete {
+            let mut handshake_request_count = 0;
+            for request in &mut requests {
+                match request.frame() {
+                    Some(Frame::Kafka(KafkaFrame::Request {
+                        body: RequestBody::SaslHandshake(_),
+                        ..
+                    })) => {
+                        self.connection_factory
+                            .add_handshake_message(request.clone());
+                        handshake_request_count += 1;
+                    }
+                    Some(Frame::Kafka(KafkaFrame::Request {
+                        body: RequestBody::SaslAuthenticate(_),
+                        ..
+                    })) => {
+                        self.connection_factory.add_auth_message(request.clone());
+                        handshake_request_count += 1;
+                    }
+                    Some(Frame::Kafka(KafkaFrame::Request {
+                        body: RequestBody::ApiVersions(_),
+                        ..
+                    })) => {
+                        handshake_request_count += 1;
+                    }
+                    _ => {
+                        // The client is no longer performing authentication
+                        self.auth_complete = true;
+                        break;
+                    }
+                }
+            }
+            // route all handshake messages
+            for _ in 0..handshake_request_count {
+                let request = requests.remove(0);
+                let (tx, rx) = oneshot::channel();
+                self.route_to_first_contact_node(request.clone(), Some(tx))
+                    .await?;
+                results.push(rx);
+            }
+
+            if requests.is_empty() {
+                // all messages received in this batch are handshake messages,
+                // so dont continue with regular message handling
+                return Ok(results);
+            } else {
+                // the later messages in this batch are not handshake messages,
+                // so continue onto the regular message handling
+            }
+        }
+
         let mut topics = vec![];
         let mut groups = vec![];
         for request in &mut requests {
@@ -339,10 +391,6 @@ impl KafkaSinkCluster {
             }
         }
 
-        if !self.auth_complete {
-            self.requests_contain_non_handshake_message(&mut requests);
-        }
-
         for group in groups {
             match self.find_coordinator_of_group(group.clone()).await {
                 Ok(node) => {
@@ -361,7 +409,7 @@ impl KafkaSinkCluster {
         }
 
         // request and process metadata if we are missing topics or the controller broker id
-        if (!topics.is_empty() || self.controller_broker.get().is_none()) && self.auth_complete {
+        if !topics.is_empty() || self.controller_broker.get().is_none() {
             let mut metadata = self.get_metadata_of_topics(topics).await?;
             match metadata.frame() {
                 Some(Frame::Kafka(KafkaFrame::Response {
@@ -561,42 +609,6 @@ impl KafkaSinkCluster {
                     ..
                 })) => results.push(self.route_to_controller(message).await?),
 
-                Some(Frame::Kafka(KafkaFrame::Request {
-                    body: RequestBody::ApiVersions(_),
-                    ..
-                })) => {
-                    let (tx, rx) = oneshot::channel();
-                    self.route_to_first_contact_node(message.clone(), Some(tx))
-                        .await?;
-
-                    results.push(rx);
-                }
-
-                Some(Frame::Kafka(KafkaFrame::Request {
-                    body: RequestBody::SaslHandshake(_),
-                    ..
-                })) => {
-                    let (tx, rx) = oneshot::channel();
-                    self.route_to_first_contact_node(message.clone(), Some(tx))
-                        .await?;
-
-                    self.connection_factory
-                        .add_handshake_message(message.clone());
-
-                    results.push(rx);
-                }
-
-                Some(Frame::Kafka(KafkaFrame::Request {
-                    body: RequestBody::SaslAuthenticate(_),
-                    ..
-                })) => {
-                    let (tx, rx) = oneshot::channel();
-                    self.route_to_first_contact_node(message.clone(), Some(tx))
-                        .await?;
-                    self.connection_factory.add_auth_message(message.clone());
-                    results.push(rx);
-                }
-
                 // route to random node
                 _ => {
                     let connection = self
@@ -741,29 +753,6 @@ impl KafkaSinkCluster {
             })
             .map_err(|_| anyhow!("Failed to send"))?;
         Ok(rx.await.unwrap().response.unwrap())
-    }
-
-    fn requests_contain_non_handshake_message(&mut self, requests: &mut [Message]) {
-        for requests in requests.iter_mut() {
-            match requests.frame() {
-                Some(Frame::Kafka(KafkaFrame::Request {
-                    body: RequestBody::ApiVersions(_),
-                    ..
-                })) => {}
-                Some(Frame::Kafka(KafkaFrame::Request {
-                    body: RequestBody::SaslHandshake(_),
-                    ..
-                })) => {}
-                Some(Frame::Kafka(KafkaFrame::Request {
-                    body: RequestBody::SaslAuthenticate(_),
-                    ..
-                })) => {}
-                _ => {
-                    self.auth_complete = true;
-                    return;
-                }
-            }
-        }
     }
 
     async fn receive_responses(
