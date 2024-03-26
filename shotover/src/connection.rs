@@ -1,6 +1,6 @@
-//! This is the one true connection implementation that all other transforms + server.rs should be ported to.
+//! All Sink transforms use SinkConnection for their outgoing connections.
 
-use crate::codec::{CodecBuilder, CodecReadError, CodecWriteError, Direction};
+use crate::codec::{CodecBuilder, CodecReadError, CodecWriteError};
 use crate::frame::Frame;
 use crate::message::{Message, MessageId, Messages};
 use crate::tcp;
@@ -18,22 +18,21 @@ use tokio_util::codec::{FramedRead, FramedWrite};
 use tracing::error;
 use tracing::Instrument;
 
-pub struct Connection {
+pub struct SinkConnection {
     in_rx: mpsc::Receiver<Vec<Message>>,
     out_tx: mpsc::UnboundedSender<Vec<Message>>,
     connection_closed_rx: mpsc::Receiver<ConnectionError>,
     error: Option<ConnectionError>,
-    dummy_response_inserter: Option<DummyResponseInserter>,
+    dummy_response_inserter: DummyResponseInserter,
 }
 
-impl Connection {
+impl SinkConnection {
     pub async fn new<A: ToSocketAddrs + ToHostname + std::fmt::Debug, C: CodecBuilder + 'static>(
         host: A,
         codec_builder: C,
         tls: &Option<TlsConnector>,
         connect_timeout: Duration,
-        force_run_chain: Option<Arc<Notify>>,
-        direction: Direction,
+        force_run_chain: Arc<Notify>,
     ) -> anyhow::Result<Self> {
         let destination = tokio::net::lookup_host(&host).await?.next().unwrap();
         let (in_tx, in_rx) = mpsc::channel::<Messages>(10_000);
@@ -68,15 +67,12 @@ impl Connection {
             );
         }
 
-        let dummy_response_inserter = match direction {
-            Direction::Source => None,
-            Direction::Sink => Some(DummyResponseInserter {
-                dummy_requests: vec![],
-                pending_requests_count: 0,
-            }),
+        let dummy_response_inserter = DummyResponseInserter {
+            dummy_requests: vec![],
+            pending_requests_count: 0,
         };
 
-        Ok(Connection {
+        Ok(SinkConnection {
             in_rx,
             out_tx,
             connection_closed_rx,
@@ -93,9 +89,8 @@ impl Connection {
     /// Send messages.
     /// If there is a problem with the connection an error is returned.
     pub fn send(&mut self, mut messages: Vec<Message>) -> Result<(), ConnectionError> {
-        if let Some(dummy_response_inserter) = &mut self.dummy_response_inserter {
-            dummy_response_inserter.process_requests(&mut messages);
-        }
+        self.dummy_response_inserter.process_requests(&mut messages);
+
         if let Some(error) = &self.error {
             Err(error.clone())
         } else {
@@ -110,20 +105,19 @@ impl Connection {
             Err(error.clone())
         } else {
             // first process any immediately pending dummy responses
-            if let Some(dummy_response_inserter) = &mut self.dummy_response_inserter {
-                // ensure we include any received messages so we dont leave them hanging after using up a force_run_chain.
-                let mut messages = self.in_rx.try_recv().unwrap_or_default();
-                dummy_response_inserter.process_responses(&mut messages);
-                if !messages.is_empty() {
-                    return Ok(messages);
-                }
+
+            // ensure we include any received messages so we dont leave them hanging after using up a force_run_chain.
+            let mut messages = self.in_rx.try_recv().unwrap_or_default();
+            self.dummy_response_inserter
+                .process_responses(&mut messages);
+            if !messages.is_empty() {
+                return Ok(messages);
             }
 
             match self.in_rx.recv().await {
                 Some(mut messages) => {
-                    if let Some(dummy_response_inserter) = &mut self.dummy_response_inserter {
-                        dummy_response_inserter.process_responses(&mut messages);
-                    }
+                    self.dummy_response_inserter
+                        .process_responses(&mut messages);
                     Ok(messages)
                 }
                 None => Err(self.set_get_error()),
@@ -139,9 +133,8 @@ impl Connection {
         } else {
             match self.in_rx.try_recv() {
                 Ok(mut messages) => {
-                    if let Some(dummy_response_inserter) = &mut self.dummy_response_inserter {
-                        dummy_response_inserter.process_responses(&mut messages);
-                    }
+                    self.dummy_response_inserter
+                        .process_responses(&mut messages);
                     Ok(messages)
                 }
                 Err(TryRecvError::Disconnected) => Err(self.set_get_error()),
@@ -179,7 +172,7 @@ fn spawn_read_write_tasks<
     in_tx: mpsc::Sender<Messages>,
     out_rx: UnboundedReceiver<Messages>,
     out_tx: UnboundedSender<Messages>,
-    force_run_chain: Option<Arc<Notify>>,
+    force_run_chain: Arc<Notify>,
     connection_closed_tx: mpsc::Sender<ConnectionError>,
 ) {
     let (decoder, encoder) = codec.build();
@@ -243,7 +236,7 @@ async fn reader_task<C: CodecBuilder + 'static, R: AsyncRead + Unpin + Send + 's
     mut reader: FramedRead<R, <C as CodecBuilder>::Decoder>,
     in_tx: mpsc::Sender<Messages>,
     out_tx: UnboundedSender<Messages>,
-    force_run_chain: Option<Arc<Notify>>,
+    force_run_chain: Arc<Notify>,
 ) -> Result<(), ConnectionError> {
     loop {
         tokio::select! {
@@ -260,9 +253,8 @@ async fn reader_task<C: CodecBuilder + 'static, R: AsyncRead + Unpin + Send + 's
                                 // main task has shutdown, this task is no longer needed
                                 return Ok(());
                             }
-                            if let Some(force_run_chain) = force_run_chain.as_ref() {
-                                force_run_chain.notify_one();
-                            }
+
+                            force_run_chain.notify_one();
                         }
                         Err(CodecReadError::RespondAndThenCloseConnection(messages)) => {
                             if let Err(err) = out_tx.send(messages) {

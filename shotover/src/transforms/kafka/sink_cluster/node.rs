@@ -1,30 +1,34 @@
 use crate::codec::{kafka::KafkaCodecBuilder, CodecBuilder, Direction};
+use crate::connection::SinkConnection;
 use crate::message::Message;
-use crate::tcp;
 use crate::tls::TlsConnector;
-use crate::transforms::util::cluster_connection_pool::{spawn_read_write_tasks, Connection};
-use crate::transforms::util::Request;
 use anyhow::{anyhow, Result};
 use kafka_protocol::messages::BrokerId;
 use kafka_protocol::protocol::StrBytes;
+use std::sync::Arc;
 use std::time::Duration;
-use tokio::io::split;
-use tokio::sync::oneshot;
+use tokio::sync::Notify;
 
 pub struct ConnectionFactory {
     tls: Option<TlsConnector>,
     connect_timeout: Duration,
     handshake_message: Option<Message>,
     auth_message: Option<Message>,
+    force_run_chain: Arc<Notify>,
 }
 
 impl ConnectionFactory {
-    pub fn new(tls: Option<TlsConnector>, connect_timeout: Duration) -> Self {
+    pub fn new(
+        tls: Option<TlsConnector>,
+        connect_timeout: Duration,
+        force_run_chain: Arc<Notify>,
+    ) -> Self {
         ConnectionFactory {
             tls,
             connect_timeout,
             handshake_message: None,
             auth_message: None,
+            force_run_chain,
         }
     }
 
@@ -36,46 +40,29 @@ impl ConnectionFactory {
         self.auth_message = Some(message);
     }
 
-    pub async fn create_connection(&self, kafka_address: &KafkaAddress) -> Result<Connection> {
+    pub async fn create_connection(&self, kafka_address: &KafkaAddress) -> Result<SinkConnection> {
         let codec = KafkaCodecBuilder::new(Direction::Sink, "KafkaSinkCluster".to_owned());
-
         let address = (kafka_address.host.to_string(), kafka_address.port as u16);
-        if let Some(tls) = self.tls.as_ref() {
-            let tls_stream = tls.connect(self.connect_timeout, address).await?;
-            let (rx, tx) = split(tls_stream);
-            let connection = spawn_read_write_tasks(&codec, rx, tx);
-            Ok(connection)
-        } else {
-            let tcp_stream = tcp::tcp_stream(self.connect_timeout, address).await?;
-            let (rx, tx) = tcp_stream.into_split();
-            let connection = spawn_read_write_tasks(&codec, rx, tx);
+        let mut connection = SinkConnection::new(
+            address,
+            codec,
+            &self.tls,
+            self.connect_timeout,
+            self.force_run_chain.clone(),
+        )
+        .await?;
 
-            if let Some(message) = self.auth_message.as_ref() {
-                let handshake_msg = self.handshake_message.as_ref().unwrap();
+        if let Some(auth_message) = self.auth_message.as_ref() {
+            let handshake_msg = self.handshake_message.as_ref().unwrap();
 
-                let (tx, rx) = oneshot::channel();
-                connection
-                    .send(Request {
-                        message: handshake_msg.clone(),
-                        return_chan: Some(tx),
-                    })
-                    .map_err(|_| anyhow!("Failed to send"))?;
-
-                let _response = rx.await.map_err(|_| anyhow!("Failed to receive"))?;
-
-                let (tx, rx) = oneshot::channel();
-                connection
-                    .send(Request {
-                        message: message.clone(),
-                        return_chan: Some(tx),
-                    })
-                    .map_err(|_| anyhow!("Failed to send"))?;
-
-                let _response = rx.await.map_err(|_| anyhow!("Failed to receive"))?;
+            connection.send(vec![handshake_msg.clone(), auth_message.clone()])?;
+            let mut received_count = 0;
+            while received_count < 2 {
+                received_count += connection.recv().await?.len();
             }
-
-            Ok(connection)
         }
+
+        Ok(connection)
     }
 }
 
@@ -108,12 +95,22 @@ impl KafkaAddress {
     }
 }
 
-#[derive(Clone, Debug)]
 pub struct KafkaNode {
     pub broker_id: BrokerId,
     pub rack: Option<StrBytes>,
     pub kafka_address: KafkaAddress,
-    connection: Option<Connection>,
+    connection: Option<SinkConnection>,
+}
+
+impl Clone for KafkaNode {
+    fn clone(&self) -> Self {
+        Self {
+            broker_id: self.broker_id,
+            rack: self.rack.clone(),
+            kafka_address: self.kafka_address.clone(),
+            connection: None,
+        }
+    }
 }
 
 impl KafkaNode {
@@ -129,7 +126,7 @@ impl KafkaNode {
     pub async fn get_connection(
         &mut self,
         connection_factory: &ConnectionFactory,
-    ) -> Result<&Connection> {
+    ) -> Result<&mut SinkConnection> {
         if self.connection.is_none() {
             self.connection = Some(
                 connection_factory
@@ -137,6 +134,10 @@ impl KafkaNode {
                     .await?,
             );
         }
-        Ok(self.connection.as_ref().unwrap())
+        Ok(self.connection.as_mut().unwrap())
+    }
+
+    pub fn get_connection_if_open(&mut self) -> Option<&mut SinkConnection> {
+        self.connection.as_mut()
     }
 }

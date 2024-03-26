@@ -1,5 +1,5 @@
 use crate::codec::{CodecBuilder, Direction};
-use crate::connection::Connection;
+use crate::connection::SinkConnection;
 use crate::frame::{Frame, RedisFrame};
 use crate::message::Messages;
 use crate::tls::{TlsConnector, TlsConnectorConfig};
@@ -94,7 +94,7 @@ impl TransformBuilder for RedisSinkSingleBuilder {
 pub struct RedisSinkSingle {
     address: String,
     tls: Option<TlsConnector>,
-    connection: Option<Connection>,
+    connection: Option<SinkConnection>,
     failed_requests: Counter,
     connect_timeout: Duration,
     force_run_chain: Arc<Notify>,
@@ -110,13 +110,12 @@ impl Transform for RedisSinkSingle {
         if self.connection.is_none() {
             let codec = RedisCodecBuilder::new(Direction::Sink, "RedisSinkSingle".to_owned());
             self.connection = Some(
-                Connection::new(
+                SinkConnection::new(
                     &self.address,
                     codec,
                     &self.tls,
                     self.connect_timeout,
-                    Some(self.force_run_chain.clone()),
-                    Direction::Sink,
+                    self.force_run_chain.clone(),
                 )
                 .await?,
             );

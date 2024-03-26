@@ -1,5 +1,5 @@
 use crate::codec::{kafka::KafkaCodecBuilder, CodecBuilder, Direction};
-use crate::connection::Connection;
+use crate::connection::SinkConnection;
 use crate::frame::kafka::{KafkaFrame, RequestBody, ResponseBody};
 use crate::frame::Frame;
 use crate::message::Messages;
@@ -96,7 +96,7 @@ impl TransformBuilder for KafkaSinkSingleBuilder {
 
 pub struct KafkaSinkSingle {
     address_port: u16,
-    connection: Option<Connection>,
+    connection: Option<SinkConnection>,
     connect_timeout: Duration,
     read_timeout: Option<Duration>,
     tls: Option<TlsConnector>,
@@ -114,13 +114,12 @@ impl Transform for KafkaSinkSingle {
             let codec = KafkaCodecBuilder::new(Direction::Sink, "KafkaSinkSingle".to_owned());
             let address = (requests_wrapper.local_addr.ip(), self.address_port);
             self.connection = Some(
-                Connection::new(
+                SinkConnection::new(
                     address,
                     codec,
                     &self.tls,
                     self.connect_timeout,
-                    Some(self.force_run_chain.clone()),
-                    Direction::Sink,
+                    self.force_run_chain.clone(),
                 )
                 .await?,
             );
