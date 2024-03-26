@@ -120,6 +120,7 @@ impl Transform for KafkaSinkSingle {
                     &self.tls,
                     self.connect_timeout,
                     self.force_run_chain.clone(),
+                    self.read_timeout,
                 )
                 .await?,
             );

@@ -156,7 +156,6 @@ impl TransformBuilder for KafkaSinkClusterBuilder {
         Box::new(KafkaSinkCluster {
             first_contact_points: self.first_contact_points.clone(),
             shotover_nodes: self.shotover_nodes.clone(),
-            read_timeout: self.read_timeout,
             nodes: vec![],
             nodes_shared: self.nodes_shared.clone(),
             controller_broker: self.controller_broker.clone(),
@@ -168,6 +167,7 @@ impl TransformBuilder for KafkaSinkClusterBuilder {
             connection_factory: ConnectionFactory::new(
                 self.tls.clone(),
                 self.connect_timeout,
+                self.read_timeout,
                 transform_context.force_run_chain,
             ),
             first_contact_node: None,
@@ -240,7 +240,6 @@ impl SaslStatus {
 pub struct KafkaSinkCluster {
     first_contact_points: Vec<String>,
     shotover_nodes: Vec<ShotoverNode>,
-    read_timeout: Option<Duration>,
     nodes: Vec<KafkaNode>,
     nodes_shared: Arc<RwLock<Vec<KafkaNode>>>,
     controller_broker: Arc<AtomicBrokerId>,
@@ -306,7 +305,6 @@ impl Transform for KafkaSinkCluster {
                 .collect();
             self.nodes = nodes?;
         }
-
 
         let mut responses = if requests_wrapper.requests.is_empty() {
             // there are no requests, so no point sending any, but we should check for any responses without awaiting

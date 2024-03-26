@@ -12,6 +12,7 @@ use tokio::sync::Notify;
 pub struct ConnectionFactory {
     tls: Option<TlsConnector>,
     connect_timeout: Duration,
+    read_timeout: Option<Duration>,
     handshake_message: Option<Message>,
     auth_message: Option<Message>,
     force_run_chain: Arc<Notify>,
@@ -21,6 +22,7 @@ impl ConnectionFactory {
     pub fn new(
         tls: Option<TlsConnector>,
         connect_timeout: Duration,
+        read_timeout: Option<Duration>,
         force_run_chain: Arc<Notify>,
     ) -> Self {
         ConnectionFactory {
@@ -29,6 +31,7 @@ impl ConnectionFactory {
             handshake_message: None,
             auth_message: None,
             force_run_chain,
+            read_timeout,
         }
     }
 
@@ -49,6 +52,7 @@ impl ConnectionFactory {
             &self.tls,
             self.connect_timeout,
             self.force_run_chain.clone(),
+            self.read_timeout,
         )
         .await?;
 
