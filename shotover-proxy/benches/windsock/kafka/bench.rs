@@ -98,7 +98,6 @@ impl KafkaBench {
                     broker_id: 0,
                 }],
                 tls: None,
-                sasl_enabled: Some(false),
             }),
         });
         common::generate_topology(SourceConfig::Kafka(shotover::sources::kafka::KafkaConfig {

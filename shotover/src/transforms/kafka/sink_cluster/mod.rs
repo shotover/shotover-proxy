@@ -49,7 +49,6 @@ pub struct KafkaSinkClusterConfig {
     pub connect_timeout_ms: u64,
     pub read_timeout: Option<u64>,
     pub tls: Option<TlsConnectorConfig>,
-    pub sasl_enabled: Option<bool>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -97,7 +96,6 @@ impl TransformConfig for KafkaSinkClusterConfig {
             self.connect_timeout_ms,
             self.read_timeout,
             tls,
-            self.sasl_enabled.unwrap_or(false),
         )))
     }
 }
@@ -114,7 +112,6 @@ pub struct KafkaSinkClusterBuilder {
     topic_by_id: Arc<DashMap<Uuid, Topic>>,
     nodes_shared: Arc<RwLock<Vec<KafkaNode>>>,
     tls: Option<TlsConnector>,
-    sasl_enabled: bool,
 }
 
 impl KafkaSinkClusterBuilder {
@@ -125,7 +122,6 @@ impl KafkaSinkClusterBuilder {
         connect_timeout_ms: u64,
         timeout: Option<u64>,
         tls: Option<TlsConnector>,
-        sasl_enabled: bool,
     ) -> KafkaSinkClusterBuilder {
         let receive_timeout = timeout.map(Duration::from_secs);
 
@@ -146,7 +142,6 @@ impl KafkaSinkClusterBuilder {
             topic_by_id: Arc::new(DashMap::new()),
             nodes_shared: Arc::new(RwLock::new(vec![])),
             tls,
-            sasl_enabled,
         }
     }
 }
@@ -163,7 +158,7 @@ impl TransformBuilder for KafkaSinkClusterBuilder {
             topic_by_name: self.topic_by_name.clone(),
             topic_by_id: self.topic_by_id.clone(),
             rng: SmallRng::from_rng(rand::thread_rng()).unwrap(),
-            sasl_status: SaslStatus::new(self.sasl_enabled),
+            auth_complete: false,
             connection_factory: ConnectionFactory::new(
                 self.tls.clone(),
                 self.connect_timeout,
@@ -210,33 +205,6 @@ impl AtomicBrokerId {
     }
 }
 
-#[derive(Debug)]
-struct SaslStatus {
-    enabled: bool,
-    handshake_complete: bool,
-}
-
-impl SaslStatus {
-    fn new(enabled: bool) -> Self {
-        Self {
-            enabled,
-            handshake_complete: false,
-        }
-    }
-
-    fn set_handshake_complete(&mut self) {
-        self.handshake_complete = true;
-    }
-
-    fn is_handshake_complete(&self) -> bool {
-        if self.enabled {
-            self.handshake_complete
-        } else {
-            true
-        }
-    }
-}
-
 pub struct KafkaSinkCluster {
     first_contact_points: Vec<String>,
     shotover_nodes: Vec<ShotoverNode>,
@@ -247,7 +215,7 @@ pub struct KafkaSinkCluster {
     topic_by_name: Arc<DashMap<TopicName, Topic>>,
     topic_by_id: Arc<DashMap<Uuid, Topic>>,
     rng: SmallRng,
-    sasl_status: SaslStatus,
+    auth_complete: bool,
     connection_factory: ConnectionFactory,
     first_contact_node: Option<KafkaAddress>,
     control_connection: Option<SinkConnection>,
@@ -381,6 +349,63 @@ impl KafkaSinkCluster {
         }
     }
 
+    async fn send_requests(
+        &mut self,
+        mut requests: Vec<Message>,
+    ) -> Result<Vec<oneshot::Receiver<Response>>> {
+        let mut results = Vec::with_capacity(requests.len());
+
+        if !self.auth_complete {
+            let mut handshake_request_count = 0;
+            for request in &mut requests {
+                match request.frame() {
+                    Some(Frame::Kafka(KafkaFrame::Request {
+                        body: RequestBody::SaslHandshake(_),
+                        ..
+                    })) => {
+                        self.connection_factory
+                            .add_handshake_message(request.clone());
+                        handshake_request_count += 1;
+                    }
+                    Some(Frame::Kafka(KafkaFrame::Request {
+                        body: RequestBody::SaslAuthenticate(_),
+                        ..
+                    })) => {
+                        self.connection_factory.add_auth_message(request.clone());
+                        handshake_request_count += 1;
+                    }
+                    Some(Frame::Kafka(KafkaFrame::Request {
+                        body: RequestBody::ApiVersions(_),
+                        ..
+                    })) => {
+                        handshake_request_count += 1;
+                    }
+                    _ => {
+                        // The client is no longer performing authentication
+                        self.auth_complete = true;
+                        break;
+                    }
+                }
+            }
+            // route all handshake messages
+            for _ in 0..handshake_request_count {
+                let request = requests.remove(0);
+                let (tx, rx) = oneshot::channel();
+                self.route_to_first_contact_node(request.clone(), Some(tx))
+                    .await?;
+                results.push(rx);
+            }
+
+            if requests.is_empty() {
+                // all messages received in this batch are handshake messages,
+                // so dont continue with regular message handling
+                return Ok(results);
+            } else {
+                // the later messages in this batch are not handshake messages,
+                // so continue onto the regular message handling
+            }
+        }
+
     async fn route_requests(&mut self, mut requests: Vec<Message>) -> Result<()> {
         let mut topics = vec![];
         let mut groups = vec![];
@@ -435,9 +460,7 @@ impl KafkaSinkCluster {
         }
 
         // request and process metadata if we are missing topics or the controller broker id
-        if (!topics.is_empty() || self.controller_broker.get().is_none())
-            && self.sasl_status.is_handshake_complete()
-        {
+        if !topics.is_empty() || self.controller_broker.get().is_none() {
             let mut metadata = self.get_metadata_of_topics(topics).await?;
             match metadata.frame() {
                 Some(Frame::Kafka(KafkaFrame::Response {
@@ -616,30 +639,6 @@ impl KafkaSinkCluster {
                     body: RequestBody::CreateTopics(_),
                     ..
                 })) => self.route_to_controller(message),
-
-                Some(Frame::Kafka(KafkaFrame::Request {
-                    body: RequestBody::ApiVersions(_),
-                    ..
-                })) => self.route_to_first_contact_node(message.clone()),
-
-                Some(Frame::Kafka(KafkaFrame::Request {
-                    body: RequestBody::SaslHandshake(_),
-                    ..
-                })) => {
-                    self.route_to_first_contact_node(message.clone());
-                    self.connection_factory
-                        .add_handshake_message(message.clone());
-                }
-
-                Some(Frame::Kafka(KafkaFrame::Request {
-                    body: RequestBody::SaslAuthenticate(_),
-                    ..
-                })) => {
-                    self.route_to_first_contact_node(message.clone());
-                    self.connection_factory.add_auth_message(message.clone());
-                    self.sasl_status.set_handshake_complete();
-                }
-
                 // route to random node
                 _ => {
                     let destination = self.nodes.choose(&mut self.rng).unwrap().broker_id;

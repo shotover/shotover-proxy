@@ -309,9 +309,6 @@ This is achieved by rewriting the FindCoordinator, Metadata and DescribeCluster 
     # When a timeout occurs the connection to the client is immediately closed.
     # read_timeout: 60
 
-    # When this field is enabled it allows the use of SASL authentication. If you intend to use SASL this field must be enabled, it is false by default.
-    sasl_enabled: false
-
     # When this field is provided TLS is used when connecting to the remote address.
     # Removing this field will disable TLS.
     #tls:
