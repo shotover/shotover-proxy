@@ -1,5 +1,5 @@
 use crate::codec::{cassandra::CassandraCodecBuilder, CodecBuilder, Direction};
-use crate::connection::Connection;
+use crate::connection::SinkConnection;
 use crate::frame::cassandra::CassandraMetadata;
 use crate::message::{Messages, Metadata};
 use crate::tls::{TlsConnector, TlsConnectorConfig};
@@ -111,7 +111,7 @@ impl TransformBuilder for CassandraSinkSingleBuilder {
 pub struct CassandraSinkSingle {
     version: Option<Version>,
     address: String,
-    connection: Option<Connection>,
+    connection: Option<SinkConnection>,
     failed_requests: Counter,
     tls: Option<TlsConnector>,
     connect_timeout: Duration,
@@ -144,13 +144,12 @@ impl CassandraSinkSingle {
         if self.connection.is_none() {
             trace!("creating outbound connection {:?}", self.address);
             self.connection = Some(
-                Connection::new(
+                SinkConnection::new(
                     self.address.clone(),
                     self.codec_builder.clone(),
                     &self.tls,
                     self.connect_timeout,
-                    Some(self.force_run_chain.clone()),
-                    Direction::Sink,
+                    self.force_run_chain.clone(),
                 )
                 .await?,
             );
