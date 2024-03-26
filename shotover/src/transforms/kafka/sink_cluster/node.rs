@@ -1,5 +1,5 @@
 use crate::codec::{kafka::KafkaCodecBuilder, CodecBuilder, Direction};
-use crate::connection::Connection;
+use crate::connection::SinkConnection;
 use crate::message::Message;
 use crate::tls::TlsConnector;
 use anyhow::{anyhow, Result};
@@ -40,16 +40,15 @@ impl ConnectionFactory {
         self.auth_message = Some(message);
     }
 
-    pub async fn create_connection(&self, kafka_address: &KafkaAddress) -> Result<Connection> {
+    pub async fn create_connection(&self, kafka_address: &KafkaAddress) -> Result<SinkConnection> {
         let codec = KafkaCodecBuilder::new(Direction::Sink, "KafkaSinkCluster".to_owned());
         let address = (kafka_address.host.to_string(), kafka_address.port as u16);
-        let mut connection = Connection::new(
+        let mut connection = SinkConnection::new(
             address,
             codec,
             &self.tls,
             self.connect_timeout,
-            Some(self.force_run_chain.clone()),
-            Direction::Sink,
+            self.force_run_chain.clone(),
         )
         .await?;
 
@@ -100,7 +99,7 @@ pub struct KafkaNode {
     pub broker_id: BrokerId,
     pub rack: Option<StrBytes>,
     pub kafka_address: KafkaAddress,
-    connection: Option<Connection>,
+    connection: Option<SinkConnection>,
 }
 
 impl Clone for KafkaNode {
@@ -127,7 +126,7 @@ impl KafkaNode {
     pub async fn get_connection(
         &mut self,
         connection_factory: &ConnectionFactory,
-    ) -> Result<&mut Connection> {
+    ) -> Result<&mut SinkConnection> {
         if self.connection.is_none() {
             self.connection = Some(
                 connection_factory
@@ -138,7 +137,7 @@ impl KafkaNode {
         Ok(self.connection.as_mut().unwrap())
     }
 
-    pub fn get_connection_if_open(&mut self) -> Option<&mut Connection> {
+    pub fn get_connection_if_open(&mut self) -> Option<&mut SinkConnection> {
         self.connection.as_mut()
     }
 }

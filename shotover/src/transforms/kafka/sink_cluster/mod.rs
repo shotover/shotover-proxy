@@ -1,4 +1,4 @@
-use crate::connection::Connection;
+use crate::connection::SinkConnection;
 use crate::frame::kafka::{KafkaFrame, RequestBody, ResponseBody};
 use crate::frame::Frame;
 use crate::message::{Message, MessageIdMap, Messages};
@@ -251,7 +251,7 @@ pub struct KafkaSinkCluster {
     sasl_status: SaslStatus,
     connection_factory: ConnectionFactory,
     first_contact_node: Option<KafkaAddress>,
-    control_connection: Option<Connection>,
+    control_connection: Option<SinkConnection>,
     // its not clear from the docs if this cache needs to be accessed cross connection:
     // https://cwiki.apache.org/confluence/display/KAFKA/KIP-227%3A+Introduce+Incremental+FetchRequests+to+Increase+Partition+Scalability
     fetch_session_id_to_broker: HashMap<i32, BrokerId>,
