@@ -187,23 +187,17 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                 self.available_connections_gauge
                     .set(self.limit_connections.available_permits() as f64);
 
-                let (pushed_messages_tx, pushed_messages_rx) =
-                    tokio::sync::mpsc::unbounded_channel::<Messages>();
-
                 let force_run_chain = Arc::new(Notify::new());
                 let context = TransformContextBuilder {
                     force_run_chain: force_run_chain.clone(),
                 };
 
                 let handler = Handler {
-                    chain: self
-                        .chain_builder
-                        .build_with_pushed_messages(pushed_messages_tx, context),
+                    chain: self.chain_builder.build(context),
                     codec: self.codec.clone(),
                     shutdown: Shutdown::new(self.trigger_shutdown_rx.clone()),
                     tls: self.tls.clone(),
                     timeout: self.timeout,
-                    pushed_messages_rx,
                     _permit: permit,
                 };
 
@@ -290,7 +284,6 @@ pub struct Handler<C: CodecBuilder> {
     shutdown: Shutdown,
     /// Timeout in seconds after which to kill an idle connection. No timeout means connections will never be timed out.
     timeout: Option<Duration>,
-    pushed_messages_rx: UnboundedReceiver<Messages>,
     _permit: OwnedSemaphorePermit,
 }
 
@@ -686,17 +679,13 @@ impl<C: CodecBuilder + 'static> Handler<C> {
                     // This will result in the task terminating.
                     return Ok(());
                 }
-                Some(responses) = self.pushed_messages_rx.recv() => {
-                    debug!("Received unrequested responses from destination {:?}", responses);
-                    self.process_backward(client_details, local_addr, responses).await?
-                }
                 () = force_run_chain.notified() => {
                     let mut requests = vec!();
                     while let Ok(x) = in_rx.try_recv() {
                         requests.extend(x);
                     }
                     debug!("A transform in the chain requested that a chain run occur, requests {:?}", requests);
-                    self.process_forward(client_details, local_addr, &out_tx, requests).await?
+                    self.process(client_details, local_addr, &out_tx, requests).await?
                 },
                 requests = Self::receive_with_timeout(self.timeout, &mut in_rx, client_details) => {
                     match requests {
@@ -705,7 +694,7 @@ impl<C: CodecBuilder + 'static> Handler<C> {
                                 requests.extend(x);
                             }
                             debug!("Received requests from client {:?}", requests);
-                            self.process_forward(client_details, local_addr, &out_tx, requests).await?
+                            self.process(client_details, local_addr, &out_tx, requests).await?
                         }
                         None => {
                             // Either we timed out the connection or the client disconnected, so terminate this connection
@@ -728,7 +717,7 @@ impl<C: CodecBuilder + 'static> Handler<C> {
         Ok(())
     }
 
-    async fn process_forward(
+    async fn process(
         &mut self,
         client_details: &str,
         local_addr: SocketAddr,
@@ -769,20 +758,6 @@ impl<C: CodecBuilder + 'static> Handler<C> {
                 Err(err)
             }
         }
-    }
-
-    async fn process_backward(
-        &mut self,
-        client_details: &str,
-        local_addr: SocketAddr,
-        responses: Messages,
-    ) -> Result<Messages> {
-        let wrapper =
-            Wrapper::new_with_client_details(responses, client_details.to_owned(), local_addr);
-
-        self.chain.process_request_rev(wrapper).await.context(
-            "Chain failed to receive pushed messages/events, the connection will now be closed.",
-        )
     }
 }
 

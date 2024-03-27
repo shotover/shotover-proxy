@@ -7,7 +7,6 @@ This interface will serve Prometheus metrics from `/metrics`. The following metr
 | `shotover_transform_total_count`           | `transform` | [counter](#counter)     | Counts the amount of times the `transform` is used                        |
 | `shotover_transform_failures_count`        | `transform` | [counter](#counter)     | Counts the amount of times the `transform` fails                          |
 | `shotover_transform_latency_seconds`       | `transform` | [histogram](#histogram) | The latency for a message batch to go through the `transform`             |
-| `shotover_transform_pushed_latency_seconds`| `transform` | [histogram](#histogram) | The latency for a pushed message from the DB to go through the `transform`|
 | `shotover_chain_total_count`               | `chain`     | [counter](#counter)     | Counts the amount of times `chain` is used                                |
 | `shotover_chain_failures_count`            | `chain`     | [counter](#counter)     | Counts the amount of times `chain` fails                                  |
 | `shotover_chain_latency_seconds`           | `chain`     | [histogram](#histogram) | The latency for running `chain`                                           |

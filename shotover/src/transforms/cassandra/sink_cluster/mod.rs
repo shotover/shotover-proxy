@@ -527,6 +527,25 @@ impl CassandraSinkCluster {
             }
         }
 
+        // remove topology and status change messages since they contain references to real cluster IPs
+        // TODO: we should be rewriting them not just deleting them.
+        responses.retain_mut(|message| {
+            if let Some(Frame::Cassandra(CassandraFrame {
+                operation: CassandraOperation::Event(event),
+                ..
+            })) = message.frame()
+            {
+                match event {
+                    ServerEvent::TopologyChange(_) => false,
+                    ServerEvent::StatusChange(_) => false,
+                    ServerEvent::SchemaChange(_) => true,
+                    _ => unreachable!(),
+                }
+            } else {
+                true
+            }
+        });
+
         Ok(responses)
     }
 
@@ -720,29 +739,6 @@ impl Transform for CassandraSinkCluster {
 
     async fn transform<'a>(&'a mut self, requests_wrapper: Wrapper<'a>) -> Result<Messages> {
         self.send_message(requests_wrapper.requests).await
-    }
-
-    async fn transform_pushed<'a>(
-        &'a mut self,
-        mut requests_wrapper: Wrapper<'a>,
-    ) -> Result<Messages> {
-        requests_wrapper.requests.retain_mut(|message| {
-            if let Some(Frame::Cassandra(CassandraFrame {
-                operation: CassandraOperation::Event(event),
-                ..
-            })) = message.frame()
-            {
-                match event {
-                    ServerEvent::TopologyChange(_) => false,
-                    ServerEvent::StatusChange(_) => false,
-                    ServerEvent::SchemaChange(_) => true,
-                    _ => unreachable!(),
-                }
-            } else {
-                true
-            }
-        });
-        requests_wrapper.call_next_transform_pushed().await
     }
 
     fn set_pushed_messages_tx(&mut self, pushed_messages_tx: mpsc::UnboundedSender<Messages>) {
