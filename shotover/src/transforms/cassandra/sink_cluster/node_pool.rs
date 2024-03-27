@@ -2,7 +2,7 @@ use super::node::{CassandraNode, ConnectionFactory};
 use super::routing_key::calculate_routing_key;
 use super::token_ring::TokenRing;
 use super::KeyspaceChanRx;
-use crate::transforms::cassandra::connection::CassandraConnection;
+use crate::connection::SinkConnection;
 use anyhow::{anyhow, Context, Error, Result};
 use cassandra_protocol::frame::message_execute::BodyReqExecuteOwned;
 use cassandra_protocol::types::CBytesShort;
@@ -107,14 +107,6 @@ impl NodePool {
         );
     }
 
-    pub fn report_issue_with_node(&mut self, address: SocketAddr) {
-        for node in &mut self.nodes {
-            if node.address == address {
-                node.report_issue();
-            }
-        }
-    }
-
     pub fn update_keyspaces(&mut self, keyspaces_rx: &mut KeyspaceChanRx) {
         let updated_keyspaces = keyspaces_rx.borrow_and_update().clone();
         self.keyspace_metadata = updated_keyspaces;
@@ -149,7 +141,7 @@ impl NodePool {
         rack: &str,
         rng: &mut SmallRng,
         connection_factory: &ConnectionFactory,
-    ) -> Result<&CassandraConnection> {
+    ) -> Result<&SinkConnection> {
         self.get_random_node_in_dc_rack(rack, rng, connection_factory)
             .await
             .map(|x| {
@@ -164,7 +156,7 @@ impl NodePool {
         rack: &str,
         rng: &mut SmallRng,
         connection_factory: &ConnectionFactory,
-    ) -> Result<(CassandraConnection, SocketAddr)> {
+    ) -> Result<(SinkConnection, SocketAddr)> {
         self.get_random_node_in_dc_rack(rack, rng, connection_factory)
             .await
             .map(|x| {
@@ -257,7 +249,7 @@ impl NodePool {
         rack: &str,
         rng: &mut SmallRng,
         connection_factory: &ConnectionFactory,
-    ) -> Result<&CassandraConnection, GetReplicaErr> {
+    ) -> Result<&SinkConnection, GetReplicaErr> {
         let nodes = self.get_replica_node_in_dc(execute, rack, rng).await?;
 
         get_accessible_node(connection_factory, nodes)
@@ -321,7 +313,7 @@ pub async fn get_accessible_node<'a>(
 pub async fn get_accessible_owned_connection<'a>(
     connection_factory: &ConnectionFactory,
     nodes: Vec<&'a mut CassandraNode>,
-) -> Result<(CassandraConnection, SocketAddr)> {
+) -> Result<(SinkConnection, SocketAddr)> {
     get_accessible_node(connection_factory, nodes)
         .await
         .map(|x| {

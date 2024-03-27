@@ -1,13 +1,13 @@
 use super::node::{CassandraNode, ConnectionFactory};
 use super::node_pool::KeyspaceMetadata;
 use super::KeyspaceChanTx;
+use crate::connection::SinkConnection;
 use crate::frame::{
     cassandra::{parse_statement_single, Tracing},
     value::GenericValue,
     CassandraFrame, CassandraOperation, CassandraResult, Frame,
 };
 use crate::message::Message;
-use crate::transforms::cassandra::connection::CassandraConnection;
 use anyhow::{anyhow, Result};
 use cassandra_protocol::events::{ServerEvent, SimpleServerEvent};
 use cassandra_protocol::frame::events::{StatusChangeType, TopologyChangeType};
@@ -16,8 +16,9 @@ use cassandra_protocol::frame::Version;
 use cassandra_protocol::token::Murmur3Token;
 use std::collections::HashMap;
 use std::net::SocketAddr;
+use std::sync::Arc;
 use tokio::sync::mpsc::unbounded_channel;
-use tokio::sync::{mpsc, watch};
+use tokio::sync::{mpsc, watch, Notify};
 
 #[derive(Debug)]
 pub struct TaskConnectionInfo {
@@ -65,29 +66,30 @@ async fn topology_task_process(
     connection_info: &mut TaskConnectionInfo,
     data_center: &str,
 ) -> Result<()> {
-    let (pushed_messages_tx, mut pushed_messages_rx) = unbounded_channel();
+    let force_run_chain = Arc::new(Notify::new());
     connection_info
         .connection_factory
-        .set_pushed_messages_tx(pushed_messages_tx);
+        .set_force_run_chain(force_run_chain);
 
-    let connection = connection_info
+    let mut connection = connection_info
         .connection_factory
         .new_connection(connection_info.address)
         .await?;
 
     let version = connection_info.connection_factory.get_version()?;
 
-    let mut nodes = fetch_current_nodes(&connection, connection_info, data_center, version).await?;
+    let mut nodes =
+        fetch_current_nodes(&mut connection, connection_info, data_center, version).await?;
     if let Err(watch::error::SendError(_)) = nodes_tx.send(nodes.clone()) {
         return Ok(());
     }
 
-    let mut keyspaces = system_keyspaces::query(&connection, data_center, version).await?;
+    let mut keyspaces = system_keyspaces::query(&mut connection, data_center, version).await?;
     if let Err(watch::error::SendError(_)) = keyspaces_tx.send(keyspaces.clone()) {
         return Ok(());
     }
 
-    register_for_topology_and_status_events(&connection, version).await?;
+    register_for_topology_and_status_events(&mut connection, version).await?;
 
     tracing::info!(
         "Topology task control connection finalized against node at: {:?}",
@@ -98,11 +100,11 @@ async fn topology_task_process(
         // Wait for events to come in from the cassandra node.
         // If all the nodes receivers are closed then immediately stop listening and shutdown the task
         let pushed_messages = tokio::select! {
-            pushed_messages = pushed_messages_rx.recv() => pushed_messages,
+            responses = connection.recv() => responses,
             _ = nodes_tx.closed() => return Ok(())
         };
         match pushed_messages {
-            Some(messages) => {
+            Ok(messages) => {
                 for mut message in messages {
                     if let Some(Frame::Cassandra(CassandraFrame {
                         operation: CassandraOperation::Event(event),
@@ -113,7 +115,7 @@ async fn topology_task_process(
                             ServerEvent::TopologyChange(topology) => match topology.change_type {
                                 TopologyChangeType::NewNode => {
                                     let mut new_nodes = fetch_current_nodes(
-                                        &connection,
+                                        &mut connection,
                                         connection_info,
                                         data_center,
                                         version,
@@ -168,7 +170,7 @@ async fn topology_task_process(
                             }
                             ServerEvent::SchemaChange(_change) => {
                                 keyspaces =
-                                    system_keyspaces::query(&connection, data_center, version)
+                                    system_keyspaces::query(&mut connection, data_center, version)
                                         .await?;
                                 if let Err(watch::error::SendError(_)) =
                                     keyspaces_tx.send(keyspaces.clone())
@@ -181,17 +183,18 @@ async fn topology_task_process(
                     }
                 }
             }
-            None => return Err(anyhow!("topology control connection was closed")),
+            Err(err) => return Err(anyhow!(err).context("topology control connection was closed")),
         }
     }
 }
 
 async fn register_for_topology_and_status_events(
-    connection: &CassandraConnection,
+    connection: &mut SinkConnection,
     version: Version,
 ) -> Result<()> {
-    let mut response = connection
-        .send(Message::from_frame(Frame::Cassandra(CassandraFrame {
+    let mut response = send_recv(
+        connection,
+        Message::from_frame(Frame::Cassandra(CassandraFrame {
             version,
             stream_id: 0,
             tracing: Tracing::Request(false),
@@ -203,9 +206,9 @@ async fn register_for_topology_and_status_events(
                     SimpleServerEvent::SchemaChange,
                 ],
             }),
-        })))
-        .unwrap()
-        .await??;
+        })),
+    )
+    .await?;
 
     if let Some(Frame::Cassandra(CassandraFrame { operation, .. })) = response.frame() {
         match operation {
@@ -218,18 +221,17 @@ async fn register_for_topology_and_status_events(
 }
 
 async fn fetch_current_nodes(
-    connection: &CassandraConnection,
+    connection: &mut SinkConnection,
     connection_info: &TaskConnectionInfo,
     data_center: &str,
     version: Version,
 ) -> Result<Vec<CassandraNode>> {
-    let (new_nodes, more_nodes) = tokio::join!(
-        system_local::query(connection, data_center, connection_info.address, version),
-        system_peers::query(connection, data_center, version)
-    );
+    // TODO: utilize cassandra out of order messages to send these in the same connection batch.
+    let mut new_nodes =
+        system_local::query(connection, data_center, connection_info.address, version).await?;
+    let more_nodes = system_peers::query(connection, data_center, version).await?;
 
-    let mut new_nodes = new_nodes?;
-    new_nodes.extend(more_nodes?);
+    new_nodes.extend(more_nodes);
 
     Ok(new_nodes)
 }
@@ -241,12 +243,13 @@ mod system_keyspaces {
     use std::str::FromStr;
 
     pub async fn query(
-        connection: &CassandraConnection,
+        connection: &mut SinkConnection,
         data_center: &str,
         version: Version,
     ) -> Result<HashMap<String, KeyspaceMetadata>> {
-        let response = connection
-            .send(Message::from_frame(Frame::Cassandra(CassandraFrame {
+        let response = super::send_recv(
+            connection,
+            Message::from_frame(Frame::Cassandra(CassandraFrame {
                 version,
                 stream_id: 0,
                 tracing: Tracing::Request(false),
@@ -258,8 +261,9 @@ mod system_keyspaces {
 
                     params: Box::default(),
                 },
-            })))?
-            .await??;
+            })),
+        )
+        .await?;
         into_keyspaces(response, data_center)
     }
 
@@ -366,17 +370,23 @@ mod system_keyspaces {
     }
 }
 
+async fn send_recv(connection: &mut SinkConnection, request: Message) -> Result<Message> {
+    connection.send(vec![request])?;
+    Ok(connection.recv().await?.remove(0))
+}
+
 mod system_local {
     use super::*;
 
     pub async fn query(
-        connection: &CassandraConnection,
+        connection: &mut SinkConnection,
         data_center: &str,
         address: SocketAddr,
         version: Version,
     ) -> Result<Vec<CassandraNode>> {
-        let response = connection
-            .send(Message::from_frame(Frame::Cassandra(CassandraFrame {
+        let response = super::send_recv(
+            connection,
+            Message::from_frame(Frame::Cassandra(CassandraFrame {
                 version,
                 stream_id: 1,
                 tracing: Tracing::Request(false),
@@ -387,8 +397,9 @@ mod system_local {
                     )),
                     params: Box::default(),
                 },
-            })))?
-            .await??;
+            })),
+        )
+        .await?;
 
         into_nodes(response, data_center, address)
     }
@@ -456,11 +467,11 @@ mod system_peers {
     use super::*;
 
     pub async fn query(
-        connection: &CassandraConnection,
+        connection: &mut SinkConnection,
         data_center: &str,
         version: Version,
     ) -> Result<Vec<CassandraNode>> {
-        let mut response = connection.send(
+        let mut response = super::send_recv(connection,
             Message::from_frame(Frame::Cassandra(CassandraFrame {
                 version,
                 stream_id: 0,
@@ -473,12 +484,12 @@ mod system_peers {
                 params: Box::default(),
                 },
             }),
-        ),
-        )?.await??;
+        )).await?;
 
         if is_peers_v2_does_not_exist_error(&mut response) {
-            response = connection
-                .send(Message::from_frame(Frame::Cassandra(CassandraFrame {
+            response = super::send_recv(
+                connection,
+                Message::from_frame(Frame::Cassandra(CassandraFrame {
                     version,
                     stream_id: 0,
                     tracing: Tracing::Request(false),
@@ -489,8 +500,9 @@ mod system_peers {
                         )),
                         params: Box::default(),
                     },
-                })))?
-                .await??;
+                })),
+            )
+            .await?;
         }
 
         into_nodes(response, data_center)
