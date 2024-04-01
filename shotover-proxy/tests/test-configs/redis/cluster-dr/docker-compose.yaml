@@ -1,11 +1,9 @@
-version: '3.3'
 services:
   redis-node-0:
     image: &image bitnami/redis-cluster:6.2.12-debian-11-r26
     ports:
       - "2220:6379"
-    environment:
-      &node-environment
+    environment: &node-environment
       - 'REDIS_PASSWORD=shotover'
       - 'REDIS_NODES=redis-node-0 redis-node-1 redis-node-2 redis-node-3 redis-node-4 redis-node-5'
 
@@ -59,8 +57,7 @@ services:
     image: *image
     ports:
       - "2120:6379"
-    environment:
-      &dr-environment
+    environment: &dr-environment
       - 'REDIS_PASSWORD=shotover'
       - 'REDIS_NODES=redis-node-0-dr redis-node-1-dr redis-node-2-dr redis-node-3-dr redis-node-4-dr redis-node-5-dr'
 
