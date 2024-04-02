@@ -1,7 +1,10 @@
 [profile.default]
 fail-fast = false
 slow-timeout = { period = '5m', terminate-after = 2 }
-archive-include = ["debug/jassets", "release/jassets"]
+archive.include = [
+    { path = "debug/jassets", relative-to = "target" },
+    { path = "release/jassets", relative-to = "target" },
+]
 
 # Overwrites profile.default when the filter matches
 [[profile.default.overrides]]
