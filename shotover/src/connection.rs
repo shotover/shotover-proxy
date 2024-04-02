@@ -7,6 +7,7 @@ use crate::tcp;
 use crate::tls::{TlsConnector, ToHostname};
 use futures::{SinkExt, StreamExt};
 use std::io::ErrorKind;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::{split, AsyncRead, AsyncWrite};
@@ -33,6 +34,7 @@ impl SinkConnection {
         tls: &Option<TlsConnector>,
         connect_timeout: Duration,
         force_run_chain: Arc<Notify>,
+        read_timeout: Option<Duration>,
     ) -> anyhow::Result<Self> {
         let destination = tokio::net::lookup_host(&host).await?.next().unwrap();
         let (in_tx, in_rx) = mpsc::channel::<Messages>(10_000);
@@ -51,6 +53,7 @@ impl SinkConnection {
                 out_tx.clone(),
                 force_run_chain,
                 connection_closed_tx,
+                read_timeout,
             );
         } else {
             let tcp_stream = tcp::tcp_stream(connect_timeout, destination).await?;
@@ -64,6 +67,7 @@ impl SinkConnection {
                 out_tx.clone(),
                 force_run_chain,
                 connection_closed_tx,
+                read_timeout,
             );
         }
 
@@ -158,6 +162,28 @@ pub enum ConnectionError {
     MessageEncode(Arc<anyhow::Error>),
     #[error("IO error {0}")]
     Io(Arc<std::io::Error>),
+    #[error("The other side of this connection did not respond within {0:?}")]
+    ReadTimeout(Duration),
+}
+
+struct RequestPending {
+    pub notify: Notify,
+    count: AtomicU64,
+}
+
+impl RequestPending {
+    fn add(&self, value: u64) {
+        self.count.fetch_add(value, Ordering::SeqCst);
+        self.notify.notify_one();
+    }
+
+    fn sub(&self, value: u64) {
+        self.count.fetch_sub(value, Ordering::SeqCst);
+    }
+
+    fn get(&self) -> u64 {
+        self.count.load(Ordering::SeqCst)
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -174,10 +200,16 @@ fn spawn_read_write_tasks<
     out_tx: UnboundedSender<Messages>,
     force_run_chain: Arc<Notify>,
     connection_closed_tx: mpsc::Sender<ConnectionError>,
+    read_timeout: Option<Duration>,
 ) {
     let (decoder, encoder) = codec.build();
     let reader = FramedRead::new(rx, decoder);
     let writer = FramedWrite::new(tx, encoder);
+
+    let request_pending = Arc::new(RequestPending {
+        notify: Notify::new(),
+        count: 0.into(),
+    });
 
     // Shutdown flows
     //
@@ -207,9 +239,19 @@ fn spawn_read_write_tasks<
     // 4.1 Connection::send checks connection_closed_rx for the error, stores it and returns it to the caller.
 
     let connection_closed_tx2 = connection_closed_tx.clone();
+    let request_pending2 = request_pending.clone();
     tokio::spawn(
         async move {
-            match reader_task::<C, _>(reader, in_tx, out_tx, force_run_chain).await {
+            match reader_task::<C, _>(
+                reader,
+                in_tx,
+                out_tx,
+                force_run_chain,
+                request_pending2,
+                read_timeout,
+            )
+            .await
+            {
                 Ok(()) => {}
                 Err(err) => {
                     connection_closed_tx2.try_send(err).ok();
@@ -221,7 +263,7 @@ fn spawn_read_write_tasks<
 
     tokio::spawn(
         async move {
-            match writer_task::<C, _>(writer, out_rx).await {
+            match writer_task::<C, _>(writer, out_rx, request_pending).await {
                 Ok(()) => {}
                 Err(err) => {
                     connection_closed_tx.try_send(err).ok();
@@ -237,18 +279,33 @@ async fn reader_task<C: CodecBuilder + 'static, R: AsyncRead + Unpin + Send + 's
     in_tx: mpsc::Sender<Messages>,
     out_tx: UnboundedSender<Messages>,
     force_run_chain: Arc<Notify>,
+    request_pending: Arc<RequestPending>,
+    read_timeout: Option<Duration>,
 ) -> Result<(), ConnectionError> {
     loop {
+        let read_timeout = if request_pending.get() == 0 {
+            // There are no requests pending so we should not trigger a timeout.
+            // To achieve this, sleep forever.
+            None
+        } else {
+            // There are requests pending so we need to timeout after the configure timeout elapses.
+            read_timeout
+        };
         tokio::select! {
             biased;
             _ = in_tx.closed() => {
                 // shotover is no longer listening for responses, this task is no longer needed
                 return Ok(());
             }
+
+            // reader.next is supposedly cancel safe: https://github.com/tokio-rs/tokio/discussions/4416#discussioncomment-2023884
             result = reader.next() => {
                 if let Some(messages) = result {
                     match messages {
                         Ok(messages) => {
+                            let count = messages.iter().filter(|x| x.request_id.is_some()).count();
+                            request_pending.sub(count as u64);
+
                             if in_tx.send(messages).await.is_err() {
                                 // main task has shutdown, this task is no longer needed
                                 return Ok(());
@@ -273,16 +330,33 @@ async fn reader_task<C: CodecBuilder + 'static, R: AsyncRead + Unpin + Send + 's
                     return Err(ConnectionError::OtherSideClosed);
                 }
             }
+            // The timeout logic can occur after read.next(), if we succesfully read we dont need the timeout at all.
+            _ = request_pending.notify.notified() => {
+                continue;
+            }
+            _ = sleep_for_duration_or_forever(read_timeout) => {
+                return Err(ConnectionError::ReadTimeout(read_timeout.unwrap()));
+            }
         }
+    }
+}
+
+async fn sleep_for_duration_or_forever(duration: Option<Duration>) {
+    if let Some(duration) = duration {
+        tokio::time::sleep(duration).await
+    } else {
+        std::future::pending().await
     }
 }
 
 async fn writer_task<C: CodecBuilder + 'static, W: AsyncWrite + Unpin + Send + 'static>(
     mut writer: FramedWrite<W, <C as CodecBuilder>::Encoder>,
     mut out_rx: UnboundedReceiver<Messages>,
+    request_pending: Arc<RequestPending>,
 ) -> Result<(), ConnectionError> {
     loop {
         if let Some(messages) = out_rx.recv().await {
+            request_pending.add(messages.len() as u64);
             match writer.send(messages).await {
                 Err(CodecWriteError::Encoder(err)) => {
                     return Err(ConnectionError::MessageEncode(Arc::new(err)));

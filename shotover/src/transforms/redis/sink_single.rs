@@ -116,6 +116,7 @@ impl Transform for RedisSinkSingle {
                     &self.tls,
                     self.connect_timeout,
                     self.force_run_chain.clone(),
+                    None,
                 )
                 .await?,
             );
