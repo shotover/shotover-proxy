@@ -1926,7 +1926,7 @@ dependencies = [
  "log",
  "parking_lot",
  "rand 0.8.5",
- "redis-protocol",
+ "redis-protocol 4.1.0",
  "rustls 0.22.2",
  "rustls-native-certs 0.7.0",
  "rustls-webpki 0.102.2",
@@ -3788,6 +3788,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "redis-protocol"
+version = "5.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7d30496c7ef712556a132b322c57239bea229c76d8508b1794da879888ac93ee"
+dependencies = [
+ "bytes",
+ "bytes-utils",
+ "cookie-factory",
+ "crc16",
+ "log",
+ "nom",
+]
+
+[[package]]
 name = "redox_syscall"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4581,7 +4595,6 @@ dependencies = [
  "bigdecimal",
  "bincode",
  "bytes",
- "bytes-utils",
  "cached",
  "cassandra-protocol",
  "chacha20poly1305",
@@ -4612,7 +4625,7 @@ dependencies = [
  "pretty-hex",
  "rand 0.8.5",
  "rand_distr",
- "redis-protocol",
+ "redis-protocol 5.0.0",
  "rustls 0.22.2",
  "rustls-pemfile 2.1.1",
  "rustls-pki-types",
@@ -4661,7 +4674,7 @@ dependencies = [
  "rand 0.8.5",
  "rand_distr",
  "redis",
- "redis-protocol",
+ "redis-protocol 5.0.0",
  "regex",
  "reqwest 0.12.0",
  "rstest",

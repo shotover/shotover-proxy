@@ -38,7 +38,6 @@ redis = [
     "dep:redis-protocol",
     "dep:csv",
     "dep:crc16",
-    "dep:bytes-utils"
 ]
 opensearch = [
     "dep:atoi",
@@ -52,7 +51,6 @@ atomic_enum = "0.3.0"
 axum = { version = "0.7", default-features = false, features = ["tokio", "tracing", "http1"] }
 pretty-hex = "0.4.0"
 tokio-stream = "0.1.2"
-bytes-utils = { version = "0.1.1", optional = true }
 derivative = "2.1.1"
 cached = { version = "0.49", features = ["async"], optional = true }
 governor = { version = "0.6", default-features = false, features = ["std", "jitter", "quanta"] }

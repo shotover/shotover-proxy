@@ -1309,7 +1309,7 @@ async fn read_redis_message(connection: &mut TcpStream) -> RedisFrame {
     let mut buffer = BytesMut::new();
     loop {
         if let Ok(Some((result, len))) =
-            redis_protocol::resp2::decode::decode(&buffer.clone().freeze())
+            redis_protocol::resp2::decode::decode_bytes(&buffer.clone().freeze())
         {
             let _ = buffer.split_to(len);
             return result;

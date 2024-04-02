@@ -8,8 +8,8 @@ use crate::message::{Encodable, Message, MessageId, Messages};
 use anyhow::{anyhow, Result};
 use bytes::BytesMut;
 use metrics::Histogram;
-use redis_protocol::resp2::prelude::decode_mut;
-use redis_protocol::resp2::prelude::encode_bytes;
+use redis_protocol::resp2::decode::decode_bytes_mut;
+use redis_protocol::resp2::encode::extend_encode;
 use tokio_util::codec::{Decoder, Encoder};
 
 #[derive(Clone)]
@@ -100,7 +100,7 @@ impl Decoder for RedisDecoder {
     //       Once thats done we will have pubsub support for both RedisSinkSingle AND RedisSinkCluster. Progress!
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
         let received_at = Instant::now();
-        match decode_mut(src)
+        match decode_bytes_mut(src)
             .map_err(|e| CodecReadError::Parser(anyhow!(e).context("Error decoding redis frame")))?
         {
             Some((frame, _size, bytes)) => {
@@ -241,7 +241,7 @@ impl Encoder<Messages> for RedisEncoder {
                 }
                 Encodable::Frame(frame) => {
                     let item = frame.into_redis().unwrap();
-                    encode_bytes(dst, &item)
+                    extend_encode(dst, &item)
                         .map(|_| ())
                         .map_err(|e| anyhow!("Redis encoding error: {} - {:#?}", e, item))
                 }
