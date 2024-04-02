@@ -1,4 +1,3 @@
-version: '3.3'
 networks:
   cluster_subnet:
     name: cluster_subnet
@@ -18,8 +17,7 @@ services:
     volumes:
       - &keys ../tls/certs:/usr/local/etc/redis/certs
 
-    environment:
-      &node_environment
+    environment: &node_environment
       - 'ALLOW_EMPTY_PASSWORD=yes'
       - 'REDIS_NODES=redis-node-0 redis-node-1 redis-node-2 redis-node-3 redis-node-4 redis-node-5'
       - 'REDIS_TLS_PORT=6379'

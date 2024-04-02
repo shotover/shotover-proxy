@@ -1,4 +1,3 @@
-version: "3.3"
 services:
   cassandra-one:
     image: shotover/cassandra-test:5.0-beta1-r2

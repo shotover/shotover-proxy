@@ -1,4 +1,3 @@
-version: "3"
 services:
   kafka0:
     image: 'bitnami/kafka:3.6.1-debian-11-r24'
