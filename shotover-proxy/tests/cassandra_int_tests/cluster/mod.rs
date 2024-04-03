@@ -31,7 +31,7 @@ pub async fn run_topology_task(ca_path: Option<&str>, port: Option<u32>) -> Vec<
         .unwrap()
     });
 
-    let mut connection_factory = ConnectionFactory::new(Duration::from_secs(3), tls);
+    let mut connection_factory = ConnectionFactory::new(Duration::from_secs(3), None, tls);
     for message in create_handshake() {
         connection_factory.push_handshake_message(message);
     }
