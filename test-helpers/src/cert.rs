@@ -1,5 +1,5 @@
 use crate::run_command;
-use rcgen::{BasicConstraints, Certificate, CertificateParams, DnType, IsCa, SanType};
+use rcgen::{BasicConstraints, Certificate, CertificateParams, DnType, IsCa, KeyPair, SanType};
 use std::path::Path;
 
 pub fn generate_test_certs(path: &Path) {
@@ -8,7 +8,7 @@ pub fn generate_test_certs(path: &Path) {
         vec![
             // Just dump every address we could ever need in here.
             // Usually you would want unique certs per instance but this works just fine for integration testing.
-            SanType::DnsName("localhost".into()),
+            SanType::DnsName("localhost".try_into().unwrap()),
             SanType::IpAddress("127.0.0.1".parse().unwrap()),
             SanType::IpAddress("172.16.1.2".parse().unwrap()),
             SanType::IpAddress("172.16.1.3".parse().unwrap()),
@@ -26,6 +26,16 @@ pub fn generate_test_certs_with_bad_san(path: &Path) {
 }
 
 pub fn generate_test_certs_with_sans(path: &Path, sans: Vec<SanType>) {
+    let (ca_cert, ca_key) = new_ca();
+    let (cert, cert_key) = new_cert(sans, &ca_cert, &ca_key);
+
+    std::fs::create_dir_all(path).unwrap();
+    std::fs::write(path.join("localhost_CA.crt"), ca_cert.pem()).unwrap();
+    std::fs::write(path.join("localhost.crt"), cert.pem()).unwrap();
+    std::fs::write(path.join("localhost.key"), cert_key.serialize_pem()).unwrap();
+}
+
+fn new_ca() -> (Certificate, KeyPair) {
     let mut params = CertificateParams::default();
     params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
     // This must be "Certificate Authority"
@@ -37,8 +47,12 @@ pub fn generate_test_certs_with_sans(path: &Path, sans: Vec<SanType>) {
         .distinguished_name
         .push(DnType::OrganizationName, "Shotover test certificate");
 
-    let ca_cert = Certificate::from_params(params).unwrap();
+    let key_pair = KeyPair::generate().unwrap();
+    let ca_cert = params.self_signed(&key_pair).unwrap();
+    (ca_cert, key_pair)
+}
 
+fn new_cert(sans: Vec<SanType>, ca_cert: &Certificate, ca_key: &KeyPair) -> (Certificate, KeyPair) {
     let mut params = CertificateParams::default();
 
     // This needs to refer to the hosts that certificate will be used by
@@ -51,20 +65,9 @@ pub fn generate_test_certs_with_sans(path: &Path, sans: Vec<SanType>) {
     params
         .distinguished_name
         .push(DnType::OrganizationName, "Shotover test certificate");
-    let cert = Certificate::from_params(params).unwrap();
-
-    std::fs::create_dir_all(path).unwrap();
-    std::fs::write(
-        path.join("localhost_CA.crt"),
-        ca_cert.serialize_pem().unwrap(),
-    )
-    .unwrap();
-    std::fs::write(
-        path.join("localhost.crt"),
-        cert.serialize_pem_with_signer(&ca_cert).unwrap(),
-    )
-    .unwrap();
-    std::fs::write(path.join("localhost.key"), cert.serialize_private_key_pem()).unwrap();
+    let cert_key = KeyPair::generate().unwrap();
+    let cert = params.signed_by(&cert_key, ca_cert, ca_key).unwrap();
+    (cert, cert_key)
 }
 
 pub fn generate_cassandra_test_certs() {
