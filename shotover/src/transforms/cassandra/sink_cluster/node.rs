@@ -72,6 +72,7 @@ pub struct ConnectionFactory {
     pushed_messages_tx: Option<mpsc::UnboundedSender<Messages>>,
     #[derivative(Debug = "ignore")]
     codec_builder: CassandraCodecBuilder,
+    version: Option<Version>,
 }
 
 impl Clone for ConnectionFactory {
@@ -83,6 +84,7 @@ impl Clone for ConnectionFactory {
             tls: self.tls.clone(),
             pushed_messages_tx: None,
             codec_builder: self.codec_builder.clone(),
+            version: self.version,
         }
     }
 }
@@ -99,6 +101,7 @@ impl ConnectionFactory {
                 Direction::Sink,
                 "CassandraSinkCluster".to_owned(),
             ),
+            version: None,
         }
     }
 
@@ -111,6 +114,7 @@ impl ConnectionFactory {
             tls: self.tls.clone(),
             pushed_messages_tx: None,
             codec_builder: self.codec_builder.clone(),
+            version: None,
         }
     }
 
@@ -159,8 +163,13 @@ impl ConnectionFactory {
         Ok(outbound)
     }
 
-    pub fn push_handshake_message(&mut self, message: Message) {
-        self.init_handshake.push(message);
+    pub fn push_handshake_message(&mut self, mut request: Message) {
+        if self.version.is_none() {
+            if let Some(Frame::Cassandra(frame)) = request.frame() {
+                self.version = Some(frame.version);
+            }
+        }
+        self.init_handshake.push(request);
     }
 
     /// Add a USE statement to the handshake ensures that any new connection
@@ -174,15 +183,14 @@ impl ConnectionFactory {
         self.pushed_messages_tx = Some(pushed_messages_tx);
     }
 
-    pub fn get_version(&mut self) -> Result<Version> {
-        for message in &mut self.init_handshake {
-            if let Some(Frame::Cassandra(frame)) = message.frame() {
-                return Ok(frame.version);
-            }
+    pub fn get_version(&self) -> Result<Version> {
+        if let Some(version) = self.version {
+            Ok(version)
+        } else {
+            Err(anyhow!(
+                "connection version could not be retrieved from the handshake because none of the {} messages in the handshake could be parsed",
+                self.init_handshake.len()
+            ))
         }
-        Err(anyhow!(
-            "connection version could not be retrieved from the handshake because none of the {} messages in the handshake could be parsed",
-            self.init_handshake.len()
-        ))
     }
 }
