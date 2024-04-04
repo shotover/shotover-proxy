@@ -1,13 +1,13 @@
 use super::node::{CassandraNode, ConnectionFactory};
 use super::node_pool::KeyspaceMetadata;
 use super::KeyspaceChanTx;
+use crate::connection::SinkConnection;
 use crate::frame::{
     cassandra::{parse_statement_single, Tracing},
     value::GenericValue,
     CassandraFrame, CassandraOperation, CassandraResult, Frame,
 };
 use crate::message::Message;
-use crate::transforms::cassandra::connection::CassandraConnection;
 use anyhow::{anyhow, Result};
 use cassandra_protocol::events::{ServerEvent, SimpleServerEvent};
 use cassandra_protocol::frame::events::{StatusChangeType, TopologyChangeType};
@@ -16,8 +16,8 @@ use cassandra_protocol::frame::Version;
 use cassandra_protocol::token::Murmur3Token;
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use tokio::sync::mpsc::unbounded_channel;
-use tokio::sync::{mpsc, watch};
+use std::sync::Arc;
+use tokio::sync::{mpsc, watch, Notify};
 
 #[derive(Debug)]
 pub struct TaskConnectionInfo {
@@ -65,133 +65,129 @@ async fn topology_task_process(
     connection_info: &mut TaskConnectionInfo,
     data_center: &str,
 ) -> Result<()> {
-    let (pushed_messages_tx, mut pushed_messages_rx) = unbounded_channel();
+    let force_run_chain = Arc::new(Notify::new());
     connection_info
         .connection_factory
-        .set_pushed_messages_tx(pushed_messages_tx);
-
-    let connection = connection_info
-        .connection_factory
-        .new_connection(connection_info.address)
-        .await?;
+        .set_force_run_chain(force_run_chain);
 
     let version = connection_info.connection_factory.get_version()?;
+    let mut connection = connection_info
+        .connection_factory
+        .new_sink_connection(connection_info.address)
+        .await?;
 
-    let mut nodes = fetch_current_nodes(&connection, connection_info, data_center, version).await?;
+    let mut nodes =
+        fetch_current_nodes(&mut connection, connection_info, data_center, version).await?;
     if let Err(watch::error::SendError(_)) = nodes_tx.send(nodes.clone()) {
         return Ok(());
     }
 
-    let mut keyspaces = system_keyspaces::query(&connection, data_center, version).await?;
-    if let Err(watch::error::SendError(_)) = keyspaces_tx.send(keyspaces.clone()) {
+    let keyspaces = system_keyspaces::query(&mut connection, data_center, version)
+        .await?
+        .0;
+    if let Err(watch::error::SendError(_)) = keyspaces_tx.send(keyspaces) {
         return Ok(());
     }
 
-    register_for_topology_and_status_events(&connection, version).await?;
+    register_for_topology_and_status_events(&mut connection, version).await?;
 
     tracing::info!(
         "Topology task control connection finalized against node at: {:?}",
         connection_info.address
     );
 
+    let mut events = vec![];
     loop {
-        // Wait for events to come in from the cassandra node.
-        // If all the nodes receivers are closed then immediately stop listening and shutdown the task
-        let pushed_messages = tokio::select! {
-            pushed_messages = pushed_messages_rx.recv() => pushed_messages,
-            _ = nodes_tx.closed() => return Ok(())
-        };
-        match pushed_messages {
-            Some(messages) => {
-                for mut message in messages {
-                    if let Some(Frame::Cassandra(CassandraFrame {
-                        operation: CassandraOperation::Event(event),
-                        ..
-                    })) = message.frame()
-                    {
-                        match event {
-                            ServerEvent::TopologyChange(topology) => match topology.change_type {
-                                TopologyChangeType::NewNode => {
-                                    let mut new_nodes = fetch_current_nodes(
-                                        &connection,
-                                        connection_info,
-                                        data_center,
-                                        version,
-                                    )
-                                    .await?;
+        if events.is_empty() {
+            // Wait for events to come in from the cassandra node.
+            // If all the nodes receivers are closed then immediately stop listening and shutdown the task
+            tokio::select! {
+                responses = connection.recv() => match responses {
+                    Ok(responses) => events.extend(responses),
+                    Err(err) => return Err(anyhow!(err).context("topology control connection was closed")),
+                },
+                _ = nodes_tx.closed() => return Ok(())
+            };
+        }
+        for mut event in std::mem::take(&mut events) {
+            if let Some(Frame::Cassandra(CassandraFrame {
+                operation: CassandraOperation::Event(event),
+                ..
+            })) = event.frame()
+            {
+                match event {
+                    ServerEvent::TopologyChange(topology) => match topology.change_type {
+                        TopologyChangeType::NewNode => {
+                            let mut new_nodes = fetch_current_nodes(
+                                &mut connection,
+                                connection_info,
+                                data_center,
+                                version,
+                            )
+                            .await?;
 
-                                    // is_up state gets carried over to new list
-                                    for node in &nodes {
-                                        if !node.is_up {
-                                            for new_node in &mut new_nodes {
-                                                if new_node.address == node.address {
-                                                    new_node.is_up = false;
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    nodes = new_nodes;
-
-                                    if let Err(watch::error::SendError(_)) =
-                                        nodes_tx.send(nodes.clone())
-                                    {
-                                        return Ok(());
-                                    }
-                                }
-                                TopologyChangeType::RemovedNode => {
-                                    nodes.retain(|node| node.address != topology.addr);
-
-                                    if let Err(watch::error::SendError(_)) =
-                                        nodes_tx.send(nodes.clone())
-                                    {
-                                        return Ok(());
-                                    }
-                                }
-                                _ => unreachable!(),
-                            },
-                            ServerEvent::StatusChange(status) => {
-                                for node in &mut nodes {
-                                    if node.address == status.addr {
-                                        node.is_up = match status.change_type {
-                                            StatusChangeType::Up => true,
-                                            StatusChangeType::Down => false,
-                                            _ => unreachable!(),
+                            // is_up state gets carried over to new list
+                            for node in &nodes {
+                                if !node.is_up {
+                                    for new_node in &mut new_nodes {
+                                        if new_node.address == node.address {
+                                            new_node.is_up = false;
                                         }
                                     }
                                 }
-                                if let Err(watch::error::SendError(_)) =
-                                    nodes_tx.send(nodes.clone())
-                                {
-                                    return Ok(());
+                            }
+
+                            nodes = new_nodes;
+
+                            if let Err(watch::error::SendError(_)) = nodes_tx.send(nodes.clone()) {
+                                return Ok(());
+                            }
+                        }
+                        TopologyChangeType::RemovedNode => {
+                            nodes.retain(|node| node.address != topology.addr);
+
+                            if let Err(watch::error::SendError(_)) = nodes_tx.send(nodes.clone()) {
+                                return Ok(());
+                            }
+                        }
+                        _ => unreachable!(),
+                    },
+                    ServerEvent::StatusChange(status) => {
+                        for node in &mut nodes {
+                            if node.address == status.addr {
+                                node.is_up = match status.change_type {
+                                    StatusChangeType::Up => true,
+                                    StatusChangeType::Down => false,
+                                    _ => unreachable!(),
                                 }
                             }
-                            ServerEvent::SchemaChange(_change) => {
-                                keyspaces =
-                                    system_keyspaces::query(&connection, data_center, version)
-                                        .await?;
-                                if let Err(watch::error::SendError(_)) =
-                                    keyspaces_tx.send(keyspaces.clone())
-                                {
-                                    return Ok(());
-                                }
-                            }
-                            _ => unreachable!(),
+                        }
+                        if let Err(watch::error::SendError(_)) = nodes_tx.send(nodes.clone()) {
+                            return Ok(());
                         }
                     }
+                    ServerEvent::SchemaChange(_change) => {
+                        let (keyspaces, extra_events) =
+                            system_keyspaces::query(&mut connection, data_center, version).await?;
+                        events.extend(extra_events);
+                        if let Err(watch::error::SendError(_)) = keyspaces_tx.send(keyspaces) {
+                            return Ok(());
+                        }
+                    }
+                    _ => unreachable!(),
                 }
             }
-            None => return Err(anyhow!("topology control connection was closed")),
         }
     }
 }
 
 async fn register_for_topology_and_status_events(
-    connection: &CassandraConnection,
+    connection: &mut SinkConnection,
     version: Version,
 ) -> Result<()> {
-    let mut response = connection
-        .send(Message::from_frame(Frame::Cassandra(CassandraFrame {
+    let mut response = send_recv(
+        connection,
+        Message::from_frame(Frame::Cassandra(CassandraFrame {
             version,
             stream_id: 0,
             tracing: Tracing::Request(false),
@@ -203,9 +199,10 @@ async fn register_for_topology_and_status_events(
                     SimpleServerEvent::SchemaChange,
                 ],
             }),
-        })))
-        .unwrap()
-        .await??;
+        })),
+    )
+    .await?
+    .0;
 
     if let Some(Frame::Cassandra(CassandraFrame { operation, .. })) = response.frame() {
         match operation {
@@ -218,18 +215,16 @@ async fn register_for_topology_and_status_events(
 }
 
 async fn fetch_current_nodes(
-    connection: &CassandraConnection,
+    connection: &mut SinkConnection,
     connection_info: &TaskConnectionInfo,
     data_center: &str,
     version: Version,
 ) -> Result<Vec<CassandraNode>> {
-    let (new_nodes, more_nodes) = tokio::join!(
-        system_local::query(connection, data_center, connection_info.address, version),
-        system_peers::query(connection, data_center, version)
-    );
+    let mut new_nodes =
+        system_local::query(connection, data_center, connection_info.address, version).await?;
+    let more_nodes = system_peers::query(connection, data_center, version).await?;
 
-    let mut new_nodes = new_nodes?;
-    new_nodes.extend(more_nodes?);
+    new_nodes.extend(more_nodes);
 
     Ok(new_nodes)
 }
@@ -241,12 +236,13 @@ mod system_keyspaces {
     use std::str::FromStr;
 
     pub async fn query(
-        connection: &CassandraConnection,
+        connection: &mut SinkConnection,
         data_center: &str,
         version: Version,
-    ) -> Result<HashMap<String, KeyspaceMetadata>> {
-        let response = connection
-            .send(Message::from_frame(Frame::Cassandra(CassandraFrame {
+    ) -> Result<(HashMap<String, KeyspaceMetadata>, Vec<Message>)> {
+        let (response, extra_events) = super::send_recv(
+            connection,
+            Message::from_frame(Frame::Cassandra(CassandraFrame {
                 version,
                 stream_id: 0,
                 tracing: Tracing::Request(false),
@@ -258,9 +254,10 @@ mod system_keyspaces {
 
                     params: Box::default(),
                 },
-            })))?
-            .await??;
-        into_keyspaces(response, data_center)
+            })),
+        )
+        .await?;
+        into_keyspaces(response, data_center).map(|x| (x, extra_events))
     }
 
     fn into_keyspaces(
@@ -366,17 +363,41 @@ mod system_keyspaces {
     }
 }
 
+async fn send_recv(
+    connection: &mut SinkConnection,
+    request: Message,
+) -> Result<(Message, Vec<Message>)> {
+    let mut extra_events = vec![];
+    let mut result = None;
+
+    connection.send(vec![request])?;
+
+    while result.is_none() {
+        let responses = connection.recv().await?;
+        for response in responses {
+            if response.request_id().is_some() {
+                result = Some(response);
+            } else {
+                extra_events.push(response)
+            }
+        }
+    }
+
+    Ok((result.unwrap(), extra_events))
+}
+
 mod system_local {
     use super::*;
 
     pub async fn query(
-        connection: &CassandraConnection,
+        connection: &mut SinkConnection,
         data_center: &str,
         address: SocketAddr,
         version: Version,
     ) -> Result<Vec<CassandraNode>> {
-        let response = connection
-            .send(Message::from_frame(Frame::Cassandra(CassandraFrame {
+        let response = super::send_recv(
+            connection,
+            Message::from_frame(Frame::Cassandra(CassandraFrame {
                 version,
                 stream_id: 1,
                 tracing: Tracing::Request(false),
@@ -387,8 +408,10 @@ mod system_local {
                     )),
                     params: Box::default(),
                 },
-            })))?
-            .await??;
+            })),
+        )
+        .await?
+        .0;
 
         into_nodes(response, data_center, address)
     }
@@ -456,11 +479,11 @@ mod system_peers {
     use super::*;
 
     pub async fn query(
-        connection: &CassandraConnection,
+        connection: &mut SinkConnection,
         data_center: &str,
         version: Version,
     ) -> Result<Vec<CassandraNode>> {
-        let mut response = connection.send(
+        let mut response = super::send_recv(connection,
             Message::from_frame(Frame::Cassandra(CassandraFrame {
                 version,
                 stream_id: 0,
@@ -473,12 +496,12 @@ mod system_peers {
                 params: Box::default(),
                 },
             }),
-        ),
-        )?.await??;
+        )).await?.0;
 
         if is_peers_v2_does_not_exist_error(&mut response) {
-            response = connection
-                .send(Message::from_frame(Frame::Cassandra(CassandraFrame {
+            response = super::send_recv(
+                connection,
+                Message::from_frame(Frame::Cassandra(CassandraFrame {
                     version,
                     stream_id: 0,
                     tracing: Tracing::Request(false),
@@ -489,8 +512,10 @@ mod system_peers {
                         )),
                         params: Box::default(),
                     },
-                })))?
-                .await??;
+                })),
+            )
+            .await?
+            .0;
         }
 
         into_nodes(response, data_center)

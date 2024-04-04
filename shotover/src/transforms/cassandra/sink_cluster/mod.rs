@@ -119,10 +119,10 @@ impl CassandraSinkClusterBuilder {
         local_shotover_node: ShotoverNode,
         tls: Option<TlsConnector>,
         connect_timeout_ms: u64,
-        timeout: Option<u64>,
+        read_timeout: Option<u64>,
     ) -> Self {
         let failed_requests = counter!("shotover_failed_requests_count", "chain" => chain_name.clone(), "transform" => "CassandraSinkCluster");
-        let receive_timeout = timeout.map(Duration::from_secs);
+        let read_timeout = read_timeout.map(Duration::from_secs);
         let connect_timeout = Duration::from_millis(connect_timeout_ms);
 
         let (local_nodes_tx, local_nodes_rx) = watch::channel(vec![]);
@@ -147,10 +147,10 @@ impl CassandraSinkClusterBuilder {
 
         Self {
             contact_points,
-            connection_factory: ConnectionFactory::new(connect_timeout, tls),
+            connection_factory: ConnectionFactory::new(connect_timeout, read_timeout, tls),
             message_rewriter,
             failed_requests,
-            read_timeout: receive_timeout,
+            read_timeout,
             nodes_rx: local_nodes_rx,
             keyspaces_rx,
             task_handshake_tx,
