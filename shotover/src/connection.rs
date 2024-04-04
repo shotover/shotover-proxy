@@ -135,14 +135,21 @@ impl SinkConnection {
         if let Some(error) = &self.error {
             Err(error.clone())
         } else {
-            match self.in_rx.try_recv() {
-                Ok(mut messages) => {
-                    self.dummy_response_inserter
-                        .process_responses(&mut messages);
-                    Ok(messages)
+            let mut results = vec![];
+            loop {
+                match self.in_rx.try_recv() {
+                    Ok(mut responses) => {
+                        self.dummy_response_inserter
+                            .process_responses(&mut responses);
+                        if results.is_empty() {
+                            results = responses;
+                        } else {
+                            results.extend(responses)
+                        }
+                    }
+                    Err(TryRecvError::Disconnected) => return Err(self.set_get_error()),
+                    Err(TryRecvError::Empty) => return Ok(results),
                 }
-                Err(TryRecvError::Disconnected) => Err(self.set_get_error()),
-                Err(TryRecvError::Empty) => Ok(vec![]),
             }
         }
     }
