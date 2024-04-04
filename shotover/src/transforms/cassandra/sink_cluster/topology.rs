@@ -98,15 +98,17 @@ async fn topology_task_process(
 
     let mut events = vec![];
     loop {
-        // Wait for events to come in from the cassandra node.
-        // If all the nodes receivers are closed then immediately stop listening and shutdown the task
-        tokio::select! {
-            responses = connection.recv() => match responses {
-                Ok(responses) => events.extend(responses),
-                Err(err) => return Err(anyhow!(err).context("topology control connection was closed")),
-            },
-            _ = nodes_tx.closed() => return Ok(())
-        };
+        if events.is_empty() {
+            // Wait for events to come in from the cassandra node.
+            // If all the nodes receivers are closed then immediately stop listening and shutdown the task
+            tokio::select! {
+                responses = connection.recv() => match responses {
+                    Ok(responses) => events.extend(responses),
+                    Err(err) => return Err(anyhow!(err).context("topology control connection was closed")),
+                },
+                _ = nodes_tx.closed() => return Ok(())
+            };
+        }
         for mut event in std::mem::take(&mut events) {
             if let Some(Frame::Cassandra(CassandraFrame {
                 operation: CassandraOperation::Event(event),
