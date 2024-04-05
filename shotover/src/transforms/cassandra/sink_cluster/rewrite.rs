@@ -237,11 +237,10 @@ impl MessageRewriter {
         }
 
         for message_or_id in table.collected_messages.iter_mut() {
-            let MessageOrId::Id(id) = message_or_id else {
-                break;
-            };
-            if let Some(i) = responses.iter().position(|x| x.request_id() == Some(*id)) {
-                *message_or_id = MessageOrId::Message(responses.swap_remove(i));
+            if let MessageOrId::Id(id) = message_or_id {
+                if let Some(i) = responses.iter().position(|x| x.request_id() == Some(*id)) {
+                    *message_or_id = MessageOrId::Message(responses.swap_remove(i));
+                }
             }
         }
 
