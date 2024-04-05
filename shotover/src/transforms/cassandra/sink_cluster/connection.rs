@@ -28,42 +28,54 @@ impl CassandraConnection {
         }
     }
 
-    pub fn send(&mut self, requests: Vec<Message>) -> Result<()> {
+    pub fn send(&mut self, requests: Vec<Message>) -> Result<(), ConnectionError> {
         self.pending_request_count += requests.len();
         self.pending_request_stream_ids
             .extend(requests.iter().map(|x| x.stream_id().unwrap()));
-        Ok(self.connection.send(requests)?)
+        self.connection.send(requests)
     }
 
     /// receive 0 or more responses
-    pub fn try_recv(&mut self, version: Version) -> Result<Vec<Message>, Vec<Message>> {
-        match self.connection.try_recv() {
-            Ok(results) => {
-                self.process_results(&results);
-                Ok(results)
+    pub fn try_recv(&mut self, responses: &mut Vec<Message>, version: Version) -> Result<(), ()> {
+        let previous_len = responses.len();
+        match self.connection.try_recv_into(responses) {
+            Ok(()) => {
+                self.process_responses(&responses[previous_len..]);
+                Ok(())
             }
-            Err(err) => Err(self.pending_into_errors(err, version)),
+            Err(err) => {
+                responses.extend(self.pending_into_errors(err, version));
+                Err(())
+            }
         }
     }
 
     /// Receive a response for every pending request
-    pub async fn recv_all_pending(&mut self) -> Result<Vec<Message>, ConnectionError> {
+    pub async fn recv_all_pending(
+        &mut self,
+        responses: &mut Vec<Message>,
+        version: Version,
+    ) -> Result<(), ()> {
         if self.pending_request_count == 0 {
             // There are no pending responses to await but we still need to check for any pending events.
-            // No need to call process_results on events
-            return self.connection.try_recv();
+            return self.try_recv(responses, version);
         }
 
-        let mut results = vec![];
         while self.pending_request_count > 0 {
-            let new_results = self.connection.recv().await?;
-            self.process_results(&new_results);
-            results.extend(new_results);
+            let previous_len = responses.len();
+            let recv_result = self.connection.recv_into(responses).await;
+            // we need to process responses even if there was an error
+            // because it might have received some actual responses before hitting the error.
+            self.process_responses(&responses[previous_len..]);
+            if let Err(err) = recv_result {
+                responses.extend(self.pending_into_errors(err, version));
+                return Err(());
+            }
         }
-        Ok(results)
+        Ok(())
     }
 
-    fn process_results(&mut self, responses: &[Message]) {
+    fn process_responses(&mut self, responses: &[Message]) {
         for response in responses {
             if response.request_id().is_some() {
                 let stream_id = response.stream_id().unwrap();
@@ -75,17 +87,21 @@ impl CassandraConnection {
         }
     }
 
-    fn pending_into_errors(&self, err: ConnectionError, version: Version) -> Vec<Message> {
+    fn pending_into_errors(
+        &self,
+        err: ConnectionError,
+        version: Version,
+    ) -> impl Iterator<Item = Message> + '_ {
         self.pending_request_stream_ids
             .iter()
-            .map(|stream_id| {
+            .cloned()
+            .map(move |stream_id| {
                 Message::from_frame(Frame::Cassandra(CassandraFrame::shotover_error(
-                    *stream_id,
+                    stream_id,
                     version,
                     &format!("{err}"),
                 )))
             })
-            .collect()
     }
 
     pub fn into_sink_connection(self) -> SinkConnection {

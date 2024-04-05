@@ -487,10 +487,14 @@ impl CassandraSinkCluster {
 
         // receive messages from all connections
         if let Some(connection) = self.control_connection.as_mut() {
-            responses.extend(connection.recv_all_pending().await?);
+            connection
+                .recv_all_pending(&mut responses, self.version.unwrap())
+                .await
+                .ok();
         }
         for node in self.pool.nodes_mut().iter_mut() {
-            responses.extend(node.recv_all_pending(self.version.unwrap()).await?);
+            node.recv_all_pending(&mut responses, self.version.unwrap())
+                .await;
         }
 
         // When the server indicates that it is ready for normal operation via Ready or AuthSuccess,

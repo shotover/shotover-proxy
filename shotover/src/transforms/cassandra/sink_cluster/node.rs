@@ -1,7 +1,7 @@
 use super::connection::CassandraConnection;
 use crate::codec::cassandra::CassandraCodecBuilder;
 use crate::codec::{CodecBuilder, Direction};
-use crate::connection::{ConnectionError, SinkConnection};
+use crate::connection::SinkConnection;
 use crate::frame::Frame;
 use crate::message::Message;
 use crate::tls::{TlsConnector, ToHostname};
@@ -71,32 +71,19 @@ impl CassandraNode {
         Ok(self.outbound.as_mut().unwrap())
     }
 
-    pub fn try_recv(&mut self, version: Version) -> Vec<Message> {
-        match self.outbound.as_mut() {
-            Some(connection) => match connection.try_recv(version) {
-                Ok(responses) => responses,
-                Err(responses) => {
-                    self.report_issue();
-                    responses
-                }
-            },
-            None => vec![],
+    pub fn try_recv(&mut self, responses: &mut Vec<Message>, version: Version) {
+        if let Some(connection) = self.outbound.as_mut() {
+            if let Err(()) = connection.try_recv(responses, version) {
+                self.report_issue()
+            }
         }
     }
 
-    pub async fn recv_all_pending(
-        &mut self,
-        _version: Version,
-    ) -> Result<Vec<Message>, ConnectionError> {
-        match self.outbound.as_mut() {
-            Some(connection) => match connection.recv_all_pending().await {
-                Ok(responses) => Ok(responses),
-                Err(responses) => {
-                    self.report_issue();
-                    Err(responses)
-                }
-            },
-            None => Ok(vec![]),
+    pub async fn recv_all_pending(&mut self, responses: &mut Vec<Message>, version: Version) {
+        if let Some(connection) = self.outbound.as_mut() {
+            if let Err(()) = connection.recv_all_pending(responses, version).await {
+                self.report_issue()
+            }
         }
     }
 
@@ -175,7 +162,7 @@ impl ConnectionFactory {
         &self,
         address: A,
     ) -> Result<CassandraConnection> {
-        let connection = SinkConnection::new(
+        let mut connection = SinkConnection::new(
             address,
             self.codec_builder.clone(),
             &self.tls,
@@ -185,7 +172,6 @@ impl ConnectionFactory {
         )
         .await
         .map_err(|e| e.context("Failed to create new connection"))?;
-        let mut connection = CassandraConnection::new(connection);
 
         let requests: Vec<Message> = self
             .init_handshake
@@ -195,10 +181,10 @@ impl ConnectionFactory {
             .collect();
         for request in requests {
             connection.send(vec![request])?;
-            connection.recv_all_pending().await?;
+            connection.recv().await?;
         }
 
-        Ok(connection)
+        Ok(CassandraConnection::new(connection))
     }
 
     pub fn push_handshake_message(&mut self, mut request: Message) {
