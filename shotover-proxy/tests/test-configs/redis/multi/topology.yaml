@@ -9,17 +9,14 @@ sources:
             read_consistency: 2
             route_map:
               one:
-                - RedisTimestampTagger
                 - RedisSinkSingle:
                     remote_address: "127.0.0.1:3331"
                     connect_timeout_ms: 3000
               two:
-                - RedisTimestampTagger
                 - RedisSinkSingle:
                     remote_address: "127.0.0.1:3332"
                     connect_timeout_ms: 3000
               three:
-                - RedisTimestampTagger
                 - RedisSinkSingle:
                     remote_address: "127.0.0.1:3333"
                     connect_timeout_ms: 3000

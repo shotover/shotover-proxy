@@ -44,7 +44,6 @@ Future transforms won't be added to the public API while in alpha. But in these 
 | [RedisClusterPortsRewrite](#redisclusterportsrewrite)    | ❌          | Beta                  |
 | [RedisSinkCluster](#redissinkcluster)                    | ✅          | Beta                  |
 | [RedisSinkSingle](#redissinksingle)                      | ✅          | Beta                  |
-| [RedisTimestampTagger](#redistimestamptagger)            | ❌          | Alpha                 |
 | [Tee](#tee)                                              | ✅          | Alpha                 |
 | [RequestThrottling](#requestthrottling)                  |❌           | Alpha                 |
 <!--| [DebugRandomDelay](#debugrandomdelay)                 | ❌          | Alpha                 |-->
@@ -213,6 +212,11 @@ This transform implements a distributed eventual consistency mechanism between t
 No sharding occurs within this transform and all requests/messages are sent to all routes.
 
 Upon receiving the configured number of responses, the transform will attempt to resolve or unify the response based on metadata about the result. Currently it will try to return the newest response based on a metadata timestamp (last write wins) or it will simply return the largest response if no timestamp information is available.
+
+#### Protocol support
+
+This transform is currently redis specific
+Internally it works by wrapping each redis request in a Lua script that also fetches the key for the operations idletime. This is then used to build a last modified timestamp and insert it into a response's timestamp. The response from the Lua operation is unwrapped and returned to up-chain transforms looking like a normal Redis response.
 
 ```yaml
 - TuneableConsistencyScatter:
@@ -583,16 +587,6 @@ This transform will take a query, serialise it into a RESP2 compatible format an
 Note: this will just pass the query to the remote node. No cluster discovery or routing occurs with this transform.
 
 This transfrom emits a metrics [counter](user-guide/observability.md#counter) named `failed_requests` and the labels `transform` defined as `RedisSinkSingle` and `chain` as the name of the chain that this transform is in.
-
-### RedisTimestampTagger
-
-A transform that wraps each Redis command in a Lua script that also fetches the key for the operations idletime. This is then used to build a last modified timestamp and insert it into a response's timestamp. The response from the Lua operation is unwrapped and returned to up-chain transforms looking like a normal Redis response.
-
-This is mainly used in conjunction with the `TuneableConsistencyScatter` transform to enable a Cassandra style consistency model within Redis.
-
-```yaml
-- RedisTimestampTagger
-```
 
 ### Tee
 
