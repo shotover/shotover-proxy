@@ -61,6 +61,7 @@ pub struct TransformChain {
     chain_total: Counter,
     chain_failures: Counter,
     chain_batch_size: Histogram,
+    chain_latency_seconds: Histogram,
 }
 
 #[derive(Debug, Clone)]
@@ -163,14 +164,13 @@ impl TransformChain {
         wrapper.reset(&mut self.chain);
 
         self.chain_batch_size.record(wrapper.requests.len() as f64);
-        let client_details = wrapper.client_details.to_owned();
         let result = wrapper.call_next_transform().await;
         self.chain_total.increment(1);
         if result.is_err() {
             self.chain_failures.increment(1);
         }
 
-        histogram!("shotover_chain_latency_seconds", "chain" => self.name, "client_details" => client_details).record(start.elapsed());
+        self.chain_latency_seconds.record(start.elapsed());
         result
     }
 
@@ -179,14 +179,13 @@ impl TransformChain {
         wrapper.reset_rev(&mut self.chain);
 
         self.chain_batch_size.record(wrapper.requests.len() as f64);
-        let client_details = wrapper.client_details.to_owned();
         let result = wrapper.call_next_transform_pushed().await;
         self.chain_total.increment(1);
         if result.is_err() {
             self.chain_failures.increment(1);
         }
 
-        histogram!("shotover_chain_latency_seconds", "chain" => self.name, "client_details" => client_details).record(start.elapsed());
+        self.chain_latency_seconds.record(start.elapsed());
         result
     }
 }
@@ -347,6 +346,7 @@ impl TransformChainBuilder {
 
         // Even though we don't keep the join handle, this thread will wrap up once all corresponding senders have been dropped.
 
+        // client_details is unused for buffered chains so just use String::new()
         let mut chain = self.build(context);
         let _jh = tokio::spawn(
             async move {
@@ -417,6 +417,11 @@ impl TransformChainBuilder {
             chain_total: self.chain_total.clone(),
             chain_failures: self.chain_failures.clone(),
             chain_batch_size: self.chain_batch_size.clone(),
+            chain_latency_seconds: histogram!(
+                "shotover_chain_latency_seconds",
+                "chain" => self.name,
+                "client_details" => context.client_details
+            ),
         }
     }
 
@@ -444,6 +449,11 @@ impl TransformChainBuilder {
             chain_total: self.chain_total.clone(),
             chain_failures: self.chain_failures.clone(),
             chain_batch_size: self.chain_batch_size.clone(),
+            chain_latency_seconds: histogram!(
+                "shotover_chain_latency_seconds",
+                "chain" => self.name,
+                "client_details" => context.client_details
+            ),
         }
     }
 }

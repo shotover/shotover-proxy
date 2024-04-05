@@ -40,7 +40,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         group.bench_function("loopback", |b| {
             b.to_async(&rt).iter_batched(
                 || BenchInput {
-                    chain: chain.build(TransformContextBuilder::new()),
+                    chain: chain.build(TransformContextBuilder::new_test()),
                     wrapper: wrapper.clone(),
                 },
                 BenchInput::bench,
@@ -59,7 +59,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         group.bench_function("nullsink", |b| {
             b.to_async(&rt).iter_batched(
                 || BenchInput {
-                    chain: chain.build(TransformContextBuilder::new()),
+                    chain: chain.build(TransformContextBuilder::new_test()),
                     wrapper: wrapper.clone(),
                 },
                 BenchInput::bench,
@@ -97,7 +97,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         group.bench_function("redis_filter", |b| {
             b.to_async(&rt).iter_batched(
                 || BenchInput {
-                    chain: chain.build(TransformContextBuilder::new()),
+                    chain: chain.build(TransformContextBuilder::new_test()),
                     wrapper: wrapper.clone(),
                 },
                 BenchInput::bench,
@@ -131,7 +131,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         group.bench_function("redis_timestamp_tagger_untagged", |b| {
             b.to_async(&rt).iter_batched(
                 || BenchInput {
-                    chain: chain.build(TransformContextBuilder::new()),
+                    chain: chain.build(TransformContextBuilder::new_test()),
                     wrapper: wrapper_set.clone(),
                 },
                 BenchInput::bench,
@@ -150,7 +150,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         group.bench_function("redis_timestamp_tagger_tagged", |b| {
             b.to_async(&rt).iter_batched(
                 || BenchInput {
-                    chain: chain.build(TransformContextBuilder::new()),
+                    chain: chain.build(TransformContextBuilder::new_test()),
                     wrapper: wrapper_get.clone(),
                 },
                 BenchInput::bench,
@@ -179,7 +179,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         group.bench_function("redis_cluster_ports_rewrite", |b| {
             b.to_async(&rt).iter_batched(
                 || BenchInput {
-                    chain: chain.build(TransformContextBuilder::new()),
+                    chain: chain.build(TransformContextBuilder::new_test()),
                     wrapper: wrapper.clone(),
                 },
                 BenchInput::bench,
@@ -226,7 +226,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         group.bench_function("cassandra_request_throttling_unparsed", |b| {
             b.to_async(&rt).iter_batched(
                 || BenchInput {
-                    chain: chain.build(TransformContextBuilder::new()),
+                    chain: chain.build(TransformContextBuilder::new_test()),
                     wrapper: wrapper.clone(),
                 },
                 BenchInput::bench,
@@ -280,7 +280,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         group.bench_function("cassandra_rewrite_peers_passthrough", |b| {
             b.to_async(&rt).iter_batched(
                 || BenchInput {
-                    chain: chain.build(TransformContextBuilder::new()),
+                    chain: chain.build(TransformContextBuilder::new_test()),
                     wrapper: wrapper.clone(),
                 },
                 BenchInput::bench,
@@ -326,7 +326,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         group.bench_function("cassandra_protect_unprotected", |b| {
             b.to_async(&rt).iter_batched(
                 || BenchInput {
-                    chain: chain.build(TransformContextBuilder::new()),
+                    chain: chain.build(TransformContextBuilder::new_test()),
                     wrapper: wrapper.clone(),
                 },
                 BenchInput::bench,
@@ -341,7 +341,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         group.bench_function("cassandra_protect_protected", |b| {
             b.to_async(&rt).iter_batched(
                 || BenchInput {
-                    chain: chain.build(TransformContextBuilder::new()),
+                    chain: chain.build(TransformContextBuilder::new_test()),
                     wrapper: wrapper.clone(),
                 },
                 BenchInput::bench,
