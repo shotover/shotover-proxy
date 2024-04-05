@@ -122,17 +122,21 @@ impl Transform for RedisSinkSingle {
             );
         }
 
+        let mut responses = vec![];
         if requests_wrapper.requests.is_empty() {
             // there are no requests, so no point sending any, but we should check for any responses without awaiting
-            if let Ok(mut responses) = self.connection.as_mut().unwrap().try_recv() {
+            // TODO: handle errors here
+            if let Ok(()) = self
+                .connection
+                .as_mut()
+                .unwrap()
+                .try_recv_into(&mut responses)
+            {
                 for response in &mut responses {
                     if let Some(Frame::Redis(RedisFrame::Error(_))) = response.frame() {
                         self.failed_requests.increment(1);
                     }
                 }
-                Ok(responses)
-            } else {
-                Ok(vec![])
             }
         } else {
             let requests_count = requests_wrapper.requests.len();
@@ -141,12 +145,16 @@ impl Transform for RedisSinkSingle {
                 .unwrap()
                 .send(requests_wrapper.requests)?;
 
-            let mut result = vec![];
             let mut responses_count = 0;
             while responses_count < requests_count {
-                let mut responses = self.connection.as_mut().unwrap().recv().await?;
+                let responses_len_old = responses.len();
+                self.connection
+                    .as_mut()
+                    .unwrap()
+                    .recv_into(&mut responses)
+                    .await?;
 
-                for response in &mut responses {
+                for response in &mut responses[responses_len_old..] {
                     if let Some(Frame::Redis(RedisFrame::Error(_))) = response.frame() {
                         self.failed_requests.increment(1);
                     }
@@ -154,9 +162,8 @@ impl Transform for RedisSinkSingle {
                         responses_count += 1;
                     }
                 }
-                result.extend(responses);
             }
-            Ok(result)
         }
+        Ok(responses)
     }
 }

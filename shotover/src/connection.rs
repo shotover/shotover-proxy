@@ -71,10 +71,7 @@ impl SinkConnection {
             );
         }
 
-        let dummy_response_inserter = DummyResponseInserter {
-            dummy_requests: vec![],
-            pending_requests_count: 0,
-        };
+        let dummy_response_inserter = DummyResponseInserter::new();
 
         Ok(SinkConnection {
             in_rx,
@@ -105,52 +102,91 @@ impl SinkConnection {
     /// Receives messages, if there are no messages available it awaits until there are messages.
     /// If there is a problem with the connection an error is returned.
     pub async fn recv(&mut self) -> Result<Vec<Message>, ConnectionError> {
-        if let Some(error) = &self.error {
-            Err(error.clone())
-        } else {
-            // first process any immediately pending dummy responses
+        let mut result = vec![];
+        self.recv_into(&mut result).await?;
+        Ok(result)
+    }
 
-            // ensure we include any received messages so we dont leave them hanging after using up a force_run_chain.
-            let mut messages = self.in_rx.try_recv().unwrap_or_default();
-            self.dummy_response_inserter
-                .process_responses(&mut messages);
-            if !messages.is_empty() {
-                return Ok(messages);
-            }
+    /// Receives messages, if there are no messages available it awaits until there are messages.
+    /// If there is a problem with the connection an error is returned.
+    pub async fn recv_into(&mut self, responses: &mut Vec<Message>) -> Result<(), ConnectionError> {
+        let initial_count = responses.len();
+        // exhaust channel and ensure dummy messages are inserted by running try_recv_into
+        self.try_recv_into(responses)?;
 
+        // If we didnt receive any messages from the channel or the dummy inserter then await more messages
+        if initial_count == responses.len() {
             match self.in_rx.recv().await {
-                Some(mut messages) => {
-                    self.dummy_response_inserter
-                        .process_responses(&mut messages);
-                    Ok(messages)
+                Some(mut new) => {
+                    self.dummy_response_inserter.process_responses(&mut new, 0);
+
+                    // If there is no allocation behind the vec then just directly use the new vec.
+                    if responses.capacity() == 0 {
+                        *responses = new;
+                    } else {
+                        responses.extend(new)
+                    }
                 }
-                None => Err(self.set_get_error()),
+                None => {
+                    return Err(self.set_get_error());
+                }
             }
         }
+
+        Ok(())
     }
 
     /// Attempts to receive messages, if there are no messages available it immediately returns an empty vec.
     /// If there is a problem with the connection an error is returned.
-    pub fn try_recv(&mut self) -> Result<Vec<Message>, ConnectionError> {
+    pub fn try_recv_into(&mut self, responses: &mut Vec<Message>) -> Result<(), ConnectionError> {
         if let Some(error) = &self.error {
             Err(error.clone())
         } else {
-            let mut results = vec![];
+            let initial_count = responses.len();
+
+            // Even if >1 message batches are in the channel force_run_chain will only notify us once.
+            // So we need to ensure we fully exhaust the channel to prevent messages being stuck when there is a backlog.
             loop {
                 match self.in_rx.try_recv() {
-                    Ok(mut responses) => {
-                        self.dummy_response_inserter
-                            .process_responses(&mut responses);
-                        if results.is_empty() {
-                            results = responses;
+                    Ok(new) => {
+                        // If there is no allocation behind the vec then just directly use the new vec.
+                        if responses.capacity() == 0 {
+                            *responses = new;
                         } else {
-                            results.extend(responses)
+                            responses.extend(new)
                         }
                     }
-                    Err(TryRecvError::Disconnected) => return Err(self.set_get_error()),
-                    Err(TryRecvError::Empty) => return Ok(results),
+                    Err(TryRecvError::Disconnected) => {
+                        self.dummy_response_inserter
+                            .process_responses(responses, initial_count);
+                        return self.handle_disconnect_on_recv(responses, initial_count);
+                    }
+                    Err(TryRecvError::Empty) => {
+                        // We need to ensure this runs even when we receive nothing from the channel.
+                        // this will ensure that the dummy message at index 0 is inserted if it exists
+                        self.dummy_response_inserter
+                            .process_responses(responses, initial_count);
+                        return Ok(());
+                    }
                 }
             }
+        }
+    }
+
+    fn handle_disconnect_on_recv(
+        &mut self,
+        responses: &[Message],
+        initial_count: usize,
+    ) -> Result<(), ConnectionError> {
+        // call this first to ensure the next send call will have an error
+        let err = self.set_get_error();
+
+        if responses.len() == initial_count {
+            // We failed to get any messages return the error.
+            Err(err)
+        } else {
+            // We got at least some messages, so consider this a success and let the error be returned when the user next calls send()
+            Ok(())
         }
     }
 }
@@ -400,7 +436,16 @@ struct DummyRequest {
 }
 
 impl DummyResponseInserter {
-    pub fn process_requests(&mut self, requests: &mut [Message]) {
+    fn new() -> Self {
+        DummyResponseInserter {
+            dummy_requests: vec![],
+            pending_requests_count: 0,
+        }
+    }
+
+    /// All requests must be passed through this method so that DummyResponseInserter can record all requests that need a dummy response generated.
+    /// The requests will not be modified.
+    fn process_requests(&mut self, requests: &mut [Message]) {
         for (i, request) in requests.iter_mut().enumerate() {
             if request.response_is_dummy() {
                 self.dummy_requests.push(DummyRequest {
@@ -412,9 +457,13 @@ impl DummyResponseInserter {
         self.pending_requests_count += requests.len();
     }
 
-    pub fn process_responses(&mut self, responses: &mut Vec<Message>) {
+    /// Insert dummy responses into the list of responses.
+    /// All elements before the element at index `start_at` is ignored,
+    /// those elements should have been already processed by a previous call to process_responses.
+    fn process_responses(&mut self, responses: &mut Vec<Message>, start_at: usize) {
+        let mut len = responses.len() - start_at;
         // responses with no request will invalidate our indexes, so we need to fix them up here.
-        for (response_i, response) in responses.iter().enumerate() {
+        for (response_i, response) in responses[start_at..].iter().enumerate() {
             if response.request_id().is_none() {
                 for (dummy_request_i, dummy_request) in
                     &mut self.dummy_requests.iter_mut().enumerate()
@@ -433,10 +482,11 @@ impl DummyResponseInserter {
         // It is important that retain_mut iterates in the order of the vec.
         // This is because it is only once the previous insert_index is inserted that the following insert_index becomes valid again.
         self.dummy_requests.retain_mut(|dummy_request| {
-            if dummy_request.request_index <= responses.len() {
+            if dummy_request.request_index <= len {
                 let mut dummy = Message::from_frame(Frame::Dummy);
                 dummy.set_request_id(dummy_request.request_id);
-                responses.insert(dummy_request.request_index, dummy);
+                responses.insert(dummy_request.request_index + start_at, dummy);
+                len += 1;
                 false
             } else {
                 true
@@ -445,8 +495,98 @@ impl DummyResponseInserter {
 
         // Decrement indexes so that they will be offset from 0 the next time responses come in.
         for dummy_request in &mut self.dummy_requests {
-            dummy_request.request_index -= responses.len();
+            dummy_request.request_index -= len;
         }
-        self.pending_requests_count -= responses.len();
+        self.pending_requests_count -= len;
+    }
+}
+
+#[cfg(all(test, feature = "redis"))]
+mod tests {
+    use super::DummyResponseInserter;
+    use crate::frame::{Frame, RedisFrame};
+    use crate::message::Message;
+
+    fn dummy() -> Message {
+        Message::from_frame(Frame::Dummy)
+    }
+
+    fn redis_request() -> Message {
+        Message::from_frame(Frame::Redis(RedisFrame::Null))
+    }
+
+    fn redis_response(request: &Message) -> Message {
+        let mut message = Message::from_frame(Frame::Redis(RedisFrame::Null));
+        message.set_request_id(request.id());
+        message
+    }
+
+    #[test]
+    fn dummy_response_inserter() {
+        let mut inserter = DummyResponseInserter::new();
+
+        // send an empty list of requests
+        {
+            let mut requests = vec![];
+            inserter.process_requests(&mut requests);
+            let mut responses = vec![];
+            inserter.process_responses(&mut responses, 0);
+            assert_eq!(responses, []);
+        }
+
+        // send one dummy request
+        {
+            let mut requests = vec![dummy()];
+            inserter.process_requests(&mut requests);
+            let mut responses = vec![];
+            inserter.process_responses(&mut responses, 0);
+            assert_eq!(responses, vec![dummy()]);
+            inserter.process_responses(&mut responses, 1);
+            assert_eq!(responses, vec![dummy()]);
+        }
+
+        // send one redis request
+        {
+            let mut requests = vec![redis_request()];
+            inserter.process_requests(&mut requests);
+            let mut responses = vec![];
+            inserter.process_responses(&mut responses, 0);
+            assert_eq!(responses, []);
+
+            // received redis response
+            responses.insert(0, redis_response(&requests[0]));
+            inserter.process_responses(&mut responses, 0);
+            assert_eq!(responses, vec![redis_response(&requests[0])]);
+        }
+
+        // send one dummy request and then one redis request
+        {
+            let mut requests = vec![dummy(), redis_request()];
+            inserter.process_requests(&mut requests);
+            let mut responses = vec![];
+            inserter.process_responses(&mut responses, 0);
+            assert_eq!(responses, vec![dummy()]);
+
+            // received redis response
+            responses.insert(1, redis_response(&requests[1]));
+            inserter.process_responses(&mut responses, 1);
+            assert_eq!(responses, vec![dummy(), redis_response(&requests[1])]);
+        }
+
+        // send one redis request and then one dummy request
+        {
+            let mut requests = vec![redis_request(), dummy()];
+            inserter.process_requests(&mut requests);
+            let mut responses = vec![];
+            inserter.process_responses(&mut responses, 0);
+            assert_eq!(responses, vec![]);
+
+            // received redis response
+            responses.insert(0, redis_response(&requests[1]));
+            inserter.process_responses(&mut responses, 0);
+            assert_eq!(responses, vec![redis_response(&requests[0]), dummy()]);
+            inserter.process_responses(&mut responses, 2);
+            assert_eq!(responses, vec![redis_response(&requests[0]), dummy()]);
+        }
     }
 }

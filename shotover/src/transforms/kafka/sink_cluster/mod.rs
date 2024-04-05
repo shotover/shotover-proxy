@@ -785,7 +785,8 @@ impl KafkaSinkCluster {
     fn recv_responses(&mut self) -> Result<Vec<Message>> {
         for node in &mut self.nodes {
             if let Some(connection) = node.get_connection_if_open() {
-                if let Ok(responses) = connection.try_recv() {
+                let mut responses = vec![];
+                if let Ok(()) = connection.try_recv_into(&mut responses) {
                     for response in responses {
                         let mut response = Some(response);
                         for pending_request in &mut self.pending_requests {
