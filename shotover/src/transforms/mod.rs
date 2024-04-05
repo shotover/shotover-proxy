@@ -54,13 +54,15 @@ pub struct TransformContextBuilder {
     /// * This must be used when a sink transform has asynchronously received responses in the background
     /// * This should be used when a transform needs to generate or flush messages after some kind of timeout or background process completes.
     pub force_run_chain: Arc<Notify>,
+    pub client_details: String,
 }
 
 #[allow(clippy::new_without_default)]
 impl TransformContextBuilder {
-    pub fn new() -> Self {
+    pub fn new_test() -> Self {
         TransformContextBuilder {
             force_run_chain: Arc::new(Notify::new()),
+            client_details: String::new(),
         }
     }
 }
@@ -107,7 +109,6 @@ pub struct TransformContextConfig {
 pub struct Wrapper<'a> {
     pub requests: Messages,
     transforms: TransformIter<'a>,
-    pub client_details: String,
     /// Contains the shotover source's ip address and port which the message was received on
     pub local_addr: SocketAddr,
     /// When true transforms must flush any buffered messages into the messages field.
@@ -150,7 +151,6 @@ impl<'a> Clone for Wrapper<'a> {
         Wrapper {
             requests: self.requests.clone(),
             transforms: TransformIter::new_forwards(&mut []),
-            client_details: self.client_details.clone(),
             local_addr: self.local_addr,
             flush: self.flush,
         }
@@ -231,7 +231,6 @@ impl<'a> Wrapper<'a> {
         Wrapper {
             requests,
             transforms: TransformIter::new_forwards(&mut []),
-            client_details: "".to_owned(),
             local_addr: "127.0.0.1:8000".parse().unwrap(),
             flush: false,
         }
@@ -241,7 +240,6 @@ impl<'a> Wrapper<'a> {
         Wrapper {
             requests,
             transforms: TransformIter::new_forwards(&mut []),
-            client_details: "".to_owned(),
             local_addr,
             flush: false,
         }
@@ -251,24 +249,9 @@ impl<'a> Wrapper<'a> {
         Wrapper {
             requests: vec![],
             transforms: TransformIter::new_forwards(&mut []),
-            client_details: "".to_owned(),
             // The connection is closed so we need to just fake an address here
             local_addr: "127.0.0.1:10000".parse().unwrap(),
             flush: true,
-        }
-    }
-
-    pub fn new_with_client_details(
-        requests: Messages,
-        client_details: String,
-        local_addr: SocketAddr,
-    ) -> Self {
-        Wrapper {
-            requests,
-            transforms: TransformIter::new_forwards(&mut []),
-            client_details,
-            local_addr,
-            flush: false,
         }
     }
 

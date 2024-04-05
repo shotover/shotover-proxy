@@ -319,7 +319,7 @@ mod scatter_transform_tests {
     }
 
     fn build_chains(route_map: HashMap<String, TransformChainBuilder>) -> Vec<BufferedChain> {
-        let context = TransformContextBuilder::new();
+        let context = TransformContextBuilder::new_test();
         route_map
             .into_values()
             .map(|x| x.build_buffered(10, context.clone()))

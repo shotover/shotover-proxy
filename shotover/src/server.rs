@@ -190,9 +190,16 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                 let (pushed_messages_tx, pushed_messages_rx) =
                     tokio::sync::mpsc::unbounded_channel::<Messages>();
 
+                let client_details = stream
+                    .peer_addr()
+                    .map(|p| p.ip().to_string())
+                    .unwrap_or_else(|_| "Unknown peer".to_string());
+                tracing::debug!("New connection from {}", client_details);
+
                 let force_run_chain = Arc::new(Notify::new());
                 let context = TransformContextBuilder {
                     force_run_chain: force_run_chain.clone(),
+                    client_details: client_details.clone(),
                 };
 
                 let handler = Handler {
@@ -211,7 +218,10 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                 self.connection_handles.push(tokio::spawn(
                     async move {
                         // Process the connection. If an error is encountered, log it.
-                        if let Err(err) = handler.run(stream, transport, force_run_chain).await {
+                        if let Err(err) = handler
+                            .run(stream, transport, force_run_chain, client_details)
+                            .await
+                        {
                             error!(
                                 "{:?}",
                                 err.context("connection was unexpectedly terminated")
@@ -548,14 +558,9 @@ impl<C: CodecBuilder + 'static> Handler<C> {
         stream: TcpStream,
         transport: Transport,
         force_run_chain: Arc<Notify>,
+        client_details: String,
     ) -> Result<()> {
         stream.set_nodelay(true)?;
-
-        let client_details = stream
-            .peer_addr()
-            .map(|p| p.ip().to_string())
-            .unwrap_or_else(|_| "Unknown peer".to_string());
-        tracing::debug!("New connection from {}", client_details);
 
         // limit buffered incoming messages to 10,000 per connection.
         // A particular scenario we are concerned about is if it takes longer to send to the server
@@ -688,7 +693,7 @@ impl<C: CodecBuilder + 'static> Handler<C> {
                 }
                 Some(responses) = self.pushed_messages_rx.recv() => {
                     debug!("Received unrequested responses from destination {:?}", responses);
-                    self.process_backward(client_details, local_addr, responses).await?
+                    self.process_backward(local_addr, responses).await?
                 }
                 () = force_run_chain.notified() => {
                     let mut requests = vec!();
@@ -696,7 +701,7 @@ impl<C: CodecBuilder + 'static> Handler<C> {
                         requests.extend(x);
                     }
                     debug!("A transform in the chain requested that a chain run occur, requests {:?}", requests);
-                    self.process_forward(client_details, local_addr, &out_tx, requests).await?
+                    self.process_forward(local_addr, &out_tx, requests).await?
                 },
                 requests = Self::receive_with_timeout(self.timeout, &mut in_rx, client_details) => {
                     match requests {
@@ -705,7 +710,7 @@ impl<C: CodecBuilder + 'static> Handler<C> {
                                 requests.extend(x);
                             }
                             debug!("Received requests from client {:?}", requests);
-                            self.process_forward(client_details, local_addr, &out_tx, requests).await?
+                            self.process_forward(local_addr, &out_tx, requests).await?
                         }
                         None => {
                             // Either we timed out the connection or the client disconnected, so terminate this connection
@@ -730,7 +735,6 @@ impl<C: CodecBuilder + 'static> Handler<C> {
 
     async fn process_forward(
         &mut self,
-        client_details: &str,
         local_addr: SocketAddr,
         out_tx: &mpsc::UnboundedSender<Messages>,
         requests: Messages,
@@ -739,8 +743,7 @@ impl<C: CodecBuilder + 'static> Handler<C> {
         // called should result in no new allocations.
         let mut error_report_messages = requests.clone();
 
-        let wrapper =
-            Wrapper::new_with_client_details(requests, client_details.to_owned(), local_addr);
+        let wrapper = Wrapper::new_with_addr(requests, local_addr);
 
         match self.chain.process_request(wrapper).await.context(
             "Chain failed to send and/or receive messages, the connection will now be closed.",
@@ -773,12 +776,10 @@ impl<C: CodecBuilder + 'static> Handler<C> {
 
     async fn process_backward(
         &mut self,
-        client_details: &str,
         local_addr: SocketAddr,
         responses: Messages,
     ) -> Result<Messages> {
-        let wrapper =
-            Wrapper::new_with_client_details(responses, client_details.to_owned(), local_addr);
+        let wrapper = Wrapper::new_with_addr(responses, local_addr);
 
         self.chain.process_request_rev(wrapper).await.context(
             "Chain failed to receive pushed messages/events, the connection will now be closed.",
