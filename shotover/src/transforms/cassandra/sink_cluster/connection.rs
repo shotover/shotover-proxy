@@ -49,7 +49,9 @@ impl CassandraConnection {
     /// Receive a response for every pending request
     pub async fn recv_all_pending(&mut self) -> Result<Vec<Message>, ConnectionError> {
         if self.pending_request_count == 0 {
-            return Ok(vec![]);
+            // There are no pending responses to await but we still need to check for any pending events.
+            // No need to call process_results on events
+            return self.connection.try_recv();
         }
 
         let mut results = vec![];

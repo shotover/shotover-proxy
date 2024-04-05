@@ -1,6 +1,6 @@
 use self::connection::CassandraConnection;
 use self::node_pool::{get_accessible_owned_connection, NodePoolBuilder, PreparedMetadata};
-use self::rewrite::{BatchMode, MessageRewriter};
+use self::rewrite::MessageRewriter;
 use crate::frame::cassandra::{CassandraMetadata, Tracing};
 use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame};
 use crate::message::{Message, MessageIdMap, Messages, Metadata};
@@ -279,8 +279,7 @@ impl CassandraSinkCluster {
 
         let mut responses = vec![];
 
-        let batch_mode = self
-            .message_rewriter
+        self.message_rewriter
             .rewrite_requests(
                 &mut messages,
                 &self.connection_factory,
@@ -288,15 +287,6 @@ impl CassandraSinkCluster {
                 self.version.unwrap(),
             )
             .await?;
-
-        if let BatchMode::Isolated = batch_mode {
-            if let Some(connection) = self.control_connection.as_mut() {
-                responses.extend(connection.recv_all_pending().await?);
-            }
-            for node in self.pool.nodes_mut().iter_mut() {
-                responses.extend(node.recv_all_pending(self.version.unwrap()).await?);
-            }
-        }
 
         // Create the initial connection.
         // Messages will be sent through this connection until we have extracted the handshake.
@@ -496,26 +486,11 @@ impl CassandraSinkCluster {
         }
 
         // receive messages from all connections
-        match batch_mode {
-            BatchMode::Isolated => {
-                if let Some(connection) = self.control_connection.as_mut() {
-                    responses.extend(connection.recv_all_pending().await?);
-                }
-                for node in self.pool.nodes_mut().iter_mut() {
-                    responses.extend(node.recv_all_pending(self.version.unwrap()).await?);
-                }
-            }
-            BatchMode::Pipelined => {
-                if let Some(connection) = self.control_connection.as_mut() {
-                    match connection.try_recv(self.version.unwrap()) {
-                        Ok(result) => responses.extend(result),
-                        Err(result) => responses.extend(result),
-                    }
-                }
-                for node in self.pool.nodes_mut().iter_mut() {
-                    responses.extend(node.try_recv(self.version.unwrap()));
-                }
-            }
+        if let Some(connection) = self.control_connection.as_mut() {
+            responses.extend(connection.recv_all_pending().await?);
+        }
+        for node in self.pool.nodes_mut().iter_mut() {
+            responses.extend(node.recv_all_pending(self.version.unwrap()).await?);
         }
 
         // When the server indicates that it is ready for normal operation via Ready or AuthSuccess,
