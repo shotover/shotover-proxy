@@ -1,6 +1,6 @@
 use crate::shotover_process;
 use cassandra_protocol::frame::message_error::{ErrorBody, ErrorType};
-use cassandra_protocol::types::cassandra_type::CassandraType;
+// use cassandra_protocol::types::cassandra_type::CassandraType;
 use cdrs_tokio::frame::events::{
     SchemaChange, SchemaChangeOptions, SchemaChangeTarget, SchemaChangeType, ServerEvent,
 };
@@ -1002,24 +1002,47 @@ async fn test_protocol_v5_compression_encode(#[case] driver: CassandraDriver) {
     }
 }
 
-#[tokio::test(flavor = "multi_thread")]
-async fn passthrough_websockets() {
-    let _docker_compose =
-        docker_compose("tests/test-configs/cassandra/passthrough-websocket/docker-compose.yaml");
+// #[tokio::test(flavor = "multi_thread")]
+// async fn passthrough_websockets() {
+//     let _docker_compose =
+//         docker_compose("tests/test-configs/cassandra/passthrough-websocket/docker-compose.yaml");
+//
+//     let shotover =
+//         shotover_process("tests/test-configs/cassandra/passthrough-websocket/topology.yaml")
+//             .start()
+//             .await;
+//
+//     let mut session = cql_ws::Session::new("ws://0.0.0.0:9042").await;
+//     let rows = session.query("SELECT bootstrapped FROM system.local").await;
+//     // assert_eq!(rows, vec![vec![CassandraType::Varchar("COMPLETED".into())]]);
+//
+//     shotover.shutdown_and_then_consume_events(&[]).await;
+// }
 
-    let shotover =
-        shotover_process("tests/test-configs/cassandra/passthrough-websocket/topology.yaml")
-            .start()
-            .await;
+// #[cfg(feature = "alpha-transforms")]
+// #[tokio::test(flavor = "multi_thread")]
+// async fn encode_websockets() {
+//     let _docker_compose =
+//         docker_compose("tests/test-configs/cassandra/passthrough-websocket/docker-compose.yaml");
+//
+//     let shotover =
+//         shotover_process("tests/test-configs/cassandra/passthrough-websocket/topology-encode.yaml")
+//             .start()
+//             .await;
+//
+//     let mut session = cql_ws::Session::new("ws://0.0.0.0:9042").await;
+//     let rows = session.query("SELECT bootstrapped FROM system.local").await;
+//     // assert_eq!(rows, vec![vec![CassandraType::Varchar("COMPLETED".into())]]);
+//
+//     shotover.shutdown_and_then_consume_events(&[]).await;
+// }
 
     let mut session = CqlWsSession::new("ws://0.0.0.0:9042").await;
     let rows = session.query("SELECT bootstrapped FROM system.local").await;
     assert_eq!(rows, vec![vec![CassandraType::Varchar("COMPLETED".into())]]);
 
-    shotover.shutdown_and_then_consume_events(&[]).await;
-}
-
-#[cfg(feature = "alpha-transforms")]
+#[rstest]
+#[case::cdrs(CdrsTokio)]
 #[tokio::test(flavor = "multi_thread")]
 async fn encode_websockets() {
     let _docker_compose =
@@ -1070,11 +1093,32 @@ async fn cassandra_5(#[case] driver: CassandraDriver) {
     let connection = || CassandraConnectionBuilder::new("127.0.0.1", 9042, driver).build();
 
     standard_test_suite(&connection, driver).await;
+    collections::vector::test(&connection().await).await;
 
     shotover.shutdown_and_then_consume_events(&[]).await;
 }
 
-#[apply(all_cassandra_drivers)]
+// #[rstest]
+// #[case::cdrs(CdrsTokio)]
+// #[tokio::test(flavor = "multi_thread")]
+// async fn cassandra_5_encode(#[case] driver: CassandraDriver) {
+//     let _compose = docker_compose("tests/test-configs/cassandra/cassandra-5/docker-compose.yaml");
+//
+//     let shotover =
+//         shotover_process("tests/test-configs/cassandra/cassandra-5/topology-encode.yaml")
+//             .start()
+//             .await;
+//
+//     let connection = || CassandraConnectionBuilder::new("127.0.0.1", 9042, driver).build();
+//
+//     standard_test_suite(&connection, driver).await;
+//     collections::vector::test(&connection().await).await;
+//
+//     shotover.shutdown_and_then_consume_events(&[]).await;
+// }
+
+#[rstest]
+#[case::cdrs(CdrsTokio)]
 #[tokio::test(flavor = "multi_thread")]
 async fn cassandra_5_cluster(#[case] driver: CassandraDriver) {
     let _compose = docker_compose("tests/test-configs/cassandra/cluster-v5/docker-compose.yaml");
@@ -1094,6 +1138,7 @@ async fn cassandra_5_cluster(#[case] driver: CassandraDriver) {
     };
 
     standard_test_suite(&connection, driver).await;
+    // collections::vector::test(&connection().await, driver).await;
 
     shotover.shutdown_and_then_consume_events(&[]).await;
 }

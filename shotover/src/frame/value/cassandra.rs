@@ -113,6 +113,7 @@ impl GenericValue {
                 GenericValue::Tuple(value_list)
             }
             CassandraType::Null => GenericValue::Null,
+            CassandraType::Vector(_vector) => todo!("make genericvalue from vector"),
             _ => unreachable!(),
         }
     }

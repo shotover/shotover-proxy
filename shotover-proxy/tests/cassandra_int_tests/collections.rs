@@ -607,6 +607,121 @@ mod map {
     }
 }
 
+pub mod vector {
+    use super::*;
+
+    async fn create(connection: &CassandraConnection) {
+        let cql = "CREATE TABLE IF NOT EXISTS collections.vectors (
+  vector VECTOR <FLOAT, 5>,
+  id int,
+  created_at timestamp,
+  PRIMARY KEY (id, created_at)
+)
+WITH CLUSTERING ORDER BY (created_at DESC);";
+        run_query(connection, cql).await;
+
+        let create_index_cql = "CREATE INDEX IF NOT EXISTS ann_index
+  ON collections.vectors(vector) USING 'sai';";
+        run_query(connection, create_index_cql).await;
+    }
+
+    async fn insert(connection: &CassandraConnection) {
+        let insert_vector_cql = [
+            "INSERT INTO collections.vectors (id, vector, created_at) VALUES (
+                1,
+                [0.45, 0.09, 0.01, 0.2, 0.11],
+                '2017-02-14 12:43:20-0800'
+            );",
+            "INSERT INTO collections.vectors (id, vector, created_at) VALUES (
+                2,
+                [0.99, 0.5, 0.99, 0.1, 0.34],
+                '2018-02-14 12:43:20-0800'
+            );",
+            "INSERT INTO collections.vectors (id, vector, created_at) VALUES (
+                3,
+                [0.9, 0.54, 0.12, 0.1, 0.95],
+                '2019-02-14 12:43:20-0800'
+            );",
+            "INSERT INTO collections.vectors (id, vector, created_at) VALUES (
+                4,
+                [0.13, 0.8, 0.35, 0.17, 0.03],
+                '2020-02-14 12:43:20-0800'
+            );",
+            "INSERT INTO collections.vectors (id, vector, created_at) VALUES (
+                5,
+                [0.3, 0.34, 0.2, 0.78, 0.25],
+                '2021-02-14 12:43:20-0800'
+            );",
+            "INSERT INTO collections.vectors (id, vector, created_at) VALUES (
+                6,
+                [0.1, 0.4, 0.1, 0.52, 0.09],
+                '2022-02-14 12:43:20-0800'
+            );",
+            "INSERT INTO collections.vectors (id, vector, created_at) VALUES (
+                7,
+                [0.3, 0.75, 0.2, 0.2, 0.5],
+                '2023-02-14 12:43:20-0800'
+            );",
+        ];
+        for row in insert_vector_cql {
+            run_query(connection, row).await;
+        }
+    }
+
+    async fn select(connection: &CassandraConnection) {
+        let select_cql = "SELECT * FROM collections.vectors
+    ORDER BY vector ANN OF [0.15, 0.1, 0.1, 0.35, 0.55]
+    LIMIT 3;";
+
+        assert_query_result(
+            connection,
+            select_cql,
+            &[
+                &[
+                    ResultValue::Int(3),
+                    ResultValue::Timestamp(1550177000000),
+                    ResultValue::Vector(vec![
+                        ResultValue::Float(0.9.into()),
+                        ResultValue::Float(0.54.into()),
+                        ResultValue::Float(0.12.into()),
+                        ResultValue::Float(0.1.into()),
+                        ResultValue::Float(0.95.into()),
+                    ]),
+                ],
+                &[
+                    ResultValue::Int(5),
+                    ResultValue::Timestamp(1613335400000),
+                    ResultValue::Vector(vec![
+                        ResultValue::Float(0.3.into()),
+                        ResultValue::Float(0.34.into()),
+                        ResultValue::Float(0.2.into()),
+                        ResultValue::Float(0.78.into()),
+                        ResultValue::Float(0.25.into()),
+                    ]),
+                ],
+                &[
+                    ResultValue::Int(7),
+                    ResultValue::Timestamp(1676407400000),
+                    ResultValue::Vector(vec![
+                        ResultValue::Float(0.3.into()),
+                        ResultValue::Float(0.75.into()),
+                        ResultValue::Float(0.2.into()),
+                        ResultValue::Float(0.2.into()),
+                        ResultValue::Float(0.5.into()),
+                    ]),
+                ],
+            ],
+        )
+        .await;
+    }
+
+    pub async fn test(connection: &CassandraConnection) {
+        create(connection).await;
+        insert(connection).await;
+        select(connection).await;
+    }
+}
+
 pub async fn test(connection: &CassandraConnection, driver: CassandraDriver) {
     run_query(
         connection,
