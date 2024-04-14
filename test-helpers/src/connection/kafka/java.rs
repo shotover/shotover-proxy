@@ -6,7 +6,9 @@ use std::{
 };
 
 fn properties(jvm: &Jvm, props: &HashMap<String, String>) -> Instance {
-    let properties = jvm.create_instance("java.util.Properties", &[]).unwrap();
+    let properties = jvm
+        .create_instance("java.util.Properties", InvocationArg::empty())
+        .unwrap();
     for (key, value) in props.iter() {
         jvm.invoke(
             &properties,
@@ -73,7 +75,7 @@ impl KafkaConnectionBuilderJava {
             .jvm
             .create_instance(
                 "org.apache.kafka.clients.producer.KafkaProducer",
-                &[properties.into()],
+                &[&properties.into()],
             )
             .unwrap();
 
@@ -101,14 +103,14 @@ impl KafkaConnectionBuilderJava {
             .jvm
             .create_instance(
                 "org.apache.kafka.clients.consumer.KafkaConsumer",
-                &[properties.into()],
+                &[&properties.into()],
             )
             .unwrap();
         self.jvm
             .invoke(
                 &consumer,
                 "subscribe",
-                &[self
+                &[&self
                     .jvm
                     .java_list("java.lang.String", vec![topic_name])
                     .unwrap()
@@ -131,7 +133,7 @@ impl KafkaConnectionBuilderJava {
             .invoke_static(
                 "org.apache.kafka.clients.admin.Admin",
                 "create",
-                &[properties.into()],
+                &[&properties.into()],
             )
             .unwrap();
         let jvm = self.jvm.clone();
@@ -224,11 +226,15 @@ impl KafkaConsumerJava {
 
         let result = tokio::task::block_in_place(|| {
             self.jvm
-                .invoke(&self.consumer, "poll", &[timeout.into()])
+                .invoke(&self.consumer, "poll", &[&timeout.into()])
                 .unwrap()
         });
 
-        let iterator = JavaIterator::new(self.jvm.invoke(&result, "iterator", &[]).unwrap());
+        let iterator = JavaIterator::new(
+            self.jvm
+                .invoke(&result, "iterator", InvocationArg::empty())
+                .unwrap(),
+        );
         while let Some(record) = iterator.next(&self.jvm) {
             let record = self
                 .jvm
@@ -288,7 +294,11 @@ impl KafkaConsumerJava {
 
 impl Drop for KafkaConsumerJava {
     fn drop(&mut self) {
-        tokio::task::block_in_place(|| self.jvm.invoke(&self.consumer, "close", &[]).unwrap());
+        tokio::task::block_in_place(|| {
+            self.jvm
+                .invoke(&self.consumer, "close", InvocationArg::empty())
+                .unwrap()
+        });
     }
 }
 
@@ -305,8 +315,9 @@ impl KafkaAdminJava {
                 self.jvm.create_instance(
                     "org.apache.kafka.clients.admin.NewTopic",
                     &[
-                        topic.name.try_into().unwrap(),
-                        self.jvm
+                        &topic.name.try_into().unwrap(),
+                        &self
+                            .jvm
                             .invoke_static(
                                 "java.util.Optional",
                                 "of",
@@ -314,7 +325,8 @@ impl KafkaAdminJava {
                             )
                             .unwrap()
                             .into(),
-                        self.jvm
+                        &self
+                            .jvm
                             .invoke_static(
                                 "java.util.Optional",
                                 "of",
@@ -342,7 +354,7 @@ impl KafkaAdminJava {
 
         let result = self
             .jvm
-            .invoke(&self.admin, "createTopics", &[topics.into()])
+            .invoke(&self.admin, "createTopics", &[&topics.into()])
             .unwrap();
         self.jvm.invoke_async(&result, "all", &[]).await.unwrap();
     }
@@ -355,7 +367,7 @@ impl KafkaAdminJava {
 
         let result = self
             .jvm
-            .invoke(&self.admin, "deleteTopics", &[topics.into()])
+            .invoke(&self.admin, "deleteTopics", &[&topics.into()])
             .unwrap();
         self.jvm.invoke_async(&result, "all", &[]).await.unwrap();
     }
@@ -388,7 +400,7 @@ impl KafkaAdminJava {
 
         let result = self
             .jvm
-            .invoke(&self.admin, "createPartitions", &[partitions.into()])
+            .invoke(&self.admin, "createPartitions", &[&partitions.into()])
             .unwrap();
         self.jvm.invoke_async(&result, "all", &[]).await.unwrap();
     }
@@ -421,7 +433,7 @@ impl KafkaAdminJava {
 
         let result = self
             .jvm
-            .invoke(&self.admin, "describeConfigs", &[resources.into()])
+            .invoke(&self.admin, "describeConfigs", &[&resources.into()])
             .unwrap();
         self.jvm.invoke_async(&result, "all", &[]).await.unwrap();
     }
@@ -463,7 +475,7 @@ impl KafkaAdminJava {
                     self.jvm
                         .create_instance(
                             "org.apache.kafka.clients.admin.Config",
-                            &[self
+                            &[&self
                                 .jvm
                                 .java_list("org.apache.kafka.clients.admin.ConfigEntry", entries)
                                 .unwrap()
@@ -478,15 +490,23 @@ impl KafkaAdminJava {
 
         let result = self
             .jvm
-            .invoke(&self.admin, "alterConfigs", &[alter_configs.into()])
+            .invoke(&self.admin, "alterConfigs", &[&alter_configs.into()])
             .unwrap();
-        self.jvm.invoke_async(&result, "all", &[]).await.unwrap();
+        self.jvm
+            .invoke_async(&result, "all", InvocationArg::empty())
+            .await
+            .unwrap();
     }
 
     fn java_map(&self, key_values: Vec<(Instance, Instance)>) -> Instance {
-        let map = self.jvm.create_instance("java.util.HashMap", &[]).unwrap();
+        let map = self
+            .jvm
+            .create_instance("java.util.HashMap", InvocationArg::empty())
+            .unwrap();
         for (k, v) in key_values {
-            self.jvm.invoke(&map, "put", &[k.into(), v.into()]).unwrap();
+            self.jvm
+                .invoke(&map, "put", &[&k.into(), &v.into()])
+                .unwrap();
         }
         map
     }
@@ -501,10 +521,13 @@ impl JavaIterator {
 
     fn next(&self, jvm: &Jvm) -> Option<Instance> {
         let has_next: bool = jvm
-            .to_rust(jvm.invoke(&self.0, "hasNext", &[]).unwrap())
+            .to_rust(
+                jvm.invoke(&self.0, "hasNext", InvocationArg::empty())
+                    .unwrap(),
+            )
             .unwrap();
         if has_next {
-            Some(jvm.invoke(&self.0, "next", &[]).unwrap())
+            Some(jvm.invoke(&self.0, "next", InvocationArg::empty()).unwrap())
         } else {
             None
         }

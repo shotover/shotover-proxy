@@ -33,4 +33,4 @@ anyhow.workspace = true
 rcgen.workspace = true
 rdkafka = { version = "0.36", features = ["cmake-build"], optional = true }
 docker-compose-runner = "0.3.0"
-j4rs = "0.17.2"
+j4rs = "0.18.0"
