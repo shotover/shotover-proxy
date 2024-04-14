@@ -316,33 +316,14 @@ impl KafkaAdminJava {
                     "org.apache.kafka.clients.admin.NewTopic",
                     &[
                         &topic.name.try_into().unwrap(),
-                        &self
-                            .jvm
-                            .invoke_static(
-                                "java.util.Optional",
-                                "of",
-                                &[InvocationArg::try_from(topic.num_partitions).unwrap()],
-                            )
+                        &InvocationArg::try_from(topic.num_partitions)
                             .unwrap()
-                            .into(),
-                        &self
-                            .jvm
-                            .invoke_static(
-                                "java.util.Optional",
-                                "of",
-                                &[InvocationArg::try_from(topic.replication_factor).unwrap()],
-                            )
+                            .into_primitive()
+                            .unwrap(),
+                        &InvocationArg::try_from(topic.replication_factor)
                             .unwrap()
-                            .into(),
-                        // TODO: can simplify to this once https://github.com/astonbitecode/j4rs/issues/91 is resolved
-                        // InvocationArg::try_from(topic.num_partitions)
-                        //     .unwrap()
-                        //     .into_primitive()
-                        //     .unwrap(),
-                        // InvocationArg::try_from(topic.replication_factor)
-                        //     .unwrap()
-                        //     .into_primitive()
-                        //     .unwrap(),
+                            .into_primitive()
+                            .unwrap(),
                     ],
                 )
             })
