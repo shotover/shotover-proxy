@@ -24,7 +24,6 @@ use rand::SeedableRng;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 use std::hash::Hasher;
-use std::net::SocketAddr;
 use std::sync::atomic::AtomicI64;
 use std::sync::Arc;
 use std::time::Duration;
@@ -54,22 +53,18 @@ pub struct KafkaSinkClusterConfig {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct ShotoverNodeConfig {
-    pub address: SocketAddr,
+    pub address: String,
     pub rack: String,
     pub broker_id: i32,
 }
 
 impl ShotoverNodeConfig {
-    fn build(self) -> ShotoverNode {
-        let address = KafkaAddress {
-            host: StrBytes::from_string(self.address.ip().to_string()),
-            port: self.address.port() as i32,
-        };
-        ShotoverNode {
-            address,
+    fn build(self) -> Result<ShotoverNode> {
+        Ok(ShotoverNode {
+            address: KafkaAddress::from_str(&self.address)?,
             rack: StrBytes::from_string(self.rack),
             broker_id: BrokerId(self.broker_id),
-        }
+        })
     }
 }
 
@@ -89,9 +84,19 @@ impl TransformConfig for KafkaSinkClusterConfig {
         transform_context: TransformContextConfig,
     ) -> Result<Box<dyn TransformBuilder>> {
         let tls = self.tls.clone().map(TlsConnector::new).transpose()?;
+
+        let shotover_nodes: Result<Vec<_>> = self
+            .shotover_nodes
+            .iter()
+            .cloned()
+            .map(ShotoverNodeConfig::build)
+            .collect();
+        let mut shotover_nodes = shotover_nodes?;
+        shotover_nodes.sort_by_key(|x| x.broker_id);
+
         Ok(Box::new(KafkaSinkClusterBuilder::new(
             self.first_contact_points.clone(),
-            self.shotover_nodes.clone(),
+            shotover_nodes,
             transform_context.chain_name,
             self.connect_timeout_ms,
             self.read_timeout,
@@ -117,19 +122,13 @@ pub struct KafkaSinkClusterBuilder {
 impl KafkaSinkClusterBuilder {
     pub fn new(
         first_contact_points: Vec<String>,
-        shotover_nodes: Vec<ShotoverNodeConfig>,
+        shotover_nodes: Vec<ShotoverNode>,
         _chain_name: String,
         connect_timeout_ms: u64,
         timeout: Option<u64>,
         tls: Option<TlsConnector>,
     ) -> KafkaSinkClusterBuilder {
         let receive_timeout = timeout.map(Duration::from_secs);
-
-        let mut shotover_nodes: Vec<_> = shotover_nodes
-            .into_iter()
-            .map(ShotoverNodeConfig::build)
-            .collect();
-        shotover_nodes.sort_by_key(|x| x.broker_id);
 
         KafkaSinkClusterBuilder {
             first_contact_points,
