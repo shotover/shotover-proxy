@@ -14,7 +14,6 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Notify;
-use tokio::time::timeout;
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
@@ -150,25 +149,9 @@ impl Transform for KafkaSinkSingle {
                 }
             }
 
-            // send
             let connection = self.connection.as_mut().unwrap();
-            let requests_count = requests_wrapper.requests.len();
             connection.send(requests_wrapper.requests)?;
-
-            // receive
-            let mut result = vec![];
-            let mut responses_count = 0;
-            while responses_count < requests_count {
-                let responses = if let Some(read_timeout) = self.read_timeout {
-                    timeout(read_timeout, connection.recv()).await?
-                } else {
-                    connection.recv().await
-                }?;
-
-                responses_count += responses.len();
-                result.extend(responses);
-            }
-            result
+            connection.try_recv()?
         };
 
         // Rewrite responses to use shotovers port instead of kafkas port

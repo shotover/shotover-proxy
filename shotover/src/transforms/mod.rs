@@ -316,7 +316,7 @@ pub trait Transform: Send {
     ///     + This type of transform is called a Terminating transform (as no subsequent transforms in the chain will be called).
     ///
     /// * Request/Response invariants:
-    ///     + Transforms must ensure that each request that passes through the transform has a corresponding response returned for it.
+    ///     + Transforms must ensure that each request that passes through the transform has a corresponding response returned for it if and only if [`Message::has_response`] is true for the request.
     ///         - A response/request pair can be identified by calling `request_id()` on a response and matching that to the `id()` of a previous request.
     ///         - The response does not need to be returned within the same call to [`Transform::transform`] that the request was encountered.
     ///           But it must be returned eventually over the lifetime of the transform.

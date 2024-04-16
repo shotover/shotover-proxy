@@ -195,6 +195,15 @@ impl Message {
         self.id
     }
 
+    /// Return the shotover assigned MessageId if the server will return a response to this message.
+    pub fn respondable_id(&mut self) -> Option<MessageId> {
+        if self.has_response() {
+            Some(self.id)
+        } else {
+            None
+        }
+    }
+
     /// Return the MessageId of the request that resulted in this message
     /// Returns None when:
     /// * The message is a request
@@ -417,23 +426,23 @@ impl Message {
         });
     }
 
-    /// Returns true iff it is known that the server will not send a response to this request, instead we need to generate a dummy response
-    pub(crate) fn response_is_dummy(&mut self) -> bool {
+    /// Returns true iff it is known that the server will not send a response to this request.
+    pub fn has_response(&mut self) -> bool {
         match self.message_type() {
             #[cfg(feature = "redis")]
-            MessageType::Redis => false,
+            MessageType::Redis => true,
             #[cfg(feature = "cassandra")]
-            MessageType::Cassandra => false,
+            MessageType::Cassandra => true,
             #[cfg(feature = "kafka")]
             MessageType::Kafka => match self.frame() {
                 Some(Frame::Kafka(crate::frame::kafka::KafkaFrame::Request {
                     body: crate::frame::kafka::RequestBody::Produce(produce),
                     ..
-                })) => produce.acks == 0,
-                _ => false,
+                })) => produce.acks != 0,
+                _ => true,
             },
             #[cfg(feature = "opensearch")]
-            MessageType::OpenSearch => false,
+            MessageType::OpenSearch => true,
             MessageType::Dummy => true,
         }
     }

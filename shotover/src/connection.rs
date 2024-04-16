@@ -1,8 +1,7 @@
 //! All Sink transforms use SinkConnection for their outgoing connections.
 
 use crate::codec::{CodecBuilder, CodecReadError, CodecWriteError};
-use crate::frame::Frame;
-use crate::message::{Message, MessageId, Messages};
+use crate::message::{Message, Messages};
 use crate::tcp;
 use crate::tls::{TlsConnector, ToHostname};
 use futures::{SinkExt, StreamExt};
@@ -24,7 +23,6 @@ pub struct SinkConnection {
     out_tx: mpsc::UnboundedSender<Vec<Message>>,
     connection_closed_rx: mpsc::Receiver<ConnectionError>,
     error: Option<ConnectionError>,
-    dummy_response_inserter: DummyResponseInserter,
 }
 
 impl SinkConnection {
@@ -71,17 +69,11 @@ impl SinkConnection {
             );
         }
 
-        let dummy_response_inserter = DummyResponseInserter {
-            dummy_requests: vec![],
-            pending_requests_count: 0,
-        };
-
         Ok(SinkConnection {
             in_rx,
             out_tx,
             connection_closed_rx,
             error: None,
-            dummy_response_inserter,
         })
     }
 
@@ -92,13 +84,13 @@ impl SinkConnection {
 
     /// Send messages.
     /// If there is a problem with the connection an error is returned.
-    pub fn send(&mut self, mut messages: Vec<Message>) -> Result<(), ConnectionError> {
-        self.dummy_response_inserter.process_requests(&mut messages);
-
+    pub fn send(&mut self, messages: Vec<Message>) -> Result<(), ConnectionError> {
         if let Some(error) = &self.error {
             Err(error.clone())
-        } else {
+        } else if !messages.is_empty() {
             self.out_tx.send(messages).map_err(|_| self.set_get_error())
+        } else {
+            Ok(())
         }
     }
 
@@ -111,19 +103,13 @@ impl SinkConnection {
             // first process any immediately pending dummy responses
 
             // ensure we include any received messages so we dont leave them hanging after using up a force_run_chain.
-            let mut messages = self.in_rx.try_recv().unwrap_or_default();
-            self.dummy_response_inserter
-                .process_responses(&mut messages);
+            let messages = self.in_rx.try_recv().unwrap_or_default();
             if !messages.is_empty() {
                 return Ok(messages);
             }
 
             match self.in_rx.recv().await {
-                Some(mut messages) => {
-                    self.dummy_response_inserter
-                        .process_responses(&mut messages);
-                    Ok(messages)
-                }
+                Some(messages) => Ok(messages),
                 None => Err(self.set_get_error()),
             }
         }
@@ -138,9 +124,7 @@ impl SinkConnection {
             let mut results = vec![];
             loop {
                 match self.in_rx.try_recv() {
-                    Ok(mut responses) => {
-                        self.dummy_response_inserter
-                            .process_responses(&mut responses);
+                    Ok(responses) => {
                         if results.is_empty() {
                             results = responses;
                         } else {
@@ -384,69 +368,5 @@ async fn writer_task<C: CodecBuilder + 'static, W: AsyncWrite + Unpin + Send + '
             // shotover is no longer sending responses, this task is no longer needed
             return Ok(());
         }
-    }
-}
-
-/// Keeps track of all dummy requests that pass through this connection and inserts a dummy response at the same index as the request.
-struct DummyResponseInserter {
-    dummy_requests: Vec<DummyRequest>,
-    pending_requests_count: usize,
-}
-
-#[derive(Debug)]
-struct DummyRequest {
-    request_id: MessageId,
-    request_index: usize,
-}
-
-impl DummyResponseInserter {
-    pub fn process_requests(&mut self, requests: &mut [Message]) {
-        for (i, request) in requests.iter_mut().enumerate() {
-            if request.response_is_dummy() {
-                self.dummy_requests.push(DummyRequest {
-                    request_id: request.id(),
-                    request_index: self.pending_requests_count + i,
-                });
-            }
-        }
-        self.pending_requests_count += requests.len();
-    }
-
-    pub fn process_responses(&mut self, responses: &mut Vec<Message>) {
-        // responses with no request will invalidate our indexes, so we need to fix them up here.
-        for (response_i, response) in responses.iter().enumerate() {
-            if response.request_id().is_none() {
-                for (dummy_request_i, dummy_request) in
-                    &mut self.dummy_requests.iter_mut().enumerate()
-                {
-                    // Either of `<` or `<=` could work here.
-                    // If its `<` then the dummy response comes before the unrequested response
-                    // If its `<=` then the dummy response comes after the unrequested response
-                    if response_i <= dummy_request.request_index + dummy_request_i {
-                        dummy_request.request_index += 1;
-                    }
-                }
-                self.pending_requests_count += 1;
-            }
-        }
-
-        // It is important that retain_mut iterates in the order of the vec.
-        // This is because it is only once the previous insert_index is inserted that the following insert_index becomes valid again.
-        self.dummy_requests.retain_mut(|dummy_request| {
-            if dummy_request.request_index <= responses.len() {
-                let mut dummy = Message::from_frame(Frame::Dummy);
-                dummy.set_request_id(dummy_request.request_id);
-                responses.insert(dummy_request.request_index, dummy);
-                false
-            } else {
-                true
-            }
-        });
-
-        // Decrement indexes so that they will be offset from 0 the next time responses come in.
-        for dummy_request in &mut self.dummy_requests {
-            dummy_request.request_index -= responses.len();
-        }
-        self.pending_requests_count -= responses.len();
     }
 }
