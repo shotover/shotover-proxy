@@ -102,8 +102,8 @@ async fn topology_task_process(
             // Wait for events to come in from the cassandra node.
             // If all the nodes receivers are closed then immediately stop listening and shutdown the task
             tokio::select! {
-                responses = connection.recv() => match responses {
-                    Ok(responses) => events.extend(responses),
+                responses = connection.recv_into(&mut events) => match responses {
+                    Ok(()) => {}
                     Err(err) => return Err(anyhow!(err).context("topology control connection was closed")),
                 },
                 _ = nodes_tx.closed() => return Ok(())

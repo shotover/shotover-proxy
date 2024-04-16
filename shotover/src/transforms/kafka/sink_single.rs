@@ -126,13 +126,13 @@ impl Transform for KafkaSinkSingle {
             );
         }
 
-        let mut responses = if requests_wrapper.requests.is_empty() {
+        let mut responses = vec![];
+        if requests_wrapper.requests.is_empty() {
             // there are no requests, so no point sending any, but we should check for any responses without awaiting
-            if let Ok(responses) = self.connection.as_mut().unwrap().try_recv() {
-                responses
-            } else {
-                vec![]
-            }
+            self.connection
+                .as_mut()
+                .unwrap()
+                .try_recv_into(&mut responses)?;
         } else {
             // send requests and wait until we have responses for all of them
 
@@ -156,20 +156,14 @@ impl Transform for KafkaSinkSingle {
             connection.send(requests_wrapper.requests)?;
 
             // receive
-            let mut result = vec![];
-            let mut responses_count = 0;
-            while responses_count < requests_count {
-                let responses = if let Some(read_timeout) = self.read_timeout {
-                    timeout(read_timeout, connection.recv()).await?
+            while responses.len() < requests_count {
+                if let Some(read_timeout) = self.read_timeout {
+                    timeout(read_timeout, connection.recv_into(&mut responses)).await?
                 } else {
-                    connection.recv().await
+                    connection.recv_into(&mut responses).await
                 }?;
-
-                responses_count += responses.len();
-                result.extend(responses);
             }
-            result
-        };
+        }
 
         // Rewrite responses to use shotovers port instead of kafkas port
         for response in &mut responses {

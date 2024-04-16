@@ -156,38 +156,36 @@ impl CassandraSinkSingle {
             );
         }
 
-        let result = if requests.is_empty() {
+        let mut responses = vec![];
+        if requests.is_empty() {
             // there are no requests, so no point sending any, but we should check for any responses without awaiting
             self.connection
                 .as_mut()
                 .unwrap()
-                .try_recv()
-                .unwrap_or_default()
+                .try_recv_into(&mut responses)?;
         } else {
             let connection = self.connection.as_mut().unwrap();
 
             let requests_count = requests.len();
             connection.send(requests)?;
 
-            let mut result = vec![];
             let mut responses_count = 0;
             while responses_count < requests_count {
-                let mut responses = if let Some(read_timeout) = self.read_timeout {
-                    timeout(read_timeout, connection.recv()).await?
+                let responses_len_old = responses.len();
+                if let Some(read_timeout) = self.read_timeout {
+                    timeout(read_timeout, connection.recv_into(&mut responses)).await?
                 } else {
-                    connection.recv().await
+                    connection.recv_into(&mut responses).await
                 }?;
-                for response in &mut responses {
+                for response in &mut responses[responses_len_old..] {
                     if response.request_id().is_some() {
                         responses_count += 1;
                     }
                 }
-                result.extend(responses);
             }
-            result
         };
 
-        for response in &result {
+        for response in &responses {
             if let Ok(Metadata::Cassandra(CassandraMetadata {
                 opcode: Opcode::Error,
                 ..
@@ -197,7 +195,7 @@ impl CassandraSinkSingle {
             }
         }
 
-        Ok(result)
+        Ok(responses)
     }
 }
 
