@@ -1,8 +1,8 @@
+use super::connection::CassandraConnection;
 use super::node::{CassandraNode, ConnectionFactory};
 use super::routing_key::calculate_routing_key;
 use super::token_ring::TokenRing;
 use super::KeyspaceChanRx;
-use crate::transforms::cassandra::connection::CassandraConnection;
 use anyhow::{anyhow, Context, Error, Result};
 use cassandra_protocol::frame::message_execute::BodyReqExecuteOwned;
 use cassandra_protocol::types::CBytesShort;
@@ -107,14 +107,6 @@ impl NodePool {
         );
     }
 
-    pub fn report_issue_with_node(&mut self, address: SocketAddr) {
-        for node in &mut self.nodes {
-            if node.address == address {
-                node.report_issue();
-            }
-        }
-    }
-
     pub fn update_keyspaces(&mut self, keyspaces_rx: &mut KeyspaceChanRx) {
         let updated_keyspaces = keyspaces_rx.borrow_and_update().clone();
         self.keyspace_metadata = updated_keyspaces;
@@ -149,12 +141,12 @@ impl NodePool {
         rack: &str,
         rng: &mut SmallRng,
         connection_factory: &ConnectionFactory,
-    ) -> Result<&CassandraConnection> {
+    ) -> Result<&mut CassandraConnection> {
         self.get_random_node_in_dc_rack(rack, rng, connection_factory)
             .await
             .map(|x| {
                 x.outbound
-                    .as_ref()
+                    .as_mut()
                     .expect("it is set to Some by get_random_node_in_dc_rack")
             })
     }
@@ -257,7 +249,7 @@ impl NodePool {
         rack: &str,
         rng: &mut SmallRng,
         connection_factory: &ConnectionFactory,
-    ) -> Result<&CassandraConnection, GetReplicaErr> {
+    ) -> Result<&mut CassandraConnection, GetReplicaErr> {
         let nodes = self.get_replica_node_in_dc(execute, rack, rng).await?;
 
         get_accessible_node(connection_factory, nodes)
@@ -266,7 +258,7 @@ impl NodePool {
             .map_err(GetReplicaErr::NoNodeAvailable)
             .map(|x| {
                 x.outbound
-                    .as_ref()
+                    .as_mut()
                     .expect("it is set to Some by get_accessible_node")
             })
     }
