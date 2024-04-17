@@ -70,14 +70,14 @@ impl MessageRewriter {
         pool: &mut NodePool,
         version: Version,
     ) -> Result<()> {
-        for (i, message) in messages.iter_mut().enumerate() {
-            if let Some(rewrite) = self.get_rewrite_table(i, message) {
-                self.to_rewrite.push(rewrite);
-            }
-        }
+        let mut new_rewrites: Vec<_> = messages
+            .iter_mut()
+            .enumerate()
+            .filter_map(|(i, message)| self.get_rewrite_table(i, message))
+            .collect();
 
         // Insert the extra messages required by table rewrites.
-        for table_to_rewrite in &mut self.to_rewrite {
+        for table_to_rewrite in &mut new_rewrites {
             match &table_to_rewrite.ty {
                 RewriteTableTy::Local => {
                     let query = "SELECT rack, data_center, schema_version, tokens, release_version FROM system.peers";
@@ -138,6 +138,7 @@ impl MessageRewriter {
                 }
             }
         }
+        self.to_rewrite.extend(new_rewrites);
 
         Ok(())
     }
@@ -236,11 +237,10 @@ impl MessageRewriter {
         }
 
         for message_or_id in table.collected_messages.iter_mut() {
-            let MessageOrId::Id(id) = message_or_id else {
-                break;
-            };
-            if let Some(i) = responses.iter().position(|x| x.request_id() == Some(*id)) {
-                *message_or_id = MessageOrId::Message(responses.swap_remove(i));
+            if let MessageOrId::Id(id) = message_or_id {
+                if let Some(i) = responses.iter().position(|x| x.request_id() == Some(*id)) {
+                    *message_or_id = MessageOrId::Message(responses.swap_remove(i));
+                }
             }
         }
 

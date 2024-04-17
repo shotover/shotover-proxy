@@ -1,5 +1,6 @@
 use crate::codec::cassandra::CassandraCodecBuilder;
 use crate::codec::{CodecBuilder, Direction};
+use crate::connection::SinkConnection;
 use crate::frame::Frame;
 use crate::message::{Message, Messages};
 use crate::tls::{TlsConnector, ToHostname};
@@ -9,9 +10,10 @@ use cassandra_protocol::frame::Version;
 use cassandra_protocol::token::Murmur3Token;
 use derivative::Derivative;
 use std::net::SocketAddr;
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::ToSocketAddrs;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, Notify};
 use uuid::Uuid;
 
 #[derive(Clone, Derivative)]
@@ -65,6 +67,7 @@ impl CassandraNode {
 #[derivative(Debug)]
 pub struct ConnectionFactory {
     connect_timeout: Duration,
+    read_timeout: Option<Duration>,
     init_handshake: Vec<Message>,
     use_message: Option<Message>,
     #[derivative(Debug = "ignore")]
@@ -72,33 +75,45 @@ pub struct ConnectionFactory {
     pushed_messages_tx: Option<mpsc::UnboundedSender<Messages>>,
     #[derivative(Debug = "ignore")]
     codec_builder: CassandraCodecBuilder,
+    version: Option<Version>,
+    force_run_chain: Option<Arc<Notify>>,
 }
 
 impl Clone for ConnectionFactory {
     fn clone(&self) -> Self {
         Self {
             connect_timeout: self.connect_timeout,
+            read_timeout: self.read_timeout,
             init_handshake: self.init_handshake.clone(),
             use_message: None,
             tls: self.tls.clone(),
             pushed_messages_tx: None,
+            force_run_chain: None,
             codec_builder: self.codec_builder.clone(),
+            version: self.version,
         }
     }
 }
 
 impl ConnectionFactory {
-    pub fn new(connect_timeout: Duration, tls: Option<TlsConnector>) -> Self {
+    pub fn new(
+        connect_timeout: Duration,
+        read_timeout: Option<Duration>,
+        tls: Option<TlsConnector>,
+    ) -> Self {
         Self {
             connect_timeout,
+            read_timeout,
             init_handshake: vec![],
             use_message: None,
             tls,
             pushed_messages_tx: None,
+            force_run_chain: None,
             codec_builder: CassandraCodecBuilder::new(
                 Direction::Sink,
                 "CassandraSinkCluster".to_owned(),
             ),
+            version: None,
         }
     }
 
@@ -107,10 +122,13 @@ impl ConnectionFactory {
         Self {
             connect_timeout: self.connect_timeout,
             init_handshake: vec![],
+            read_timeout: self.read_timeout,
             use_message: None,
             tls: self.tls.clone(),
             pushed_messages_tx: None,
+            force_run_chain: None,
             codec_builder: self.codec_builder.clone(),
+            version: None,
         }
     }
 
@@ -159,8 +177,42 @@ impl ConnectionFactory {
         Ok(outbound)
     }
 
-    pub fn push_handshake_message(&mut self, message: Message) {
-        self.init_handshake.push(message);
+    pub fn push_handshake_message(&mut self, mut request: Message) {
+        if self.version.is_none() {
+            if let Some(Frame::Cassandra(frame)) = request.frame() {
+                self.version = Some(frame.version);
+            }
+        }
+        self.init_handshake.push(request);
+    }
+
+    pub async fn new_sink_connection<A: ToSocketAddrs + ToHostname + std::fmt::Debug>(
+        &self,
+        address: A,
+    ) -> Result<SinkConnection> {
+        let mut connection = SinkConnection::new(
+            address,
+            self.codec_builder.clone(),
+            &self.tls,
+            self.connect_timeout,
+            self.force_run_chain.clone().unwrap(),
+            self.read_timeout,
+        )
+        .await
+        .map_err(|e| e.context("Failed to create new connection"))?;
+
+        let requests: Vec<Message> = self
+            .init_handshake
+            .iter()
+            .cloned()
+            .chain(self.use_message.clone())
+            .collect();
+        for request in requests {
+            connection.send(vec![request])?;
+            connection.recv().await?;
+        }
+
+        Ok(connection)
     }
 
     /// Add a USE statement to the handshake ensures that any new connection
@@ -174,15 +226,18 @@ impl ConnectionFactory {
         self.pushed_messages_tx = Some(pushed_messages_tx);
     }
 
-    pub fn get_version(&mut self) -> Result<Version> {
-        for message in &mut self.init_handshake {
-            if let Some(Frame::Cassandra(frame)) = message.frame() {
-                return Ok(frame.version);
-            }
+    pub fn get_version(&self) -> Result<Version> {
+        if let Some(version) = self.version {
+            Ok(version)
+        } else {
+            Err(anyhow!(
+                "connection version could not be retrieved from the handshake because none of the {} messages in the handshake could be parsed",
+                self.init_handshake.len()
+            ))
         }
-        Err(anyhow!(
-            "connection version could not be retrieved from the handshake because none of the {} messages in the handshake could be parsed",
-            self.init_handshake.len()
-        ))
+    }
+
+    pub fn set_force_run_chain(&mut self, force_run_chain: Arc<Notify>) {
+        self.force_run_chain = Some(force_run_chain);
     }
 }

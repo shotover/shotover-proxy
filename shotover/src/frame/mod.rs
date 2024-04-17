@@ -12,7 +12,7 @@ use kafka::KafkaFrame;
 #[cfg(feature = "opensearch")]
 pub use opensearch::OpenSearchFrame;
 #[cfg(feature = "redis")]
-pub use redis_protocol::resp2::types::Frame as RedisFrame;
+pub use redis_protocol::resp2::types::BytesFrame as RedisFrame;
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
 #[cfg(feature = "cassandra")]
@@ -131,7 +131,7 @@ impl Frame {
                 CassandraFrame::from_bytes(bytes, codec_state.as_cassandra()).map(Frame::Cassandra)
             }
             #[cfg(feature = "redis")]
-            MessageType::Redis => redis_protocol::resp2::decode::decode(&bytes)
+            MessageType::Redis => redis_protocol::resp2::decode::decode_bytes(&bytes)
                 .map(|x| Frame::Redis(x.unwrap().0))
                 .map_err(|e| anyhow!("{e:?}")),
             #[cfg(feature = "kafka")]

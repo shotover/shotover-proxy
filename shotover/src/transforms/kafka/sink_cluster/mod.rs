@@ -24,7 +24,6 @@ use rand::SeedableRng;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 use std::hash::Hasher;
-use std::net::SocketAddr;
 use std::sync::atomic::AtomicI64;
 use std::sync::Arc;
 use std::time::Duration;
@@ -49,28 +48,23 @@ pub struct KafkaSinkClusterConfig {
     pub connect_timeout_ms: u64,
     pub read_timeout: Option<u64>,
     pub tls: Option<TlsConnectorConfig>,
-    pub sasl_enabled: Option<bool>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct ShotoverNodeConfig {
-    pub address: SocketAddr,
+    pub address: String,
     pub rack: String,
     pub broker_id: i32,
 }
 
 impl ShotoverNodeConfig {
-    fn build(self) -> ShotoverNode {
-        let address = KafkaAddress {
-            host: StrBytes::from_string(self.address.ip().to_string()),
-            port: self.address.port() as i32,
-        };
-        ShotoverNode {
-            address,
+    fn build(self) -> Result<ShotoverNode> {
+        Ok(ShotoverNode {
+            address: KafkaAddress::from_str(&self.address)?,
             rack: StrBytes::from_string(self.rack),
             broker_id: BrokerId(self.broker_id),
-        }
+        })
     }
 }
 
@@ -90,14 +84,23 @@ impl TransformConfig for KafkaSinkClusterConfig {
         transform_context: TransformContextConfig,
     ) -> Result<Box<dyn TransformBuilder>> {
         let tls = self.tls.clone().map(TlsConnector::new).transpose()?;
+
+        let shotover_nodes: Result<Vec<_>> = self
+            .shotover_nodes
+            .iter()
+            .cloned()
+            .map(ShotoverNodeConfig::build)
+            .collect();
+        let mut shotover_nodes = shotover_nodes?;
+        shotover_nodes.sort_by_key(|x| x.broker_id);
+
         Ok(Box::new(KafkaSinkClusterBuilder::new(
             self.first_contact_points.clone(),
-            self.shotover_nodes.clone(),
+            shotover_nodes,
             transform_context.chain_name,
             self.connect_timeout_ms,
             self.read_timeout,
             tls,
-            self.sasl_enabled.unwrap_or(false),
         )))
     }
 }
@@ -114,26 +117,18 @@ pub struct KafkaSinkClusterBuilder {
     topic_by_id: Arc<DashMap<Uuid, Topic>>,
     nodes_shared: Arc<RwLock<Vec<KafkaNode>>>,
     tls: Option<TlsConnector>,
-    sasl_enabled: bool,
 }
 
 impl KafkaSinkClusterBuilder {
     pub fn new(
         first_contact_points: Vec<String>,
-        shotover_nodes: Vec<ShotoverNodeConfig>,
+        shotover_nodes: Vec<ShotoverNode>,
         _chain_name: String,
         connect_timeout_ms: u64,
         timeout: Option<u64>,
         tls: Option<TlsConnector>,
-        sasl_enabled: bool,
     ) -> KafkaSinkClusterBuilder {
         let receive_timeout = timeout.map(Duration::from_secs);
-
-        let mut shotover_nodes: Vec<_> = shotover_nodes
-            .into_iter()
-            .map(ShotoverNodeConfig::build)
-            .collect();
-        shotover_nodes.sort_by_key(|x| x.broker_id);
 
         KafkaSinkClusterBuilder {
             first_contact_points,
@@ -146,7 +141,6 @@ impl KafkaSinkClusterBuilder {
             topic_by_id: Arc::new(DashMap::new()),
             nodes_shared: Arc::new(RwLock::new(vec![])),
             tls,
-            sasl_enabled,
         }
     }
 }
@@ -163,7 +157,7 @@ impl TransformBuilder for KafkaSinkClusterBuilder {
             topic_by_name: self.topic_by_name.clone(),
             topic_by_id: self.topic_by_id.clone(),
             rng: SmallRng::from_rng(rand::thread_rng()).unwrap(),
-            sasl_status: SaslStatus::new(self.sasl_enabled),
+            auth_complete: false,
             connection_factory: ConnectionFactory::new(
                 self.tls.clone(),
                 self.connect_timeout,
@@ -210,33 +204,6 @@ impl AtomicBrokerId {
     }
 }
 
-#[derive(Debug)]
-struct SaslStatus {
-    enabled: bool,
-    handshake_complete: bool,
-}
-
-impl SaslStatus {
-    fn new(enabled: bool) -> Self {
-        Self {
-            enabled,
-            handshake_complete: false,
-        }
-    }
-
-    fn set_handshake_complete(&mut self) {
-        self.handshake_complete = true;
-    }
-
-    fn is_handshake_complete(&self) -> bool {
-        if self.enabled {
-            self.handshake_complete
-        } else {
-            true
-        }
-    }
-}
-
 pub struct KafkaSinkCluster {
     first_contact_points: Vec<String>,
     shotover_nodes: Vec<ShotoverNode>,
@@ -247,7 +214,7 @@ pub struct KafkaSinkCluster {
     topic_by_name: Arc<DashMap<TopicName, Topic>>,
     topic_by_id: Arc<DashMap<Uuid, Topic>>,
     rng: SmallRng,
-    sasl_status: SaslStatus,
+    auth_complete: bool,
     connection_factory: ConnectionFactory,
     first_contact_node: Option<KafkaAddress>,
     control_connection: Option<SinkConnection>,
@@ -382,6 +349,54 @@ impl KafkaSinkCluster {
     }
 
     async fn route_requests(&mut self, mut requests: Vec<Message>) -> Result<()> {
+        if !self.auth_complete {
+            let mut handshake_request_count = 0;
+            for request in &mut requests {
+                match request.frame() {
+                    Some(Frame::Kafka(KafkaFrame::Request {
+                        body: RequestBody::SaslHandshake(_),
+                        ..
+                    })) => {
+                        self.connection_factory
+                            .add_handshake_message(request.clone());
+                        handshake_request_count += 1;
+                    }
+                    Some(Frame::Kafka(KafkaFrame::Request {
+                        body: RequestBody::SaslAuthenticate(_),
+                        ..
+                    })) => {
+                        self.connection_factory.add_auth_message(request.clone());
+                        handshake_request_count += 1;
+                    }
+                    Some(Frame::Kafka(KafkaFrame::Request {
+                        body: RequestBody::ApiVersions(_),
+                        ..
+                    })) => {
+                        handshake_request_count += 1;
+                    }
+                    _ => {
+                        // The client is no longer performing authentication
+                        self.auth_complete = true;
+                        break;
+                    }
+                }
+            }
+            // route all handshake messages
+            for _ in 0..handshake_request_count {
+                let request = requests.remove(0);
+                self.route_to_first_contact_node(request.clone());
+            }
+
+            if requests.is_empty() {
+                // all messages received in this batch are handshake messages,
+                // so dont continue with regular message handling
+                return Ok(());
+            } else {
+                // the later messages in this batch are not handshake messages,
+                // so continue onto the regular message handling
+            }
+        }
+
         let mut topics = vec![];
         let mut groups = vec![];
         for request in &mut requests {
@@ -435,9 +450,7 @@ impl KafkaSinkCluster {
         }
 
         // request and process metadata if we are missing topics or the controller broker id
-        if (!topics.is_empty() || self.controller_broker.get().is_none())
-            && self.sasl_status.is_handshake_complete()
-        {
+        if !topics.is_empty() || self.controller_broker.get().is_none() {
             let mut metadata = self.get_metadata_of_topics(topics).await?;
             match metadata.frame() {
                 Some(Frame::Kafka(KafkaFrame::Response {
@@ -457,112 +470,15 @@ impl KafkaSinkCluster {
             match message.frame() {
                 // route to partition leader
                 Some(Frame::Kafka(KafkaFrame::Request {
-                    body: RequestBody::Produce(produce),
+                    body: RequestBody::Produce(_),
                     ..
-                })) => {
-                    let mut connection = None;
-                    // assume that all topics in this message have the same routing requirements
-                    let (topic_name, topic_data) = produce
-                        .topic_data
-                        .iter()
-                        .next()
-                        .ok_or_else(|| anyhow!("No topics in produce message"))?;
-                    if let Some(topic) = self.topic_by_name.get(&topic_name.0) {
-                        // assume that all partitions in this topic have the same routing requirements
-                        let partition = &topic.partitions[topic_data
-                            .partition_data
-                            .first()
-                            .ok_or_else(|| anyhow!("No partitions in topic"))?
-                            .index
-                            as usize];
-                        for node in &mut self.nodes {
-                            if node.broker_id == partition.leader_id {
-                                connection = Some(node.broker_id);
-                            }
-                        }
-                    }
-                    let destination = match connection {
-                        Some(connection) => connection,
-                        None => {
-                            tracing::warn!("no known partition leader for {topic_name:?}, routing message to a random node so that a NOT_LEADER_OR_FOLLOWER or similar error is returned to the client");
-                            self.nodes.choose(&mut self.rng).unwrap().broker_id
-                        }
-                    };
-
-                    self.pending_requests.push_back(PendingRequest::Routed {
-                        destination,
-                        request: message,
-                    })
-                }
+                })) => self.route_produce_request(message)?,
 
                 // route to random partition replica
                 Some(Frame::Kafka(KafkaFrame::Request {
-                    body: RequestBody::Fetch(fetch),
+                    body: RequestBody::Fetch(_),
                     ..
-                })) => {
-                    let destination = if fetch.session_id == 0 {
-                        // assume that all topics in this message have the same routing requirements
-                        let topic = fetch
-                            .topics
-                            .first()
-                            .ok_or_else(|| anyhow!("No topics in fetch message"))?;
-
-                        // This way of constructing topic_meta is kind of crazy, but it works around borrow checker limitations
-                        // Old clients only specify the topic name and some newer clients only specify the topic id.
-                        // So we need to check the id first and then fallback to the name.
-                        let topic_name = &topic.topic;
-                        let topic_by_id = self.topic_by_id.get(&topic.topic_id);
-                        let topic_by_name;
-                        let mut topic_meta = topic_by_id.as_deref();
-                        if topic_meta.is_none() {
-                            topic_by_name = self.topic_by_name.get(&topic.topic);
-                            topic_meta = topic_by_name.as_deref();
-                        }
-
-                        let destination = if let Some(topic_meta) = topic_meta {
-                            let partition_index = topic
-                                .partitions
-                                .first()
-                                .ok_or_else(|| anyhow!("No partitions in topic"))?
-                                .partition
-                                as usize;
-                            // assume that all partitions in this topic have the same routing requirements
-                            if let Some(partition) = topic_meta.partitions.get(partition_index) {
-                                self.nodes
-                                    .iter_mut()
-                                    .filter(|node| {
-                                        partition.replica_nodes.contains(&node.broker_id)
-                                    })
-                                    .choose(&mut self.rng)
-                                    .unwrap()
-                                    .broker_id
-                            } else {
-                                let partition_len = topic_meta.partitions.len();
-                                tracing::warn!("no known partition replica for {topic_name:?} at partition index {partition_index} out of {partition_len} partitions, routing message to a random node so that a NOT_LEADER_OR_FOLLOWER or similar error is returned to the client");
-                                self.nodes.choose(&mut self.rng).unwrap().broker_id
-                            }
-                        } else {
-                            tracing::warn!("no known partition replica for {topic_name:?}, routing message to a random node so that a NOT_LEADER_OR_FOLLOWER or similar error is returned to the client");
-                            self.nodes.choose(&mut self.rng).unwrap().broker_id
-                        };
-                        self.fetch_request_destinations
-                            .insert(message.id(), destination);
-                        destination
-                    } else {
-                        // route via session id
-                        if let Some(destination) =
-                            self.fetch_session_id_to_broker.get(&fetch.session_id)
-                        {
-                            *destination
-                        } else {
-                            todo!()
-                        }
-                    };
-                    self.pending_requests.push_back(PendingRequest::Routed {
-                        destination,
-                        request: message,
-                    })
-                }
+                })) => self.route_fetch_request(message)?,
 
                 // route to group coordinator
                 Some(Frame::Kafka(KafkaFrame::Request {
@@ -616,30 +532,6 @@ impl KafkaSinkCluster {
                     body: RequestBody::CreateTopics(_),
                     ..
                 })) => self.route_to_controller(message),
-
-                Some(Frame::Kafka(KafkaFrame::Request {
-                    body: RequestBody::ApiVersions(_),
-                    ..
-                })) => self.route_to_first_contact_node(message.clone()),
-
-                Some(Frame::Kafka(KafkaFrame::Request {
-                    body: RequestBody::SaslHandshake(_),
-                    ..
-                })) => {
-                    self.route_to_first_contact_node(message.clone());
-                    self.connection_factory
-                        .add_handshake_message(message.clone());
-                }
-
-                Some(Frame::Kafka(KafkaFrame::Request {
-                    body: RequestBody::SaslAuthenticate(_),
-                    ..
-                })) => {
-                    self.route_to_first_contact_node(message.clone());
-                    self.connection_factory.add_auth_message(message.clone());
-                    self.sasl_status.set_handshake_complete();
-                }
-
                 // route to random node
                 _ => {
                     let destination = self.nodes.choose(&mut self.rng).unwrap().broker_id;
@@ -653,23 +545,115 @@ impl KafkaSinkCluster {
         Ok(())
     }
 
-    fn route_to_first_contact_node(&mut self, message: Message) {
-        let destination = if let Some(first_contact_node) = &self.first_contact_node {
-            self.nodes
-                .iter_mut()
-                .find(|node| node.kafka_address == *first_contact_node)
-                .unwrap()
-                .broker_id
-        } else {
-            let node = self.nodes.get_mut(0).unwrap();
-            self.first_contact_node = Some(node.kafka_address.clone());
-            node.broker_id
-        };
+    fn route_produce_request(&mut self, mut message: Message) -> Result<()> {
+        if let Some(Frame::Kafka(KafkaFrame::Request {
+            body: RequestBody::Produce(produce),
+            ..
+        })) = message.frame()
+        {
+            let mut connection = None;
+            // assume that all topics in this message have the same routing requirements
+            let (topic_name, topic_data) = produce
+                .topic_data
+                .iter()
+                .next()
+                .ok_or_else(|| anyhow!("No topics in produce message"))?;
+            if let Some(topic) = self.topic_by_name.get(&topic_name.0) {
+                // assume that all partitions in this topic have the same routing requirements
+                let partition = &topic.partitions[topic_data
+                    .partition_data
+                    .first()
+                    .ok_or_else(|| anyhow!("No partitions in topic"))?
+                    .index as usize];
+                for node in &mut self.nodes {
+                    if node.broker_id == partition.leader_id {
+                        connection = Some(node.broker_id);
+                    }
+                }
+            }
+            let destination = match connection {
+                Some(connection) => connection,
+                None => {
+                    tracing::warn!("no known partition leader for {topic_name:?}, routing message to a random node so that a NOT_LEADER_OR_FOLLOWER or similar error is returned to the client");
+                    self.nodes.choose(&mut self.rng).unwrap().broker_id
+                }
+            };
 
-        self.pending_requests.push_back(PendingRequest::Routed {
-            destination,
-            request: message,
-        });
+            self.pending_requests.push_back(PendingRequest::Routed {
+                destination,
+                request: message,
+            })
+        }
+
+        Ok(())
+    }
+
+    fn route_fetch_request(&mut self, mut message: Message) -> Result<()> {
+        if let Some(Frame::Kafka(KafkaFrame::Request {
+            body: RequestBody::Fetch(fetch),
+            ..
+        })) = message.frame()
+        {
+            let destination = if fetch.session_id == 0 {
+                // assume that all topics in this message have the same routing requirements
+                let topic = fetch
+                    .topics
+                    .first()
+                    .ok_or_else(|| anyhow!("No topics in fetch message"))?;
+
+                // This way of constructing topic_meta is kind of crazy, but it works around borrow checker limitations
+                // Old clients only specify the topic name and some newer clients only specify the topic id.
+                // So we need to check the id first and then fallback to the name.
+                let topic_name = &topic.topic;
+                let topic_by_id = self.topic_by_id.get(&topic.topic_id);
+                let topic_by_name;
+                let mut topic_meta = topic_by_id.as_deref();
+                if topic_meta.is_none() {
+                    topic_by_name = self.topic_by_name.get(&topic.topic);
+                    topic_meta = topic_by_name.as_deref();
+                }
+
+                let destination = if let Some(topic_meta) = topic_meta {
+                    let partition_index = topic
+                        .partitions
+                        .first()
+                        .ok_or_else(|| anyhow!("No partitions in topic"))?
+                        .partition as usize;
+                    // assume that all partitions in this topic have the same routing requirements
+                    if let Some(partition) = topic_meta.partitions.get(partition_index) {
+                        self.nodes
+                            .iter_mut()
+                            .filter(|node| partition.replica_nodes.contains(&node.broker_id))
+                            .choose(&mut self.rng)
+                            .unwrap()
+                            .broker_id
+                    } else {
+                        let partition_len = topic_meta.partitions.len();
+                        tracing::warn!("no known partition replica for {topic_name:?} at partition index {partition_index} out of {partition_len} partitions, routing message to a random node so that a NOT_LEADER_OR_FOLLOWER or similar error is returned to the client");
+                        self.nodes.choose(&mut self.rng).unwrap().broker_id
+                    }
+                } else {
+                    tracing::warn!("no known partition replica for {topic_name:?}, routing message to a random node so that a NOT_LEADER_OR_FOLLOWER or similar error is returned to the client");
+                    self.nodes.choose(&mut self.rng).unwrap().broker_id
+                };
+                self.fetch_request_destinations
+                    .insert(message.id(), destination);
+                destination
+            } else {
+                // route via session id
+                if let Some(destination) = self.fetch_session_id_to_broker.get(&fetch.session_id) {
+                    *destination
+                } else {
+                    todo!()
+                }
+            };
+            self.pending_requests.push_back(PendingRequest::Routed {
+                destination,
+                request: message,
+            })
+        }
+
+        Ok(())
     }
 
     async fn find_coordinator_of_group(
@@ -801,7 +785,8 @@ impl KafkaSinkCluster {
     fn recv_responses(&mut self) -> Result<Vec<Message>> {
         for node in &mut self.nodes {
             if let Some(connection) = node.get_connection_if_open() {
-                if let Ok(responses) = connection.try_recv() {
+                let mut responses = vec![];
+                if let Ok(()) = connection.try_recv_into(&mut responses) {
                     for response in responses {
                         let mut response = Some(response);
                         for pending_request in &mut self.pending_requests {
@@ -890,6 +875,25 @@ impl KafkaSinkCluster {
         }
 
         Ok(())
+    }
+
+    fn route_to_first_contact_node(&mut self, message: Message) {
+        let destination = if let Some(first_contact_node) = &self.first_contact_node {
+            self.nodes
+                .iter_mut()
+                .find(|node| node.kafka_address == *first_contact_node)
+                .unwrap()
+                .broker_id
+        } else {
+            let node = self.nodes.get_mut(0).unwrap();
+            self.first_contact_node = Some(node.kafka_address.clone());
+            node.broker_id
+        };
+
+        self.pending_requests.push_back(PendingRequest::Routed {
+            destination,
+            request: message,
+        });
     }
 
     fn route_to_controller(&mut self, message: Message) {

@@ -14,7 +14,6 @@ use crate::transforms::{
 use anyhow::{anyhow, bail, ensure, Context, Result};
 use async_trait::async_trait;
 use bytes::Bytes;
-use bytes_utils::string::Str;
 use derivative::Derivative;
 use futures::stream::FuturesOrdered;
 use futures::stream::FuturesUnordered;
@@ -24,7 +23,8 @@ use metrics::counter;
 use rand::rngs::SmallRng;
 use rand::seq::IteratorRandom;
 use rand::SeedableRng;
-use redis_protocol::types::Redirection;
+use redis_protocol::bytes_utils::string::Str;
+use redis_protocol::resp2::types::Resp2Frame;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
@@ -1054,7 +1054,7 @@ impl Transform for RedisSinkCluster {
             let mut response = response?;
             match response.frame() {
                 Some(Frame::Redis(frame)) => {
-                    match frame.to_redirection() {
+                    match Redirection::parse(frame) {
                         Some(Redirection::Moved { slot, server }) => {
                             debug!("Got MOVE {} {}", slot, server);
 
@@ -1085,6 +1085,33 @@ impl Transform for RedisSinkCluster {
             }
         }
         Ok(response_buffer)
+    }
+}
+
+enum Redirection {
+    Moved { slot: u16, server: String },
+    Ask { slot: u16, server: String },
+}
+
+impl Redirection {
+    fn parse(frame: &RedisFrame) -> Option<Redirection> {
+        match frame {
+            RedisFrame::Error(err) => {
+                let mut tokens = err.split(' ');
+                match tokens.next()? {
+                    "MOVED" => Some(Redirection::Moved {
+                        slot: tokens.next()?.parse().ok()?,
+                        server: tokens.next()?.to_owned(),
+                    }),
+                    "ASK" => Some(Redirection::Ask {
+                        slot: tokens.next()?.parse().ok()?,
+                        server: tokens.next()?.to_owned(),
+                    }),
+                    _ => None,
+                }
+            }
+            _ => None,
+        }
     }
 }
 

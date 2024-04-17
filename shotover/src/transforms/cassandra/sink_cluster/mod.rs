@@ -4,7 +4,7 @@ use crate::frame::cassandra::{CassandraMetadata, Tracing};
 use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame};
 use crate::message::{Message, MessageIdMap, Messages, Metadata};
 use crate::tls::{TlsConnector, TlsConnectorConfig};
-use crate::transforms::cassandra::connection::{CassandraConnection, Response, ResponseError};
+use crate::transforms::cassandra::connection::{CassandraConnection, ResponseError};
 use crate::transforms::{
     Transform, TransformBuilder, TransformConfig, TransformContextBuilder, TransformContextConfig,
     Wrapper,
@@ -19,7 +19,6 @@ use cassandra_protocol::types::CBytesShort;
 use cql3_parser::cassandra_statement::CassandraStatement;
 use cql3_parser::common::IdentifierRef;
 use futures::stream::FuturesOrdered;
-use futures::StreamExt;
 use metrics::{counter, Counter};
 use node::{CassandraNode, ConnectionFactory};
 use node_pool::{GetReplicaErr, KeyspaceMetadata, NodePool};
@@ -120,10 +119,10 @@ impl CassandraSinkClusterBuilder {
         local_shotover_node: ShotoverNode,
         tls: Option<TlsConnector>,
         connect_timeout_ms: u64,
-        timeout: Option<u64>,
+        read_timeout: Option<u64>,
     ) -> Self {
         let failed_requests = counter!("shotover_failed_requests_count", "chain" => chain_name.clone(), "transform" => "CassandraSinkCluster");
-        let receive_timeout = timeout.map(Duration::from_secs);
+        let read_timeout = read_timeout.map(Duration::from_secs);
         let connect_timeout = Duration::from_millis(connect_timeout_ms);
 
         let (local_nodes_tx, local_nodes_rx) = watch::channel(vec![]);
@@ -148,10 +147,10 @@ impl CassandraSinkClusterBuilder {
 
         Self {
             contact_points,
-            connection_factory: ConnectionFactory::new(connect_timeout, tls),
+            connection_factory: ConnectionFactory::new(connect_timeout, read_timeout, tls),
             message_rewriter,
             failed_requests,
-            read_timeout: receive_timeout,
+            read_timeout,
             nodes_rx: local_nodes_rx,
             keyspaces_rx,
             task_handshake_tx,
@@ -347,8 +346,6 @@ impl CassandraSinkCluster {
 
         let mut responses_future = FuturesOrdered::new();
 
-        let mut responses_future_use = FuturesOrdered::new();
-        let mut use_future_index_to_node_index = vec![];
         for mut message in messages.into_iter() {
             let return_chan_rx = if self.pool.nodes().is_empty()
                 || !self.init_handshake_complete
@@ -363,16 +360,23 @@ impl CassandraSinkCluster {
                 // created will have the correct keyspace setup.
                 self.connection_factory.set_use_message(message.clone());
 
-                // Send the USE statement to all open connections to ensure they are all in sync
-                for (node_index, node) in self.pool.nodes().iter().enumerate() {
-                    if let Some(connection) = &node.outbound {
-                        responses_future_use.push_back(connection.send(message.clone())?);
-                        use_future_index_to_node_index.push(node_index);
-                    }
+                // route to the control connection
+                let result = self.control_connection.as_mut().unwrap().send(message)?;
+
+                // Close all other connections as they are now invalidated.
+                // They will be recreated as needed with the correct use statement used automatically after the handshake
+                for node in self.pool.nodes_mut() {
+                    node.outbound = None;
                 }
 
-                // Send the USE statement to the handshake connection and use the response as shotovers response
-                self.control_connection.as_mut().unwrap().send(message)?
+                // Sending the use statement to these connections to keep them alive instead is possible but tricky.
+                // 1. The destinations need to be calculated here, at sending time, to ensure no new connections have been created in the meantime.
+                // 2. We need a way to filter out these extra responses from reaching the client.
+                // 3. But we cant use the TableRewrite abstraction since that occurs too early. See 1.
+                //
+                // It might be worth doing in the future.
+
+                result
             } else if is_prepare_message(&mut message) {
                 let next_host_id = self.message_rewriter.get_destination_for_prepare(&message);
                 match self
@@ -504,18 +508,6 @@ impl CassandraSinkCluster {
                     self.complete_handshake().await?;
                     break;
                 }
-            }
-        }
-
-        for node_index in use_future_index_to_node_index {
-            let response = responses_future_use
-                .next()
-                .await
-                .map(|x| x.map_err(|e| anyhow!(e)));
-            // If any errors occurred close the connection as we can no
-            // longer make any guarantees about the current state of the connection
-            if !is_use_statement_successful(response) {
-                self.pool.nodes_mut()[node_index].outbound = None;
             }
         }
 
@@ -694,19 +686,6 @@ fn is_ddl_statement(request: &mut Message) -> bool {
             {
                 return true;
             }
-        }
-    }
-    false
-}
-
-fn is_use_statement_successful(response: Option<Result<Response>>) -> bool {
-    if let Some(Ok(Ok(mut response))) = response {
-        if let Some(Frame::Cassandra(CassandraFrame {
-            operation: CassandraOperation::Result(CassandraResult::SetKeyspace(_)),
-            ..
-        })) = response.frame()
-        {
-            return true;
         }
     }
     false

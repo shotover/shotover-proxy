@@ -25,6 +25,7 @@ impl KafkaConnectionBuilderCpp {
         let mut client = ClientConfig::new();
         client
             .set("bootstrap.servers", address)
+            .set("broker.address.family", "v4")
             // internal driver debug logs are emitted to tokio tracing, assuming the appropriate filter is used by the tracing subscriber
             .set("debug", "all");
         KafkaConnectionBuilderCpp { client }

@@ -20,7 +20,6 @@ This more accurately reflects a real production use but will take a bit more set
 And reduce the docker-compose.yaml to just the shotover part
 
 ```yaml
-version: '3.3'
 services:
   shotover-0:
     networks:
