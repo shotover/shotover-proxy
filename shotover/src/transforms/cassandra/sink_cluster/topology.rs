@@ -73,8 +73,9 @@ async fn topology_task_process(
     let version = connection_info.connection_factory.get_version()?;
     let mut connection = connection_info
         .connection_factory
-        .new_sink_connection(connection_info.address)
-        .await?;
+        .new_connection(connection_info.address)
+        .await?
+        .into_sink_connection();
 
     let mut nodes =
         fetch_current_nodes(&mut connection, connection_info, data_center, version).await?;
