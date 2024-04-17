@@ -21,8 +21,6 @@ pub mod cassandra;
 pub mod chain;
 pub mod coalesce;
 pub mod debug;
-#[cfg(feature = "redis")]
-pub mod distributed;
 pub mod filter;
 #[cfg(feature = "kafka")]
 pub mod kafka;

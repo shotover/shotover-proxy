@@ -12,23 +12,9 @@ sources:
       listen_addr: "127.0.0.1:6379"
       chain:
         - DebugPrinter
-        - TuneableConsistencyScatter:
-            read_consistency: 1
-            write_consistency: 1
-            route_map:
-              a_chain_1:
-                - NullSink
-                - DebugPrinter
-              b_chain_2:
-                - NullSink
-                - NullSink
-              c_chain_3:
-                - TuneableConsistencyScatter:
-                    read_consistency: 1
-                    write_consistency: 1
-                    route_map:
-                      sub_chain_1:
-                        - NullSink
-                      sub_chain_2:
-                        - NullSink
-                        - NullSink
+        - ParallelMap:
+            chain:
+              - NullSink
+              - DebugPrinter
+            parallelism: 1
+            ordered_results: false

@@ -53,10 +53,6 @@ pub struct Message {
     /// The only reason it is an Option is to allow temporarily taking ownership of the value from an &mut T
     inner: Option<MessageInner>,
 
-    // TODO: Not a fan of this field and we could get rid of it by making TimestampTagger an implicit part of TuneableConsistencyScatter
-    // This metadata field is only used for communication between transforms and should not be touched by sinks or sources
-    pub(crate) meta_timestamp: Option<i64>,
-
     /// The instant the bytes were read off the TCP connection at a source or sink.
     /// This field is used to measure the time it takes for a message to go from one end of the chain to the other.
     ///
@@ -67,7 +63,6 @@ pub struct Message {
     /// * When a response is generated from a request, for example to return an error message to the client, set this field to `None`.
     #[derivative(PartialEq = "ignore")]
     pub(crate) received_from_source_or_sink_at: Option<Instant>,
-
     pub(crate) codec_state: CodecState,
 
     // TODO: Consider removing the "ignore" down the line, we we need it for now for compatibility with logic using the old style "in order protocol" assumption.
@@ -92,7 +87,6 @@ impl Message {
                 bytes,
                 message_type: MessageType::from(&codec_state),
             }),
-            meta_timestamp: None,
             codec_state,
             received_from_source_or_sink_at,
             id: rand::random(),
@@ -111,7 +105,6 @@ impl Message {
         Message {
             codec_state: frame.as_codec_state(),
             inner: Some(MessageInner::Parsed { bytes, frame }),
-            meta_timestamp: None,
             received_from_source_or_sink_at,
             id: rand::random(),
             request_id: None,
@@ -128,7 +121,6 @@ impl Message {
         Message {
             codec_state: frame.as_codec_state(),
             inner: Some(MessageInner::Modified { frame }),
-            meta_timestamp: None,
             received_from_source_or_sink_at,
             id: rand::random(),
             request_id: None,
@@ -141,7 +133,6 @@ impl Message {
         Message {
             codec_state: frame.as_codec_state(),
             inner: Some(MessageInner::Modified { frame }),
-            meta_timestamp: None,
             received_from_source_or_sink_at: diverged_from.received_from_source_or_sink_at,
             id: diverged_from.id(),
             request_id: None,
@@ -210,7 +201,6 @@ impl Message {
     pub fn clone_with_new_id(&self) -> Self {
         Message {
             inner: self.inner.clone(),
-            meta_timestamp: self.meta_timestamp,
             received_from_source_or_sink_at: None,
             codec_state: self.codec_state,
             id: rand::random(),

@@ -1471,45 +1471,6 @@ async fn test_pubsub_conn_reuse_multisub(sub_connection: Connection) {
     assert_eq!(&res, "bar");
 }
 
-pub async fn run_all_multi_safe(connection: &mut Connection, flusher: &mut Flusher) {
-    test_cluster_basics(connection).await;
-    test_cluster_eval(connection).await;
-    test_cluster_script(connection).await; //TODO: script does not seem to be loading in the server?
-                                           // test_cluster_pipeline(); // we do support pipelining!!
-    test_getset(connection).await;
-    test_incr(connection).await;
-    test_info(connection).await;
-    test_keys_hiding(connection, flusher).await;
-    // test_hash_ops(connection).await;
-    test_set_ops(connection, flusher).await;
-    test_scan(connection, flusher).await;
-    test_optionals(connection).await;
-    // test_scanning(connection).await;
-    // test_filtered_scanning(connection).await;
-    // test_pipeline(connection).await;
-    test_empty_pipeline(connection).await;
-    // TODO: Pipeline transactions currently don't work (though it tries very hard)
-    // Current each cmd in a pipeline is treated as a single request, which means on a cluster
-    // basis they end up getting routed to different masters. This results in very occasionally will
-    // the transaction resolve (the exec and the multi both go to the right server).
-    // test_pipeline_transaction(connection).await;
-    // test_pipeline_reuse_query(connection).await;
-    // test_pipeline_reuse_query_clear(connection).await;
-    // test_real_transaction(connection).await;
-    test_script(connection).await;
-    test_tuple_args(connection, flusher).await;
-    // test_nice_api(connection).await;
-    test_auto_m_versions(connection).await;
-    test_nice_hash_api(connection).await;
-    test_nice_list_api(connection).await;
-    test_tuple_decoding_regression(connection).await;
-    test_bit_operations(connection).await;
-    test_client_name(connection).await;
-    //test_save(connection).await; // Save is not supported here
-    test_ping_echo(connection).await;
-    test_time(connection).await;
-}
-
 pub async fn run_all_cluster_hiding(connection: &mut Connection, flusher: &mut Flusher) {
     test_cluster_pipe(connection).await;
     test_pipeline_error(connection).await; //TODO: script does not seem to be loading in the server?
