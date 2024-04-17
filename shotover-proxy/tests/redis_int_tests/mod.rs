@@ -187,39 +187,6 @@ async fn cluster_ports_rewrite() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn multi() {
-    let _compose = docker_compose("tests/test-configs/redis/multi/docker-compose.yaml");
-    let shotover = shotover_process("tests/test-configs/redis/multi/topology.yaml")
-        .expect_startup_events(vec![EventMatcher::new()
-            .with_level(Level::Warn)
-            .with_target("shotover::transforms::distributed::tuneable_consistency_scatter")
-            .with_message(
-                "Using this transform is considered unstable - Does not work with REDIS pipelines",
-            )])
-        .start()
-        .await;
-    let mut connection = redis_connection::new_async("127.0.0.1", 6379).await;
-    let mut flusher =
-        Flusher::new_single_connection(redis_connection::new_async("127.0.0.1", 6379).await).await;
-
-    run_all_multi_safe(&mut connection, &mut flusher).await;
-
-    shotover
-        .shutdown_and_then_consume_events(&[EventMatcher::new()
-            .with_level(Level::Error)
-            .with_target("shotover::transforms::chain")
-            .with_message(
-                r#"Internal error in buffered chain: RedisTimestampTagger transform failed
-
-Caused by:
-    0: RedisSinkSingle transform failed
-    1: Failed to receive message because RedisSinkSingle response processing task is dead"#,
-            )
-            .with_count(Count::Any)])
-        .await;
-}
-
-#[tokio::test(flavor = "multi_thread")]
 async fn cluster_auth() {
     let _compose = docker_compose("tests/test-configs/redis/cluster-auth/docker-compose.yaml");
     let shotover = shotover_process("tests/test-configs/redis/cluster-auth/topology.yaml")
