@@ -18,7 +18,7 @@ async fn passthrough_standard(#[case] driver: KafkaDriver) {
         .await;
 
     let connection_builder = KafkaConnectionBuilder::new(driver, "127.0.0.1:9192");
-    test_cases::basic(connection_builder).await;
+    test_cases::standard_test_suite(connection_builder).await;
 
     tokio::time::timeout(
         Duration::from_secs(10),
@@ -42,7 +42,7 @@ async fn passthrough_tls(#[case] driver: KafkaDriver) {
         .await;
 
     let connection_builder = KafkaConnectionBuilder::new(driver, "127.0.0.1:9192");
-    test_cases::basic(connection_builder).await;
+    test_cases::standard_test_suite(connection_builder).await;
 
     tokio::time::timeout(
         Duration::from_secs(10),
@@ -66,7 +66,7 @@ async fn cluster_tls(#[case] driver: KafkaDriver) {
         .await;
 
     let connection_builder = KafkaConnectionBuilder::new(driver, "127.0.0.1:9192");
-    test_cases::basic(connection_builder).await;
+    test_cases::cluster_test_suite(connection_builder).await;
 
     tokio::time::timeout(
         Duration::from_secs(10),
@@ -89,7 +89,7 @@ async fn passthrough_encode(#[case] driver: KafkaDriver) {
         .await;
 
     let connection_builder = KafkaConnectionBuilder::new(driver, "127.0.0.1:9192");
-    test_cases::basic(connection_builder).await;
+    test_cases::standard_test_suite(connection_builder).await;
 
     shotover.shutdown_and_then_consume_events(&[]).await;
 }
@@ -107,7 +107,7 @@ async fn passthrough_sasl(#[case] driver: KafkaDriver) {
 
     let connection_builder =
         KafkaConnectionBuilder::new(driver, "127.0.0.1:9192").use_sasl("user", "password");
-    test_cases::basic(connection_builder).await;
+    test_cases::standard_test_suite(connection_builder).await;
 
     shotover.shutdown_and_then_consume_events(&[]).await;
 }
@@ -127,7 +127,7 @@ async fn passthrough_sasl_encode(#[case] driver: KafkaDriver) {
 
     let connection_builder =
         KafkaConnectionBuilder::new(driver, "127.0.0.1:9192").use_sasl("user", "password");
-    test_cases::basic(connection_builder).await;
+    test_cases::standard_test_suite(connection_builder).await;
 
     shotover.shutdown_and_then_consume_events(&[]).await;
 }
@@ -144,7 +144,7 @@ async fn cluster_1_rack_single_shotover(#[case] driver: KafkaDriver) {
         .await;
 
     let connection_builder = KafkaConnectionBuilder::new(driver, "127.0.0.1:9192");
-    test_cases::basic(connection_builder).await;
+    test_cases::cluster_test_suite(connection_builder).await;
 
     tokio::time::timeout(
         Duration::from_secs(10),
@@ -178,7 +178,7 @@ async fn cluster_1_rack_multi_shotover(#[case] driver: KafkaDriver) {
     }
 
     let connection_builder = KafkaConnectionBuilder::new(driver, "127.0.0.1:9192");
-    test_cases::basic(connection_builder).await;
+    test_cases::cluster_test_suite(connection_builder).await;
 
     for shotover in shotovers {
         tokio::time::timeout(
@@ -216,7 +216,7 @@ async fn cluster_2_racks_multi_shotover(#[case] driver: KafkaDriver) {
     }
 
     let connection_builder = KafkaConnectionBuilder::new(driver, "127.0.0.1:9192");
-    test_cases::basic(connection_builder).await;
+    test_cases::cluster_test_suite(connection_builder).await;
 
     for shotover in shotovers {
         tokio::time::timeout(
@@ -242,7 +242,7 @@ async fn cluster_sasl_single_shotover(#[case] driver: KafkaDriver) {
 
     let connection_builder =
         KafkaConnectionBuilder::new(driver, "127.0.0.1:9192").use_sasl("user", "password");
-    test_cases::basic(connection_builder).await;
+    test_cases::cluster_test_suite(connection_builder).await;
 
     tokio::time::timeout(
         Duration::from_secs(10),
@@ -277,7 +277,7 @@ async fn cluster_sasl_multi_shotover(#[case] driver: KafkaDriver) {
 
     let connection_builder =
         KafkaConnectionBuilder::new(driver, "127.0.0.1:9192").use_sasl("user", "password");
-    test_cases::basic(connection_builder).await;
+    test_cases::cluster_test_suite(connection_builder).await;
 
     for shotover in shotovers {
         tokio::time::timeout(
