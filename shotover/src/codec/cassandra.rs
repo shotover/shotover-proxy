@@ -264,6 +264,7 @@ impl CassandraDecoder {
             (Version::V5, true) => match compression {
                 Compression::None => {
                     let mut frame_bytes = src.split_to(frame_len);
+                    tracing::debug!("frame_bytes: \n{}", pretty_hex::pretty_hex(&frame_bytes));
 
                     let header =
                         i64::from_le_bytes(frame_bytes[..8].try_into().unwrap()) & 0xffffffffffff; // convert to 6 byte int
@@ -1052,6 +1053,7 @@ mod cassandra_protocol_tests {
     use crate::frame::cassandra::{
         parse_statement_single, CassandraFrame, CassandraOperation, CassandraResult, Tracing,
     };
+    use crate::frame::value::GenericValue;
     use crate::frame::Frame;
     use crate::message::Message;
     use bytes::BytesMut;
@@ -1064,6 +1066,7 @@ mod cassandra_protocol_tests {
     use cassandra_protocol::frame::message_startup::BodyReqStartup;
     use cassandra_protocol::frame::Version;
     use hex_literal::hex;
+    use ordered_float::OrderedFloat;
     use std::collections::HashMap;
     use tokio_util::codec::{Decoder, Encoder};
 
@@ -1168,6 +1171,88 @@ mod cassandra_protocol_tests {
             warnings: vec![],
         }))];
         test_frame_codec_roundtrip(&mut codec, &bytes, messages);
+    }
+
+    #[test]
+    fn test_codec_vector() {
+        let mut codec = CassandraCodecBuilder::new(Direction::Sink, "cassandra".to_owned());
+
+        let bytes = hex!("ac 00 02 c8  82 3a 85 00 00 03 08 00 00 00 a3 00 00 00 02 00 00 00 01 00 00 00 01 00 0b 63 6f 6c 6c 65 63 74 69 6f 6e 73 00 07 76 65 63 74 6f 72 73 00 06 76 65 63 74 6f 72 00 00 00 59 6f 72 67 2e 61 70 61 63 68 65 2e 63 61 73 73 61 6e 64 72 61 2e 64 62 2e 6d 61 72 73 68 61 6c 2e 56 65 63 74 6f 72 54 79 70 65 28 6f 72 67 2e 61 70 61 63 68 65 2e 63 61 73 73 61 6e 64 72 61 2e 64 62 2e 6d 61 72 73 68 61 6c 2e 46 6c 6f 61 74 54 79 70 65 20 2c 20 35 29 00 00 00 01 00 00 00 14 3e e6 66 66 3d b8 51 ec 3c 23 d7 0a 3e 4c cc cd 3d e1 47 ae 69 7d  6d 4f");
+
+        fn roundtrip(
+            codec: &mut CassandraCodecBuilder,
+            raw_frame: &[u8],
+            expected_messages: Vec<Message>,
+        ) {
+            let (mut decoder, mut encoder) = codec.build();
+
+            encoder.set_startup_state_ext("NONE".into(), Version::V5);
+
+            // test decode
+            let decoded_messages = decoder
+                .decode(&mut BytesMut::from(raw_frame))
+                .unwrap()
+                .unwrap();
+
+            // test messages parse correctly
+            let mut parsed_messages = decoded_messages.clone();
+            for message in &mut parsed_messages {
+                // This has the side effect of modifying the inner message to be parsed
+                message.frame().unwrap();
+                message.invalidate_cache();
+            }
+            assert_eq!(parsed_messages, expected_messages);
+
+            // test encode round trip - parsed messages
+            {
+                let mut dest = BytesMut::new();
+                encoder.encode(parsed_messages, &mut dest).unwrap();
+                assert_eq!(raw_frame, &dest.to_vec());
+            }
+
+            // test encode round trip - raw messages
+            {
+                let mut dest = BytesMut::new();
+                encoder.encode(decoded_messages, &mut dest).unwrap();
+                assert_eq!(raw_frame, &dest.to_vec());
+            }
+        }
+
+        let messages = vec![Message::from_frame(Frame::Cassandra(CassandraFrame {
+            version: Version::V5,
+            stream_id: 3,
+            tracing: Tracing::Response(None),
+            warnings: vec![],
+            operation: CassandraOperation::Result(CassandraResult::Rows {
+            rows: vec![
+                vec![
+                    GenericValue::Vector(vec![
+                        GenericValue::Float(OrderedFloat(0.45)),
+                        GenericValue::Float(OrderedFloat(0.09)),
+                        GenericValue::Float(OrderedFloat(0.01)),
+                        GenericValue::Float(OrderedFloat(0.2)),
+                        GenericValue::Float(OrderedFloat(0.11))
+                    ])
+                ]
+            ],
+            metadata: Box::new(
+                RowsMetadata {
+                    flags: RowsMetadataFlags::GLOBAL_TABLE_SPACE,
+                    columns_count: 1,
+                    paging_state: None,
+                    new_metadata_id: None,
+                    global_table_spec: Some(TableSpec { ks_name: "collections".into(), table_name: "vectors".into() }),
+                    col_specs: vec![
+                        ColSpec {
+                            table_spec: None,
+                            name: "vector".into(),
+                            col_type: ColTypeOption { id: ColType::Custom, value: Some(ColTypeOptionValue::CString("org.apache.cassandra.db.marshal.VectorType(org.apache.cassandra.db.marshal.FloatType , 5)".into())) }
+                }]
+            })
+    })}))
+        ];
+
+        roundtrip(&mut codec, &bytes, messages);
     }
 
     #[test]

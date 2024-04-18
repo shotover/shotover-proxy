@@ -1,2 +1,2 @@
-main_log_level: "info, shotover::connection_span=debug"
+main_log_level: "debug, shotover::connection_span=debug"
 observability_interface: "0.0.0.0:9001"

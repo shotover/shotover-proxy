@@ -925,7 +925,7 @@ dependencies = [
 [[package]]
 name = "cassandra-protocol"
 version = "3.1.1"
-source = "git+https://github.com/conorbros/cdrs-tokio?branch=vector-support#22789633a053f6469e1af7b1e5f9ff6658d0d76a"
+source = "git+https://github.com/conorbros/cdrs-tokio?branch=vector-support#03fa6ffeac55894fbe2472db59d0c17520e95225"
 dependencies = [
  "arc-swap",
  "arrayref",
@@ -975,7 +975,7 @@ dependencies = [
 [[package]]
 name = "cdrs-tokio"
 version = "8.1.2"
-source = "git+https://github.com/conorbros/cdrs-tokio?branch=vector-support#22789633a053f6469e1af7b1e5f9ff6658d0d76a"
+source = "git+https://github.com/conorbros/cdrs-tokio?branch=vector-support#03fa6ffeac55894fbe2472db59d0c17520e95225"
 dependencies = [
  "arc-swap",
  "atomic",

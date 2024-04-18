@@ -1098,24 +1098,24 @@ async fn cassandra_5(#[case] driver: CassandraDriver) {
     shotover.shutdown_and_then_consume_events(&[]).await;
 }
 
-// #[rstest]
-// #[case::cdrs(CdrsTokio)]
-// #[tokio::test(flavor = "multi_thread")]
-// async fn cassandra_5_encode(#[case] driver: CassandraDriver) {
-//     let _compose = docker_compose("tests/test-configs/cassandra/cassandra-5/docker-compose.yaml");
-//
-//     let shotover =
-//         shotover_process("tests/test-configs/cassandra/cassandra-5/topology-encode.yaml")
-//             .start()
-//             .await;
-//
-//     let connection = || CassandraConnectionBuilder::new("127.0.0.1", 9042, driver).build();
-//
-//     standard_test_suite(&connection, driver).await;
-//     collections::vector::test(&connection().await).await;
-//
-//     shotover.shutdown_and_then_consume_events(&[]).await;
-// }
+#[rstest]
+#[case::cdrs(CdrsTokio)]
+#[tokio::test(flavor = "multi_thread")]
+async fn cassandra_5_encode(#[case] driver: CassandraDriver) {
+    let _compose = docker_compose("tests/test-configs/cassandra/cassandra-5/docker-compose.yaml");
+
+    let shotover =
+        shotover_process("tests/test-configs/cassandra/cassandra-5/topology-encode.yaml")
+            .start()
+            .await;
+
+    let connection = || CassandraConnectionBuilder::new("127.0.0.1", 9042, driver).build();
+
+    standard_test_suite(&connection, driver).await;
+    collections::vector::test(&connection().await).await;
+
+    shotover.shutdown_and_then_consume_events(&[]).await;
+}
 
 #[rstest]
 #[case::cdrs(CdrsTokio)]
@@ -1138,7 +1138,7 @@ async fn cassandra_5_cluster(#[case] driver: CassandraDriver) {
     };
 
     standard_test_suite(&connection, driver).await;
-    // collections::vector::test(&connection().await, driver).await;
+    // collections::vector::test(&connection().await).await;
 
     shotover.shutdown_and_then_consume_events(&[]).await;
 }

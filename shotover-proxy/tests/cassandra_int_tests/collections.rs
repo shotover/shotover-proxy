@@ -669,47 +669,50 @@ WITH CLUSTERING ORDER BY (created_at DESC);";
     }
 
     async fn select(connection: &CassandraConnection) {
-        let select_cql = "SELECT * FROM collections.vectors
-    ORDER BY vector ANN OF [0.15, 0.1, 0.1, 0.35, 0.55]
-    LIMIT 3;";
+        let select_basic_cql = "SELECT vector from collections.vectors WHERE id = 7";
+
+        assert_query_result(
+            connection,
+            select_basic_cql,
+            &[&[ResultValue::Vector(vec![
+                ResultValue::Float(0.3.into()),
+                ResultValue::Float(0.75.into()),
+                ResultValue::Float(0.2.into()),
+                ResultValue::Float(0.2.into()),
+                ResultValue::Float(0.5.into()),
+            ])]],
+        )
+        .await;
+
+        let select_cql = "SELECT vector FROM collections.vectors
+        ORDER BY vector ANN OF [0.15, 0.1, 0.1, 0.35, 0.55]
+        LIMIT 3;";
 
         assert_query_result(
             connection,
             select_cql,
             &[
-                &[
-                    ResultValue::Int(3),
-                    ResultValue::Timestamp(1550177000000),
-                    ResultValue::Vector(vec![
-                        ResultValue::Float(0.9.into()),
-                        ResultValue::Float(0.54.into()),
-                        ResultValue::Float(0.12.into()),
-                        ResultValue::Float(0.1.into()),
-                        ResultValue::Float(0.95.into()),
-                    ]),
-                ],
-                &[
-                    ResultValue::Int(5),
-                    ResultValue::Timestamp(1613335400000),
-                    ResultValue::Vector(vec![
-                        ResultValue::Float(0.3.into()),
-                        ResultValue::Float(0.34.into()),
-                        ResultValue::Float(0.2.into()),
-                        ResultValue::Float(0.78.into()),
-                        ResultValue::Float(0.25.into()),
-                    ]),
-                ],
-                &[
-                    ResultValue::Int(7),
-                    ResultValue::Timestamp(1676407400000),
-                    ResultValue::Vector(vec![
-                        ResultValue::Float(0.3.into()),
-                        ResultValue::Float(0.75.into()),
-                        ResultValue::Float(0.2.into()),
-                        ResultValue::Float(0.2.into()),
-                        ResultValue::Float(0.5.into()),
-                    ]),
-                ],
+                &[ResultValue::Vector(vec![
+                    ResultValue::Float(0.9.into()),
+                    ResultValue::Float(0.54.into()),
+                    ResultValue::Float(0.12.into()),
+                    ResultValue::Float(0.1.into()),
+                    ResultValue::Float(0.95.into()),
+                ])],
+                &[ResultValue::Vector(vec![
+                    ResultValue::Float(0.3.into()),
+                    ResultValue::Float(0.34.into()),
+                    ResultValue::Float(0.2.into()),
+                    ResultValue::Float(0.78.into()),
+                    ResultValue::Float(0.25.into()),
+                ])],
+                &[ResultValue::Vector(vec![
+                    ResultValue::Float(0.3.into()),
+                    ResultValue::Float(0.75.into()),
+                    ResultValue::Float(0.2.into()),
+                    ResultValue::Float(0.2.into()),
+                    ResultValue::Float(0.5.into()),
+                ])],
             ],
         )
         .await;

@@ -113,7 +113,14 @@ impl GenericValue {
                 GenericValue::Tuple(value_list)
             }
             CassandraType::Null => GenericValue::Null,
-            CassandraType::Vector(_vector) => todo!("make genericvalue from vector"),
+            CassandraType::Vector(vector) => {
+                let values = vector
+                    .into_iter()
+                    .map(GenericValue::create_element)
+                    .collect();
+
+                GenericValue::Vector(values)
+            }
             _ => unreachable!(),
         }
     }
@@ -174,6 +181,7 @@ impl GenericValue {
             GenericValue::Counter(c) => serialize_bytes(cursor, &c.to_be_bytes()),
             GenericValue::Tuple(t) => serialize_list(cursor, t),
             GenericValue::Udt(u) => serialize_stringmap(cursor, u),
+            GenericValue::Vector(v) => serialize_vector(cursor, v),
         }
     }
 }
@@ -248,4 +256,24 @@ fn serialize_map(cursor: &mut Cursor<&mut Vec<u8>>, values: &BTreeMap<GenericVal
             value.cassandra_serialize(cursor);
         }
     });
+}
+
+fn serialize_vector(cursor: &mut Cursor<&mut Vec<u8>>, values: &[GenericValue]) {
+    let length_start = cursor.position();
+    let bytes_start = length_start + 4;
+    serialize_len(cursor, 0);
+
+    for value in values {
+        match value {
+            GenericValue::Float(f) => {
+                let float_bytes = f.into_inner().to_be_bytes();
+                let _ = cursor.write_all(&float_bytes);
+            }
+            _ => todo!(),
+        }
+    }
+
+    let bytes_len = cursor.position() - bytes_start;
+    cursor.get_mut()[length_start as usize..bytes_start as usize]
+        .copy_from_slice(&(bytes_len as CInt).to_be_bytes());
 }

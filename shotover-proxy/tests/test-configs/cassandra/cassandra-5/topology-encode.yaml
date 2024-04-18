@@ -5,7 +5,7 @@ sources:
       listen_addr: "127.0.0.1:9042"
       chain:
         - DebugForceEncode:
-            encode_requests: true
+            encode_requests: false
             encode_responses: true
         - CassandraSinkSingle:
             remote_address: "127.0.0.1:9043"

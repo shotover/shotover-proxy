@@ -37,6 +37,8 @@ redis = { version = "0.24.0", features = ["tokio-comp", "cluster"] }
 # cassandra-protocol = "3.0"
 cdrs-tokio = { git = "https://github.com/conorbros/cdrs-tokio", branch = "vector-support" }
 cassandra-protocol = { git = "https://github.com/conorbros/cdrs-tokio", branch = "vector-support" }
+# cdrs-tokio = { path = "/home/conor/src/cdrs-tokio/cdrs-tokio" }
+# cassandra-protocol = { path = "/home/conor/src/cdrs-tokio/cassandra-protocol" }
 tracing = "0.1.15"
 tracing-subscriber = { version = "0.3.1", features = ["env-filter", "json"] }
 tracing-appender = "0.2.0"
