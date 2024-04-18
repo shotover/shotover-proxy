@@ -47,6 +47,8 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::timeout;
 
+const TIMEOUT: u64 = 10;
+
 pub struct CassandraConnectionBuilder {
     contact_points: String,
     port: u16,
@@ -276,7 +278,7 @@ impl CassandraConnection {
                     });
                 }
 
-                let config = timeout(Duration::from_secs(10), node_config_builder.build())
+                let config = timeout(Duration::from_secs(TIMEOUT), node_config_builder.build())
                     .await
                     .unwrap()
                     .unwrap();
@@ -295,7 +297,7 @@ impl CassandraConnection {
                     session_builder = session_builder.with_compression(compression);
                 }
 
-                let session = timeout(Duration::from_secs(10), session_builder.build())
+                let session = timeout(Duration::from_secs(TIMEOUT), session_builder.build())
                     .await
                     .unwrap()
                     .unwrap();
@@ -414,9 +416,12 @@ impl CassandraConnection {
     }
 
     pub async fn execute_fallible(&self, query: &str) -> Result<Vec<Vec<ResultValue>>, ErrorBody> {
-        tokio::time::timeout(Duration::from_secs(10), self.execute_fallible_inner(query))
-            .await
-            .unwrap_or_else(|_| panic!("The CQL query: {query}\nTimed out after 10s"))
+        tokio::time::timeout(
+            Duration::from_secs(TIMEOUT),
+            self.execute_fallible_inner(query),
+        )
+        .await
+        .unwrap_or_else(|_| panic!("The CQL query: {query}\nTimed out after 10s"))
     }
 
     pub async fn execute_fallible_inner(
@@ -451,7 +456,7 @@ impl CassandraConnection {
         timestamp: i64,
     ) -> Result<Vec<Vec<ResultValue>>, ErrorBody> {
         tokio::time::timeout(
-            Duration::from_secs(10),
+            Duration::from_secs(TIMEOUT),
             self.execute_with_timestamp_inner(query, timestamp),
         )
         .await
@@ -494,7 +499,7 @@ impl CassandraConnection {
     }
 
     pub async fn prepare(&self, query: &str) -> PreparedQuery {
-        tokio::time::timeout(Duration::from_secs(10), self.prepare_inner(query))
+        tokio::time::timeout(Duration::from_secs(TIMEOUT), self.prepare_inner(query))
             .await
             .unwrap_or_else(|_| panic!("Preparing the CQL query: {query}\nTimed out after 10s"))
     }
@@ -523,7 +528,7 @@ impl CassandraConnection {
         values: &[ResultValue],
     ) -> IpAddr {
         tokio::time::timeout(
-            Duration::from_secs(10),
+            Duration::from_secs(TIMEOUT),
             self.execute_prepared_coordinator_node_inner(prepared_query, values),
         )
         .await
@@ -601,7 +606,7 @@ impl CassandraConnection {
         consistency: Consistency,
     ) -> Result<Vec<Vec<ResultValue>>, ErrorBody> {
         tokio::time::timeout(
-            Duration::from_secs(10),
+            Duration::from_secs(TIMEOUT),
             self.execute_prepared_inner(prepared_query, values, consistency),
         )
         .await
@@ -759,7 +764,7 @@ impl CassandraConnection {
         queries: Vec<String>,
     ) -> Result<Vec<Vec<ResultValue>>, ErrorBody> {
         tokio::time::timeout(
-            Duration::from_secs(10),
+            Duration::from_secs(TIMEOUT),
             self.execute_batch_fallible_inner(queries.clone()),
         )
         .await
