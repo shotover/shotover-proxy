@@ -18,9 +18,6 @@ async fn test_metrics() {
 # TYPE shotover_sink_to_source_latency_seconds summary
 # TYPE shotover_transform_failures_count counter
 # TYPE shotover_transform_latency_seconds summary
-# TYPE shotover_transform_pushed_failures_count counter
-# TYPE shotover_transform_pushed_latency_seconds summary
-# TYPE shotover_transform_pushed_total_count counter
 # TYPE shotover_transform_total_count counter
 shotover_available_connections_count{source="redis"}
 shotover_chain_failures_count{chain="redis"}
@@ -68,30 +65,6 @@ shotover_transform_latency_seconds{transform="QueryCounter",quantile="0.95"}
 shotover_transform_latency_seconds{transform="QueryCounter",quantile="0.99"}
 shotover_transform_latency_seconds{transform="QueryCounter",quantile="0.999"}
 shotover_transform_latency_seconds{transform="QueryCounter",quantile="1"}
-shotover_transform_pushed_failures_count{transform="NullSink"}
-shotover_transform_pushed_failures_count{transform="QueryCounter"}
-shotover_transform_pushed_latency_seconds_count{transform="NullSink"}
-shotover_transform_pushed_latency_seconds_count{transform="QueryCounter"}
-shotover_transform_pushed_latency_seconds_sum{transform="NullSink"}
-shotover_transform_pushed_latency_seconds_sum{transform="QueryCounter"}
-shotover_transform_pushed_latency_seconds{transform="NullSink",quantile="0"}
-shotover_transform_pushed_latency_seconds{transform="NullSink",quantile="0.1"}
-shotover_transform_pushed_latency_seconds{transform="NullSink",quantile="0.5"}
-shotover_transform_pushed_latency_seconds{transform="NullSink",quantile="0.9"}
-shotover_transform_pushed_latency_seconds{transform="NullSink",quantile="0.95"}
-shotover_transform_pushed_latency_seconds{transform="NullSink",quantile="0.99"}
-shotover_transform_pushed_latency_seconds{transform="NullSink",quantile="0.999"}
-shotover_transform_pushed_latency_seconds{transform="NullSink",quantile="1"}
-shotover_transform_pushed_latency_seconds{transform="QueryCounter",quantile="0"}
-shotover_transform_pushed_latency_seconds{transform="QueryCounter",quantile="0.1"}
-shotover_transform_pushed_latency_seconds{transform="QueryCounter",quantile="0.5"}
-shotover_transform_pushed_latency_seconds{transform="QueryCounter",quantile="0.9"}
-shotover_transform_pushed_latency_seconds{transform="QueryCounter",quantile="0.95"}
-shotover_transform_pushed_latency_seconds{transform="QueryCounter",quantile="0.99"}
-shotover_transform_pushed_latency_seconds{transform="QueryCounter",quantile="0.999"}
-shotover_transform_pushed_latency_seconds{transform="QueryCounter",quantile="1"}
-shotover_transform_pushed_total_count{transform="NullSink"}
-shotover_transform_pushed_total_count{transform="QueryCounter"}
 shotover_transform_total_count{transform="NullSink"}
 shotover_transform_total_count{transform="QueryCounter"}
 "#;
