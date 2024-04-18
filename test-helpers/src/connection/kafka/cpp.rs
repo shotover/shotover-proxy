@@ -133,25 +133,24 @@ pub struct KafkaConsumerCpp {
 }
 
 impl KafkaConsumerCpp {
-    pub async fn assert_consume(&self, response: ExpectedResponse<'_>) {
+    pub async fn consume(&self) -> ExpectedResponse {
         let message = tokio::time::timeout(Duration::from_secs(30), self.consumer.recv())
             .await
             .expect("Timeout while receiving from consumer")
             .unwrap();
-        let contents = message.payload_view::<str>().unwrap().unwrap();
-        assert_eq!(response.message, contents);
-        assert_eq!(
-            response.key,
-            message.key().map(|x| std::str::from_utf8(x).unwrap())
-        );
-        assert_eq!(response.topic_name, message.topic());
-        assert_eq!(response.offset, message.offset());
+        ExpectedResponse {
+            message: message.payload_view::<str>().unwrap().unwrap().to_owned(),
+            key: message
+                .key()
+                .map(|x| String::from_utf8(x.to_vec()).unwrap()),
+            topic_name: message.topic().to_owned(),
+            offset: Some(message.offset()),
+        }
     }
 }
 
 pub struct KafkaAdminCpp {
-    // TODO: make private
-    pub admin: AdminClient<DefaultClientContext>,
+    admin: AdminClient<DefaultClientContext>,
 }
 
 impl KafkaAdminCpp {

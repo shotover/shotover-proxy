@@ -199,16 +199,16 @@ pub struct KafkaConsumerJava {
 }
 
 impl KafkaConsumerJava {
-    pub async fn assert_consume(&mut self, expected_response: ExpectedResponse<'_>) {
+    pub async fn consume(&mut self) -> ExpectedResponse {
         // This method asserts that we have consumed a single record from the broker.
         // Internally we may have actually received multiple records from the broker.
-        // But that is hidden from the test by storing any extra messages for use in the next call to `assert_consume`
+        // But that is hidden from the test by storing any extra messages for use in the next call to `consume`
 
         if self.waiting_records.is_empty() {
             self.fetch_from_broker();
         }
 
-        self.process_one_fetched_record(expected_response);
+        self.pop_one_record()
     }
 
     fn fetch_from_broker(&mut self) {
@@ -240,14 +240,14 @@ impl KafkaConsumerJava {
                 .jvm
                 .cast(&record, "org.apache.kafka.clients.consumer.ConsumerRecord")
                 .unwrap();
-            self.waiting_records.push_front(record);
+            self.waiting_records.push_back(record);
         }
     }
 
-    fn process_one_fetched_record(&mut self, expected_response: ExpectedResponse<'_>) {
+    fn pop_one_record(&mut self) -> ExpectedResponse {
         let record = self
             .waiting_records
-            .pop_back()
+            .pop_front()
             .expect("KafkaConsumer.poll timed out");
 
         let offset: i64 = self
@@ -258,9 +258,8 @@ impl KafkaConsumerJava {
             .unwrap()
             .to_rust()
             .unwrap();
-        assert_eq!(expected_response.offset, offset);
 
-        let topic: String = self
+        let topic_name: String = self
             .jvm
             .chain(&record)
             .unwrap()
@@ -268,9 +267,8 @@ impl KafkaConsumerJava {
             .unwrap()
             .to_rust()
             .unwrap();
-        assert_eq!(expected_response.topic_name, topic);
 
-        let value: String = self
+        let message: String = self
             .jvm
             .chain(&record)
             .unwrap()
@@ -278,7 +276,6 @@ impl KafkaConsumerJava {
             .unwrap()
             .to_rust()
             .unwrap();
-        assert_eq!(expected_response.message, value);
 
         let key: Option<String> = self
             .jvm
@@ -288,7 +285,13 @@ impl KafkaConsumerJava {
             .unwrap()
             .to_rust()
             .unwrap();
-        assert_eq!(expected_response.key, key.as_deref());
+
+        ExpectedResponse {
+            message,
+            key,
+            topic_name,
+            offset: Some(offset),
+        }
     }
 }
 
