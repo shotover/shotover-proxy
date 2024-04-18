@@ -95,9 +95,6 @@ impl Decoder for RedisDecoder {
     type Item = Messages;
     type Error = CodecReadError;
 
-    // TODO: this duplicates a bunch of logic from sink_single.rs
-    //       As soon as we remove `Transforms::transform_pushed` we can remove the duplication on the RedisSinkSingle side.
-    //       Once thats done we will have pubsub support for both RedisSinkSingle AND RedisSinkCluster. Progress!
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
         let received_at = Instant::now();
         match decode_bytes_mut(src)
