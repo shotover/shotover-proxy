@@ -8,13 +8,14 @@ use crate::transforms::{TransformConfig, TransformContextConfig};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use dashmap::DashMap;
+use kafka_protocol::messages::fetch_request::FetchTopic;
 use kafka_protocol::messages::find_coordinator_response::Coordinator;
 use kafka_protocol::messages::metadata_request::MetadataRequestTopic;
 use kafka_protocol::messages::metadata_response::MetadataResponseBroker;
 use kafka_protocol::messages::{
-    ApiKey, BrokerId, FindCoordinatorRequest, FindCoordinatorResponse, GroupId, HeartbeatRequest,
-    JoinGroupRequest, MetadataRequest, MetadataResponse, OffsetFetchRequest, RequestHeader,
-    SyncGroupRequest, TopicName,
+    ApiKey, BrokerId, FetchRequest, FindCoordinatorRequest, FindCoordinatorResponse, GroupId,
+    HeartbeatRequest, JoinGroupRequest, MetadataRequest, MetadataResponse, OffsetFetchRequest,
+    RequestHeader, SyncGroupRequest, TopicName,
 };
 use kafka_protocol::protocol::{Builder, StrBytes};
 use node::{ConnectionFactory, KafkaAddress, KafkaNode};
@@ -166,10 +167,9 @@ impl TransformBuilder for KafkaSinkClusterBuilder {
             ),
             first_contact_node: None,
             control_connection: None,
-            fetch_session_id_to_broker: HashMap::new(),
-            fetch_request_destinations: Default::default(),
             pending_requests: Default::default(),
             find_coordinator_requests: Default::default(),
+            temp_responses_buffer: Default::default(),
         })
     }
 
@@ -218,21 +218,18 @@ pub struct KafkaSinkCluster {
     connection_factory: ConnectionFactory,
     first_contact_node: Option<KafkaAddress>,
     control_connection: Option<SinkConnection>,
-    // its not clear from the docs if this cache needs to be accessed cross connection:
-    // https://cwiki.apache.org/confluence/display/KAFKA/KIP-227%3A+Introduce+Incremental+FetchRequests+to+Increase+Partition+Scalability
-    fetch_session_id_to_broker: HashMap<i32, BrokerId>,
-    // for use with fetch_session_id_to_broker
-    fetch_request_destinations: MessageIdMap<BrokerId>,
     /// Maintains the state of each request/response pair.
     /// Ordering must be maintained to ensure responses match up with their request.
     pending_requests: VecDeque<PendingRequest>,
     find_coordinator_requests: MessageIdMap<FindCoordinator>,
+    /// A temporary buffer used when receiving responses, only held onto in order to avoid reallocating.
+    temp_responses_buffer: Vec<Message>,
 }
 
 /// State of a Request/Response is maintained by this enum.
 /// The state progresses from Routed -> Sent -> Received
 #[derive(Debug)]
-enum PendingRequest {
+enum PendingRequestTy {
     /// A route has been determined for this request but it has not yet been sent.
     Routed {
         destination: BrokerId,
@@ -249,6 +246,13 @@ enum PendingRequest {
     /// The broker has returned a Response to this request.
     /// Returning this response may be delayed until a response to an earlier request comes back from another broker.
     Received { response: Message },
+}
+
+struct PendingRequest {
+    ty: PendingRequestTy,
+    /// Combine the next N responses into a single response
+    /// This message should be considered the base message and will retain the shotover Message::id and kafka correlation_id
+    combine_responses: usize,
 }
 
 #[async_trait]
@@ -535,9 +539,12 @@ impl KafkaSinkCluster {
                 // route to random node
                 _ => {
                     let destination = self.nodes.choose(&mut self.rng).unwrap().broker_id;
-                    self.pending_requests.push_back(PendingRequest::Routed {
-                        destination,
-                        request: message,
+                    self.pending_requests.push_back(PendingRequest {
+                        ty: PendingRequestTy::Routed {
+                            destination,
+                            request: message,
+                        },
+                        combine_responses: 1,
                     });
                 }
             }
@@ -579,48 +586,44 @@ impl KafkaSinkCluster {
                 }
             };
 
-            self.pending_requests.push_back(PendingRequest::Routed {
-                destination,
-                request: message,
-            })
+            self.pending_requests.push_back(PendingRequest {
+                ty: PendingRequestTy::Routed {
+                    destination,
+                    request: message,
+                },
+                combine_responses: 1,
+            });
         }
 
         Ok(())
     }
 
-    fn route_fetch_request(&mut self, mut message: Message) -> Result<()> {
-        if let Some(Frame::Kafka(KafkaFrame::Request {
-            body: RequestBody::Fetch(fetch),
-            ..
-        })) = message.frame()
-        {
-            let destination = if fetch.session_id == 0 {
-                // assume that all topics in this message have the same routing requirements
-                let topic = fetch
-                    .topics
-                    .first()
-                    .ok_or_else(|| anyhow!("No topics in fetch message"))?;
+    /// This method removes all topics from the fetch request and returns them split up by their destination
+    /// If any topics are unroutable they will have their BrokerId set to -1
+    fn split_fetch_request_by_destination(
+        &mut self,
+        fetch: &mut FetchRequest,
+    ) -> HashMap<BrokerId, Vec<FetchTopic>> {
+        let mut result: HashMap<BrokerId, Vec<FetchTopic>> = Default::default();
 
-                // This way of constructing topic_meta is kind of crazy, but it works around borrow checker limitations
-                // Old clients only specify the topic name and some newer clients only specify the topic id.
-                // So we need to check the id first and then fallback to the name.
-                let topic_name = &topic.topic;
-                let topic_by_id = self.topic_by_id.get(&topic.topic_id);
-                let topic_by_name;
-                let mut topic_meta = topic_by_id.as_deref();
-                if topic_meta.is_none() {
-                    topic_by_name = self.topic_by_name.get(&topic.topic);
-                    topic_meta = topic_by_name.as_deref();
-                }
-
-                let destination = if let Some(topic_meta) = topic_meta {
-                    let partition_index = topic
-                        .partitions
-                        .first()
-                        .ok_or_else(|| anyhow!("No partitions in topic"))?
-                        .partition as usize;
-                    // assume that all partitions in this topic have the same routing requirements
-                    if let Some(partition) = topic_meta.partitions.get(partition_index) {
+        for mut topic in fetch.topics.drain(..) {
+            // This way of constructing topic_meta is kind of crazy, but it works around borrow checker limitations
+            // Old clients only specify the topic name and some newer clients only specify the topic id.
+            // So we need to check the id first and then fallback to the name.
+            let topic_name = &topic.topic;
+            let topic_by_id = self.topic_by_id.get(&topic.topic_id);
+            let topic_by_name;
+            let mut topic_meta = topic_by_id.as_deref();
+            if topic_meta.is_none() {
+                topic_by_name = self.topic_by_name.get(&topic.topic);
+                topic_meta = topic_by_name.as_deref();
+            }
+            if let Some(topic_meta) = topic_meta {
+                for partition in std::mem::take(&mut topic.partitions) {
+                    let partition_index = partition.partition as usize;
+                    let destination = if let Some(partition) =
+                        topic_meta.partitions.get(partition_index)
+                    {
                         self.nodes
                             .iter_mut()
                             .filter(|node| partition.replica_nodes.contains(&node.broker_id))
@@ -630,27 +633,109 @@ impl KafkaSinkCluster {
                     } else {
                         let partition_len = topic_meta.partitions.len();
                         tracing::warn!("no known partition replica for {topic_name:?} at partition index {partition_index} out of {partition_len} partitions, routing message to a random node so that a NOT_LEADER_OR_FOLLOWER or similar error is returned to the client");
-                        self.nodes.choose(&mut self.rng).unwrap().broker_id
+                        BrokerId(-1)
+                    };
+                    let dest_topics = result.entry(destination).or_default();
+                    if let Some(dest_topic) = dest_topics
+                        .iter_mut()
+                        .find(|x| x.topic_id == topic.topic_id && x.topic == topic.topic)
+                    {
+                        dest_topic.partitions.push(partition);
+                    } else {
+                        let mut topic = topic.clone();
+                        topic.partitions.push(partition);
+                        dest_topics.push(topic);
                     }
+                }
+            } else {
+                tracing::warn!("no known partition replica for {topic_name:?}, routing message to a random node so that a NOT_LEADER_OR_FOLLOWER or similar error is returned to the client");
+                let destination = BrokerId(-1);
+                let dest_topics = result.entry(destination).or_default();
+                dest_topics.push(topic);
+            }
+        }
+
+        result
+    }
+
+    fn route_fetch_request(&mut self, mut message: Message) -> Result<()> {
+        if let Some(Frame::Kafka(KafkaFrame::Request {
+            body: RequestBody::Fetch(fetch),
+            ..
+        })) = message.frame()
+        {
+            if fetch.session_id == 0 {
+                let routing = self.split_fetch_request_by_destination(fetch);
+
+                if routing.is_empty() {
+                    // Fetch contains no topics, so we can just pick a random destination.
+                    // The message is unchanged so we can just send as is.
+                    let destination = self.nodes.choose(&mut self.rng).unwrap().broker_id;
+
+                    self.pending_requests.push_back(PendingRequest {
+                        ty: PendingRequestTy::Routed {
+                            destination,
+                            request: message,
+                        },
+                        combine_responses: 1,
+                    });
+                } else if routing.len() == 1 {
+                    // Only 1 destination,
+                    // so we can just reconstruct the original message as is,
+                    // act like this never happened 😎,
+                    // we dont even need to invalidate the message's cache.
+                    let (destination, topics) = routing.into_iter().next().unwrap();
+                    let destination = if destination == -1 {
+                        self.nodes.choose(&mut self.rng).unwrap().broker_id
+                    } else {
+                        destination
+                    };
+
+                    fetch.topics = topics;
+                    self.pending_requests.push_back(PendingRequest {
+                        ty: PendingRequestTy::Routed {
+                            destination,
+                            request: message,
+                        },
+                        combine_responses: 1,
+                    });
                 } else {
-                    tracing::warn!("no known partition replica for {topic_name:?}, routing message to a random node so that a NOT_LEADER_OR_FOLLOWER or similar error is returned to the client");
-                    self.nodes.choose(&mut self.rng).unwrap().broker_id
-                };
-                self.fetch_request_destinations
-                    .insert(message.id(), destination);
-                destination
+                    // The message has been split so it may be delivered to multiple destinations.
+                    // We must generate a unique message for each destination.
+                    let combine_responses = routing.len();
+                    message.invalidate_cache();
+                    for (i, (destination, topics)) in routing.into_iter().enumerate() {
+                        let destination = if destination == -1 {
+                            self.nodes.choose(&mut self.rng).unwrap().broker_id
+                        } else {
+                            destination
+                        };
+                        let mut request = if i == 0 {
+                            // First message acts as base and retains message id
+                            message.clone()
+                        } else {
+                            message.clone_with_new_id()
+                        };
+                        if let Some(Frame::Kafka(KafkaFrame::Request {
+                            body: RequestBody::Fetch(fetch),
+                            ..
+                        })) = request.frame()
+                        {
+                            fetch.topics = topics;
+                        }
+                        self.pending_requests.push_back(PendingRequest {
+                            ty: PendingRequestTy::Routed {
+                                destination,
+                                request,
+                            },
+                            combine_responses,
+                        });
+                    }
+                }
             } else {
                 // route via session id
-                if let Some(destination) = self.fetch_session_id_to_broker.get(&fetch.session_id) {
-                    *destination
-                } else {
-                    todo!()
-                }
+                unreachable!("Currently requests should not have session_id set since we remove it from responses. In the future we do want to handle session_id though.")
             };
-            self.pending_requests.push_back(PendingRequest::Routed {
-                destination,
-                request: message,
-            })
         }
 
         Ok(())
@@ -727,7 +812,7 @@ impl KafkaSinkCluster {
         self.control_send_receive(request).await
     }
 
-    /// Convert all PendingRequest::Routed into PendingRequest::Sent
+    /// Convert all PendingRequestTy::Routed into PendingRequestTy::Sent
     async fn send_requests(&mut self) -> Result<()> {
         struct RoutedRequests {
             requests: Vec<Message>,
@@ -736,7 +821,7 @@ impl KafkaSinkCluster {
 
         let mut broker_to_routed_requests: HashMap<BrokerId, RoutedRequests> = HashMap::new();
         for i in 0..self.pending_requests.len() {
-            if let PendingRequest::Routed { destination, .. } = &self.pending_requests[i] {
+            if let PendingRequestTy::Routed { destination, .. } = &self.pending_requests[i].ty {
                 let routed_requests = broker_to_routed_requests
                     .entry(*destination)
                     .or_insert_with(|| RoutedRequests {
@@ -745,10 +830,10 @@ impl KafkaSinkCluster {
                             .pending_requests
                             .iter()
                             .filter(|pending_request| {
-                                if let PendingRequest::Sent {
+                                if let PendingRequestTy::Sent {
                                     destination: check_destination,
                                     ..
-                                } = pending_request
+                                } = &pending_request.ty
                                 {
                                     check_destination == destination
                                 } else {
@@ -757,12 +842,12 @@ impl KafkaSinkCluster {
                             })
                             .count(),
                     });
-                let mut value = PendingRequest::Sent {
+                let mut value = PendingRequestTy::Sent {
                     destination: *destination,
                     index: routed_requests.requests.len() + routed_requests.already_pending,
                 };
-                std::mem::swap(&mut self.pending_requests[i], &mut value);
-                if let PendingRequest::Routed { request, .. } = value {
+                std::mem::swap(&mut self.pending_requests[i].ty, &mut value);
+                if let PendingRequestTy::Routed { request, .. } = value {
                     routed_requests.requests.push(request);
                 }
             }
@@ -781,19 +866,21 @@ impl KafkaSinkCluster {
         Ok(())
     }
 
-    /// Convert some PendingRequest::Sent into PendingRequest::Received
+    /// Convert some PendingRequestTy::Sent into PendingRequestTy::Received
     fn recv_responses(&mut self) -> Result<Vec<Message>> {
         for node in &mut self.nodes {
             if let Some(connection) = node.get_connection_if_open() {
-                let mut responses = vec![];
-                if let Ok(()) = connection.try_recv_into(&mut responses) {
-                    for response in responses {
+                self.temp_responses_buffer.clear();
+                if let Ok(()) = connection.try_recv_into(&mut self.temp_responses_buffer) {
+                    for response in self.temp_responses_buffer.drain(..) {
                         let mut response = Some(response);
                         for pending_request in &mut self.pending_requests {
-                            if let PendingRequest::Sent { destination, index } = pending_request {
+                            if let PendingRequestTy::Sent { destination, index } =
+                                &mut pending_request.ty
+                            {
                                 if *destination == node.broker_id {
                                     if *index == 0 {
-                                        *pending_request = PendingRequest::Received {
+                                        pending_request.ty = PendingRequestTy::Received {
                                             response: response.take().unwrap(),
                                         };
                                     } else {
@@ -809,12 +896,41 @@ impl KafkaSinkCluster {
 
         let mut responses = vec![];
         while let Some(pending_request) = self.pending_requests.front() {
-            if let PendingRequest::Received { .. } = pending_request {
+            let all_combined_received = (0..pending_request.combine_responses).all(|i| {
+                matches!(
+                    self.pending_requests.get(i),
+                    Some(PendingRequest {
+                        ty: PendingRequestTy::Received { .. },
+                        ..
+                    })
+                )
+            });
+            if all_combined_received {
                 // The next response we are waiting on has been received, add it to responses
-                if let Some(PendingRequest::Received { response }) =
-                    self.pending_requests.pop_front()
-                {
-                    responses.push(response);
+                if pending_request.combine_responses == 1 {
+                    if let Some(PendingRequest {
+                        ty: PendingRequestTy::Received { response },
+                        ..
+                    }) = self.pending_requests.pop_front()
+                    {
+                        responses.push(response);
+                    }
+                } else {
+                    let drain = self
+                        .pending_requests
+                        .drain(..pending_request.combine_responses)
+                        .map(|x| {
+                            if let PendingRequest {
+                                ty: PendingRequestTy::Received { response },
+                                ..
+                            } = x
+                            {
+                                response
+                            } else {
+                                unreachable!("Guaranteed by all_combined_received")
+                            }
+                        });
+                    responses.push(Self::combine_fetch_responses(drain)?);
                 }
             } else {
                 // The pending_request is not received, we need to break to maintain response ordering.
@@ -822,6 +938,59 @@ impl KafkaSinkCluster {
             }
         }
         Ok(responses)
+    }
+
+    fn combine_fetch_responses(mut drain: impl Iterator<Item = Message>) -> Result<Message> {
+        // Take this response as base.
+        // Then iterate over all remaining combined responses and integrate them into the base.
+        let mut base = drain.next().unwrap();
+        if let Some(Frame::Kafka(KafkaFrame::Response {
+            body: ResponseBody::Fetch(base_fetch),
+            ..
+        })) = base.frame()
+        {
+            for mut next in drain {
+                if let Some(Frame::Kafka(KafkaFrame::Response {
+                    body: ResponseBody::Fetch(next_fetch),
+                    ..
+                })) = next.frame()
+                {
+                    for next_response in std::mem::take(&mut next_fetch.responses) {
+                        if let Some(base_response) =
+                            base_fetch.responses.iter_mut().find(|response| {
+                                response.topic == next_response.topic
+                                    && response.topic_id == next_response.topic_id
+                            })
+                        {
+                            for next_partition in &next_response.partitions {
+                                for base_partition in &base_response.partitions {
+                                    if next_partition.partition_index
+                                        == base_partition.partition_index
+                                    {
+                                        tracing::warn!("Duplicate partition indexes in combined fetch response, if this ever occurs we should investigate the repercussions")
+                                    }
+                                }
+                            }
+                            // A partition can only be contained in one response so there is no risk of duplicating partitions
+                            base_response.partitions.extend(next_response.partitions)
+                        } else {
+                            base_fetch.responses.push(next_response);
+                        }
+                    }
+                } else {
+                    return Err(anyhow!(
+                        "Combining Fetch messages but received another message type"
+                    ));
+                }
+            }
+        } else {
+            return Err(anyhow!(
+                "Combining of message types other than Fetch is currently unsupported"
+            ));
+        }
+
+        base.invalidate_cache();
+        Ok(base)
     }
 
     async fn process_responses(&mut self, responses: &mut [Message]) -> Result<()> {
@@ -855,10 +1024,8 @@ impl KafkaSinkCluster {
                     body: ResponseBody::Fetch(fetch),
                     ..
                 })) => {
-                    if let Some(destination) = self.fetch_request_destinations.remove(&request_id) {
-                        self.fetch_session_id_to_broker
-                            .insert(fetch.session_id, destination);
-                    }
+                    fetch.session_id = 0;
+                    response.invalidate_cache();
                 }
                 Some(Frame::Kafka(KafkaFrame::Response {
                     body: ResponseBody::DescribeCluster(_),
@@ -890,9 +1057,12 @@ impl KafkaSinkCluster {
             node.broker_id
         };
 
-        self.pending_requests.push_back(PendingRequest::Routed {
-            destination,
-            request: message,
+        self.pending_requests.push_back(PendingRequest {
+            ty: PendingRequestTy::Routed {
+                destination,
+                request: message,
+            },
+            combine_responses: 1,
         });
     }
 
@@ -908,9 +1078,12 @@ impl KafkaSinkCluster {
             self.nodes.choose(&mut self.rng).unwrap().broker_id
         };
 
-        self.pending_requests.push_back(PendingRequest::Routed {
-            destination,
-            request: message,
+        self.pending_requests.push_back(PendingRequest {
+            ty: PendingRequestTy::Routed {
+                destination,
+                request: message,
+            },
+            combine_responses: 1,
         });
     }
 
@@ -923,9 +1096,12 @@ impl KafkaSinkCluster {
                 self.nodes.choose(&mut self.rng).unwrap().broker_id
             }
         };
-        self.pending_requests.push_back(PendingRequest::Routed {
-            destination,
-            request: message,
+        self.pending_requests.push_back(PendingRequest {
+            ty: PendingRequestTy::Routed {
+                destination,
+                request: message,
+            },
+            combine_responses: 1,
         });
     }
 
