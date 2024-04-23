@@ -3,7 +3,6 @@ services:
     image: 'bitnami/kafka:3.6.1-debian-11-r24'
     ports:
       - '9092:9092'
-      - '9093:9093'
     environment:
       - KAFKA_CFG_NODE_ID=0
       - KAFKA_CFG_PROCESS_ROLES=controller,broker
@@ -14,11 +13,11 @@ services:
       - KAFKA_CLIENT_USERS=user
       - KAFKA_CLIENT_PASSWORDS=password
       - KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER
-      - KAFKA_CFG_SASL_MECHANISM_CONTROLLER_PROTOCOL=PLAIN
       - KAFKA_CONTROLLER_USER=controller_user
       - KAFKA_CONTROLLER_PASSWORD=controller_password
       - KAFKA_CFG_INTER_BROKER_LISTENER_NAME=BROKER
-      - KAFKA_CFG_SASL_MECHANISM_INTER_BROKER_PROTOCOL=PLAIN
+      - KAFKA_CFG_SASL_MECHANISM_CONTROLLER_PROTOCOL=PLAIN
+      - KAFKA_CFG_SASL_MECHANISM_INTER_BROKER_PROTOCOL=SCRAM-SHA-256
       - KAFKA_INTER_BROKER_USER=controller_user
       - KAFKA_INTER_BROKER_PASSWORD=controller_password
     volumes:

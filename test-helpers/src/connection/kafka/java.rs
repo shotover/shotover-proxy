@@ -55,7 +55,19 @@ impl KafkaConnectionBuilderJava {
         self
     }
 
-    pub fn use_sasl(mut self, user: &str, pass: &str) -> Self {
+    pub fn use_sasl_scram(mut self, user: &str, pass: &str) -> Self {
+        let conf = &mut self.base_config;
+        conf.insert("sasl.mechanism".to_owned(), "SCRAM-SHA-256".to_owned());
+        conf.insert("security.protocol".to_owned(), "SASL_PLAINTEXT".to_owned());
+        conf.insert(
+            "sasl.jaas.config".to_owned(),
+            format!(r#"org.apache.kafka.common.security.scram.ScramLoginModule required username="{user}" password="{pass}";"#)
+        );
+
+        self
+    }
+
+    pub fn use_sasl_plain(mut self, user: &str, pass: &str) -> Self {
         let conf = &mut self.base_config;
         conf.insert("sasl.mechanism".to_owned(), "PLAIN".to_owned());
         conf.insert("security.protocol".to_owned(), "SASL_PLAINTEXT".to_owned());
