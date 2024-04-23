@@ -46,6 +46,15 @@ impl KafkaConnectionBuilderJava {
         KafkaConnectionBuilderJava { jvm, base_config }
     }
 
+    pub fn use_tls(mut self, truststore: &str) -> Self {
+        let conf = &mut self.base_config;
+        conf.insert("ssl.truststore.location".to_owned(), truststore.to_owned());
+        conf.insert("ssl.truststore.password".to_owned(), "password".to_owned());
+        conf.insert("security.protocol".to_owned(), "SSL".to_owned());
+
+        self
+    }
+
     pub fn use_sasl(mut self, user: &str, pass: &str) -> Self {
         let conf = &mut self.base_config;
         conf.insert("sasl.mechanism".to_owned(), "PLAIN".to_owned());

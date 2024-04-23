@@ -99,9 +99,10 @@ pub fn generate_redis_test_certs() {
 pub fn generate_kafka_test_certs() {
     let path = Path::new("tests/test-configs/kafka/tls/certs");
     generate_test_certs(path);
+
+    // create keystore
     std::fs::remove_file(path.join("kafka.keystore.p12")).ok();
     std::fs::remove_file(path.join("kafka.keystore.jks")).ok();
-    std::fs::remove_file(path.join("kafka.truststore.jks")).ok();
     run_command(
         "openssl",
         &[
@@ -118,7 +119,6 @@ pub fn generate_kafka_test_certs() {
         ],
     )
     .unwrap();
-
     run_command(
         "keytool",
         &[
@@ -139,11 +139,20 @@ pub fn generate_kafka_test_certs() {
     )
     .unwrap();
 
-    // Bitnami or kafka insists on having a truststore, but I dont think it actually uses it at all since client auth is disabled.
-    // So instead lets just give it a truststore shaped file.
-    std::fs::copy(
-        path.join("kafka.keystore.jks").to_str().unwrap(),
-        path.join("kafka.truststore.jks").to_str().unwrap(),
+    // create truststore
+    std::fs::remove_file(path.join("kafka.truststore.jks")).ok();
+    run_command(
+        "keytool",
+        &[
+            "-import",
+            "-noprompt",
+            "-file",
+            path.join("localhost_CA.crt").to_str().unwrap(),
+            "-keystore",
+            path.join("kafka.truststore.jks").to_str().unwrap(),
+            "-storepass",
+            "password",
+        ],
     )
     .unwrap();
 }

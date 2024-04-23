@@ -53,7 +53,6 @@ async fn passthrough_tls(#[case] driver: KafkaDriver) {
 }
 
 #[rstest]
-#[cfg_attr(feature = "rdkafka-driver-tests", case::cpp(KafkaDriver::Cpp))]
 #[case::java(KafkaDriver::Java)]
 #[tokio::test(flavor = "multi_thread")] // multi_thread is needed since java driver will block when consuming, causing shotover logs to not appear
 async fn cluster_tls(#[case] driver: KafkaDriver) {
@@ -65,7 +64,8 @@ async fn cluster_tls(#[case] driver: KafkaDriver) {
         .start()
         .await;
 
-    let connection_builder = KafkaConnectionBuilder::new(driver, "127.0.0.1:9192");
+    let connection_builder = KafkaConnectionBuilder::new(driver, "127.0.0.1:9192")
+        .use_tls("tests/test-configs/kafka/tls/certs/kafka.keystore.jks");
     test_cases::cluster_test_suite(connection_builder).await;
 
     tokio::time::timeout(
