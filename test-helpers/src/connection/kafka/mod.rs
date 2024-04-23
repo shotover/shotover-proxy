@@ -27,6 +27,14 @@ impl KafkaConnectionBuilder {
         }
     }
 
+    pub fn use_tls(self, truststore: &str) -> Self {
+        match self {
+            #[cfg(feature = "rdkafka-driver-tests")]
+            Self::Cpp(_) => todo!("TLS not implemented for cpp driver"),
+            Self::Java(java) => Self::Java(java.use_tls(truststore)),
+        }
+    }
+
     pub fn use_sasl(self, user: &str, pass: &str) -> Self {
         match self {
             #[cfg(feature = "rdkafka-driver-tests")]
