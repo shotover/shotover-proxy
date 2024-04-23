@@ -1172,7 +1172,7 @@ pub async fn assert_query_result(
 ) {
     let mut result_rows = session.execute(query).await;
     result_rows.sort();
-    assert_rows(result_rows, expected_rows);
+    assert_rows_with_query(result_rows, expected_rows, query);
 }
 
 /// Assert that the results from an integration test match the expected rows
@@ -1181,6 +1181,19 @@ pub fn assert_rows(result_rows: Vec<Vec<ResultValue>>, expected_rows: &[&[Result
     expected_rows.sort();
 
     assert_eq!(result_rows, expected_rows);
+}
+
+/// Assert that the results from an integration test match the expected rows and print the query if
+/// failure
+pub fn assert_rows_with_query(
+    result_rows: Vec<Vec<ResultValue>>,
+    expected_rows: &[&[ResultValue]],
+    query: &str,
+) {
+    let mut expected_rows: Vec<_> = expected_rows.iter().map(|x| x.to_vec()).collect();
+    expected_rows.sort();
+
+    assert_eq!(result_rows, expected_rows, "\n failed on query: {}", query);
 }
 
 /// Execute a `query` against the `session` and assert the result rows contain `row`
