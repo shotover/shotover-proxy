@@ -243,12 +243,3 @@ pub async fn standard_test_suite(connection_builder: KafkaConnectionBuilder) {
     produce_consume_acks0(&connection_builder).await;
     connection_builder.admin_cleanup().await;
 }
-
-// TODO: make cluster's run standard_test_suite instead
-pub async fn cluster_test_suite(connection_builder: KafkaConnectionBuilder) {
-    admin_setup(&connection_builder).await;
-    produce_consume_partitions1(&connection_builder, "partitions1").await;
-    produce_consume_partitions1(&connection_builder, "unknown_topic").await;
-    produce_consume_acks0(&connection_builder).await;
-    connection_builder.admin_cleanup().await;
-}
