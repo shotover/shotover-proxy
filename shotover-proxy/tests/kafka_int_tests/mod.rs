@@ -100,28 +100,9 @@ async fn passthrough_encode(#[case] driver: KafkaDriver) {
 #[tokio::test(flavor = "multi_thread")] // multi_thread is needed since java driver will block when consuming, causing shotover logs to not appear
 async fn passthrough_sasl_plain(#[case] driver: KafkaDriver) {
     let _docker_compose =
-        docker_compose("tests/test-configs/kafka/passthrough-sasl/docker-compose.yaml");
-    let shotover = shotover_process("tests/test-configs/kafka/passthrough-sasl/topology.yaml")
-        .start()
-        .await;
-
-    let connection_builder =
-        KafkaConnectionBuilder::new(driver, "127.0.0.1:9192").use_sasl_plain("user", "password");
-    test_cases::standard_test_suite(connection_builder).await;
-
-    shotover.shutdown_and_then_consume_events(&[]).await;
-}
-
-#[cfg(feature = "alpha-transforms")]
-#[rstest]
-#[cfg_attr(feature = "rdkafka-driver-tests", case::cpp(KafkaDriver::Cpp))]
-#[case::java(KafkaDriver::Java)]
-#[tokio::test(flavor = "multi_thread")] // multi_thread is needed since java driver will block when consuming, causing shotover logs to not appear
-async fn passthrough_sasl_plain_encode(#[case] driver: KafkaDriver) {
-    let _docker_compose =
-        docker_compose("tests/test-configs/kafka/passthrough-sasl/docker-compose.yaml");
+        docker_compose("tests/test-configs/kafka/passthrough-sasl-plain/docker-compose.yaml");
     let shotover =
-        shotover_process("tests/test-configs/kafka/passthrough-sasl/topology-encode.yaml")
+        shotover_process("tests/test-configs/kafka/passthrough-sasl-plain/topology.yaml")
             .start()
             .await;
 
@@ -135,7 +116,7 @@ async fn passthrough_sasl_plain_encode(#[case] driver: KafkaDriver) {
 #[rstest]
 #[case::java(KafkaDriver::Java)]
 #[tokio::test(flavor = "multi_thread")] // multi_thread is needed since java driver will block when consuming, causing shotover logs to not appear
-async fn passthrough_sasl_scram(#[case] driver: KafkaDriver) {
+async fn passthrough_sasl_scram_and_encode(#[case] driver: KafkaDriver) {
     test_helpers::cert::generate_kafka_test_certs();
 
     let _docker_compose =

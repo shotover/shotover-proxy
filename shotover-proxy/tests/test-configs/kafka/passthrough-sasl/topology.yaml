@@ -1,9 +1,0 @@
----
-sources:
-  - Kafka:
-      name: "kafka"
-      listen_addr: "127.0.0.1:9192"
-      chain:
-        - KafkaSinkSingle:
-            destination_port: 9092
-            connect_timeout_ms: 3000
