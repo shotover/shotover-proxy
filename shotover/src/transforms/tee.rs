@@ -258,7 +258,7 @@ impl Transform for Tee {
                             keep_message.to_high_level_string(),
                             other_message.to_high_level_string()
                         );
-                        *keep_message = keep_message.to_error_response(
+                        *keep_message = keep_message.from_response_to_error_response(
                             "ERR The responses from the Tee subchain and down-chain did not match and behavior is set to fail on mismatch".into()
                         ).unwrap();
                     },

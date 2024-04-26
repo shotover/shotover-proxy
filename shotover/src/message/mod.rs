@@ -32,8 +32,8 @@ pub enum Metadata {
 
 impl Metadata {
     /// Returns an error response with the provided error message.
-    /// If self is a request: the returned `Message` is a valid response to self
-    /// If self is a response: the returned `Message` is a valid replacement of self
+    /// If the metadata is from a request: the returned `Message` is a valid response to self
+    /// If the metadata is from a response: the returned `Message` is a valid replacement of self
     pub fn to_error_response(&self, error: String) -> Result<Message> {
         #[allow(unreachable_code)]
         Ok(Message::from_frame(match self {
@@ -365,12 +365,28 @@ impl Message {
     }
 
     /// Returns an error response with the provided error message.
-    /// If self is a request: the returned `Message` is a valid response to self
-    /// If self is a response: the returned `Message` is a valid replacement of self
-    pub fn to_error_response(&self, error: String) -> Result<Message> {
-        self.metadata()
+    pub fn from_response_to_error_response(&self, error: String) -> Result<Message> {
+        let mut response = self
+            .metadata()
             .context("Failed to parse metadata of request or response when producing an error")?
-            .to_error_response(error)
+            .to_error_response(error)?;
+
+        if let Some(request_id) = self.request_id() {
+            response.set_request_id(request_id)
+        }
+
+        Ok(response)
+    }
+
+    /// Returns an error response with the provided error message.
+    pub fn from_request_to_error_response(&self, error: String) -> Result<Message> {
+        let mut request = self
+            .metadata()
+            .context("Failed to parse metadata of request or response when producing an error")?
+            .to_error_response(error)?;
+
+        request.set_request_id(self.id());
+        Ok(request)
     }
 
     /// Get metadata for this `Message`
