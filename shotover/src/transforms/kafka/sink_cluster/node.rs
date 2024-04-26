@@ -1,8 +1,10 @@
 use crate::codec::{kafka::KafkaCodecBuilder, CodecBuilder, Direction};
 use crate::connection::SinkConnection;
+use crate::frame::kafka::{KafkaFrame, ResponseBody};
+use crate::frame::Frame;
 use crate::message::Message;
 use crate::tls::TlsConnector;
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use kafka_protocol::messages::BrokerId;
 use kafka_protocol::protocol::StrBytes;
 use std::sync::Arc;
@@ -61,8 +63,32 @@ impl ConnectionFactory {
 
             connection.send(vec![handshake_msg.clone(), auth_message.clone()])?;
             let mut received_count = 0;
+            let mut received = vec![];
             while received_count < 2 {
-                received_count += connection.recv().await?.len();
+                received = connection.recv().await?;
+                received_count += received.len();
+            }
+
+            // Check that the authenticate response was a success
+            let mut response = received.pop().unwrap();
+            if let Some(Frame::Kafka(KafkaFrame::Response {
+                body: ResponseBody::SaslAuthenticate(auth_response),
+                ..
+            })) = response.frame()
+            {
+                if auth_response.error_code != 0 {
+                    return Err(anyhow!(
+                        "Replayed auth failed, error code: {}, {}",
+                        auth_response.error_code,
+                        auth_response
+                            .error_message
+                            .as_ref()
+                            .map(|x| x.to_string())
+                            .unwrap_or_default()
+                    ));
+                }
+            } else {
+                return Err(anyhow!("Unexpected response to replayed auth {response:?}"));
             }
         }
 
@@ -135,7 +161,8 @@ impl KafkaNode {
             self.connection = Some(
                 connection_factory
                     .create_connection(&self.kafka_address)
-                    .await?,
+                    .await
+                    .context("Failed to create a new connection")?,
             );
         }
         Ok(self.connection.as_mut().unwrap())

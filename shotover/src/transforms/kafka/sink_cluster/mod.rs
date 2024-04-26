@@ -5,7 +5,7 @@ use crate::message::{Message, MessageIdMap, Messages};
 use crate::tls::{TlsConnector, TlsConnectorConfig};
 use crate::transforms::{Transform, TransformBuilder, TransformContextBuilder, Wrapper};
 use crate::transforms::{TransformConfig, TransformContextConfig};
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use dashmap::DashMap;
 use kafka_protocol::messages::fetch_request::FetchTopic;
@@ -316,8 +316,12 @@ impl KafkaSinkCluster {
     async fn control_send_receive(&mut self, requests: Message) -> Result<Message> {
         if self.control_connection.is_none() {
             let address = &self.nodes.choose(&mut self.rng).unwrap().kafka_address;
-            self.control_connection =
-                Some(self.connection_factory.create_connection(address).await?);
+            self.control_connection = Some(
+                self.connection_factory
+                    .create_connection(address)
+                    .await
+                    .context("Failed to create control connection")?,
+            );
         }
         let connection = self.control_connection.as_mut().unwrap();
         connection.send(vec![requests])?;
