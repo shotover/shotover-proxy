@@ -1,0 +1,12 @@
+---
+sources:
+  - Kafka:
+      name: "kafka"
+      listen_addr: "127.0.0.1:9192"
+      chain:
+        - KafkaSinkSingle:
+            destination_port: 9092
+            connect_timeout_ms: 3000
+            tls:
+              certificate_authority_path: "tests/test-configs/kafka/tls/certs/localhost_CA.crt"
+              verify_hostname: true

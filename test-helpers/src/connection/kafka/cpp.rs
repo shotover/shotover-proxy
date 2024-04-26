@@ -31,7 +31,15 @@ impl KafkaConnectionBuilderCpp {
         KafkaConnectionBuilderCpp { client }
     }
 
-    pub fn use_sasl(mut self, user: &str, pass: &str) -> Self {
+    pub fn use_sasl_scram(mut self, user: &str, pass: &str) -> Self {
+        self.client.set("sasl.mechanisms", "SCRAM-SHA-256");
+        self.client.set("sasl.username", user);
+        self.client.set("sasl.password", pass);
+        self.client.set("security.protocol", "SASL_PLAINTEXT");
+        self
+    }
+
+    pub fn use_sasl_plain(mut self, user: &str, pass: &str) -> Self {
         self.client.set("sasl.mechanisms", "PLAIN");
         self.client.set("sasl.username", user);
         self.client.set("sasl.password", pass);

@@ -35,11 +35,19 @@ impl KafkaConnectionBuilder {
         }
     }
 
-    pub fn use_sasl(self, user: &str, pass: &str) -> Self {
+    pub fn use_sasl_scram(self, user: &str, pass: &str) -> Self {
         match self {
             #[cfg(feature = "rdkafka-driver-tests")]
-            Self::Cpp(cpp) => Self::Cpp(cpp.use_sasl(user, pass)),
-            Self::Java(java) => Self::Java(java.use_sasl(user, pass)),
+            Self::Cpp(cpp) => Self::Cpp(cpp.use_sasl_scram(user, pass)),
+            Self::Java(java) => Self::Java(java.use_sasl_scram(user, pass)),
+        }
+    }
+
+    pub fn use_sasl_plain(self, user: &str, pass: &str) -> Self {
+        match self {
+            #[cfg(feature = "rdkafka-driver-tests")]
+            Self::Cpp(cpp) => Self::Cpp(cpp.use_sasl_plain(user, pass)),
+            Self::Java(java) => Self::Java(java.use_sasl_plain(user, pass)),
         }
     }
 
