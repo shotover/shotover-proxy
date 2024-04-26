@@ -301,6 +301,11 @@ pub trait Transform: Send {
     ///         - When writing a transform specific to a protocol that is out of order: you can disregard this requirement
     ///             * This is currently only cassandra
     ///
+    /// * Err response:
+    ///     + When [`Transform::transform`] returns `Err`, shotover will never call [`Transform::transform`] on this transform instance again
+    ///       and will close the connection with the client after attempting to generate error responses for any pending requests.
+    ///       So it is ok to leave the transform in an invalid state when returning `Err`.
+    ///
     /// # Naming
     /// Transform also have different naming conventions.
     /// * Transform that interact with an external system are called Sinks.

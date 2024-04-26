@@ -30,6 +30,37 @@ pub enum Metadata {
     OpenSearch,
 }
 
+impl Metadata {
+    /// Returns an error response with the provided error message.
+    /// If self is a request: the returned `Message` is a valid response to self
+    /// If self is a response: the returned `Message` is a valid replacement of self
+    pub fn to_error_response(&self, error: String) -> Result<Message> {
+        #[allow(unreachable_code)]
+        Ok(Message::from_frame(match self {
+            #[cfg(feature = "redis")]
+            Metadata::Redis => {
+                // Redis errors can not contain newlines at the protocol level
+                let message = format!("ERR {error}")
+                    .replace("\r\n", " ")
+                    .replace('\n', " ");
+                Frame::Redis(RedisFrame::Error(message.into()))
+            }
+            #[cfg(feature = "cassandra")]
+            Metadata::Cassandra(meta) => Frame::Cassandra(meta.to_error_response(error)),
+            // In theory we could actually support kafka errors in some form here but:
+            // * kafka errors are defined per response type and many response types only provide an error code without a field for a custom error message.
+            //     + Implementing this per response type would add a lot of (localized) complexity but might be worth it.
+            // * the official C++ kafka driver we use for integration tests does not pick up errors sent just before closing a connection, so this wouldnt help the usage in server.rs where we send an error before terminating the connection for at least that driver.
+            #[cfg(feature = "kafka")]
+            Metadata::Kafka => return Err(anyhow!(error).context(
+                "A generic error cannot be formed because the kafka protocol does not support it",
+            )),
+            #[cfg(feature = "opensearch")]
+            Metadata::OpenSearch => unimplemented!(),
+        }))
+    }
+}
+
 pub type Messages = Vec<Message>;
 
 /// Unique identifier for the message assigned by shotover at creation time.
@@ -337,29 +368,9 @@ impl Message {
     /// If self is a request: the returned `Message` is a valid response to self
     /// If self is a response: the returned `Message` is a valid replacement of self
     pub fn to_error_response(&self, error: String) -> Result<Message> {
-        #[allow(unreachable_code)]
-        Ok(Message::from_frame(match self.metadata().context("Failed to parse metadata of request or response when producing an error")? {
-            #[cfg(feature = "redis")]
-            Metadata::Redis => {
-                // Redis errors can not contain newlines at the protocol level
-                let message = format!("ERR {error}")
-                    .replace("\r\n", " ")
-                    .replace('\n', " ");
-                Frame::Redis(RedisFrame::Error(message.into()))
-            }
-            #[cfg(feature = "cassandra")]
-            Metadata::Cassandra(meta) => Frame::Cassandra(meta.to_error_response(error)),
-            // In theory we could actually support kafka errors in some form here but:
-            // * kafka errors are defined per response type and many response types only provide an error code without a field for a custom error message.
-            //     + Implementing this per response type would add a lot of (localized) complexity but might be worth it.
-            // * the official C++ kafka driver we use for integration tests does not pick up errors sent just before closing a connection, so this wouldnt help the usage in server.rs where we send an error before terminating the connection for at least that driver.
-            #[cfg(feature = "kafka")]
-            Metadata::Kafka => return Err(anyhow!(error).context(
-                "A generic error cannot be formed because the kafka protocol does not support it",
-            )),
-            #[cfg(feature = "opensearch")]
-            Metadata::OpenSearch => unimplemented!()
-        }))
+        self.metadata()
+            .context("Failed to parse metadata of request or response when producing an error")?
+            .to_error_response(error)
     }
 
     /// Get metadata for this `Message`
