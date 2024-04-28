@@ -3,6 +3,16 @@
 This document describes the general process I follow for debugging.
 There is no need to strictly adhere to it, but maybe you will find something useful here.
 
+## Ensure the project has no warnings
+
+The rust compiler's warnings should always be addressed immediately as they can point out program breaking mistakes.
+For example a missed `.await` will leave a future unresolved but is hard to notice from visual inspection.
+I recommend ensuring `cargo check --all-targets` returns no errors at all times.
+You can set features to reduce runtime e.g. `cargo check --all-targets --no-default-features --features kafka` but that will disable some dead code warnings (fine for development).
+You can use a tool like [bacon](https://github.com/Canop/bacon) or [cargo watch](https://github.com/watchexec/cargo-watch) to keep track of warnings.
+
+Note that CI will fail if your PR has any warnings anyway, so you'll have to address them all eventually.
+
 ## Failing test
 
 Write or modify an integration test to reproduce the bug.
@@ -38,7 +48,7 @@ shotover   06:37:14.712212Z  INFO connection{id=2 source="redis"}: shotover::tra
 Run the test by:
 
 ```shell
-cargo nextest run --no-default-features --features kafka kafka_int_tests::passthrough_standard --nocapture
+cargo nextest run --no-default-features --features kafka kafka_int_tests::passthrough_standard::case_1_java --nocapture
 ```
 
 Broken down we have:
@@ -46,7 +56,7 @@ Broken down we have:
 * `--no-default-features --features kafka` will compile only the parts of shotover and the integration tests required for the specified protocol.
   * This will drastically improve time to compile shotover and the tests, currently it drops from 15s to 5s. The difference will grow as shotover grows.
   * For a full list of features refer to the `[features]` section in [shotover-proxy/Cargo.toml](https://github.com/shotover/shotover-proxy/blob/main/shotover-proxy/Cargo.toml)
-* `kafka_int_tests::passthrough_standard::case_1` the exact name of the test to run.
+* `kafka_int_tests::passthrough_standard::case_1_java` the exact name of the test to run.
   * We could also specify just `kafka_int_tests::passthrough` to run every test in `kafka_int_tests` that starts with `passthrough`. Refer to [the nextest docs](https://nexte.st/book/filter-expressions) for more advanced filtering.
 * `--nocapture` disables the test runner from capturing (and hiding) the test and shotover's stdout+stderr.
   * By default the test runner captures the output so it can avoid displaying output from a test that passed and is therefore uninteresting.
@@ -74,13 +84,3 @@ Sprinkle `tracing::info!("some log {}", some.variable)` around suspect areas in 
 Rerun the test each time to learn more about the behavior of the system and narrow down your search.
 
 Delete these extra logs when you are finished your investigation. Some of them could be downgraded to a `tracing::debug!()` and kept if they are found to be generally valuable.
-
-## Ensure the project has no warnings
-
-The rust compiler's warnings should always be addressed immediately as they can point out program breaking mistakes.
-For example a missed `.await` will leave a future unresolved but is hard to notice from visual inspection.
-I recommend ensuring `cargo check --all-targets` returns no errors at all times.
-You can set features to reduce runtime e.g. `cargo check --all-targets --no-default-features --features kafka` but that will disable some dead code warnings (fine for development).
-You can use a tool like [bacon](https://github.com/Canop/bacon) or [cargo watch](https://github.com/watchexec/cargo-watch) to keep track of warnings.
-
-Note that CI will fail if your PR has any warnings anyway, so you'll have to address them all eventually.
