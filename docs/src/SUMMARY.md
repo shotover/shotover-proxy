@@ -17,3 +17,4 @@
   - [Cassandra Cluster]()
     - [Shotover sidecars](./examples/cassandra-cluster-shotover-sidecar.md)
 - [Contributing](./contributing.md)
+  - [Debugging](debugging.md)
