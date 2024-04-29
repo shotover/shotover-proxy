@@ -92,7 +92,7 @@ export RUST_LOG={rust_log}
 export AWS_ACCESS_KEY_ID={access_key_id}
 export AWS_SECRET_ACCESS_KEY={secret_access_key}
 export CARGO_TERM_COLOR=always
-cargo test --target-dir /target --release --bench windsock --no-default-features --features alpha-transforms,rdkafka-driver-tests,{features} -- {args}"#
+cargo test --target-dir /target --release --bench windsock --no-default-features --features alpha-transforms,kafka-cpp-driver-tests,{features} -- {args}"#
     )).await;
 
         // extract windsock results

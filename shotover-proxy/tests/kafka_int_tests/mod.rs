@@ -9,7 +9,7 @@ use test_helpers::shotover_process::{Count, EventMatcher};
 use tokio_bin_process::event::Level;
 
 #[rstest]
-#[cfg_attr(feature = "rdkafka-driver-tests", case::cpp(KafkaDriver::Cpp))]
+#[cfg_attr(feature = "kafka-cpp-driver-tests", case::cpp(KafkaDriver::Cpp))]
 #[case::java(KafkaDriver::Java)]
 #[tokio::test(flavor = "multi_thread")] // multi_thread is needed since java driver will block when consuming, causing shotover logs to not appear
 async fn passthrough_standard(#[case] driver: KafkaDriver) {
@@ -31,7 +31,7 @@ async fn passthrough_standard(#[case] driver: KafkaDriver) {
 }
 
 #[rstest]
-#[cfg_attr(feature = "rdkafka-driver-tests", case::cpp(KafkaDriver::Cpp))]
+#[cfg_attr(feature = "kafka-cpp-driver-tests", case::cpp(KafkaDriver::Cpp))]
 #[case::java(KafkaDriver::Java)]
 #[tokio::test(flavor = "multi_thread")] // multi_thread is needed since java driver will block when consuming, causing shotover logs to not appear
 async fn passthrough_tls(#[case] driver: KafkaDriver) {
@@ -80,7 +80,7 @@ async fn cluster_tls(#[case] driver: KafkaDriver) {
 
 #[cfg(feature = "alpha-transforms")]
 #[rstest]
-#[cfg_attr(feature = "rdkafka-driver-tests", case::cpp(KafkaDriver::Cpp))]
+#[cfg_attr(feature = "kafka-cpp-driver-tests", case::cpp(KafkaDriver::Cpp))]
 #[case::java(KafkaDriver::Java)]
 #[tokio::test(flavor = "multi_thread")] // multi_thread is needed since java driver will block when consuming, causing shotover logs to not appear
 async fn passthrough_encode(#[case] driver: KafkaDriver) {
@@ -98,7 +98,7 @@ async fn passthrough_encode(#[case] driver: KafkaDriver) {
 
 #[cfg(feature = "alpha-transforms")]
 #[rstest]
-#[cfg_attr(feature = "rdkafka-driver-tests", case::cpp(KafkaDriver::Cpp))]
+#[cfg_attr(feature = "kafka-cpp-driver-tests", case::cpp(KafkaDriver::Cpp))]
 #[case::java(KafkaDriver::Java)]
 #[tokio::test(flavor = "multi_thread")] // multi_thread is needed since java driver will block when consuming, causing shotover logs to not appear
 async fn passthrough_sasl_plain(#[case] driver: KafkaDriver) {
@@ -172,7 +172,7 @@ async fn single_sasl_scram_plaintext_source_tls_sink(#[case] driver: KafkaDriver
 }
 
 #[rstest]
-#[cfg_attr(feature = "rdkafka-driver-tests", case::cpp(KafkaDriver::Cpp))]
+#[cfg_attr(feature = "kafka-cpp-driver-tests", case::cpp(KafkaDriver::Cpp))]
 #[case::java(KafkaDriver::Java)]
 #[tokio::test(flavor = "multi_thread")] // multi_thread is needed since java driver will block when consuming, causing shotover logs to not appear
 async fn cluster_1_rack_single_shotover(#[case] driver: KafkaDriver) {
@@ -193,9 +193,9 @@ async fn cluster_1_rack_single_shotover(#[case] driver: KafkaDriver) {
     .expect("Shotover did not shutdown within 10s");
 }
 
-#[cfg(feature = "rdkafka-driver-tests")] // temporarily needed to avoid a warning
+#[cfg(feature = "kafka-cpp-driver-tests")] // temporarily needed to avoid a warning
 #[rstest]
-#[cfg_attr(feature = "rdkafka-driver-tests", case::cpp(KafkaDriver::Cpp))]
+#[cfg_attr(feature = "kafka-cpp-driver-tests", case::cpp(KafkaDriver::Cpp))]
 //#[case::java(KafkaDriver::Java)]
 #[tokio::test(flavor = "multi_thread")] // multi_thread is needed since java driver will block when consuming, causing shotover logs to not appear
 async fn cluster_1_rack_multi_shotover(#[case] driver: KafkaDriver) {
@@ -229,9 +229,9 @@ async fn cluster_1_rack_multi_shotover(#[case] driver: KafkaDriver) {
     }
 }
 
-#[cfg(feature = "rdkafka-driver-tests")] // temporarily needed to avoid a warning
+#[cfg(feature = "kafka-cpp-driver-tests")] // temporarily needed to avoid a warning
 #[rstest]
-#[cfg_attr(feature = "rdkafka-driver-tests", case::cpp(KafkaDriver::Cpp))]
+#[cfg_attr(feature = "kafka-cpp-driver-tests", case::cpp(KafkaDriver::Cpp))]
 //#[case::java(KafkaDriver::Java)]
 #[tokio::test(flavor = "multi_thread")] // multi_thread is needed since java driver will block when consuming, causing shotover logs to not appear
 async fn cluster_2_racks_multi_shotover(#[case] driver: KafkaDriver) {
@@ -268,7 +268,7 @@ async fn cluster_2_racks_multi_shotover(#[case] driver: KafkaDriver) {
 }
 
 #[rstest]
-//#[cfg_attr(feature = "rdkafka-driver-tests", case::cpp(KafkaDriver::Cpp))] // CPP driver does not support scram
+//#[cfg_attr(feature = "kafka-cpp-driver-tests", case::cpp(KafkaDriver::Cpp))] // CPP driver does not support scram
 #[case::java(KafkaDriver::Java)]
 #[tokio::test(flavor = "multi_thread")] // multi_thread is needed since java driver will block when consuming, causing shotover logs to not appear
 async fn cluster_sasl_scram_single_shotover(#[case] driver: KafkaDriver) {
@@ -307,9 +307,9 @@ Caused by:
     .expect("Shotover did not shutdown within 10s");
 }
 
-#[cfg(feature = "rdkafka-driver-tests")] // temporarily needed to avoid a warning
+#[cfg(feature = "kafka-cpp-driver-tests")] // temporarily needed to avoid a warning
 #[rstest]
-#[cfg_attr(feature = "rdkafka-driver-tests", case::cpp(KafkaDriver::Cpp))]
+#[cfg_attr(feature = "kafka-cpp-driver-tests", case::cpp(KafkaDriver::Cpp))]
 //#[case::java(KafkaDriver::Java)]
 #[tokio::test(flavor = "multi_thread")] // multi_thread is needed since java driver will block when consuming, causing shotover logs to not appear
 async fn cluster_sasl_plain_multi_shotover(#[case] driver: KafkaDriver) {
@@ -342,7 +342,7 @@ async fn cluster_sasl_plain_multi_shotover(#[case] driver: KafkaDriver) {
     assert_eq!(
         connection_builder.assert_admin_error().await.to_string(),
         match driver {
-            #[cfg(feature = "rdkafka-driver-tests")]
+            #[cfg(feature = "kafka-cpp-driver-tests")]
             KafkaDriver::Cpp => "Admin operation error: OperationTimedOut (Local: Timed out)",
             KafkaDriver::Java => "org.apache.kafka.common.errors.SaslAuthenticationException: Authentication failed: Invalid username or password\n"
         }
