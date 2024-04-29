@@ -30,7 +30,6 @@ Future transforms won't be added to the public API while in alpha. But in these 
 | [CassandraSinkSingle](#cassandrasinksingle)              | ✅          | Alpha                 |
 | [CassandraPeersRewrite](#cassandrapeersrewrite)          | ❌          | Alpha                 |
 | [Coalesce](#coalesce)                                    | ❌          | Alpha                 |
-| [TuneableConsistencyScatter](#tuneableconsistencyscatter)| ✅          | Alpha                 |
 | [DebugPrinter](#debugprinter)                            | ❌          | Alpha                 |
 | [DebugReturner](#debugreturner)                          | ✅          | Alpha                 |
 | [KafkaSinkCluster](#kafkasinkcluster)                    | ✅          | Beta                  |
@@ -44,7 +43,6 @@ Future transforms won't be added to the public API while in alpha. But in these 
 | [RedisClusterPortsRewrite](#redisclusterportsrewrite)    | ❌          | Beta                  |
 | [RedisSinkCluster](#redissinkcluster)                    | ✅          | Beta                  |
 | [RedisSinkSingle](#redissinksingle)                      | ✅          | Beta                  |
-| [RedisTimestampTagger](#redistimestamptagger)            | ❌          | Alpha                 |
 | [Tee](#tee)                                              | ✅          | Alpha                 |
 | [RequestThrottling](#requestthrottling)                  |❌           | Alpha                 |
 <!--| [DebugRandomDelay](#debugrandomdelay)                 | ❌          | Alpha                 |-->
@@ -204,33 +202,6 @@ Validation will fail if none of the `flush_when_` fields are provided, as this w
     # 1. the specified number of milliseconds have passed since the last flush ocurred
     # 2. a new message is received
     flush_when_millis_since_last_flush: 10000
-```
-
-### TuneableConsistencyScatter
-
-This transform implements a distributed eventual consistency mechanism between the set of defined sub-chains. This transform will wait for a user configurable number of chains to return an OK response before returning the value up-chain. This follows a similar model as used by Cassandra for its consistency model. Strong consistency can be achieved when W + R > RF. In this case RF is always the number of chains in the `route_map`.
-
-No sharding occurs within this transform and all requests/messages are sent to all routes.
-
-Upon receiving the configured number of responses, the transform will attempt to resolve or unify the response based on metadata about the result. Currently it will try to return the newest response based on a metadata timestamp (last write wins) or it will simply return the largest response if no timestamp information is available.
-
-```yaml
-- TuneableConsistencyScatter:
-    # The number of chains to wait for a "write" response on.
-    write_consistency: 2
-    # The number of chains to wait for a "read" response on.
-    read_consistency: 2
-    # A map of named chains. All chains will be used in each request.
-    route_map:
-      instance1:
-        - CassandraSinkSingle:
-            remote_address: "127.0.0.1:9043"
-      instance2:
-        - CassandraSinkSingle:
-            remote_address: "127.1.0.2:9043"
-      instance3:
-        - CassandraSinkSingle:
-            remote_address: "127.2.0.3:9043"
 ```
 
 ### DebugPrinter
@@ -583,16 +554,6 @@ This transform will take a query, serialise it into a RESP2 compatible format an
 Note: this will just pass the query to the remote node. No cluster discovery or routing occurs with this transform.
 
 This transfrom emits a metrics [counter](user-guide/observability.md#counter) named `failed_requests` and the labels `transform` defined as `RedisSinkSingle` and `chain` as the name of the chain that this transform is in.
-
-### RedisTimestampTagger
-
-A transform that wraps each Redis command in a Lua script that also fetches the key for the operations idletime. This is then used to build a last modified timestamp and insert it into a response's timestamp. The response from the Lua operation is unwrapped and returned to up-chain transforms looking like a normal Redis response.
-
-This is mainly used in conjunction with the `TuneableConsistencyScatter` transform to enable a Cassandra style consistency model within Redis.
-
-```yaml
-- RedisTimestampTagger
-```
 
 ### Tee
 

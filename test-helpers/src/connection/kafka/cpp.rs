@@ -31,7 +31,15 @@ impl KafkaConnectionBuilderCpp {
         KafkaConnectionBuilderCpp { client }
     }
 
-    pub fn use_sasl(mut self, user: &str, pass: &str) -> Self {
+    pub fn use_sasl_scram(mut self, user: &str, pass: &str) -> Self {
+        self.client.set("sasl.mechanisms", "SCRAM-SHA-256");
+        self.client.set("sasl.username", user);
+        self.client.set("sasl.password", pass);
+        self.client.set("security.protocol", "SASL_PLAINTEXT");
+        self
+    }
+
+    pub fn use_sasl_plain(mut self, user: &str, pass: &str) -> Self {
         self.client.set("sasl.mechanisms", "PLAIN");
         self.client.set("sasl.username", user);
         self.client.set("sasl.password", pass);
@@ -133,25 +141,24 @@ pub struct KafkaConsumerCpp {
 }
 
 impl KafkaConsumerCpp {
-    pub async fn assert_consume(&self, response: ExpectedResponse<'_>) {
+    pub async fn consume(&self) -> ExpectedResponse {
         let message = tokio::time::timeout(Duration::from_secs(30), self.consumer.recv())
             .await
             .expect("Timeout while receiving from consumer")
             .unwrap();
-        let contents = message.payload_view::<str>().unwrap().unwrap();
-        assert_eq!(response.message, contents);
-        assert_eq!(
-            response.key,
-            message.key().map(|x| std::str::from_utf8(x).unwrap())
-        );
-        assert_eq!(response.topic_name, message.topic());
-        assert_eq!(response.offset, message.offset());
+        ExpectedResponse {
+            message: message.payload_view::<str>().unwrap().unwrap().to_owned(),
+            key: message
+                .key()
+                .map(|x| String::from_utf8(x.to_vec()).unwrap()),
+            topic_name: message.topic().to_owned(),
+            offset: Some(message.offset()),
+        }
     }
 }
 
 pub struct KafkaAdminCpp {
-    // TODO: make private
-    pub admin: AdminClient<DefaultClientContext>,
+    admin: AdminClient<DefaultClientContext>,
 }
 
 impl KafkaAdminCpp {

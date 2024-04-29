@@ -13,7 +13,7 @@ async fn admin_setup(connection_builder: &KafkaConnectionBuilder) {
                 replication_factor: 1,
             },
             NewTopic {
-                name: "paritions3",
+                name: "partitions3",
                 num_partitions: 3,
                 replication_factor: 1,
             },
@@ -32,7 +32,6 @@ async fn admin_setup(connection_builder: &KafkaConnectionBuilder) {
 
     admin
         .create_partitions(&[NewPartition {
-            // TODO: modify topic "foo" instead so that we can test our handling of that with interesting partition + replication count
             topic_name: "to_delete",
             new_partition_count: 2,
         }])
@@ -57,48 +56,152 @@ async fn admin_setup(connection_builder: &KafkaConnectionBuilder) {
     admin.delete_topics(&["to_delete"]).await
 }
 
-async fn produce_consume(connection_builder: &KafkaConnectionBuilder, topic_name: &str, i: i64) {
-    let producer = connection_builder.connect_producer(1).await;
+async fn produce_consume_partitions1(
+    connection_builder: &KafkaConnectionBuilder,
+    topic_name: &str,
+) {
+    {
+        let producer = connection_builder.connect_producer(1).await;
+        // create an initial record to force kafka to create the topic if it doesnt yet exist
+        producer
+            .assert_produce(
+                Record {
+                    payload: "initial",
+                    topic_name,
+                    key: Some("Key"),
+                },
+                Some(0),
+            )
+            .await;
 
-    producer
-        .assert_produce(
-            Record {
-                payload: "Message1",
-                topic_name,
-                key: Some("Key"),
-            },
-            Some(i * 2),
-        )
+        let mut consumer = connection_builder.connect_consumer(topic_name).await;
+        consumer
+            .assert_consume(ExpectedResponse {
+                message: "initial".to_owned(),
+                key: Some("Key".to_owned()),
+                topic_name: topic_name.to_owned(),
+                offset: Some(0),
+            })
+            .await;
+
+        // create and consume records
+        for i in 0..5 {
+            producer
+                .assert_produce(
+                    Record {
+                        payload: "Message1",
+                        topic_name,
+                        key: Some("Key"),
+                    },
+                    Some(i * 2 + 1),
+                )
+                .await;
+            producer
+                .assert_produce(
+                    Record {
+                        payload: "Message2",
+                        topic_name,
+                        key: None,
+                    },
+                    Some(i * 2 + 2),
+                )
+                .await;
+
+            consumer
+                .assert_consume(ExpectedResponse {
+                    message: "Message1".to_owned(),
+                    key: Some("Key".to_owned()),
+                    topic_name: topic_name.to_owned(),
+                    offset: Some(i * 2 + 1),
+                })
+                .await;
+            consumer
+                .assert_consume(ExpectedResponse {
+                    message: "Message2".to_owned(),
+                    key: None,
+                    topic_name: topic_name.to_owned(),
+                    offset: Some(i * 2 + 2),
+                })
+                .await;
+        }
+    }
+
+    // if we create a new consumer it will start from the begginning since `auto.offset.reset = earliest`
+    // so we test that we can access all records ever created on this topic
+    let mut consumer = connection_builder.connect_consumer(topic_name).await;
+    consumer
+        .assert_consume(ExpectedResponse {
+            message: "initial".to_owned(),
+            key: Some("Key".to_owned()),
+            topic_name: topic_name.to_owned(),
+            offset: Some(0),
+        })
         .await;
-    producer
-        .assert_produce(
-            Record {
-                payload: "Message2",
-                topic_name,
+    for i in 0..5 {
+        consumer
+            .assert_consume(ExpectedResponse {
+                message: "Message1".to_owned(),
+                key: Some("Key".to_owned()),
+                topic_name: topic_name.to_owned(),
+                offset: Some(i * 2 + 1),
+            })
+            .await;
+        consumer
+            .assert_consume(ExpectedResponse {
+                message: "Message2".to_owned(),
                 key: None,
-            },
-            Some(i * 2 + 1),
-        )
-        .await;
+                topic_name: topic_name.to_owned(),
+                offset: Some(i * 2 + 2),
+            })
+            .await;
+    }
+}
 
+async fn produce_consume_partitions3(connection_builder: &KafkaConnectionBuilder) {
+    let topic_name = "partitions3";
+    let producer = connection_builder.connect_producer(1).await;
     let mut consumer = connection_builder.connect_consumer(topic_name).await;
 
-    consumer
-        .assert_consume(ExpectedResponse {
-            message: "Message1",
-            key: Some("Key"),
-            topic_name,
-            offset: 0,
-        })
-        .await;
-    consumer
-        .assert_consume(ExpectedResponse {
-            message: "Message2",
-            key: None,
-            topic_name,
-            offset: 1,
-        })
-        .await;
+    for _ in 0..5 {
+        producer
+            .assert_produce(
+                Record {
+                    payload: "Message1",
+                    topic_name,
+                    key: Some("Key"),
+                },
+                // We cant predict the offsets since that will depend on which partition the keyless record ends up in
+                None,
+            )
+            .await;
+        producer
+            .assert_produce(
+                Record {
+                    payload: "Message2",
+                    topic_name,
+                    key: None,
+                },
+                None,
+            )
+            .await;
+
+        consumer
+            .assert_consume_in_any_order(vec![
+                ExpectedResponse {
+                    message: "Message1".to_owned(),
+                    key: Some("Key".to_owned()),
+                    topic_name: topic_name.to_owned(),
+                    offset: None,
+                },
+                ExpectedResponse {
+                    message: "Message2".to_owned(),
+                    key: None,
+                    topic_name: topic_name.to_owned(),
+                    offset: None,
+                },
+            ])
+            .await;
+    }
 }
 
 async fn produce_consume_acks0(connection_builder: &KafkaConnectionBuilder) {
@@ -123,21 +226,20 @@ async fn produce_consume_acks0(connection_builder: &KafkaConnectionBuilder) {
     for j in 0..10 {
         consumer
             .assert_consume(ExpectedResponse {
-                message: "MessageAcks0",
-                key: Some("KeyAcks0"),
-                topic_name,
-                offset: j,
+                message: "MessageAcks0".to_owned(),
+                key: Some("KeyAcks0".to_owned()),
+                topic_name: topic_name.to_owned(),
+                offset: Some(j),
             })
             .await;
     }
 }
 
-pub async fn basic(connection_builder: KafkaConnectionBuilder) {
+pub async fn standard_test_suite(connection_builder: KafkaConnectionBuilder) {
     admin_setup(&connection_builder).await;
-    for i in 0..2 {
-        produce_consume(&connection_builder, "partitions1", i).await;
-        produce_consume(&connection_builder, "partitions3", i).await;
-        produce_consume_acks0(&connection_builder).await;
-    }
+    produce_consume_partitions1(&connection_builder, "partitions1").await;
+    produce_consume_partitions1(&connection_builder, "unknown_topic").await;
+    produce_consume_partitions3(&connection_builder).await;
+    produce_consume_acks0(&connection_builder).await;
     connection_builder.admin_cleanup().await;
 }

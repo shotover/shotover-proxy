@@ -21,8 +21,6 @@ pub mod cassandra;
 pub mod chain;
 pub mod coalesce;
 pub mod debug;
-#[cfg(feature = "redis")]
-pub mod distributed;
 pub mod filter;
 #[cfg(feature = "kafka")]
 pub mod kafka;
@@ -193,33 +191,6 @@ impl<'a> Wrapper<'a> {
         result
     }
 
-    pub async fn call_next_transform_pushed(mut self) -> Result<Messages> {
-        let TransformAndMetrics {
-            transform,
-            transform_pushed_total,
-            transform_pushed_failures,
-            transform_pushed_latency,
-            ..
-        } = match self.transforms.next() {
-            Some(transform) => transform,
-            None => return Ok(self.requests),
-        };
-
-        let transform_name = transform.get_name();
-
-        let start = Instant::now();
-        let result = transform
-            .transform_pushed(self)
-            .await
-            .map_err(|e| e.context(anyhow!("{transform_name} transform failed")));
-        transform_pushed_total.increment(1);
-        if result.is_err() {
-            transform_pushed_failures.increment(1);
-        }
-        transform_pushed_latency.record(start.elapsed());
-        result
-    }
-
     pub fn clone_requests_into_hashmap(&self, destination: &mut MessageIdMap<Message>) {
         for request in &self.requests {
             destination.insert(request.id(), request.clone());
@@ -330,6 +301,11 @@ pub trait Transform: Send {
     ///         - When writing a transform specific to a protocol that is out of order: you can disregard this requirement
     ///             * This is currently only cassandra
     ///
+    /// * Err response:
+    ///     + When [`Transform::transform`] returns `Err`, shotover will never call [`Transform::transform`] on this transform instance again
+    ///       and will close the connection with the client after attempting to generate error responses for any pending requests.
+    ///       So it is ok to leave the transform in an invalid state when returning `Err`.
+    ///
     /// # Naming
     /// Transform also have different naming conventions.
     /// * Transform that interact with an external system are called Sinks.
@@ -338,27 +314,6 @@ pub trait Transform: Send {
     ///
     /// You can have have a transform that is both non-terminating and a sink.
     async fn transform<'a>(&'a mut self, requests_wrapper: Wrapper<'a>) -> Result<Messages>;
-
-    /// TODO: This method should be removed and integrated with `Transform::transform` once we properly support out of order protocols.
-    ///
-    /// This method should be should be implemented by your transform if it is required to process pushed messages (typically events
-    /// or messages that your source is subscribed to. The wrapper object contains the queries/frames
-    /// in a [`Vec<Message`](crate::message::Message).
-    ///
-    /// This transform method is not the same request/response model as the other transform method.
-    /// This method processes one pushed message before sending it in reverse on the chain back to the source.
-    ///
-    /// You can modify the messages in the wrapper struct to achieve your own designs. Your transform can
-    /// also modify the response from `requests_wrapper.call_next_transform_pushed` if it needs to. As long as the message
-    /// carries on through the chain, it will function correctly. You are able to add or remove messages as this method is not expecting
-    /// request/response pairs.
-    ///
-    /// # Invariants
-    /// * _Non-terminating_ - Your `transform_pushed` method should not be terminating as the messages should get passed back to the source, where they will terminate.
-    async fn transform_pushed<'a>(&'a mut self, requests_wrapper: Wrapper<'a>) -> Result<Messages> {
-        let response = requests_wrapper.call_next_transform_pushed().await?;
-        Ok(response)
-    }
 
     fn get_name(&self) -> &'static str;
 

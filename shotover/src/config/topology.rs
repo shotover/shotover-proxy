@@ -88,7 +88,6 @@ mod topology_tests {
     use crate::{
         sources::{redis::RedisConfig, Source, SourceConfig},
         transforms::{
-            distributed::tuneable_consistency_scatter::TuneableConsistencyScatterConfig,
             parallel_map::ParallelMapConfig, redis::cache::RedisConfig as RedisCacheConfig,
         },
     };
@@ -231,66 +230,6 @@ foo source:
     }
 
     #[tokio::test]
-    async fn test_validate_chain_valid_subchain_consistent_scatter() {
-        let subchain = TransformChainConfig(vec![
-            Box::new(DebugPrinterConfig) as Box<dyn TransformConfig>,
-            Box::new(DebugPrinterConfig),
-            Box::new(NullSinkConfig),
-        ]);
-
-        let mut route_map = HashMap::new();
-        route_map.insert("subchain-1".to_string(), subchain);
-
-        run_test_topology(vec![
-            Box::new(DebugPrinterConfig),
-            Box::new(DebugPrinterConfig),
-            Box::new(TuneableConsistencyScatterConfig {
-                route_map,
-                write_consistency: 1,
-                read_consistency: 1,
-            }),
-        ])
-        .await
-        .unwrap();
-    }
-
-    #[tokio::test]
-    async fn test_validate_chain_invalid_subchain_scatter() {
-        let expected = r#"Topology errors
-foo source:
-  foo chain:
-    TuneableConsistencyScatter:
-      subchain-1 chain:
-        Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
-"#;
-
-        let subchain = TransformChainConfig(vec![
-            Box::new(DebugPrinterConfig) as Box<dyn TransformConfig>,
-            Box::new(NullSinkConfig),
-            Box::new(DebugPrinterConfig),
-            Box::new(NullSinkConfig),
-        ]);
-
-        let mut route_map = HashMap::new();
-        route_map.insert("subchain-1".to_string(), subchain);
-
-        let error = run_test_topology(vec![
-            Box::new(DebugPrinterConfig),
-            Box::new(DebugPrinterConfig),
-            Box::new(TuneableConsistencyScatterConfig {
-                route_map,
-                write_consistency: 1,
-                read_consistency: 1,
-            }),
-        ])
-        .await
-        .unwrap_err()
-        .to_string();
-
-        assert_eq!(error, expected);
-    }
-
-    #[tokio::test]
     async fn test_validate_chain_valid_subchain_redis_cache() {
         let caching_schema = HashMap::new();
 
@@ -397,8 +336,8 @@ foo source:
         let expected = r#"Topology errors
 foo source:
   foo chain:
-    TuneableConsistencyScatter:
-      subchain-1 chain:
+    ParallelMap:
+      parallel_map_chain chain:
         Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
 "#;
 
@@ -409,16 +348,13 @@ foo source:
             Box::new(NullSinkConfig),
         ]);
 
-        let mut route_map = HashMap::new();
-        route_map.insert("subchain-1".to_string(), subchain);
-
         let error = run_test_topology(vec![
             Box::new(DebugPrinterConfig),
             Box::new(DebugPrinterConfig),
-            Box::new(TuneableConsistencyScatterConfig {
-                route_map,
-                write_consistency: 1,
-                read_consistency: 1,
+            Box::new(ParallelMapConfig {
+                parallelism: 1,
+                chain: subchain,
+                ordered_results: true,
             }),
         ])
         .await
@@ -433,8 +369,8 @@ foo source:
         let expected = r#"Topology errors
 foo source:
   foo chain:
-    TuneableConsistencyScatter:
-      subchain-1 chain:
+    ParallelMap:
+      parallel_map_chain chain:
         Non-terminating transform "DebugPrinter" is last in chain. Last transform must be terminating.
 "#;
 
@@ -443,16 +379,13 @@ foo source:
             Box::new(DebugPrinterConfig),
         ]);
 
-        let mut route_map = HashMap::new();
-        route_map.insert("subchain-1".to_string(), subchain);
-
         let error = run_test_topology(vec![
             Box::new(DebugPrinterConfig),
             Box::new(DebugPrinterConfig),
-            Box::new(TuneableConsistencyScatterConfig {
-                route_map,
-                write_consistency: 1,
-                read_consistency: 1,
+            Box::new(ParallelMapConfig {
+                parallelism: 1,
+                chain: subchain,
+                ordered_results: true,
             }),
         ])
         .await
@@ -467,8 +400,8 @@ foo source:
         let expected = r#"Topology errors
 foo source:
   foo chain:
-    TuneableConsistencyScatter:
-      subchain-1 chain:
+    ParallelMap:
+      parallel_map_chain chain:
         Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
         Non-terminating transform "DebugPrinter" is last in chain. Last transform must be terminating.
 "#;
@@ -479,16 +412,13 @@ foo source:
             Box::new(DebugPrinterConfig),
         ]);
 
-        let mut route_map = HashMap::new();
-        route_map.insert("subchain-1".to_string(), subchain);
-
         let error = run_test_topology(vec![
             Box::new(DebugPrinterConfig),
             Box::new(DebugPrinterConfig),
-            Box::new(TuneableConsistencyScatterConfig {
-                route_map,
-                write_consistency: 1,
-                read_consistency: 1,
+            Box::new(ParallelMapConfig {
+                parallelism: 1,
+                chain: subchain,
+                ordered_results: true,
             }),
         ])
         .await
@@ -539,16 +469,10 @@ redis1 source:
     Non-terminating transform "DebugPrinter" is last in chain. Last transform must be terminating.
 redis2 source:
   redis2 chain:
-    TuneableConsistencyScatter:
-      a_chain_1 chain:
+    ParallelMap:
+      parallel_map_chain chain:
         Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
         Non-terminating transform "DebugPrinter" is last in chain. Last transform must be terminating.
-      b_chain_2 chain:
-        Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
-      c_chain_3 chain:
-        TuneableConsistencyScatter:
-          sub_chain_2 chain:
-            Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
 "#;
 
         assert_eq!(error, expected);

@@ -45,15 +45,10 @@ impl Transform for NullSink {
     }
 
     async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Messages> {
-        for message in &mut requests_wrapper.requests {
-            let request_id = message.id();
-
+        for request in &mut requests_wrapper.requests {
             // reuse the requests to hold the responses to avoid an allocation
-            *message =
-                message.to_error_response("Handled by shotover null transform".to_string())?;
-
-            // set the response to point to its corresponding request
-            message.set_request_id(request_id)
+            *request = request
+                .from_request_to_error_response("Handled by shotover null transform".to_string())?;
         }
         Ok(requests_wrapper.requests)
     }

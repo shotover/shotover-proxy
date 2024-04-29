@@ -173,21 +173,6 @@ impl TransformChain {
         self.chain_latency_seconds.record(start.elapsed());
         result
     }
-
-    pub async fn process_request_rev(&mut self, mut wrapper: Wrapper<'_>) -> Result<Messages> {
-        let start = Instant::now();
-        wrapper.reset_rev(&mut self.chain);
-
-        self.chain_batch_size.record(wrapper.requests.len() as f64);
-        let result = wrapper.call_next_transform_pushed().await;
-        self.chain_total.increment(1);
-        if result.is_err() {
-            self.chain_failures.increment(1);
-        }
-
-        self.chain_latency_seconds.record(start.elapsed());
-        result
-    }
 }
 
 pub struct TransformAndMetrics {
@@ -195,9 +180,6 @@ pub struct TransformAndMetrics {
     pub transform_total: Counter,
     pub transform_failures: Counter,
     pub transform_latency: Histogram,
-    pub transform_pushed_total: Counter,
-    pub transform_pushed_failures: Counter,
-    pub transform_pushed_latency: Histogram,
 }
 
 impl TransformAndMetrics {
@@ -208,9 +190,6 @@ impl TransformAndMetrics {
             transform_total: Counter::noop(),
             transform_failures: Counter::noop(),
             transform_latency: Histogram::noop(),
-            transform_pushed_total: Counter::noop(),
-            transform_pushed_failures: Counter::noop(),
-            transform_pushed_latency: Histogram::noop(),
         }
     }
 }
@@ -225,12 +204,6 @@ pub struct TransformBuilderAndMetrics {
     transform_failures: Counter,
     #[derivative(Debug = "ignore")]
     transform_latency: Histogram,
-    #[derivative(Debug = "ignore")]
-    transform_pushed_total: Counter,
-    #[derivative(Debug = "ignore")]
-    transform_pushed_failures: Counter,
-    #[derivative(Debug = "ignore")]
-    transform_pushed_latency: Histogram,
 }
 
 impl TransformBuilderAndMetrics {
@@ -240,9 +213,6 @@ impl TransformBuilderAndMetrics {
             transform_total: self.transform_total.clone(),
             transform_failures: self.transform_failures.clone(),
             transform_latency: self.transform_latency.clone(),
-            transform_pushed_total: self.transform_pushed_total.clone(),
-            transform_pushed_failures: self.transform_pushed_failures.clone(),
-            transform_pushed_latency: self.transform_pushed_latency.clone(),
         }
     }
 }
@@ -268,9 +238,6 @@ impl TransformChainBuilder {
                 transform_total: counter!("shotover_transform_total_count", "transform" => builder.get_name()),
                 transform_failures: counter!("shotover_transform_failures_count", "transform" => builder.get_name()),
                 transform_latency: histogram!("shotover_transform_latency_seconds", "transform" => builder.get_name()),
-                transform_pushed_total: counter!("shotover_transform_pushed_total_count", "transform" => builder.get_name()),
-                transform_pushed_failures: counter!("shotover_transform_pushed_failures_count", "transform" => builder.get_name()),
-                transform_pushed_latency: histogram!("shotover_transform_pushed_latency_seconds", "transform" => builder.get_name()),
                 builder,
             }
         ).collect();
@@ -403,44 +370,12 @@ impl TransformChainBuilder {
         }
     }
 
-    /// Clone the chain while adding a producer for the pushed messages channel
+    /// Build the chain
     pub fn build(&self, context: TransformContextBuilder) -> TransformChain {
         let chain = self
             .chain
             .iter()
             .map(|x| x.build(context.clone()))
-            .collect();
-
-        TransformChain {
-            name: self.name,
-            chain,
-            chain_total: self.chain_total.clone(),
-            chain_failures: self.chain_failures.clone(),
-            chain_batch_size: self.chain_batch_size.clone(),
-            chain_latency_seconds: histogram!(
-                "shotover_chain_latency_seconds",
-                "chain" => self.name,
-                "client_details" => context.client_details
-            ),
-        }
-    }
-
-    /// Clone the chain while adding a producer for the pushed messages channel
-    pub fn build_with_pushed_messages(
-        &self,
-        pushed_messages_tx: mpsc::UnboundedSender<Messages>,
-        context: TransformContextBuilder,
-    ) -> TransformChain {
-        let chain = self
-            .chain
-            .iter()
-            .map(|x| {
-                let mut transform = x.build(context.clone());
-                transform
-                    .transform
-                    .set_pushed_messages_tx(pushed_messages_tx.clone());
-                transform
-            })
             .collect();
 
         TransformChain {

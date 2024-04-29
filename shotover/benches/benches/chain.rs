@@ -17,7 +17,6 @@ use shotover::transforms::null::NullSink;
 #[cfg(feature = "alpha-transforms")]
 use shotover::transforms::protect::{KeyManagerConfig, ProtectConfig};
 use shotover::transforms::redis::cluster_ports_rewrite::RedisClusterPortsRewrite;
-use shotover::transforms::redis::timestamp_tagging::RedisTimestampTagger;
 use shotover::transforms::throttling::RequestThrottlingConfig;
 use shotover::transforms::{
     TransformConfig, TransformContextBuilder, TransformContextConfig, Wrapper,
@@ -99,59 +98,6 @@ fn criterion_benchmark(c: &mut Criterion) {
                 || BenchInput {
                     chain: chain.build(TransformContextBuilder::new_test()),
                     wrapper: wrapper.clone(),
-                },
-                BenchInput::bench,
-                BatchSize::SmallInput,
-            )
-        });
-    }
-
-    {
-        let chain = TransformChainBuilder::new(
-            vec![
-                Box::new(RedisTimestampTagger::new()),
-                Box::new(DebugReturner::new(Response::Message(Message::from_frame(
-                    Frame::Redis(RedisFrame::Array(vec![
-                        RedisFrame::BulkString(Bytes::from_static(b"1")), // real frame
-                        RedisFrame::BulkString(Bytes::from_static(b"1")), // timestamp
-                    ])),
-                )))),
-            ],
-            "bench",
-        );
-        let wrapper_set = Wrapper::new_with_addr(
-            vec![Message::from_frame(Frame::Redis(RedisFrame::Array(vec![
-                RedisFrame::BulkString(Bytes::from_static(b"SET")),
-                RedisFrame::BulkString(Bytes::from_static(b"foo")),
-                RedisFrame::BulkString(Bytes::from_static(b"bar")),
-            ])))],
-            "127.0.0.1:6379".parse().unwrap(),
-        );
-
-        group.bench_function("redis_timestamp_tagger_untagged", |b| {
-            b.to_async(&rt).iter_batched(
-                || BenchInput {
-                    chain: chain.build(TransformContextBuilder::new_test()),
-                    wrapper: wrapper_set.clone(),
-                },
-                BenchInput::bench,
-                BatchSize::SmallInput,
-            )
-        });
-
-        let wrapper_get = Wrapper::new_with_addr(
-            vec![Message::from_frame(Frame::Redis(RedisFrame::Array(vec![
-                RedisFrame::BulkString(Bytes::from_static(b"GET")),
-                RedisFrame::BulkString(Bytes::from_static(b"foo")),
-            ])))],
-            "127.0.0.1:6379".parse().unwrap(),
-        );
-
-        group.bench_function("redis_timestamp_tagger_tagged", |b| {
-            b.to_async(&rt).iter_batched(
-                || BenchInput {
-                    chain: chain.build(TransformContextBuilder::new_test()),
-                    wrapper: wrapper_get.clone(),
                 },
                 BenchInput::bench,
                 BatchSize::SmallInput,

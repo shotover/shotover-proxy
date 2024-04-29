@@ -27,11 +27,27 @@ impl KafkaConnectionBuilder {
         }
     }
 
-    pub fn use_sasl(self, user: &str, pass: &str) -> Self {
+    pub fn use_tls(self, truststore: &str) -> Self {
         match self {
             #[cfg(feature = "rdkafka-driver-tests")]
-            Self::Cpp(cpp) => Self::Cpp(cpp.use_sasl(user, pass)),
-            Self::Java(java) => Self::Java(java.use_sasl(user, pass)),
+            Self::Cpp(_) => todo!("TLS not implemented for cpp driver"),
+            Self::Java(java) => Self::Java(java.use_tls(truststore)),
+        }
+    }
+
+    pub fn use_sasl_scram(self, user: &str, pass: &str) -> Self {
+        match self {
+            #[cfg(feature = "rdkafka-driver-tests")]
+            Self::Cpp(cpp) => Self::Cpp(cpp.use_sasl_scram(user, pass)),
+            Self::Java(java) => Self::Java(java.use_sasl_scram(user, pass)),
+        }
+    }
+
+    pub fn use_sasl_plain(self, user: &str, pass: &str) -> Self {
+        match self {
+            #[cfg(feature = "rdkafka-driver-tests")]
+            Self::Cpp(cpp) => Self::Cpp(cpp.use_sasl_plain(user, pass)),
+            Self::Java(java) => Self::Java(java.use_sasl_plain(user, pass)),
         }
     }
 
@@ -97,20 +113,63 @@ pub enum KafkaConsumer {
 }
 
 impl KafkaConsumer {
-    pub async fn assert_consume(&mut self, response: ExpectedResponse<'_>) {
-        match self {
+    pub async fn assert_consume(&mut self, expected_response: ExpectedResponse) {
+        let response = match self {
             #[cfg(feature = "rdkafka-driver-tests")]
-            Self::Cpp(cpp) => cpp.assert_consume(response).await,
-            Self::Java(java) => java.assert_consume(response).await,
+            Self::Cpp(cpp) => cpp.consume().await,
+            Self::Java(java) => java.consume().await,
+        };
+        assert_eq!(expected_response.message, response.message);
+        assert_eq!(expected_response.key, response.key);
+        assert_eq!(expected_response.topic_name, response.topic_name);
+        assert_eq!(expected_response.offset, response.offset);
+    }
+
+    pub async fn assert_consume_in_any_order(&mut self, expected_responses: Vec<ExpectedResponse>) {
+        let mut responses = vec![];
+        while responses.len() < expected_responses.len() {
+            match self {
+                #[cfg(feature = "rdkafka-driver-tests")]
+                Self::Cpp(cpp) => responses.push(cpp.consume().await),
+                Self::Java(java) => responses.push(java.consume().await),
+            }
+        }
+        let full_responses = responses.clone();
+        let full_expected_responses = expected_responses.clone();
+
+        for expected_response in expected_responses {
+            match responses.iter().enumerate().find(|(_, x)| **x == expected_response) {
+                Some((i, _)) => {
+                    responses.remove(i);
+                }
+                None => panic!("An expected response was not found in the actual responses\nExpected responses:{full_expected_responses:#?}\nActual responses:{full_responses:#?}"),
+            }
         }
     }
 }
 
-pub struct ExpectedResponse<'a> {
-    pub message: &'a str,
-    pub key: Option<&'a str>,
-    pub topic_name: &'a str,
-    pub offset: i64,
+#[derive(Debug, Clone)]
+pub struct ExpectedResponse {
+    pub message: String,
+    pub key: Option<String>,
+    pub topic_name: String,
+    /// Responses will always have this set to Some.
+    /// The test case can set this to None to ignore the value of the actual response.
+    pub offset: Option<i64>,
+}
+
+impl PartialEq for ExpectedResponse {
+    fn eq(&self, other: &Self) -> bool {
+        self.message == other.message
+            && self.key == other.key
+            && self.topic_name == other.topic_name
+            && match (self.offset, other.offset) {
+                (None, None) => true,
+                (None, Some(_)) => true,
+                (Some(_), None) => true,
+                (Some(a), Some(b)) => a == b,
+            }
+    }
 }
 
 pub enum KafkaAdmin {
