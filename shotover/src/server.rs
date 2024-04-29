@@ -1,6 +1,7 @@
 use crate::codec::{CodecBuilder, CodecReadError, CodecWriteError};
 use crate::config::chain::TransformChainConfig;
-use crate::message::{Message, Messages};
+use crate::frame::MessageType;
+use crate::message::{Message, MessageIdMap, Messages, Metadata};
 use crate::sources::Transport;
 use crate::tls::{AcceptError, TlsAcceptor};
 use crate::transforms::chain::{TransformChain, TransformChainBuilder};
@@ -204,6 +205,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                     codec: self.codec.clone(),
                     shutdown: Shutdown::new(self.trigger_shutdown_rx.clone()),
                     tls: self.tls.clone(),
+                    pending_requests: PendingRequests::new(self.codec.protocol()),
                     timeout: self.timeout,
                     _permit: permit,
                 };
@@ -282,6 +284,7 @@ async fn create_listener(listen_addr: &str) -> Result<TcpListener> {
 pub struct Handler<C: CodecBuilder> {
     chain: TransformChain,
     codec: C,
+    pending_requests: PendingRequests,
     tls: Option<TlsAcceptor>,
     /// Listen for shutdown notifications.
     ///
@@ -631,16 +634,19 @@ impl<C: CodecBuilder + 'static> Handler<C> {
             .process_messages(&client_details, local_addr, in_rx, out_tx, force_run_chain)
             .await;
 
-        // Flush messages regardless of if we are shutting down due to a failure or due to application shutdown
-        match self.chain.process_request(Wrapper::flush()).await {
-            Ok(_) => {}
-            Err(e) => error!(
-                "{:?}",
-                e.context(format!(
-                    "encountered an error when flushing the chain {} for shutdown",
-                    self.chain.name,
-                ))
-            ),
+        // Only flush messages if we are shutting down due to application shutdown
+        // If a Transform::transform returns an Err the transform is no longer in a usable state and needs to be destroyed without reusing.
+        if result.is_ok() {
+            match self.chain.process_request(Wrapper::flush()).await {
+                Ok(_) => {}
+                Err(e) => error!(
+                    "{:?}",
+                    e.context(format!(
+                        "encountered an error when flushing the chain {} for shutdown",
+                        self.chain.name,
+                    ))
+                ),
+            }
         }
 
         result
@@ -728,36 +734,21 @@ impl<C: CodecBuilder + 'static> Handler<C> {
         out_tx: &mpsc::UnboundedSender<Messages>,
         requests: Messages,
     ) -> Result<Messages> {
-        // This clone should be cheap as cloning requests Message that has never had `.frame()`
-        // called should result in no new allocations.
-        let mut error_report_messages = requests.clone();
+        self.pending_requests.process_requests(&requests);
 
         let wrapper = Wrapper::new_with_addr(requests, local_addr);
 
         match self.chain.process_request(wrapper).await.context(
             "Chain failed to send and/or receive messages, the connection will now be closed.",
         ) {
-            Ok(x) => Ok(x),
+            Ok(x) => {
+                self.pending_requests.process_responses(&x);
+                Ok(x)
+            }
             Err(err) => {
-                // An internal error occured and we need to terminate the connection because we can no
-                // longer make any guarantees about the state its in.
-                // However before we do that we need to return errors for all the messages in this batch for two reasons:
-                // * Poorly programmed clients may hang forever waiting for a response
-                // * We want to give the user a hint as to what went wrong
-                //     + they might not know to check the shotover logs
-                //     + they may not be able to correlate which error in the shotover logs corresponds to their failed message
-                for m in &mut error_report_messages {
-                    #[allow(clippy::single_match)]
-                    match m.to_error_response(format!(
-                        "Internal shotover (or custom transform) bug: {err:?}"
-                    )) {
-                        Ok(new_m) => *m = new_m,
-                        Err(_) => {
-                            // If we cant produce an error then nothing we can do, just continue on and close the connection.
-                        }
-                    }
-                }
-                out_tx.send(error_report_messages)?;
+                // The connection is going to be closed once we return Err.
+                // So first make a best effort attempt of responding to any pending requests with an error response.
+                out_tx.send(self.pending_requests.to_errors(&err))?;
                 Err(err)
             }
         }
@@ -812,5 +803,132 @@ impl Shutdown {
 
         // Remember that the signal has been received.
         self.shutdown = true;
+    }
+}
+
+/// Keeps track of all currently pending requests.
+/// This allows error responses to be generated if the connection needs to be terminated before the response comes back.
+enum PendingRequests {
+    /// The protocol is in order.
+    Ordered(Vec<Result<Metadata>>),
+    /// The protocol is out of order.
+    Unordered(MessageIdMap<Result<Metadata>>),
+    /// If a protocol does not support error messages then no point keeping track of the requests at all
+    Unsupported,
+}
+
+impl PendingRequests {
+    fn new(message_type: MessageType) -> Self {
+        match message_type {
+            #[cfg(feature = "redis")]
+            MessageType::Redis => PendingRequests::Ordered(vec![]),
+            #[cfg(feature = "cassandra")]
+            MessageType::Cassandra => PendingRequests::Unordered(Default::default()),
+            #[cfg(feature = "kafka")]
+            MessageType::Kafka => PendingRequests::Unsupported,
+            #[cfg(feature = "opensearch")]
+            MessageType::OpenSearch => PendingRequests::Unsupported,
+            MessageType::Dummy => PendingRequests::Unsupported,
+        }
+    }
+
+    fn process_requests(&mut self, requests: &[Message]) {
+        match self {
+            PendingRequests::Ordered(pending_requests) => {
+                pending_requests.extend(requests.iter().map(|x| x.metadata()))
+            }
+            PendingRequests::Unordered(pending_requests) => {
+                for request in requests {
+                    pending_requests.insert(request.id(), request.metadata());
+                }
+            }
+            PendingRequests::Unsupported => {}
+        }
+    }
+
+    fn process_responses(&mut self, responses: &[Message]) {
+        match self {
+            PendingRequests::Ordered(pending_requests) => {
+                let responses_received = responses
+                    .iter()
+                    .filter(|x| x.request_id().is_some())
+                    .count();
+                if responses_received > pending_requests.len() {
+                    tracing::error!("received more responses than requests, this violates the transform invariants");
+                    std::mem::drop(pending_requests.drain(..))
+                } else {
+                    std::mem::drop(pending_requests.drain(..responses_received))
+                }
+            }
+            PendingRequests::Unordered(pending_requests) => {
+                for response in responses {
+                    if let Some(id) = response.request_id() {
+                        pending_requests.remove(&id);
+                    }
+                }
+            }
+            PendingRequests::Unsupported => {}
+        }
+    }
+
+    fn to_errors(&self, err: &anyhow::Error) -> Vec<Message> {
+        // An internal error occured and we need to terminate the connection because we can no
+        // longer make any guarantees about the state its in.
+        // However before we do that we need to return error responses for all the pending requests for two reasons:
+        // * Poorly programmed clients may hang forever waiting for a response
+        // * We want to give the user a hint as to what went wrong
+        //     + they might not know to check the shotover logs
+        //     + they may not be able to correlate which error in the shotover logs corresponds to their failed message
+        match self {
+            PendingRequests::Ordered(pending_requests) => {
+                pending_requests.iter().filter_map(|pending_request| {
+                    let meta = match pending_request {
+                        Ok(meta) => meta,
+                        Err(err) => {
+                            tracing::error!("Failed to parse request into metadata {err:?}");
+                            return None;
+                        }
+                    };
+
+                    match meta.to_error_response(format!(
+                        "Internal shotover (or custom transform) bug: {err:?}"
+                    )) {
+                        Ok(response) => Some(response),
+                        Err(err) => {
+                            tracing::error!("Failed to create an error from the request even though the protocol supports it {err:?}");
+                            None
+                        }
+                    }
+                }).collect()
+            }
+            PendingRequests::Unordered(pending_requests) => {
+                pending_requests.iter().filter_map(|(id, pending_request)| {
+                    let meta = match pending_request {
+                        Ok(meta) => meta,
+                        Err(err) => {
+                            tracing::error!("Failed to parse request into metadata {err:?}");
+                            return None;
+                        }
+                    };
+
+                    match meta.to_error_response(format!(
+                        "Internal shotover (or custom transform) bug: {err:?}"
+                    )) {
+                        Ok(mut response) => {
+                            response.set_request_id(*id);
+                            Some(response)
+                        }
+                        Err(err) => {
+                            tracing::error!("Failed to create an error from the request even though the protocol supports it {err:?}");
+                            None
+                        }
+                    }
+                }).collect()
+            }
+            PendingRequests::Unsupported => {
+                // If we cant produce an error then nothing we can do, just continue on and close the connection.
+                vec![]
+            }
+        }
     }
 }

@@ -76,7 +76,10 @@ Caused by:
     3: Connection refused (os error 111)"#,
                 )
                 .with_count(Count::Times(2)),
-            // When the chain is flushed on client connection close we hit the same error again
+            // This error occurs due to `test_invalid_frame`, it opens a connection, sends an invalid frame which
+            // fails at the codec stage and never reaches the transform.
+            // Since the transform has never been reached, the chain/transform does not fail and
+            // chain flush is reached when the connection is closed by the client.
             EventMatcher::new()
                 .with_level(Level::Error)
                 .with_target("shotover::server")
@@ -88,7 +91,7 @@ Caused by:
     1: Failed to connect to destination 127.0.0.1:1111
     2: Connection refused (os error 111)"#,
                 )
-                .with_count(Count::Times(3)),
+                .with_count(Count::Times(1)),
             invalid_frame_event(),
         ])
         .await;

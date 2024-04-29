@@ -67,7 +67,9 @@ impl Transform for QueryTypeFilter {
                 self.filtered_requests.insert(
                     request.id(),
                     request
-                        .to_error_response("Message was filtered out by shotover".to_owned())
+                        .from_request_to_error_response(
+                            "Message was filtered out by shotover".to_owned(),
+                        )
                         .map_err(|e| e.context("Failed to filter message"))?,
                 );
                 request.replace_with_dummy();

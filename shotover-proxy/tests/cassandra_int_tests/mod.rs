@@ -8,6 +8,7 @@ use futures::future::join_all;
 use futures::Future;
 use rstest::rstest;
 use rstest_reuse::{self, *};
+use scylla::SessionBuilder;
 use std::net::SocketAddr;
 #[cfg(feature = "cassandra-cpp-driver-tests")]
 use test_helpers::connection::cassandra::CassandraDriver::Datastax;
@@ -101,6 +102,50 @@ async fn passthrough_standard(#[case] driver: CassandraDriver) {
     standard_test_suite(&connection, driver).await;
 
     shotover.shutdown_and_then_consume_events(&[]).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn passthrough_cassandra_down() {
+    let shotover = shotover_process("tests/test-configs/cassandra/passthrough/topology.yaml")
+        .start()
+        .await;
+
+    let err = SessionBuilder::new()
+        .known_nodes(["127.0.0.1:9042"])
+        .user("cassandra", "cassandra")
+        .build()
+        .await
+        .unwrap_err();
+    match err {
+        scylla::transport::errors::NewSessionError::IoError(err) => {
+            assert_eq!(
+                format!("{err}"),
+                "No connections in the pool; last connection failed with: Database returned an error: Internal server error. This indicates a server-side bug, Error message: Internal shotover (or custom transform) bug: Chain failed to send and/or receive messages, the connection will now be closed.
+
+Caused by:
+    0: CassandraSinkSingle transform failed
+    1: Failed to connect to destination 127.0.0.1:9043
+    2: Connection refused (os error 111)"
+            );
+        }
+        _ => panic!("Unexpected error, was {err:?}"),
+    }
+
+    shotover
+        .shutdown_and_then_consume_events(&[EventMatcher::new()
+            .with_level(Level::Error)
+            .with_target("shotover::server")
+            .with_message(
+                r#"connection was unexpectedly terminated
+
+Caused by:
+    0: Chain failed to send and/or receive messages, the connection will now be closed.
+    1: CassandraSinkSingle transform failed
+    2: Failed to connect to destination 127.0.0.1:9043
+    3: Connection refused (os error 111)"#,
+            )
+            .with_count(Count::Times(1))])
+        .await;
 }
 
 #[cfg(feature = "alpha-transforms")]
