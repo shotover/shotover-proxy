@@ -98,7 +98,6 @@ impl TransformConfig for CassandraSinkClusterConfig {
     }
 }
 
-#[derive(Clone)]
 pub struct CassandraSinkClusterBuilder {
     contact_points: Vec<String>,
     connection_factory: ConnectionFactory,

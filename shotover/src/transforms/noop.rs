@@ -5,7 +5,6 @@ use async_trait::async_trait;
 
 const NAME: &str = "NoOp";
 
-#[derive(Debug, Clone)]
 pub struct NoOp {}
 
 impl NoOp {

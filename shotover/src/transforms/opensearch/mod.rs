@@ -38,7 +38,6 @@ impl TransformConfig for OpenSearchSinkSingleConfig {
     }
 }
 
-#[derive(Clone)]
 pub struct OpenSearchSinkSingleBuilder {
     address: String,
     connect_timeout: Duration,

@@ -68,7 +68,7 @@ impl TransformConfig for DebugForceEncodeConfig {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct DebugForceParse {
     parse_requests: bool,
     parse_responses: bool,

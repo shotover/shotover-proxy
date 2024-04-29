@@ -5,9 +5,8 @@ use crate::frame::MessageType;
 use crate::message::{Message, MessageIdMap, Messages};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
-use core::fmt;
 use futures::Future;
-use std::fmt::{Debug, Formatter};
+use std::fmt::Debug;
 use std::iter::Rev;
 use std::net::SocketAddr;
 use std::pin::Pin;
@@ -76,12 +75,6 @@ pub trait TransformBuilder: Send + Sync {
 
     fn is_terminating(&self) -> bool {
         false
-    }
-}
-
-impl Debug for dyn TransformBuilder {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "Transform: {}", self.get_name())
     }
 }
 

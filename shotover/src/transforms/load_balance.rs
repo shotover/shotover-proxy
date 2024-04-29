@@ -35,7 +35,6 @@ impl TransformConfig for ConnectionBalanceAndPoolConfig {
     }
 }
 
-#[derive(Debug)]
 pub struct ConnectionBalanceAndPoolBuilder {
     pub max_connections: usize,
     pub all_connections: Arc<Mutex<Vec<BufferedChain>>>,
@@ -64,7 +63,6 @@ impl TransformBuilder for ConnectionBalanceAndPoolBuilder {
 
 /// Every cloned instance of ConnectionBalanceAndPool will use a new connection until `max_connections` clones are made.
 /// Once this happens cloned instances will reuse connections from earlier clones.
-#[derive(Debug)]
 pub struct ConnectionBalanceAndPool {
     active_connection: Option<BufferedChain>,
     max_connections: usize,
