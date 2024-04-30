@@ -5,10 +5,10 @@ use test_helpers::connection::cassandra::{
 };
 
 const NATIVE_COL_TYPES: [ColType; 18] = [
-    ColType::Boolean,
     ColType::Ascii,
     ColType::Bigint,
     ColType::Blob,
+    ColType::Boolean,
     ColType::Decimal,
     ColType::Double,
     ColType::Float,
@@ -27,11 +27,11 @@ const NATIVE_COL_TYPES: [ColType; 18] = [
 
 fn get_type_str(col_type: ColType) -> &'static str {
     match col_type {
-        ColType::Boolean => "boolean",
         ColType::Custom => "custom",
         ColType::Ascii => "ascii",
         ColType::Bigint => "bigint",
         ColType::Blob => "blob",
+        ColType::Boolean => "boolean",
         ColType::Counter => "counter",
         ColType::Decimal => "decimal",
         ColType::Double => "double",
@@ -59,10 +59,10 @@ fn get_type_str(col_type: ColType) -> &'static str {
 
 fn get_type_example(col_type: ColType) -> Vec<&'static str> {
     match col_type {
-        ColType::Boolean => vec!["false", "true"],
         ColType::Ascii => vec!["'ascii string'", "'other string'", "'other string 2'"],
         ColType::Bigint => vec!["1844674407370", "1844674407371", "1844674407372"],
         ColType::Blob => vec!["bigIntAsBlob(10)", "bigIntAsBlob(11)", "bigIntAsBlob(12)"],
+        ColType::Boolean => vec!["false", "true"],
         ColType::Counter => vec!["12", "13", "14"],
         ColType::Decimal => vec!["1.111", "1.112", "1.113"],
         ColType::Double => vec!["1.11", "1.12", "1.13"],
@@ -96,7 +96,6 @@ fn get_type_example(col_type: ColType) -> Vec<&'static str> {
 
 fn get_type_example_result_value(col_type: ColType) -> Vec<ResultValue> {
     match col_type {
-        ColType::Boolean => vec![ResultValue::Boolean(false), ResultValue::Boolean(true)],
         ColType::Ascii => vec![
             ResultValue::Ascii("ascii string".into()),
             ResultValue::Ascii("other string".into()),
@@ -112,6 +111,7 @@ fn get_type_example_result_value(col_type: ColType) -> Vec<ResultValue> {
             ResultValue::Blob(vec![0, 0, 0, 0, 0, 0, 0, 11]),
             ResultValue::Blob(vec![0, 0, 0, 0, 0, 0, 0, 12]),
         ],
+        ColType::Boolean => vec![ResultValue::Boolean(false), ResultValue::Boolean(true)],
         ColType::Counter => vec![
             ResultValue::Counter(12),
             ResultValue::Counter(13),
