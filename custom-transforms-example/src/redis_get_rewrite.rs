@@ -8,7 +8,7 @@ use shotover::transforms::{
     Transform, TransformBuilder, TransformConfig, TransformContextConfig, Wrapper,
 };
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct RedisGetRewriteConfig {
     pub result: String,
@@ -28,7 +28,6 @@ impl TransformConfig for RedisGetRewriteConfig {
     }
 }
 
-#[derive(Clone)]
 pub struct RedisGetRewriteBuilder {
     result: String,
 }

@@ -52,7 +52,6 @@ impl TransformConfig for RedisSinkSingleConfig {
     }
 }
 
-#[derive(Clone)]
 pub struct RedisSinkSingleBuilder {
     address: String,
     tls: Option<TlsConnector>,

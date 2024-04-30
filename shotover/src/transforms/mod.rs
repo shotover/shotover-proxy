@@ -5,15 +5,13 @@ use crate::frame::MessageType;
 use crate::message::{Message, MessageIdMap, Messages};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
-use core::fmt;
 use futures::Future;
-use std::fmt::{Debug, Formatter};
-use std::iter::Rev;
+use std::fmt::Debug;
 use std::net::SocketAddr;
 use std::pin::Pin;
 use std::slice::IterMut;
 use std::sync::Arc;
-use tokio::sync::{mpsc, Notify};
+use tokio::sync::Notify;
 use tokio::time::Instant;
 
 #[cfg(feature = "cassandra")]
@@ -79,12 +77,6 @@ pub trait TransformBuilder: Send + Sync {
     }
 }
 
-impl Debug for dyn TransformBuilder {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "Transform: {}", self.get_name())
-    }
-}
-
 #[typetag::serde]
 #[async_trait(?Send)]
 pub trait TransformConfig: Debug {
@@ -132,39 +124,13 @@ pub struct TransformContextConfig {
 /// Most [`Transform`] authors will only be interested in [`wrapper.requests`].
 pub struct Wrapper<'a> {
     pub requests: Messages,
-    transforms: TransformIter<'a>,
+    transforms: IterMut<'a, TransformAndMetrics>,
     /// Contains the shotover source's ip address and port which the message was received on
     pub local_addr: SocketAddr,
     /// When true transforms must flush any buffered messages into the messages field.
     /// This can occur at any time but will always occur before the transform is destroyed due to either
     /// shotover or the transform's chain shutting down.
     pub flush: bool,
-}
-
-enum TransformIter<'a> {
-    Forwards(IterMut<'a, TransformAndMetrics>),
-    Backwards(Rev<IterMut<'a, TransformAndMetrics>>),
-}
-
-impl<'a> TransformIter<'a> {
-    fn new_forwards(transforms: &'a mut [TransformAndMetrics]) -> TransformIter<'a> {
-        TransformIter::Forwards(transforms.iter_mut())
-    }
-
-    fn new_backwards(transforms: &'a mut [TransformAndMetrics]) -> TransformIter<'a> {
-        TransformIter::Backwards(transforms.iter_mut().rev())
-    }
-}
-
-impl<'a> Iterator for TransformIter<'a> {
-    type Item = &'a mut TransformAndMetrics;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match self {
-            TransformIter::Forwards(iter) => iter.next(),
-            TransformIter::Backwards(iter) => iter.next(),
-        }
-    }
 }
 
 /// [`Wrapper`] will not (cannot) bring the current list of transforms that it needs to traverse with it
@@ -174,7 +140,7 @@ impl<'a> Clone for Wrapper<'a> {
     fn clone(&self) -> Self {
         Wrapper {
             requests: self.requests.clone(),
-            transforms: TransformIter::new_forwards(&mut []),
+            transforms: [].iter_mut(),
             local_addr: self.local_addr,
             flush: self.flush,
         }
@@ -227,7 +193,7 @@ impl<'a> Wrapper<'a> {
     pub fn new_test(requests: Messages) -> Self {
         Wrapper {
             requests,
-            transforms: TransformIter::new_forwards(&mut []),
+            transforms: [].iter_mut(),
             local_addr: "127.0.0.1:8000".parse().unwrap(),
             flush: false,
         }
@@ -236,7 +202,7 @@ impl<'a> Wrapper<'a> {
     pub fn new_with_addr(requests: Messages, local_addr: SocketAddr) -> Self {
         Wrapper {
             requests,
-            transforms: TransformIter::new_forwards(&mut []),
+            transforms: [].iter_mut(),
             local_addr,
             flush: false,
         }
@@ -245,7 +211,7 @@ impl<'a> Wrapper<'a> {
     pub fn flush() -> Self {
         Wrapper {
             requests: vec![],
-            transforms: TransformIter::new_forwards(&mut []),
+            transforms: [].iter_mut(),
             // The connection is closed so we need to just fake an address here
             local_addr: "127.0.0.1:10000".parse().unwrap(),
             flush: true,
@@ -265,11 +231,7 @@ impl<'a> Wrapper<'a> {
     }
 
     pub fn reset(&mut self, transforms: &'a mut [TransformAndMetrics]) {
-        self.transforms = TransformIter::new_forwards(transforms);
-    }
-
-    pub fn reset_rev(&mut self, transforms: &'a mut [TransformAndMetrics]) {
-        self.transforms = TransformIter::new_backwards(transforms);
+        self.transforms = transforms.iter_mut();
     }
 }
 
@@ -342,8 +304,6 @@ pub trait Transform: Send {
     async fn transform<'a>(&'a mut self, requests_wrapper: Wrapper<'a>) -> Result<Messages>;
 
     fn get_name(&self) -> &'static str;
-
-    fn set_pushed_messages_tx(&mut self, _pushed_messages_tx: mpsc::UnboundedSender<Messages>) {}
 }
 
 type ResponseFuture = Pin<Box<dyn Future<Output = Result<util::Response>> + Send + Sync>>;

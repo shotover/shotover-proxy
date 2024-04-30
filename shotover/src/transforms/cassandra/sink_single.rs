@@ -10,7 +10,6 @@ use crate::transforms::{
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use cassandra_protocol::frame::{Opcode, Version};
-
 use metrics::{counter, Counter};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -48,7 +47,6 @@ impl TransformConfig for CassandraSinkSingleConfig {
     }
 }
 
-#[derive(Clone)]
 pub struct CassandraSinkSingleBuilder {
     version: Option<Version>,
     address: String,

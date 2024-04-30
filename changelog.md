@@ -3,9 +3,26 @@
 Any breaking changes to the `topology.yaml` or `shotover` rust API should be documented here.
 This assists us in knowing when to make the next release a breaking release and assists users with making upgrades to new breaking releases.
 
+## 0.4.0
+
+### shotover rust API
+
+#### Debug/Clone
+
+`TransformBuilderAndMetrics`, `TransformChainBuilder`, the `TransformBuilder` trait, as well as many `Transform` structs and `TransformBuilder` structs no longer implement `Derive` or `Clone`.
+
+#### Transform trait
+
+The transform invariants have been changed significantly.
+A system of message IDs is now used to match responses to requests instead of relying on the message order.
+For full details refer to the [documentation of the invariants](https://github.com/shotover/shotover-proxy/blob/204d315b769e300176dea137dff047a369022498/shotover/src/transforms/mod.rs).
+
+The `transform_pushed` method has been removed.
+The messages that were previously sent through that method will now go through the regular `transform` method.
+
 ## 0.3.0
 
-## shotover rust API
+### shotover rust API
 
 `TransformBuilder::build` now returns `Box<dyn Transform>` instead of `Transforms`.
 This means that custom transforms should implement the builder as:
@@ -30,8 +47,8 @@ impl TransformBuilder for CustomBuilder {
 
 ### metrics
 
-The prometheus metrics were renamed to better follow the official reccomended naming scheme: <https://prometheus.io/docs/practices/naming/>
-This included ensuring all meterics were prefixed with `shotover_` and all metrics were suffixed with an appropriate `_unit`.
+The prometheus metrics were renamed to better follow the official recommended naming scheme: <https://prometheus.io/docs/practices/naming/>
+This included ensuring all metrics were prefixed with `shotover_` and all metrics were suffixed with an appropriate `_unit`.
 This includes:
 
 * `shotover_transform_total` -> `shotover_transform_total_count`
