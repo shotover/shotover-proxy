@@ -2,10 +2,12 @@
 pub mod cpp;
 pub mod java;
 
+use anyhow::Result;
 #[cfg(feature = "rdkafka-driver-tests")]
 use cpp::*;
 use java::*;
 
+#[derive(Clone, Copy)]
 pub enum KafkaDriver {
     #[cfg(feature = "rdkafka-driver-tests")]
     Cpp,
@@ -73,6 +75,19 @@ impl KafkaConnectionBuilder {
             Self::Cpp(cpp) => KafkaAdmin::Cpp(cpp.connect_admin().await),
             Self::Java(java) => KafkaAdmin::Java(java.connect_admin().await),
         }
+    }
+
+    pub async fn assert_admin_error(&self) -> anyhow::Error {
+        let admin = self.connect_admin().await;
+
+        admin
+            .create_topics_fallible(&[NewTopic {
+                name: "partitions1",
+                num_partitions: 1,
+                replication_factor: 1,
+            }])
+            .await
+            .unwrap_err()
     }
 
     pub async fn admin_cleanup(&self) {
@@ -179,6 +194,14 @@ pub enum KafkaAdmin {
 }
 
 impl KafkaAdmin {
+    pub async fn create_topics_fallible(&self, topics: &[NewTopic<'_>]) -> Result<()> {
+        match self {
+            #[cfg(feature = "rdkafka-driver-tests")]
+            KafkaAdmin::Cpp(cpp) => cpp.create_topics_fallible(topics).await,
+            KafkaAdmin::Java(java) => java.create_topics_fallible(topics).await,
+        }
+    }
+
     pub async fn create_topics(&self, topics: &[NewTopic<'_>]) {
         match self {
             #[cfg(feature = "rdkafka-driver-tests")]

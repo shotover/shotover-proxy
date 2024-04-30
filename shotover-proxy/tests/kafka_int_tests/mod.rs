@@ -5,6 +5,8 @@ use rstest::rstest;
 use std::time::Duration;
 use test_helpers::connection::kafka::{KafkaConnectionBuilder, KafkaDriver};
 use test_helpers::docker_compose::docker_compose;
+use test_helpers::shotover_process::{Count, EventMatcher};
+use tokio_bin_process::event::Level;
 
 #[rstest]
 #[cfg_attr(feature = "rdkafka-driver-tests", case::cpp(KafkaDriver::Cpp))]
@@ -94,6 +96,7 @@ async fn passthrough_encode(#[case] driver: KafkaDriver) {
     shotover.shutdown_and_then_consume_events(&[]).await;
 }
 
+#[cfg(feature = "alpha-transforms")]
 #[rstest]
 #[cfg_attr(feature = "rdkafka-driver-tests", case::cpp(KafkaDriver::Cpp))]
 #[case::java(KafkaDriver::Java)]
@@ -265,25 +268,40 @@ async fn cluster_2_racks_multi_shotover(#[case] driver: KafkaDriver) {
 }
 
 #[rstest]
-#[cfg_attr(feature = "rdkafka-driver-tests", case::cpp(KafkaDriver::Cpp))]
+//#[cfg_attr(feature = "rdkafka-driver-tests", case::cpp(KafkaDriver::Cpp))] // CPP driver does not support scram
 #[case::java(KafkaDriver::Java)]
 #[tokio::test(flavor = "multi_thread")] // multi_thread is needed since java driver will block when consuming, causing shotover logs to not appear
-async fn cluster_sasl_plain_single_shotover(#[case] driver: KafkaDriver) {
+async fn cluster_sasl_scram_single_shotover(#[case] driver: KafkaDriver) {
     let _docker_compose =
-        docker_compose("tests/test-configs/kafka/cluster-sasl-plain-single/docker-compose.yaml");
+        docker_compose("tests/test-configs/kafka/cluster-sasl-scram/docker-compose.yaml");
 
     let shotover =
-        shotover_process("tests/test-configs/kafka/cluster-sasl-plain-single/topology-single.yaml")
+        shotover_process("tests/test-configs/kafka/cluster-sasl-scram/topology-single.yaml")
             .start()
             .await;
 
     let connection_builder =
-        KafkaConnectionBuilder::new(driver, "127.0.0.1:9192").use_sasl_plain("user", "password");
-    test_cases::standard_test_suite(connection_builder).await;
+        KafkaConnectionBuilder::new(driver, "127.0.0.1:9192").use_sasl_scram("user", "password");
+
+    // TODO: SCRAM currently fails with KafkaSinkCluster, we need to investigate a solution to get it working.
+    //       For now, just assert on the current failing behaviour.
+    let err = connection_builder.assert_admin_error().await;
+    assert_eq!(format!("{err}"), "org.apache.kafka.common.errors.TimeoutException: Timed out waiting for a node assignment. Call: createTopics\n");
 
     tokio::time::timeout(
         Duration::from_secs(10),
-        shotover.shutdown_and_then_consume_events(&[]),
+        shotover.shutdown_and_then_consume_events(&[EventMatcher::new()
+            .with_level(Level::Error)
+            .with_target("shotover::server")
+            .with_message(r#"connection was unexpectedly terminated
+
+Caused by:
+    0: Chain failed to send and/or receive messages, the connection will now be closed.
+    1: KafkaSinkCluster transform failed
+    2: Failed to create control connection
+    3: Replayed auth failed, error code: 58, Authentication failed during authentication due to invalid credentials with SASL mechanism SCRAM-SHA-256"#,
+            )
+            .with_count(Count::Any)]),
     )
     .await
     .expect("Shotover did not shutdown within 10s");
@@ -315,6 +333,20 @@ async fn cluster_sasl_plain_multi_shotover(#[case] driver: KafkaDriver) {
     let connection_builder =
         KafkaConnectionBuilder::new(driver, "127.0.0.1:9192").use_sasl_plain("user", "password");
     test_cases::standard_test_suite(connection_builder).await;
+
+    // Test invalid credentials
+    // We perform the regular test suite first in an attempt to catch a scenario
+    // where valid credentials are leaked into subsequent connections.
+    let connection_builder = KafkaConnectionBuilder::new(driver, "127.0.0.1:9192")
+        .use_sasl_plain("user", "not_the_password");
+    assert_eq!(
+        connection_builder.assert_admin_error().await.to_string(),
+        match driver {
+            #[cfg(feature = "rdkafka-driver-tests")]
+            KafkaDriver::Cpp => "Admin operation error: OperationTimedOut (Local: Timed out)",
+            KafkaDriver::Java => "org.apache.kafka.common.errors.SaslAuthenticationException: Authentication failed: Invalid username or password\n"
+        }
+    );
 
     for shotover in shotovers {
         tokio::time::timeout(
