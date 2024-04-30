@@ -12,7 +12,7 @@ pub enum Filter {
     DenyList(Vec<QueryType>),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct QueryTypeFilter {
     pub filter: Filter,
     pub filtered_requests: MessageIdMap<Message>,

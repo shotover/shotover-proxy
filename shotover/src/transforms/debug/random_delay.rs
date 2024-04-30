@@ -8,7 +8,6 @@ use tokio::time::Duration;
 
 const NAME: &str = "DebugRandomDelay";
 
-#[derive(Debug, Clone)]
 pub struct DebugRandomDelay {
     pub delay: u64,
     pub distribution: Option<Normal<f64>>,

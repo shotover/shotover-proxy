@@ -21,12 +21,12 @@ impl TransformConfig for NullSinkConfig {
     }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Default)]
 pub struct NullSink {}
 
 impl TransformBuilder for NullSink {
     fn build(&self, _transform_context: TransformContextBuilder) -> Box<dyn Transform> {
-        Box::new(self.clone())
+        Box::new(NullSink {})
     }
 
     fn get_name(&self) -> &'static str {

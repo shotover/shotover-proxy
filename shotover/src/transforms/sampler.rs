@@ -8,7 +8,6 @@ use tracing::warn;
 
 const NAME: &str = "Sampler";
 
-#[derive(Debug)]
 pub struct SamplerBuilder {
     pub numerator: u32,
     pub denominator: u32,

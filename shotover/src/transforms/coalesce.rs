@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Coalesce {
     flush_when_buffered_message_count: Option<usize>,
     flush_when_millis_since_last_flush: Option<u128>,
