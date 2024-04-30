@@ -8,7 +8,7 @@ license = "Apache-2.0"
 
 [features]
 cassandra-cpp-driver-tests = ["cassandra-cpp"]
-rdkafka-driver-tests = ["rdkafka"]
+kafka-cpp-driver-tests = ["rdkafka"]
 
 [dependencies]
 tracing.workspace = true

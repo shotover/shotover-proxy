@@ -1,13 +1,12 @@
+use super::TransformContextBuilder;
 use crate::message::Messages;
 use crate::transforms::{Transform, TransformBuilder, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
 
-use super::TransformContextBuilder;
-
 const NAME: &str = "Loopback";
 
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Default)]
 pub struct Loopback {}
 
 impl TransformBuilder for Loopback {

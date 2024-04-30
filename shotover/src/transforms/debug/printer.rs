@@ -24,7 +24,7 @@ impl TransformConfig for DebugPrinterConfig {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct DebugPrinter {
     counter: i32,
 }

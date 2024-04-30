@@ -1,3 +1,4 @@
+use super::{TransformContextBuilder, TransformContextConfig};
 use crate::config::chain::TransformChainConfig;
 use crate::message::Messages;
 use crate::transforms::chain::{TransformChain, TransformChainBuilder};
@@ -12,9 +13,6 @@ use serde::{Deserialize, Serialize};
 use std::future::Future;
 use std::pin::Pin;
 
-use super::{TransformContextBuilder, TransformContextConfig};
-
-#[derive(Debug)]
 pub struct ParallelMapBuilder {
     chains: Vec<TransformChainBuilder>,
     ordered: bool,

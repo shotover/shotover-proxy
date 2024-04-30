@@ -36,7 +36,7 @@ pub enum Response {
     Fail,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct DebugReturner {
     response: Response,
 }

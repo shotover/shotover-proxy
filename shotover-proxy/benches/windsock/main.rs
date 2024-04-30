@@ -3,7 +3,7 @@
     any(
         not(feature = "cassandra"),
         not(feature = "redis"),
-        not(all(feature = "rdkafka-driver-tests", feature = "kafka"))
+        not(all(feature = "kafka-cpp-driver-tests", feature = "kafka"))
     ),
     allow(dead_code, unused_imports, unused_variables, unused_mut)
 )]
@@ -12,7 +12,7 @@
 mod cassandra;
 mod cloud;
 mod common;
-#[cfg(all(feature = "rdkafka-driver-tests", feature = "kafka"))]
+#[cfg(all(feature = "kafka-cpp-driver-tests", feature = "kafka"))]
 mod kafka;
 mod profilers;
 #[cfg(feature = "redis")]
@@ -52,7 +52,7 @@ fn main() {
 
     #[cfg(feature = "cassandra")]
     benches.extend(cassandra::benches());
-    #[cfg(all(feature = "rdkafka-driver-tests", feature = "kafka"))]
+    #[cfg(all(feature = "kafka-cpp-driver-tests", feature = "kafka"))]
     benches.extend(kafka::benches());
     #[cfg(feature = "redis")]
     benches.extend(redis::benches());

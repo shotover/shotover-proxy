@@ -1,15 +1,13 @@
+use super::TransformContextBuilder;
 use crate::message::Messages;
 use crate::transforms::{Transform, TransformBuilder, Wrapper};
 use anyhow::{anyhow, Result};
-use derivative::Derivative;
 use futures::TryFutureExt;
 use metrics::{counter, histogram, Counter, Histogram};
 use std::net::SocketAddr;
 use tokio::sync::{mpsc, oneshot};
 use tokio::time::{Duration, Instant};
 use tracing::{debug, error, info, trace, Instrument};
-
-use super::TransformContextBuilder;
 
 type InnerChain = Vec<TransformAndMetrics>;
 
@@ -194,15 +192,10 @@ impl TransformAndMetrics {
     }
 }
 
-#[derive(Derivative)]
-#[derivative(Debug)]
 pub struct TransformBuilderAndMetrics {
     pub builder: Box<dyn TransformBuilder>,
-    #[derivative(Debug = "ignore")]
     transform_total: Counter,
-    #[derivative(Debug = "ignore")]
     transform_failures: Counter,
-    #[derivative(Debug = "ignore")]
     transform_latency: Histogram,
 }
 
@@ -217,17 +210,12 @@ impl TransformBuilderAndMetrics {
     }
 }
 
-#[derive(Derivative)]
-#[derivative(Debug)]
 pub struct TransformChainBuilder {
     pub name: &'static str,
     pub chain: Vec<TransformBuilderAndMetrics>,
 
-    #[derivative(Debug = "ignore")]
     chain_total: Counter,
-    #[derivative(Debug = "ignore")]
     chain_failures: Counter,
-    #[derivative(Debug = "ignore")]
     chain_batch_size: Histogram,
 }
 

@@ -63,7 +63,7 @@ kafka = ["shotover/kafka"]
 redis = ["shotover/redis"]
 opensearch = ["shotover/opensearch"]
 cassandra-cpp-driver-tests = ["test-helpers/cassandra-cpp-driver-tests"]
-rdkafka-driver-tests = ["test-helpers/rdkafka-driver-tests"]
+kafka-cpp-driver-tests = ["test-helpers/kafka-cpp-driver-tests"]
 default = ["cassandra", "kafka", "redis", "opensearch"]
 
 [[bench]]

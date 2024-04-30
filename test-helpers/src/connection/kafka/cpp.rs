@@ -2,6 +2,7 @@
 pub use rdkafka;
 
 use super::{ExpectedResponse, NewPartition, Record};
+use anyhow::Result;
 use rdkafka::admin::AdminClient;
 use rdkafka::admin::{
     AdminOptions, AlterConfig, NewPartitions, NewTopic, OwnedResourceSpecifier, ResourceSpecifier,
@@ -163,6 +164,10 @@ pub struct KafkaAdminCpp {
 
 impl KafkaAdminCpp {
     pub async fn create_topics(&self, topics: &[super::NewTopic<'_>]) {
+        self.create_topics_fallible(topics).await.unwrap();
+    }
+
+    pub async fn create_topics_fallible(&self, topics: &[super::NewTopic<'_>]) -> Result<()> {
         let topics: Vec<_> = topics
             .iter()
             .map(|topic| NewTopic {
@@ -178,8 +183,8 @@ impl KafkaAdminCpp {
                 &AdminOptions::new()
                     .operation_timeout(Some(Timeout::After(Duration::from_secs(30)))),
             )
-            .await
-            .unwrap();
+            .await?;
+        Ok(())
     }
 
     pub async fn create_partitions(&self, partitions: &[NewPartition<'_>]) {
