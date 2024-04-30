@@ -117,7 +117,6 @@ impl Topology {
     }
 }
 
-#[derive(Debug)]
 pub struct RedisSinkCluster {
     chain_name: String,
     has_run_init: bool,

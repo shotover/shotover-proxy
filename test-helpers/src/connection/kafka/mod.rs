@@ -1,19 +1,21 @@
-#[cfg(feature = "rdkafka-driver-tests")]
+#[cfg(feature = "kafka-cpp-driver-tests")]
 pub mod cpp;
 pub mod java;
 
-#[cfg(feature = "rdkafka-driver-tests")]
+use anyhow::Result;
+#[cfg(feature = "kafka-cpp-driver-tests")]
 use cpp::*;
 use java::*;
 
+#[derive(Clone, Copy)]
 pub enum KafkaDriver {
-    #[cfg(feature = "rdkafka-driver-tests")]
+    #[cfg(feature = "kafka-cpp-driver-tests")]
     Cpp,
     Java,
 }
 
 pub enum KafkaConnectionBuilder {
-    #[cfg(feature = "rdkafka-driver-tests")]
+    #[cfg(feature = "kafka-cpp-driver-tests")]
     Cpp(KafkaConnectionBuilderCpp),
     Java(KafkaConnectionBuilderJava),
 }
@@ -21,7 +23,7 @@ pub enum KafkaConnectionBuilder {
 impl KafkaConnectionBuilder {
     pub fn new(driver: KafkaDriver, address: &str) -> Self {
         match driver {
-            #[cfg(feature = "rdkafka-driver-tests")]
+            #[cfg(feature = "kafka-cpp-driver-tests")]
             KafkaDriver::Cpp => Self::Cpp(KafkaConnectionBuilderCpp::new(address)),
             KafkaDriver::Java => Self::Java(KafkaConnectionBuilderJava::new(address)),
         }
@@ -29,7 +31,7 @@ impl KafkaConnectionBuilder {
 
     pub fn use_tls(self, truststore: &str) -> Self {
         match self {
-            #[cfg(feature = "rdkafka-driver-tests")]
+            #[cfg(feature = "kafka-cpp-driver-tests")]
             Self::Cpp(_) => todo!("TLS not implemented for cpp driver"),
             Self::Java(java) => Self::Java(java.use_tls(truststore)),
         }
@@ -37,7 +39,7 @@ impl KafkaConnectionBuilder {
 
     pub fn use_sasl_scram(self, user: &str, pass: &str) -> Self {
         match self {
-            #[cfg(feature = "rdkafka-driver-tests")]
+            #[cfg(feature = "kafka-cpp-driver-tests")]
             Self::Cpp(cpp) => Self::Cpp(cpp.use_sasl_scram(user, pass)),
             Self::Java(java) => Self::Java(java.use_sasl_scram(user, pass)),
         }
@@ -45,7 +47,7 @@ impl KafkaConnectionBuilder {
 
     pub fn use_sasl_plain(self, user: &str, pass: &str) -> Self {
         match self {
-            #[cfg(feature = "rdkafka-driver-tests")]
+            #[cfg(feature = "kafka-cpp-driver-tests")]
             Self::Cpp(cpp) => Self::Cpp(cpp.use_sasl_plain(user, pass)),
             Self::Java(java) => Self::Java(java.use_sasl_plain(user, pass)),
         }
@@ -53,7 +55,7 @@ impl KafkaConnectionBuilder {
 
     pub async fn connect_producer(&self, acks: i32) -> KafkaProducer {
         match self {
-            #[cfg(feature = "rdkafka-driver-tests")]
+            #[cfg(feature = "kafka-cpp-driver-tests")]
             Self::Cpp(cpp) => KafkaProducer::Cpp(cpp.connect_producer(acks).await),
             Self::Java(java) => KafkaProducer::Java(java.connect_producer(acks).await),
         }
@@ -61,7 +63,7 @@ impl KafkaConnectionBuilder {
 
     pub async fn connect_consumer(&self, topic_name: &str) -> KafkaConsumer {
         match self {
-            #[cfg(feature = "rdkafka-driver-tests")]
+            #[cfg(feature = "kafka-cpp-driver-tests")]
             Self::Cpp(cpp) => KafkaConsumer::Cpp(cpp.connect_consumer(topic_name).await),
             Self::Java(java) => KafkaConsumer::Java(java.connect_consumer(topic_name).await),
         }
@@ -69,15 +71,28 @@ impl KafkaConnectionBuilder {
 
     pub async fn connect_admin(&self) -> KafkaAdmin {
         match self {
-            #[cfg(feature = "rdkafka-driver-tests")]
+            #[cfg(feature = "kafka-cpp-driver-tests")]
             Self::Cpp(cpp) => KafkaAdmin::Cpp(cpp.connect_admin().await),
             Self::Java(java) => KafkaAdmin::Java(java.connect_admin().await),
         }
     }
 
+    pub async fn assert_admin_error(&self) -> anyhow::Error {
+        let admin = self.connect_admin().await;
+
+        admin
+            .create_topics_fallible(&[NewTopic {
+                name: "partitions1",
+                num_partitions: 1,
+                replication_factor: 1,
+            }])
+            .await
+            .unwrap_err()
+    }
+
     pub async fn admin_cleanup(&self) {
         match self {
-            #[cfg(feature = "rdkafka-driver-tests")]
+            #[cfg(feature = "kafka-cpp-driver-tests")]
             Self::Cpp(cpp) => cpp.admin_cleanup().await,
             Self::Java(_) => {}
         }
@@ -85,7 +100,7 @@ impl KafkaConnectionBuilder {
 }
 
 pub enum KafkaProducer {
-    #[cfg(feature = "rdkafka-driver-tests")]
+    #[cfg(feature = "kafka-cpp-driver-tests")]
     Cpp(KafkaProducerCpp),
     Java(KafkaProducerJava),
 }
@@ -93,7 +108,7 @@ pub enum KafkaProducer {
 impl KafkaProducer {
     pub async fn assert_produce(&self, record: Record<'_>, expected_offset: Option<i64>) {
         match self {
-            #[cfg(feature = "rdkafka-driver-tests")]
+            #[cfg(feature = "kafka-cpp-driver-tests")]
             Self::Cpp(cpp) => cpp.assert_produce(record, expected_offset).await,
             Self::Java(java) => java.assert_produce(record, expected_offset).await,
         }
@@ -107,7 +122,7 @@ pub struct Record<'a> {
 }
 
 pub enum KafkaConsumer {
-    #[cfg(feature = "rdkafka-driver-tests")]
+    #[cfg(feature = "kafka-cpp-driver-tests")]
     Cpp(KafkaConsumerCpp),
     Java(KafkaConsumerJava),
 }
@@ -115,7 +130,7 @@ pub enum KafkaConsumer {
 impl KafkaConsumer {
     pub async fn assert_consume(&mut self, expected_response: ExpectedResponse) {
         let response = match self {
-            #[cfg(feature = "rdkafka-driver-tests")]
+            #[cfg(feature = "kafka-cpp-driver-tests")]
             Self::Cpp(cpp) => cpp.consume().await,
             Self::Java(java) => java.consume().await,
         };
@@ -129,7 +144,7 @@ impl KafkaConsumer {
         let mut responses = vec![];
         while responses.len() < expected_responses.len() {
             match self {
-                #[cfg(feature = "rdkafka-driver-tests")]
+                #[cfg(feature = "kafka-cpp-driver-tests")]
                 Self::Cpp(cpp) => responses.push(cpp.consume().await),
                 Self::Java(java) => responses.push(java.consume().await),
             }
@@ -173,15 +188,23 @@ impl PartialEq for ExpectedResponse {
 }
 
 pub enum KafkaAdmin {
-    #[cfg(feature = "rdkafka-driver-tests")]
+    #[cfg(feature = "kafka-cpp-driver-tests")]
     Cpp(KafkaAdminCpp),
     Java(KafkaAdminJava),
 }
 
 impl KafkaAdmin {
+    pub async fn create_topics_fallible(&self, topics: &[NewTopic<'_>]) -> Result<()> {
+        match self {
+            #[cfg(feature = "kafka-cpp-driver-tests")]
+            KafkaAdmin::Cpp(cpp) => cpp.create_topics_fallible(topics).await,
+            KafkaAdmin::Java(java) => java.create_topics_fallible(topics).await,
+        }
+    }
+
     pub async fn create_topics(&self, topics: &[NewTopic<'_>]) {
         match self {
-            #[cfg(feature = "rdkafka-driver-tests")]
+            #[cfg(feature = "kafka-cpp-driver-tests")]
             KafkaAdmin::Cpp(cpp) => cpp.create_topics(topics).await,
             KafkaAdmin::Java(java) => java.create_topics(topics).await,
         }
@@ -189,7 +212,7 @@ impl KafkaAdmin {
 
     pub async fn delete_topics(&self, to_delete: &[&str]) {
         match self {
-            #[cfg(feature = "rdkafka-driver-tests")]
+            #[cfg(feature = "kafka-cpp-driver-tests")]
             Self::Cpp(cpp) => cpp.delete_topics(to_delete).await,
             Self::Java(java) => java.delete_topics(to_delete).await,
         }
@@ -197,7 +220,7 @@ impl KafkaAdmin {
 
     pub async fn create_partitions(&self, partitions: &[NewPartition<'_>]) {
         match self {
-            #[cfg(feature = "rdkafka-driver-tests")]
+            #[cfg(feature = "kafka-cpp-driver-tests")]
             KafkaAdmin::Cpp(cpp) => cpp.create_partitions(partitions).await,
             KafkaAdmin::Java(java) => java.create_partitions(partitions).await,
         }
@@ -205,7 +228,7 @@ impl KafkaAdmin {
 
     pub async fn describe_configs(&self, resources: &[ResourceSpecifier<'_>]) {
         match self {
-            #[cfg(feature = "rdkafka-driver-tests")]
+            #[cfg(feature = "kafka-cpp-driver-tests")]
             KafkaAdmin::Cpp(cpp) => cpp.describe_configs(resources).await,
             KafkaAdmin::Java(java) => java.describe_configs(resources).await,
         }
@@ -213,7 +236,7 @@ impl KafkaAdmin {
 
     pub async fn alter_configs(&self, alter_configs: &[AlterConfig<'_>]) {
         match self {
-            #[cfg(feature = "rdkafka-driver-tests")]
+            #[cfg(feature = "kafka-cpp-driver-tests")]
             KafkaAdmin::Cpp(cpp) => cpp.alter_configs(alter_configs).await,
             KafkaAdmin::Java(java) => java.alter_configs(alter_configs).await,
         }

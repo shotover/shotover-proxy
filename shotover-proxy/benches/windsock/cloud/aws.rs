@@ -267,7 +267,7 @@ sudo docker system prune -af"#,
         }
     }
 
-    #[cfg(all(feature = "rdkafka-driver-tests", feature = "kafka"))]
+    #[cfg(all(feature = "kafka-cpp-driver-tests", feature = "kafka"))]
     pub async fn run_shotover(self: Arc<Self>, topology: &str) -> RunningShotover {
         self.instance
             .ssh()

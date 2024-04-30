@@ -11,7 +11,7 @@ use serde::Serialize;
 
 use super::TransformContextConfig;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct QueryCounter {
     counter_name: String,
 }
