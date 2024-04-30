@@ -318,44 +318,25 @@ mod list {
         .await;
         insert_table(connection, "list_set", |elements| {
             let sets: String = format!("{{{}}}", elements.join(","));
-
-            let mut result = String::from("[");
-
-            for _ in 0..2 {
-                result.push_str(&format!("{},", sets));
-            }
-
-            result.push_str(&format!("{}]", sets));
-
-            result
+            format!("[{}]", (0..3).map(|_| &sets).join(","))
         })
         .await;
         insert_table(connection, "list_list", |elements| {
             let lists = format!("[{}]", elements.join(","));
-
-            let mut result = String::from("[");
-            for _ in 0..2 {
-                result.push_str(&format!("{},", lists));
-            }
-            result.push_str(&format!("{}]", lists));
-
-            result
+            format!("[{}]", (0..3).map(|_| &lists).join(","))
         })
         .await;
         insert_table(connection, "list_map", |elements| {
-            let mut maps = String::from("{");
-            for (i, element) in elements.iter().enumerate().take(2) {
-                maps.push_str(&format!("{}: {}, ", i, element));
-            }
-            maps.push_str(&format!("{}: {}}}", 2, elements[2]));
+            let maps = format!(
+                "{{{}}}",
+                elements
+                    .iter()
+                    .enumerate()
+                    .map(|(i, element)| { format!("{i}: {element}") })
+                    .join(",")
+            );
 
-            let mut result = String::from("[");
-            for _ in 0..2 {
-                result.push_str(&format!("{}, ", maps));
-            }
-            result.push_str(&format!("{}]", maps));
-
-            result
+            format!("[{}]", (0..3).map(|_| &maps).join(","))
         })
         .await;
     }
@@ -444,29 +425,13 @@ mod set {
         })
         .await;
         insert_table(connection, "set_set", |elements| {
-            let sets: String = format!("{{{}}}", elements.join(","));
-
-            let mut result = String::from("{");
-
-            for _ in 0..2 {
-                result.push_str(&format!("{},", sets));
-            }
-            result.push_str(&format!("{}}}", sets));
-
-            result
+            let sets = format!("{{{}}}", elements.join(","));
+            format!("{{{}}}", (0..3).map(|_| &sets).join(","))
         })
         .await;
         insert_table(connection, "set_list", |elements| {
             let lists = format!("[{}]", elements.join(","));
-            let mut result = String::from("{");
-
-            for _ in 0..2 {
-                result.push_str(&format!("{},", lists));
-            }
-
-            result.push_str(&format!("{}}}", lists));
-
-            result
+            format!("{{{}}}", (0..3).map(|_| &lists).join(","))
         })
         .await;
         insert_table(connection, "set_map", |elements| {
@@ -476,14 +441,7 @@ mod set {
             }
             maps.push_str(&format!("{}: {}}}", 2, elements[2]));
 
-            let mut result = String::from("{");
-
-            for _ in 0..2 {
-                result.push_str(&format!("{},", maps));
-            }
-            result.push_str(&format!("{}}}", maps));
-
-            result
+            format!("{{{}}}", (0..3).map(|_| &maps).join(","))
         })
         .await;
     }
@@ -547,55 +505,50 @@ mod map {
 
     async fn insert(connection: &CassandraConnection) {
         insert_table(connection, "map_native", |elements| {
-            let mut map = String::from("{");
-
-            for (i, element) in elements.iter().enumerate().take(2) {
-                map.push_str(&format!("{}: {}, ", i, element));
-            }
-            map.push_str(&format!("{}: {}}}", 2, elements[2]));
-
-            map
+            format!(
+                "{{{}}}",
+                elements
+                    .iter()
+                    .enumerate()
+                    .map(|(i, element)| format!("{i}: {element}"))
+                    .join(",")
+            )
         })
         .await;
         insert_table(connection, "map_set", |elements| {
             let sets: String = format!("{{{}}}", elements.join(","));
-            let mut map = String::from("{");
-
-            for i in 0..2 {
-                map.push_str(&format!("{}: {}, ", i, sets));
-            }
-            map.push_str(&format!("{}: {}}}", 2, sets));
-
-            map
+            format!("{{{}}}", (0..3).map(|i| format!("{i}: {sets}")).join(","))
         })
         .await;
         insert_table(connection, "map_list", |elements| {
             let lists = format!("[{}]", elements.join(","));
-            let mut map = String::from("{");
-
-            for i in 0..2 {
-                map.push_str(&format!("{}: {}, ", i, lists));
-            }
-            map.push_str(&format!("{}: {}}}", 2, lists));
-
-            map
+            format!("{{{}}}", (0..3).map(|i| format!("{i}: {lists}")).join(","))
         })
         .await;
         insert_table(connection, "map_map", |elements| {
-            let mut maps = String::from("{");
-            for (i, element) in elements.iter().enumerate().take(2) {
-                maps.push_str(&format!("{}: {}, ", i, element));
-            }
-            maps.push_str(&format!("{}: {}}}", 2, elements[2]));
+            let maps = format!(
+                "{{{}}}",
+                elements
+                    .iter()
+                    .enumerate()
+                    .map(|(i, element)| { format!("{i}: {element}") })
+                    .join(",")
+            );
 
-            let mut map = String::from("{");
+            format!("{{{}}}", (0..3).map(|i| format!("{i}: {maps}")).join(","))
 
-            for i in 0..2 {
-                map.push_str(&format!("{}: {}, ", i, maps));
-            }
-            map.push_str(&format!("{}: {}}}", 2, maps));
-
-            map
+            // let mut maps = String::from("{");
+            // for (i, element) in elements.iter().enumerate().take(2) {
+            //     maps.push_str(&format!("{}: {}, ", i, element));
+            // }
+            // maps.push_str(&format!("{}: {}}}", 2, elements[2]));
+            //
+            // let mut map = String::from("{");
+            // for i in 0..2 {
+            //     map.push_str(&format!("{}: {}, ", i, maps));
+            // }
+            // map.push_str(&format!("{}: {}}}", 2, maps));
+            // map
         })
         .await;
     }
