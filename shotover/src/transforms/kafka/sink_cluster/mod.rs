@@ -15,7 +15,7 @@ use kafka_protocol::messages::metadata_response::MetadataResponseBroker;
 use kafka_protocol::messages::{
     ApiKey, BrokerId, FetchRequest, FindCoordinatorRequest, FindCoordinatorResponse, GroupId,
     HeartbeatRequest, JoinGroupRequest, MetadataRequest, MetadataResponse, OffsetFetchRequest,
-    RequestHeader, SyncGroupRequest, TopicName,
+    RequestHeader, SaslHandshakeRequest, SyncGroupRequest, TopicName,
 };
 use kafka_protocol::protocol::{Builder, StrBytes};
 use node::{ConnectionFactory, KafkaAddress, KafkaNode};
@@ -170,6 +170,7 @@ impl TransformBuilder for KafkaSinkClusterBuilder {
             pending_requests: Default::default(),
             find_coordinator_requests: Default::default(),
             temp_responses_buffer: Default::default(),
+            sasl_mechanism: None,
         })
     }
 
@@ -224,6 +225,7 @@ pub struct KafkaSinkCluster {
     find_coordinator_requests: MessageIdMap<FindCoordinator>,
     /// A temporary buffer used when receiving responses, only held onto in order to avoid reallocating.
     temp_responses_buffer: Vec<Message>,
+    sasl_mechanism: Option<StrBytes>,
 }
 
 /// State of a Request/Response is maintained by this enum.
@@ -362,18 +364,20 @@ impl KafkaSinkCluster {
             for request in &mut requests {
                 match request.frame() {
                     Some(Frame::Kafka(KafkaFrame::Request {
-                        body: RequestBody::SaslHandshake(_),
+                        body: RequestBody::SaslHandshake(SaslHandshakeRequest { mechanism, .. }),
                         ..
                     })) => {
-                        self.connection_factory
-                            .add_handshake_message(request.clone());
+                        mechanism.as_str();
+
+                        self.sasl_mechanism = Some(mechanism.clone());
+                        self.connection_factory.add_auth_request(request.clone());
                         handshake_request_count += 1;
                     }
                     Some(Frame::Kafka(KafkaFrame::Request {
                         body: RequestBody::SaslAuthenticate(_),
                         ..
                     })) => {
-                        self.connection_factory.add_auth_message(request.clone());
+                        self.connection_factory.add_auth_request(request.clone());
                         handshake_request_count += 1;
                     }
                     Some(Frame::Kafka(KafkaFrame::Request {
@@ -1017,6 +1021,25 @@ impl KafkaSinkCluster {
                     response.invalidate_cache();
                 }
                 Some(Frame::Kafka(KafkaFrame::Response {
+                    body: ResponseBody::SaslHandshake(handshake),
+                    ..
+                })) => {
+                    // always remove scram from supported mechanisms
+                    const SASL_SCRAM_MECHANISMS: [&str; 2] = ["SCRAM-SHA-256", "SCRAM-SHA-512"];
+                    handshake
+                        .mechanisms
+                        .retain(|x| !SASL_SCRAM_MECHANISMS.contains(&x.as_str()));
+
+                    // declare unsupported if the client requested SCRAM
+                    if let Some(sasl_mechanism) = &self.sasl_mechanism {
+                        if SASL_SCRAM_MECHANISMS.contains(&sasl_mechanism.as_str()) {
+                            handshake.error_code = 33; // UNSUPPORTED_SASL_MECHANISM
+                        }
+                    }
+
+                    response.invalidate_cache();
+                }
+                Some(Frame::Kafka(KafkaFrame::Response {
                     body: ResponseBody::Metadata(metadata),
                     ..
                 })) => {
@@ -1048,7 +1071,7 @@ impl KafkaSinkCluster {
         Ok(())
     }
 
-    fn route_to_first_contact_node(&mut self, message: Message) {
+    fn route_to_first_contact_node(&mut self, request: Message) {
         let destination = if let Some(first_contact_node) = &self.first_contact_node {
             self.nodes
                 .iter_mut()
@@ -1064,13 +1087,13 @@ impl KafkaSinkCluster {
         self.pending_requests.push_back(PendingRequest {
             ty: PendingRequestTy::Routed {
                 destination,
-                request: message,
+                request,
             },
             combine_responses: 1,
         });
     }
 
-    fn route_to_controller(&mut self, message: Message) {
+    fn route_to_controller(&mut self, request: Message) {
         let broker_id = self.controller_broker.get().unwrap();
 
         let destination = if let Some(node) =
@@ -1085,13 +1108,13 @@ impl KafkaSinkCluster {
         self.pending_requests.push_back(PendingRequest {
             ty: PendingRequestTy::Routed {
                 destination,
-                request: message,
+                request,
             },
             combine_responses: 1,
         });
     }
 
-    fn route_to_coordinator(&mut self, message: Message, group_id: GroupId) {
+    fn route_to_coordinator(&mut self, request: Message, group_id: GroupId) {
         let destination = self.group_to_coordinator_broker.get(&group_id);
         let destination = match destination {
             Some(destination) => *destination,
@@ -1103,7 +1126,7 @@ impl KafkaSinkCluster {
         self.pending_requests.push_back(PendingRequest {
             ty: PendingRequestTy::Routed {
                 destination,
-                request: message,
+                request,
             },
             combine_responses: 1,
         });
