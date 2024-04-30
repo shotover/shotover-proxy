@@ -4,7 +4,8 @@ use test_helpers::connection::cassandra::{
     assert_query_result, run_query, CassandraConnection, CassandraDriver, ResultValue,
 };
 
-const NATIVE_COL_TYPES: [ColType; 17] = [
+const NATIVE_COL_TYPES: [ColType; 18] = [
+    ColType::Boolean,
     ColType::Ascii,
     ColType::Bigint,
     ColType::Blob,
@@ -26,6 +27,7 @@ const NATIVE_COL_TYPES: [ColType; 17] = [
 
 fn get_type_str(col_type: ColType) -> &'static str {
     match col_type {
+        ColType::Boolean => "boolean",
         ColType::Custom => "custom",
         ColType::Ascii => "ascii",
         ColType::Bigint => "bigint",
@@ -57,6 +59,7 @@ fn get_type_str(col_type: ColType) -> &'static str {
 
 fn get_type_example(col_type: ColType) -> Vec<&'static str> {
     match col_type {
+        ColType::Boolean => vec!["false", "true"],
         ColType::Ascii => vec!["'ascii string'", "'other string'", "'other string 2'"],
         ColType::Bigint => vec!["1844674407370", "1844674407371", "1844674407372"],
         ColType::Blob => vec!["bigIntAsBlob(10)", "bigIntAsBlob(11)", "bigIntAsBlob(12)"],
@@ -93,6 +96,7 @@ fn get_type_example(col_type: ColType) -> Vec<&'static str> {
 
 fn get_type_example_result_value(col_type: ColType) -> Vec<ResultValue> {
     match col_type {
+        ColType::Boolean => vec![ResultValue::Boolean(false), ResultValue::Boolean(true)],
         ColType::Ascii => vec![
             ResultValue::Ascii("ascii string".into()),
             ResultValue::Ascii("other string".into()),
@@ -317,17 +321,17 @@ mod list {
         })
         .await;
         insert_table(connection, "list_set", |elements| {
-            let sets: String = format!("{{{}}}", elements.join(","));
-            format!("[{}]", (0..3).map(|_| &sets).join(","))
+            let set: String = format!("{{{}}}", elements.join(","));
+            format!("[{}]", (0..3).map(|_| &set).join(","))
         })
         .await;
         insert_table(connection, "list_list", |elements| {
-            let lists = format!("[{}]", elements.join(","));
-            format!("[{}]", (0..3).map(|_| &lists).join(","))
+            let list = format!("[{}]", elements.join(","));
+            format!("[{}]", (0..3).map(|_| &list).join(","))
         })
         .await;
         insert_table(connection, "list_map", |elements| {
-            let maps = format!(
+            let map = format!(
                 "{{{}}}",
                 elements
                     .iter()
@@ -336,7 +340,7 @@ mod list {
                     .join(",")
             );
 
-            format!("[{}]", (0..3).map(|_| &maps).join(","))
+            format!("[{}]", (0..3).map(|_| &map).join(","))
         })
         .await;
     }
@@ -373,23 +377,13 @@ mod list {
             connection,
             "list_map",
             |t| {
-                ResultValue::List(vec![
-                    ResultValue::Map(vec![
-                        (ResultValue::Int(0), t[0].clone()),
-                        (ResultValue::Int(1), t[1].clone()),
-                        (ResultValue::Int(2), t[2].clone()),
-                    ]),
-                    ResultValue::Map(vec![
-                        (ResultValue::Int(0), t[0].clone()),
-                        (ResultValue::Int(1), t[1].clone()),
-                        (ResultValue::Int(2), t[2].clone()),
-                    ]),
-                    ResultValue::Map(vec![
-                        (ResultValue::Int(0), t[0].clone()),
-                        (ResultValue::Int(1), t[1].clone()),
-                        (ResultValue::Int(2), t[2].clone()),
-                    ]),
-                ])
+                let map = ResultValue::Map(
+                    t.iter()
+                        .enumerate()
+                        .map(|(i, x)| (ResultValue::Int(i as i32), x.clone()))
+                        .collect(),
+                );
+                ResultValue::List(vec![map.clone(), map.clone(), map])
             },
             driver,
         )
@@ -425,23 +419,26 @@ mod set {
         })
         .await;
         insert_table(connection, "set_set", |elements| {
-            let sets = format!("{{{}}}", elements.join(","));
-            format!("{{{}}}", (0..3).map(|_| &sets).join(","))
+            let set = format!("{{{}}}", elements.join(","));
+            format!("{{{}}}", (0..3).map(|_| &set).join(","))
         })
         .await;
         insert_table(connection, "set_list", |elements| {
-            let lists = format!("[{}]", elements.join(","));
-            format!("{{{}}}", (0..3).map(|_| &lists).join(","))
+            let list = format!("[{}]", elements.join(","));
+            format!("{{{}}}", (0..3).map(|_| &list).join(","))
         })
         .await;
         insert_table(connection, "set_map", |elements| {
-            let mut maps = String::from("{");
-            for (i, element) in elements.iter().enumerate().take(2) {
-                maps.push_str(&format!("{}: {}, ", i, element));
-            }
-            maps.push_str(&format!("{}: {}}}", 2, elements[2]));
+            let map = format!(
+                "{{{}}}",
+                elements
+                    .iter()
+                    .enumerate()
+                    .map(|(i, element)| { format!("{i}: {element}") })
+                    .join(",")
+            );
 
-            format!("{{{}}}", (0..3).map(|_| &maps).join(","))
+            format!("{{{}}}", (0..3).map(|_| &map).join(","))
         })
         .await;
     }
@@ -466,11 +463,12 @@ mod set {
             connection,
             "set_map",
             |t| {
-                ResultValue::Set(vec![ResultValue::Map(vec![
-                    (ResultValue::Int(0), t[0].clone()),
-                    (ResultValue::Int(1), t[1].clone()),
-                    (ResultValue::Int(2), t[2].clone()),
-                ])])
+                ResultValue::Set(vec![ResultValue::Map(
+                    t.iter()
+                        .enumerate()
+                        .map(|(i, x)| (ResultValue::Int(i as i32), x.clone()))
+                        .collect(),
+                )])
             },
             driver,
         )
@@ -516,17 +514,17 @@ mod map {
         })
         .await;
         insert_table(connection, "map_set", |elements| {
-            let sets: String = format!("{{{}}}", elements.join(","));
-            format!("{{{}}}", (0..3).map(|i| format!("{i}: {sets}")).join(","))
+            let set = format!("{{{}}}", elements.join(","));
+            format!("{{{}}}", (0..3).map(|i| format!("{i}: {set}")).join(","))
         })
         .await;
         insert_table(connection, "map_list", |elements| {
-            let lists = format!("[{}]", elements.join(","));
-            format!("{{{}}}", (0..3).map(|i| format!("{i}: {lists}")).join(","))
+            let list = format!("[{}]", elements.join(","));
+            format!("{{{}}}", (0..3).map(|i| format!("{i}: {list}")).join(","))
         })
         .await;
         insert_table(connection, "map_map", |elements| {
-            let maps = format!(
+            let map = format!(
                 "{{{}}}",
                 elements
                     .iter()
@@ -535,20 +533,7 @@ mod map {
                     .join(",")
             );
 
-            format!("{{{}}}", (0..3).map(|i| format!("{i}: {maps}")).join(","))
-
-            // let mut maps = String::from("{");
-            // for (i, element) in elements.iter().enumerate().take(2) {
-            //     maps.push_str(&format!("{}: {}, ", i, element));
-            // }
-            // maps.push_str(&format!("{}: {}}}", 2, elements[2]));
-            //
-            // let mut map = String::from("{");
-            // for i in 0..2 {
-            //     map.push_str(&format!("{}: {}, ", i, maps));
-            // }
-            // map.push_str(&format!("{}: {}}}", 2, maps));
-            // map
+            format!("{{{}}}", (0..3).map(|i| format!("{i}: {map}")).join(","))
         })
         .await;
     }
@@ -558,11 +543,12 @@ mod map {
             connection,
             "map_native",
             |t| {
-                ResultValue::Map(vec![
-                    (ResultValue::Int(0), t[0].clone()),
-                    (ResultValue::Int(1), t[1].clone()),
-                    (ResultValue::Int(2), t[2].clone()),
-                ])
+                ResultValue::Map(
+                    t.iter()
+                        .enumerate()
+                        .map(|(i, x)| (ResultValue::Int(i as i32), x.clone()))
+                        .collect(),
+                )
             },
             driver,
         )
@@ -597,31 +583,16 @@ mod map {
             connection,
             "map_map",
             |t| {
+                let map = ResultValue::Map(
+                    t.iter()
+                        .enumerate()
+                        .map(|(i, x)| (ResultValue::Int(i as i32), x.clone()))
+                        .collect(),
+                );
                 ResultValue::Map(vec![
-                    (
-                        ResultValue::Int(0),
-                        ResultValue::Map(vec![
-                            (ResultValue::Int(0), t[0].clone()),
-                            (ResultValue::Int(1), t[1].clone()),
-                            (ResultValue::Int(2), t[2].clone()),
-                        ]),
-                    ),
-                    (
-                        ResultValue::Int(1),
-                        ResultValue::Map(vec![
-                            (ResultValue::Int(0), t[0].clone()),
-                            (ResultValue::Int(1), t[1].clone()),
-                            (ResultValue::Int(2), t[2].clone()),
-                        ]),
-                    ),
-                    (
-                        ResultValue::Int(2),
-                        ResultValue::Map(vec![
-                            (ResultValue::Int(0), t[0].clone()),
-                            (ResultValue::Int(1), t[1].clone()),
-                            (ResultValue::Int(2), t[2].clone()),
-                        ]),
-                    ),
+                    (ResultValue::Int(0), map.clone()),
+                    (ResultValue::Int(1), map.clone()),
+                    (ResultValue::Int(2), map),
                 ])
             },
             driver,
