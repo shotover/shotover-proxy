@@ -1,6 +1,8 @@
 use crate::transforms::chain::TransformChainBuilder;
-use crate::transforms::{TransformBuilder, TransformConfig, TransformContextConfig};
-use anyhow::Result;
+use crate::transforms::{
+    DownChainProtocol, TransformBuilder, TransformConfig, TransformContextConfig, UpChainProtocol,
+};
+use anyhow::{anyhow, Result};
 use serde::de::{DeserializeSeed, Deserializer, MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Serialize};
 use std::fmt::{self, Debug};
@@ -16,11 +18,37 @@ pub struct TransformChainConfig(
 impl TransformChainConfig {
     pub async fn get_builder(
         &self,
-        transform_context: TransformContextConfig,
+        mut transform_context: TransformContextConfig,
     ) -> Result<TransformChainBuilder> {
         let mut transforms: Vec<Box<dyn TransformBuilder>> = Vec::new();
-        for tc in &self.0 {
-            transforms.push(tc.get_builder(transform_context.clone()).await?)
+        let mut upchain_protocol = transform_context.protocol;
+        for (i, tc) in self.0.iter().enumerate() {
+            let name = tc.typetag_name();
+            match tc.up_chain_protocol() {
+                UpChainProtocol::MustBeOneOf(protocols) => {
+                    if !protocols.contains(&upchain_protocol) {
+                        return Err(anyhow!("Transform {name} requires upchain protocol to be one of {protocols:?} but was {upchain_protocol:?}"));
+                    }
+                }
+                UpChainProtocol::Any => {
+                    // anything is fine
+                }
+            }
+            transform_context.protocol = upchain_protocol;
+            transforms.push(tc.get_builder(transform_context.clone()).await?);
+
+            upchain_protocol = match tc.down_chain_protocol() {
+                DownChainProtocol::TransformedTo(new) => new,
+                DownChainProtocol::SameAsIncoming => upchain_protocol,
+                DownChainProtocol::Sink => {
+                    if i + 1 != self.0.len() {
+                        // TODO: Move bad sink reporting to here
+                        upchain_protocol
+                    } else {
+                        upchain_protocol
+                    }
+                }
+            }
         }
         Ok(TransformChainBuilder::new(
             transforms,

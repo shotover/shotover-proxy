@@ -1,10 +1,11 @@
 use crate::codec::{CodecBuilder, Direction};
 use crate::connection::SinkConnection;
-use crate::frame::{Frame, RedisFrame};
+use crate::frame::{Frame, MessageType, RedisFrame};
 use crate::message::Messages;
 use crate::tls::{TlsConnector, TlsConnectorConfig};
 use crate::transforms::{
-    Transform, TransformBuilder, TransformConfig, TransformContextBuilder, Wrapper,
+    DownChainProtocol, Transform, TransformBuilder, TransformConfig, TransformContextBuilder,
+    UpChainProtocol, Wrapper,
 };
 use crate::{codec::redis::RedisCodecBuilder, transforms::TransformContextConfig};
 use anyhow::Result;
@@ -40,6 +41,14 @@ impl TransformConfig for RedisSinkSingleConfig {
             transform_context.chain_name,
             self.connect_timeout_ms,
         )))
+    }
+
+    fn up_chain_protocol(&self) -> UpChainProtocol {
+        UpChainProtocol::MustBeOneOf(vec![MessageType::Redis])
+    }
+
+    fn down_chain_protocol(&self) -> DownChainProtocol {
+        DownChainProtocol::Sink
     }
 }
 
