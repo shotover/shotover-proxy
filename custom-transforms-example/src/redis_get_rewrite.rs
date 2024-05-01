@@ -1,9 +1,9 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use shotover::frame::{Frame, RedisFrame};
+use shotover::frame::{Frame, MessageType, RedisFrame};
 use shotover::message::{MessageIdSet, Messages};
-use shotover::transforms::TransformContextBuilder;
+use shotover::transforms::{DownChainProtocol, TransformContextBuilder, UpChainProtocol};
 use shotover::transforms::{
     Transform, TransformBuilder, TransformConfig, TransformContextConfig, Wrapper,
 };
@@ -25,6 +25,14 @@ impl TransformConfig for RedisGetRewriteConfig {
         Ok(Box::new(RedisGetRewriteBuilder {
             result: self.result.clone(),
         }))
+    }
+
+    fn up_chain_protocol(&self) -> UpChainProtocol {
+        UpChainProtocol::MustBeOneOf(vec![MessageType::Redis])
+    }
+
+    fn down_chain_protocol(&self) -> DownChainProtocol {
+        DownChainProtocol::SameAsUpChain
     }
 }
 

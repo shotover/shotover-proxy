@@ -1,4 +1,6 @@
 use crate::message::{Encodable, Message};
+#[cfg(feature = "alpha-transforms")]
+use crate::transforms::{DownChainProtocol, UpChainProtocol};
 use crate::transforms::{Transform, TransformBuilder, TransformContextBuilder, Wrapper};
 use anyhow::{Context, Result};
 use async_trait::async_trait;
@@ -27,6 +29,14 @@ impl crate::transforms::TransformConfig for DebugLogToFileConfig {
         Ok(Box::new(DebugLogToFileBuilder {
             connection_counter: Arc::new(AtomicU64::new(0)),
         }))
+    }
+
+    fn up_chain_protocol(&self) -> UpChainProtocol {
+        UpChainProtocol::Any
+    }
+
+    fn down_chain_protocol(&self) -> DownChainProtocol {
+        DownChainProtocol::SameAsUpChain
     }
 }
 

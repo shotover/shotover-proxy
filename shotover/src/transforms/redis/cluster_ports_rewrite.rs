@@ -1,8 +1,11 @@
 use crate::frame::Frame;
+use crate::frame::MessageType;
 use crate::frame::RedisFrame;
 use crate::message::{MessageIdMap, Messages};
+use crate::transforms::DownChainProtocol;
 use crate::transforms::TransformContextBuilder;
 use crate::transforms::TransformContextConfig;
+use crate::transforms::UpChainProtocol;
 use crate::transforms::{Transform, TransformBuilder, TransformConfig, Wrapper};
 use anyhow::{anyhow, bail, Context, Result};
 use async_trait::async_trait;
@@ -25,6 +28,14 @@ impl TransformConfig for RedisClusterPortsRewriteConfig {
         _transform_context: TransformContextConfig,
     ) -> Result<Box<dyn TransformBuilder>> {
         Ok(Box::new(RedisClusterPortsRewrite::new(self.new_port)))
+    }
+
+    fn up_chain_protocol(&self) -> UpChainProtocol {
+        UpChainProtocol::MustBeOneOf(vec![MessageType::Redis])
+    }
+
+    fn down_chain_protocol(&self) -> DownChainProtocol {
+        DownChainProtocol::SameAsUpChain
     }
 }
 

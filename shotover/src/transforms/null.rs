@@ -1,4 +1,4 @@
-use super::{TransformContextBuilder, TransformContextConfig};
+use super::{DownChainProtocol, TransformContextBuilder, TransformContextConfig, UpChainProtocol};
 use crate::message::Messages;
 use crate::transforms::{Transform, TransformBuilder, TransformConfig, Wrapper};
 use anyhow::Result;
@@ -18,6 +18,14 @@ impl TransformConfig for NullSinkConfig {
         _transform_context: TransformContextConfig,
     ) -> Result<Box<dyn TransformBuilder>> {
         Ok(Box::new(NullSink {}))
+    }
+
+    fn up_chain_protocol(&self) -> UpChainProtocol {
+        UpChainProtocol::Any
+    }
+
+    fn down_chain_protocol(&self) -> DownChainProtocol {
+        DownChainProtocol::Terminating
     }
 }
 

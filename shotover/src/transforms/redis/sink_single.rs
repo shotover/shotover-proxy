@@ -48,7 +48,7 @@ impl TransformConfig for RedisSinkSingleConfig {
     }
 
     fn down_chain_protocol(&self) -> DownChainProtocol {
-        DownChainProtocol::Sink
+        DownChainProtocol::Terminating
     }
 }
 

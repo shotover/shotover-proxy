@@ -1,9 +1,12 @@
 use crate::connection::SinkConnection;
 use crate::frame::kafka::{KafkaFrame, RequestBody, ResponseBody};
-use crate::frame::Frame;
+use crate::frame::{Frame, MessageType};
 use crate::message::{Message, MessageIdMap, Messages};
 use crate::tls::{TlsConnector, TlsConnectorConfig};
-use crate::transforms::{Transform, TransformBuilder, TransformContextBuilder, Wrapper};
+use crate::transforms::{
+    DownChainProtocol, Transform, TransformBuilder, TransformContextBuilder, UpChainProtocol,
+    Wrapper,
+};
 use crate::transforms::{TransformConfig, TransformContextConfig};
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
@@ -103,6 +106,14 @@ impl TransformConfig for KafkaSinkClusterConfig {
             self.read_timeout,
             tls,
         )))
+    }
+
+    fn up_chain_protocol(&self) -> UpChainProtocol {
+        UpChainProtocol::MustBeOneOf(vec![MessageType::Kafka])
+    }
+
+    fn down_chain_protocol(&self) -> DownChainProtocol {
+        DownChainProtocol::Terminating
     }
 }
 

@@ -1,4 +1,4 @@
-use super::{TransformContextBuilder, TransformContextConfig};
+use super::{DownChainProtocol, TransformContextBuilder, TransformContextConfig, UpChainProtocol};
 use crate::config::chain::TransformChainConfig;
 use crate::http::HttpServerError;
 use crate::message::{Message, MessageIdMap, Messages};
@@ -228,6 +228,14 @@ impl TransformConfig for TeeConfig {
             self.switch_port,
             transform_context.protocol.is_inorder(),
         )))
+    }
+
+    fn up_chain_protocol(&self) -> UpChainProtocol {
+        UpChainProtocol::Any
+    }
+
+    fn down_chain_protocol(&self) -> DownChainProtocol {
+        DownChainProtocol::SameAsUpChain
     }
 }
 
