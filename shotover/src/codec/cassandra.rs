@@ -264,8 +264,6 @@ impl CassandraDecoder {
             (Version::V5, true) => match compression {
                 Compression::None => {
                     let mut frame_bytes = src.split_to(frame_len);
-                    tracing::debug!("frame_bytes: \n{}", pretty_hex::pretty_hex(&frame_bytes));
-
                     let header =
                         i64::from_le_bytes(frame_bytes[..8].try_into().unwrap()) & 0xffffffffffff; // convert to 6 byte int
 

@@ -1,5 +1,5 @@
 # configure the first `info` to set the log level for dependencies
 # configure `shotover=info` to set the log level for shotover itself
-# set `shotover::connection_span=info` to `shotover::connection_span=debug` to attach connection info to most log events, this is disabled by default due to a minor performance hit.
-main_log_level: "debug, shotover=debug, shotover::connection_span=debug"
+# set `shotover::connection_span=debug` to `shotover::connection_span=info` to attach connection info to most log events, this is disabled by default due to a minor performance hit.
+main_log_level: "info, shotover=info, shotover::connection_span=info"
 observability_interface: "0.0.0.0:9001"
