@@ -55,6 +55,30 @@ async fn passthrough_tls(#[case] driver: KafkaDriver) {
 #[rstest]
 #[case::java(KafkaDriver::Java)]
 #[tokio::test(flavor = "multi_thread")] // multi_thread is needed since java driver will block when consuming, causing shotover logs to not appear
+async fn passthrough_mtls(#[case] driver: KafkaDriver) {
+    test_helpers::cert::generate_kafka_test_certs();
+
+    let _docker_compose =
+        docker_compose("tests/test-configs/kafka/passthrough-mtls/docker-compose.yaml");
+    let shotover = shotover_process("tests/test-configs/kafka/passthrough-mtls/topology.yaml")
+        .start()
+        .await;
+
+    let connection_builder = KafkaConnectionBuilder::new(driver, "127.0.0.1:9192")
+        .use_tls("tests/test-configs/kafka/tls/certs");
+    test_cases::standard_test_suite(connection_builder).await;
+
+    tokio::time::timeout(
+        Duration::from_secs(10),
+        shotover.shutdown_and_then_consume_events(&[]),
+    )
+    .await
+    .expect("Shotover did not shutdown within 10s");
+}
+
+#[rstest]
+#[case::java(KafkaDriver::Java)]
+#[tokio::test(flavor = "multi_thread")] // multi_thread is needed since java driver will block when consuming, causing shotover logs to not appear
 async fn cluster_tls(#[case] driver: KafkaDriver) {
     test_helpers::cert::generate_kafka_test_certs();
 
@@ -65,7 +89,31 @@ async fn cluster_tls(#[case] driver: KafkaDriver) {
         .await;
 
     let connection_builder = KafkaConnectionBuilder::new(driver, "127.0.0.1:9192")
-        .use_tls("tests/test-configs/kafka/tls/certs/kafka.keystore.jks");
+        .use_tls("tests/test-configs/kafka/tls/certs");
+    test_cases::standard_test_suite(connection_builder).await;
+
+    tokio::time::timeout(
+        Duration::from_secs(10),
+        shotover.shutdown_and_then_consume_events(&[]),
+    )
+    .await
+    .expect("Shotover did not shutdown within 10s");
+}
+
+#[rstest]
+#[case::java(KafkaDriver::Java)]
+#[tokio::test(flavor = "multi_thread")] // multi_thread is needed since java driver will block when consuming, causing shotover logs to not appear
+async fn cluster_mtls(#[case] driver: KafkaDriver) {
+    test_helpers::cert::generate_kafka_test_certs();
+
+    let _docker_compose =
+        docker_compose("tests/test-configs/kafka/cluster-mtls/docker-compose.yaml");
+    let shotover = shotover_process("tests/test-configs/kafka/cluster-mtls/topology.yaml")
+        .start()
+        .await;
+
+    let connection_builder = KafkaConnectionBuilder::new(driver, "127.0.0.1:9192")
+        .use_tls("tests/test-configs/kafka/tls/certs");
     test_cases::standard_test_suite(connection_builder).await;
 
     tokio::time::timeout(
