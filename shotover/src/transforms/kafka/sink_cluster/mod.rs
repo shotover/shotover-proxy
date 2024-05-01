@@ -17,13 +17,18 @@ use kafka_protocol::messages::metadata_response::MetadataResponseBroker;
 use kafka_protocol::messages::{
     ApiKey, BrokerId, FetchRequest, FindCoordinatorRequest, FindCoordinatorResponse, GroupId,
     HeartbeatRequest, JoinGroupRequest, MetadataRequest, MetadataResponse, OffsetFetchRequest,
-    RequestHeader, SaslHandshakeRequest, SyncGroupRequest, TopicName,
+    RequestHeader, SaslAuthenticateRequest, SaslAuthenticateResponse, SaslHandshakeRequest,
+    SyncGroupRequest, TopicName,
 };
 use kafka_protocol::protocol::{Builder, StrBytes};
 use node::{ConnectionFactory, KafkaAddress, KafkaNode};
 use rand::rngs::SmallRng;
 use rand::seq::{IteratorRandom, SliceRandom};
 use rand::SeedableRng;
+use scram_over_mtls::{
+    create_delegation_token_for_user, AuthorizeScramOverMtls, AuthorizeScramOverMtlsBuilder,
+    AuthorizeScramOverMtlsConfig, OriginalScramState,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 use std::hash::Hasher;
@@ -34,6 +39,9 @@ use tokio::sync::RwLock;
 use uuid::Uuid;
 
 mod node;
+mod scram_over_mtls;
+
+const SASL_SCRAM_MECHANISMS: [&str; 2] = ["SCRAM-SHA-256", "SCRAM-SHA-512"];
 
 #[derive(thiserror::Error, Debug)]
 enum FindCoordinatorError {
@@ -51,6 +59,7 @@ pub struct KafkaSinkClusterConfig {
     pub connect_timeout_ms: u64,
     pub read_timeout: Option<u64>,
     pub tls: Option<TlsConnectorConfig>,
+    pub authorize_scram_over_mtls: Option<AuthorizeScramOverMtlsConfig>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -99,6 +108,10 @@ impl TransformConfig for KafkaSinkClusterConfig {
 
         Ok(Box::new(KafkaSinkClusterBuilder::new(
             self.first_contact_points.clone(),
+            self.authorize_scram_over_mtls
+                .as_ref()
+                .map(AuthorizeScramOverMtlsConfig::get_builder)
+                .transpose()?,
             shotover_nodes,
             transform_context.chain_name,
             self.connect_timeout_ms,
@@ -127,12 +140,15 @@ pub struct KafkaSinkClusterBuilder {
     topic_by_name: Arc<DashMap<TopicName, Topic>>,
     topic_by_id: Arc<DashMap<Uuid, Topic>>,
     nodes_shared: Arc<RwLock<Vec<KafkaNode>>>,
+    authorize_scram_over_mtls: Option<AuthorizeScramOverMtlsBuilder>,
+
     tls: Option<TlsConnector>,
 }
 
 impl KafkaSinkClusterBuilder {
     pub fn new(
         first_contact_points: Vec<String>,
+        authorize_scram_over_mtls: Option<AuthorizeScramOverMtlsBuilder>,
         shotover_nodes: Vec<ShotoverNode>,
         _chain_name: String,
         connect_timeout_ms: u64,
@@ -143,6 +159,7 @@ impl KafkaSinkClusterBuilder {
 
         KafkaSinkClusterBuilder {
             first_contact_points,
+            authorize_scram_over_mtls,
             shotover_nodes,
             connect_timeout: Duration::from_millis(connect_timeout_ms),
             read_timeout: receive_timeout,
@@ -181,6 +198,10 @@ impl TransformBuilder for KafkaSinkClusterBuilder {
             find_coordinator_requests: Default::default(),
             temp_responses_buffer: Default::default(),
             sasl_mechanism: None,
+            authorize_scram_over_mtls: self
+                .authorize_scram_over_mtls
+                .as_ref()
+                .map(|x| x.build(self.connect_timeout, self.read_timeout)),
         })
     }
 
@@ -235,7 +256,8 @@ pub struct KafkaSinkCluster {
     find_coordinator_requests: MessageIdMap<FindCoordinator>,
     /// A temporary buffer used when receiving responses, only held onto in order to avoid reallocating.
     temp_responses_buffer: Vec<Message>,
-    sasl_mechanism: Option<StrBytes>,
+    sasl_mechanism: Option<String>,
+    authorize_scram_over_mtls: Option<AuthorizeScramOverMtls>,
 }
 
 /// State of a Request/Response is maintained by this enum.
@@ -330,7 +352,11 @@ impl KafkaSinkCluster {
             let address = &self.nodes.choose(&mut self.rng).unwrap().kafka_address;
             self.control_connection = Some(
                 self.connection_factory
-                    .create_connection(address)
+                    .create_connection(
+                        address,
+                        &self.authorize_scram_over_mtls,
+                        &self.sasl_mechanism,
+                    )
                     .await
                     .context("Failed to create control connection")?,
             );
@@ -379,14 +405,30 @@ impl KafkaSinkCluster {
                     })) => {
                         mechanism.as_str();
 
-                        self.sasl_mechanism = Some(mechanism.clone());
+                        self.sasl_mechanism = Some(mechanism.as_str().to_owned());
                         self.connection_factory.add_auth_request(request.clone());
                         handshake_request_count += 1;
                     }
                     Some(Frame::Kafka(KafkaFrame::Request {
-                        body: RequestBody::SaslAuthenticate(_),
+                        body:
+                            RequestBody::SaslAuthenticate(SaslAuthenticateRequest {
+                                auth_bytes, ..
+                            }),
                         ..
                     })) => {
+                        if let Some(scram_over_mtls) = &mut self.authorize_scram_over_mtls {
+                            if let Some(username) = get_username_from_scram_request(auth_bytes) {
+                                // Since it takes a while for the delegation token to propogate across the cluster,
+                                // we request the delegation token as soon as we have access to the username.
+                                scram_over_mtls.delegation_token =
+                                    create_delegation_token_for_user(
+                                        scram_over_mtls,
+                                        username,
+                                        &mut self.rng,
+                                    )
+                                    .await?;
+                            }
+                        }
                         self.connection_factory.add_auth_request(request.clone());
                         handshake_request_count += 1;
                     }
@@ -397,7 +439,26 @@ impl KafkaSinkCluster {
                         handshake_request_count += 1;
                     }
                     _ => {
-                        // The client is no longer performing authentication
+                        // The client is no longer performing authentication, so consider auth completed
+
+                        if let Some(scram_over_mtls) = &self.authorize_scram_over_mtls {
+                            // When performing SCRAM over mTLS, we need this security check to ensure that the
+                            // client cannot access delegation tokens that it has not succesfully authenticated for.
+                            //
+                            // If the client were to send a request directly after the SCRAM requests,
+                            // without waiting for responses to those scram requests first,
+                            // this error would be triggered even if the SCRAM requests were succesful.
+                            // However that would be a violation of the SCRAM protocol as the client is supposed to check
+                            // the server's signature contained in the server's final message in order to authenticate the server.
+                            // So I dont think this problem is worth solving.
+                            if !matches!(
+                                scram_over_mtls.original_scram_state,
+                                OriginalScramState::AuthSuccess
+                            ) {
+                                return Err(anyhow!("Client attempted to send requests before a succesful auth was completed or after an unsuccesful auth"));
+                            }
+                        }
+
                         self.auth_complete = true;
                         break;
                     }
@@ -876,7 +937,11 @@ impl KafkaSinkCluster {
                 .iter_mut()
                 .find(|x| x.broker_id == destination)
                 .unwrap()
-                .get_connection(&self.connection_factory)
+                .get_connection(
+                    &self.connection_factory,
+                    &self.authorize_scram_over_mtls,
+                    &self.sasl_mechanism,
+                )
                 .await?
                 .send(requests.requests)?;
         }
@@ -1034,20 +1099,30 @@ impl KafkaSinkCluster {
                     body: ResponseBody::SaslHandshake(handshake),
                     ..
                 })) => {
-                    // always remove scram from supported mechanisms
-                    const SASL_SCRAM_MECHANISMS: [&str; 2] = ["SCRAM-SHA-256", "SCRAM-SHA-512"];
-                    handshake
-                        .mechanisms
-                        .retain(|x| !SASL_SCRAM_MECHANISMS.contains(&x.as_str()));
+                    // If authorize_scram_over_mtls is disabled there is no way that scram can work through KafkaSinkCluster
+                    // since it is specifically designed such that replay attacks wont work.
+                    // So when authorize_scram_over_mtls is disabled report to the user that SCRAM is not enabled.
+                    if self.authorize_scram_over_mtls.is_none() {
+                        // remove scram from supported mechanisms
+                        handshake
+                            .mechanisms
+                            .retain(|x| !SASL_SCRAM_MECHANISMS.contains(&x.as_str()));
 
-                    // declare unsupported if the client requested SCRAM
-                    if let Some(sasl_mechanism) = &self.sasl_mechanism {
-                        if SASL_SCRAM_MECHANISMS.contains(&sasl_mechanism.as_str()) {
-                            handshake.error_code = 33; // UNSUPPORTED_SASL_MECHANISM
+                        // declare unsupported if the client requested SCRAM
+                        if let Some(sasl_mechanism) = &self.sasl_mechanism {
+                            if SASL_SCRAM_MECHANISMS.contains(&sasl_mechanism.as_str()) {
+                                handshake.error_code = 33; // UNSUPPORTED_SASL_MECHANISM
+                            }
                         }
-                    }
 
-                    response.invalidate_cache();
+                        response.invalidate_cache();
+                    }
+                }
+                Some(Frame::Kafka(KafkaFrame::Response {
+                    body: ResponseBody::SaslAuthenticate(authenticate),
+                    ..
+                })) => {
+                    self.process_sasl_authenticate(authenticate).await?;
                 }
                 Some(Frame::Kafka(KafkaFrame::Response {
                     body: ResponseBody::Metadata(metadata),
@@ -1078,6 +1153,40 @@ impl KafkaSinkCluster {
             }
         }
 
+        Ok(())
+    }
+
+    async fn process_sasl_authenticate(
+        &mut self,
+        authenticate: &mut SaslAuthenticateResponse,
+    ) -> Result<()> {
+        if let Some(sasl_mechanism) = &self.sasl_mechanism {
+            if SASL_SCRAM_MECHANISMS.contains(&sasl_mechanism.as_str()) {
+                if let Some(scram_over_mtls) = &mut self.authorize_scram_over_mtls {
+                    match scram_over_mtls.original_scram_state {
+                        OriginalScramState::WaitingOnServerFirst => {
+                            scram_over_mtls.original_scram_state = if authenticate.error_code == 0 {
+                                OriginalScramState::WaitingOnServerFinal
+                            } else {
+                                OriginalScramState::AuthFailed
+                            };
+                        }
+                        OriginalScramState::WaitingOnServerFinal => {
+                            scram_over_mtls.original_scram_state = if authenticate.error_code == 0 {
+                                OriginalScramState::AuthSuccess
+                            } else {
+                                OriginalScramState::AuthFailed
+                            };
+                        }
+                        OriginalScramState::AuthSuccess | OriginalScramState::AuthFailed => {
+                            return Err(anyhow!(
+                                "SCRAM protocol does not allow a third sasl response"
+                            ));
+                        }
+                    }
+                }
+            }
+        }
         Ok(())
     }
 
@@ -1414,4 +1523,16 @@ struct Partition {
 struct FindCoordinator {
     key: StrBytes,
     key_type: i8,
+}
+
+fn get_username_from_scram_request(auth_request: &[u8]) -> Option<String> {
+    for s in std::str::from_utf8(auth_request).ok()?.split(',') {
+        let mut iter = s.splitn(2, '=');
+        if let (Some(key), Some(value)) = (iter.next(), iter.next()) {
+            if key == "n" {
+                return Some(value.to_owned());
+            }
+        }
+    }
+    None
 }

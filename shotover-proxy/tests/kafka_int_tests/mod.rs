@@ -346,6 +346,34 @@ async fn cluster_sasl_scram_single_shotover(#[case] driver: KafkaDriver) {
     .expect("Shotover did not shutdown within 10s");
 }
 
+#[rstest]
+//#[cfg_attr(feature = "kafka-cpp-driver-tests", case::cpp(KafkaDriver::Cpp))] // CPP driver does not support scram
+#[case::java(KafkaDriver::Java)]
+#[tokio::test(flavor = "multi_thread")] // multi_thread is needed since java driver will block when consuming, causing shotover logs to not appear
+async fn cluster_sasl_scram_over_mtls_single_shotover(#[case] driver: KafkaDriver) {
+    test_helpers::cert::generate_kafka_test_certs();
+
+    let _docker_compose =
+        docker_compose("tests/test-configs/kafka/cluster-sasl-scram-over-mtls/docker-compose.yaml");
+
+    let shotover = shotover_process(
+        "tests/test-configs/kafka/cluster-sasl-scram-over-mtls/topology-single.yaml",
+    )
+    .start()
+    .await;
+
+    let connection_builder =
+        KafkaConnectionBuilder::new(driver, "127.0.0.1:9192").use_sasl_scram("user", "password");
+    test_cases::standard_test_suite(connection_builder).await;
+
+    tokio::time::timeout(
+        Duration::from_secs(10),
+        shotover.shutdown_and_then_consume_events(&[]),
+    )
+    .await
+    .expect("Shotover did not shutdown within 10s");
+}
+
 #[cfg(feature = "kafka-cpp-driver-tests")] // temporarily needed to avoid a warning
 #[rstest]
 #[cfg_attr(feature = "kafka-cpp-driver-tests", case::cpp(KafkaDriver::Cpp))]
