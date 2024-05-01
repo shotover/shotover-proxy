@@ -46,6 +46,24 @@ async fn passthrough_standard() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn valkey_passthrough_standard() {
+    let _compose =
+        docker_compose("tests/test-configs/redis/passthrough-valkey/docker-compose.yaml");
+    let shotover = shotover_process("tests/test-configs/redis/passthrough-valkey/topology.yaml")
+        .start()
+        .await;
+    let connection = || redis_connection::new_async("127.0.0.1", 6379);
+    let mut flusher =
+        Flusher::new_single_connection(redis_connection::new_async("127.0.0.1", 6379).await).await;
+
+    run_all(&connection, &mut flusher).await;
+    test_invalid_frame().await;
+    shotover
+        .shutdown_and_then_consume_events(&[invalid_frame_event()])
+        .await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn passthrough_redis_down() {
     let shotover = shotover_process("tests/test-configs/redis/passthrough/topology.yaml")
         .start()
