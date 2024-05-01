@@ -1211,20 +1211,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "cql-ws"
-version = "0.1.0"
-source = "git+https://github.com/shotover/cql-ws#11ec9db0acc0c1e605eae214a81a327571f4cd97"
-dependencies = [
- "cassandra-protocol",
- "futures-util",
- "http 1.1.0",
- "rustls 0.21.12",
- "rustls-pemfile 1.0.4",
- "tokio",
- "tokio-tungstenite 0.20.1",
-]
-
-[[package]]
 name = "cql3-parser"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4646,7 +4632,6 @@ dependencies = [
  "cdrs-tokio",
  "chacha20poly1305",
  "clap",
- "cql-ws",
  "csv",
  "fred",
  "futures",
@@ -4982,6 +4967,8 @@ dependencies = [
  "cassandra-protocol",
  "cdrs-tokio",
  "docker-compose-runner",
+ "futures-util",
+ "http 1.1.0",
  "itertools 0.12.1",
  "j4rs",
  "openssl",
@@ -4990,12 +4977,15 @@ dependencies = [
  "rdkafka",
  "redis",
  "reqwest 0.12.4",
+ "rustls 0.21.12",
+ "rustls-pemfile 1.0.4",
  "scylla",
  "subprocess",
  "tokio",
  "tokio-bin-process",
  "tokio-io-timeout",
  "tokio-openssl",
+ "tokio-tungstenite 0.20.1",
  "tracing",
  "tracing-subscriber",
  "uuid",

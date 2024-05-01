@@ -17,7 +17,8 @@ use test_helpers::connection::cassandra::Compression;
 use test_helpers::connection::cassandra::ProtocolVersion;
 use test_helpers::connection::cassandra::{
     assert_query_result, run_query, CassandraConnection, CassandraConnectionBuilder,
-    CassandraDriver, CassandraDriver::CdrsTokio, CassandraDriver::Scylla, ResultValue,
+    CassandraDriver, CassandraDriver::CdrsTokio, CassandraDriver::Scylla, CqlWsSession,
+    ResultValue,
 };
 use test_helpers::connection::redis_connection;
 use test_helpers::docker_compose::docker_compose;
@@ -1011,7 +1012,7 @@ async fn passthrough_websockets() {
             .start()
             .await;
 
-    let mut session = cql_ws::Session::new("ws://0.0.0.0:9042").await;
+    let mut session = CqlWsSession::new("ws://0.0.0.0:9042").await;
     let rows = session.query("SELECT bootstrapped FROM system.local").await;
     assert_eq!(rows, vec![vec![CassandraType::Varchar("COMPLETED".into())]]);
 
@@ -1029,7 +1030,7 @@ async fn encode_websockets() {
             .start()
             .await;
 
-    let mut session = cql_ws::Session::new("ws://0.0.0.0:9042").await;
+    let mut session = CqlWsSession::new("ws://0.0.0.0:9042").await;
     let rows = session.query("SELECT bootstrapped FROM system.local").await;
     assert_eq!(rows, vec![vec![CassandraType::Varchar("COMPLETED".into())]]);
 
@@ -1050,7 +1051,7 @@ async fn passthrough_tls_websockets() {
 
     let ca_cert = "tests/test-configs/cassandra/tls/certs/localhost_CA.crt";
 
-    let mut session = cql_ws::Session::new_tls("wss://0.0.0.0:9042", ca_cert).await;
+    let mut session = CqlWsSession::new_tls("wss://0.0.0.0:9042", ca_cert).await;
     let rows = session.query("SELECT bootstrapped FROM system.local").await;
     assert_eq!(rows, vec![vec![CassandraType::Varchar("COMPLETED".into())]]);
 
