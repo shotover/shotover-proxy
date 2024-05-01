@@ -254,6 +254,8 @@ Instead Shotover will pretend to be either a single Kafka node or part of a clus
 
 This is achieved by rewriting the FindCoordinator, Metadata and DescribeCluster messages to contain the nodes in the shotover cluster instead of the kafka cluster.
 
+KafkaSinkCluster does not support SASL SCRAM authentication, if a client attempts to use SCRAM it will appear as if its not enabled in the server.
+
 ```yaml
 - KafkaSinkCluster:
     # Addresses of the initial kafka brokers to connect to.

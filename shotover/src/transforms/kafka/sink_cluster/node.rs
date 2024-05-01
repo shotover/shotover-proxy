@@ -15,8 +15,7 @@ pub struct ConnectionFactory {
     tls: Option<TlsConnector>,
     connect_timeout: Duration,
     read_timeout: Option<Duration>,
-    handshake_message: Option<Message>,
-    auth_message: Option<Message>,
+    auth_requests: Vec<Message>,
     force_run_chain: Arc<Notify>,
 }
 
@@ -30,19 +29,14 @@ impl ConnectionFactory {
         ConnectionFactory {
             tls,
             connect_timeout,
-            handshake_message: None,
-            auth_message: None,
+            auth_requests: vec![],
             force_run_chain,
             read_timeout,
         }
     }
 
-    pub fn add_handshake_message(&mut self, message: Message) {
-        self.handshake_message = Some(message);
-    }
-
-    pub fn add_auth_message(&mut self, message: Message) {
-        self.auth_message = Some(message);
+    pub fn add_auth_request(&mut self, message: Message) {
+        self.auth_requests.push(message);
     }
 
     pub async fn create_connection(&self, kafka_address: &KafkaAddress) -> Result<SinkConnection> {
@@ -58,13 +52,11 @@ impl ConnectionFactory {
         )
         .await?;
 
-        if let Some(auth_message) = self.auth_message.as_ref() {
-            let handshake_msg = self.handshake_message.as_ref().unwrap();
-
-            connection.send(vec![handshake_msg.clone(), auth_message.clone()])?;
+        if !self.auth_requests.is_empty() {
+            connection.send(self.auth_requests.clone())?;
             let mut received_count = 0;
             let mut received = vec![];
-            while received_count < 2 {
+            while received_count < self.auth_requests.len() {
                 received = connection.recv().await?;
                 received_count += received.len();
             }
