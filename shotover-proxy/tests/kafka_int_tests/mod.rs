@@ -5,8 +5,6 @@ use rstest::rstest;
 use std::time::Duration;
 use test_helpers::connection::kafka::{KafkaConnectionBuilder, KafkaDriver};
 use test_helpers::docker_compose::docker_compose;
-use test_helpers::shotover_process::{Count, EventMatcher};
-use tokio_bin_process::event::Level;
 
 #[rstest]
 #[cfg_attr(feature = "kafka-cpp-driver-tests", case::cpp(KafkaDriver::Cpp))]
@@ -283,25 +281,18 @@ async fn cluster_sasl_scram_single_shotover(#[case] driver: KafkaDriver) {
     let connection_builder =
         KafkaConnectionBuilder::new(driver, "127.0.0.1:9192").use_sasl_scram("user", "password");
 
-    // TODO: SCRAM currently fails with KafkaSinkCluster, we need to investigate a solution to get it working.
-    //       For now, just assert on the current failing behaviour.
-    let err = connection_builder.assert_admin_error().await;
-    assert_eq!(format!("{err}"), "org.apache.kafka.common.errors.TimeoutException: Timed out waiting for a node assignment. Call: createTopics\n");
+    assert_eq!(
+        connection_builder.assert_admin_error().await.to_string(),
+        match driver {
+            #[cfg(feature = "kafka-cpp-driver-tests")]
+            KafkaDriver::Cpp => panic!("CPP driver does not support SCRAM"),
+            KafkaDriver::Java => "org.apache.kafka.common.errors.UnsupportedSaslMechanismException: Client SASL mechanism 'SCRAM-SHA-256' not enabled in the server, enabled mechanisms are [PLAIN]\n"
+        }
+    );
 
     tokio::time::timeout(
         Duration::from_secs(10),
-        shotover.shutdown_and_then_consume_events(&[EventMatcher::new()
-            .with_level(Level::Error)
-            .with_target("shotover::server")
-            .with_message(r#"connection was unexpectedly terminated
-
-Caused by:
-    0: Chain failed to send and/or receive messages, the connection will now be closed.
-    1: KafkaSinkCluster transform failed
-    2: Failed to create control connection
-    3: Replayed auth failed, error code: 58, Authentication failed during authentication due to invalid credentials with SASL mechanism SCRAM-SHA-256"#,
-            )
-            .with_count(Count::Any)]),
+        shotover.shutdown_and_then_consume_events(&[]),
     )
     .await
     .expect("Shotover did not shutdown within 10s");
