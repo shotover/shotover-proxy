@@ -1,0 +1,55 @@
+networks:
+  cluster_subnet:
+    name: cluster_subnet
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.16.1.0/24
+          gateway: 172.16.1.1
+services:
+  kafka0:
+    image: &image 'bitnami/kafka:3.6.1-debian-11-r24'
+    networks:
+      cluster_subnet:
+        ipv4_address: 172.16.1.2
+    environment: &environment
+      KAFKA_CFG_LISTENERS: "BROKER://:9092,CONTROLLER://:9093"
+      KAFKA_CFG_ADVERTISED_LISTENERS: "BROKER://172.16.1.2:9092"
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:SSL,BROKER:SSL"
+      KAFKA_CFG_INTER_BROKER_LISTENER_NAME: "BROKER"
+      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      KAFKA_CFG_PROCESS_ROLES: "controller,broker"
+      KAFKA_KRAFT_CLUSTER_ID: "abcdefghijklmnopqrstuv"
+      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: "0@kafka0:9093,1@kafka1:9093,2@kafka2:9093"
+      KAFKA_CFG_NODE_ID: 0
+      KAFKA_CERTIFICATE_PASSWORD: password
+      KAFKA_TLS_CLIENT_AUTH: required
+      KAFKA_CFG_AUTHORIZER_CLASS_NAME: "org.apache.kafka.metadata.authorizer.StandardAuthorizer"
+      KAFKA_CFG_SUPER_USERS: "User:O=ShotoverTestCertificate,CN=Generic-Cert"
+    volumes: &volumes
+      - type: tmpfs
+        target: /bitnami/kafka
+      - type: bind
+        source: "../tls/certs"
+        target: "/opt/bitnami/kafka/config/certs"
+  kafka1:
+    image: *image
+    networks:
+      cluster_subnet:
+        ipv4_address: 172.16.1.3
+    environment:
+      <<: *environment
+      KAFKA_CFG_ADVERTISED_LISTENERS: "BROKER://172.16.1.3:9092"
+      KAFKA_CFG_NODE_ID: 1
+    volumes: *volumes
+  kafka2:
+    image: *image
+    networks:
+      cluster_subnet:
+        ipv4_address: 172.16.1.4
+    environment:
+      <<: *environment
+      KAFKA_CFG_ADVERTISED_LISTENERS: "BROKER://172.16.1.4:9092"
+      KAFKA_CFG_NODE_ID: 2
+    volumes: *volumes

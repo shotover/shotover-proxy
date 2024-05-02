@@ -9,6 +9,9 @@ pub fn generate_test_certs(path: &Path) {
             // Just dump every address we could ever need in here.
             // Usually you would want unique certs per instance but this works just fine for integration testing.
             SanType::DnsName("localhost".try_into().unwrap()),
+            SanType::DnsName("kafka0".try_into().unwrap()),
+            SanType::DnsName("kafka1".try_into().unwrap()),
+            SanType::DnsName("kafka2".try_into().unwrap()),
             SanType::IpAddress("127.0.0.1".parse().unwrap()),
             SanType::IpAddress("172.16.1.2".parse().unwrap()),
             SanType::IpAddress("172.16.1.3".parse().unwrap()),
@@ -45,7 +48,7 @@ fn new_ca() -> (Certificate, KeyPair) {
     // This can be whatever
     params
         .distinguished_name
-        .push(DnType::OrganizationName, "Shotover test certificate");
+        .push(DnType::OrganizationName, "ShotoverTestCertificate");
 
     let key_pair = KeyPair::generate().unwrap();
     let ca_cert = params.self_signed(&key_pair).unwrap();
@@ -64,7 +67,7 @@ fn new_cert(sans: Vec<SanType>, ca_cert: &Certificate, ca_key: &KeyPair) -> (Cer
     // This can be whatever
     params
         .distinguished_name
-        .push(DnType::OrganizationName, "Shotover test certificate");
+        .push(DnType::OrganizationName, "ShotoverTestCertificate");
     let cert_key = KeyPair::generate().unwrap();
     let cert = params.signed_by(&cert_key, ca_cert, ca_key).unwrap();
     (cert, cert_key)

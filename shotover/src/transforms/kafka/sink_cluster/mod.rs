@@ -12,7 +12,6 @@ use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use dashmap::DashMap;
 use kafka_protocol::messages::fetch_request::FetchTopic;
-use kafka_protocol::messages::find_coordinator_response::Coordinator;
 use kafka_protocol::messages::metadata_request::MetadataRequestTopic;
 use kafka_protocol::messages::metadata_response::MetadataResponseBroker;
 use kafka_protocol::messages::{
@@ -1211,7 +1210,7 @@ impl KafkaSinkCluster {
         find_coordinator: &mut FindCoordinatorResponse,
     ) {
         if version <= 3 {
-            // for version <= 3 we need to make do with only one coordinator.
+            // For version <= 3 we only have one coordinator to replace,
             // so we just pick the first shotover node in the rack of the coordinator.
 
             // skip rewriting on error
@@ -1232,15 +1231,22 @@ impl KafkaSinkCluster {
                             .unwrap_or(true)
                     })
                     .unwrap();
+
                 find_coordinator.host = shotover_node.address.host.clone();
                 find_coordinator.port = shotover_node.address.port;
                 find_coordinator.node_id = shotover_node.broker_id;
             }
         } else {
-            // for version > 3 we can include as many coordinators as we want.
-            // so we include all shotover nodes in the rack of the coordinator.
-            let mut shotover_coordinators: Vec<Coordinator> = vec![];
-            for coordinator in find_coordinator.coordinators.drain(..) {
+            // For version > 3 we have to replace multiple coordinators.
+            // It may be tempting to include all shotover nodes in the rack of the coordinator, assuming the client will load balance between them.
+            // However it doesnt work like that.
+            // AFAIK there can only be one coordinator per unique `FindCoordinatorResponse::key`.
+            // In fact the java driver doesnt even support multiple coordinators of different types yet:
+            // https://github.com/apache/kafka/blob/4825c89d14e5f1b2da7e1f48dac97888602028d7/clients/src/main/java/org/apache/kafka/clients/consumer/internals/AbstractCoordinator.java#L921
+            //
+            // So, just like with version <= 3, we just pick the first shotover node in the rack of the coordinator for each coordinator.
+            for coordinator in &mut find_coordinator.coordinators {
+                // skip rewriting on error
                 if coordinator.error_code == 0 {
                     let coordinator_rack = &self
                         .nodes
@@ -1249,31 +1255,20 @@ impl KafkaSinkCluster {
                         .unwrap()
                         .rack
                         .as_ref();
-                    for shotover_node in self.shotover_nodes.iter().filter(|shotover_node| {
-                        coordinator_rack
-                            .map(|rack| rack == &shotover_node.rack)
-                            .unwrap_or(true)
-                    }) {
-                        if !shotover_coordinators
-                            .iter()
-                            .any(|x| x.node_id == shotover_node.broker_id)
-                        {
-                            shotover_coordinators.push(
-                                Coordinator::builder()
-                                    .node_id(shotover_node.broker_id)
-                                    .host(shotover_node.address.host.clone())
-                                    .port(shotover_node.address.port)
-                                    .build()
-                                    .unwrap(),
-                            );
-                        }
-                    }
-                } else {
-                    // pass errors through untouched
-                    shotover_coordinators.push(coordinator)
+                    let shotover_node = self
+                        .shotover_nodes
+                        .iter()
+                        .find(|shotover_node| {
+                            coordinator_rack
+                                .map(|rack| rack == &shotover_node.rack)
+                                .unwrap_or(true)
+                        })
+                        .unwrap();
+                    coordinator.host = shotover_node.address.host.clone();
+                    coordinator.port = shotover_node.address.port;
+                    coordinator.node_id = shotover_node.broker_id;
                 }
             }
-            find_coordinator.coordinators = shotover_coordinators;
         }
     }
 
