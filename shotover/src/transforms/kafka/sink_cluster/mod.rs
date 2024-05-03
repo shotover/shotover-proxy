@@ -471,6 +471,11 @@ impl KafkaSinkCluster {
             }
         }
 
+        tracing::info!(
+            "requesting metadata: {:?}",
+            !topics.is_empty() || self.controller_broker.get().is_none(),
+        );
+
         // request and process metadata if we are missing topics or the controller broker id
         if !topics.is_empty() || self.controller_broker.get().is_none() {
             let mut metadata = self.get_metadata_of_topics(topics).await?;
@@ -584,22 +589,25 @@ impl KafkaSinkCluster {
                 .next()
                 .ok_or_else(|| anyhow!("No topics in produce message"))?;
             if let Some(topic) = self.topic_by_name.get(&topic_name.0) {
-                // assume that all partitions in this topic have the same routing requirements
-                let partition = &topic.partitions[topic_data
+                let index = topic_data
                     .partition_data
                     .first()
                     .ok_or_else(|| anyhow!("No partitions in topic"))?
-                    .index as usize];
-                for node in &mut self.nodes {
-                    if node.broker_id == partition.leader_id {
-                        connection = Some(node.broker_id);
+                    .index as usize;
+
+                // assume that all partitions in this topic have the same routing requirements
+                if let Some(partition) = &topic.partitions.get(index) {
+                    for node in &mut self.nodes {
+                        if node.broker_id == partition.leader_id {
+                            connection = Some(node.broker_id);
+                        }
                     }
                 }
             }
             let destination = match connection {
                 Some(connection) => connection,
                 None => {
-                    tracing::warn!("no known partition leader for {topic_name:?}, routing message to a random node so that a NOT_LEADER_OR_FOLLOWER or similar error is returned to the client");
+                    tracing::info!("no known partition leader for {topic_name:?}, routing message to a random node so that a NOT_LEADER_OR_FOLLOWER or similar error is returned to the client");
                     self.nodes.choose(&mut self.rng).unwrap().broker_id
                 }
             };
@@ -650,7 +658,7 @@ impl KafkaSinkCluster {
                             .broker_id
                     } else {
                         let partition_len = topic_meta.partitions.len();
-                        tracing::warn!("no known partition replica for {topic_name:?} at partition index {partition_index} out of {partition_len} partitions, routing message to a random node so that a NOT_LEADER_OR_FOLLOWER or similar error is returned to the client");
+                        tracing::info!("661 no known partition replica for {topic_name:?} at partition index {partition_index} out of {partition_len} partitions, routing message to a random node so that a NOT_LEADER_OR_FOLLOWER or similar error is returned to the client");
                         BrokerId(-1)
                     };
                     let dest_topics = result.entry(destination).or_default();
@@ -666,7 +674,7 @@ impl KafkaSinkCluster {
                     }
                 }
             } else {
-                tracing::warn!("no known partition replica for {topic_name:?}, routing message to a random node so that a NOT_LEADER_OR_FOLLOWER or similar error is returned to the client");
+                tracing::info!("677 no known partition replica for {topic_name:?}, routing message to a random node so that a NOT_LEADER_OR_FOLLOWER or similar error is returned to the client");
                 let destination = BrokerId(-1);
                 let dest_topics = result.entry(destination).or_default();
                 dest_topics.push(topic);
@@ -829,6 +837,23 @@ impl KafkaSinkCluster {
 
         self.control_send_receive(request).await
     }
+
+    // async fn refresh_topic_metadata(&mut self, topics: Vec<TopicName>) -> Result<()> {
+    //     let mut metadata = self.get_metadata_of_topics(topics).await?;
+    //     match metadata.frame() {
+    //         Some(Frame::Kafka(KafkaFrame::Response {
+    //             body: ResponseBody::Metadata(metadata),
+    //             ..
+    //         })) => self.process_metadata_response(metadata).await,
+    //         other => {
+    //             return Err(anyhow!(
+    //                 "Unexpected message returned to metadata request {other:?}"
+    //             ))
+    //         }
+    //     };
+    //
+    //     Ok(())
+    // }
 
     /// Convert all PendingRequestTy::Routed into PendingRequestTy::Sent
     async fn send_requests(&mut self) -> Result<()> {
@@ -1129,7 +1154,7 @@ impl KafkaSinkCluster {
         let destination = match destination {
             Some(destination) => *destination,
             None => {
-                tracing::warn!("no known coordinator for {group_id:?}, routing message to a random node so that a NOT_COORDINATOR or similar error is returned to the client");
+                tracing::info!("no known coordinator for {group_id:?}, routing message to a random node so that a NOT_COORDINATOR or similar error is returned to the client");
                 self.nodes.choose(&mut self.rng).unwrap().broker_id
             }
         };

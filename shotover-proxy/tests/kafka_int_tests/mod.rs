@@ -241,8 +241,8 @@ async fn cluster_1_rack_single_shotover(#[case] driver: KafkaDriver) {
 
 #[cfg(feature = "kafka-cpp-driver-tests")] // temporarily needed to avoid a warning
 #[rstest]
-#[cfg_attr(feature = "kafka-cpp-driver-tests", case::cpp(KafkaDriver::Cpp))]
-//#[case::java(KafkaDriver::Java)]
+// #[cfg_attr(feature = "kafka-cpp-driver-tests", case::cpp(KafkaDriver::Cpp))]
+#[case::java(KafkaDriver::Java)]
 #[tokio::test(flavor = "multi_thread")] // multi_thread is needed since java driver will block when consuming, causing shotover logs to not appear
 async fn cluster_1_rack_multi_shotover(#[case] driver: KafkaDriver) {
     let _docker_compose =
@@ -278,7 +278,7 @@ async fn cluster_1_rack_multi_shotover(#[case] driver: KafkaDriver) {
 #[cfg(feature = "kafka-cpp-driver-tests")] // temporarily needed to avoid a warning
 #[rstest]
 #[cfg_attr(feature = "kafka-cpp-driver-tests", case::cpp(KafkaDriver::Cpp))]
-//#[case::java(KafkaDriver::Java)]
+#[case::java(KafkaDriver::Java)]
 #[tokio::test(flavor = "multi_thread")] // multi_thread is needed since java driver will block when consuming, causing shotover logs to not appear
 async fn cluster_2_racks_multi_shotover(#[case] driver: KafkaDriver) {
     let _docker_compose =
@@ -349,7 +349,7 @@ async fn cluster_sasl_scram_single_shotover(#[case] driver: KafkaDriver) {
 #[cfg(feature = "kafka-cpp-driver-tests")] // temporarily needed to avoid a warning
 #[rstest]
 #[cfg_attr(feature = "kafka-cpp-driver-tests", case::cpp(KafkaDriver::Cpp))]
-//#[case::java(KafkaDriver::Java)]
+#[case::java(KafkaDriver::Java)]
 #[tokio::test(flavor = "multi_thread")] // multi_thread is needed since java driver will block when consuming, causing shotover logs to not appear
 async fn cluster_sasl_plain_multi_shotover(#[case] driver: KafkaDriver) {
     let _docker_compose =
