@@ -468,13 +468,13 @@ impl MessageRewriter {
                                 && node.rack == shotover_peer.rack
                             {
                                 if release_version.is_empty() {
-                                    release_version = node.release_version.clone();
+                                    release_version.clone_from(&node.release_version);
                                 }
                                 if let Ok(Cmp::Lt) = version_compare::compare(
                                     &node.release_version,
                                     &release_version,
                                 ) {
-                                    release_version = node.release_version.clone();
+                                    release_version.clone_from(&node.release_version);
                                 }
 
                                 match &mut schema_version {
@@ -617,7 +617,7 @@ impl MessageRewriter {
                                         &peer.release_version,
                                         &release_version,
                                     ) {
-                                        *release_version = peer.release_version.clone();
+                                        release_version.clone_from(&peer.release_version);
                                     }
                                 }
                             }
