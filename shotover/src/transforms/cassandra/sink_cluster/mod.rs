@@ -2,12 +2,12 @@ use self::connection::CassandraConnection;
 use self::node_pool::{get_accessible_owned_connection, NodePoolBuilder, PreparedMetadata};
 use self::rewrite::{BatchMode, MessageRewriter};
 use crate::frame::cassandra::{CassandraMetadata, Tracing};
-use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame};
+use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame, MessageType};
 use crate::message::{Message, MessageIdMap, Messages, Metadata};
 use crate::tls::{TlsConnector, TlsConnectorConfig};
 use crate::transforms::{
-    Transform, TransformBuilder, TransformConfig, TransformContextBuilder, TransformContextConfig,
-    Wrapper,
+    DownChainProtocol, Transform, TransformBuilder, TransformConfig, TransformContextBuilder,
+    TransformContextConfig, UpChainProtocol, Wrapper,
 };
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
@@ -95,6 +95,14 @@ impl TransformConfig for CassandraSinkClusterConfig {
             self.connect_timeout_ms,
             self.read_timeout,
         )))
+    }
+
+    fn up_chain_protocol(&self) -> UpChainProtocol {
+        UpChainProtocol::MustBeOneOf(vec![MessageType::Cassandra])
+    }
+
+    fn down_chain_protocol(&self) -> DownChainProtocol {
+        DownChainProtocol::Terminating
     }
 }
 

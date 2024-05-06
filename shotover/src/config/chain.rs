@@ -39,8 +39,8 @@ impl TransformChainConfig {
 
             upchain_protocol = match tc.down_chain_protocol() {
                 DownChainProtocol::TransformedTo(new) => new,
-                DownChainProtocol::SameAsIncoming => upchain_protocol,
-                DownChainProtocol::Sink => {
+                DownChainProtocol::SameAsUpChain => upchain_protocol,
+                DownChainProtocol::Terminating => {
                     if i + 1 != self.0.len() {
                         // TODO: Move bad sink reporting to here
                         upchain_protocol

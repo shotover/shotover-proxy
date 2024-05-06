@@ -1,4 +1,4 @@
-use super::{TransformContextBuilder, TransformContextConfig};
+use super::{DownChainProtocol, TransformContextBuilder, TransformContextConfig, UpChainProtocol};
 use crate::message::{Message, MessageIdMap, Messages, QueryType};
 use crate::transforms::{Transform, TransformBuilder, TransformConfig, Wrapper};
 use anyhow::Result;
@@ -37,6 +37,14 @@ impl TransformConfig for QueryTypeFilterConfig {
             filter: self.filter.clone(),
             filtered_requests: MessageIdMap::default(),
         }))
+    }
+
+    fn up_chain_protocol(&self) -> UpChainProtocol {
+        UpChainProtocol::Any
+    }
+
+    fn down_chain_protocol(&self) -> DownChainProtocol {
+        DownChainProtocol::SameAsUpChain
     }
 }
 
