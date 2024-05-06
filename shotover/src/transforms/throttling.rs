@@ -1,4 +1,5 @@
-use super::{TransformContextBuilder, TransformContextConfig};
+use super::{DownChainProtocol, TransformContextBuilder, TransformContextConfig, UpChainProtocol};
+use crate::frame::MessageType;
 use crate::message::{Message, MessageIdMap, Messages};
 use crate::transforms::{Transform, TransformBuilder, TransformConfig, Wrapper};
 use anyhow::Result;
@@ -35,6 +36,14 @@ impl TransformConfig for RequestThrottlingConfig {
             max_requests_per_second: self.max_requests_per_second,
             throttled_requests: MessageIdMap::default(),
         }))
+    }
+
+    fn up_chain_protocol(&self) -> UpChainProtocol {
+        UpChainProtocol::MustBeOneOf(vec![MessageType::Cassandra])
+    }
+
+    fn down_chain_protocol(&self) -> DownChainProtocol {
+        DownChainProtocol::SameAsUpChain
     }
 }
 

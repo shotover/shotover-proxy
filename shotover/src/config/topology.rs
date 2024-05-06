@@ -81,6 +81,7 @@ impl Topology {
 mod topology_tests {
     use crate::config::chain::TransformChainConfig;
     use crate::config::topology::Topology;
+    use crate::sources::cassandra::CassandraConfig;
     use crate::transforms::coalesce::CoalesceConfig;
     use crate::transforms::debug::printer::DebugPrinterConfig;
     use crate::transforms::null::NullSinkConfig;
@@ -94,8 +95,8 @@ mod topology_tests {
     use std::collections::HashMap;
     use tokio::sync::watch;
 
-    fn create_source_from_chain(chain: Vec<Box<dyn TransformConfig>>) -> Vec<SourceConfig> {
-        let redis_source = SourceConfig::Redis(RedisConfig {
+    fn create_source_from_chain_redis(chain: Vec<Box<dyn TransformConfig>>) -> Vec<SourceConfig> {
+        vec![SourceConfig::Redis(RedisConfig {
             name: "foo".to_string(),
             listen_addr: "127.0.0.1:0".to_string(),
             connection_limit: None,
@@ -103,15 +104,40 @@ mod topology_tests {
             tls: None,
             timeout: None,
             chain: TransformChainConfig(chain),
-        });
-
-        vec![redis_source]
+        })]
     }
 
-    async fn run_test_topology(
+    fn create_source_from_chain_cassandra(
+        chain: Vec<Box<dyn TransformConfig>>,
+    ) -> Vec<SourceConfig> {
+        vec![SourceConfig::Cassandra(CassandraConfig {
+            name: "foo".to_string(),
+            listen_addr: "127.0.0.1:0".to_string(),
+            connection_limit: None,
+            hard_connection_limit: None,
+            tls: None,
+            timeout: None,
+            chain: TransformChainConfig(chain),
+            transport: None,
+        })]
+    }
+
+    async fn run_test_topology_redis(
         chain: Vec<Box<dyn TransformConfig>>,
     ) -> anyhow::Result<Vec<Source>> {
-        let sources = create_source_from_chain(chain);
+        let sources = create_source_from_chain_redis(chain);
+
+        let topology = Topology { sources };
+
+        let (_sender, trigger_shutdown_rx) = watch::channel::<bool>(false);
+
+        topology.run_chains(trigger_shutdown_rx).await
+    }
+
+    async fn run_test_topology_cassandra(
+        chain: Vec<Box<dyn TransformConfig>>,
+    ) -> anyhow::Result<Vec<Source>> {
+        let sources = create_source_from_chain_cassandra(chain);
 
         let topology = Topology { sources };
 
@@ -128,13 +154,16 @@ foo source:
     Chain cannot be empty
 "#;
 
-        let error = run_test_topology(vec![]).await.unwrap_err().to_string();
+        let error = run_test_topology_redis(vec![])
+            .await
+            .unwrap_err()
+            .to_string();
         assert_eq!(error, expected);
     }
 
     #[tokio::test]
     async fn test_validate_chain_valid_chain() {
-        run_test_topology(vec![Box::new(DebugPrinterConfig), Box::new(NullSinkConfig)])
+        run_test_topology_redis(vec![Box::new(DebugPrinterConfig), Box::new(NullSinkConfig)])
             .await
             .unwrap();
     }
@@ -153,7 +182,7 @@ foo source:
       Check https://docs.shotover.io/transforms.html#coalesce for more information.
 "#;
 
-        let error = run_test_topology(vec![
+        let error = run_test_topology_redis(vec![
             Box::new(CoalesceConfig {
                 flush_when_buffered_message_count: None,
                 flush_when_millis_since_last_flush: None,
@@ -175,7 +204,7 @@ foo source:
     Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
 "#;
 
-        let error = run_test_topology(vec![
+        let error = run_test_topology_redis(vec![
             Box::new(DebugPrinterConfig),
             Box::new(NullSinkConfig),
             Box::new(NullSinkConfig),
@@ -195,7 +224,7 @@ foo source:
     Non-terminating transform "DebugPrinter" is last in chain. Last transform must be terminating.
 "#;
 
-        let error = run_test_topology(vec![
+        let error = run_test_topology_redis(vec![
             Box::new(DebugPrinterConfig),
             Box::new(DebugPrinterConfig),
             Box::new(DebugPrinterConfig),
@@ -216,7 +245,7 @@ foo source:
     Non-terminating transform "DebugPrinter" is last in chain. Last transform must be terminating.
 "#;
 
-        let error = run_test_topology(vec![
+        let error = run_test_topology_redis(vec![
             Box::new(DebugPrinterConfig),
             Box::new(DebugPrinterConfig),
             Box::new(NullSinkConfig),
@@ -230,10 +259,10 @@ foo source:
     }
 
     #[tokio::test]
-    async fn test_validate_chain_valid_subchain_redis_cache() {
+    async fn test_validate_chain_valid_subchain_cassandra_redis_cache() {
         let caching_schema = HashMap::new();
 
-        run_test_topology(vec![
+        run_test_topology_cassandra(vec![
             Box::new(DebugPrinterConfig),
             Box::new(DebugPrinterConfig),
             Box::new(RedisCacheConfig {
@@ -251,7 +280,7 @@ foo source:
     }
 
     #[tokio::test]
-    async fn test_validate_chain_invalid_subchain_redis_cache() {
+    async fn test_validate_chain_invalid_subchain_cassandra_redis_cache() {
         let expected = r#"Topology errors
 foo source:
   foo chain:
@@ -260,7 +289,7 @@ foo source:
         Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
 "#;
 
-        let error = run_test_topology(vec![
+        let error = run_test_topology_cassandra(vec![
             Box::new(DebugPrinterConfig),
             Box::new(DebugPrinterConfig),
             Box::new(RedisCacheConfig {
@@ -283,7 +312,7 @@ foo source:
 
     #[tokio::test]
     async fn test_validate_chain_valid_subchain_parallel_map() {
-        run_test_topology(vec![
+        run_test_topology_redis(vec![
             Box::new(DebugPrinterConfig),
             Box::new(DebugPrinterConfig),
             Box::new(ParallelMapConfig {
@@ -310,7 +339,7 @@ foo source:
         Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
 "#;
 
-        let error = run_test_topology(vec![
+        let error = run_test_topology_redis(vec![
             Box::new(DebugPrinterConfig),
             Box::new(DebugPrinterConfig),
             Box::new(ParallelMapConfig {
@@ -348,7 +377,7 @@ foo source:
             Box::new(NullSinkConfig),
         ]);
 
-        let error = run_test_topology(vec![
+        let error = run_test_topology_redis(vec![
             Box::new(DebugPrinterConfig),
             Box::new(DebugPrinterConfig),
             Box::new(ParallelMapConfig {
@@ -379,7 +408,7 @@ foo source:
             Box::new(DebugPrinterConfig),
         ]);
 
-        let error = run_test_topology(vec![
+        let error = run_test_topology_redis(vec![
             Box::new(DebugPrinterConfig),
             Box::new(DebugPrinterConfig),
             Box::new(ParallelMapConfig {
@@ -412,7 +441,7 @@ foo source:
             Box::new(DebugPrinterConfig),
         ]);
 
-        let error = run_test_topology(vec![
+        let error = run_test_topology_redis(vec![
             Box::new(DebugPrinterConfig),
             Box::new(DebugPrinterConfig),
             Box::new(ParallelMapConfig {
@@ -434,8 +463,10 @@ foo source:
 Source name "foo" occurred more than once. Make sure all source names are unique. The names will be used in logging and metrics.
 "#;
 
-        let mut sources = create_source_from_chain(vec![Box::new(NullSinkConfig)]);
-        sources.extend(create_source_from_chain(vec![Box::new(NullSinkConfig)]));
+        let mut sources = create_source_from_chain_redis(vec![Box::new(NullSinkConfig)]);
+        sources.extend(create_source_from_chain_redis(vec![Box::new(
+            NullSinkConfig,
+        )]));
 
         let topology = Topology { sources };
         let (_sender, trigger_shutdown_rx) = watch::channel::<bool>(false);

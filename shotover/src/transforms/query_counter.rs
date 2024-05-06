@@ -9,7 +9,9 @@ use metrics::counter;
 use serde::Deserialize;
 use serde::Serialize;
 
+use super::DownChainProtocol;
 use super::TransformContextConfig;
+use super::UpChainProtocol;
 
 #[derive(Clone)]
 pub struct QueryCounter {
@@ -93,5 +95,13 @@ impl TransformConfig for QueryCounterConfig {
         _transform_context: TransformContextConfig,
     ) -> Result<Box<dyn TransformBuilder>> {
         Ok(Box::new(QueryCounter::new(self.name.clone())))
+    }
+
+    fn up_chain_protocol(&self) -> UpChainProtocol {
+        UpChainProtocol::Any
+    }
+
+    fn down_chain_protocol(&self) -> DownChainProtocol {
+        DownChainProtocol::SameAsUpChain
     }
 }

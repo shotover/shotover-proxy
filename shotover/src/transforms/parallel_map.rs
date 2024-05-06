@@ -1,4 +1,4 @@
-use super::{TransformContextBuilder, TransformContextConfig};
+use super::{DownChainProtocol, TransformContextBuilder, TransformContextConfig, UpChainProtocol};
 use crate::config::chain::TransformChainConfig;
 use crate::message::Messages;
 use crate::transforms::chain::{TransformChain, TransformChainBuilder};
@@ -91,6 +91,14 @@ impl TransformConfig for ParallelMapConfig {
             chains,
             ordered: self.ordered_results,
         }))
+    }
+
+    fn up_chain_protocol(&self) -> UpChainProtocol {
+        UpChainProtocol::Any
+    }
+
+    fn down_chain_protocol(&self) -> DownChainProtocol {
+        DownChainProtocol::Terminating
     }
 }
 
