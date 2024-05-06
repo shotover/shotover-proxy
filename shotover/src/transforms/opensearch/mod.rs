@@ -1,4 +1,5 @@
-use super::{TransformContextBuilder, TransformContextConfig};
+use super::{DownChainProtocol, TransformContextBuilder, TransformContextConfig, UpChainProtocol};
+use crate::frame::MessageType;
 use crate::tcp;
 use crate::transforms::{Messages, Transform, TransformBuilder, TransformConfig, Wrapper};
 use crate::{
@@ -35,6 +36,14 @@ impl TransformConfig for OpenSearchSinkSingleConfig {
             transform_context.chain_name,
             self.connect_timeout_ms,
         )))
+    }
+
+    fn up_chain_protocol(&self) -> UpChainProtocol {
+        UpChainProtocol::MustBeOneOf(vec![MessageType::OpenSearch])
+    }
+
+    fn down_chain_protocol(&self) -> DownChainProtocol {
+        DownChainProtocol::Terminating
     }
 }
 

@@ -1,4 +1,4 @@
-use super::{TransformContextBuilder, TransformContextConfig};
+use super::{DownChainProtocol, TransformContextBuilder, TransformContextConfig, UpChainProtocol};
 use crate::message::Messages;
 use crate::transforms::{Transform, TransformBuilder, TransformConfig, Wrapper};
 use anyhow::Result;
@@ -35,6 +35,14 @@ impl TransformConfig for CoalesceConfig {
             flush_when_millis_since_last_flush: self.flush_when_millis_since_last_flush,
             last_write: Instant::now(),
         }))
+    }
+
+    fn up_chain_protocol(&self) -> UpChainProtocol {
+        UpChainProtocol::Any
+    }
+
+    fn down_chain_protocol(&self) -> DownChainProtocol {
+        DownChainProtocol::SameAsUpChain
     }
 }
 

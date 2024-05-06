@@ -36,6 +36,7 @@ pub mod query_counter;
 pub mod redis;
 pub mod sampler;
 pub mod tee;
+#[cfg(feature = "cassandra")]
 pub mod throttling;
 pub mod util;
 
@@ -85,15 +86,9 @@ pub trait TransformConfig: Debug {
         transform_context: TransformContextConfig,
     ) -> Result<Box<dyn TransformBuilder>>;
 
-    fn up_chain_protocol(&self) -> UpChainProtocol {
-        // TODO: Remove default implementation to force transforms to make a choice.
-        UpChainProtocol::Any
-    }
+    fn up_chain_protocol(&self) -> UpChainProtocol;
 
-    fn down_chain_protocol(&self) -> DownChainProtocol {
-        // TODO: Remove default implementation to force transforms to make a choice.
-        DownChainProtocol::SameAsIncoming
-    }
+    fn down_chain_protocol(&self) -> DownChainProtocol;
 }
 
 pub enum UpChainProtocol {
@@ -107,9 +102,9 @@ pub enum DownChainProtocol {
     /// The protocol sent down the chain will be this protocol.
     TransformedTo(MessageType),
     /// The protocol sent down the chain will be the same protocol received from up chain.
-    SameAsIncoming,
-    /// The transform is a sink transform and so it does not send any messages down chain.
-    Sink,
+    SameAsUpChain,
+    /// The transform is terminating and so it does not send any messages down chain.
+    Terminating,
 }
 
 /// Provides extra context that may be needed when creating a TransformBuilder

@@ -1,7 +1,7 @@
 use crate::message::{Message, Messages};
 use crate::transforms::{
-    Transform, TransformBuilder, TransformConfig, TransformContextBuilder, TransformContextConfig,
-    Wrapper,
+    DownChainProtocol, Transform, TransformBuilder, TransformConfig, TransformContextBuilder,
+    TransformContextConfig, UpChainProtocol, Wrapper,
 };
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
@@ -23,6 +23,14 @@ impl TransformConfig for DebugReturnerConfig {
         _transform_context: TransformContextConfig,
     ) -> Result<Box<dyn TransformBuilder>> {
         Ok(Box::new(DebugReturner::new(self.response.clone())))
+    }
+
+    fn up_chain_protocol(&self) -> UpChainProtocol {
+        UpChainProtocol::Any
+    }
+
+    fn down_chain_protocol(&self) -> DownChainProtocol {
+        DownChainProtocol::SameAsUpChain
     }
 }
 
