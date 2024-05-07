@@ -1,10 +1,12 @@
 pub mod connection;
+pub mod cql_ws;
 pub mod result_value;
 
 pub use connection::{
     CassandraConnection, CassandraConnectionBuilder, CassandraDriver, Compression, Consistency,
     ProtocolVersion,
 };
+pub use cql_ws::CqlWsSession;
 pub use result_value::ResultValue;
 
 /// Execute a `query` against the `session` and assert that the result rows match `expected_rows`

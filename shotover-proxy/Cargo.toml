@@ -49,7 +49,6 @@ rustls-pki-types = "1.1.0"
 aws-throwaway.workspace = true
 windsock = "0.1.0"
 regex = "1.7.0"
-cql-ws = { git = "https://github.com/shotover/cql-ws" }
 opensearch = "2.1.0"
 serde_json = "1.0.103"
 time = { version = "0.3.25" }
