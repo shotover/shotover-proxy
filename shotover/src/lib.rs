@@ -24,11 +24,14 @@
 //!     shotover::runner::Shotover::new().run_block();
 //! }
 //! ```
-//!
 
+// If we absolutely need unsafe code, it should be isolated within a separate small crate that exposes a sound safe API.
+// "sound" means that it is impossible for any interaction with the public API of the crate to violate an unsafe invariant which causes UB.
+#![deny(unsafe_code)]
 // Accidentally printing would break json log output
 #![deny(clippy::print_stdout)]
 #![deny(clippy::print_stderr)]
+// allow some clippy lints that we disagree with
 #![allow(clippy::needless_doctest_main)]
 #![allow(clippy::box_default)]
 // Allow dead code if any of the protocol features are disabled
