@@ -37,7 +37,7 @@ pub enum KeyManagerConfig {
 }
 
 async fn config(region: String, endpoint: Option<String>) -> SdkConfig {
-    let builder = aws_config::defaults(BehaviorVersion::v2023_11_09())
+    let builder = aws_config::defaults(BehaviorVersion::v2024_03_28())
         .region(RegionProviderChain::first_try(Region::new(region)));
     match endpoint {
         Some(endpoint) => builder.endpoint_url(endpoint).load().await,
