@@ -26,6 +26,11 @@ pub struct Args {
 
 #[tokio::main]
 async fn main() {
+    // Needed to disable anyhow stacktraces by default
+    if std::env::var("RUST_LIB_BACKTRACE").is_err() {
+        std::env::set_var("RUST_LIB_BACKTRACE", "0");
+    }
+
     let (non_blocking, _guard) = tracing_appender::non_blocking(std::io::stdout());
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_default_env())
@@ -82,13 +87,13 @@ if [ "$(uname -m)" = "aarch64" ]; then
     curl -LsSf https://get.nexte.st/latest/linux-arm | tar zxf - -C ${CARGO_HOME:-~/.cargo}/bin
 
     curl "https://awscli.amazonaws.com/awscli-exe-linux-aarch64.zip" -o "awscliv2.zip"
-    unzip awscliv2.zip
+    unzip -q awscliv2.zip
     sudo ./aws/install
 else
     curl -LsSf https://get.nexte.st/latest/linux | tar zxf - -C ${CARGO_HOME:-~/.cargo}/bin
 
     curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
-    unzip awscliv2.zip
+    unzip -q awscliv2.zip
     sudo ./aws/install
 fi
 "#).await;
