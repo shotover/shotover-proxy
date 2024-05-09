@@ -131,6 +131,7 @@ impl Transform for RedisSinkSingle {
         }
 
         let mut responses = vec![];
+
         if requests_wrapper.requests.is_empty() {
             // there are no requests, so no point sending any, but we should check for any responses without awaiting
             // TODO: handle errors here
@@ -147,31 +148,23 @@ impl Transform for RedisSinkSingle {
                 }
             }
         } else {
-            let requests_count = requests_wrapper.requests.len();
             self.connection
                 .as_mut()
                 .unwrap()
                 .send(requests_wrapper.requests)?;
 
-            let mut responses_count = 0;
-            while responses_count < requests_count {
-                let responses_len_old = responses.len();
-                self.connection
-                    .as_mut()
-                    .unwrap()
-                    .recv_into(&mut responses)
-                    .await?;
+            self.connection
+                .as_mut()
+                .unwrap()
+                .try_recv_into(&mut responses)?;
 
-                for response in &mut responses[responses_len_old..] {
-                    if let Some(Frame::Redis(RedisFrame::Error(_))) = response.frame() {
-                        self.failed_requests.increment(1);
-                    }
-                    if response.request_id().is_some() {
-                        responses_count += 1;
-                    }
+            for response in &mut responses {
+                if let Some(Frame::Redis(RedisFrame::Error(_))) = response.frame() {
+                    self.failed_requests.increment(1);
                 }
             }
         }
+
         Ok(responses)
     }
 }
