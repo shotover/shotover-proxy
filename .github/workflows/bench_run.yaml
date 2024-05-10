@@ -1,42 +1,34 @@
-name: Benchmarks
+name: MicroBenchmarks
 
 on:
+  push:
+    branches:
+      - "main"
   pull_request:
-    branches: [ main ]
-
-# Cancel already running jobs
-concurrency:
-  group: benchmark_run_${{ github.head_ref }}
-  cancel-in-progress: true
-
-env:
-  CARGO_TERM_COLOR: always
-  RUST_BACKTRACE: 1
+  # `workflow_dispatch` allows CodSpeed to trigger backtest
+  # performance analysis in order to generate initial data.
+  workflow_dispatch:
 
 jobs:
   benchmarks:
-    runs-on: ubuntu-20.04
-    name: Benchmarks
+    runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
-    - uses: Swatinem/rust-cache@v2
-      with:
-        # PRs do not share caches, instead each PR initially pulls from the cache of the main branch for the first run.
-        # This workflow does not run on main, so to make use of a cache before this workflow has completed once on a PR,
-        # we need to manually recreate the key used by ubuntu-20.04 release builds.
-        shared-key: "ubuntu-20.04 - --release-build_check_and_upload"
-        save-if: false
-    - name: cache custom ubuntu packages
-      uses: actions/cache@v4
-      with:
-        path: shotover-proxy/build/packages
-        key: ubuntu-20.04-packages
-    - name: Install ubuntu packages
-      run: shotover-proxy/build/install_ubuntu_packages.sh
-    - name: Run benchmarks
-      run: shotover-proxy/tests/scripts/bench_against_master.sh ${{ github.event.number }}
-    - name: Upload comment artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: comment_info
-        path: comment_info/
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+        with:
+          # this line means that only the main branch writes to the cache
+          # benefits:
+          # * prevents main branch caches from being evicted in favor of a PR cache
+          # * saves about 1min per workflow by skipping the actual cache write
+          # downsides:
+          # * PRs that update rust version or changes deps will be slow to iterate on due to changes not being cached.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-codspeed
+      - name: Build the benchmark target(s)
+        run: cargo codspeed build --features alpha-transforms
+      - name: Run the benchmarks
+        uses: CodSpeedHQ/action@v2
+        with:
+          run: cargo codspeed run
