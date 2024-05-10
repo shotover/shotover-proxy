@@ -76,3 +76,4 @@ we won't judge you.
 
 Shotover refers to the Shotover (Kimi-ākau) river in Otago, New Zealand - close to Queenstown and eventually flowing into Lake Wakatipu
 via the Kawarau River, it's famous for white water rafting, bungy-jumping, fast rapids and jet boating.
+.
