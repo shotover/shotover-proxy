@@ -1,3 +1,4 @@
+use anyhow::{Context, Result};
 use cassandra_protocol::compression::Compression;
 use cassandra_protocol::frame::message_query::BodyReqQuery;
 use cassandra_protocol::frame::message_response::ResponseBody;
@@ -9,8 +10,10 @@ use cassandra_protocol::frame::Version;
 use cassandra_protocol::query::query_params::QueryParams;
 use cassandra_protocol::types::cassandra_type::{wrapper_fn, CassandraType};
 use futures_util::{SinkExt, StreamExt};
-use rustls::client::{ServerCertVerified, ServerCertVerifier, WebPkiVerifier};
-use rustls::{Certificate, CertificateError, RootCertStore, ServerName};
+use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
+use rustls::client::WebPkiServerVerifier;
+use rustls::{CertificateError, DigitallySignedStruct, RootCertStore, SignatureScheme};
+use rustls_pki_types::{CertificateDer, ServerName, UnixTime};
 use std::fs::File;
 use std::io::BufReader;
 use std::sync::Arc;
@@ -75,10 +78,10 @@ impl CqlWsSession {
     }
 
     pub async fn new_tls(address: &str, ca_path: &str) -> Self {
-        let root_cert_store = load_ca(ca_path);
+        let root_cert_store = load_ca(ca_path).unwrap();
 
         let tls_client_config = rustls::ClientConfig::builder()
-            .with_safe_defaults()
+            .dangerous()
             .with_custom_certificate_verifier(Arc::new(SkipVerifyHostName::new(root_cert_store)))
             .with_no_client_auth();
 
@@ -228,25 +231,28 @@ fn spawn_read_write_tasks<S: AsyncRead + AsyncWrite + Unpin + Send + 'static>(
     });
 }
 
-fn load_ca(path: &str) -> RootCertStore {
-    let mut pem = BufReader::new(File::open(path).unwrap());
-    let certs = rustls_pemfile::certs(&mut pem).unwrap();
-
+fn load_ca(path: &str) -> Result<RootCertStore> {
+    let mut pem = BufReader::new(File::open(path)?);
     let mut root_cert_store = RootCertStore::empty();
-    for cert in certs {
-        root_cert_store.add(&Certificate(cert)).unwrap();
+    for cert in rustls_pemfile::certs(&mut pem) {
+        root_cert_store
+            .add(cert.context("Error while parsing PEM")?)
+            .context("Failed to add cert to cert store")?;
     }
-    root_cert_store
+    Ok(root_cert_store)
 }
 
+#[derive(Debug)]
 pub struct SkipVerifyHostName {
-    verifier: WebPkiVerifier,
+    verifier: Arc<WebPkiServerVerifier>,
 }
 
 impl SkipVerifyHostName {
     pub fn new(roots: RootCertStore) -> Self {
         SkipVerifyHostName {
-            verifier: WebPkiVerifier::new(roots, None),
+            verifier: WebPkiServerVerifier::builder(Arc::new(roots))
+                .build()
+                .unwrap(),
         }
     }
 }
@@ -258,18 +264,16 @@ impl SkipVerifyHostName {
 impl ServerCertVerifier for SkipVerifyHostName {
     fn verify_server_cert(
         &self,
-        end_entity: &Certificate,
-        intermediates: &[Certificate],
-        server_name: &ServerName,
-        scts: &mut dyn Iterator<Item = &[u8]>,
+        end_entity: &CertificateDer<'_>,
+        intermediates: &[CertificateDer<'_>],
+        server_name: &ServerName<'_>,
         ocsp_response: &[u8],
-        now: std::time::SystemTime,
-    ) -> std::result::Result<rustls::client::ServerCertVerified, rustls::Error> {
+        now: UnixTime,
+    ) -> std::result::Result<ServerCertVerified, rustls::Error> {
         match self.verifier.verify_server_cert(
             end_entity,
             intermediates,
             server_name,
-            scts,
             ocsp_response,
             now,
         ) {
@@ -279,5 +283,27 @@ impl ServerCertVerifier for SkipVerifyHostName {
             }
             Err(err) => Err(err),
         }
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, rustls::Error> {
+        self.verifier.verify_tls12_signature(message, cert, dss)
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, rustls::Error> {
+        self.verifier.verify_tls13_signature(message, cert, dss)
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
+        self.verifier.supported_verify_schemes()
     }
 }
