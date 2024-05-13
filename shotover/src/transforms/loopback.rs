@@ -30,6 +30,7 @@ impl Transform for Loopback {
     }
 
     async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Messages> {
+        std::thread::sleep(std::time::Duration::from_secs(1));
         // This transform ultimately doesnt make a lot of sense semantically
         // but make a vague attempt to follow transform invariants anyway.
         for request in &mut requests_wrapper.requests {
