@@ -126,7 +126,7 @@ fnv = "1.0.7"
 sasl = { version = "0.5.1", optional = true, default-features = false, features = ["scram"] , package = "a8da96aa9ee5ce956b7069f92a4ca762efc75133" }
 
 [dev-dependencies]
-criterion = { version = "0.5.0", features = ["async_tokio"] }
+criterion = { version = "2.6.0", features = ["async_tokio"], package = "codspeed-criterion-compat" }
 hex-literal.workspace = true
 
 # TODO: Optionally compiling benches is quite tricky with criterion, maybe it would be easier with divan?
