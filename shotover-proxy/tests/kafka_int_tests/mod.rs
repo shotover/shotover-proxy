@@ -1,6 +1,7 @@
 mod test_cases;
 
 use crate::shotover_process;
+use pretty_assertions::assert_eq;
 use rstest::rstest;
 use std::time::Duration;
 use test_helpers::connection::kafka::{KafkaConnectionBuilder, KafkaDriver};

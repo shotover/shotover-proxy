@@ -128,6 +128,7 @@ sasl = { version = "0.5.1", optional = true, default-features = false, features 
 [dev-dependencies]
 criterion = { version = "2.6.0", features = ["async_tokio"], package = "codspeed-criterion-compat" }
 hex-literal.workspace = true
+pretty_assertions.workspace = true
 
 # TODO: Optionally compiling benches is quite tricky with criterion, maybe it would be easier with divan?
 #       For now just set required features

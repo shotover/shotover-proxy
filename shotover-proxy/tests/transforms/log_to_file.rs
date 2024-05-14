@@ -1,5 +1,6 @@
 use crate::redis_int_tests::assert::assert_ok;
 use crate::shotover_process;
+use pretty_assertions::assert_eq;
 use test_helpers::connection::redis_connection;
 use test_helpers::docker_compose::docker_compose;
 
