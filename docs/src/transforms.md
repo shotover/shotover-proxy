@@ -254,7 +254,14 @@ Instead Shotover will pretend to be either a single Kafka node or part of a clus
 
 This is achieved by rewriting the FindCoordinator, Metadata and DescribeCluster messages to contain the nodes in the shotover cluster instead of the kafka cluster.
 
-KafkaSinkCluster does not support SASL SCRAM authentication, if a client attempts to use SCRAM it will appear as if its not enabled in the server.
+By default KafkaSinkCluster does not support SASL SCRAM authentication, if a client attempts to use SCRAM it will appear as if its not enabled in the server.
+SCRAM can not be supported normally as it is protected against replaying of auth messages, preventing shotover from opening multiple outgoing connections.
+
+However, SCRAM support can be achieved by enabling the `authorize_scram_over_mtls` option.
+This will, hidden from the client, generate delegation tokens over an mTLS connection that correspond to the username sent over the SCRAM auth requests.
+First the clients SCRAM auth requests are routed to a single kafka broker to verify the user has the correct credentials.
+Once authentication is confirmed, shotover creates new outgoing connections to different brokers via delegation token authentication. (Outgoing connections are accessible only to the one incoming connection)
+If SCRAM authentication against the first kafka broker fails, shotover will terminate the connection before processing any non-auth requests, to ensure the client can not escalate privileges.
 
 ```yaml
 - KafkaSinkCluster:
@@ -293,6 +300,19 @@ KafkaSinkCluster does not support SASL SCRAM authentication, if a client attempt
     #  private_key_path: "tls/localhost.key"
     #  # Enable/disable verifying the hostname of the certificate provided by the destination.
     #  #verify_hostname: true
+
+    # When this field is provided authorization of SCRAM over mTLS is enabled.
+    # Removing this field will disable the feature.
+    #authorize_scram_over_mtls:
+    #  # This must point at a kafka port that exposes mTLS authentication for a user capable of creating delegation tokens.
+    #  mtls_port_contact_points: ["172.16.1.2:9094"]
+    #  # The TLS certs for an mTLS user capable of creating delegation tokens
+    #  tls:
+    #    certificate_authority_path: "tls/mtls_localhost_CA.crt"
+    #    certificate_path: "tls/mtls_localhost.crt"
+    #    private_key_path: "tls/mtls_localhost.key"
+    #    verify_hostname: true
+
 ```
 
 ### KafkaSinkSingle
