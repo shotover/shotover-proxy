@@ -8,10 +8,11 @@ use crate::{
     message::Message,
     tls::{TlsConnector, TlsConnectorConfig},
 };
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use kafka_protocol::{
     messages::{ApiKey, CreateDelegationTokenRequest, RequestHeader},
     protocol::{Builder, StrBytes},
+    ResponseError,
 };
 use rand::rngs::SmallRng;
 use rand::{prelude::SliceRandom, SeedableRng};
@@ -60,8 +61,11 @@ impl TokenTask {
                 username,
                 response_tx,
             })
-            .await?;
-        Ok(response_rx.await?)
+            .await
+            .context("Failed to request delegation token from token task")?;
+        response_rx
+            .await
+            .context("Token task encountered an error before it could respond to request for token")
     }
 }
 
@@ -187,10 +191,16 @@ pub async fn create_delegation_token_for_user(
         ..
     })) = response.frame()
     {
-        Ok(DelegationToken {
-            token_id: response.token_id.as_str().to_owned(),
-            hmac: response.hmac.to_vec(),
-        })
+        if let Some(err) = ResponseError::try_from_code(response.error_code) {
+            Err(anyhow!(
+                "kafka responded to CreateDelegationToken with error {err}",
+            ))
+        } else {
+            Ok(DelegationToken {
+                token_id: response.token_id.as_str().to_owned(),
+                hmac: response.hmac.to_vec(),
+            })
+        }
     } else {
         Err(anyhow!(
             "Unexpected response to CreateDelegationToken {response:?}"

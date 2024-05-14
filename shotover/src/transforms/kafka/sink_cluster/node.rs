@@ -12,6 +12,7 @@ use base64::Engine;
 use bytes::Bytes;
 use kafka_protocol::messages::{ApiKey, BrokerId, RequestHeader, SaslAuthenticateRequest};
 use kafka_protocol::protocol::{Builder, StrBytes};
+use kafka_protocol::ResponseError;
 use sasl::client::mechanisms::Scram;
 use sasl::client::Mechanism;
 use sasl::common::scram::Sha256;
@@ -82,14 +83,16 @@ impl ConnectionFactory {
             self.force_run_chain.clone(),
             self.read_timeout,
         )
-        .await?;
+        .await
+        .context("Failed to create sink connection")?;
 
         if !self.auth_requests.is_empty() {
             if let Some(scram_over_mtls) = authorize_scram_over_mtls {
                 if let Some(sasl_mechanism) = sasl_mechanism {
                     if SASL_SCRAM_MECHANISMS.contains(&sasl_mechanism.as_str()) {
                         self.perform_tokenauth_scram_exchange(scram_over_mtls, &mut connection)
-                            .await?;
+                            .await
+                            .context("Failed to perform delegation token SCRAM exchange")?;
                     } else {
                         self.replay_sasl(&mut connection).await?;
                     }
@@ -127,10 +130,9 @@ impl ConnectionFactory {
             ..
         })) = handshake_response.frame()
         {
-            if handshake_response.error_code != 0 {
+            if let Some(err) = ResponseError::try_from_code(handshake_response.error_code) {
                 return Err(anyhow!(
-                    "SaslHandshake response reported an error, error code: {}, server supported mechanisms: {:?}",
-                    handshake_response.error_code,
+                    "kafka responded to SaslHandshake with error {err}, server supported mechanisms: {:?}",
                     handshake_response.mechanisms,
                 ));
             }
@@ -208,10 +210,9 @@ impl ConnectionFactory {
             ..
         })) = response.frame()
         {
-            if auth_response.error_code != 0 {
+            if let Some(err) = ResponseError::try_from_code(auth_response.error_code) {
                 Err(anyhow!(
-                    "SaslAuthenticate response reported an error, error code: {}, {}",
-                    auth_response.error_code,
+                    "kafka responded to SaslAuthenticate with error: {err}, {}",
                     auth_response
                         .error_message
                         .as_ref()

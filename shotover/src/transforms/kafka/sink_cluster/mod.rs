@@ -21,6 +21,7 @@ use kafka_protocol::messages::{
     SyncGroupRequest, TopicName,
 };
 use kafka_protocol::protocol::{Builder, StrBytes};
+use kafka_protocol::ResponseError;
 use node::{ConnectionFactory, KafkaAddress, KafkaNode};
 use rand::rngs::SmallRng;
 use rand::seq::{IteratorRandom, SliceRandom};
@@ -838,17 +839,19 @@ impl KafkaSinkCluster {
             Some(Frame::Kafka(KafkaFrame::Response {
                 body: ResponseBody::FindCoordinator(coordinator),
                 ..
-            })) => {
-                if coordinator.error_code == 0 {
-                    Ok(KafkaNode::new(
-                        coordinator.node_id,
-                        KafkaAddress::new(coordinator.host.clone(), coordinator.port),
-                        None,
-                    ))
-                } else {
+            })) => match ResponseError::try_from_code(coordinator.error_code) {
+                None => Ok(KafkaNode::new(
+                    coordinator.node_id,
+                    KafkaAddress::new(coordinator.host.clone(), coordinator.port),
+                    None,
+                )),
+                Some(ResponseError::CoordinatorNotAvailable) => {
                     Err(FindCoordinatorError::CoordinatorNotAvailable)
                 }
-            }
+                Some(err) => Err(FindCoordinatorError::Unrecoverable(anyhow!(
+                    "Unexpected server error from FindCoordinator {err}"
+                ))),
+            },
             other => Err(anyhow!(
                 "Unexpected message returned to findcoordinator request {other:?}"
             ))?,
@@ -1104,7 +1107,8 @@ impl KafkaSinkCluster {
                         // declare unsupported if the client requested SCRAM
                         if let Some(sasl_mechanism) = &self.sasl_mechanism {
                             if SASL_SCRAM_MECHANISMS.contains(&sasl_mechanism.as_str()) {
-                                handshake.error_code = 33; // UNSUPPORTED_SASL_MECHANISM
+                                handshake.error_code =
+                                    ResponseError::UnsupportedSaslMechanism.code();
                             }
                         }
 
