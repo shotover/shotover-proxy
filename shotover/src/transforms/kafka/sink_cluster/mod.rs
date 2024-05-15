@@ -26,8 +26,8 @@ use rand::rngs::SmallRng;
 use rand::seq::{IteratorRandom, SliceRandom};
 use rand::SeedableRng;
 use scram_over_mtls::{
-    create_delegation_token_for_user, AuthorizeScramOverMtls, AuthorizeScramOverMtlsBuilder,
-    AuthorizeScramOverMtlsConfig, OriginalScramState,
+    AuthorizeScramOverMtls, AuthorizeScramOverMtlsBuilder, AuthorizeScramOverMtlsConfig,
+    OriginalScramState,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
@@ -108,16 +108,13 @@ impl TransformConfig for KafkaSinkClusterConfig {
 
         Ok(Box::new(KafkaSinkClusterBuilder::new(
             self.first_contact_points.clone(),
-            self.authorize_scram_over_mtls
-                .as_ref()
-                .map(AuthorizeScramOverMtlsConfig::get_builder)
-                .transpose()?,
+            &self.authorize_scram_over_mtls,
             shotover_nodes,
             transform_context.chain_name,
             self.connect_timeout_ms,
             self.read_timeout,
             tls,
-        )))
+        )?))
     }
 
     fn up_chain_protocol(&self) -> UpChainProtocol {
@@ -148,28 +145,32 @@ pub struct KafkaSinkClusterBuilder {
 impl KafkaSinkClusterBuilder {
     pub fn new(
         first_contact_points: Vec<String>,
-        authorize_scram_over_mtls: Option<AuthorizeScramOverMtlsBuilder>,
+        authorize_scram_over_mtls: &Option<AuthorizeScramOverMtlsConfig>,
         shotover_nodes: Vec<ShotoverNode>,
         _chain_name: String,
         connect_timeout_ms: u64,
         timeout: Option<u64>,
         tls: Option<TlsConnector>,
-    ) -> KafkaSinkClusterBuilder {
-        let receive_timeout = timeout.map(Duration::from_secs);
+    ) -> Result<KafkaSinkClusterBuilder> {
+        let read_timeout = timeout.map(Duration::from_secs);
+        let connect_timeout = Duration::from_millis(connect_timeout_ms);
 
-        KafkaSinkClusterBuilder {
+        Ok(KafkaSinkClusterBuilder {
             first_contact_points,
-            authorize_scram_over_mtls,
+            authorize_scram_over_mtls: authorize_scram_over_mtls
+                .as_ref()
+                .map(|x| x.get_builder(connect_timeout, read_timeout))
+                .transpose()?,
             shotover_nodes,
-            connect_timeout: Duration::from_millis(connect_timeout_ms),
-            read_timeout: receive_timeout,
+            connect_timeout,
+            read_timeout,
             controller_broker: Arc::new(AtomicBrokerId::new()),
             group_to_coordinator_broker: Arc::new(DashMap::new()),
             topic_by_name: Arc::new(DashMap::new()),
             topic_by_id: Arc::new(DashMap::new()),
             nodes_shared: Arc::new(RwLock::new(vec![])),
             tls,
-        }
+        })
     }
 }
 
@@ -198,10 +199,7 @@ impl TransformBuilder for KafkaSinkClusterBuilder {
             find_coordinator_requests: Default::default(),
             temp_responses_buffer: Default::default(),
             sasl_mechanism: None,
-            authorize_scram_over_mtls: self
-                .authorize_scram_over_mtls
-                .as_ref()
-                .map(|x| x.build(self.connect_timeout, self.read_timeout)),
+            authorize_scram_over_mtls: self.authorize_scram_over_mtls.as_ref().map(|x| x.build()),
         })
     }
 
@@ -418,14 +416,9 @@ impl KafkaSinkCluster {
                     })) => {
                         if let Some(scram_over_mtls) = &mut self.authorize_scram_over_mtls {
                             if let Some(username) = get_username_from_scram_request(auth_bytes) {
-                                // Since it takes a while for the delegation token to propogate across the cluster,
-                                // we request the delegation token as soon as we have access to the username.
-                                scram_over_mtls.delegation_token =
-                                    create_delegation_token_for_user(
-                                        scram_over_mtls,
-                                        username,
-                                        &mut self.rng,
-                                    )
+                                scram_over_mtls.delegation_token = scram_over_mtls
+                                    .token_task
+                                    .get_token_for_user(username)
                                     .await?;
                             }
                         }

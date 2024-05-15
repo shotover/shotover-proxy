@@ -117,10 +117,6 @@ impl ConnectionFactory {
         scram_over_mtls: &AuthorizeScramOverMtls,
         connection: &mut SinkConnection,
     ) -> Result<()> {
-        // TODO: This sleep is currently load bearing...
-        //       Need to delay progression until token has propagated.
-        tokio::time::sleep(std::time::Duration::from_secs(4)).await;
-
         let mut auth_requests = self.auth_requests.clone();
 
         // send/receive SaslHandshake
