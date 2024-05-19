@@ -232,9 +232,9 @@ pub struct CassandraSinkCluster {
 }
 
 impl CassandraSinkCluster {
-    async fn send_message(&mut self, mut messages: Messages) -> Result<Messages> {
+    async fn send_message(&mut self, mut requests: Messages) -> Result<Messages> {
         if self.version.is_none() {
-            if let Some(message) = messages.first() {
+            if let Some(message) = requests.first() {
                 if let Ok(Metadata::Cassandra(CassandraMetadata { version, .. })) =
                     message.metadata()
                 {
@@ -289,7 +289,7 @@ impl CassandraSinkCluster {
         let batch_mode = self
             .message_rewriter
             .rewrite_requests(
-                &mut messages,
+                &mut requests,
                 &self.connection_factory,
                 &mut self.pool,
                 self.version.unwrap(),
@@ -349,7 +349,7 @@ impl CassandraSinkCluster {
         }
 
         if !self.init_handshake_complete {
-            for message in &mut messages {
+            for message in &mut requests {
                 // Filter operation types so we are only left with messages relevant to the handshake.
                 // Due to shotover pipelining we could receive non-handshake messages while !self.init_handshake_complete.
                 // Despite being used by the client in a handshake, CassandraOperation::Options is not included
@@ -365,146 +365,7 @@ impl CassandraSinkCluster {
             }
         }
 
-        for mut message in messages.into_iter() {
-            if self.pool.nodes().is_empty()
-                || !self.init_handshake_complete
-                // system.local and system.peers must be routed to the same node otherwise the system.local node will be amongst the system.peers nodes and a node will be missing
-                // DDL statements and system.local must be routed through the same connection, so that schema_version changes appear immediately in system.local
-                || is_ddl_statement(&mut message)
-                || self.is_system_query(&mut message)
-            {
-                self.control_connection
-                    .as_mut()
-                    .unwrap()
-                    .send(vec![message])?;
-            } else if is_use_statement(&mut message) {
-                // Adding the USE statement to the handshake ensures that any new connection
-                // created will have the correct keyspace setup.
-                self.connection_factory.set_use_message(message.clone());
-
-                // route to the control connection
-                self.control_connection
-                    .as_mut()
-                    .unwrap()
-                    .send(vec![message])?;
-
-                // Close all other connections as they are now invalidated.
-                // They will be recreated as needed with the correct use statement used automatically after the handshake
-                for node in self.pool.nodes_mut() {
-                    node.outbound = None;
-                }
-
-                // Sending the use statement to these connections to keep them alive instead is possible but tricky.
-                // 1. The destinations need to be calculated here, at sending time, to ensure no new connections have been created in the meantime.
-                // 2. We need a way to filter out these extra responses from reaching the client.
-                // 3. But we cant use the TableRewrite abstraction since that occurs too early. See 1.
-                //
-                // It might be worth doing in the future.
-            } else if is_prepare_message(&mut message) {
-                let next_host_id = self.message_rewriter.get_destination_for_prepare(&message);
-                match self
-                    .pool
-                    .nodes_mut()
-                    .iter_mut()
-                    .find(|node| node.host_id == next_host_id)
-                    .ok_or_else(|| anyhow!("node {next_host_id} has dissapeared"))?
-                    .get_connection(&self.connection_factory)
-                    .await
-                {
-                    Ok(connection) => connection.send(vec![message])?,
-                    Err(err) => responses.push(send_error_in_response_to_message(
-                        &message,
-                        &format!("{err}"),
-                    )?),
-                }
-            } else if let Some((execute, metadata)) = get_execute_message(&mut message) {
-                // If the message is an execute we should perform token aware routing
-                let rack = &self.message_rewriter.local_shotover_node.rack;
-                let connection = self
-                    .pool
-                    .get_replica_connection_in_dc(
-                        execute,
-                        rack,
-                        &mut self.rng,
-                        &self.connection_factory,
-                    )
-                    .await;
-
-                match connection {
-                    Ok(connection) => connection.send(vec![message])?,
-                    Err(
-                        err @ GetReplicaErr::NoKeyspaceMetadata | err @ GetReplicaErr::NoRoutingKey,
-                    ) => {
-                        if matches!(err, GetReplicaErr::NoRoutingKey)
-                            && self.version.unwrap() != Version::V3
-                        {
-                            tracing::error!(
-                                "No routing key found for message on version: {}",
-                                self.version.unwrap()
-                            );
-                        };
-
-                        match self
-                            .pool
-                            .get_random_connection_in_dc_rack(
-                                rack,
-                                &mut self.rng,
-                                &self.connection_factory,
-                            )
-                            .await
-                        {
-                            Ok(connection) => connection.send(vec![message])?,
-                            Err(err) => responses.push(send_error_in_response_to_metadata(
-                                &metadata,
-                                &format!("{err}"),
-                            )),
-                        }
-                    }
-                    Err(GetReplicaErr::NoPreparedMetadata) => {
-                        let id = execute.id.clone();
-                        tracing::info!("forcing re-prepare on {:?}", id);
-                        // this shotover node doesn't have the metadata.
-                        // send an unprepared error in response to force
-                        // the client to reprepare the query
-                        responses.push(Message::from_frame(Frame::Cassandra(
-                            CassandraFrame {
-                                operation: CassandraOperation::Error(ErrorBody {
-                                    message: "Shotover does not have this query's metadata. Please re-prepare on this Shotover host before sending again.".into(),
-                                    ty: ErrorType::Unprepared(UnpreparedError { id }),
-                                }),
-                                stream_id: metadata.stream_id,
-                                tracing: Tracing::Response(None), // We didn't actually hit a node so we don't have a tracing id
-                                version: self.version.unwrap(),
-                                warnings: vec![],
-                            },
-                        )));
-                    }
-                    Err(GetReplicaErr::NoNodeAvailable(err)) => responses.push(
-                        send_error_in_response_to_metadata(&metadata, &format!("{err}")),
-                    ),
-                    Err(GetReplicaErr::Other(err)) => {
-                        return Err(err);
-                    }
-                }
-            } else {
-                // otherwise just send to a random node
-                match self
-                    .pool
-                    .get_random_connection_in_dc_rack(
-                        &self.message_rewriter.local_shotover_node.rack,
-                        &mut self.rng,
-                        &self.connection_factory,
-                    )
-                    .await
-                {
-                    Ok(connection) => connection.send(vec![message])?,
-                    Err(err) => responses.push(send_error_in_response_to_message(
-                        &message,
-                        &format!("{err}"),
-                    )?),
-                }
-            };
-        }
+        self.route_requests(requests, &mut responses).await?;
 
         // receive messages from all connections
         match batch_mode {
