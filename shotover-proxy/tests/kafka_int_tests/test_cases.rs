@@ -243,3 +243,16 @@ pub async fn standard_test_suite(connection_builder: KafkaConnectionBuilder) {
     produce_consume_acks0(&connection_builder).await;
     connection_builder.admin_cleanup().await;
 }
+
+// TODO: get all tests passing on the standard_test_suite and then delete this function
+pub async fn minimal_test_suite(connection_builder: KafkaConnectionBuilder) {
+    admin_setup(&connection_builder).await;
+    produce_consume_partitions1(&connection_builder, "partitions1").await;
+    // fails due to missing metadata on the unknown_topic (out of bounds error)
+    //produce_consume_partitions1(&connection_builder, "unknown_topic").await;
+    // Failed to decode kafka_protocol::messages::produce_response::ProduceResponse v9
+    //produce_consume_partitions3(&connection_builder).await;
+    // Failed to decode kafka_protocol::messages::produce_response::ProduceResponse v9
+    //produce_consume_acks0(&connection_builder).await;
+    connection_builder.admin_cleanup().await;
+}

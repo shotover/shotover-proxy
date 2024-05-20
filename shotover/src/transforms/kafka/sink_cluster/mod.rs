@@ -365,8 +365,15 @@ impl KafkaSinkCluster {
         Ok(connection.recv().await?.remove(0))
     }
 
-    fn store_topic(&self, topics: &mut Vec<TopicName>, topic: TopicName) {
-        if self.topic_by_name.get(&topic).is_none() && !topics.contains(&topic) {
+    fn store_topic_names(&self, topics: &mut Vec<TopicName>, topic: TopicName) {
+        if self.topic_by_name.get(&topic).is_none() && !topics.contains(&topic) && !topic.is_empty()
+        {
+            topics.push(topic);
+        }
+    }
+
+    fn store_topic_ids(&self, topics: &mut Vec<Uuid>, topic: Uuid) {
+        if self.topic_by_id.get(&topic).is_none() && !topics.contains(&topic) && !topic.is_nil() {
             topics.push(topic);
         }
     }
@@ -474,7 +481,8 @@ impl KafkaSinkCluster {
             }
         }
 
-        let mut topics = vec![];
+        let mut topic_names = vec![];
+        let mut topic_ids = vec![];
         let mut groups = vec![];
         for request in &mut requests {
             match request.frame() {
@@ -483,16 +491,16 @@ impl KafkaSinkCluster {
                     ..
                 })) => {
                     for (name, _) in &produce.topic_data {
-                        self.store_topic(&mut topics, name.clone());
+                        self.store_topic_names(&mut topic_names, name.clone());
                     }
                 }
                 Some(Frame::Kafka(KafkaFrame::Request {
                     body: RequestBody::Fetch(fetch),
                     ..
                 })) => {
-                    // TODO: Handle topics that only have an ID
                     for topic in &fetch.topics {
-                        self.store_topic(&mut topics, topic.topic.clone());
+                        self.store_topic_names(&mut topic_names, topic.topic.clone());
+                        self.store_topic_ids(&mut topic_ids, topic.topic_id);
                     }
                 }
                 Some(Frame::Kafka(KafkaFrame::Request {
@@ -519,7 +527,7 @@ impl KafkaSinkCluster {
                 Err(FindCoordinatorError::CoordinatorNotAvailable) => {
                     // We cant find the coordinator so do nothing so that the request will be routed to a random node:
                     // * If it happens to be the coordinator all is well
-                    // * If its not the coordinator then it will return a COORDINATOR_NOT_AVAILABLE message to
+                    // * If its not the coordinator then it will return a NOT_COORDINATOR message to
                     //   the client prompting it to retry the whole process again.
                 }
                 Err(FindCoordinatorError::Unrecoverable(err)) => Err(err)?,
@@ -527,13 +535,25 @@ impl KafkaSinkCluster {
         }
 
         // request and process metadata if we are missing topics or the controller broker id
-        if !topics.is_empty() || self.controller_broker.get().is_none() {
-            let mut metadata = self.get_metadata_of_topics(topics).await?;
+        if !topic_names.is_empty()
+            || !topic_ids.is_empty()
+            || self.controller_broker.get().is_none()
+        {
+            let mut metadata = self.get_metadata_of_topics(topic_names, topic_ids).await?;
             match metadata.frame() {
                 Some(Frame::Kafka(KafkaFrame::Response {
                     body: ResponseBody::Metadata(metadata),
                     ..
-                })) => self.process_metadata_response(metadata).await,
+                })) => {
+                    for topic in metadata.topics.values() {
+                        if let Some(err) = ResponseError::try_from_code(topic.error_code) {
+                            return Err(anyhow!(
+                                "Kafka responded to Metadata request with error {err:?}"
+                            ));
+                        }
+                    }
+                    self.process_metadata_response(metadata).await
+                }
                 other => {
                     return Err(anyhow!(
                         "Unexpected message returned to metadata request {other:?}"
@@ -858,18 +878,23 @@ impl KafkaSinkCluster {
         }
     }
 
-    async fn get_metadata_of_topics(&mut self, topics: Vec<TopicName>) -> Result<Message> {
+    async fn get_metadata_of_topics(
+        &mut self,
+        topic_names: Vec<TopicName>,
+        topic_ids: Vec<Uuid>,
+    ) -> Result<Message> {
+        let api_version = if topic_ids.is_empty() { 4 } else { 12 };
         let request = Message::from_frame(Frame::Kafka(KafkaFrame::Request {
             header: RequestHeader::builder()
                 .request_api_key(ApiKey::MetadataKey as i16)
-                .request_api_version(4)
+                .request_api_version(api_version)
                 .correlation_id(0)
                 .build()
                 .unwrap(),
             body: RequestBody::Metadata(
                 MetadataRequest::builder()
                     .topics(Some(
-                        topics
+                        topic_names
                             .into_iter()
                             .map(|name| {
                                 MetadataRequestTopic::builder()
@@ -877,6 +902,13 @@ impl KafkaSinkCluster {
                                     .build()
                                     .unwrap()
                             })
+                            .chain(topic_ids.into_iter().map(|id| {
+                                MetadataRequestTopic::builder()
+                                    .name(None)
+                                    .topic_id(id)
+                                    .build()
+                                    .unwrap()
+                            }))
                             .collect(),
                     ))
                     .build()
