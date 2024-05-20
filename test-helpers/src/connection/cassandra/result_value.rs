@@ -33,6 +33,7 @@ pub enum ResultValue {
     List(Vec<ResultValue>),
     Tuple(Vec<ResultValue>),
     Map(Vec<(ResultValue, ResultValue)>),
+    Vector(Vec<ResultValue>),
     Null,
     /// Never output by the DB
     /// Can be used by the user in assertions to allow any value.
@@ -66,6 +67,7 @@ impl PartialEq for ResultValue {
             (Self::List(l0), Self::List(r0)) => l0 == r0,
             (Self::Tuple(l0), Self::Tuple(r0)) => l0 == r0,
             (Self::Map(l0), Self::Map(r0)) => l0 == r0,
+            (Self::Vector(l0), Self::Vector(r0)) => l0 == r0,
             (Self::Null, Self::Null) => true,
             (Self::Any, _) => true,
             (_, Self::Any) => true,
@@ -113,7 +115,12 @@ impl ResultValue {
         ResultValue::Map(result)
                 },
                 ValueType::UNKNOWN => todo!(),
-                ValueType::CUSTOM => todo!(),
+                ValueType::CUSTOM => {
+                    println!("{:?}", value.get_bytes());
+
+                    todo!();
+
+                },
                 ValueType::UDT => todo!(),
                 ValueType::TEXT => unimplemented!("text is represented by the same id as varchar at the protocol level and therefore will never be instantiated by the datastax cpp driver. https://github.com/apache/cassandra/blob/703ccdee29f7e8c39aeb976e72e516415d609cf4/doc/native_protocol_v5.spec#L1184"),
             }
@@ -183,6 +190,12 @@ impl ResultValue {
                 tuple
                     .into_iter()
                     .map(|element| ResultValue::new_from_cdrs(element, version))
+                    .collect(),
+            ),
+            CassandraType::Vector(vector) => ResultValue::Vector(
+                vector
+                    .into_iter()
+                    .map(|float_value| ResultValue::new_from_cdrs(float_value, version))
                     .collect(),
             ),
             CassandraType::Null => ResultValue::Null,

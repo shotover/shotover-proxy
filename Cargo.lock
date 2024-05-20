@@ -913,9 +913,8 @@ checksum = "8234d29d30873ab5a41e3557b8515d3ecbaefb1ea5be579425b3b0074b6d0e40"
 
 [[package]]
 name = "cassandra-protocol"
-version = "3.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0e7a47ebcd9508b56f04e782cb94a0708d685c6a5ad7b5f58ee57c03aa3763c8"
+version = "3.1.1"
+source = "git+https://github.com/conorbros/cdrs-tokio?branch=vector-support#2d1d569422d514a85846032cb15cd05b5e53d198"
 dependencies = [
  "arc-swap",
  "arrayref",
@@ -964,9 +963,8 @@ dependencies = [
 
 [[package]]
 name = "cdrs-tokio"
-version = "8.1.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "be8840d17b05de2dd9a96df0f38fc7d7341da32db1682f083ab8016ce4311bac"
+version = "8.1.2"
+source = "git+https://github.com/conorbros/cdrs-tokio?branch=vector-support#2d1d569422d514a85846032cb15cd05b5e53d198"
 dependencies = [
  "arc-swap",
  "atomic",

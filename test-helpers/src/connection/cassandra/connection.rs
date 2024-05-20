@@ -888,6 +888,7 @@ impl CassandraConnection {
                                 let mut row_result_values = vec![];
                                 for (i, col_spec) in rows.metadata.col_specs.iter().enumerate() {
                                     let wrapper = wrapper_fn(&col_spec.col_type.id);
+
                                     let value = ResultValue::new_from_cdrs(
                                         wrapper(&row[i], &col_spec.col_type, version).unwrap(),
                                         version,

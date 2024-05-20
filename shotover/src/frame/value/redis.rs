@@ -62,6 +62,7 @@ impl From<GenericValue> for RedisFrame {
             GenericValue::Tuple(_) => todo!(),
             GenericValue::Udt(_) => todo!(),
             GenericValue::Duration(_) => todo!(),
+            GenericValue::Vector(_) => todo!(),
         }
     }
 }

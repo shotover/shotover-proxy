@@ -202,7 +202,6 @@ async fn test_switch_main_chain() {
         .await;
 
     for i in 1..=3 {
-        println!("{i}");
         let redis_port = 6370 + i;
         let switch_port = 1230 + i;
 
