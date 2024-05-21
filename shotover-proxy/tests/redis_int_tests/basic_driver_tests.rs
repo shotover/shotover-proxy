@@ -4,6 +4,7 @@ use bytes::BytesMut;
 use fred::clients::RedisClient;
 use fred::interfaces::ClientLike;
 use futures::{Future, StreamExt};
+use pretty_assertions::assert_eq;
 use rand::{thread_rng, Rng};
 use rand_distr::Alphanumeric;
 use redis::aio::Connection;

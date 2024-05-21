@@ -108,6 +108,7 @@ mod test {
     use crate::transforms::filter::QueryTypeFilter;
     use crate::transforms::loopback::Loopback;
     use crate::transforms::{Transform, Wrapper};
+    use pretty_assertions::assert_eq;
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_filter_denylist() {

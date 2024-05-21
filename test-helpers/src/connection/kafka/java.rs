@@ -1,6 +1,7 @@
 use super::{AlterConfig, ExpectedResponse, NewPartition, NewTopic, Record, ResourceSpecifier};
 use anyhow::Result;
 use j4rs::{errors::J4RsError, Instance, InvocationArg, Jvm, JvmBuilder, MavenArtifact};
+use pretty_assertions::assert_eq;
 use std::{
     collections::{HashMap, VecDeque},
     rc::Rc,

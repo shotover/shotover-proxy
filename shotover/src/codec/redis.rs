@@ -258,9 +258,11 @@ impl Encoder<Messages> for RedisEncoder {
 
 #[cfg(test)]
 mod redis_tests {
+
     use crate::codec::{redis::RedisCodecBuilder, CodecBuilder, Direction};
     use bytes::BytesMut;
     use hex_literal::hex;
+    use pretty_assertions::assert_eq;
     use tokio_util::codec::{Decoder, Encoder};
 
     const SET_MESSAGE: [u8; 45] = hex!("2a330d0a24330d0a5345540d0a2431360d0a6b65793a5f5f72616e645f696e745f5f0d0a24330d0a7878780d0a");

@@ -3,6 +3,7 @@ pub use rdkafka;
 
 use super::{ExpectedResponse, NewPartition, Record};
 use anyhow::Result;
+use pretty_assertions::assert_eq;
 use rdkafka::admin::AdminClient;
 use rdkafka::admin::{
     AdminOptions, AlterConfig, NewPartitions, NewTopic, OwnedResourceSpecifier, ResourceSpecifier,

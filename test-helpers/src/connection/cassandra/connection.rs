@@ -22,6 +22,7 @@ use cdrs_tokio::{
     transport::TransportTcp,
 };
 use openssl::ssl::{SslContext, SslMethod};
+use pretty_assertions::assert_eq;
 use scylla::batch::Batch as ScyllaBatch;
 use scylla::frame::types::Consistency as ScyllaConsistency;
 use scylla::frame::value::{CqlDate, CqlDecimal, CqlTime, CqlTimestamp};

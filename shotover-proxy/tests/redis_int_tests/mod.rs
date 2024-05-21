@@ -3,6 +3,7 @@ use basic_driver_tests::*;
 use fred::clients::RedisClient;
 use fred::interfaces::ClientLike;
 use fred::types::RedisConfig;
+use pretty_assertions::assert_eq;
 use redis::aio::Connection;
 use redis::Commands;
 
