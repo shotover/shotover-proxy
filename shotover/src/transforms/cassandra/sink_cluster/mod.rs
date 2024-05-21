@@ -2,12 +2,12 @@ use self::connection::CassandraConnection;
 use self::node_pool::{get_accessible_owned_connection, NodePoolBuilder, PreparedMetadata};
 use self::rewrite::{BatchMode, MessageRewriter};
 use crate::frame::cassandra::{CassandraMetadata, Tracing};
-use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame};
+use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame, MessageType};
 use crate::message::{Message, MessageIdMap, Messages, Metadata};
 use crate::tls::{TlsConnector, TlsConnectorConfig};
 use crate::transforms::{
-    Transform, TransformBuilder, TransformConfig, TransformContextBuilder, TransformContextConfig,
-    Wrapper,
+    DownChainProtocol, Transform, TransformBuilder, TransformConfig, TransformContextBuilder,
+    TransformContextConfig, UpChainProtocol, Wrapper,
 };
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
@@ -95,6 +95,14 @@ impl TransformConfig for CassandraSinkClusterConfig {
             self.connect_timeout_ms,
             self.read_timeout,
         )))
+    }
+
+    fn up_chain_protocol(&self) -> UpChainProtocol {
+        UpChainProtocol::MustBeOneOf(vec![MessageType::Cassandra])
+    }
+
+    fn down_chain_protocol(&self) -> DownChainProtocol {
+        DownChainProtocol::Terminating
     }
 }
 
@@ -224,9 +232,9 @@ pub struct CassandraSinkCluster {
 }
 
 impl CassandraSinkCluster {
-    async fn send_message(&mut self, mut messages: Messages) -> Result<Messages> {
+    async fn send_message(&mut self, mut requests: Messages) -> Result<Messages> {
         if self.version.is_none() {
-            if let Some(message) = messages.first() {
+            if let Some(message) = requests.first() {
                 if let Ok(Metadata::Cassandra(CassandraMetadata { version, .. })) =
                     message.metadata()
                 {
@@ -281,7 +289,7 @@ impl CassandraSinkCluster {
         let batch_mode = self
             .message_rewriter
             .rewrite_requests(
-                &mut messages,
+                &mut requests,
                 &self.connection_factory,
                 &mut self.pool,
                 self.version.unwrap(),
@@ -341,7 +349,7 @@ impl CassandraSinkCluster {
         }
 
         if !self.init_handshake_complete {
-            for message in &mut messages {
+            for message in &mut requests {
                 // Filter operation types so we are only left with messages relevant to the handshake.
                 // Due to shotover pipelining we could receive non-handshake messages while !self.init_handshake_complete.
                 // Despite being used by the client in a handshake, CassandraOperation::Options is not included
@@ -357,7 +365,92 @@ impl CassandraSinkCluster {
             }
         }
 
-        for mut message in messages.into_iter() {
+        self.route_requests(requests, &mut responses).await?;
+
+        // receive messages from all connections
+        match batch_mode {
+            BatchMode::Isolated => {
+                if let Some(connection) = self.control_connection.as_mut() {
+                    connection
+                        .recv_all_pending(&mut responses, self.version.unwrap())
+                        .await
+                        .ok();
+                }
+                for node in self.pool.nodes_mut().iter_mut() {
+                    node.recv_all_pending(&mut responses, self.version.unwrap())
+                        .await;
+                }
+            }
+            BatchMode::Pipelined => {
+                if let Some(connection) = self.control_connection.as_mut() {
+                    connection
+                        .try_recv(&mut responses, self.version.unwrap())
+                        .ok();
+                }
+                for node in self.pool.nodes_mut().iter_mut() {
+                    node.try_recv(&mut responses, self.version.unwrap());
+                }
+            }
+        }
+
+        // When the server indicates that it is ready for normal operation via Ready or AuthSuccess,
+        // we have succesfully collected an entire handshake so we mark the handshake as complete.
+        if !self.init_handshake_complete {
+            for response in &mut responses {
+                if let Some(Frame::Cassandra(CassandraFrame {
+                    operation: CassandraOperation::Ready(_) | CassandraOperation::AuthSuccess(_),
+                    ..
+                })) = response.frame()
+                {
+                    self.complete_handshake().await?;
+                    break;
+                }
+            }
+        }
+
+        self.message_rewriter.rewrite_responses(&mut responses)?;
+
+        for response in responses.iter_mut() {
+            if let Some((id, metadata)) = get_prepared_result_message(response) {
+                self.pool.add_prepared_result(id, metadata).await;
+            }
+            if let Ok(Metadata::Cassandra(CassandraMetadata {
+                opcode: Opcode::Error,
+                ..
+            })) = response.metadata()
+            {
+                self.failed_requests.increment(1);
+            }
+        }
+
+        // remove topology and status change messages since they contain references to real cluster IPs
+        // TODO: we should be rewriting them not just deleting them.
+        responses.retain_mut(|message| {
+            if let Some(Frame::Cassandra(CassandraFrame {
+                operation: CassandraOperation::Event(event),
+                ..
+            })) = message.frame()
+            {
+                match event {
+                    ServerEvent::TopologyChange(_) => false,
+                    ServerEvent::StatusChange(_) => false,
+                    ServerEvent::SchemaChange(_) => true,
+                    _ => unreachable!(),
+                }
+            } else {
+                true
+            }
+        });
+
+        Ok(responses)
+    }
+
+    async fn route_requests(
+        &mut self,
+        requests: Vec<Message>,
+        responses: &mut Vec<Message>,
+    ) -> Result<()> {
+        for mut message in requests.into_iter() {
             if self.pool.nodes().is_empty()
                 || !self.init_handshake_complete
                 // system.local and system.peers must be routed to the same node otherwise the system.local node will be amongst the system.peers nodes and a node will be missing
@@ -497,83 +590,7 @@ impl CassandraSinkCluster {
                 }
             };
         }
-
-        // receive messages from all connections
-        match batch_mode {
-            BatchMode::Isolated => {
-                if let Some(connection) = self.control_connection.as_mut() {
-                    connection
-                        .recv_all_pending(&mut responses, self.version.unwrap())
-                        .await
-                        .ok();
-                }
-                for node in self.pool.nodes_mut().iter_mut() {
-                    node.recv_all_pending(&mut responses, self.version.unwrap())
-                        .await;
-                }
-            }
-            BatchMode::Pipelined => {
-                if let Some(connection) = self.control_connection.as_mut() {
-                    connection
-                        .try_recv(&mut responses, self.version.unwrap())
-                        .ok();
-                }
-                for node in self.pool.nodes_mut().iter_mut() {
-                    node.try_recv(&mut responses, self.version.unwrap());
-                }
-            }
-        }
-
-        // When the server indicates that it is ready for normal operation via Ready or AuthSuccess,
-        // we have succesfully collected an entire handshake so we mark the handshake as complete.
-        if !self.init_handshake_complete {
-            for response in &mut responses {
-                if let Some(Frame::Cassandra(CassandraFrame {
-                    operation: CassandraOperation::Ready(_) | CassandraOperation::AuthSuccess(_),
-                    ..
-                })) = response.frame()
-                {
-                    self.complete_handshake().await?;
-                    break;
-                }
-            }
-        }
-
-        self.message_rewriter.rewrite_responses(&mut responses)?;
-
-        for response in responses.iter_mut() {
-            if let Some((id, metadata)) = get_prepared_result_message(response) {
-                self.pool.add_prepared_result(id, metadata).await;
-            }
-            if let Ok(Metadata::Cassandra(CassandraMetadata {
-                opcode: Opcode::Error,
-                ..
-            })) = response.metadata()
-            {
-                self.failed_requests.increment(1);
-            }
-        }
-
-        // remove topology and status change messages since they contain references to real cluster IPs
-        // TODO: we should be rewriting them not just deleting them.
-        responses.retain_mut(|message| {
-            if let Some(Frame::Cassandra(CassandraFrame {
-                operation: CassandraOperation::Event(event),
-                ..
-            })) = message.frame()
-            {
-                match event {
-                    ServerEvent::TopologyChange(_) => false,
-                    ServerEvent::StatusChange(_) => false,
-                    ServerEvent::SchemaChange(_) => true,
-                    _ => unreachable!(),
-                }
-            } else {
-                true
-            }
-        });
-
-        Ok(responses)
+        Ok(())
     }
 
     async fn complete_handshake(&mut self) -> Result<()> {

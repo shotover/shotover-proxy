@@ -20,6 +20,11 @@ For full details refer to the [documentation of the invariants](https://github.c
 The `transform_pushed` method has been removed.
 The messages that were previously sent through that method will now go through the regular `transform` method.
 
+#### TransformConfig trait
+
+Mandatory methods `TransformConfig::up_chain_protocol` and `TransformConfig::down_chain_protocol` are added.
+Implement these to define what protocols your transform requires and outputs.
+
 ## 0.3.0
 
 ### shotover rust API

@@ -34,3 +34,9 @@ rcgen.workspace = true
 rdkafka = { version = "0.36", features = ["cmake-build"], optional = true }
 docker-compose-runner = "0.3.0"
 j4rs = "0.18.0"
+futures-util = "0.3.28"
+http = "1.1.0"
+rustls = { version = "0.21.2" ,features = ["dangerous_configuration"] }
+rustls-pemfile = "1.0.2"
+tokio-tungstenite = { git = "https://github.com/shotover/tokio-tungstenite", features = ["rustls-tls-native-roots"], rev = "2f1cc11e491c2d0401d01a83f623623182784b3a" }
+pretty_assertions.workspace = true

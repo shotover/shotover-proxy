@@ -57,3 +57,4 @@ aws-throwaway = { version = "0.6.0", default-features = false }
 tokio-bin-process = "0.5.0"
 ordered-float = { version = "4.0.0", features = ["serde"] }
 shell-quote = { default-features = false, version = "0.5.0" }
+pretty_assertions = "1.4.0"

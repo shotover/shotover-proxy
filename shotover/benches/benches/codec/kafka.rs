@@ -16,6 +16,7 @@ const KAFKA_REQUESTS: &[(&[u8], &str)] = &[
     ),
     (include_bytes!("kafka_requests/fetch.bin"), "request_fetch"),
     (
+        // is acks=0
         include_bytes!("kafka_requests/produce.bin"),
         "request_produce",
     ),

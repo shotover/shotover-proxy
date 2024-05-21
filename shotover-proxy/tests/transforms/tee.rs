@@ -1,4 +1,5 @@
 use crate::shotover_process;
+use pretty_assertions::assert_eq;
 use test_helpers::connection::redis_connection;
 use test_helpers::docker_compose::docker_compose;
 use test_helpers::shotover_process::{Count, EventMatcher, Level};

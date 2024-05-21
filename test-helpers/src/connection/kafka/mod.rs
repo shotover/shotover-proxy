@@ -1,3 +1,5 @@
+use pretty_assertions::assert_eq;
+
 #[cfg(feature = "kafka-cpp-driver-tests")]
 pub mod cpp;
 pub mod java;
@@ -29,11 +31,11 @@ impl KafkaConnectionBuilder {
         }
     }
 
-    pub fn use_tls(self, truststore: &str) -> Self {
+    pub fn use_tls(self, certs: &str) -> Self {
         match self {
             #[cfg(feature = "kafka-cpp-driver-tests")]
             Self::Cpp(_) => todo!("TLS not implemented for cpp driver"),
-            Self::Java(java) => Self::Java(java.use_tls(truststore)),
+            Self::Java(java) => Self::Java(java.use_tls(certs)),
         }
     }
 

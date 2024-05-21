@@ -18,7 +18,7 @@ anyhow.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 clap.workspace = true
-rstest = "0.18.0"
+rstest = "0.19.0"
 rstest_reuse = "0.6.0"
 cassandra-cpp = { version = "3.0.0", default-features = false }
 test-helpers = { path = "../test-helpers" }
@@ -42,18 +42,18 @@ rand_distr.workspace = true
 async-trait.workspace = true
 tracing-subscriber.workspace = true
 tracing-appender.workspace = true
-fred = { version = "8.0.0", features = ["enable-rustls"] }
+fred = { version = "9.0.3", features = ["enable-rustls-ring"] }
 tokio-bin-process.workspace = true
 rustls-pemfile = "2.0.0"
 rustls-pki-types = "1.1.0"
 aws-throwaway.workspace = true
 windsock = "0.1.0"
 regex = "1.7.0"
-cql-ws = { git = "https://github.com/shotover/cql-ws" }
 opensearch = "2.1.0"
 serde_json = "1.0.103"
 time = { version = "0.3.25" }
 shell-quote.workspace = true
+pretty_assertions.workspace = true
 
 [features]
 # Include WIP alpha transforms in the public API

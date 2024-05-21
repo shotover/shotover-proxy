@@ -1,6 +1,6 @@
 use crate::codec::redis::RedisCodecBuilder;
 use crate::codec::{CodecBuilder, Direction};
-use crate::frame::{Frame, RedisFrame};
+use crate::frame::{Frame, MessageType, RedisFrame};
 use crate::message::{Message, Messages};
 use crate::tls::TlsConnectorConfig;
 use crate::transforms::redis::RedisError;
@@ -8,8 +8,8 @@ use crate::transforms::redis::TransformError;
 use crate::transforms::util::cluster_connection_pool::{Authenticator, ConnectionPool};
 use crate::transforms::util::{Request, Response};
 use crate::transforms::{
-    ResponseFuture, Transform, TransformBuilder, TransformConfig, TransformContextBuilder,
-    TransformContextConfig, Wrapper,
+    DownChainProtocol, ResponseFuture, Transform, TransformBuilder, TransformConfig,
+    TransformContextBuilder, TransformContextConfig, UpChainProtocol, Wrapper,
 };
 use anyhow::{anyhow, bail, ensure, Context, Result};
 use async_trait::async_trait;
@@ -69,6 +69,14 @@ impl TransformConfig for RedisSinkClusterConfig {
             chain_name: transform_context.chain_name,
             shared_topology: Arc::new(RwLock::new(Topology::new())),
         }))
+    }
+
+    fn up_chain_protocol(&self) -> UpChainProtocol {
+        UpChainProtocol::MustBeOneOf(vec![MessageType::Redis])
+    }
+
+    fn down_chain_protocol(&self) -> DownChainProtocol {
+        DownChainProtocol::Terminating
     }
 }
 
@@ -1170,6 +1178,7 @@ mod test {
     use super::*;
     use crate::codec::redis::RedisDecoder;
     use crate::codec::Direction;
+    use pretty_assertions::assert_eq;
     use tokio_util::codec::Decoder;
 
     #[test]

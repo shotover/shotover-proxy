@@ -57,57 +57,148 @@ fn get_type_str(col_type: ColType) -> &'static str {
     }
 }
 
-fn get_type_example(col_type: ColType) -> &'static str {
+fn get_type_example(col_type: ColType) -> Vec<&'static str> {
     match col_type {
-        ColType::Ascii => "'ascii string'",
-        ColType::Bigint => "1844674407370",
-        ColType::Blob => "bigIntAsBlob(10)",
-        ColType::Boolean => "true",
-        ColType::Counter => "12",
-        ColType::Decimal => "1.111",
-        ColType::Double => "1.11",
-        ColType::Float => "1.11",
-        ColType::Int => "1",
-        ColType::Timestamp => "'2011-02-03 04:05+0000'",
-        ColType::Uuid => "84196262-53de-11ec-bf63-0242ac130002",
-        ColType::Varchar => "'varchar'",
-        ColType::Varint => "198121",
-        ColType::Timeuuid => "84196262-53de-11ec-bf63-0242ac130002",
-        ColType::Inet => "'127.0.0.1'",
-        ColType::Date => "'2011-02-03'",
-        ColType::Time => "'08:12:54'",
-        ColType::Smallint => "32767",
-        ColType::Tinyint => "127",
+        ColType::Ascii => vec!["'ascii string'", "'other string'", "'other string 2'"],
+        ColType::Bigint => vec!["1844674407370", "1844674407371", "1844674407372"],
+        ColType::Blob => vec!["bigIntAsBlob(10)", "bigIntAsBlob(11)", "bigIntAsBlob(12)"],
+        ColType::Boolean => vec!["false", "true"],
+        ColType::Counter => vec!["12", "13", "14"],
+        ColType::Decimal => vec!["1.111", "1.112", "1.113"],
+        ColType::Double => vec!["1.11", "1.12", "1.13"],
+        ColType::Float => vec!["1.11", "1.12", "1.13"],
+        ColType::Int => vec!["1", "2", "3"],
+        ColType::Timestamp => vec![
+            "'2011-02-03 04:01+0000'",
+            "'2011-02-03 04:02+0000'",
+            "'2011-02-03 04:03+0000'",
+        ],
+        ColType::Uuid => vec![
+            "84196262-53de-11ec-bf63-0242ac130001",
+            "84196262-53de-11ec-bf63-0242ac130002",
+            "84196262-53de-11ec-bf63-0242ac130003",
+        ],
+        ColType::Varchar => vec!["'varchar 1'", "'varchar 2'", "'varchar 3'"],
+        ColType::Varint => vec!["198121", "198122", "198123"],
+        ColType::Timeuuid => vec![
+            "84196262-53de-11ec-bf63-0242ac130001",
+            "84196262-53de-11ec-bf63-0242ac130002",
+            "84196262-53de-11ec-bf63-0242ac130003",
+        ],
+        ColType::Inet => vec!["'127.0.0.1'", "'127.0.0.2'", "'127.0.0.3'"],
+        ColType::Date => vec!["'2011-02-01'", "'2011-02-02'", "'2011-02-03'"],
+        ColType::Time => vec!["'08:12:54'", "'08:12:55'", "'08:12:56'"],
+        ColType::Smallint => vec!["32765", "32766", "32767"],
+        ColType::Tinyint => vec!["121", "122", "123"],
         _ => panic!("dont have an example for {}", col_type),
     }
 }
 
-fn get_type_example_result_value(col_type: ColType) -> ResultValue {
+fn get_type_example_result_value(col_type: ColType) -> Vec<ResultValue> {
     match col_type {
-        ColType::Ascii => ResultValue::Ascii("ascii string".into()),
-        ColType::Bigint => ResultValue::BigInt(1844674407370),
-        ColType::Blob => ResultValue::Blob(vec![0, 0, 0, 0, 0, 0, 0, 10]),
-        ColType::Boolean => ResultValue::Boolean(true),
-        ColType::Counter => ResultValue::Counter(12),
-        ColType::Decimal => ResultValue::Decimal(vec![0, 0, 0, 3, 4, 87]),
-        ColType::Double => ResultValue::Double(1.11.into()),
-        ColType::Float => ResultValue::Float(1.11.into()),
-        ColType::Int => ResultValue::Int(1),
-        ColType::Timestamp => ResultValue::Timestamp(1296705900000),
-        ColType::Uuid => ResultValue::Uuid(
-            uuid::Uuid::parse_str("84196262-53de-11ec-bf63-0242ac130002").unwrap(),
-        ),
-
-        ColType::Varchar => ResultValue::Varchar("varchar".into()),
-        ColType::Varint => ResultValue::VarInt(vec![3, 5, 233]),
-        ColType::Timeuuid => ResultValue::TimeUuid(
-            uuid::Uuid::parse_str("84196262-53de-11ec-bf63-0242ac130002").unwrap(),
-        ),
-        ColType::Inet => ResultValue::Inet("127.0.0.1".parse().unwrap()),
-        ColType::Date => ResultValue::Date(2147498656),
-        ColType::Time => ResultValue::Time(29574000000000),
-        ColType::Smallint => ResultValue::SmallInt(32767),
-        ColType::Tinyint => ResultValue::TinyInt(127),
+        ColType::Ascii => vec![
+            ResultValue::Ascii("ascii string".into()),
+            ResultValue::Ascii("other string".into()),
+            ResultValue::Ascii("other string 2".into()),
+        ],
+        ColType::Bigint => vec![
+            ResultValue::BigInt(1844674407370),
+            ResultValue::BigInt(1844674407371),
+            ResultValue::BigInt(1844674407372),
+        ],
+        ColType::Blob => vec![
+            ResultValue::Blob(vec![0, 0, 0, 0, 0, 0, 0, 10]),
+            ResultValue::Blob(vec![0, 0, 0, 0, 0, 0, 0, 11]),
+            ResultValue::Blob(vec![0, 0, 0, 0, 0, 0, 0, 12]),
+        ],
+        ColType::Boolean => vec![ResultValue::Boolean(false), ResultValue::Boolean(true)],
+        ColType::Counter => vec![
+            ResultValue::Counter(12),
+            ResultValue::Counter(13),
+            ResultValue::Counter(14),
+        ],
+        ColType::Decimal => vec![
+            ResultValue::Decimal(vec![0, 0, 0, 3, 4, 87]),
+            ResultValue::Decimal(vec![0, 0, 0, 3, 4, 88]),
+            ResultValue::Decimal(vec![0, 0, 0, 3, 4, 89]),
+        ],
+        ColType::Double => vec![
+            ResultValue::Double(1.11.into()),
+            ResultValue::Double(1.12.into()),
+            ResultValue::Double(1.13.into()),
+        ],
+        ColType::Float => vec![
+            ResultValue::Float(1.11.into()),
+            ResultValue::Float(1.12.into()),
+            ResultValue::Float(1.13.into()),
+        ],
+        ColType::Int => vec![
+            ResultValue::Int(1),
+            ResultValue::Int(2),
+            ResultValue::Int(3),
+        ],
+        ColType::Timestamp => vec![
+            ResultValue::Timestamp(1296705660000),
+            ResultValue::Timestamp(1296705720000),
+            ResultValue::Timestamp(1296705780000),
+        ],
+        ColType::Uuid => vec![
+            ResultValue::Uuid(
+                uuid::Uuid::parse_str("84196262-53de-11ec-bf63-0242ac130001").unwrap(),
+            ),
+            ResultValue::Uuid(
+                uuid::Uuid::parse_str("84196262-53de-11ec-bf63-0242ac130002").unwrap(),
+            ),
+            ResultValue::Uuid(
+                uuid::Uuid::parse_str("84196262-53de-11ec-bf63-0242ac130003").unwrap(),
+            ),
+        ],
+        ColType::Varchar => vec![
+            ResultValue::Varchar("varchar 1".into()),
+            ResultValue::Varchar("varchar 2".into()),
+            ResultValue::Varchar("varchar 3".into()),
+        ],
+        ColType::Varint => vec![
+            ResultValue::VarInt(vec![3, 5, 233]),
+            ResultValue::VarInt(vec![3, 5, 234]),
+            ResultValue::VarInt(vec![3, 5, 235]),
+        ],
+        ColType::Timeuuid => vec![
+            ResultValue::TimeUuid(
+                uuid::Uuid::parse_str("84196262-53de-11ec-bf63-0242ac130001").unwrap(),
+            ),
+            ResultValue::TimeUuid(
+                uuid::Uuid::parse_str("84196262-53de-11ec-bf63-0242ac130002").unwrap(),
+            ),
+            ResultValue::TimeUuid(
+                uuid::Uuid::parse_str("84196262-53de-11ec-bf63-0242ac130003").unwrap(),
+            ),
+        ],
+        ColType::Inet => vec![
+            ResultValue::Inet("127.0.0.1".parse().unwrap()),
+            ResultValue::Inet("127.0.0.2".parse().unwrap()),
+            ResultValue::Inet("127.0.0.3".parse().unwrap()),
+        ],
+        ColType::Date => vec![
+            ResultValue::Date(2147498654),
+            ResultValue::Date(2147498655),
+            ResultValue::Date(2147498656),
+        ],
+        ColType::Time => vec![
+            ResultValue::Time(29574000000000),
+            ResultValue::Time(29575000000000),
+            ResultValue::Time(29576000000000),
+        ],
+        ColType::Smallint => vec![
+            ResultValue::SmallInt(32765),
+            ResultValue::SmallInt(32766),
+            ResultValue::SmallInt(32767),
+        ],
+        ColType::Tinyint => vec![
+            ResultValue::TinyInt(121),
+            ResultValue::TinyInt(122),
+            ResultValue::TinyInt(123),
+        ],
         _ => panic!("dont have an example for {}", col_type),
     }
 }
@@ -140,7 +231,7 @@ async fn create_table(
 async fn insert_table(
     connection: &CassandraConnection,
     name: &str,
-    collection_type: fn(&str) -> String,
+    collection_type: fn(Vec<&str>) -> String,
 ) {
     let columns = column_list(&NATIVE_COL_TYPES);
     let values = NATIVE_COL_TYPES
@@ -180,7 +271,7 @@ fn set_to_list(value: &mut ResultValue) {
 async fn select_table(
     connection: &CassandraConnection,
     name: &str,
-    collection_type: fn(ResultValue) -> ResultValue,
+    collection_type: fn(Vec<ResultValue>) -> ResultValue,
     driver: CassandraDriver,
 ) {
     let columns = column_list(&NATIVE_COL_TYPES);
@@ -225,38 +316,75 @@ mod list {
     }
 
     async fn insert(connection: &CassandraConnection) {
-        insert_table(connection, "list_native", |s| format!("[{s}]")).await;
-        insert_table(connection, "list_set", |s| format!("[{{{s}}}]")).await;
-        insert_table(connection, "list_list", |s| format!("[[{s}]]")).await;
-        insert_table(connection, "list_map", |s| format!("[{{ 0: {s} }}]")).await;
+        insert_table(connection, "list_native", |elements| {
+            format!("[{}]", elements.join(","))
+        })
+        .await;
+        insert_table(connection, "list_set", |elements| {
+            let set: String = format!("{{{}}}", elements.join(","));
+            format!("[{}]", (0..3).map(|_| &set).join(","))
+        })
+        .await;
+        insert_table(connection, "list_list", |elements| {
+            let list = format!("[{}]", elements.join(","));
+            format!("[{}]", (0..3).map(|_| &list).join(","))
+        })
+        .await;
+        insert_table(connection, "list_map", |elements| {
+            let map = format!(
+                "{{{}}}",
+                elements
+                    .iter()
+                    .enumerate()
+                    .map(|(i, element)| { format!("{i}: {element}") })
+                    .join(",")
+            );
+
+            format!("[{}]", (0..3).map(|_| &map).join(","))
+        })
+        .await;
     }
 
     async fn select(connection: &CassandraConnection, driver: CassandraDriver) {
-        select_table(
-            connection,
-            "list_native",
-            |t| ResultValue::List(vec![t]),
-            driver,
-        )
-        .await;
+        select_table(connection, "list_native", ResultValue::List, driver).await;
         select_table(
             connection,
             "list_set",
-            |t| ResultValue::List(vec![ResultValue::Set(vec![t])]),
+            |t| {
+                ResultValue::List(vec![
+                    ResultValue::Set(t.clone()),
+                    ResultValue::Set(t.clone()),
+                    ResultValue::Set(t),
+                ])
+            },
             driver,
         )
         .await;
         select_table(
             connection,
             "list_list",
-            |t| ResultValue::List(vec![ResultValue::List(vec![t])]),
+            |t| {
+                ResultValue::List(vec![
+                    ResultValue::List(t.clone()),
+                    ResultValue::List(t.clone()),
+                    ResultValue::List(t),
+                ])
+            },
             driver,
         )
         .await;
         select_table(
             connection,
             "list_map",
-            |t| ResultValue::List(vec![ResultValue::Map(vec![(ResultValue::Int(0), t)])]),
+            |t| {
+                let map = ResultValue::Map(
+                    t.iter()
+                        .enumerate()
+                        .map(|(i, x)| (ResultValue::Int(i as i32), x.clone()))
+                        .collect(),
+                );
+                ResultValue::List(vec![map.clone(), map.clone(), map])
+            },
             driver,
         )
         .await;
@@ -286,38 +414,62 @@ mod set {
     }
 
     async fn insert(connection: &CassandraConnection) {
-        insert_table(connection, "set_native", |s| format!("{{{s}}}")).await;
-        insert_table(connection, "set_set", |s| format!("{{ {{{s}}} }}")).await;
-        insert_table(connection, "set_list", |s| format!("{{ [{s}] }}")).await;
-        insert_table(connection, "set_map", |s| format!("{{ {{ 0: {s} }} }}")).await;
+        insert_table(connection, "set_native", |elements| {
+            format!("{{{}}}", elements.join(","))
+        })
+        .await;
+        insert_table(connection, "set_set", |elements| {
+            let set = format!("{{{}}}", elements.join(","));
+            format!("{{{}}}", (0..3).map(|_| &set).join(","))
+        })
+        .await;
+        insert_table(connection, "set_list", |elements| {
+            let list = format!("[{}]", elements.join(","));
+            format!("{{{}}}", (0..3).map(|_| &list).join(","))
+        })
+        .await;
+        insert_table(connection, "set_map", |elements| {
+            let map = format!(
+                "{{{}}}",
+                elements
+                    .iter()
+                    .enumerate()
+                    .map(|(i, element)| { format!("{i}: {element}") })
+                    .join(",")
+            );
+
+            format!("{{{}}}", (0..3).map(|_| &map).join(","))
+        })
+        .await;
     }
 
     async fn select(connection: &CassandraConnection, driver: CassandraDriver) {
-        select_table(
-            connection,
-            "set_native",
-            |t| ResultValue::Set(vec![t]),
-            driver,
-        )
-        .await;
+        select_table(connection, "set_native", ResultValue::Set, driver).await;
         select_table(
             connection,
             "set_set",
-            |t| ResultValue::Set(vec![ResultValue::Set(vec![t])]),
+            |t| ResultValue::Set(vec![ResultValue::Set(t.clone())]),
             driver,
         )
         .await;
         select_table(
             connection,
             "set_list",
-            |t| ResultValue::Set(vec![ResultValue::List(vec![t])]),
+            |t| ResultValue::Set(vec![ResultValue::List(t)]),
             driver,
         )
         .await;
         select_table(
             connection,
             "set_map",
-            |t| ResultValue::Set(vec![ResultValue::Map(vec![(ResultValue::Int(0), t)])]),
+            |t| {
+                ResultValue::Set(vec![ResultValue::Map(
+                    t.iter()
+                        .enumerate()
+                        .map(|(i, x)| (ResultValue::Int(i as i32), x.clone()))
+                        .collect(),
+                )])
+            },
             driver,
         )
         .await;
@@ -350,31 +502,80 @@ mod map {
     }
 
     async fn insert(connection: &CassandraConnection) {
-        insert_table(connection, "map_native", |s| format!("{{ 0: {s} }}")).await;
-        insert_table(connection, "map_set", |s| format!("{{ 0: {{{s}}} }}")).await;
-        insert_table(connection, "map_list", |s| format!("{{ 0: [{s}] }}")).await;
-        insert_table(connection, "map_map", |s| format!("{{ 0: {{ 0: {s} }} }}")).await;
+        insert_table(connection, "map_native", |elements| {
+            format!(
+                "{{{}}}",
+                elements
+                    .iter()
+                    .enumerate()
+                    .map(|(i, element)| format!("{i}: {element}"))
+                    .join(",")
+            )
+        })
+        .await;
+        insert_table(connection, "map_set", |elements| {
+            let set = format!("{{{}}}", elements.join(","));
+            format!("{{{}}}", (0..3).map(|i| format!("{i}: {set}")).join(","))
+        })
+        .await;
+        insert_table(connection, "map_list", |elements| {
+            let list = format!("[{}]", elements.join(","));
+            format!("{{{}}}", (0..3).map(|i| format!("{i}: {list}")).join(","))
+        })
+        .await;
+        insert_table(connection, "map_map", |elements| {
+            let map = format!(
+                "{{{}}}",
+                elements
+                    .iter()
+                    .enumerate()
+                    .map(|(i, element)| { format!("{i}: {element}") })
+                    .join(",")
+            );
+
+            format!("{{{}}}", (0..3).map(|i| format!("{i}: {map}")).join(","))
+        })
+        .await;
     }
 
     async fn select(connection: &CassandraConnection, driver: CassandraDriver) {
         select_table(
             connection,
             "map_native",
-            |t| ResultValue::Map(vec![(ResultValue::Int(0), t)]),
+            |t| {
+                ResultValue::Map(
+                    t.iter()
+                        .enumerate()
+                        .map(|(i, x)| (ResultValue::Int(i as i32), x.clone()))
+                        .collect(),
+                )
+            },
             driver,
         )
         .await;
         select_table(
             connection,
             "map_set",
-            |t| ResultValue::Map(vec![(ResultValue::Int(0), ResultValue::Set(vec![t]))]),
+            |t| {
+                ResultValue::Map(vec![
+                    (ResultValue::Int(0), ResultValue::Set(t.clone())),
+                    (ResultValue::Int(1), ResultValue::Set(t.clone())),
+                    (ResultValue::Int(2), ResultValue::Set(t)),
+                ])
+            },
             driver,
         )
         .await;
         select_table(
             connection,
             "map_list",
-            |t| ResultValue::Map(vec![(ResultValue::Int(0), ResultValue::List(vec![t]))]),
+            |t| {
+                ResultValue::Map(vec![
+                    (ResultValue::Int(0), ResultValue::List(t.clone())),
+                    (ResultValue::Int(1), ResultValue::List(t.clone())),
+                    (ResultValue::Int(2), ResultValue::List(t)),
+                ])
+            },
             driver,
         )
         .await;
@@ -382,10 +583,17 @@ mod map {
             connection,
             "map_map",
             |t| {
-                ResultValue::Map(vec![(
-                    ResultValue::Int(0),
-                    ResultValue::Map(vec![(ResultValue::Int(0), t)]),
-                )])
+                let map = ResultValue::Map(
+                    t.iter()
+                        .enumerate()
+                        .map(|(i, x)| (ResultValue::Int(i as i32), x.clone()))
+                        .collect(),
+                );
+                ResultValue::Map(vec![
+                    (ResultValue::Int(0), map.clone()),
+                    (ResultValue::Int(1), map.clone()),
+                    (ResultValue::Int(2), map),
+                ])
             },
             driver,
         )

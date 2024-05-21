@@ -1,4 +1,4 @@
-use super::{TransformContextBuilder, TransformContextConfig};
+use super::{DownChainProtocol, TransformContextBuilder, TransformContextConfig, UpChainProtocol};
 use crate::config::chain::TransformChainConfig;
 use crate::http::HttpServerError;
 use crate::message::{Message, MessageIdMap, Messages};
@@ -228,6 +228,14 @@ impl TransformConfig for TeeConfig {
             self.switch_port,
             transform_context.protocol.is_inorder(),
         )))
+    }
+
+    fn up_chain_protocol(&self) -> UpChainProtocol {
+        UpChainProtocol::Any
+    }
+
+    fn down_chain_protocol(&self) -> DownChainProtocol {
+        DownChainProtocol::SameAsUpChain
     }
 }
 
@@ -580,6 +588,7 @@ struct AppState {
 mod tests {
     use super::*;
     use crate::{frame::MessageType, transforms::null::NullSinkConfig};
+    use pretty_assertions::assert_eq;
 
     #[tokio::test]
     async fn test_validate_subchain_valid() {

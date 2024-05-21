@@ -1,4 +1,5 @@
 use futures::Future;
+use pretty_assertions::assert_eq;
 use test_helpers::connection::cassandra::{
     assert_query_result, assert_rows, run_query, CassandraConnection, Consistency, ResultValue,
 };

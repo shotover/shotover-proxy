@@ -1,6 +1,7 @@
 use super::{AlterConfig, ExpectedResponse, NewPartition, NewTopic, Record, ResourceSpecifier};
 use anyhow::Result;
 use j4rs::{errors::J4RsError, Instance, InvocationArg, Jvm, JvmBuilder, MavenArtifact};
+use pretty_assertions::assert_eq;
 use std::{
     collections::{HashMap, VecDeque},
     rc::Rc,
@@ -47,10 +48,18 @@ impl KafkaConnectionBuilderJava {
         KafkaConnectionBuilderJava { jvm, base_config }
     }
 
-    pub fn use_tls(mut self, truststore: &str) -> Self {
+    pub fn use_tls(mut self, certs: &str) -> Self {
         let conf = &mut self.base_config;
-        conf.insert("ssl.truststore.location".to_owned(), truststore.to_owned());
+        conf.insert(
+            "ssl.truststore.location".to_owned(),
+            format!("{certs}/kafka.truststore.jks"),
+        );
         conf.insert("ssl.truststore.password".to_owned(), "password".to_owned());
+        conf.insert(
+            "ssl.keystore.location".to_owned(),
+            format!("{certs}/kafka.keystore.jks"),
+        );
+        conf.insert("ssl.keystore.password".to_owned(), "password".to_owned());
         conf.insert("security.protocol".to_owned(), "SSL".to_owned());
 
         self

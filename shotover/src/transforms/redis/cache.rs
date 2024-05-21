@@ -3,8 +3,8 @@ use crate::frame::{CassandraFrame, CassandraOperation, Frame, MessageType, Redis
 use crate::message::{Message, MessageIdMap, Messages, Metadata};
 use crate::transforms::chain::{TransformChain, TransformChainBuilder};
 use crate::transforms::{
-    Transform, TransformBuilder, TransformConfig, TransformContextBuilder, TransformContextConfig,
-    Wrapper,
+    DownChainProtocol, Transform, TransformBuilder, TransformConfig, TransformContextBuilder,
+    TransformContextConfig, UpChainProtocol, Wrapper,
 };
 use anyhow::{bail, Result};
 use async_trait::async_trait;
@@ -110,6 +110,14 @@ impl TransformConfig for RedisConfig {
             caching_schema,
             missed_requests,
         }))
+    }
+
+    fn up_chain_protocol(&self) -> UpChainProtocol {
+        UpChainProtocol::MustBeOneOf(vec![MessageType::Cassandra])
+    }
+
+    fn down_chain_protocol(&self) -> DownChainProtocol {
+        DownChainProtocol::SameAsUpChain
     }
 }
 
@@ -645,6 +653,7 @@ mod test {
     use bytes::Bytes;
     use cql3_parser::common::Identifier;
     use metrics::counter;
+    use pretty_assertions::assert_eq;
     use std::collections::HashMap;
 
     #[test]

@@ -1064,6 +1064,7 @@ mod cassandra_protocol_tests {
     use cassandra_protocol::frame::message_startup::BodyReqStartup;
     use cassandra_protocol::frame::Version;
     use hex_literal::hex;
+    use pretty_assertions::assert_eq;
     use std::collections::HashMap;
     use tokio_util::codec::{Decoder, Encoder};
 

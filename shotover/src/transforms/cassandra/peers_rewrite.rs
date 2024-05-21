@@ -1,7 +1,9 @@
+use crate::frame::MessageType;
 use crate::message::{Message, MessageIdMap, Messages};
 use crate::transforms::cassandra::peers_rewrite::CassandraOperation::Event;
 use crate::transforms::{
-    Transform, TransformBuilder, TransformConfig, TransformContextBuilder, Wrapper,
+    DownChainProtocol, Transform, TransformBuilder, TransformConfig, TransformContextBuilder,
+    UpChainProtocol, Wrapper,
 };
 use crate::{
     frame::{
@@ -33,6 +35,14 @@ impl TransformConfig for CassandraPeersRewriteConfig {
         _transform_context: TransformContextConfig,
     ) -> Result<Box<dyn TransformBuilder>> {
         Ok(Box::new(CassandraPeersRewrite::new(self.port)))
+    }
+
+    fn up_chain_protocol(&self) -> UpChainProtocol {
+        UpChainProtocol::MustBeOneOf(vec![MessageType::Cassandra])
+    }
+
+    fn down_chain_protocol(&self) -> DownChainProtocol {
+        DownChainProtocol::SameAsUpChain
     }
 }
 
@@ -157,6 +167,7 @@ mod test {
     };
     use cassandra_protocol::frame::Version;
     use cassandra_protocol::query::QueryParams;
+    use pretty_assertions::assert_eq;
 
     fn create_query_message(query: &str) -> Message {
         Message::from_frame(Frame::Cassandra(CassandraFrame {

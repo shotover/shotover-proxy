@@ -10,6 +10,8 @@ use crate::transforms::TransformConfig;
 use crate::transforms::TransformContextBuilder;
 #[cfg(feature = "alpha-transforms")]
 use crate::transforms::TransformContextConfig;
+#[cfg(feature = "alpha-transforms")]
+use crate::transforms::{DownChainProtocol, UpChainProtocol};
 use crate::transforms::{Transform, TransformBuilder, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
@@ -39,6 +41,14 @@ impl TransformConfig for DebugForceParseConfig {
             encode_responses: false,
         }))
     }
+
+    fn up_chain_protocol(&self) -> UpChainProtocol {
+        UpChainProtocol::Any
+    }
+
+    fn down_chain_protocol(&self) -> DownChainProtocol {
+        DownChainProtocol::SameAsUpChain
+    }
 }
 
 /// Messages that pass through this transform will be parsed and then reencoded.
@@ -65,6 +75,14 @@ impl TransformConfig for DebugForceEncodeConfig {
             encode_requests: self.encode_requests,
             encode_responses: self.encode_responses,
         }))
+    }
+
+    fn up_chain_protocol(&self) -> UpChainProtocol {
+        UpChainProtocol::Any
+    }
+
+    fn down_chain_protocol(&self) -> DownChainProtocol {
+        DownChainProtocol::SameAsUpChain
     }
 }
 

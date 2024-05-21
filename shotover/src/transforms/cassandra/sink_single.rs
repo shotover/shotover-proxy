@@ -1,11 +1,12 @@
 use crate::codec::{cassandra::CassandraCodecBuilder, CodecBuilder, Direction};
 use crate::connection::SinkConnection;
 use crate::frame::cassandra::CassandraMetadata;
+use crate::frame::MessageType;
 use crate::message::{Messages, Metadata};
 use crate::tls::{TlsConnector, TlsConnectorConfig};
 use crate::transforms::{
-    Transform, TransformBuilder, TransformConfig, TransformContextBuilder, TransformContextConfig,
-    Wrapper,
+    DownChainProtocol, Transform, TransformBuilder, TransformConfig, TransformContextBuilder,
+    TransformContextConfig, UpChainProtocol, Wrapper,
 };
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
@@ -44,6 +45,14 @@ impl TransformConfig for CassandraSinkSingleConfig {
             self.connect_timeout_ms,
             self.read_timeout,
         )))
+    }
+
+    fn up_chain_protocol(&self) -> UpChainProtocol {
+        UpChainProtocol::MustBeOneOf(vec![MessageType::Cassandra])
+    }
+
+    fn down_chain_protocol(&self) -> DownChainProtocol {
+        DownChainProtocol::Terminating
     }
 }
 

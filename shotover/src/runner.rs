@@ -309,22 +309,28 @@ async fn run(
     }
 }
 
-#[test]
-fn test_try_parse_log_directives() {
-    assert_eq!(
-        try_parse_log_directives(&[
-            Some("info,short=warn,error"),
-            None,
-            Some("debug"),
-            Some("alongname=trace")
-        ])
-        .unwrap()
-        .to_string(),
-        // Ordered by descending specificity.
-        "alongname=trace,short=warn,debug"
-    );
-    match try_parse_log_directives(&[Some("good=info,bad=blah,warn")]) {
-        Ok(_) => panic!(),
-        Err(e) => assert_eq!(e.to_string(), "invalid filter directive: bad=blah"),
+#[cfg(test)]
+mod test {
+    use super::*;
+    use pretty_assertions::assert_eq;
+
+    #[test]
+    fn test_try_parse_log_directives() {
+        assert_eq!(
+            try_parse_log_directives(&[
+                Some("info,short=warn,error"),
+                None,
+                Some("debug"),
+                Some("alongname=trace")
+            ])
+            .unwrap()
+            .to_string(),
+            // Ordered by descending specificity.
+            "alongname=trace,short=warn,debug"
+        );
+        match try_parse_log_directives(&[Some("good=info,bad=blah,warn")]) {
+            Ok(_) => panic!(),
+            Err(e) => assert_eq!(e.to_string(), "invalid filter directive: bad=blah"),
+        }
     }
 }

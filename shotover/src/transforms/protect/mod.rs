@@ -1,4 +1,8 @@
 use super::TransformContextBuilder;
+#[cfg(feature = "alpha-transforms")]
+use super::{DownChainProtocol, UpChainProtocol};
+#[cfg(feature = "alpha-transforms")]
+use crate::frame::MessageType;
 use crate::frame::{
     value::GenericValue, CassandraFrame, CassandraOperation, CassandraResult, Frame,
 };
@@ -59,6 +63,14 @@ impl crate::transforms::TransformConfig for ProtectConfig {
             key_id: "XXXXXXX".to_string(),
             requests: MessageIdMap::default(),
         }))
+    }
+
+    fn up_chain_protocol(&self) -> UpChainProtocol {
+        UpChainProtocol::MustBeOneOf(vec![MessageType::Cassandra])
+    }
+
+    fn down_chain_protocol(&self) -> DownChainProtocol {
+        DownChainProtocol::SameAsUpChain
     }
 }
 

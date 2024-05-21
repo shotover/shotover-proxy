@@ -1,4 +1,4 @@
-use super::{TransformContextBuilder, TransformContextConfig};
+use super::{DownChainProtocol, TransformContextBuilder, TransformContextConfig, UpChainProtocol};
 use crate::message::Messages;
 use crate::transforms::{Transform, TransformBuilder, TransformConfig, Wrapper};
 use anyhow::Result;
@@ -35,6 +35,14 @@ impl TransformConfig for CoalesceConfig {
             flush_when_millis_since_last_flush: self.flush_when_millis_since_last_flush,
             last_write: Instant::now(),
         }))
+    }
+
+    fn up_chain_protocol(&self) -> UpChainProtocol {
+        UpChainProtocol::Any
+    }
+
+    fn down_chain_protocol(&self) -> DownChainProtocol {
+        DownChainProtocol::SameAsUpChain
     }
 }
 
@@ -106,6 +114,7 @@ mod test {
     use crate::transforms::coalesce::Coalesce;
     use crate::transforms::loopback::Loopback;
     use crate::transforms::{Transform, Wrapper};
+    use pretty_assertions::assert_eq;
     use std::time::{Duration, Instant};
 
     #[tokio::test(flavor = "multi_thread")]

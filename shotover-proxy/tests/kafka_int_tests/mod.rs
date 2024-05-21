@@ -1,6 +1,7 @@
 mod test_cases;
 
 use crate::shotover_process;
+use pretty_assertions::assert_eq;
 use rstest::rstest;
 use std::time::Duration;
 use test_helpers::connection::kafka::{KafkaConnectionBuilder, KafkaDriver};
@@ -57,6 +58,30 @@ async fn passthrough_tls(#[case] driver: KafkaDriver) {
 #[rstest]
 #[case::java(KafkaDriver::Java)]
 #[tokio::test(flavor = "multi_thread")] // multi_thread is needed since java driver will block when consuming, causing shotover logs to not appear
+async fn passthrough_mtls(#[case] driver: KafkaDriver) {
+    test_helpers::cert::generate_kafka_test_certs();
+
+    let _docker_compose =
+        docker_compose("tests/test-configs/kafka/passthrough-mtls/docker-compose.yaml");
+    let shotover = shotover_process("tests/test-configs/kafka/passthrough-mtls/topology.yaml")
+        .start()
+        .await;
+
+    let connection_builder = KafkaConnectionBuilder::new(driver, "127.0.0.1:9192")
+        .use_tls("tests/test-configs/kafka/tls/certs");
+    test_cases::standard_test_suite(connection_builder).await;
+
+    tokio::time::timeout(
+        Duration::from_secs(10),
+        shotover.shutdown_and_then_consume_events(&[]),
+    )
+    .await
+    .expect("Shotover did not shutdown within 10s");
+}
+
+#[rstest]
+#[case::java(KafkaDriver::Java)]
+#[tokio::test(flavor = "multi_thread")] // multi_thread is needed since java driver will block when consuming, causing shotover logs to not appear
 async fn cluster_tls(#[case] driver: KafkaDriver) {
     test_helpers::cert::generate_kafka_test_certs();
 
@@ -67,7 +92,31 @@ async fn cluster_tls(#[case] driver: KafkaDriver) {
         .await;
 
     let connection_builder = KafkaConnectionBuilder::new(driver, "127.0.0.1:9192")
-        .use_tls("tests/test-configs/kafka/tls/certs/kafka.keystore.jks");
+        .use_tls("tests/test-configs/kafka/tls/certs");
+    test_cases::standard_test_suite(connection_builder).await;
+
+    tokio::time::timeout(
+        Duration::from_secs(10),
+        shotover.shutdown_and_then_consume_events(&[]),
+    )
+    .await
+    .expect("Shotover did not shutdown within 10s");
+}
+
+#[rstest]
+#[case::java(KafkaDriver::Java)]
+#[tokio::test(flavor = "multi_thread")] // multi_thread is needed since java driver will block when consuming, causing shotover logs to not appear
+async fn cluster_mtls(#[case] driver: KafkaDriver) {
+    test_helpers::cert::generate_kafka_test_certs();
+
+    let _docker_compose =
+        docker_compose("tests/test-configs/kafka/cluster-mtls/docker-compose.yaml");
+    let shotover = shotover_process("tests/test-configs/kafka/cluster-mtls/topology.yaml")
+        .start()
+        .await;
+
+    let connection_builder = KafkaConnectionBuilder::new(driver, "127.0.0.1:9192")
+        .use_tls("tests/test-configs/kafka/tls/certs");
     test_cases::standard_test_suite(connection_builder).await;
 
     tokio::time::timeout(
@@ -193,10 +242,9 @@ async fn cluster_1_rack_single_shotover(#[case] driver: KafkaDriver) {
     .expect("Shotover did not shutdown within 10s");
 }
 
-#[cfg(feature = "kafka-cpp-driver-tests")] // temporarily needed to avoid a warning
 #[rstest]
 #[cfg_attr(feature = "kafka-cpp-driver-tests", case::cpp(KafkaDriver::Cpp))]
-//#[case::java(KafkaDriver::Java)]
+#[case::java(KafkaDriver::Java)]
 #[tokio::test(flavor = "multi_thread")] // multi_thread is needed since java driver will block when consuming, causing shotover logs to not appear
 async fn cluster_1_rack_multi_shotover(#[case] driver: KafkaDriver) {
     let _docker_compose =
@@ -217,22 +265,25 @@ async fn cluster_1_rack_multi_shotover(#[case] driver: KafkaDriver) {
     }
 
     let connection_builder = KafkaConnectionBuilder::new(driver, "127.0.0.1:9192");
-    test_cases::standard_test_suite(connection_builder).await;
+    match driver {
+        #[cfg(feature = "kafka-cpp-driver-tests")]
+        KafkaDriver::Cpp => test_cases::standard_test_suite(connection_builder).await,
+        KafkaDriver::Java => test_cases::minimal_test_suite(connection_builder).await,
+    }
 
     for shotover in shotovers {
         tokio::time::timeout(
             Duration::from_secs(10),
-            shotover.shutdown_and_then_consume_events(&[]),
+            shotover.shutdown_and_then_consume_events(&multi_shotover_events(driver)),
         )
         .await
         .expect("Shotover did not shutdown within 10s");
     }
 }
 
-#[cfg(feature = "kafka-cpp-driver-tests")] // temporarily needed to avoid a warning
 #[rstest]
 #[cfg_attr(feature = "kafka-cpp-driver-tests", case::cpp(KafkaDriver::Cpp))]
-//#[case::java(KafkaDriver::Java)]
+#[case::java(KafkaDriver::Java)]
 #[tokio::test(flavor = "multi_thread")] // multi_thread is needed since java driver will block when consuming, causing shotover logs to not appear
 async fn cluster_2_racks_multi_shotover(#[case] driver: KafkaDriver) {
     let _docker_compose =
@@ -255,12 +306,16 @@ async fn cluster_2_racks_multi_shotover(#[case] driver: KafkaDriver) {
     }
 
     let connection_builder = KafkaConnectionBuilder::new(driver, "127.0.0.1:9192");
-    test_cases::standard_test_suite(connection_builder).await;
+    match driver {
+        #[cfg(feature = "kafka-cpp-driver-tests")]
+        KafkaDriver::Cpp => test_cases::standard_test_suite(connection_builder).await,
+        KafkaDriver::Java => test_cases::minimal_test_suite(connection_builder).await,
+    }
 
     for shotover in shotovers {
         tokio::time::timeout(
             Duration::from_secs(10),
-            shotover.shutdown_and_then_consume_events(&[]),
+            shotover.shutdown_and_then_consume_events(&multi_shotover_events(driver)),
         )
         .await
         .expect("Shotover did not shutdown within 10s");
@@ -283,34 +338,54 @@ async fn cluster_sasl_scram_single_shotover(#[case] driver: KafkaDriver) {
     let connection_builder =
         KafkaConnectionBuilder::new(driver, "127.0.0.1:9192").use_sasl_scram("user", "password");
 
-    // TODO: SCRAM currently fails with KafkaSinkCluster, we need to investigate a solution to get it working.
-    //       For now, just assert on the current failing behaviour.
-    let err = connection_builder.assert_admin_error().await;
-    assert_eq!(format!("{err}"), "org.apache.kafka.common.errors.TimeoutException: Timed out waiting for a node assignment. Call: createTopics\n");
+    assert_eq!(
+        connection_builder.assert_admin_error().await.to_string(),
+        match driver {
+            #[cfg(feature = "kafka-cpp-driver-tests")]
+            KafkaDriver::Cpp => panic!("CPP driver does not support SCRAM"),
+            KafkaDriver::Java => "org.apache.kafka.common.errors.UnsupportedSaslMechanismException: Client SASL mechanism 'SCRAM-SHA-256' not enabled in the server, enabled mechanisms are [PLAIN]\n"
+        }
+    );
 
     tokio::time::timeout(
         Duration::from_secs(10),
-        shotover.shutdown_and_then_consume_events(&[EventMatcher::new()
-            .with_level(Level::Error)
-            .with_target("shotover::server")
-            .with_message(r#"connection was unexpectedly terminated
-
-Caused by:
-    0: Chain failed to send and/or receive messages, the connection will now be closed.
-    1: KafkaSinkCluster transform failed
-    2: Failed to create control connection
-    3: Replayed auth failed, error code: 58, Authentication failed during authentication due to invalid credentials with SASL mechanism SCRAM-SHA-256"#,
-            )
-            .with_count(Count::Any)]),
+        shotover.shutdown_and_then_consume_events(&[]),
     )
     .await
     .expect("Shotover did not shutdown within 10s");
 }
 
-#[cfg(feature = "kafka-cpp-driver-tests")] // temporarily needed to avoid a warning
+#[rstest]
+//#[cfg_attr(feature = "kafka-cpp-driver-tests", case::cpp(KafkaDriver::Cpp))] // CPP driver does not support scram
+#[case::java(KafkaDriver::Java)]
+#[tokio::test(flavor = "multi_thread")] // multi_thread is needed since java driver will block when consuming, causing shotover logs to not appear
+async fn cluster_sasl_scram_over_mtls_single_shotover(#[case] driver: KafkaDriver) {
+    test_helpers::cert::generate_kafka_test_certs();
+
+    let _docker_compose =
+        docker_compose("tests/test-configs/kafka/cluster-sasl-scram-over-mtls/docker-compose.yaml");
+
+    let shotover = shotover_process(
+        "tests/test-configs/kafka/cluster-sasl-scram-over-mtls/topology-single.yaml",
+    )
+    .start()
+    .await;
+
+    let connection_builder =
+        KafkaConnectionBuilder::new(driver, "127.0.0.1:9192").use_sasl_scram("user", "password");
+    test_cases::standard_test_suite(connection_builder).await;
+
+    tokio::time::timeout(
+        Duration::from_secs(10),
+        shotover.shutdown_and_then_consume_events(&[]),
+    )
+    .await
+    .expect("Shotover did not shutdown within 10s");
+}
+
 #[rstest]
 #[cfg_attr(feature = "kafka-cpp-driver-tests", case::cpp(KafkaDriver::Cpp))]
-//#[case::java(KafkaDriver::Java)]
+#[case::java(KafkaDriver::Java)]
 #[tokio::test(flavor = "multi_thread")] // multi_thread is needed since java driver will block when consuming, causing shotover logs to not appear
 async fn cluster_sasl_plain_multi_shotover(#[case] driver: KafkaDriver) {
     let _docker_compose =
@@ -332,7 +407,11 @@ async fn cluster_sasl_plain_multi_shotover(#[case] driver: KafkaDriver) {
 
     let connection_builder =
         KafkaConnectionBuilder::new(driver, "127.0.0.1:9192").use_sasl_plain("user", "password");
-    test_cases::standard_test_suite(connection_builder).await;
+    match driver {
+        #[cfg(feature = "kafka-cpp-driver-tests")]
+        KafkaDriver::Cpp => test_cases::standard_test_suite(connection_builder).await,
+        KafkaDriver::Java => test_cases::minimal_test_suite(connection_builder).await,
+    }
 
     // Test invalid credentials
     // We perform the regular test suite first in an attempt to catch a scenario
@@ -351,9 +430,29 @@ async fn cluster_sasl_plain_multi_shotover(#[case] driver: KafkaDriver) {
     for shotover in shotovers {
         tokio::time::timeout(
             Duration::from_secs(10),
-            shotover.shutdown_and_then_consume_events(&[]),
+            shotover.shutdown_and_then_consume_events(&multi_shotover_events(driver)),
         )
         .await
         .expect("Shotover did not shutdown within 10s");
+    }
+}
+
+fn multi_shotover_events(driver: KafkaDriver) -> Vec<EventMatcher> {
+    #[allow(irrefutable_let_patterns)]
+    if let KafkaDriver::Java = driver {
+        // The java driver manages to send requests fast enough that shotover's find_coordinator_of_group method
+        // gets a COORDINATOR_NOT_AVAILABLE response from kafka.
+        // If the client were connecting directly to kafka it would get this same error, so it doesnt make sense for us to retry on error.
+        // Instead we just let shotover pass on the NOT_COORDINATOR error to the client which triggers this warning in the process.
+        // So we ignore the warning in this case.
+        vec![EventMatcher::new()
+            .with_level(Level::Warn)
+            .with_target("shotover::transforms::kafka::sink_cluster")
+            .with_message(
+                r#"no known coordinator for GroupId("some_group"), routing message to a random node so that a NOT_COORDINATOR or similar error is returned to the client"#,
+            )
+            .with_count(Count::Any)]
+    } else {
+        vec![]
     }
 }

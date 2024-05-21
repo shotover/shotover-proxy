@@ -1,4 +1,4 @@
-use super::{TransformContextBuilder, TransformContextConfig};
+use super::{DownChainProtocol, TransformContextBuilder, TransformContextConfig, UpChainProtocol};
 use crate::config::chain::TransformChainConfig;
 use crate::message::Messages;
 use crate::transforms::chain::{TransformChain, TransformChainBuilder};
@@ -92,6 +92,14 @@ impl TransformConfig for ParallelMapConfig {
             ordered: self.ordered_results,
         }))
     }
+
+    fn up_chain_protocol(&self) -> UpChainProtocol {
+        UpChainProtocol::Any
+    }
+
+    fn down_chain_protocol(&self) -> DownChainProtocol {
+        DownChainProtocol::Terminating
+    }
 }
 
 #[async_trait]
@@ -177,6 +185,7 @@ mod parallel_map_tests {
     use crate::transforms::null::NullSink;
     use crate::transforms::parallel_map::ParallelMapBuilder;
     use crate::transforms::TransformBuilder;
+    use pretty_assertions::assert_eq;
 
     #[tokio::test]
     async fn test_validate_invalid_chain() {

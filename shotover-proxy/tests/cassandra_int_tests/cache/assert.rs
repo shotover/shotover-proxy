@@ -1,3 +1,4 @@
+use pretty_assertions::assert_eq;
 use redis::Commands;
 use std::collections::HashSet;
 use test_helpers::connection::cassandra::{assert_query_result, CassandraConnection, ResultValue};

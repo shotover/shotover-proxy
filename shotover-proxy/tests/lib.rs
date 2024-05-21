@@ -22,3 +22,11 @@ pub fn shotover_process(topology_path: &str) -> ShotoverProcessBuilder {
         .with_bin(bin_path!("shotover-proxy"))
         .with_config("tests/test-configs/shotover-config/config1.yaml")
 }
+
+#[cfg(target_os = "macos")]
+#[cfg(feature = "redis")]
+const CONNECTION_REFUSED_OS_ERROR: i32 = 61;
+
+#[cfg(not(target_os = "macos"))]
+#[cfg(feature = "redis")]
+const CONNECTION_REFUSED_OS_ERROR: i32 = 111;

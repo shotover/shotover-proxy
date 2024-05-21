@@ -1,5 +1,5 @@
 use crate::shotover_process;
-use test_helpers::shotover_process::{Count, EventMatcher, Level};
+use test_helpers::shotover_process::{EventMatcher, Level};
 
 #[tokio::test]
 async fn test_early_shutdown_cassandra_source() {
@@ -107,15 +107,24 @@ Caused by:
             Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
             Non-terminating transform "DebugPrinter" is last in chain. Last transform must be terminating.
     "#),
-            // TODO: Investigate these
-            EventMatcher::new().with_level(Level::Error)
-                .with_message("failed response Couldn't send message to wrapped chain SendError(BufferedChainMessages { local_addr: 127.0.0.1:10000, messages: [], flush: true, return_chan: Some(Sender { inner: Some(Inner { state: State { is_complete: false, is_closed: false, is_rx_task_set: false, is_tx_task_set: false } }) }) })")
-                .with_count(Count::Any),
-            EventMatcher::new().with_level(Level::Error)
-                .with_target("shotover::transforms::distributed::tuneable_consistency_scatter")
-                .with_message("failed response channel closed")
-                .with_count(Count::Any),
         ],
     )
     .await;
+}
+
+#[tokio::test]
+async fn test_shotover_shutdown_when_protocol_mismatch() {
+    shotover_process("tests/test-configs/invalid_protocol_mismatch.yaml")
+        .assert_fails_to_start(&[EventMatcher::new()
+            .with_level(Level::Error)
+            .with_target("shotover::runner")
+            .with_message(
+                r#"Failed to start shotover
+
+Caused by:
+    Topology errors
+    Transform RedisSinkSingle requires upchain protocol to be one of [Redis] but was Cassandra
+    "#,
+            )])
+        .await;
 }
