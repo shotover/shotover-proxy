@@ -1,5 +1,6 @@
 mod assert;
 
+use pretty_assertions::assert_eq;
 use redis::Commands;
 use std::collections::HashSet;
 use test_helpers::connection::cassandra::{run_query, CassandraConnection, ResultValue};

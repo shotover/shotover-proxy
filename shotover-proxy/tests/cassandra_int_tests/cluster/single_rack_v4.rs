@@ -1,6 +1,7 @@
 use crate::cassandra_int_tests::cluster::run_topology_task;
 use cassandra_protocol::events::ServerEvent;
 use cassandra_protocol::frame::events::{StatusChange, StatusChangeType};
+use pretty_assertions::assert_eq;
 use std::net::SocketAddr;
 use std::time::Duration;
 use test_helpers::connection::cassandra::{

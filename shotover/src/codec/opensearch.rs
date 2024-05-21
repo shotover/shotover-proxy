@@ -387,6 +387,7 @@ mod opensearch_tests {
     };
     use bytes::{Bytes, BytesMut};
     use http::{Method, Version};
+    use pretty_assertions::assert_eq;
     use tokio_util::codec::{Decoder, Encoder};
 
     fn assert_decode_encode_request(raw_frame: &[u8]) {

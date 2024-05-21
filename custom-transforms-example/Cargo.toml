@@ -20,6 +20,7 @@ typetag.workspace = true
 test-helpers = {path = "../test-helpers"}
 tokio.workspace = true
 redis.workspace = true
+pretty_assertions.workspace = true
 
 [features]
 redis = ["shotover/redis"]

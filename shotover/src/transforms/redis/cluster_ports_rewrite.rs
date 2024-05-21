@@ -255,6 +255,7 @@ mod test {
     use crate::codec::redis::RedisDecoder;
     use crate::codec::Direction;
     use crate::transforms::redis::sink_cluster::parse_slots;
+    use pretty_assertions::assert_eq;
     use tokio_util::codec::Decoder;
 
     #[test]

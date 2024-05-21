@@ -653,6 +653,7 @@ mod test {
     use bytes::Bytes;
     use cql3_parser::common::Identifier;
     use metrics::counter;
+    use pretty_assertions::assert_eq;
     use std::collections::HashMap;
 
     #[test]

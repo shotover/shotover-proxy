@@ -83,6 +83,7 @@ mod test_token_map {
     use super::*;
     use hex_literal::hex;
     use itertools::Itertools;
+    use pretty_assertions::assert_eq;
     use uuid::Uuid;
 
     static NODE_1: Uuid = Uuid::from_bytes(hex!("2DD022D62937475489D602D2933A8F71"));

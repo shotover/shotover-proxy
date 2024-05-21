@@ -167,6 +167,7 @@ mod test {
     };
     use cassandra_protocol::frame::Version;
     use cassandra_protocol::query::QueryParams;
+    use pretty_assertions::assert_eq;
 
     fn create_query_message(query: &str) -> Message {
         Message::from_frame(Frame::Cassandra(CassandraFrame {
