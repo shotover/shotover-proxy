@@ -185,6 +185,7 @@ mod parallel_map_tests {
     use crate::transforms::null::NullSink;
     use crate::transforms::parallel_map::ParallelMapBuilder;
     use crate::transforms::TransformBuilder;
+    use pretty_assertions::assert_eq;
 
     #[tokio::test]
     async fn test_validate_invalid_chain() {

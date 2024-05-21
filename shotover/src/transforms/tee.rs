@@ -588,6 +588,7 @@ struct AppState {
 mod tests {
     use super::*;
     use crate::{frame::MessageType, transforms::null::NullSinkConfig};
+    use pretty_assertions::assert_eq;
 
     #[tokio::test]
     async fn test_validate_subchain_valid() {

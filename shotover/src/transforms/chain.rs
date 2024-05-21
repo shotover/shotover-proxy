@@ -386,6 +386,7 @@ mod chain_tests {
     use crate::transforms::chain::TransformChainBuilder;
     use crate::transforms::debug::printer::DebugPrinter;
     use crate::transforms::null::NullSink;
+    use pretty_assertions::assert_eq;
 
     #[tokio::test]
     async fn test_validate_invalid_chain() {
