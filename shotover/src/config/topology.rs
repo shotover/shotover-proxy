@@ -92,6 +92,7 @@ mod topology_tests {
             parallel_map::ParallelMapConfig, redis::cache::RedisConfig as RedisCacheConfig,
         },
     };
+    use pretty_assertions::assert_eq;
     use std::collections::HashMap;
     use tokio::sync::watch;
 

@@ -53,6 +53,7 @@ opensearch = "2.1.0"
 serde_json = "1.0.103"
 time = { version = "0.3.25" }
 shell-quote.workspace = true
+pretty_assertions.workspace = true
 
 [features]
 # Include WIP alpha transforms in the public API

@@ -6,6 +6,7 @@ use cdrs_tokio::frame::events::{
 };
 use futures::future::join_all;
 use futures::Future;
+use pretty_assertions::assert_eq;
 use rstest::rstest;
 use rstest_reuse::{self, *};
 use scylla::SessionBuilder;
