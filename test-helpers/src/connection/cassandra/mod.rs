@@ -7,6 +7,7 @@ pub use connection::{
     ProtocolVersion,
 };
 pub use cql_ws::CqlWsSession;
+use pretty_assertions::assert_eq;
 pub use result_value::ResultValue;
 
 /// Execute a `query` against the `session` and assert that the result rows match `expected_rows`

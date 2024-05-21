@@ -124,6 +124,7 @@ mod test {
     use super::*;
     use crate::transforms::chain::TransformChainBuilder;
     use crate::transforms::null::NullSink;
+    use pretty_assertions::assert_eq;
 
     #[test]
     fn test_validate() {

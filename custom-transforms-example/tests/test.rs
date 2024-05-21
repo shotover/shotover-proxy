@@ -1,3 +1,4 @@
+use pretty_assertions::assert_eq;
 use redis::aio::Connection;
 use redis::Cmd;
 use std::time::Duration;
