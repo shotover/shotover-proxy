@@ -7,8 +7,6 @@ use crate::message::Message;
 use crate::tls::TlsConnector;
 use crate::transforms::kafka::sink_cluster::SASL_SCRAM_MECHANISMS;
 use anyhow::{anyhow, Context, Result};
-use base64::engine::general_purpose;
-use base64::Engine;
 use bytes::Bytes;
 use kafka_protocol::messages::{ApiKey, BrokerId, RequestHeader, SaslAuthenticateRequest};
 use kafka_protocol::protocol::{Builder, StrBytes};
@@ -143,10 +141,9 @@ impl ConnectionFactory {
         }
 
         // SCRAM client-first
-        let hmac = general_purpose::STANDARD.encode(&scram_over_mtls.delegation_token.hmac);
         let mut scram = Scram::<Sha256>::new(
             scram_over_mtls.delegation_token.token_id.clone(),
-            hmac,
+            scram_over_mtls.delegation_token.hmac.to_string(),
             ChannelBinding::None,
             "tokenauth=true".to_owned(),
             String::new(),
