@@ -58,7 +58,8 @@ pub struct TransformChain {
 
     chain_total: Counter,
     chain_failures: Counter,
-    chain_batch_size: Histogram,
+    chain_requests_batch_size: Histogram,
+    chain_responses_batch_size: Histogram,
     chain_latency_seconds: Histogram,
 }
 
@@ -165,12 +166,21 @@ impl TransformChain {
         let start = Instant::now();
         chain_state.reset(&mut self.chain);
 
-        self.chain_batch_size
-            .record(chain_state.requests.len() as f64);
+        if !chain_state.requests.is_empty() {
+            self.chain_requests_batch_size
+                .record(chain_state.requests.len() as f64);
+        }
+
         let result = chain_state.call_next_transform().await;
         self.chain_total.increment(1);
-        if result.is_err() {
-            self.chain_failures.increment(1);
+        match &result {
+            Ok(responses) => {
+                if !responses.is_empty() {
+                    self.chain_responses_batch_size
+                        .record(responses.len() as f64);
+                }
+            }
+            Err(_) => self.chain_failures.increment(1),
         }
 
         self.chain_latency_seconds.record(start.elapsed());
@@ -221,7 +231,8 @@ pub struct TransformChainBuilder {
 
     chain_total: Counter,
     chain_failures: Counter,
-    chain_batch_size: Histogram,
+    chain_responses_batch_size: Histogram,
+    chain_requests_batch_size: Histogram,
 }
 
 impl TransformChainBuilder {
@@ -235,18 +246,20 @@ impl TransformChainBuilder {
             }
         ).collect();
 
-        let chain_batch_size =
-            histogram!("shotover_chain_messages_per_batch_count", "chain" => name);
+        let chain_requests_batch_size =
+            histogram!("shotover_chain_requests_batch_size", "chain" => name);
+        let chain_responses_batch_size =
+            histogram!("shotover_chain_responses_batch_size", "chain" => name);
         let chain_total = counter!("shotover_chain_total_count", "chain" => name);
         let chain_failures = counter!("shotover_chain_failures_count", "chain" => name);
-        // Cant register shotover_chain_latency_seconds because a unique one is created for each client ip address
 
         TransformChainBuilder {
             name,
             chain,
             chain_total,
             chain_failures,
-            chain_batch_size,
+            chain_requests_batch_size,
+            chain_responses_batch_size,
         }
     }
 
@@ -376,7 +389,8 @@ impl TransformChainBuilder {
             chain,
             chain_total: self.chain_total.clone(),
             chain_failures: self.chain_failures.clone(),
-            chain_batch_size: self.chain_batch_size.clone(),
+            chain_requests_batch_size: self.chain_requests_batch_size.clone(),
+            chain_responses_batch_size: self.chain_responses_batch_size.clone(),
             chain_latency_seconds: histogram!(
                 "shotover_chain_latency_seconds",
                 "chain" => self.name,
