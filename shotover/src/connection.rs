@@ -506,6 +506,7 @@ mod tests {
     use super::DummyResponseInserter;
     use crate::frame::{Frame, RedisFrame};
     use crate::message::Message;
+    use pretty_assertions::assert_eq;
 
     fn dummy() -> Message {
         Message::from_frame(Frame::Dummy)

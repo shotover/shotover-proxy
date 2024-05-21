@@ -620,6 +620,7 @@ mod system_peers {
 #[cfg(test)]
 mod test_system_keyspaces {
     use crate::transforms::cassandra::sink_cluster::node_pool::ReplicationStrategy;
+    use pretty_assertions::assert_eq;
 
     use super::*;
 

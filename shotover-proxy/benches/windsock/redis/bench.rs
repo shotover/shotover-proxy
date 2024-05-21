@@ -15,6 +15,7 @@ use fred::{
     rustls::{ClientConfig, RootCertStore},
 };
 use itertools::Itertools;
+use pretty_assertions::assert_eq;
 use rustls_pemfile::Item;
 use rustls_pki_types::{CertificateDer, PrivateKeyDer};
 use shotover::{

@@ -1,4 +1,5 @@
 use crate::shotover_process;
+use pretty_assertions::assert_eq;
 use test_helpers::connection::redis_connection;
 
 async fn test_pipeline(connection: &mut redis::aio::Connection) {

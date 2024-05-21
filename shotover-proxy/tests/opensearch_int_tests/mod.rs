@@ -13,6 +13,7 @@ use opensearch::{
     params::Refresh,
     BulkOperation, BulkParts, DeleteParts, Error, IndexParts, OpenSearch, SearchParts,
 };
+use pretty_assertions::assert_eq;
 use serde_json::{json, Value};
 use test_helpers::docker_compose::docker_compose;
 

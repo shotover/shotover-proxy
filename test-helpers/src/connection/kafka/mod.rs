@@ -1,3 +1,5 @@
+use pretty_assertions::assert_eq;
+
 #[cfg(feature = "kafka-cpp-driver-tests")]
 pub mod cpp;
 pub mod java;

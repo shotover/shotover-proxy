@@ -10,6 +10,7 @@ use async_trait::async_trait;
 use aws_throwaway::Ec2Instance;
 use futures::StreamExt;
 use itertools::Itertools;
+use pretty_assertions::assert_eq;
 use shotover::config::chain::TransformChainConfig;
 use shotover::sources::SourceConfig;
 use shotover::transforms::debug::force_parse::DebugForceEncodeConfig;
