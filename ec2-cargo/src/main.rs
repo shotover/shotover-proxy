@@ -66,7 +66,7 @@ until sudo apt-get update -qq
 do
   sleep 1
 done
-sudo apt-get install -y cmake pkg-config g++ libssl-dev librdkafka-dev uidmap unzip
+sudo apt-get install -y cmake pkg-config g++ libssl-dev librdkafka-dev unzip
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 
 curl -sSL https://get.docker.com/ | sudo sh

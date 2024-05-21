@@ -39,6 +39,9 @@ jobs:
         # so we should leave the cache alone so build_and_test can make more use of it.
       - name: Install ubuntu packages
         run: shotover-proxy/build/install_ubuntu_packages.sh
+      # This can be removed when we swap to aarch64 runners instead of cross compiling
+      - name: Install aarch64 gcc
+        run: sudo apt-get install -y gcc-aarch64-linux-gnu
       - name: Install cargo-hack
         uses: taiki-e/install-action@v2
         with:
