@@ -962,6 +962,7 @@ mod test {
     use cql3_parser::common::{FQName, Identifier, Operand, RelationElement, RelationOperator};
     use cql3_parser::insert::{Insert, InsertValues};
     use cql3_parser::select::{Select, SelectElement};
+    use pretty_assertions::assert_eq;
     use std::net::IpAddr;
     use std::str::FromStr;
     use uuid::Uuid;

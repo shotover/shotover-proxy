@@ -160,10 +160,11 @@ impl Encoder<Messages> for KafkaEncoder {
     type Error = CodecWriteError;
 
     fn encode(&mut self, item: Messages, dst: &mut BytesMut) -> Result<(), Self::Error> {
-        item.into_iter().try_for_each(|m| {
+        item.into_iter().try_for_each(|mut m| {
             let start = dst.len();
             m.ensure_message_type(MessageType::Kafka)
                 .map_err(CodecWriteError::Encoder)?;
+            let response_is_dummy = m.response_is_dummy();
             let id = m.id();
             let received_at = m.received_from_source_or_sink_at;
             let result = match m.into_encodable() {
@@ -175,7 +176,8 @@ impl Encoder<Messages> for KafkaEncoder {
             };
 
             // Skip if the message wrote nothing to dst, possibly due to being a dummy message.
-            if !dst[start..].is_empty() {
+            // or if it will generate a dummy response
+            if !dst[start..].is_empty() && !response_is_dummy {
                 if let Some(tx) = self.request_header_tx.as_ref() {
                     let api_key = i16::from_be_bytes(dst[start + 4..start + 6].try_into().unwrap());
                     let version = i16::from_be_bytes(dst[start + 6..start + 8].try_into().unwrap());

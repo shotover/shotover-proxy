@@ -3,9 +3,6 @@ sources:
   - Kafka:
       name: "kafka"
       listen_addr: "127.0.0.1:9192"
-      tls:
-        certificate_path: "tests/test-configs/kafka/tls/certs/localhost.crt"
-        private_key_path: "tests/test-configs/kafka/tls/certs/localhost.key"
       chain:
         - KafkaSinkCluster:
             shotover_nodes:
@@ -14,6 +11,13 @@ sources:
                 broker_id: 0
             local_shotover_broker_id: 0
             first_contact_points: ["172.16.1.2:9092"]
+            authorize_scram_over_mtls:
+              mtls_port_contact_points: ["172.16.1.2:9094", "172.16.1.3:9094", "172.16.1.4:9094"]
+              tls:
+                certificate_authority_path: "tests/test-configs/kafka/tls/certs/localhost_CA.crt"
+                certificate_path: "tests/test-configs/kafka/tls/certs/localhost.crt"
+                private_key_path: "tests/test-configs/kafka/tls/certs/localhost.key"
+                verify_hostname: true
             connect_timeout_ms: 3000
             tls:
               certificate_authority_path: "tests/test-configs/kafka/tls/certs/localhost_CA.crt"

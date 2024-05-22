@@ -37,7 +37,7 @@ pub enum KeyManagerConfig {
 }
 
 async fn config(region: String, endpoint: Option<String>) -> SdkConfig {
-    let builder = aws_config::defaults(BehaviorVersion::v2023_11_09())
+    let builder = aws_config::defaults(BehaviorVersion::latest())
         .region(RegionProviderChain::first_try(Region::new(region)));
     match endpoint {
         Some(endpoint) => builder.endpoint_url(endpoint).load().await,
@@ -124,6 +124,7 @@ pub struct KeyMaterial {
 #[cfg(test)]
 mod key_manager_tests {
     use super::*;
+    use pretty_assertions::assert_eq;
 
     #[test]
     fn test_valid_local() {

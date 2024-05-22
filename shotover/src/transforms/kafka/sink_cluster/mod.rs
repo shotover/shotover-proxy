@@ -17,13 +17,19 @@ use kafka_protocol::messages::metadata_response::MetadataResponseBroker;
 use kafka_protocol::messages::{
     ApiKey, BrokerId, FetchRequest, FindCoordinatorRequest, FindCoordinatorResponse, GroupId,
     HeartbeatRequest, JoinGroupRequest, MetadataRequest, MetadataResponse, OffsetFetchRequest,
-    RequestHeader, SaslHandshakeRequest, SyncGroupRequest, TopicName,
+    RequestHeader, SaslAuthenticateRequest, SaslAuthenticateResponse, SaslHandshakeRequest,
+    SyncGroupRequest, TopicName,
 };
 use kafka_protocol::protocol::{Builder, StrBytes};
+use kafka_protocol::ResponseError;
 use node::{ConnectionFactory, KafkaAddress, KafkaNode};
 use rand::rngs::SmallRng;
 use rand::seq::{IteratorRandom, SliceRandom};
 use rand::SeedableRng;
+use scram_over_mtls::{
+    AuthorizeScramOverMtls, AuthorizeScramOverMtlsBuilder, AuthorizeScramOverMtlsConfig,
+    OriginalScramState,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 use std::hash::Hasher;
@@ -34,6 +40,9 @@ use tokio::sync::RwLock;
 use uuid::Uuid;
 
 mod node;
+mod scram_over_mtls;
+
+const SASL_SCRAM_MECHANISMS: [&str; 2] = ["SCRAM-SHA-256", "SCRAM-SHA-512"];
 
 #[derive(thiserror::Error, Debug)]
 enum FindCoordinatorError {
@@ -48,9 +57,11 @@ enum FindCoordinatorError {
 pub struct KafkaSinkClusterConfig {
     pub first_contact_points: Vec<String>,
     pub shotover_nodes: Vec<ShotoverNodeConfig>,
+    pub local_shotover_broker_id: i32,
     pub connect_timeout_ms: u64,
     pub read_timeout: Option<u64>,
     pub tls: Option<TlsConnectorConfig>,
+    pub authorize_scram_over_mtls: Option<AuthorizeScramOverMtlsConfig>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -84,7 +95,7 @@ const NAME: &str = "KafkaSinkCluster";
 impl TransformConfig for KafkaSinkClusterConfig {
     async fn get_builder(
         &self,
-        transform_context: TransformContextConfig,
+        _transform_context: TransformContextConfig,
     ) -> Result<Box<dyn TransformBuilder>> {
         let tls = self.tls.clone().map(TlsConnector::new).transpose()?;
 
@@ -95,16 +106,27 @@ impl TransformConfig for KafkaSinkClusterConfig {
             .map(ShotoverNodeConfig::build)
             .collect();
         let mut shotover_nodes = shotover_nodes?;
+        let rack = shotover_nodes
+            .iter()
+            .find(|x| x.broker_id.0 == self.local_shotover_broker_id)
+            .map(|x| x.rack.clone())
+            .ok_or_else(|| {
+                anyhow!(
+                    "local_shotover_broker_id {} was missing in shotover_nodes",
+                    self.local_shotover_broker_id
+                )
+            })?;
         shotover_nodes.sort_by_key(|x| x.broker_id);
 
         Ok(Box::new(KafkaSinkClusterBuilder::new(
             self.first_contact_points.clone(),
+            &self.authorize_scram_over_mtls,
             shotover_nodes,
-            transform_context.chain_name,
+            rack,
             self.connect_timeout_ms,
             self.read_timeout,
             tls,
-        )))
+        )?))
     }
 
     fn up_chain_protocol(&self) -> UpChainProtocol {
@@ -120,6 +142,7 @@ pub struct KafkaSinkClusterBuilder {
     // contains address and port
     first_contact_points: Vec<String>,
     shotover_nodes: Vec<ShotoverNode>,
+    rack: StrBytes,
     connect_timeout: Duration,
     read_timeout: Option<Duration>,
     controller_broker: Arc<AtomicBrokerId>,
@@ -127,32 +150,40 @@ pub struct KafkaSinkClusterBuilder {
     topic_by_name: Arc<DashMap<TopicName, Topic>>,
     topic_by_id: Arc<DashMap<Uuid, Topic>>,
     nodes_shared: Arc<RwLock<Vec<KafkaNode>>>,
+    authorize_scram_over_mtls: Option<AuthorizeScramOverMtlsBuilder>,
     tls: Option<TlsConnector>,
 }
 
 impl KafkaSinkClusterBuilder {
     pub fn new(
         first_contact_points: Vec<String>,
+        authorize_scram_over_mtls: &Option<AuthorizeScramOverMtlsConfig>,
         shotover_nodes: Vec<ShotoverNode>,
-        _chain_name: String,
+        rack: StrBytes,
         connect_timeout_ms: u64,
         timeout: Option<u64>,
         tls: Option<TlsConnector>,
-    ) -> KafkaSinkClusterBuilder {
-        let receive_timeout = timeout.map(Duration::from_secs);
+    ) -> Result<KafkaSinkClusterBuilder> {
+        let read_timeout = timeout.map(Duration::from_secs);
+        let connect_timeout = Duration::from_millis(connect_timeout_ms);
 
-        KafkaSinkClusterBuilder {
+        Ok(KafkaSinkClusterBuilder {
             first_contact_points,
+            authorize_scram_over_mtls: authorize_scram_over_mtls
+                .as_ref()
+                .map(|x| x.get_builder(connect_timeout, read_timeout))
+                .transpose()?,
             shotover_nodes,
-            connect_timeout: Duration::from_millis(connect_timeout_ms),
-            read_timeout: receive_timeout,
+            rack,
+            connect_timeout,
+            read_timeout,
             controller_broker: Arc::new(AtomicBrokerId::new()),
             group_to_coordinator_broker: Arc::new(DashMap::new()),
             topic_by_name: Arc::new(DashMap::new()),
             topic_by_id: Arc::new(DashMap::new()),
             nodes_shared: Arc::new(RwLock::new(vec![])),
             tls,
-        }
+        })
     }
 }
 
@@ -161,6 +192,7 @@ impl TransformBuilder for KafkaSinkClusterBuilder {
         Box::new(KafkaSinkCluster {
             first_contact_points: self.first_contact_points.clone(),
             shotover_nodes: self.shotover_nodes.clone(),
+            _rack: self.rack.clone(),
             nodes: vec![],
             nodes_shared: self.nodes_shared.clone(),
             controller_broker: self.controller_broker.clone(),
@@ -181,6 +213,7 @@ impl TransformBuilder for KafkaSinkClusterBuilder {
             find_coordinator_requests: Default::default(),
             temp_responses_buffer: Default::default(),
             sasl_mechanism: None,
+            authorize_scram_over_mtls: self.authorize_scram_over_mtls.as_ref().map(|x| x.build()),
         })
     }
 
@@ -218,6 +251,8 @@ impl AtomicBrokerId {
 pub struct KafkaSinkCluster {
     first_contact_points: Vec<String>,
     shotover_nodes: Vec<ShotoverNode>,
+    // TODO: use this for rack aware routing
+    _rack: StrBytes,
     nodes: Vec<KafkaNode>,
     nodes_shared: Arc<RwLock<Vec<KafkaNode>>>,
     controller_broker: Arc<AtomicBrokerId>,
@@ -235,7 +270,8 @@ pub struct KafkaSinkCluster {
     find_coordinator_requests: MessageIdMap<FindCoordinator>,
     /// A temporary buffer used when receiving responses, only held onto in order to avoid reallocating.
     temp_responses_buffer: Vec<Message>,
-    sasl_mechanism: Option<StrBytes>,
+    sasl_mechanism: Option<String>,
+    authorize_scram_over_mtls: Option<AuthorizeScramOverMtls>,
 }
 
 /// State of a Request/Response is maintained by this enum.
@@ -330,7 +366,11 @@ impl KafkaSinkCluster {
             let address = &self.nodes.choose(&mut self.rng).unwrap().kafka_address;
             self.control_connection = Some(
                 self.connection_factory
-                    .create_connection(address)
+                    .create_connection(
+                        address,
+                        &self.authorize_scram_over_mtls,
+                        &self.sasl_mechanism,
+                    )
                     .await
                     .context("Failed to create control connection")?,
             );
@@ -340,8 +380,15 @@ impl KafkaSinkCluster {
         Ok(connection.recv().await?.remove(0))
     }
 
-    fn store_topic(&self, topics: &mut Vec<TopicName>, topic: TopicName) {
-        if self.topic_by_name.get(&topic).is_none() && !topics.contains(&topic) {
+    fn store_topic_names(&self, topics: &mut Vec<TopicName>, topic: TopicName) {
+        if self.topic_by_name.get(&topic).is_none() && !topics.contains(&topic) && !topic.is_empty()
+        {
+            topics.push(topic);
+        }
+    }
+
+    fn store_topic_ids(&self, topics: &mut Vec<Uuid>, topic: Uuid) {
+        if self.topic_by_id.get(&topic).is_none() && !topics.contains(&topic) && !topic.is_nil() {
             topics.push(topic);
         }
     }
@@ -379,14 +426,25 @@ impl KafkaSinkCluster {
                     })) => {
                         mechanism.as_str();
 
-                        self.sasl_mechanism = Some(mechanism.clone());
+                        self.sasl_mechanism = Some(mechanism.as_str().to_owned());
                         self.connection_factory.add_auth_request(request.clone());
                         handshake_request_count += 1;
                     }
                     Some(Frame::Kafka(KafkaFrame::Request {
-                        body: RequestBody::SaslAuthenticate(_),
+                        body:
+                            RequestBody::SaslAuthenticate(SaslAuthenticateRequest {
+                                auth_bytes, ..
+                            }),
                         ..
                     })) => {
+                        if let Some(scram_over_mtls) = &mut self.authorize_scram_over_mtls {
+                            if let Some(username) = get_username_from_scram_request(auth_bytes) {
+                                scram_over_mtls.delegation_token = scram_over_mtls
+                                    .token_task
+                                    .get_token_for_user(username)
+                                    .await?;
+                            }
+                        }
                         self.connection_factory.add_auth_request(request.clone());
                         handshake_request_count += 1;
                     }
@@ -397,7 +455,26 @@ impl KafkaSinkCluster {
                         handshake_request_count += 1;
                     }
                     _ => {
-                        // The client is no longer performing authentication
+                        // The client is no longer performing authentication, so consider auth completed
+
+                        if let Some(scram_over_mtls) = &self.authorize_scram_over_mtls {
+                            // When performing SCRAM over mTLS, we need this security check to ensure that the
+                            // client cannot access delegation tokens that it has not succesfully authenticated for.
+                            //
+                            // If the client were to send a request directly after the SCRAM requests,
+                            // without waiting for responses to those scram requests first,
+                            // this error would be triggered even if the SCRAM requests were succesful.
+                            // However that would be a violation of the SCRAM protocol as the client is supposed to check
+                            // the server's signature contained in the server's final message in order to authenticate the server.
+                            // So I dont think this problem is worth solving.
+                            if !matches!(
+                                scram_over_mtls.original_scram_state,
+                                OriginalScramState::AuthSuccess
+                            ) {
+                                return Err(anyhow!("Client attempted to send requests before a succesful auth was completed or after an unsuccesful auth"));
+                            }
+                        }
+
                         self.auth_complete = true;
                         break;
                     }
@@ -419,7 +496,8 @@ impl KafkaSinkCluster {
             }
         }
 
-        let mut topics = vec![];
+        let mut topic_names = vec![];
+        let mut topic_ids = vec![];
         let mut groups = vec![];
         for request in &mut requests {
             match request.frame() {
@@ -428,16 +506,16 @@ impl KafkaSinkCluster {
                     ..
                 })) => {
                     for (name, _) in &produce.topic_data {
-                        self.store_topic(&mut topics, name.clone());
+                        self.store_topic_names(&mut topic_names, name.clone());
                     }
                 }
                 Some(Frame::Kafka(KafkaFrame::Request {
                     body: RequestBody::Fetch(fetch),
                     ..
                 })) => {
-                    // TODO: Handle topics that only have an ID
                     for topic in &fetch.topics {
-                        self.store_topic(&mut topics, topic.topic.clone());
+                        self.store_topic_names(&mut topic_names, topic.topic.clone());
+                        self.store_topic_ids(&mut topic_ids, topic.topic_id);
                     }
                 }
                 Some(Frame::Kafka(KafkaFrame::Request {
@@ -464,7 +542,7 @@ impl KafkaSinkCluster {
                 Err(FindCoordinatorError::CoordinatorNotAvailable) => {
                     // We cant find the coordinator so do nothing so that the request will be routed to a random node:
                     // * If it happens to be the coordinator all is well
-                    // * If its not the coordinator then it will return a COORDINATOR_NOT_AVAILABLE message to
+                    // * If its not the coordinator then it will return a NOT_COORDINATOR message to
                     //   the client prompting it to retry the whole process again.
                 }
                 Err(FindCoordinatorError::Unrecoverable(err)) => Err(err)?,
@@ -472,13 +550,25 @@ impl KafkaSinkCluster {
         }
 
         // request and process metadata if we are missing topics or the controller broker id
-        if !topics.is_empty() || self.controller_broker.get().is_none() {
-            let mut metadata = self.get_metadata_of_topics(topics).await?;
+        if !topic_names.is_empty()
+            || !topic_ids.is_empty()
+            || self.controller_broker.get().is_none()
+        {
+            let mut metadata = self.get_metadata_of_topics(topic_names, topic_ids).await?;
             match metadata.frame() {
                 Some(Frame::Kafka(KafkaFrame::Response {
                     body: ResponseBody::Metadata(metadata),
                     ..
-                })) => self.process_metadata_response(metadata).await,
+                })) => {
+                    for topic in metadata.topics.values() {
+                        if let Some(err) = ResponseError::try_from_code(topic.error_code) {
+                            return Err(anyhow!(
+                                "Kafka responded to Metadata request with error {err:?}"
+                            ));
+                        }
+                    }
+                    self.process_metadata_response(metadata).await
+                }
                 other => {
                     return Err(anyhow!(
                         "Unexpected message returned to metadata request {other:?}"
@@ -628,7 +718,6 @@ impl KafkaSinkCluster {
             // This way of constructing topic_meta is kind of crazy, but it works around borrow checker limitations
             // Old clients only specify the topic name and some newer clients only specify the topic id.
             // So we need to check the id first and then fallback to the name.
-            let topic_name = &topic.topic;
             let topic_by_id = self.topic_by_id.get(&topic.topic_id);
             let topic_by_name;
             let mut topic_meta = topic_by_id.as_deref();
@@ -650,7 +739,8 @@ impl KafkaSinkCluster {
                             .broker_id
                     } else {
                         let partition_len = topic_meta.partitions.len();
-                        tracing::warn!("no known partition replica for {topic_name:?} at partition index {partition_index} out of {partition_len} partitions, routing message to a random node so that a NOT_LEADER_OR_FOLLOWER or similar error is returned to the client");
+                        let topic_name = Self::format_topic_name(&topic);
+                        tracing::warn!("no known partition replica for {topic_name} at partition index {partition_index} out of {partition_len} partitions, routing message to a random node so that a NOT_LEADER_OR_FOLLOWER or similar error is returned to the client");
                         BrokerId(-1)
                     };
                     let dest_topics = result.entry(destination).or_default();
@@ -666,7 +756,8 @@ impl KafkaSinkCluster {
                     }
                 }
             } else {
-                tracing::warn!("no known partition replica for {topic_name:?}, routing message to a random node so that a NOT_LEADER_OR_FOLLOWER or similar error is returned to the client");
+                let topic_name = Self::format_topic_name(&topic);
+                tracing::warn!("no known partition replica for {topic_name}, routing message to a random node so that a NOT_LEADER_OR_FOLLOWER or similar error is returned to the client");
                 let destination = BrokerId(-1);
                 let dest_topics = result.entry(destination).or_default();
                 dest_topics.push(topic);
@@ -674,6 +765,14 @@ impl KafkaSinkCluster {
         }
 
         result
+    }
+
+    fn format_topic_name(fetch_topic: &FetchTopic) -> String {
+        if fetch_topic.topic.0.is_empty() {
+            format!("topic with id {}", fetch_topic.topic_id)
+        } else {
+            format!("topic with name {:?}", fetch_topic.topic.0.as_str())
+        }
     }
 
     fn route_fetch_request(&mut self, mut message: Message) -> Result<()> {
@@ -784,35 +883,42 @@ impl KafkaSinkCluster {
             Some(Frame::Kafka(KafkaFrame::Response {
                 body: ResponseBody::FindCoordinator(coordinator),
                 ..
-            })) => {
-                if coordinator.error_code == 0 {
-                    Ok(KafkaNode::new(
-                        coordinator.node_id,
-                        KafkaAddress::new(coordinator.host.clone(), coordinator.port),
-                        None,
-                    ))
-                } else {
+            })) => match ResponseError::try_from_code(coordinator.error_code) {
+                None => Ok(KafkaNode::new(
+                    coordinator.node_id,
+                    KafkaAddress::new(coordinator.host.clone(), coordinator.port),
+                    None,
+                )),
+                Some(ResponseError::CoordinatorNotAvailable) => {
                     Err(FindCoordinatorError::CoordinatorNotAvailable)
                 }
-            }
+                Some(err) => Err(FindCoordinatorError::Unrecoverable(anyhow!(
+                    "Unexpected server error from FindCoordinator {err}"
+                ))),
+            },
             other => Err(anyhow!(
                 "Unexpected message returned to findcoordinator request {other:?}"
             ))?,
         }
     }
 
-    async fn get_metadata_of_topics(&mut self, topics: Vec<TopicName>) -> Result<Message> {
+    async fn get_metadata_of_topics(
+        &mut self,
+        topic_names: Vec<TopicName>,
+        topic_ids: Vec<Uuid>,
+    ) -> Result<Message> {
+        let api_version = if topic_ids.is_empty() { 4 } else { 12 };
         let request = Message::from_frame(Frame::Kafka(KafkaFrame::Request {
             header: RequestHeader::builder()
                 .request_api_key(ApiKey::MetadataKey as i16)
-                .request_api_version(4)
+                .request_api_version(api_version)
                 .correlation_id(0)
                 .build()
                 .unwrap(),
             body: RequestBody::Metadata(
                 MetadataRequest::builder()
                     .topics(Some(
-                        topics
+                        topic_names
                             .into_iter()
                             .map(|name| {
                                 MetadataRequestTopic::builder()
@@ -820,6 +926,13 @@ impl KafkaSinkCluster {
                                     .build()
                                     .unwrap()
                             })
+                            .chain(topic_ids.into_iter().map(|id| {
+                                MetadataRequestTopic::builder()
+                                    .name(None)
+                                    .topic_id(id)
+                                    .build()
+                                    .unwrap()
+                            }))
                             .collect(),
                     ))
                     .build()
@@ -876,7 +989,11 @@ impl KafkaSinkCluster {
                 .iter_mut()
                 .find(|x| x.broker_id == destination)
                 .unwrap()
-                .get_connection(&self.connection_factory)
+                .get_connection(
+                    &self.connection_factory,
+                    &self.authorize_scram_over_mtls,
+                    &self.sasl_mechanism,
+                )
                 .await?
                 .send(requests.requests)?;
         }
@@ -1034,20 +1151,31 @@ impl KafkaSinkCluster {
                     body: ResponseBody::SaslHandshake(handshake),
                     ..
                 })) => {
-                    // always remove scram from supported mechanisms
-                    const SASL_SCRAM_MECHANISMS: [&str; 2] = ["SCRAM-SHA-256", "SCRAM-SHA-512"];
-                    handshake
-                        .mechanisms
-                        .retain(|x| !SASL_SCRAM_MECHANISMS.contains(&x.as_str()));
+                    // If authorize_scram_over_mtls is disabled there is no way that scram can work through KafkaSinkCluster
+                    // since it is specifically designed such that replay attacks wont work.
+                    // So when authorize_scram_over_mtls is disabled report to the user that SCRAM is not enabled.
+                    if self.authorize_scram_over_mtls.is_none() {
+                        // remove scram from supported mechanisms
+                        handshake
+                            .mechanisms
+                            .retain(|x| !SASL_SCRAM_MECHANISMS.contains(&x.as_str()));
 
-                    // declare unsupported if the client requested SCRAM
-                    if let Some(sasl_mechanism) = &self.sasl_mechanism {
-                        if SASL_SCRAM_MECHANISMS.contains(&sasl_mechanism.as_str()) {
-                            handshake.error_code = 33; // UNSUPPORTED_SASL_MECHANISM
+                        // declare unsupported if the client requested SCRAM
+                        if let Some(sasl_mechanism) = &self.sasl_mechanism {
+                            if SASL_SCRAM_MECHANISMS.contains(&sasl_mechanism.as_str()) {
+                                handshake.error_code =
+                                    ResponseError::UnsupportedSaslMechanism.code();
+                            }
                         }
-                    }
 
-                    response.invalidate_cache();
+                        response.invalidate_cache();
+                    }
+                }
+                Some(Frame::Kafka(KafkaFrame::Response {
+                    body: ResponseBody::SaslAuthenticate(authenticate),
+                    ..
+                })) => {
+                    self.process_sasl_authenticate(authenticate).await?;
                 }
                 Some(Frame::Kafka(KafkaFrame::Response {
                     body: ResponseBody::Metadata(metadata),
@@ -1078,6 +1206,40 @@ impl KafkaSinkCluster {
             }
         }
 
+        Ok(())
+    }
+
+    async fn process_sasl_authenticate(
+        &mut self,
+        authenticate: &mut SaslAuthenticateResponse,
+    ) -> Result<()> {
+        if let Some(sasl_mechanism) = &self.sasl_mechanism {
+            if SASL_SCRAM_MECHANISMS.contains(&sasl_mechanism.as_str()) {
+                if let Some(scram_over_mtls) = &mut self.authorize_scram_over_mtls {
+                    match scram_over_mtls.original_scram_state {
+                        OriginalScramState::WaitingOnServerFirst => {
+                            scram_over_mtls.original_scram_state = if authenticate.error_code == 0 {
+                                OriginalScramState::WaitingOnServerFinal
+                            } else {
+                                OriginalScramState::AuthFailed
+                            };
+                        }
+                        OriginalScramState::WaitingOnServerFinal => {
+                            scram_over_mtls.original_scram_state = if authenticate.error_code == 0 {
+                                OriginalScramState::AuthSuccess
+                            } else {
+                                OriginalScramState::AuthFailed
+                            };
+                        }
+                        OriginalScramState::AuthSuccess | OriginalScramState::AuthFailed => {
+                            return Err(anyhow!(
+                                "SCRAM protocol does not allow a third sasl response"
+                            ));
+                        }
+                    }
+                }
+            }
+        }
         Ok(())
     }
 
@@ -1414,4 +1576,16 @@ struct Partition {
 struct FindCoordinator {
     key: StrBytes,
     key_type: i8,
+}
+
+fn get_username_from_scram_request(auth_request: &[u8]) -> Option<String> {
+    for s in std::str::from_utf8(auth_request).ok()?.split(',') {
+        let mut iter = s.splitn(2, '=');
+        if let (Some(key), Some(value)) = (iter.next(), iter.next()) {
+            if key == "n" {
+                return Some(value.to_owned());
+            }
+        }
+    }
+    None
 }

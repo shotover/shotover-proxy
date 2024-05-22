@@ -114,6 +114,7 @@ mod test {
     use crate::transforms::coalesce::Coalesce;
     use crate::transforms::loopback::Loopback;
     use crate::transforms::{Transform, Wrapper};
+    use pretty_assertions::assert_eq;
     use std::time::{Duration, Instant};
 
     #[tokio::test(flavor = "multi_thread")]

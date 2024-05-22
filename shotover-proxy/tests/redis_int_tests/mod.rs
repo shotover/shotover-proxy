@@ -1,8 +1,9 @@
-use crate::shotover_process;
+use crate::{shotover_process, CONNECTION_REFUSED_OS_ERROR};
 use basic_driver_tests::*;
 use fred::clients::RedisClient;
 use fred::interfaces::ClientLike;
 use fred::types::RedisConfig;
+use pretty_assertions::assert_eq;
 use redis::aio::Connection;
 use redis::Commands;
 
@@ -66,15 +67,15 @@ async fn passthrough_redis_down() {
             EventMatcher::new()
                 .with_level(Level::Error)
                 .with_target("shotover::server")
-                .with_message(
+                .with_message(&format!(
                     r#"connection was unexpectedly terminated
 
 Caused by:
     0: Chain failed to send and/or receive messages, the connection will now be closed.
     1: RedisSinkSingle transform failed
     2: Failed to connect to destination 127.0.0.1:1111
-    3: Connection refused (os error 111)"#,
-                )
+    3: Connection refused (os error {CONNECTION_REFUSED_OS_ERROR})"#
+                ))
                 .with_count(Count::Times(2)),
             // This error occurs due to `test_invalid_frame`, it opens a connection, sends an invalid frame which
             // fails at the codec stage and never reaches the transform.
@@ -83,14 +84,14 @@ Caused by:
             EventMatcher::new()
                 .with_level(Level::Error)
                 .with_target("shotover::server")
-                .with_message(
+                .with_message(&format!(
                     r#"encountered an error when flushing the chain redis for shutdown
 
 Caused by:
     0: RedisSinkSingle transform failed
     1: Failed to connect to destination 127.0.0.1:1111
-    2: Connection refused (os error 111)"#,
-                )
+    2: Connection refused (os error {CONNECTION_REFUSED_OS_ERROR})"#
+                ))
                 .with_count(Count::Times(1)),
             invalid_frame_event(),
         ])

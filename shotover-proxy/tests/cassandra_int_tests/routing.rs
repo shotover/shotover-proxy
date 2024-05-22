@@ -1,6 +1,8 @@
+use pretty_assertions::assert_eq;
 use test_helpers::connection::cassandra::{CassandraConnectionBuilder, CassandraDriver};
 
 mod single_key {
+    use super::assert_eq;
     use test_helpers::connection::cassandra::{run_query, CassandraConnection, ResultValue};
 
     pub async fn setup_schema(connection: &CassandraConnection) {
@@ -70,6 +72,8 @@ mod single_key {
 }
 
 mod compound_key {
+
+    use super::assert_eq;
     use test_helpers::connection::cassandra::{run_query, CassandraConnection, ResultValue};
 
     pub async fn setup_schema(connection: &CassandraConnection) {
@@ -173,6 +177,8 @@ mod compound_key {
 }
 
 mod composite_key {
+
+    use super::assert_eq;
     use rand::{distributions::Alphanumeric, Rng};
     use test_helpers::connection::cassandra::{
         run_query, CassandraConnection, Consistency, ResultValue,
