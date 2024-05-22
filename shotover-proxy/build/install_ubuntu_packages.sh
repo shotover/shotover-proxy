@@ -1,13 +1,19 @@
 #!/bin/bash
 
+# The cassandra integration tests also support other drivers that don't rely on external dependencies.
+# But if you want to test the cassandra-cpp driver, you will need to install it.
+#
+# Upstream installation information and dependencies for the Cassandra CPP driver can be found [here](https://docs.datastax.com/en/developer/cpp-driver/2.16/).
+#
+# However that is likely unusable because datastax do not ship packages for modern ubuntu so we have our own script which will compile, package and install the driver on a modern ubuntu.
+# So to install the driver on ubuntu run this script.
+
 set -e
 
 cd "$(dirname "$0")"
 
-sudo apt-get update
-sudo apt-get install -y gcc-aarch64-linux-gnu
-
 # Install dependencies of the cpp-driver even if they are already on CI so that we can run this locally
+sudo apt-get update
 sudo apt-get install -y libuv1 libuv1-dev cmake g++ libssl-dev zlib1g-dev
 
 # set VERSION to one of the tags here: https://github.com/datastax/cpp-driver/tags

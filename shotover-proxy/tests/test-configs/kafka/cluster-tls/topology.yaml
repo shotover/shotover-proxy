@@ -12,6 +12,7 @@ sources:
               - address: "127.0.0.1:9192"
                 rack: "rack0"
                 broker_id: 0
+            local_shotover_broker_id: 0
             first_contact_points: ["172.16.1.2:9092"]
             connect_timeout_ms: 3000
             tls:

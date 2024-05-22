@@ -36,13 +36,13 @@ fn criterion_benchmark(c: &mut Criterion) {
 
         encoder.set_startup_state_ext("NONE".to_string(), Version::V4);
 
+        let mut bytes = BytesMut::new();
         group.bench_function("encode_system.local_query_v4_no_compression", |b| {
             b.iter_batched(
                 || messages.clone(),
                 |messages| {
-                    let mut bytes = BytesMut::new();
+                    bytes.clear();
                     encoder.encode(messages, &mut bytes).unwrap();
-                    bytes
                 },
                 BatchSize::SmallInput,
             )
@@ -83,13 +83,13 @@ fn criterion_benchmark(c: &mut Criterion) {
 
         encoder.set_startup_state_ext("NONE".to_string(), Version::V4);
 
+        let mut bytes = BytesMut::new();
         group.bench_function("encode_system.local_query_v4_lz4_compression", |b| {
             b.iter_batched(
                 || messages.clone(),
                 |messages| {
-                    let mut bytes = BytesMut::new();
+                    bytes.clear();
                     encoder.encode(messages, &mut bytes).unwrap();
-                    bytes
                 },
                 BatchSize::SmallInput,
             )
@@ -127,13 +127,13 @@ fn criterion_benchmark(c: &mut Criterion) {
 
         encoder.set_startup_state_ext("NONE".to_string(), Version::V5);
 
+        let mut bytes = BytesMut::new();
         group.bench_function("encode_system.local_result_v4_no_compression", |b| {
             b.iter_batched(
                 || messages.clone(),
                 |messages| {
-                    let mut bytes = BytesMut::new();
+                    bytes.clear();
                     encoder.encode(messages, &mut bytes).unwrap();
-                    bytes
                 },
                 BatchSize::SmallInput,
             )
@@ -171,13 +171,13 @@ fn criterion_benchmark(c: &mut Criterion) {
 
         encoder.set_startup_state_ext("LZ4".to_string(), Version::V5);
 
+        let mut bytes = BytesMut::new();
         group.bench_function("encode_system.local_result_v4_lz4_compression", |b| {
             b.iter_batched(
                 || messages.clone(),
                 |messages| {
-                    let mut bytes = BytesMut::new();
+                    bytes.clear();
                     encoder.encode(messages, &mut bytes).unwrap();
-                    bytes
                 },
                 BatchSize::SmallInput,
             )
@@ -218,13 +218,13 @@ fn criterion_benchmark(c: &mut Criterion) {
 
         encoder.set_startup_state_ext("NONE".to_string(), Version::V5);
 
+        let mut bytes = BytesMut::new();
         group.bench_function("encode_system.local_query_v5_no_compression", |b| {
             b.iter_batched(
                 || messages.clone(),
                 |messages| {
-                    let mut bytes = BytesMut::new();
+                    bytes.clear();
                     encoder.encode(messages, &mut bytes).unwrap();
-                    bytes
                 },
                 BatchSize::SmallInput,
             )
@@ -265,13 +265,13 @@ fn criterion_benchmark(c: &mut Criterion) {
 
         encoder.set_startup_state_ext("LZ4".to_string(), Version::V5);
 
+        let mut bytes = BytesMut::new();
         group.bench_function("encode_system.local_query_v5_lz4_compression", |b| {
             b.iter_batched(
                 || messages.clone(),
                 |messages| {
-                    let mut bytes = BytesMut::new();
+                    bytes.clear();
                     encoder.encode(messages, &mut bytes).unwrap();
-                    bytes
                 },
                 BatchSize::SmallInput,
             )
@@ -309,13 +309,13 @@ fn criterion_benchmark(c: &mut Criterion) {
 
         encoder.set_startup_state_ext("NONE".to_string(), Version::V5);
 
+        let mut bytes = BytesMut::new();
         group.bench_function("encode_system.local_result_v5_no_compression", |b| {
             b.iter_batched(
                 || messages.clone(),
                 |messages| {
-                    let mut bytes = BytesMut::new();
+                    bytes.clear();
                     encoder.encode(messages, &mut bytes).unwrap();
-                    bytes
                 },
                 BatchSize::SmallInput,
             )
@@ -353,13 +353,13 @@ fn criterion_benchmark(c: &mut Criterion) {
 
         encoder.set_startup_state_ext("LZ4".to_string(), Version::V5);
 
+        let mut bytes = BytesMut::new();
         group.bench_function("encode_system.local_result_v5_lz4_compression", |b| {
             b.iter_batched(
                 || messages.clone(),
                 |messages| {
-                    let mut bytes = BytesMut::new();
+                    bytes.clear();
                     encoder.encode(messages, &mut bytes).unwrap();
-                    bytes
                 },
                 BatchSize::SmallInput,
             )

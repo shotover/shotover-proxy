@@ -98,6 +98,7 @@ impl KafkaBench {
                     rack: "rack1".into(),
                     broker_id: 0,
                 }],
+                local_shotover_broker_id: 0,
                 authorize_scram_over_mtls: None,
                 tls: None,
             }),

@@ -1,5 +1,5 @@
 use bytes::{Bytes, BytesMut};
-use criterion::{black_box, criterion_group, BatchSize, Criterion};
+use criterion::{criterion_group, BatchSize, Criterion};
 use shotover::codec::kafka::KafkaCodecBuilder;
 use shotover::codec::{CodecBuilder, CodecState, Direction};
 use shotover::message::Message;
@@ -87,6 +87,7 @@ fn criterion_benchmark(c: &mut Criterion) {
 
             let messages = vec![message];
 
+            let mut bytes = BytesMut::new();
             group.bench_function(format!("encode_{file_name}"), |b| {
                 b.iter_batched(
                     || {
@@ -97,9 +98,8 @@ fn criterion_benchmark(c: &mut Criterion) {
                         )
                     },
                     |((decoder, mut encoder), messages)| {
-                        let mut bytes = BytesMut::new();
+                        bytes.clear();
                         encoder.encode(messages, &mut bytes).unwrap();
-                        std::mem::drop(black_box(bytes));
                         (encoder, decoder)
                     },
                     BatchSize::SmallInput,
@@ -124,6 +124,7 @@ fn criterion_benchmark(c: &mut Criterion) {
             messages.push(message);
         }
 
+        let mut bytes = BytesMut::new();
         group.bench_function("encode_all", |b| {
             b.iter_batched(
                 || {
@@ -134,9 +135,8 @@ fn criterion_benchmark(c: &mut Criterion) {
                     )
                 },
                 |((decoder, mut encoder), messages)| {
-                    let mut bytes = BytesMut::new();
+                    bytes.clear();
                     encoder.encode(messages, &mut bytes).unwrap();
-                    std::mem::drop(black_box(bytes));
                     (encoder, decoder)
                 },
                 BatchSize::SmallInput,

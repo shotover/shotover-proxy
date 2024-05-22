@@ -16,5 +16,5 @@
     - [Aware client](./examples/redis-clustering-aware.md)
   - [Cassandra Cluster]()
     - [Shotover sidecars](./examples/cassandra-cluster-shotover-sidecar.md)
-- [Contributing](./contributing.md)
-  - [Debugging](debugging.md)
+- [Contributing](./dev-docs/contributing.md)
+  - [Debugging](./dev-docs/debugging.md)
