@@ -57,6 +57,7 @@ enum FindCoordinatorError {
 pub struct KafkaSinkClusterConfig {
     pub first_contact_points: Vec<String>,
     pub shotover_nodes: Vec<ShotoverNodeConfig>,
+    pub local_shotover_broker_id: i32,
     pub connect_timeout_ms: u64,
     pub read_timeout: Option<u64>,
     pub tls: Option<TlsConnectorConfig>,
@@ -94,7 +95,7 @@ const NAME: &str = "KafkaSinkCluster";
 impl TransformConfig for KafkaSinkClusterConfig {
     async fn get_builder(
         &self,
-        transform_context: TransformContextConfig,
+        _transform_context: TransformContextConfig,
     ) -> Result<Box<dyn TransformBuilder>> {
         let tls = self.tls.clone().map(TlsConnector::new).transpose()?;
 
@@ -105,13 +106,23 @@ impl TransformConfig for KafkaSinkClusterConfig {
             .map(ShotoverNodeConfig::build)
             .collect();
         let mut shotover_nodes = shotover_nodes?;
+        let rack = shotover_nodes
+            .iter()
+            .find(|x| x.broker_id.0 == self.local_shotover_broker_id)
+            .map(|x| x.rack.clone())
+            .ok_or_else(|| {
+                anyhow!(
+                    "local_shotover_broker_id {} was missing in shotover_nodes",
+                    self.local_shotover_broker_id
+                )
+            })?;
         shotover_nodes.sort_by_key(|x| x.broker_id);
 
         Ok(Box::new(KafkaSinkClusterBuilder::new(
             self.first_contact_points.clone(),
             &self.authorize_scram_over_mtls,
             shotover_nodes,
-            transform_context.chain_name,
+            rack,
             self.connect_timeout_ms,
             self.read_timeout,
             tls,
@@ -131,6 +142,7 @@ pub struct KafkaSinkClusterBuilder {
     // contains address and port
     first_contact_points: Vec<String>,
     shotover_nodes: Vec<ShotoverNode>,
+    rack: StrBytes,
     connect_timeout: Duration,
     read_timeout: Option<Duration>,
     controller_broker: Arc<AtomicBrokerId>,
@@ -139,7 +151,6 @@ pub struct KafkaSinkClusterBuilder {
     topic_by_id: Arc<DashMap<Uuid, Topic>>,
     nodes_shared: Arc<RwLock<Vec<KafkaNode>>>,
     authorize_scram_over_mtls: Option<AuthorizeScramOverMtlsBuilder>,
-
     tls: Option<TlsConnector>,
 }
 
@@ -148,7 +159,7 @@ impl KafkaSinkClusterBuilder {
         first_contact_points: Vec<String>,
         authorize_scram_over_mtls: &Option<AuthorizeScramOverMtlsConfig>,
         shotover_nodes: Vec<ShotoverNode>,
-        _chain_name: String,
+        rack: StrBytes,
         connect_timeout_ms: u64,
         timeout: Option<u64>,
         tls: Option<TlsConnector>,
@@ -163,6 +174,7 @@ impl KafkaSinkClusterBuilder {
                 .map(|x| x.get_builder(connect_timeout, read_timeout))
                 .transpose()?,
             shotover_nodes,
+            rack,
             connect_timeout,
             read_timeout,
             controller_broker: Arc::new(AtomicBrokerId::new()),
@@ -180,6 +192,7 @@ impl TransformBuilder for KafkaSinkClusterBuilder {
         Box::new(KafkaSinkCluster {
             first_contact_points: self.first_contact_points.clone(),
             shotover_nodes: self.shotover_nodes.clone(),
+            _rack: self.rack.clone(),
             nodes: vec![],
             nodes_shared: self.nodes_shared.clone(),
             controller_broker: self.controller_broker.clone(),
@@ -238,6 +251,8 @@ impl AtomicBrokerId {
 pub struct KafkaSinkCluster {
     first_contact_points: Vec<String>,
     shotover_nodes: Vec<ShotoverNode>,
+    // TODO: use this for rack aware routing
+    _rack: StrBytes,
     nodes: Vec<KafkaNode>,
     nodes_shared: Arc<RwLock<Vec<KafkaNode>>>,
     controller_broker: Arc<AtomicBrokerId>,
