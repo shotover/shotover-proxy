@@ -22,6 +22,7 @@ use kafka_protocol::messages::{
 };
 use kafka_protocol::protocol::{Builder, StrBytes};
 use kafka_protocol::ResponseError;
+use metrics::{counter, Counter};
 use node::{ConnectionFactory, KafkaAddress, KafkaNode};
 use rand::rngs::SmallRng;
 use rand::seq::{IteratorRandom, SliceRandom};
@@ -95,7 +96,7 @@ const NAME: &str = "KafkaSinkCluster";
 impl TransformConfig for KafkaSinkClusterConfig {
     async fn get_builder(
         &self,
-        _transform_context: TransformContextConfig,
+        transform_context: TransformContextConfig,
     ) -> Result<Box<dyn TransformBuilder>> {
         let tls = self.tls.clone().map(TlsConnector::new).transpose()?;
 
@@ -119,6 +120,7 @@ impl TransformConfig for KafkaSinkClusterConfig {
         shotover_nodes.sort_by_key(|x| x.broker_id);
 
         Ok(Box::new(KafkaSinkClusterBuilder::new(
+            transform_context.chain_name,
             self.first_contact_points.clone(),
             &self.authorize_scram_over_mtls,
             shotover_nodes,
@@ -152,10 +154,13 @@ pub struct KafkaSinkClusterBuilder {
     nodes_shared: Arc<RwLock<Vec<KafkaNode>>>,
     authorize_scram_over_mtls: Option<AuthorizeScramOverMtlsBuilder>,
     tls: Option<TlsConnector>,
+    out_of_rack_requests: Counter,
 }
 
 impl KafkaSinkClusterBuilder {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
+        chain_name: String,
         first_contact_points: Vec<String>,
         authorize_scram_over_mtls: &Option<AuthorizeScramOverMtlsConfig>,
         shotover_nodes: Vec<ShotoverNode>,
@@ -182,6 +187,7 @@ impl KafkaSinkClusterBuilder {
             topic_by_name: Arc::new(DashMap::new()),
             topic_by_id: Arc::new(DashMap::new()),
             nodes_shared: Arc::new(RwLock::new(vec![])),
+            out_of_rack_requests: counter!("shotover_out_of_rack_requests_count", "chain" => chain_name, "transform" => NAME),
             tls,
         })
     }
@@ -192,7 +198,7 @@ impl TransformBuilder for KafkaSinkClusterBuilder {
         Box::new(KafkaSinkCluster {
             first_contact_points: self.first_contact_points.clone(),
             shotover_nodes: self.shotover_nodes.clone(),
-            _rack: self.rack.clone(),
+            rack: self.rack.clone(),
             nodes: vec![],
             nodes_shared: self.nodes_shared.clone(),
             controller_broker: self.controller_broker.clone(),
@@ -214,6 +220,7 @@ impl TransformBuilder for KafkaSinkClusterBuilder {
             temp_responses_buffer: Default::default(),
             sasl_mechanism: None,
             authorize_scram_over_mtls: self.authorize_scram_over_mtls.as_ref().map(|x| x.build()),
+            out_of_rack_requests: self.out_of_rack_requests.clone(),
         })
     }
 
@@ -251,8 +258,7 @@ impl AtomicBrokerId {
 pub struct KafkaSinkCluster {
     first_contact_points: Vec<String>,
     shotover_nodes: Vec<ShotoverNode>,
-    // TODO: use this for rack aware routing
-    _rack: StrBytes,
+    rack: StrBytes,
     nodes: Vec<KafkaNode>,
     nodes_shared: Arc<RwLock<Vec<KafkaNode>>>,
     controller_broker: Arc<AtomicBrokerId>,
@@ -272,6 +278,7 @@ pub struct KafkaSinkCluster {
     temp_responses_buffer: Vec<Message>,
     sasl_mechanism: Option<String>,
     authorize_scram_over_mtls: Option<AuthorizeScramOverMtls>,
+    out_of_rack_requests: Counter,
 }
 
 /// State of a Request/Response is maintained by this enum.
@@ -734,12 +741,30 @@ impl KafkaSinkCluster {
                     let destination = if let Some(partition) =
                         topic_meta.partitions.get(partition_index)
                     {
-                        self.nodes
+                        if let Some(node) = self
+                            .nodes
                             .iter_mut()
-                            .filter(|node| partition.replica_nodes.contains(&node.broker_id))
+                            .filter(|node| {
+                                partition
+                                    .shotover_rack_replica_nodes
+                                    .contains(&node.broker_id)
+                            })
                             .choose(&mut self.rng)
-                            .unwrap()
-                            .broker_id
+                        {
+                            node.broker_id
+                        } else {
+                            self.out_of_rack_requests.increment(1);
+                            self.nodes
+                                .iter_mut()
+                                .filter(|node| {
+                                    partition
+                                        .external_rack_replica_nodes
+                                        .contains(&node.broker_id)
+                                })
+                                .choose(&mut self.rng)
+                                .unwrap()
+                                .broker_id
+                        }
                     } else {
                         let partition_len = topic_meta.partitions.len();
                         let topic_name = Self::format_topic_name(&topic);
@@ -1314,8 +1339,19 @@ impl KafkaSinkCluster {
                 .iter()
                 .map(|partition| Partition {
                     index: partition.partition_index,
-                    leader_id: *partition.leader_id,
-                    replica_nodes: partition.replica_nodes.iter().map(|x| x.0).collect(),
+                    leader_id: partition.leader_id,
+                    shotover_rack_replica_nodes: partition
+                        .replica_nodes
+                        .iter()
+                        .cloned()
+                        .filter(|replica_node_id| self.broker_within_rack(*replica_node_id))
+                        .collect(),
+                    external_rack_replica_nodes: partition
+                        .replica_nodes
+                        .iter()
+                        .cloned()
+                        .filter(|replica_node_id| !self.broker_within_rack(*replica_node_id))
+                        .collect(),
                 })
                 .collect();
             partitions.sort_by_key(|x| x.index);
@@ -1543,6 +1579,17 @@ impl KafkaSinkCluster {
             self.update_local_nodes().await;
         }
     }
+
+    fn broker_within_rack(&self, broker_id: BrokerId) -> bool {
+        self.nodes.iter().any(|node| {
+            node.broker_id == broker_id
+                && node
+                    .rack
+                    .as_ref()
+                    .map(|rack| rack == &self.rack)
+                    .unwrap_or(false)
+        })
+    }
 }
 
 fn hash_partition(topic_id: Uuid, partition_index: i32) -> usize {
@@ -1560,8 +1607,9 @@ struct Topic {
 #[derive(Debug, Clone)]
 struct Partition {
     index: i32,
-    leader_id: i32,
-    replica_nodes: Vec<i32>,
+    leader_id: BrokerId,
+    shotover_rack_replica_nodes: Vec<BrokerId>,
+    external_rack_replica_nodes: Vec<BrokerId>,
 }
 
 struct FindCoordinator {
