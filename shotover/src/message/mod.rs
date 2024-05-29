@@ -212,6 +212,25 @@ impl Message {
         }
     }
 
+    /// Same as [`Message::frame`] but consumes the message and returns an owned [`Frame`]
+    /// It is useful when the transform generates a request and consumes the response without the involvement of the client.
+    pub fn into_frame(mut self) -> Option<Frame> {
+        let (inner, result) = self.inner.take().unwrap().ensure_parsed(self.codec_state);
+        if let Err(err) = result {
+            // TODO: If we could include a stacktrace in this error it would be really helpful
+            tracing::error!("{:?}", err.context("Failed to parse frame"));
+            return None;
+        }
+
+        match inner {
+            MessageInner::RawBytes { .. } => {
+                unreachable!("Cannot be RawBytes because ensure_parsed was called")
+            }
+            MessageInner::Parsed { frame, .. } => Some(frame),
+            MessageInner::Modified { frame } => Some(frame),
+        }
+    }
+
     /// Return the shotover assigned MessageId
     pub fn id(&self) -> MessageId {
         self.id
