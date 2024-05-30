@@ -97,7 +97,7 @@ impl TransformConfig for KafkaSinkClusterConfig {
         &self,
         _transform_context: TransformContextConfig,
     ) -> Result<Box<dyn TransformBuilder>> {
-        let tls = self.tls.clone().map(TlsConnector::new).transpose()?;
+        let tls = self.tls.as_ref().map(TlsConnector::new).transpose()?;
 
         let shotover_nodes: Result<Vec<_>> = self
             .shotover_nodes

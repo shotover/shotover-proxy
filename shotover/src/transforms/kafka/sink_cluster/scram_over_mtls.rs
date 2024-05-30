@@ -151,7 +151,7 @@ impl AuthorizeScramOverMtlsConfig {
         read_timeout: Option<Duration>,
     ) -> Result<AuthorizeScramOverMtlsBuilder> {
         let mtls_connection_factory = ConnectionFactory::new(
-            Some(TlsConnector::new(self.tls.clone())?),
+            Some(TlsConnector::new(&self.tls)?),
             connect_timeout,
             read_timeout,
             Arc::new(Notify::new()),

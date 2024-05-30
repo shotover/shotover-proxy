@@ -75,7 +75,7 @@ impl<C: CodecBuilder + 'static, A: Authenticator<T>, T: Token> ConnectionPool<C,
         Ok(Self {
             connect_timeout,
             lanes: Arc::new(Mutex::new(HashMap::new())),
-            tls: tls.map(TlsConnector::new).transpose()?,
+            tls: tls.as_ref().map(TlsConnector::new).transpose()?,
             codec,
             authenticator,
         })
