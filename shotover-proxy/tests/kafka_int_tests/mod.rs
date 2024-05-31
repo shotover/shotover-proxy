@@ -265,11 +265,7 @@ async fn cluster_1_rack_multi_shotover(#[case] driver: KafkaDriver) {
     }
 
     let connection_builder = KafkaConnectionBuilder::new(driver, "127.0.0.1:9192");
-    match driver {
-        #[cfg(feature = "kafka-cpp-driver-tests")]
-        KafkaDriver::Cpp => test_cases::standard_test_suite(connection_builder).await,
-        KafkaDriver::Java => test_cases::minimal_test_suite(connection_builder).await,
-    }
+    test_cases::standard_test_suite(connection_builder).await;
 
     for shotover in shotovers {
         tokio::time::timeout(
@@ -306,11 +302,7 @@ async fn cluster_2_racks_multi_shotover(#[case] driver: KafkaDriver) {
     }
 
     let connection_builder = KafkaConnectionBuilder::new(driver, "127.0.0.1:9192");
-    match driver {
-        #[cfg(feature = "kafka-cpp-driver-tests")]
-        KafkaDriver::Cpp => test_cases::standard_test_suite(connection_builder).await,
-        KafkaDriver::Java => test_cases::minimal_test_suite(connection_builder).await,
-    }
+    test_cases::standard_test_suite(connection_builder).await;
 
     for shotover in shotovers {
         tokio::time::timeout(
@@ -410,11 +402,7 @@ async fn cluster_sasl_scram_over_mtls_multi_shotover(#[case] driver: KafkaDriver
 
     let connection_builder =
         KafkaConnectionBuilder::new(driver, "127.0.0.1:9192").use_sasl_scram("user", "password");
-    match driver {
-        #[cfg(feature = "kafka-cpp-driver-tests")]
-        KafkaDriver::Cpp => test_cases::standard_test_suite(connection_builder).await,
-        KafkaDriver::Java => test_cases::minimal_test_suite(connection_builder).await,
-    }
+    test_cases::standard_test_suite(connection_builder).await;
 
     for shotover in shotovers {
         tokio::time::timeout(
@@ -450,11 +438,7 @@ async fn cluster_sasl_plain_multi_shotover(#[case] driver: KafkaDriver) {
 
     let connection_builder =
         KafkaConnectionBuilder::new(driver, "127.0.0.1:9192").use_sasl_plain("user", "password");
-    match driver {
-        #[cfg(feature = "kafka-cpp-driver-tests")]
-        KafkaDriver::Cpp => test_cases::standard_test_suite(connection_builder).await,
-        KafkaDriver::Java => test_cases::minimal_test_suite(connection_builder).await,
-    }
+    test_cases::standard_test_suite(connection_builder).await;
 
     // Test invalid credentials
     // We perform the regular test suite first in an attempt to catch a scenario
