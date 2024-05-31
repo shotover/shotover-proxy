@@ -1,4 +1,4 @@
-use crate::shotover_process;
+use crate::{shotover_process, CONNECTION_REFUSED_OS_ERROR};
 use cassandra_protocol::frame::message_error::{ErrorBody, ErrorType};
 use cassandra_protocol::types::cassandra_type::CassandraType;
 use cdrs_tokio::frame::events::{
@@ -122,13 +122,13 @@ async fn passthrough_cassandra_down() {
         scylla::transport::errors::NewSessionError::IoError(err) => {
             assert_eq!(
                 format!("{err}"),
-                "No connections in the pool; last connection failed with: Database returned an error: Internal server error. This indicates a server-side bug, Error message: Internal shotover (or custom transform) bug: Chain failed to send and/or receive messages, the connection will now be closed.
+                format!("No connections in the pool; last connection failed with: Database returned an error: Internal server error. This indicates a server-side bug, Error message: Internal shotover (or custom transform) bug: Chain failed to send and/or receive messages, the connection will now be closed.
 
 Caused by:
     0: CassandraSinkSingle transform failed
     1: Failed to connect to destination 127.0.0.1:9043
-    2: Connection refused (os error 111)"
-            );
+    2: Connection refused (os error {CONNECTION_REFUSED_OS_ERROR})"
+            ));
         }
         _ => panic!("Unexpected error, was {err:?}"),
     }
@@ -137,15 +137,15 @@ Caused by:
         .shutdown_and_then_consume_events(&[EventMatcher::new()
             .with_level(Level::Error)
             .with_target("shotover::server")
-            .with_message(
+            .with_message(&format!(
                 r#"connection was unexpectedly terminated
 
 Caused by:
     0: Chain failed to send and/or receive messages, the connection will now be closed.
     1: CassandraSinkSingle transform failed
     2: Failed to connect to destination 127.0.0.1:9043
-    3: Connection refused (os error 111)"#,
-            )
+    3: Connection refused (os error {CONNECTION_REFUSED_OS_ERROR})"#,
+            ))
             .with_count(Count::Times(1))])
         .await;
 }
