@@ -117,7 +117,11 @@ async fn task(
             //   + From our testing delegation tokens should be propagated within 0.5s to 1s on unloaded kafka clusters of size 15 to 30 nodes.
             let token = tokio::time::timeout(
                 Duration::from_secs(120),
-                create_delegation_token_for_user(&mut connections, username.clone(), &mut rng),
+                create_delegation_token_for_user_with_wait(
+                    &mut connections,
+                    username.clone(),
+                    &mut rng,
+                ),
             )
             .await
             .with_context(|| format!("Delegation token creation for {username:?} timedout"))?
@@ -151,7 +155,7 @@ impl AuthorizeScramOverMtlsConfig {
         read_timeout: Option<Duration>,
     ) -> Result<AuthorizeScramOverMtlsBuilder> {
         let mtls_connection_factory = ConnectionFactory::new(
-            Some(TlsConnector::new(self.tls.clone())?),
+            Some(TlsConnector::new(&self.tls)?),
             connect_timeout,
             read_timeout,
             Arc::new(Notify::new()),
@@ -200,11 +204,26 @@ pub enum OriginalScramState {
     AuthSuccess,
 }
 
-pub async fn create_delegation_token_for_user(
+pub async fn create_delegation_token_for_user_with_wait(
     connections: &mut [SinkConnection],
     username: StrBytes,
     rng: &mut SmallRng,
 ) -> Result<DelegationToken> {
+    let create_response = create_delegation_token_for_user(connections, &username, rng).await?;
+    wait_until_delegation_token_ready_on_all_brokers(connections, &create_response, username)
+        .await?;
+
+    Ok(DelegationToken {
+        token_id: create_response.token_id.as_str().to_owned(),
+        hmac: StrBytes::from_string(general_purpose::STANDARD.encode(&create_response.hmac)),
+    })
+}
+
+pub async fn create_delegation_token_for_user(
+    connections: &mut [SinkConnection],
+    username: &StrBytes,
+    rng: &mut SmallRng,
+) -> Result<CreateDelegationTokenResponse> {
     let connection = connections.choose_mut(rng).unwrap();
     connection.send(vec![Message::from_frame(Frame::Kafka(
         KafkaFrame::Request {
@@ -222,32 +241,25 @@ pub async fn create_delegation_token_for_user(
             ),
         },
     ))])?;
-    let mut response = connection.recv().await?.pop().unwrap();
-    let create_response = if let Some(Frame::Kafka(KafkaFrame::Response {
-        body: ResponseBody::CreateDelegationToken(response),
-        ..
-    })) = response.frame()
-    {
-        if let Some(err) = ResponseError::try_from_code(response.error_code) {
-            return Err(anyhow!(
-                "kafka responded to CreateDelegationToken with error {err}",
-            ));
-        } else {
-            response
+
+    let response = connection.recv().await?.pop().unwrap();
+    match response.into_frame() {
+        Some(Frame::Kafka(KafkaFrame::Response {
+            body: ResponseBody::CreateDelegationToken(response),
+            ..
+        })) => {
+            if let Some(err) = ResponseError::try_from_code(response.error_code) {
+                Err(anyhow!(
+                    "kafka responded to CreateDelegationToken with error {err}",
+                ))
+            } else {
+                Ok(response)
+            }
         }
-    } else {
-        return Err(anyhow!(
+        response => Err(anyhow!(
             "Unexpected response to CreateDelegationToken {response:?}"
-        ));
-    };
-
-    wait_until_delegation_token_ready_on_all_brokers(connections, create_response, username)
-        .await?;
-
-    Ok(DelegationToken {
-        token_id: create_response.token_id.as_str().to_owned(),
-        hmac: StrBytes::from_string(general_purpose::STANDARD.encode(&create_response.hmac)),
-    })
+        )),
+    }
 }
 
 async fn wait_until_delegation_token_ready_on_all_brokers(

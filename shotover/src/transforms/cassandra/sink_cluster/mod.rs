@@ -72,7 +72,7 @@ impl TransformConfig for CassandraSinkClusterConfig {
         &self,
         transform_context: TransformContextConfig,
     ) -> Result<Box<dyn TransformBuilder>> {
-        let tls = self.tls.clone().map(TlsConnector::new).transpose()?;
+        let tls = self.tls.as_ref().map(TlsConnector::new).transpose()?;
         let mut shotover_nodes = self.shotover_nodes.clone();
         let index = self
             .shotover_nodes
