@@ -5,6 +5,7 @@ use pretty_assertions::assert_eq;
 use rstest::rstest;
 use std::time::Duration;
 use std::time::Instant;
+use test_cases::smoke_test;
 use test_cases::{assert_topic_creation_is_denied_due_to_acl, setup_basic_user_acls};
 use test_helpers::connection::kafka::{KafkaConnectionBuilder, KafkaDriver};
 use test_helpers::docker_compose::docker_compose;
@@ -382,6 +383,38 @@ async fn cluster_sasl_scram_over_mtls_single_shotover(#[case] driver: KafkaDrive
             .use_sasl_scram("basic_user", "basic_password");
         assert_topic_creation_is_denied_due_to_acl(&connection_basic).await;
         assert_connection_fails_with_incorrect_password(driver, "basic_user").await;
+
+        tokio::time::timeout(
+            Duration::from_secs(10),
+            shotover.shutdown_and_then_consume_events(&[]),
+        )
+        .await
+        .expect("Shotover did not shutdown within 10s");
+    }
+
+    // rerun same tests as before with different ordering
+    {
+        let shotover = shotover_process(
+            "tests/test-configs/kafka/cluster-sasl-scram-over-mtls/topology-single.yaml",
+        )
+        .start()
+        .await;
+
+        // admin requests sent by regular user are unsuccessful
+        assert_connection_fails_with_incorrect_password(driver, "basic_user").await;
+        let connection_basic = KafkaConnectionBuilder::new(driver, "127.0.0.1:9192")
+            .use_sasl_scram("basic_user", "basic_password");
+        assert_topic_creation_is_denied_due_to_acl(&connection_basic).await;
+        assert_connection_fails_with_incorrect_password(driver, "basic_user").await;
+
+        // admin requests sent by admin user are successful
+        // admin requests sent by regular user remain unsuccessful
+        let connection_super = KafkaConnectionBuilder::new(driver, "127.0.0.1:9192")
+            .use_sasl_scram("super_user", "super_password");
+        smoke_test(&connection_super).await;
+        assert_topic_creation_is_denied_due_to_acl(&connection_basic).await;
+        assert_connection_fails_with_incorrect_password(driver, "basic_user").await;
+        assert_connection_fails_with_incorrect_password(driver, "super_user").await;
 
         tokio::time::timeout(
             Duration::from_secs(10),
