@@ -23,6 +23,7 @@ use kafka_protocol::{
 use rand::SeedableRng;
 use rand::{rngs::SmallRng, seq::IteratorRandom};
 use serde::{Deserialize, Serialize};
+use std::collections::VecDeque;
 use std::{
     collections::HashMap,
     sync::Arc,
@@ -31,6 +32,9 @@ use std::{
 use tokio::sync::Notify;
 use tokio::sync::{mpsc, oneshot};
 use tokio_stream::StreamExt;
+
+// 1 day
+const TOKEN_LIFETIME: Duration = Duration::from_secs(60 * 60 * 24);
 
 pub struct TokenRequest {
     username: String,
@@ -87,71 +91,114 @@ async fn task(
 ) -> Result<()> {
     let mut rng = SmallRng::from_rng(rand::thread_rng())?;
     let mut username_to_token = HashMap::new();
-
+    let mut recreate_queue = RecreateTokenQueue::new();
     let mut nodes = vec![];
-    while let Some(request) = rx.recv().await {
-        let instant = Instant::now();
 
-        // initialize nodes if uninitialized
-        if nodes.is_empty() {
-            let mut futures = FuturesUnordered::new();
-            for address in mtls_addresses {
-                futures.push(async move {
-                    let connection = match mtls_connection_factory
-                        // Must be unauthed since mTLS is its own auth.
-                        .create_connection_unauthed(address)
-                        .await
-                    {
-                        Ok(connection) => Some(connection),
-                        Err(err) => {
-                            tracing::error!("Token Task: Failed to create connection for {address:?} during nodes list init {err}");
-                            None
-                        }
-                    };
-                    Node {
-                        connection,
-                        address: address.clone(),
-                    }
-                });
-            }
-            while let Some(node) = futures.next().await {
-                nodes.push(node);
-            }
-        }
-
-        let token = if let Some(token) = username_to_token.get(&request.username).cloned() {
-            token
-        } else {
-            let username = StrBytes::from_string(request.username.clone());
-            // We apply a 120s timeout to token creation:
-            // * It needs to be low enough to avoid the task getting permanently stuck if the cluster gets in a bad state and never fully propagates the token.
-            // * It needs to be high enough to avoid catching cases of slow token propagation.
-            //   + From our testing delegation tokens should be propagated within 0.5s to 1s on unloaded kafka clusters of size 15 to 30 nodes.
-            let token = tokio::time::timeout(
-                Duration::from_secs(120),
-                create_delegation_token_for_user_with_wait(
+    loop {
+        tokio::select! {
+            biased;
+            username = recreate_queue.next() => {
+                let instant = Instant::now();
+                let token = create_token_with_timeout(
                     &mut nodes,
-                    username.clone(),
                     &mut rng,
                     mtls_connection_factory,
-                ),
-            )
-            .await
-            .with_context(|| format!("Delegation token creation for {username:?} timedout"))?
-            .with_context(|| format!("Failed to create delegation token for {username:?}"))?;
+                    &username
+                ).await
+                .with_context(|| format!("Failed to recreate delegation token for {:?}", username))?;
+                username_to_token.insert(username.clone(), token);
+                recreate_queue.push(username.clone());
 
-            username_to_token.insert(request.username, token.clone());
-            tracing::info!(
-                "Delegation token for {username:?} created in {:?}",
-                instant.elapsed()
-            );
-            token
-        };
-        request.response_tx.send(token).ok();
+                tracing::info!(
+                    "Delegation token for {:?} recreated in {:?}",
+                    username,
+                    instant.elapsed()
+                );
+            }
+            result = rx.recv() => {
+                if let Some(request) = result {
+                    let instant = Instant::now();
+
+                    // initialize nodes if uninitialized
+                    if nodes.is_empty() {
+                        let mut futures = FuturesUnordered::new();
+                        for address in mtls_addresses {
+                            futures.push(async move {
+                                let connection = match mtls_connection_factory
+                                    // Must be unauthed since mTLS is its own auth.
+                                    .create_connection_unauthed(address)
+                                    .await
+                                {
+                                    Ok(connection) => Some(connection),
+                                    Err(err) => {
+                                        tracing::error!("Token Task: Failed to create connection for {address:?} during nodes list init {err}");
+                                        None
+                                    }
+                                };
+                                Node {
+                                    connection,
+                                    address: address.clone(),
+                                }
+                            });
+                        }
+                        while let Some(node) = futures.next().await {
+                            nodes.push(node);
+                        }
+                    }
+
+                    let token = if let Some(token) = username_to_token.get(&request.username).cloned() {
+                        token
+                    } else {
+                        let token = create_token_with_timeout(
+                            &mut nodes,
+                            &mut rng,
+                            mtls_connection_factory,
+                            &request.username
+                        ).await
+                        .with_context(|| format!("Failed to create delegation token for {:?}", request.username))?;
+
+                        username_to_token.insert(request.username.clone(), token.clone());
+                        recreate_queue.push(request.username.clone());
+                        tracing::info!(
+                            "Delegation token for {:?} created in {:?}",
+                            request.username,
+                            instant.elapsed()
+                        );
+                        token
+                    };
+                    request.response_tx.send(token).ok();
+                }
+                else {
+                    // rx returned None which indicates shotover is shutting down
+                    return Ok(())
+                }
+            }
+        }
     }
+}
 
-    // rx returned None which indicates shotover is shutting down
-    Ok(())
+async fn create_token_with_timeout(
+    nodes: &mut Vec<Node>,
+    rng: &mut SmallRng,
+    mtls_connection_factory: &ConnectionFactory,
+    username: &str,
+) -> Result<DelegationToken> {
+    let username = StrBytes::from_string(username.to_owned());
+    // We apply a 120s timeout to token creation:
+    // * It needs to be low enough to avoid the task getting permanently stuck if the cluster gets in a bad state and never fully propagates the token.
+    // * It needs to be high enough to avoid catching cases of slow token propagation.
+    //   + From our testing delegation tokens should be propagated within 0.5s to 1s on unloaded kafka clusters of size 15 to 30 nodes.
+    tokio::time::timeout(
+        Duration::from_secs(120),
+        create_delegation_token_for_user_with_wait(
+            nodes,
+            username.clone(),
+            rng,
+            mtls_connection_factory,
+        ),
+    )
+    .await
+    .with_context(|| format!("Delegation token creation for {username:?} timedout"))?
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -328,6 +375,7 @@ async fn create_delegation_token_for_user(
             body: RequestBody::CreateDelegationToken(
                 CreateDelegationTokenRequest::builder()
                     .owner_principal_type(Some(StrBytes::from_static_str("User")))
+                    .max_lifetime_ms(TOKEN_LIFETIME.as_millis() as i64)
                     .owner_principal_name(Some(username.clone()))
                     .build()
                     .unwrap(),
@@ -462,4 +510,46 @@ struct Node {
 pub struct DelegationToken {
     pub token_id: String,
     pub hmac: StrBytes,
+}
+
+struct RecreateTokenQueue {
+    queue: VecDeque<TokenToRecreate>,
+}
+
+impl RecreateTokenQueue {
+    fn new() -> Self {
+        RecreateTokenQueue {
+            queue: VecDeque::new(),
+        }
+    }
+
+    /// Returns when the next token needs to be recreated.
+    /// If there are no pending token recreations this method will never return.
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is cancel safe.
+    /// If it is cancelled, it is guaranteed that no element was removed from the queue.
+    async fn next(&mut self) -> String {
+        if let Some(token) = self.queue.front() {
+            tokio::time::sleep_until(token.recreate_at.into()).await;
+            self.queue.pop_front().unwrap().username
+        } else {
+            futures::future::pending::<()>().await;
+            unreachable!()
+        }
+    }
+
+    fn push(&mut self, username: String) {
+        self.queue.push_back(TokenToRecreate {
+            // recreate the token when it is halfway through its lifetime
+            recreate_at: Instant::now() + TOKEN_LIFETIME / 2,
+            username,
+        })
+    }
+}
+
+struct TokenToRecreate {
+    recreate_at: Instant,
+    username: String,
 }
