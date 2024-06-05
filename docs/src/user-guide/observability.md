@@ -1,6 +1,6 @@
 # Metrics
 
-This interface will serve Prometheus metrics from `/metrics`. The following metrics are included by default, others are transform specific.
+This optional interface will serve Prometheus metrics from `/metrics`. It will be disabled if the field `observability_interface` is not provided in `configuration.yaml`. The following metrics are included by default, others are transform specific.
 
 | Name                                       | Labels      | Data type               | Description                                                               |
 |--------------------------------------------|-------------|-------------------------|---------------------------------------------------------------------------|
