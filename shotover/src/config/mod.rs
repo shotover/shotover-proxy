@@ -10,7 +10,7 @@ pub mod topology;
 #[serde(deny_unknown_fields)]
 pub struct Config {
     pub main_log_level: String,
-    pub observability_interface: String,
+    pub observability_interface: Option<String>,
 }
 
 impl Config {

@@ -8,7 +8,7 @@ and a topology file specified by `--topology-file`
 The configuration file is used to change general behavior of Shotover. Currently it supports two values:
 
 * `main_log_level`
-* `observability_interface`
+* `observability_interface` (optional)
 
 ### main_log_level
 
@@ -16,7 +16,7 @@ This is a single string that you can use to configure logging with Shotover. It 
 
 ### observability_interface
 
-Shotover has an observability interface for you to collect Prometheus data from. This value will define the address and port for Shotover's observability interface. It is configured as a string in the format of `127.0.0.1:8080` for IPV4 addresses or `[2001:db8::1]:8080` for IPV6 addresses. More information is on the [observability page](./observability.md).
+Shotover has an optional observability interface for you to collect Prometheus data from. This value will define the address and port for Shotover's observability interface. It is configured as a string in the format of `127.0.0.1:8080` for IPV4 addresses or `[2001:db8::1]:8080` for IPV6 addresses. To disable metrics reporting for Shotover, do not specify this field. More information is on the [observability page](./observability.md).
 
 ## topology.yaml
 
