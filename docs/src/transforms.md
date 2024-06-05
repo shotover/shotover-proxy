@@ -246,7 +246,7 @@ This transform will route kafka messages to a broker within a Kafka cluster:
 
 * produce messages are routed to the partition leader
 * fetch messages are routed to a random partition replica
-* heartbeat, syncgroup, offsetfetch and joingroup are all routed to the group coordinator
+* heartbeat, syncgroup, offsetfetch, joingroup and leavegroup are all routed to the group coordinator
 * all other messages go to a random node.
 
 The fact that Shotover is routing to multiple destination nodes will be hidden from the client.
