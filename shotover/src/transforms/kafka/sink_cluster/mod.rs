@@ -16,9 +16,9 @@ use kafka_protocol::messages::metadata_request::MetadataRequestTopic;
 use kafka_protocol::messages::metadata_response::MetadataResponseBroker;
 use kafka_protocol::messages::{
     ApiKey, BrokerId, FetchRequest, FindCoordinatorRequest, FindCoordinatorResponse, GroupId,
-    HeartbeatRequest, JoinGroupRequest, MetadataRequest, MetadataResponse, OffsetFetchRequest,
-    RequestHeader, SaslAuthenticateRequest, SaslAuthenticateResponse, SaslHandshakeRequest,
-    SyncGroupRequest, TopicName,
+    HeartbeatRequest, JoinGroupRequest, LeaveGroupRequest, MetadataRequest, MetadataResponse,
+    OffsetFetchRequest, RequestHeader, SaslAuthenticateRequest, SaslAuthenticateResponse,
+    SaslHandshakeRequest, SyncGroupRequest, TopicName,
 };
 use kafka_protocol::protocol::{Builder, StrBytes};
 use kafka_protocol::ResponseError;
@@ -533,7 +533,8 @@ impl KafkaSinkCluster {
                         RequestBody::Heartbeat(HeartbeatRequest { group_id, .. })
                         | RequestBody::SyncGroup(SyncGroupRequest { group_id, .. })
                         | RequestBody::OffsetFetch(OffsetFetchRequest { group_id, .. })
-                        | RequestBody::JoinGroup(JoinGroupRequest { group_id, .. }),
+                        | RequestBody::JoinGroup(JoinGroupRequest { group_id, .. })
+                        | RequestBody::LeaveGroup(LeaveGroupRequest { group_id, .. }),
                     ..
                 })) => {
                     self.store_group(&mut groups, group_id.clone());
@@ -571,10 +572,18 @@ impl KafkaSinkCluster {
                     ..
                 })) => {
                     for topic in metadata.topics.values() {
-                        if let Some(err) = ResponseError::try_from_code(topic.error_code) {
-                            return Err(anyhow!(
-                                "Kafka responded to Metadata request with error {err:?}"
-                            ));
+                        match ResponseError::try_from_code(topic.error_code) {
+                            Some(ResponseError::UnknownTopicOrPartition) => {
+                                // We need to look up all topics sent to us by the client
+                                // but the client may request a topic that doesnt exist.
+                            }
+                            Some(err) => {
+                                // Some other kind of error, better to terminate the connection
+                                return Err(anyhow!(
+                                    "Kafka responded to Metadata request with error {err:?}"
+                                ));
+                            }
+                            None => {}
                         }
                     }
                     self.process_metadata_response(metadata).await
@@ -642,6 +651,13 @@ impl KafkaSinkCluster {
                     self.route_to_coordinator(message, group_id);
                 }
                 Some(Frame::Kafka(KafkaFrame::Request {
+                    body: RequestBody::LeaveGroup(leave_group),
+                    ..
+                })) => {
+                    let group_id = leave_group.group_id.clone();
+                    self.route_to_coordinator(message, group_id);
+                }
+                Some(Frame::Kafka(KafkaFrame::Request {
                     body: RequestBody::DeleteGroups(groups),
                     ..
                 })) => {
@@ -699,7 +715,12 @@ impl KafkaSinkCluster {
             let destination = match connection {
                 Some(connection) => connection,
                 None => {
-                    tracing::warn!("no known partition leader for {topic_name:?}, routing message to a random node so that a NOT_LEADER_OR_FOLLOWER or similar error is returned to the client");
+                    tracing::debug!(
+                        r#"no known partition leader for {topic_name:?}
+routing message to a random node so that:
+* if auto topic creation is enabled, auto topic creation will occur
+* if auto topic creation is disabled a NOT_LEADER_OR_FOLLOWER is returned to the client"#
+                    );
                     self.nodes.choose(&mut self.rng).unwrap().broker_id
                 }
             };
@@ -1346,40 +1367,41 @@ impl KafkaSinkCluster {
 
         self.controller_broker.set(metadata.controller_id);
 
-        for topic in &metadata.topics {
-            let mut partitions: Vec<_> = topic
-                .1
-                .partitions
-                .iter()
-                .map(|partition| Partition {
-                    index: partition.partition_index,
-                    leader_id: partition.leader_id,
-                    shotover_rack_replica_nodes: partition
-                        .replica_nodes
-                        .iter()
-                        .cloned()
-                        .filter(|replica_node_id| self.broker_within_rack(*replica_node_id))
-                        .collect(),
-                    external_rack_replica_nodes: partition
-                        .replica_nodes
-                        .iter()
-                        .cloned()
-                        .filter(|replica_node_id| !self.broker_within_rack(*replica_node_id))
-                        .collect(),
-                })
-                .collect();
-            partitions.sort_by_key(|x| x.index);
-            if !topic.0.is_empty() {
-                self.topic_by_name.insert(
-                    topic.0.clone(),
-                    Topic {
-                        partitions: partitions.clone(),
-                    },
-                );
-            }
-            if !topic.1.topic_id.is_nil() {
-                self.topic_by_id
-                    .insert(topic.1.topic_id, Topic { partitions });
+        for (topic_name, topic) in &metadata.topics {
+            if ResponseError::try_from_code(topic.error_code).is_none() {
+                let mut partitions: Vec<_> = topic
+                    .partitions
+                    .iter()
+                    .map(|partition| Partition {
+                        index: partition.partition_index,
+                        leader_id: partition.leader_id,
+                        shotover_rack_replica_nodes: partition
+                            .replica_nodes
+                            .iter()
+                            .cloned()
+                            .filter(|replica_node_id| self.broker_within_rack(*replica_node_id))
+                            .collect(),
+                        external_rack_replica_nodes: partition
+                            .replica_nodes
+                            .iter()
+                            .cloned()
+                            .filter(|replica_node_id| !self.broker_within_rack(*replica_node_id))
+                            .collect(),
+                    })
+                    .collect();
+                partitions.sort_by_key(|x| x.index);
+                if !topic_name.is_empty() {
+                    self.topic_by_name.insert(
+                        topic_name.clone(),
+                        Topic {
+                            partitions: partitions.clone(),
+                        },
+                    );
+                }
+                if !topic.topic_id.is_nil() {
+                    self.topic_by_id
+                        .insert(topic.topic_id, Topic { partitions });
+                }
             }
         }
     }
