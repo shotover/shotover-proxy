@@ -16,9 +16,9 @@ use kafka_protocol::messages::metadata_request::MetadataRequestTopic;
 use kafka_protocol::messages::metadata_response::MetadataResponseBroker;
 use kafka_protocol::messages::{
     ApiKey, BrokerId, FetchRequest, FindCoordinatorRequest, FindCoordinatorResponse, GroupId,
-    HeartbeatRequest, JoinGroupRequest, MetadataRequest, MetadataResponse, OffsetFetchRequest,
-    RequestHeader, SaslAuthenticateRequest, SaslAuthenticateResponse, SaslHandshakeRequest,
-    SyncGroupRequest, TopicName,
+    HeartbeatRequest, JoinGroupRequest, LeaveGroupRequest, MetadataRequest, MetadataResponse,
+    OffsetFetchRequest, RequestHeader, SaslAuthenticateRequest, SaslAuthenticateResponse,
+    SaslHandshakeRequest, SyncGroupRequest, TopicName,
 };
 use kafka_protocol::protocol::{Builder, StrBytes};
 use kafka_protocol::ResponseError;
@@ -533,7 +533,8 @@ impl KafkaSinkCluster {
                         RequestBody::Heartbeat(HeartbeatRequest { group_id, .. })
                         | RequestBody::SyncGroup(SyncGroupRequest { group_id, .. })
                         | RequestBody::OffsetFetch(OffsetFetchRequest { group_id, .. })
-                        | RequestBody::JoinGroup(JoinGroupRequest { group_id, .. }),
+                        | RequestBody::JoinGroup(JoinGroupRequest { group_id, .. })
+                        | RequestBody::LeaveGroup(LeaveGroupRequest { group_id, .. }),
                     ..
                 })) => {
                     self.store_group(&mut groups, group_id.clone());
@@ -647,6 +648,13 @@ impl KafkaSinkCluster {
                     ..
                 })) => {
                     let group_id = join_group.group_id.clone();
+                    self.route_to_coordinator(message, group_id);
+                }
+                Some(Frame::Kafka(KafkaFrame::Request {
+                    body: RequestBody::LeaveGroup(leave_group),
+                    ..
+                })) => {
+                    let group_id = leave_group.group_id.clone();
                     self.route_to_coordinator(message, group_id);
                 }
                 Some(Frame::Kafka(KafkaFrame::Request {
