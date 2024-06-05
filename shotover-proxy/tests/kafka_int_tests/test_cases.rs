@@ -1,6 +1,7 @@
 use test_helpers::connection::kafka::{
-    AlterConfig, ConfigEntry, ExpectedResponse, KafkaConnectionBuilder, NewPartition, NewTopic,
-    Record, ResourceSpecifier,
+    Acl, AclOperation, AclPermissionType, AlterConfig, ConfigEntry, ExpectedResponse,
+    KafkaConnectionBuilder, NewPartition, NewTopic, Record, ResourcePatternType, ResourceSpecifier,
+    ResourceType,
 };
 
 async fn admin_setup(connection_builder: &KafkaConnectionBuilder) {
@@ -242,4 +243,50 @@ pub async fn standard_test_suite(connection_builder: KafkaConnectionBuilder) {
     produce_consume_partitions3(&connection_builder).await;
     produce_consume_acks0(&connection_builder).await;
     connection_builder.admin_cleanup().await;
+}
+
+pub async fn setup_basic_user_acls(connection: &KafkaConnectionBuilder, username: &str) {
+    let admin = connection.connect_admin().await;
+    admin
+        .create_acls(vec![Acl {
+            resource_type: ResourceType::Topic,
+            resource_name: "*".to_owned(),
+            resource_pattern_type: ResourcePatternType::Literal,
+            principal: format!("User:{username}"),
+            host: "*".to_owned(),
+            operation: AclOperation::Describe,
+            permission_type: AclPermissionType::Allow,
+        }])
+        .await;
+}
+
+/// Invariants:
+/// * The passed connection is a user setup with the ACL's of `setup_basic_user_acls`
+/// Assertions:
+/// * Asserts that the user cannot perform the admin operation of creating new topics (not allowed by ACL)
+///     + Asserts that the topic was not created as a result of the failed topic creation.
+/// * Asserts that the user can perform the describe operation on topics (explicitly allowed by ACL)
+pub async fn assert_topic_creation_is_denied_due_to_acl(connection: &KafkaConnectionBuilder) {
+    let admin = connection.connect_admin().await;
+    // attempt to create topic and get auth failure due to missing ACL
+    assert_eq!(
+        admin
+            .create_topics_fallible(&[NewTopic {
+                name: "acl_check_topic",
+                num_partitions: 1,
+                replication_factor: 1,
+            }])
+            .await
+            .unwrap_err()
+            .to_string(),
+        "org.apache.kafka.common.errors.TopicAuthorizationException: Authorization failed.\n"
+    );
+
+    // attempt to describe topic:
+    // * The request succeeds because user has AclOperation::Describe.
+    // * But no topic is found since the topic creation was denied.
+    assert_eq!(
+        admin.describe_topic("acl_check_topic").await.unwrap_err().to_string(),
+        "org.apache.kafka.common.errors.UnknownTopicOrPartitionException: This server does not host this topic-partition.\n"
+    )
 }

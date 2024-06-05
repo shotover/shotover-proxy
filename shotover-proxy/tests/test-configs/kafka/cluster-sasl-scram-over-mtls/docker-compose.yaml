@@ -22,8 +22,8 @@ services:
       KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:SSL,BROKER:SASL_SSL,SHOTOVER_MTLS:SSL"
       KAFKA_CFG_ADVERTISED_LISTENERS: "BROKER://172.16.1.2:9092,SHOTOVER_MTLS://172.16.1.2:9094"
       KAFKA_CFG_DELEGATION_TOKEN_MASTER_KEY: THE_MASTER_KEY
-      KAFKA_CLIENT_USERS: "user"
-      KAFKA_CLIENT_PASSWORDS: "password"
+      KAFKA_CLIENT_USERS: "super_user,basic_user"
+      KAFKA_CLIENT_PASSWORDS: "super_password,basic_password"
       KAFKA_CFG_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
       KAFKA_CFG_SASL_MECHANISM_CONTROLLER_PROTOCOL: "PLAIN"
       KAFKA_CFG_INTER_BROKER_LISTENER_NAME: "BROKER"
@@ -37,7 +37,7 @@ services:
       # Give the following super user access:
       # * the user named `user`
       # * any clients connected via a TLS certificate of `O=ShotoverTestCertificate,CN=Generic-Cert`
-      KAFKA_CFG_SUPER_USERS: "User:user;User:O=ShotoverTestCertificate,CN=Generic-Cert"
+      KAFKA_CFG_SUPER_USERS: "User:super_user;User:O=ShotoverTestCertificate,CN=Generic-Cert"
     volumes: &volumes
       - type: tmpfs
         target: /bitnami/kafka
