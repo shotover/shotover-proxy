@@ -328,7 +328,9 @@ If SCRAM authentication against the first kafka broker fails, shotover will term
     #    certificate_path: "tls/mtls_localhost.crt"
     #    private_key_path: "tls/mtls_localhost.key"
     #    verify_hostname: true
-
+    #  # The lifetime that delegation tokens will be created with.
+    #  # Delegation tokens will automatically be recreated after they have passed half of their lifetime.
+    #  delegation_token_lifetime_seconds: 86400 # 1 day
 ```
 
 ### KafkaSinkSingle

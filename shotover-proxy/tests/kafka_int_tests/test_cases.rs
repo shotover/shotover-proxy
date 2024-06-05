@@ -57,7 +57,7 @@ async fn admin_setup(connection_builder: &KafkaConnectionBuilder) {
     admin.delete_topics(&["to_delete"]).await
 }
 
-async fn produce_consume_partitions1(
+pub async fn produce_consume_partitions1(
     connection_builder: &KafkaConnectionBuilder,
     topic_name: &str,
 ) {
@@ -236,12 +236,12 @@ async fn produce_consume_acks0(connection_builder: &KafkaConnectionBuilder) {
     }
 }
 
-pub async fn standard_test_suite(connection_builder: KafkaConnectionBuilder) {
-    admin_setup(&connection_builder).await;
-    produce_consume_partitions1(&connection_builder, "partitions1").await;
-    produce_consume_partitions1(&connection_builder, "unknown_topic").await;
-    produce_consume_partitions3(&connection_builder).await;
-    produce_consume_acks0(&connection_builder).await;
+pub async fn standard_test_suite(connection_builder: &KafkaConnectionBuilder) {
+    admin_setup(connection_builder).await;
+    produce_consume_partitions1(connection_builder, "partitions1").await;
+    produce_consume_partitions1(connection_builder, "unknown_topic").await;
+    produce_consume_partitions3(connection_builder).await;
+    produce_consume_acks0(connection_builder).await;
     connection_builder.admin_cleanup().await;
 }
 
