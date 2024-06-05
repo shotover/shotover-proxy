@@ -557,7 +557,6 @@ impl KafkaAdminJava {
             .iter()
             .map(|acl| {
                 let resource_type_field = match acl.resource_type {
-                    ResourceType::Any => "ANY",
                     ResourceType::Cluster => "CLUSTER",
                     ResourceType::DelegationToken => "DELEGATION_TOKEN",
                     ResourceType::Group => "GROUP",

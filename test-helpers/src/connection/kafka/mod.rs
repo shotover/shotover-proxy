@@ -298,7 +298,6 @@ pub struct Acl {
 
 /// https://docs.confluent.io/platform/current/clients/javadocs/javadoc/org/apache/kafka/common/resource/ResourceType.html
 pub enum ResourceType {
-    Any,
     Cluster,
     DelegationToken,
     Group,

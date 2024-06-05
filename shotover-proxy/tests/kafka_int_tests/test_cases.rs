@@ -270,7 +270,6 @@ pub async fn assert_topic_creation_is_denied_due_to_acl(connection: &KafkaConnec
     let admin = connection.connect_admin().await;
     // attempt to create topic and get auth failure due to missing ACL
     assert_eq!(
-        connection.assert_admin_error().await.to_string(),
         admin
             .create_topics_fallible(&[NewTopic {
                 name: "acl_check_topic",
