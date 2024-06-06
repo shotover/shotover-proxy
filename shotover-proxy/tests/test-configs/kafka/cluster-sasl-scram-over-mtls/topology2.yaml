@@ -25,6 +25,7 @@ sources:
                 certificate_path: "tests/test-configs/kafka/tls/certs/localhost.crt"
                 private_key_path: "tests/test-configs/kafka/tls/certs/localhost.key"
                 verify_hostname: true
+              delegation_token_lifetime_seconds: 15
             connect_timeout_ms: 3000
             tls:
               certificate_authority_path: "tests/test-configs/kafka/tls/certs/localhost_CA.crt"
