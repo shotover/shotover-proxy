@@ -45,6 +45,8 @@ async fn passthrough_standard() {
     shotover
         .shutdown_and_then_consume_events(&[invalid_frame_event()])
         .await;
+
+    assert_failed_requests_metric_is_incremented_on_error_response().await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -323,9 +325,7 @@ async fn cluster_dr() {
     shotover.shutdown_and_then_consume_events(&[]).await;
 }
 
-#[tokio::test(flavor = "multi_thread")]
-async fn test_failed_requests_metric_sink_single() {
-    let _compose = docker_compose("tests/test-configs/redis/passthrough/docker-compose.yaml");
+pub async fn assert_failed_requests_metric_is_incremented_on_error_response() {
     let shotover = shotover_process("tests/test-configs/redis/passthrough/topology.yaml")
         .start()
         .await;
@@ -341,32 +341,6 @@ async fn test_failed_requests_metric_sink_single() {
     // because those commands are not available in the currently used redis version.
     assert_metrics_key_value(
         r#"shotover_failed_requests_count{chain="redis",transform="RedisSinkSingle"}"#,
-        "3",
-    )
-    .await;
-
-    shotover.shutdown_and_then_consume_events(&[]).await;
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn test_failed_requests_metric_sink_cluster() {
-    let _compose = docker_compose("tests/test-configs/redis/cluster-handling/docker-compose.yaml");
-    let shotover = shotover_process("tests/test-configs/redis/cluster-handling/topology.yaml")
-        .start()
-        .await;
-
-    let mut connection = redis_connection::new_async("127.0.0.1", 6379).await;
-
-    redis::cmd("INVALID_COMMAND")
-        .arg("foo")
-        .query_async::<_, ()>(&mut connection)
-        .await
-        .unwrap_err();
-
-    // Redis client driver initialization sends 2 CLIENT SETINFO commands which trigger 2 errors
-    // because those commands are not available in the currently used redis version.
-    assert_metrics_key_value(
-        r#"shotover_failed_requests_count{chain="redis",transform="RedisSinkCluster"}"#,
         "3",
     )
     .await;
