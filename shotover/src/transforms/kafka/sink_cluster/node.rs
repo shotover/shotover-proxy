@@ -8,6 +8,7 @@ use crate::tls::TlsConnector;
 use crate::transforms::kafka::sink_cluster::SASL_SCRAM_MECHANISMS;
 use anyhow::{anyhow, Context, Result};
 use bytes::Bytes;
+use derivative::Derivative;
 use kafka_protocol::messages::{ApiKey, BrokerId, RequestHeader, SaslAuthenticateRequest};
 use kafka_protocol::protocol::{Builder, StrBytes};
 use kafka_protocol::ResponseError;
@@ -256,10 +257,13 @@ impl KafkaAddress {
     }
 }
 
+#[derive(Derivative)]
+#[derivative(Debug)]
 pub struct KafkaNode {
     pub broker_id: BrokerId,
     pub rack: Option<StrBytes>,
     pub kafka_address: KafkaAddress,
+    #[derivative(Debug = "ignore")]
     connection: Option<SinkConnection>,
 }
 

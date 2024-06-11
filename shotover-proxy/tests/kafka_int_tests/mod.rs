@@ -5,7 +5,7 @@ use pretty_assertions::assert_eq;
 use rstest::rstest;
 use std::time::Duration;
 use std::time::Instant;
-use test_cases::smoke_test;
+use test_cases::produce_consume_partitions1;
 use test_cases::{assert_topic_creation_is_denied_due_to_acl, setup_basic_user_acls};
 use test_helpers::connection::kafka::{KafkaConnectionBuilder, KafkaDriver};
 use test_helpers::docker_compose::docker_compose;
@@ -411,7 +411,8 @@ async fn cluster_sasl_scram_over_mtls_single_shotover(#[case] driver: KafkaDrive
         // admin requests sent by regular user remain unsuccessful
         let connection_super = KafkaConnectionBuilder::new(driver, "127.0.0.1:9192")
             .use_sasl_scram("super_user", "super_password");
-        smoke_test(&connection_super).await;
+        produce_consume_partitions1(&connection_super, "c3220ff0-9390-425d-a56d-9d880a339c8c")
+            .await;
         assert_topic_creation_is_denied_due_to_acl(&connection_basic).await;
         assert_connection_fails_with_incorrect_password(driver, "basic_user").await;
         assert_connection_fails_with_incorrect_password(driver, "super_user").await;

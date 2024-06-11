@@ -290,20 +290,3 @@ pub async fn assert_topic_creation_is_denied_due_to_acl(connection: &KafkaConnec
         "org.apache.kafka.common.errors.UnknownTopicOrPartitionException: This server does not host this topic-partition.\n"
     )
 }
-
-// A quick test without running the whole test suite
-// Assumes that admin_setup or standard_test_suite has already been run.
-pub async fn smoke_test(connection_builder: &KafkaConnectionBuilder) {
-    let producer = connection_builder.connect_producer(1).await;
-
-    producer
-        .assert_produce(
-            Record {
-                payload: "initial",
-                topic_name: "partitions1",
-                key: Some("Key"),
-            },
-            None,
-        )
-        .await;
-}
