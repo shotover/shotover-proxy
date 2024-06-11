@@ -102,16 +102,13 @@ impl RedisSinkClusterBuilder {
         chain_name: String,
         shared_topology: Arc<RwLock<Topology>>,
     ) -> Self {
-        let failed_requests =
-            counter!("shotover_failed_requests_count", "chain" => chain_name, "transform" => NAME);
-
         RedisSinkClusterBuilder {
             first_contact_points,
             direct_destination,
             connection_count,
             connection_pool,
             shared_topology,
-            failed_requests,
+            failed_requests: counter!("shotover_failed_requests_count", "chain" => chain_name, "transform" => NAME),
         }
     }
 }
