@@ -12,6 +12,7 @@ use std::thread::sleep;
 use std::time::Duration;
 use test_helpers::connection::redis_connection;
 use test_helpers::docker_compose::docker_compose;
+use test_helpers::metrics::assert_metrics_key_value;
 use test_helpers::shotover_process::{Count, EventMatcher, Level};
 
 pub mod assert;
@@ -44,6 +45,8 @@ async fn passthrough_standard() {
     shotover
         .shutdown_and_then_consume_events(&[invalid_frame_event()])
         .await;
+
+    assert_failed_requests_metric_is_incremented_on_error_response().await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -318,6 +321,29 @@ async fn cluster_dr() {
     test_cluster_replication(&mut connection, &mut replication_connection).await;
     test_dr_auth().await;
     run_all_cluster_hiding(&mut connection, &mut flusher).await;
+
+    shotover.shutdown_and_then_consume_events(&[]).await;
+}
+
+pub async fn assert_failed_requests_metric_is_incremented_on_error_response() {
+    let shotover = shotover_process("tests/test-configs/redis/passthrough/topology.yaml")
+        .start()
+        .await;
+    let mut connection = redis_connection::new_async("127.0.0.1", 6379).await;
+
+    redis::cmd("INVALID_COMMAND")
+        .arg("foo")
+        .query_async::<_, ()>(&mut connection)
+        .await
+        .unwrap_err();
+
+    // Redis client driver initialization sends 2 CLIENT SETINFO commands which trigger 2 errors
+    // because those commands are not available in the currently used redis version.
+    assert_metrics_key_value(
+        r#"shotover_failed_requests_count{chain="redis",transform="RedisSinkSingle"}"#,
+        "3",
+    )
+    .await;
 
     shotover.shutdown_and_then_consume_events(&[]).await;
 }
