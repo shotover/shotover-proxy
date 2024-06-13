@@ -1371,7 +1371,7 @@ routing message to a random node so that:
             if ResponseError::try_from_code(topic.error_code).is_none() {
                 // We use the response's partitions list as a base
                 // since if it has deleted an entry then we also want to delete that entry.
-                let mut base_partitions: Vec<_> = topic
+                let mut new_partitions: Vec<_> = topic
                     .partitions
                     .iter()
                     .map(|partition| Partition {
@@ -1392,25 +1392,25 @@ routing message to a random node so that:
                             .collect(),
                     })
                     .collect();
-                base_partitions.sort_by_key(|x| x.index);
+                new_partitions.sort_by_key(|x| x.index);
 
                 // If topic_by_name contains any partitions with a more recent leader_epoch use that instead.
                 // The out of date epoch is probably caused by requesting metadata from a broker that is slightly out of date.
                 // We use topic_by_name instead of topic_by_id since its always used regardless of protocol version.
                 if let Some(topic) = self.topic_by_name.get(topic_name) {
-                    for partition in &topic.partitions {
-                        if let Some(base_partition) = base_partitions
+                    for old_partition in &topic.partitions {
+                        if let Some(new_partition) = new_partitions
                             .iter_mut()
-                            .find(|p| p.index == partition.index)
+                            .find(|p| p.index == old_partition.index)
                         {
-                            if partition.leader_epoch > base_partition.leader_epoch {
-                                base_partition.leader_id = partition.leader_id;
-                                base_partition
+                            if old_partition.leader_epoch > new_partition.leader_epoch {
+                                new_partition.leader_id = old_partition.leader_id;
+                                new_partition
                                     .shotover_rack_replica_nodes
-                                    .clone_from(&partition.shotover_rack_replica_nodes);
-                                base_partition
+                                    .clone_from(&old_partition.shotover_rack_replica_nodes);
+                                new_partition
                                     .external_rack_replica_nodes
-                                    .clone_from(&partition.external_rack_replica_nodes);
+                                    .clone_from(&old_partition.external_rack_replica_nodes);
                             }
                         }
                     }
@@ -1420,7 +1420,7 @@ routing message to a random node so that:
                     self.topic_by_name.insert(
                         topic_name.clone(),
                         Topic {
-                            partitions: base_partitions.clone(),
+                            partitions: new_partitions.clone(),
                         },
                     );
                 }
@@ -1428,7 +1428,7 @@ routing message to a random node so that:
                     self.topic_by_id.insert(
                         topic.topic_id,
                         Topic {
-                            partitions: base_partitions,
+                            partitions: new_partitions,
                         },
                     );
                 }
