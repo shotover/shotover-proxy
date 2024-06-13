@@ -16,6 +16,7 @@ use shotover::transforms::loopback::Loopback;
 use shotover::transforms::null::NullSink;
 #[cfg(feature = "alpha-transforms")]
 use shotover::transforms::protect::{KeyManagerConfig, ProtectConfig};
+use shotover::transforms::query_counter::QueryCounter;
 use shotover::transforms::redis::cluster_ports_rewrite::RedisClusterPortsRewrite;
 use shotover::transforms::throttling::RequestThrottlingConfig;
 use shotover::transforms::{
@@ -285,6 +286,41 @@ fn criterion_benchmark(c: &mut Criterion) {
         );
 
         group.bench_function("cassandra_protect_protected", |b| {
+            b.to_async(&rt).iter_batched(
+                || BenchInput {
+                    chain: chain.build(TransformContextBuilder::new_test()),
+                    wrapper: wrapper.clone(),
+                },
+                BenchInput::bench,
+                BatchSize::SmallInput,
+            )
+        });
+    }
+
+    {
+        let chain = TransformChainBuilder::new(
+            vec![
+                Box::new(QueryCounter::new("chain".to_owned())),
+                Box::<Loopback>::default(),
+            ],
+            "bench",
+        );
+        let wrapper = Wrapper::new_with_addr(
+            vec![
+                Message::from_frame(Frame::Redis(RedisFrame::Array(vec![
+                    RedisFrame::BulkString(Bytes::from_static(b"SET")),
+                    RedisFrame::BulkString(Bytes::from_static(b"foo")),
+                    RedisFrame::BulkString(Bytes::from_static(b"bar")),
+                ]))),
+                Message::from_frame(Frame::Redis(RedisFrame::Array(vec![
+                    RedisFrame::BulkString(Bytes::from_static(b"GET")),
+                    RedisFrame::BulkString(Bytes::from_static(b"foo")),
+                ]))),
+            ],
+            "127.0.0.1:6379".parse().unwrap(),
+        );
+
+        group.bench_function("query_counter", |b| {
             b.to_async(&rt).iter_batched(
                 || BenchInput {
                     chain: chain.build(TransformContextBuilder::new_test()),
