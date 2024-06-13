@@ -1603,17 +1603,20 @@ routing message to a random node so that:
     }
 
     async fn add_node_if_new(&mut self, new_node: KafkaNode) {
-        let new = self
+        let missing_from_shared = self
             .nodes_shared
             .read()
             .await
             .iter()
             .all(|node| node.broker_id != new_node.broker_id);
-        if new {
+        if missing_from_shared {
             self.nodes_shared.write().await.push(new_node);
-
-            self.update_local_nodes().await;
         }
+
+        // We need to run this every time, not just when missing_from_shared.
+        // This is because nodes_shared could already contain new_node while its missing from `self.nodes`.
+        // This could happen when another KafkaSinkCluster instance updates nodes_shared just before we read from it.
+        self.update_local_nodes().await;
     }
 
     fn broker_within_rack(&self, broker_id: BrokerId) -> bool {
