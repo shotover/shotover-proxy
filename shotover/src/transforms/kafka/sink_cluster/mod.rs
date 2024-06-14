@@ -1269,11 +1269,20 @@ routing message to a random node so that:
                                                 stored_partition.leader_epoch =
                                                     response_partition.current_leader.leader_epoch;
                                             }
+                                            tracing::info!(
+                                                "Produce response included error NOT_LEADER_OR_FOLLOWER and so updated leader in topic {:?} partition {}",
+                                                topic_name,
+                                                response_partition.index
+                                            );
                                         }
                                     }
                                 } else {
                                     // The broker doesnt know who the new leader is, clear the entire topic.
                                     self.topic_by_name.remove(topic_name);
+                                    tracing::info!(
+                                        "Produce response included error NOT_LEADER_OR_FOLLOWER and so cleared topic {:?}",
+                                        topic_name,
+                                    );
                                     break;
                                 }
                             }
@@ -1293,6 +1302,11 @@ routing message to a random node so that:
                                 // but we cant use it to fix our list of replicas, so our only option is to clear the whole thing.
                                 self.topic_by_name.remove(&response.topic);
                                 self.topic_by_id.remove(&response.topic_id);
+                                tracing::info!(
+                                    "Fetch response included error NOT_LEADER_OR_FOLLOWER and so cleared topic {:?} {:?}",
+                                    response.topic,
+                                    response.topic_id
+                                );
                                 break;
                             }
                         }
@@ -1342,7 +1356,12 @@ routing message to a random node so that:
                         if let Some(ResponseError::NotController) =
                             ResponseError::try_from_code(topic.error_code)
                         {
+                            tracing::info!(
+                                "Response to CreateTopics included error NOT_CONTROLLER and so reset controller broker, previously was {:?}",
+                                self.controller_broker.get()
+                            );
                             self.controller_broker.clear();
+                            break;
                         }
                     }
                 }
@@ -1375,7 +1394,12 @@ routing message to a random node so that:
     fn handle_coordinator_routing_error(&mut self, request_id: u128, error_code: i16) {
         if let Some(ResponseError::NotCoordinator) = ResponseError::try_from_code(error_code) {
             if let Some(group_id) = self.routed_to_coordinator_for_group.remove(&request_id) {
-                self.group_to_coordinator_broker.remove(&group_id);
+                let broker_id = self.group_to_coordinator_broker.remove(&group_id);
+                tracing::info!(
+                    "Response was error NOT_COORDINATOR and so cleared group id {:?} coordinator mapping to broker {:?}",
+                    group_id,
+                    broker_id,
+                );
             }
         }
     }
