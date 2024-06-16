@@ -39,10 +39,7 @@ fn criterion_benchmark(c: &mut Criterion) {
 
         group.bench_function("loopback", |b| {
             b.to_async(&rt).iter_batched(
-                || BenchInput {
-                    chain: chain.build(TransformContextBuilder::new_test()),
-                    wrapper: wrapper.clone(),
-                },
+                || BenchInput::new_pre_used(&chain, &wrapper),
                 BenchInput::bench,
                 BatchSize::SmallInput,
             )
@@ -58,10 +55,7 @@ fn criterion_benchmark(c: &mut Criterion) {
 
         group.bench_function("nullsink", |b| {
             b.to_async(&rt).iter_batched(
-                || BenchInput {
-                    chain: chain.build(TransformContextBuilder::new_test()),
-                    wrapper: wrapper.clone(),
-                },
+                || BenchInput::new_pre_used(&chain, &wrapper),
                 BenchInput::bench,
                 BatchSize::SmallInput,
             )
@@ -96,10 +90,7 @@ fn criterion_benchmark(c: &mut Criterion) {
 
         group.bench_function("redis_filter", |b| {
             b.to_async(&rt).iter_batched(
-                || BenchInput {
-                    chain: chain.build(TransformContextBuilder::new_test()),
-                    wrapper: wrapper.clone(),
-                },
+                || BenchInput::new_pre_used(&chain, &wrapper),
                 BenchInput::bench,
                 BatchSize::SmallInput,
             )
@@ -125,10 +116,7 @@ fn criterion_benchmark(c: &mut Criterion) {
 
         group.bench_function("redis_cluster_ports_rewrite", |b| {
             b.to_async(&rt).iter_batched(
-                || BenchInput {
-                    chain: chain.build(TransformContextBuilder::new_test()),
-                    wrapper: wrapper.clone(),
-                },
+                || BenchInput::new_pre_used(&chain, &wrapper),
                 BenchInput::bench,
                 BatchSize::SmallInput,
             )
@@ -172,10 +160,7 @@ fn criterion_benchmark(c: &mut Criterion) {
 
         group.bench_function("cassandra_request_throttling_unparsed", |b| {
             b.to_async(&rt).iter_batched(
-                || BenchInput {
-                    chain: chain.build(TransformContextBuilder::new_test()),
-                    wrapper: wrapper.clone(),
-                },
+                || BenchInput::new_pre_used(&chain, &wrapper),
                 BenchInput::bench,
                 BatchSize::SmallInput,
             )
@@ -226,10 +211,7 @@ fn criterion_benchmark(c: &mut Criterion) {
 
         group.bench_function("cassandra_rewrite_peers_passthrough", |b| {
             b.to_async(&rt).iter_batched(
-                || BenchInput {
-                    chain: chain.build(TransformContextBuilder::new_test()),
-                    wrapper: wrapper.clone(),
-                },
+                || BenchInput::new_pre_used(&chain, &wrapper),
                 BenchInput::bench,
                 BatchSize::SmallInput,
             )
@@ -272,10 +254,7 @@ fn criterion_benchmark(c: &mut Criterion) {
 
         group.bench_function("cassandra_protect_unprotected", |b| {
             b.to_async(&rt).iter_batched(
-                || BenchInput {
-                    chain: chain.build(TransformContextBuilder::new_test()),
-                    wrapper: wrapper.clone(),
-                },
+                || BenchInput::new_pre_used(&chain, &wrapper),
                 BenchInput::bench,
                 BatchSize::SmallInput,
             )
@@ -287,10 +266,7 @@ fn criterion_benchmark(c: &mut Criterion) {
 
         group.bench_function("cassandra_protect_protected", |b| {
             b.to_async(&rt).iter_batched(
-                || BenchInput {
-                    chain: chain.build(TransformContextBuilder::new_test()),
-                    wrapper: wrapper.clone(),
-                },
+                || BenchInput::new_pre_used(&chain, &wrapper),
                 BenchInput::bench,
                 BatchSize::SmallInput,
             )
@@ -320,12 +296,17 @@ fn criterion_benchmark(c: &mut Criterion) {
             "127.0.0.1:6379".parse().unwrap(),
         );
 
-        group.bench_function("query_counter", |b| {
+        group.bench_function("query_counter_fresh", |b| {
             b.to_async(&rt).iter_batched(
-                || BenchInput {
-                    chain: chain.build(TransformContextBuilder::new_test()),
-                    wrapper: wrapper.clone(),
-                },
+                || BenchInput::new_fresh(&chain, &wrapper),
+                BenchInput::bench,
+                BatchSize::SmallInput,
+            )
+        });
+
+        group.bench_function("query_counter_pre_used", |b| {
+            b.to_async(&rt).iter_batched(
+                || BenchInput::new_pre_used(&chain, &wrapper),
                 BenchInput::bench,
                 BatchSize::SmallInput,
             )
@@ -366,6 +347,29 @@ struct BenchInput<'a> {
 }
 
 impl<'a> BenchInput<'a> {
+    // Setup the bench such that the chain is completely fresh
+    fn new_fresh(chain: &TransformChainBuilder, wrapper: &Wrapper<'a>) -> Self {
+        BenchInput {
+            chain: chain.build(TransformContextBuilder::new_test()),
+            wrapper: wrapper.clone(),
+        }
+    }
+
+    // Setup the bench such that the chain has already had the test wrapper passed through it.
+    // This ensures that any adhoc setup for that message type has been performed.
+    // This is a more realistic bench for typical usage.
+    fn new_pre_used(chain: &TransformChainBuilder, wrapper: &Wrapper<'a>) -> Self {
+        let mut chain = chain.build(TransformContextBuilder::new_test());
+
+        // Run the chain once so we are measuring the chain once each transform has been fully initialized
+        futures::executor::block_on(chain.process_request(wrapper.clone())).unwrap();
+
+        BenchInput {
+            chain,
+            wrapper: wrapper.clone(),
+        }
+    }
+
     async fn bench(mut self) -> (Vec<Message>, TransformChain) {
         // Return both the chain itself and the response to avoid measuring the time to drop the values in the benchmark
         (
