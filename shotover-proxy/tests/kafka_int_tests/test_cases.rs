@@ -241,6 +241,24 @@ pub async fn standard_test_suite(connection_builder: &KafkaConnectionBuilder) {
     produce_consume_partitions1(connection_builder, "partitions1").await;
     produce_consume_partitions1(connection_builder, "unknown_topic").await;
     produce_consume_partitions3(connection_builder).await;
+
+    // Only run this test case on the java driver,
+    // since even without going through shotover the cpp driver fails this test.
+    #[allow(irrefutable_let_patterns)]
+    if let KafkaConnectionBuilder::Java(_) = connection_builder {
+        // delete and recreate topic to force shotover to adjust its existing routing metadata
+        let admin = connection_builder.connect_admin().await;
+        admin.delete_topics(&["partitions1"]).await;
+        admin
+            .create_topics(&[NewTopic {
+                name: "partitions1",
+                num_partitions: 1,
+                replication_factor: 1,
+            }])
+            .await;
+        produce_consume_partitions1(connection_builder, "partitions1").await;
+    }
+
     produce_consume_acks0(connection_builder).await;
     connection_builder.admin_cleanup().await;
 }
