@@ -29,6 +29,7 @@ impl QueryCounter {
         counter!("shotover_query_count", "name" => counter_name.clone());
 
         QueryCounter {
+            // Leaking here is fine since the builder is created only once during shotover startup.
             counter_name: counter_name.leak(),
         }
     }
