@@ -15,7 +15,7 @@ use super::UpChainProtocol;
 
 #[derive(Clone)]
 pub struct QueryCounter {
-    counter_name: String,
+    counter_name: &'static str,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -28,7 +28,9 @@ impl QueryCounter {
     pub fn new(counter_name: String) -> Self {
         counter!("shotover_query_count", "name" => counter_name.clone());
 
-        QueryCounter { counter_name }
+        QueryCounter {
+            counter_name: counter_name.leak(),
+        }
     }
 }
 
@@ -54,20 +56,20 @@ impl Transform for QueryCounter {
                 #[cfg(feature = "cassandra")]
                 Some(Frame::Cassandra(frame)) => {
                     for statement in frame.operation.queries() {
-                        counter!("shotover_query_count", "name" => self.counter_name.clone(), "query" => statement.short_name(), "type" => "cassandra").increment(1);
+                        counter!("shotover_query_count", "name" => self.counter_name, "query" => statement.short_name(), "type" => "cassandra").increment(1);
                     }
                 }
                 #[cfg(feature = "redis")]
                 Some(Frame::Redis(frame)) => {
                     if let Some(query_type) = crate::frame::redis::redis_query_name(frame) {
-                        counter!("shotover_query_count", "name" => self.counter_name.clone(), "query" => query_type, "type" => "redis").increment(1);
+                        counter!("shotover_query_count", "name" => self.counter_name, "query" => query_type, "type" => "redis").increment(1);
                     } else {
-                        counter!("shotover_query_count", "name" => self.counter_name.clone(), "query" => "unknown", "type" => "redis").increment(1);
+                        counter!("shotover_query_count", "name" => self.counter_name, "query" => "unknown", "type" => "redis").increment(1);
                     }
                 }
                 #[cfg(feature = "kafka")]
                 Some(Frame::Kafka(_)) => {
-                    counter!("shotover_query_count", "name" => self.counter_name.clone(), "query" => "unknown", "type" => "kafka").increment(1);
+                    counter!("shotover_query_count", "name" => self.counter_name, "query" => "unknown", "type" => "kafka").increment(1);
                 }
                 Some(Frame::Dummy) => {
                     // Dummy does not count as a message
@@ -77,7 +79,7 @@ impl Transform for QueryCounter {
                     todo!();
                 }
                 None => {
-                    counter!("shotover_query_count", "name" => self.counter_name.clone(), "query" => "unknown", "type" => "none").increment(1)
+                    counter!("shotover_query_count", "name" => self.counter_name, "query" => "unknown", "type" => "none").increment(1)
                 }
             }
         }
