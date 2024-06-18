@@ -74,14 +74,14 @@ fn load_private_key(path: &str) -> Result<PrivateKeyDer<'static>> {
 }
 
 impl TlsAcceptor {
-    pub fn new(tls_config: TlsAcceptorConfig) -> Result<TlsAcceptor, Vec<String>> {
+    pub fn new(tls_config: &TlsAcceptorConfig) -> Result<TlsAcceptor, Vec<String>> {
         // TODO: report multiple errors back to the user
         // The validation and anyhow error reporting has merged here and they were originally intended to be seperate.
         // We should probably replace the error reporting Vec<String> system with a better typed error system. (anyhow maybe?)
         Self::new_inner(tls_config).map_err(|x| vec![format!("{x:?}")])
     }
 
-    fn new_inner(tls_config: TlsAcceptorConfig) -> Result<TlsAcceptor> {
+    fn new_inner(tls_config: &TlsAcceptorConfig) -> Result<TlsAcceptor> {
         let client_cert_verifier =
             if let Some(path) = tls_config.certificate_authority_path.as_ref() {
                 let root_cert_store = load_ca(path).with_context(|| {
@@ -149,7 +149,7 @@ pub struct TlsConnector {
 }
 
 impl TlsConnector {
-    pub fn new(tls_config: TlsConnectorConfig) -> Result<TlsConnector> {
+    pub fn new(tls_config: &TlsConnectorConfig) -> Result<TlsConnector> {
         let root_cert_store =
             load_ca(&tls_config.certificate_authority_path).with_context(|| {
                 format!(

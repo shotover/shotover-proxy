@@ -35,7 +35,7 @@ impl TransformConfig for KafkaSinkSingleConfig {
         &self,
         transform_context: TransformContextConfig,
     ) -> Result<Box<dyn TransformBuilder>> {
-        let tls = self.tls.clone().map(TlsConnector::new).transpose()?;
+        let tls = self.tls.as_ref().map(TlsConnector::new).transpose()?;
         Ok(Box::new(KafkaSinkSingleBuilder::new(
             self.destination_port,
             transform_context.chain_name,

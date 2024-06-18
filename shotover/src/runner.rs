@@ -124,17 +124,19 @@ impl Shotover {
         config: &Config,
         tracing: &TracingState,
     ) -> Result<()> {
-        let recorder = PrometheusBuilder::new()
-            .set_quantiles(&[0.0, 0.1, 0.5, 0.9, 0.95, 0.99, 0.999, 1.0])
-            .unwrap()
-            .build_recorder();
-        let handle = recorder.handle();
-        metrics::set_global_recorder(recorder)?;
+        if let Some(observability_interface) = &config.observability_interface {
+            let recorder = PrometheusBuilder::new()
+                .set_quantiles(&[0.0, 0.1, 0.5, 0.9, 0.95, 0.99, 0.999, 1.0])
+                .unwrap()
+                .build_recorder();
+            let handle = recorder.handle();
+            metrics::set_global_recorder(recorder)?;
 
-        let socket: SocketAddr = config.observability_interface.parse()?;
-        let exporter = LogFilterHttpExporter::new(handle, socket, tracing.handle.clone());
+            let socket: SocketAddr = observability_interface.parse()?;
+            let exporter = LogFilterHttpExporter::new(handle, socket, tracing.handle.clone());
 
-        runtime.spawn(exporter.async_run());
+            runtime.spawn(exporter.async_run());
+        }
         Ok(())
     }
 

@@ -24,9 +24,9 @@ pub fn shotover_process(topology_path: &str) -> ShotoverProcessBuilder {
 }
 
 #[cfg(target_os = "macos")]
-#[cfg(feature = "redis")]
+#[cfg(any(feature = "cassandra", feature = "redis"))]
 const CONNECTION_REFUSED_OS_ERROR: i32 = 61;
 
 #[cfg(not(target_os = "macos"))]
-#[cfg(feature = "redis")]
+#[cfg(any(feature = "cassandra", feature = "redis"))]
 const CONNECTION_REFUSED_OS_ERROR: i32 = 111;

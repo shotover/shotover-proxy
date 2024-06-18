@@ -212,6 +212,14 @@ impl KafkaAdmin {
         }
     }
 
+    pub async fn describe_topic(&self, topic_name: &str) -> Result<TopicDescription> {
+        match self {
+            #[cfg(feature = "kafka-cpp-driver-tests")]
+            KafkaAdmin::Cpp(_) => unimplemented!(),
+            KafkaAdmin::Java(java) => java.describe_topic(topic_name).await,
+        }
+    }
+
     pub async fn delete_topics(&self, to_delete: &[&str]) {
         match self {
             #[cfg(feature = "kafka-cpp-driver-tests")]
@@ -243,6 +251,14 @@ impl KafkaAdmin {
             KafkaAdmin::Java(java) => java.alter_configs(alter_configs).await,
         }
     }
+
+    pub async fn create_acls(&self, acls: Vec<Acl>) {
+        match self {
+            #[cfg(feature = "kafka-cpp-driver-tests")]
+            KafkaAdmin::Cpp(_) => unimplemented!("CPP driver does not support creating ACL's"),
+            KafkaAdmin::Java(java) => java.create_acls(acls).await,
+        }
+    }
 }
 
 pub struct NewTopic<'a> {
@@ -268,4 +284,59 @@ pub struct AlterConfig<'a> {
 pub struct ConfigEntry {
     pub key: String,
     pub value: String,
+}
+
+pub struct Acl {
+    pub resource_type: ResourceType,
+    pub resource_name: String,
+    pub resource_pattern_type: ResourcePatternType,
+    pub principal: String,
+    pub host: String,
+    pub operation: AclOperation,
+    pub permission_type: AclPermissionType,
+}
+
+/// https://docs.confluent.io/platform/current/clients/javadocs/javadoc/org/apache/kafka/common/resource/ResourceType.html
+pub enum ResourceType {
+    Cluster,
+    DelegationToken,
+    Group,
+    Topic,
+    TransactionalId,
+    User,
+}
+
+/// https://docs.confluent.io/platform/current/clients/javadocs/javadoc/org/apache/kafka/common/resource/PatternType.html
+pub enum ResourcePatternType {
+    Literal,
+    Prefixed,
+}
+
+/// https://docs.confluent.io/platform/current/clients/javadocs/javadoc/org/apache/kafka/common/acl/AclOperation.html
+pub enum AclOperation {
+    All,
+    Alter,
+    AlterConfigs,
+    ClusterAction,
+    Create,
+    CreateTokens,
+    Delete,
+    Describe,
+    DescribeConfigs,
+    DescribeTokens,
+    Read,
+    Write,
+}
+
+/// https://docs.confluent.io/platform/current/clients/javadocs/javadoc/org/apache/kafka/common/acl/AclPermissionType.html
+pub enum AclPermissionType {
+    Allow,
+    Deny,
+}
+
+#[derive(Debug)]
+pub struct TopicDescription {
+    // None of our tests actually make use of the contents of TopicDescription,
+    // instead they just check if the describe succeeded or failed,
+    // so this is intentionally left empty for now
 }

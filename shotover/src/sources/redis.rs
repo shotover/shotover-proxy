@@ -71,7 +71,7 @@ impl RedisSource {
             RedisCodecBuilder::new(Direction::Source, name),
             Arc::new(Semaphore::new(connection_limit.unwrap_or(512))),
             trigger_shutdown_rx.clone(),
-            tls.map(TlsAcceptor::new).transpose()?,
+            tls.as_ref().map(TlsAcceptor::new).transpose()?,
             timeout.map(Duration::from_secs),
             Transport::Tcp,
         )

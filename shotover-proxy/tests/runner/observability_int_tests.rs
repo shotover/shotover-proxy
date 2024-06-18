@@ -1,5 +1,6 @@
 use crate::shotover_process;
 use test_helpers::connection::redis_connection;
+use test_helpers::docker_compose::docker_compose;
 use test_helpers::metrics::{assert_metrics_has_keys, assert_metrics_key_value};
 
 #[tokio::test(flavor = "multi_thread")]
@@ -120,6 +121,26 @@ shotover_query_count{name="redis-chain",query="SET",type="redis"}
         "2",
     )
     .await;
+
+    shotover.shutdown_and_then_consume_events(&[]).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_shotover_with_metrics_disabled() {
+    let _compose = docker_compose("tests/test-configs/redis/passthrough/docker-compose.yaml");
+    let shotover = shotover_process("tests/test-configs/redis/passthrough/topology.yaml")
+        .with_config("tests/test-configs/shotover-config/config_metrics_disabled.yaml")
+        .start()
+        .await;
+    let mut connection = redis_connection::new_async("127.0.0.1", 6379).await;
+
+    // Verify Shotover can still process messages with metrics disabled
+    redis::cmd("SET")
+        .arg("the_key")
+        .arg(42)
+        .query_async::<_, ()>(&mut connection)
+        .await
+        .unwrap();
 
     shotover.shutdown_and_then_consume_events(&[]).await;
 }

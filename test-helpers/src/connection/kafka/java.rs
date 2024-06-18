@@ -1,4 +1,7 @@
-use super::{AlterConfig, ExpectedResponse, NewPartition, NewTopic, Record, ResourceSpecifier};
+use super::{
+    Acl, AclOperation, AclPermissionType, AlterConfig, ExpectedResponse, NewPartition, NewTopic,
+    Record, ResourcePatternType, ResourceSpecifier, ResourceType, TopicDescription,
+};
 use anyhow::Result;
 use j4rs::{errors::J4RsError, Instance, InvocationArg, Jvm, JvmBuilder, MavenArtifact};
 use pretty_assertions::assert_eq;
@@ -346,6 +349,20 @@ impl KafkaAdminJava {
         self.create_topics_fallible(topics).await.unwrap();
     }
 
+    pub async fn describe_topic(&self, topic_name: &str) -> Result<TopicDescription> {
+        let topics = self
+            .jvm
+            .java_list("java.lang.String", vec![topic_name])
+            .unwrap();
+
+        let result = self
+            .jvm
+            .invoke(&self.admin, "describeTopics", &[&topics.into()])
+            .unwrap();
+        self.jvm.invoke_async(&result, "allTopicNames", &[]).await?;
+        Ok(TopicDescription {})
+    }
+
     pub async fn create_topics_fallible(&self, topics: &[NewTopic<'_>]) -> Result<()> {
         let topics: Vec<_> = topics
             .iter()
@@ -511,6 +528,123 @@ impl KafkaAdminJava {
         let result = self
             .jvm
             .invoke(&self.admin, "alterConfigs", &[&alter_configs.into()])
+            .unwrap();
+        self.jvm
+            .invoke_async(&result, "all", InvocationArg::empty())
+            .await
+            .unwrap();
+    }
+
+    pub async fn create_acls(&self, acls: Vec<Acl>) {
+        let resource_type = self
+            .jvm
+            .static_class("org.apache.kafka.common.resource.ResourceType")
+            .unwrap();
+        let resource_pattern_type = self
+            .jvm
+            .static_class("org.apache.kafka.common.resource.PatternType")
+            .unwrap();
+        let acl_operation = self
+            .jvm
+            .static_class("org.apache.kafka.common.acl.AclOperation")
+            .unwrap();
+        let acl_permission_type = self
+            .jvm
+            .static_class("org.apache.kafka.common.acl.AclPermissionType")
+            .unwrap();
+
+        let acls: Vec<_> = acls
+            .iter()
+            .map(|acl| {
+                let resource_type_field = match acl.resource_type {
+                    ResourceType::Cluster => "CLUSTER",
+                    ResourceType::DelegationToken => "DELEGATION_TOKEN",
+                    ResourceType::Group => "GROUP",
+                    ResourceType::Topic => "TOPIC",
+                    ResourceType::TransactionalId => "TRANSACTIONAL_ID",
+                    ResourceType::User => "USER",
+                };
+                let resource_pattern_type_field = match acl.resource_pattern_type {
+                    ResourcePatternType::Literal => "LITERAL",
+                    ResourcePatternType::Prefixed => "PREFIXED",
+                };
+                let resource = self
+                    .jvm
+                    .create_instance(
+                        "org.apache.kafka.common.resource.ResourcePattern",
+                        &[
+                            &self
+                                .jvm
+                                .field(&resource_type, resource_type_field)
+                                .unwrap()
+                                .into(),
+                            &InvocationArg::try_from(acl.resource_name.as_str()).unwrap(),
+                            &self
+                                .jvm
+                                .field(&resource_pattern_type, resource_pattern_type_field)
+                                .unwrap()
+                                .into(),
+                        ],
+                    )
+                    .unwrap();
+
+                let acl_operation_field = match acl.operation {
+                    AclOperation::All => "ALL",
+                    AclOperation::Alter => "ALTER",
+                    AclOperation::AlterConfigs => "ALTER_CONFIGS",
+                    AclOperation::ClusterAction => "CLUSTER_ACTION",
+                    AclOperation::Create => "CREATE",
+                    AclOperation::CreateTokens => "CREATE_TOKENS",
+                    AclOperation::Delete => "DELETE",
+                    AclOperation::Describe => "DESCRIBE",
+                    AclOperation::DescribeConfigs => "DESCRIBE_CONFIGS",
+                    AclOperation::DescribeTokens => "DESCRIBE_TOKENS",
+                    AclOperation::Read => "READ",
+                    AclOperation::Write => "WRITE",
+                };
+                let acl_permission_type_field = match acl.permission_type {
+                    AclPermissionType::Allow => "ALLOW",
+                    AclPermissionType::Deny => "DENY",
+                };
+                let entry = self
+                    .jvm
+                    .create_instance(
+                        "org.apache.kafka.common.acl.AccessControlEntry",
+                        &[
+                            &InvocationArg::try_from(acl.principal.as_str()).unwrap(),
+                            &InvocationArg::try_from(acl.host.as_str()).unwrap(),
+                            &self
+                                .jvm
+                                .field(&acl_operation, acl_operation_field)
+                                .unwrap()
+                                .into(),
+                            &self
+                                .jvm
+                                .field(&acl_permission_type, acl_permission_type_field)
+                                .unwrap()
+                                .into(),
+                        ],
+                    )
+                    .unwrap();
+
+                Ok(self
+                    .jvm
+                    .create_instance(
+                        "org.apache.kafka.common.acl.AclBinding",
+                        &[&resource.into(), &entry.into()],
+                    )
+                    .unwrap())
+            })
+            .collect();
+
+        let acls = self
+            .jvm
+            .java_list("org.apache.kafka.common.acl.AclBinding", acls)
+            .unwrap();
+
+        let result = self
+            .jvm
+            .invoke(&self.admin, "createAcls", &[&acls.into()])
             .unwrap();
         self.jvm
             .invoke_async(&result, "all", InvocationArg::empty())

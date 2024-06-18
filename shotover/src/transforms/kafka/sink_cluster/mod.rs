@@ -16,12 +16,13 @@ use kafka_protocol::messages::metadata_request::MetadataRequestTopic;
 use kafka_protocol::messages::metadata_response::MetadataResponseBroker;
 use kafka_protocol::messages::{
     ApiKey, BrokerId, FetchRequest, FindCoordinatorRequest, FindCoordinatorResponse, GroupId,
-    HeartbeatRequest, JoinGroupRequest, MetadataRequest, MetadataResponse, OffsetFetchRequest,
-    RequestHeader, SaslAuthenticateRequest, SaslAuthenticateResponse, SaslHandshakeRequest,
-    SyncGroupRequest, TopicName,
+    HeartbeatRequest, JoinGroupRequest, LeaveGroupRequest, MetadataRequest, MetadataResponse,
+    OffsetFetchRequest, RequestHeader, SaslAuthenticateRequest, SaslAuthenticateResponse,
+    SaslHandshakeRequest, SyncGroupRequest, TopicName,
 };
 use kafka_protocol::protocol::{Builder, StrBytes};
 use kafka_protocol::ResponseError;
+use metrics::{counter, Counter};
 use node::{ConnectionFactory, KafkaAddress, KafkaNode};
 use rand::rngs::SmallRng;
 use rand::seq::{IteratorRandom, SliceRandom};
@@ -95,9 +96,9 @@ const NAME: &str = "KafkaSinkCluster";
 impl TransformConfig for KafkaSinkClusterConfig {
     async fn get_builder(
         &self,
-        _transform_context: TransformContextConfig,
+        transform_context: TransformContextConfig,
     ) -> Result<Box<dyn TransformBuilder>> {
-        let tls = self.tls.clone().map(TlsConnector::new).transpose()?;
+        let tls = self.tls.as_ref().map(TlsConnector::new).transpose()?;
 
         let shotover_nodes: Result<Vec<_>> = self
             .shotover_nodes
@@ -119,6 +120,7 @@ impl TransformConfig for KafkaSinkClusterConfig {
         shotover_nodes.sort_by_key(|x| x.broker_id);
 
         Ok(Box::new(KafkaSinkClusterBuilder::new(
+            transform_context.chain_name,
             self.first_contact_points.clone(),
             &self.authorize_scram_over_mtls,
             shotover_nodes,
@@ -152,10 +154,13 @@ pub struct KafkaSinkClusterBuilder {
     nodes_shared: Arc<RwLock<Vec<KafkaNode>>>,
     authorize_scram_over_mtls: Option<AuthorizeScramOverMtlsBuilder>,
     tls: Option<TlsConnector>,
+    out_of_rack_requests: Counter,
 }
 
 impl KafkaSinkClusterBuilder {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
+        chain_name: String,
         first_contact_points: Vec<String>,
         authorize_scram_over_mtls: &Option<AuthorizeScramOverMtlsConfig>,
         shotover_nodes: Vec<ShotoverNode>,
@@ -182,6 +187,7 @@ impl KafkaSinkClusterBuilder {
             topic_by_name: Arc::new(DashMap::new()),
             topic_by_id: Arc::new(DashMap::new()),
             nodes_shared: Arc::new(RwLock::new(vec![])),
+            out_of_rack_requests: counter!("shotover_out_of_rack_requests_count", "chain" => chain_name, "transform" => NAME),
             tls,
         })
     }
@@ -192,7 +198,7 @@ impl TransformBuilder for KafkaSinkClusterBuilder {
         Box::new(KafkaSinkCluster {
             first_contact_points: self.first_contact_points.clone(),
             shotover_nodes: self.shotover_nodes.clone(),
-            _rack: self.rack.clone(),
+            rack: self.rack.clone(),
             nodes: vec![],
             nodes_shared: self.nodes_shared.clone(),
             controller_broker: self.controller_broker.clone(),
@@ -210,10 +216,15 @@ impl TransformBuilder for KafkaSinkClusterBuilder {
             first_contact_node: None,
             control_connection: None,
             pending_requests: Default::default(),
+            // TODO: this approach with `find_coordinator_requests` and `routed_to_coordinator_for_group`
+            //       is prone to memory leaks and logic errors.
+            //       We should replace these fields with extra state within `PendingRequestTy::Received/Sent`.
             find_coordinator_requests: Default::default(),
+            routed_to_coordinator_for_group: Default::default(),
             temp_responses_buffer: Default::default(),
             sasl_mechanism: None,
             authorize_scram_over_mtls: self.authorize_scram_over_mtls.as_ref().map(|x| x.build()),
+            out_of_rack_requests: self.out_of_rack_requests.clone(),
         })
     }
 
@@ -238,6 +249,10 @@ impl AtomicBrokerId {
             .store(value.0.into(), std::sync::atomic::Ordering::Relaxed)
     }
 
+    fn clear(&self) {
+        self.0.store(i64::MAX, std::sync::atomic::Ordering::Relaxed)
+    }
+
     /// Returns `None` when set has never been called.
     /// Otherwise returns `Some` containing the latest set value.
     fn get(&self) -> Option<BrokerId> {
@@ -251,8 +266,7 @@ impl AtomicBrokerId {
 pub struct KafkaSinkCluster {
     first_contact_points: Vec<String>,
     shotover_nodes: Vec<ShotoverNode>,
-    // TODO: use this for rack aware routing
-    _rack: StrBytes,
+    rack: StrBytes,
     nodes: Vec<KafkaNode>,
     nodes_shared: Arc<RwLock<Vec<KafkaNode>>>,
     controller_broker: Arc<AtomicBrokerId>,
@@ -268,10 +282,12 @@ pub struct KafkaSinkCluster {
     /// Ordering must be maintained to ensure responses match up with their request.
     pending_requests: VecDeque<PendingRequest>,
     find_coordinator_requests: MessageIdMap<FindCoordinator>,
+    routed_to_coordinator_for_group: MessageIdMap<GroupId>,
     /// A temporary buffer used when receiving responses, only held onto in order to avoid reallocating.
     temp_responses_buffer: Vec<Message>,
     sasl_mechanism: Option<String>,
     authorize_scram_over_mtls: Option<AuthorizeScramOverMtls>,
+    out_of_rack_requests: Counter,
 }
 
 /// State of a Request/Response is maintained by this enum.
@@ -517,13 +533,17 @@ impl KafkaSinkCluster {
                         self.store_topic_names(&mut topic_names, topic.topic.clone());
                         self.store_topic_ids(&mut topic_ids, topic.topic_id);
                     }
+                    fetch.session_id = 0;
+                    fetch.session_epoch = -1;
+                    request.invalidate_cache();
                 }
                 Some(Frame::Kafka(KafkaFrame::Request {
                     body:
                         RequestBody::Heartbeat(HeartbeatRequest { group_id, .. })
                         | RequestBody::SyncGroup(SyncGroupRequest { group_id, .. })
                         | RequestBody::OffsetFetch(OffsetFetchRequest { group_id, .. })
-                        | RequestBody::JoinGroup(JoinGroupRequest { group_id, .. }),
+                        | RequestBody::JoinGroup(JoinGroupRequest { group_id, .. })
+                        | RequestBody::LeaveGroup(LeaveGroupRequest { group_id, .. }),
                     ..
                 })) => {
                     self.store_group(&mut groups, group_id.clone());
@@ -561,10 +581,18 @@ impl KafkaSinkCluster {
                     ..
                 })) => {
                     for topic in metadata.topics.values() {
-                        if let Some(err) = ResponseError::try_from_code(topic.error_code) {
-                            return Err(anyhow!(
-                                "Kafka responded to Metadata request with error {err:?}"
-                            ));
+                        match ResponseError::try_from_code(topic.error_code) {
+                            Some(ResponseError::UnknownTopicOrPartition) => {
+                                // We need to look up all topics sent to us by the client
+                                // but the client may request a topic that doesnt exist.
+                            }
+                            Some(err) => {
+                                // Some other kind of error, better to terminate the connection
+                                return Err(anyhow!(
+                                    "Kafka responded to Metadata request with error {err:?}"
+                                ));
+                            }
+                            None => {}
                         }
                     }
                     self.process_metadata_response(metadata).await
@@ -632,9 +660,17 @@ impl KafkaSinkCluster {
                     self.route_to_coordinator(message, group_id);
                 }
                 Some(Frame::Kafka(KafkaFrame::Request {
+                    body: RequestBody::LeaveGroup(leave_group),
+                    ..
+                })) => {
+                    let group_id = leave_group.group_id.clone();
+                    self.route_to_coordinator(message, group_id);
+                }
+                Some(Frame::Kafka(KafkaFrame::Request {
                     body: RequestBody::DeleteGroups(groups),
                     ..
                 })) => {
+                    // TODO: we need to split this up into multiple requests so it can be correctly routed to all possible nodes
                     let group_id = groups.groups_names.first().unwrap().clone();
                     self.route_to_coordinator(message, group_id);
                 }
@@ -673,7 +709,7 @@ impl KafkaSinkCluster {
                 .iter()
                 .next()
                 .ok_or_else(|| anyhow!("No topics in produce message"))?;
-            if let Some(topic) = self.topic_by_name.get(&topic_name.0) {
+            if let Some(topic) = self.topic_by_name.get(topic_name) {
                 // assume that all partitions in this topic have the same routing requirements
                 let partition = &topic.partitions[topic_data
                     .partition_data
@@ -689,7 +725,12 @@ impl KafkaSinkCluster {
             let destination = match connection {
                 Some(connection) => connection,
                 None => {
-                    tracing::warn!("no known partition leader for {topic_name:?}, routing message to a random node so that a NOT_LEADER_OR_FOLLOWER or similar error is returned to the client");
+                    tracing::debug!(
+                        r#"no known partition leader for {topic_name:?}
+routing message to a random node so that:
+* if auto topic creation is enabled, auto topic creation will occur
+* if auto topic creation is disabled a NOT_LEADER_OR_FOLLOWER is returned to the client"#
+                    );
                     self.nodes.choose(&mut self.rng).unwrap().broker_id
                 }
             };
@@ -731,12 +772,32 @@ impl KafkaSinkCluster {
                     let destination = if let Some(partition) =
                         topic_meta.partitions.get(partition_index)
                     {
-                        self.nodes
+                        if let Some(node) = self
+                            .nodes
                             .iter_mut()
-                            .filter(|node| partition.replica_nodes.contains(&node.broker_id))
+                            .filter(|node| {
+                                partition
+                                    .shotover_rack_replica_nodes
+                                    .contains(&node.broker_id)
+                            })
                             .choose(&mut self.rng)
-                            .unwrap()
-                            .broker_id
+                        {
+                            node.broker_id
+                        } else {
+                            tracing::debug!(
+                                "Routing fetch request to replica outside of shotover's rack"
+                            );
+                            self.nodes
+                                .iter_mut()
+                                .filter(|node| {
+                                    partition
+                                        .external_rack_replica_nodes
+                                        .contains(&node.broker_id)
+                                })
+                                .choose(&mut self.rng)
+                                .unwrap()
+                                .broker_id
+                        }
                     } else {
                         let partition_len = topic_meta.partitions.len();
                         let topic_name = Self::format_topic_name(&topic);
@@ -781,78 +842,73 @@ impl KafkaSinkCluster {
             ..
         })) = message.frame()
         {
-            if fetch.session_id == 0 {
-                let routing = self.split_fetch_request_by_destination(fetch);
+            let routing = self.split_fetch_request_by_destination(fetch);
 
-                if routing.is_empty() {
-                    // Fetch contains no topics, so we can just pick a random destination.
-                    // The message is unchanged so we can just send as is.
-                    let destination = self.nodes.choose(&mut self.rng).unwrap().broker_id;
+            if routing.is_empty() {
+                // Fetch contains no topics, so we can just pick a random destination.
+                // The message is unchanged so we can just send as is.
+                let destination = self.nodes.choose(&mut self.rng).unwrap().broker_id;
 
-                    self.pending_requests.push_back(PendingRequest {
-                        ty: PendingRequestTy::Routed {
-                            destination,
-                            request: message,
-                        },
-                        combine_responses: 1,
-                    });
-                } else if routing.len() == 1 {
-                    // Only 1 destination,
-                    // so we can just reconstruct the original message as is,
-                    // act like this never happened 😎,
-                    // we dont even need to invalidate the message's cache.
-                    let (destination, topics) = routing.into_iter().next().unwrap();
+                self.pending_requests.push_back(PendingRequest {
+                    ty: PendingRequestTy::Routed {
+                        destination,
+                        request: message,
+                    },
+                    combine_responses: 1,
+                });
+            } else if routing.len() == 1 {
+                // Only 1 destination,
+                // so we can just reconstruct the original message as is,
+                // act like this never happened 😎,
+                // we dont even need to invalidate the message's cache.
+                let (destination, topics) = routing.into_iter().next().unwrap();
+                let destination = if destination == -1 {
+                    self.nodes.choose(&mut self.rng).unwrap().broker_id
+                } else {
+                    destination
+                };
+
+                fetch.topics = topics;
+                self.pending_requests.push_back(PendingRequest {
+                    ty: PendingRequestTy::Routed {
+                        destination,
+                        request: message,
+                    },
+                    combine_responses: 1,
+                });
+            } else {
+                // The message has been split so it may be delivered to multiple destinations.
+                // We must generate a unique message for each destination.
+                let combine_responses = routing.len();
+                message.invalidate_cache();
+                for (i, (destination, topics)) in routing.into_iter().enumerate() {
                     let destination = if destination == -1 {
                         self.nodes.choose(&mut self.rng).unwrap().broker_id
                     } else {
                         destination
                     };
-
-                    fetch.topics = topics;
+                    let mut request = if i == 0 {
+                        // First message acts as base and retains message id
+                        message.clone()
+                    } else {
+                        message.clone_with_new_id()
+                    };
+                    if let Some(Frame::Kafka(KafkaFrame::Request {
+                        body: RequestBody::Fetch(fetch),
+                        ..
+                    })) = request.frame()
+                    {
+                        fetch.topics = topics;
+                    }
                     self.pending_requests.push_back(PendingRequest {
                         ty: PendingRequestTy::Routed {
                             destination,
-                            request: message,
+                            request,
                         },
-                        combine_responses: 1,
+                        combine_responses,
                     });
-                } else {
-                    // The message has been split so it may be delivered to multiple destinations.
-                    // We must generate a unique message for each destination.
-                    let combine_responses = routing.len();
-                    message.invalidate_cache();
-                    for (i, (destination, topics)) in routing.into_iter().enumerate() {
-                        let destination = if destination == -1 {
-                            self.nodes.choose(&mut self.rng).unwrap().broker_id
-                        } else {
-                            destination
-                        };
-                        let mut request = if i == 0 {
-                            // First message acts as base and retains message id
-                            message.clone()
-                        } else {
-                            message.clone_with_new_id()
-                        };
-                        if let Some(Frame::Kafka(KafkaFrame::Request {
-                            body: RequestBody::Fetch(fetch),
-                            ..
-                        })) = request.frame()
-                        {
-                            fetch.topics = topics;
-                        }
-                        self.pending_requests.push_back(PendingRequest {
-                            ty: PendingRequestTy::Routed {
-                                destination,
-                                request,
-                            },
-                            combine_responses,
-                        });
-                    }
                 }
-            } else {
-                // route via session id
-                unreachable!("Currently requests should not have session_id set since we remove it from responses. In the future we do want to handle session_id though.")
-            };
+            }
         }
 
         Ok(())
@@ -985,17 +1041,28 @@ impl KafkaSinkCluster {
         }
 
         for (destination, requests) in broker_to_routed_requests {
-            self.nodes
+            let node = self
+                .nodes
                 .iter_mut()
                 .find(|x| x.broker_id == destination)
-                .unwrap()
-                .get_connection(
-                    &self.connection_factory,
-                    &self.authorize_scram_over_mtls,
-                    &self.sasl_mechanism,
-                )
-                .await?
-                .send(requests.requests)?;
+                .unwrap();
+
+            if node
+                .rack
+                .as_ref()
+                .map(|rack| rack != &self.rack)
+                .unwrap_or(false)
+            {
+                self.out_of_rack_requests.increment(1);
+            }
+
+            node.get_connection(
+                &self.connection_factory,
+                &self.authorize_scram_over_mtls,
+                &self.sasl_mechanism,
+            )
+            .await?
+            .send(requests.requests)?;
         }
 
         Ok(())
@@ -1129,7 +1196,6 @@ impl KafkaSinkCluster {
     }
 
     async fn process_responses(&mut self, responses: &mut [Message]) -> Result<()> {
-        // TODO: Handle errors like NOT_COORDINATOR by removing element from self.topics and self.coordinator_broker_id
         for response in responses.iter_mut() {
             let request_id = response.request_id().unwrap();
             match response.frame() {
@@ -1178,18 +1244,133 @@ impl KafkaSinkCluster {
                     self.process_sasl_authenticate(authenticate).await?;
                 }
                 Some(Frame::Kafka(KafkaFrame::Response {
-                    body: ResponseBody::Metadata(metadata),
+                    body: ResponseBody::Produce(produce),
                     ..
                 })) => {
-                    self.process_metadata_response(metadata).await;
-                    self.rewrite_metadata_response(metadata)?;
-                    response.invalidate_cache();
+                    for (topic_name, response_topic) in &produce.responses {
+                        for response_partition in &response_topic.partition_responses {
+                            if let Some(ResponseError::NotLeaderOrFollower) =
+                                ResponseError::try_from_code(response_partition.error_code)
+                            {
+                                if response_partition.current_leader.leader_id != -1 {
+                                    // The broker has informed us who the new leader is, we can just directly update the leader
+                                    if let Some(mut stored_topic) =
+                                        self.topic_by_name.get_mut(topic_name)
+                                    {
+                                        if let Some(stored_partition) = stored_topic
+                                            .partitions
+                                            .get_mut(response_partition.index as usize)
+                                        {
+                                            if response_partition.current_leader.leader_epoch
+                                                > stored_partition.leader_epoch
+                                            {
+                                                stored_partition.leader_id =
+                                                    response_partition.current_leader.leader_id;
+                                                stored_partition.leader_epoch =
+                                                    response_partition.current_leader.leader_epoch;
+                                            }
+                                            tracing::info!(
+                                                "Produce response included error NOT_LEADER_OR_FOLLOWER and so updated leader in topic {:?} partition {}",
+                                                topic_name,
+                                                response_partition.index
+                                            );
+                                        }
+                                    }
+                                } else {
+                                    // The broker doesnt know who the new leader is, clear the entire topic.
+                                    self.topic_by_name.remove(topic_name);
+                                    tracing::info!(
+                                        "Produce response included error NOT_LEADER_OR_FOLLOWER and so cleared topic {:?}",
+                                        topic_name,
+                                    );
+                                    break;
+                                }
+                            }
+                        }
+                    }
                 }
                 Some(Frame::Kafka(KafkaFrame::Response {
                     body: ResponseBody::Fetch(fetch),
                     ..
                 })) => {
-                    fetch.session_id = 0;
+                    for response in &fetch.responses {
+                        for partition in &response.partitions {
+                            if let Some(ResponseError::NotLeaderOrFollower) =
+                                ResponseError::try_from_code(partition.error_code)
+                            {
+                                // The fetch response includes the leader_id which a client could could use to route a fetch request to,
+                                // but we cant use it to fix our list of replicas, so our only option is to clear the whole thing.
+                                self.topic_by_name.remove(&response.topic);
+                                self.topic_by_id.remove(&response.topic_id);
+                                tracing::info!(
+                                    "Fetch response included error NOT_LEADER_OR_FOLLOWER and so cleared topic {:?} {:?}",
+                                    response.topic,
+                                    response.topic_id
+                                );
+                                break;
+                            }
+                        }
+                    }
+                }
+                Some(Frame::Kafka(KafkaFrame::Response {
+                    body: ResponseBody::Heartbeat(heartbeat),
+                    ..
+                })) => self.handle_coordinator_routing_error(request_id, heartbeat.error_code),
+                Some(Frame::Kafka(KafkaFrame::Response {
+                    body: ResponseBody::SyncGroup(sync_group),
+                    ..
+                })) => self.handle_coordinator_routing_error(request_id, sync_group.error_code),
+                Some(Frame::Kafka(KafkaFrame::Response {
+                    body: ResponseBody::OffsetFetch(offset_fetch),
+                    ..
+                })) => self.handle_coordinator_routing_error(request_id, offset_fetch.error_code),
+                Some(Frame::Kafka(KafkaFrame::Response {
+                    body: ResponseBody::JoinGroup(join_group),
+                    ..
+                })) => self.handle_coordinator_routing_error(request_id, join_group.error_code),
+                Some(Frame::Kafka(KafkaFrame::Response {
+                    body: ResponseBody::LeaveGroup(leave_group),
+                    ..
+                })) => self.handle_coordinator_routing_error(request_id, leave_group.error_code),
+                Some(Frame::Kafka(KafkaFrame::Response {
+                    body: ResponseBody::DeleteGroups(delete_groups),
+                    ..
+                })) => {
+                    for (group_id, result) in &delete_groups.results {
+                        if let Some(ResponseError::NotCoordinator) =
+                            ResponseError::try_from_code(result.error_code)
+                        {
+                            // Need to run this to avoid memory leaks, since route_to_coordinator is called for DeleteGroup requests
+                            self.routed_to_coordinator_for_group.remove(&request_id);
+
+                            // Need to run this to ensure we remove for all groups
+                            self.group_to_coordinator_broker.remove(group_id);
+                        }
+                    }
+                }
+                Some(Frame::Kafka(KafkaFrame::Response {
+                    body: ResponseBody::CreateTopics(create_topics),
+                    ..
+                })) => {
+                    for topic in create_topics.topics.values() {
+                        if let Some(ResponseError::NotController) =
+                            ResponseError::try_from_code(topic.error_code)
+                        {
+                            tracing::info!(
+                                "Response to CreateTopics included error NOT_CONTROLLER and so reset controller broker, previously was {:?}",
+                                self.controller_broker.get()
+                            );
+                            self.controller_broker.clear();
+                            break;
+                        }
+                    }
+                }
+                Some(Frame::Kafka(KafkaFrame::Response {
+                    body: ResponseBody::Metadata(metadata),
+                    ..
+                })) => {
+                    self.process_metadata_response(metadata).await;
+                    self.rewrite_metadata_response(metadata)?;
                     response.invalidate_cache();
                 }
                 Some(Frame::Kafka(KafkaFrame::Response {
@@ -1207,6 +1388,20 @@ impl KafkaSinkCluster {
         }
 
         Ok(())
+    }
+
+    /// This method must be called for every response to a request that was routed via `route_to_coordinator`
+    fn handle_coordinator_routing_error(&mut self, request_id: u128, error_code: i16) {
+        if let Some(ResponseError::NotCoordinator) = ResponseError::try_from_code(error_code) {
+            if let Some(group_id) = self.routed_to_coordinator_for_group.remove(&request_id) {
+                let broker_id = self.group_to_coordinator_broker.remove(&group_id);
+                tracing::info!(
+                    "Response was error NOT_COORDINATOR and so cleared group id {:?} coordinator mapping to broker {:?}",
+                    group_id,
+                    broker_id,
+                );
+            }
+        }
     }
 
     async fn process_sasl_authenticate(
@@ -1288,6 +1483,8 @@ impl KafkaSinkCluster {
 
     fn route_to_coordinator(&mut self, request: Message, group_id: GroupId) {
         let destination = self.group_to_coordinator_broker.get(&group_id);
+        self.routed_to_coordinator_for_group
+            .insert(request.id(), group_id.clone());
         let destination = match destination {
             Some(destination) => *destination,
             None => {
@@ -1295,6 +1492,7 @@ impl KafkaSinkCluster {
                 self.nodes.choose(&mut self.rng).unwrap().broker_id
             }
         };
+
         self.pending_requests.push_back(PendingRequest {
             ty: PendingRequestTy::Routed {
                 destination,
@@ -1316,29 +1514,71 @@ impl KafkaSinkCluster {
 
         self.controller_broker.set(metadata.controller_id);
 
-        for topic in &metadata.topics {
-            let mut partitions: Vec<_> = topic
-                .1
-                .partitions
-                .iter()
-                .map(|partition| Partition {
-                    index: partition.partition_index,
-                    leader_id: *partition.leader_id,
-                    replica_nodes: partition.replica_nodes.iter().map(|x| x.0).collect(),
-                })
-                .collect();
-            partitions.sort_by_key(|x| x.index);
-            if !topic.0.is_empty() {
-                self.topic_by_name.insert(
-                    topic.0.clone(),
-                    Topic {
-                        partitions: partitions.clone(),
-                    },
-                );
-            }
-            if !topic.1.topic_id.is_nil() {
-                self.topic_by_id
-                    .insert(topic.1.topic_id, Topic { partitions });
+        for (topic_name, topic) in &metadata.topics {
+            if ResponseError::try_from_code(topic.error_code).is_none() {
+                // We use the response's partitions list as a base
+                // since if it has deleted an entry then we also want to delete that entry.
+                let mut new_partitions: Vec<_> = topic
+                    .partitions
+                    .iter()
+                    .map(|partition| Partition {
+                        index: partition.partition_index,
+                        leader_id: partition.leader_id,
+                        leader_epoch: partition.leader_epoch,
+                        shotover_rack_replica_nodes: partition
+                            .replica_nodes
+                            .iter()
+                            .cloned()
+                            .filter(|replica_node_id| self.broker_within_rack(*replica_node_id))
+                            .collect(),
+                        external_rack_replica_nodes: partition
+                            .replica_nodes
+                            .iter()
+                            .cloned()
+                            .filter(|replica_node_id| !self.broker_within_rack(*replica_node_id))
+                            .collect(),
+                    })
+                    .collect();
+                new_partitions.sort_by_key(|x| x.index);
+
+                // If topic_by_name contains any partitions with a more recent leader_epoch use that instead.
+                // The out of date epoch is probably caused by requesting metadata from a broker that is slightly out of date.
+                // We use topic_by_name instead of topic_by_id since its always used regardless of protocol version.
+                if let Some(topic) = self.topic_by_name.get(topic_name) {
+                    for old_partition in &topic.partitions {
+                        if let Some(new_partition) = new_partitions
+                            .iter_mut()
+                            .find(|p| p.index == old_partition.index)
+                        {
+                            if old_partition.leader_epoch > new_partition.leader_epoch {
+                                new_partition.leader_id = old_partition.leader_id;
+                                new_partition
+                                    .shotover_rack_replica_nodes
+                                    .clone_from(&old_partition.shotover_rack_replica_nodes);
+                                new_partition
+                                    .external_rack_replica_nodes
+                                    .clone_from(&old_partition.external_rack_replica_nodes);
+                            }
+                        }
+                    }
+                };
+
+                if !topic_name.is_empty() {
+                    self.topic_by_name.insert(
+                        topic_name.clone(),
+                        Topic {
+                            partitions: new_partitions.clone(),
+                        },
+                    );
+                }
+                if !topic.topic_id.is_nil() {
+                    self.topic_by_id.insert(
+                        topic.topic_id,
+                        Topic {
+                            partitions: new_partitions,
+                        },
+                    );
+                }
             }
         }
     }
@@ -1540,17 +1780,31 @@ impl KafkaSinkCluster {
     }
 
     async fn add_node_if_new(&mut self, new_node: KafkaNode) {
-        let new = self
+        let missing_from_shared = self
             .nodes_shared
             .read()
             .await
             .iter()
             .all(|node| node.broker_id != new_node.broker_id);
-        if new {
+        if missing_from_shared {
             self.nodes_shared.write().await.push(new_node);
-
-            self.update_local_nodes().await;
         }
+
+        // We need to run this every time, not just when missing_from_shared.
+        // This is because nodes_shared could already contain new_node while its missing from `self.nodes`.
+        // This could happen when another KafkaSinkCluster instance updates nodes_shared just before we read from it.
+        self.update_local_nodes().await;
+    }
+
+    fn broker_within_rack(&self, broker_id: BrokerId) -> bool {
+        self.nodes.iter().any(|node| {
+            node.broker_id == broker_id
+                && node
+                    .rack
+                    .as_ref()
+                    .map(|rack| rack == &self.rack)
+                    .unwrap_or(false)
+        })
     }
 }
 
@@ -1569,8 +1823,10 @@ struct Topic {
 #[derive(Debug, Clone)]
 struct Partition {
     index: i32,
-    leader_id: i32,
-    replica_nodes: Vec<i32>,
+    leader_epoch: i32,
+    leader_id: BrokerId,
+    shotover_rack_replica_nodes: Vec<BrokerId>,
+    external_rack_replica_nodes: Vec<BrokerId>,
 }
 
 struct FindCoordinator {

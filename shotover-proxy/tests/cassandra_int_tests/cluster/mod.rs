@@ -22,7 +22,7 @@ pub async fn run_topology_task(ca_path: Option<&str>, port: Option<u32>) -> Vec<
     let (keyspaces_tx, _keyspaces_rx) = watch::channel(HashMap::new());
     let (task_handshake_tx, task_handshake_rx) = mpsc::channel(1);
     let tls = ca_path.map(|ca_path| {
-        TlsConnector::new(TlsConnectorConfig {
+        TlsConnector::new(&TlsConnectorConfig {
             certificate_authority_path: ca_path.into(),
             certificate_path: None,
             private_key_path: None,

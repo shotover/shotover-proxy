@@ -246,7 +246,7 @@ This transform will route kafka messages to a broker within a Kafka cluster:
 
 * produce messages are routed to the partition leader
 * fetch messages are routed to a random partition replica
-* heartbeat, syncgroup, offsetfetch and joingroup are all routed to the group coordinator
+* heartbeat, syncgroup, offsetfetch, joingroup and leavegroup are all routed to the group coordinator
 * all other messages go to a random node.
 
 The fact that Shotover is routing to multiple destination nodes will be hidden from the client.
@@ -328,7 +328,9 @@ If SCRAM authentication against the first kafka broker fails, shotover will term
     #    certificate_path: "tls/mtls_localhost.crt"
     #    private_key_path: "tls/mtls_localhost.key"
     #    verify_hostname: true
-
+    #  # The lifetime that delegation tokens will be created with.
+    #  # Delegation tokens will automatically be recreated after they have passed half of their lifetime.
+    #  delegation_token_lifetime_seconds: 86400 # 1 day
 ```
 
 ### KafkaSinkSingle
