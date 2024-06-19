@@ -9,7 +9,6 @@ use metrics::counter;
 use metrics::Counter;
 use serde::Deserialize;
 use serde::Serialize;
-use std::borrow::Cow;
 use std::collections::HashMap;
 
 use super::DownChainProtocol;
@@ -42,9 +41,9 @@ impl QueryCounter {
         }
     }
 
-    fn increment_counter(&mut self, query: Cow<str>, query_type: &'static str) {
-        self.query_to_counter.entry(query.to_string())
-            .or_insert_with(|| counter!("shotover_query_count", "name" => self.counter_name, "query" => query.to_string(), "type" => query_type))
+    fn increment_counter(&mut self, query: String, query_type: &'static str) {
+        self.query_to_counter.entry(query)
+            .or_insert_with_key(|query| counter!("shotover_query_count", "name" => self.counter_name, "query" => query.clone(), "type" => query_type))
             .increment(1);
     }
 }
@@ -71,20 +70,20 @@ impl Transform for QueryCounter {
                 #[cfg(feature = "cassandra")]
                 Some(Frame::Cassandra(frame)) => {
                     for statement in frame.operation.queries() {
-                        self.increment_counter(Cow::from(statement.short_name()), "cassandra");
+                        self.increment_counter(statement.short_name().to_string(), "cassandra");
                     }
                 }
                 #[cfg(feature = "redis")]
                 Some(Frame::Redis(frame)) => {
                     if let Some(query_type) = crate::frame::redis::redis_query_name(frame) {
-                        self.increment_counter(Cow::from(query_type), "redis");
+                        self.increment_counter(query_type, "redis");
                     } else {
-                        self.increment_counter(Cow::from("unknown"), "redis");
+                        self.increment_counter("unknown".to_string(), "redis");
                     }
                 }
                 #[cfg(feature = "kafka")]
                 Some(Frame::Kafka(_)) => {
-                    self.increment_counter(Cow::from("unknown"), "kafka");
+                    self.increment_counter("unknown".to_string(), "kafka");
                 }
                 Some(Frame::Dummy) => {
                     // Dummy does not count as a message
@@ -94,7 +93,7 @@ impl Transform for QueryCounter {
                     todo!();
                 }
                 None => {
-                    self.increment_counter(Cow::from("unknown"), "none");
+                    self.increment_counter("unknown".to_string(), "none");
                 }
             }
         }
