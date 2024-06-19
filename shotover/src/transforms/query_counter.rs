@@ -18,7 +18,7 @@ use super::UpChainProtocol;
 #[derive(Clone)]
 pub struct QueryCounter {
     counter_name: &'static str,
-    counters: HashMap<&'static str, Counter>,
+    counters: HashMap<String, Counter>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -31,11 +31,8 @@ impl QueryCounter {
     pub fn new(counter_name: String) -> Self {
         let counter_name_ref: &'static str = counter_name.leak();
         let mut counters = HashMap::new();
-
-        let query_counter_key = format!("shotover_query_count-name:{}", counter_name_ref);
-        let query_counter_key_ref: &'static str = query_counter_key.leak();
         let query_counter = counter!("shotover_query_count", "name" => counter_name_ref);
-        counters.insert(query_counter_key_ref, query_counter);
+        counters.insert("shotover_query_count".to_string(), query_counter);
 
         QueryCounter {
             // Leaking here is fine since the builder is created only once during shotover startup.
@@ -44,21 +41,13 @@ impl QueryCounter {
         }
     }
 
-    fn increment_counter(&mut self, query: &'static str, query_type: &'static str) {
-        let query_counter_key = format!(
-            "shotover_query_count-name:{}-query:{}-type:{}",
-            self.counter_name, query, query_type
-        );
-        let query_counter_key_ref: &'static str = query_counter_key.leak();
-        if self.counters.contains_key(query_counter_key_ref) {
-            self.counters
-                .get(query_counter_key_ref)
-                .unwrap()
-                .increment(1);
+    fn increment_counter(&mut self, query: String, query_type: &'static str) {
+        if self.counters.contains_key(query.as_str()) {
+            self.counters.get(query.as_str()).unwrap().increment(1);
         } else {
-            let query_counter = counter!("shotover_query_count", "name" => self.counter_name, "query" => query, "type" => query_type);
+            let query_counter = counter!("shotover_query_count", "name" => self.counter_name, "query" => query.clone(), "type" => query_type);
             query_counter.increment(1);
-            self.counters.insert(query_counter_key_ref, query_counter);
+            self.counters.insert(query, query_counter);
         }
     }
 }
@@ -85,21 +74,20 @@ impl Transform for QueryCounter {
                 #[cfg(feature = "cassandra")]
                 Some(Frame::Cassandra(frame)) => {
                     for statement in frame.operation.queries() {
-                        self.increment_counter(statement.short_name(), "cassandra");
+                        self.increment_counter(statement.short_name().to_string(), "cassandra");
                     }
                 }
                 #[cfg(feature = "redis")]
                 Some(Frame::Redis(frame)) => {
                     if let Some(query_type) = crate::frame::redis::redis_query_name(frame) {
-                        let query_type_ref: &'static str = query_type.leak();
-                        self.increment_counter(query_type_ref, "redis");
+                        self.increment_counter(query_type, "redis");
                     } else {
-                        self.increment_counter("unknown", "redis");
+                        self.increment_counter("unknown".to_string(), "redis");
                     }
                 }
                 #[cfg(feature = "kafka")]
                 Some(Frame::Kafka(_)) => {
-                    self.increment_counter("unknown", "kafka");
+                    self.increment_counter("unknown".to_string(), "kafka");
                 }
                 Some(Frame::Dummy) => {
                     // Dummy does not count as a message
@@ -109,7 +97,7 @@ impl Transform for QueryCounter {
                     todo!();
                 }
                 None => {
-                    self.increment_counter("unknown", "none");
+                    self.increment_counter("unknown".to_string(), "none");
                 }
             }
         }
