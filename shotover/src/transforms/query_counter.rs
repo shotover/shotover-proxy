@@ -6,8 +6,10 @@ use crate::transforms::{Transform, TransformBuilder, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
 use metrics::counter;
+use metrics::Counter;
 use serde::Deserialize;
 use serde::Serialize;
+use std::collections::HashMap;
 
 use super::DownChainProtocol;
 use super::TransformContextConfig;
@@ -16,6 +18,7 @@ use super::UpChainProtocol;
 #[derive(Clone)]
 pub struct QueryCounter {
     counter_name: &'static str,
+    counters: HashMap<&'static str, Counter>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -26,11 +29,36 @@ pub struct QueryCounterConfig {
 
 impl QueryCounter {
     pub fn new(counter_name: String) -> Self {
-        counter!("shotover_query_count", "name" => counter_name.clone());
+        let counter_name_ref: &'static str = counter_name.leak();
+        let mut counters = HashMap::new();
+
+        let query_counter_key = format!("shotover_query_count-name:{}", counter_name_ref);
+        let query_counter_key_ref: &'static str = query_counter_key.leak();
+        let query_counter = counter!("shotover_query_count", "name" => counter_name_ref);
+        counters.insert(query_counter_key_ref, query_counter);
 
         QueryCounter {
             // Leaking here is fine since the builder is created only once during shotover startup.
-            counter_name: counter_name.leak(),
+            counter_name: counter_name_ref,
+            counters,
+        }
+    }
+
+    fn increment_counter(&mut self, query: &'static str, query_type: &'static str) {
+        let query_counter_key = format!(
+            "shotover_query_count-name:{}-query:{}-type:{}",
+            self.counter_name, query, query_type
+        );
+        let query_counter_key_ref: &'static str = query_counter_key.leak();
+        if self.counters.contains_key(query_counter_key_ref) {
+            self.counters
+                .get(query_counter_key_ref)
+                .unwrap()
+                .increment(1);
+        } else {
+            let query_counter = counter!("shotover_query_count", "name" => self.counter_name, "query" => query, "type" => query_type);
+            query_counter.increment(1);
+            self.counters.insert(query_counter_key_ref, query_counter);
         }
     }
 }
@@ -57,20 +85,21 @@ impl Transform for QueryCounter {
                 #[cfg(feature = "cassandra")]
                 Some(Frame::Cassandra(frame)) => {
                     for statement in frame.operation.queries() {
-                        counter!("shotover_query_count", "name" => self.counter_name, "query" => statement.short_name(), "type" => "cassandra").increment(1);
+                        self.increment_counter(statement.short_name(), "cassandra");
                     }
                 }
                 #[cfg(feature = "redis")]
                 Some(Frame::Redis(frame)) => {
                     if let Some(query_type) = crate::frame::redis::redis_query_name(frame) {
-                        counter!("shotover_query_count", "name" => self.counter_name, "query" => query_type, "type" => "redis").increment(1);
+                        let query_type_ref: &'static str = query_type.leak();
+                        self.increment_counter(query_type_ref, "redis");
                     } else {
-                        counter!("shotover_query_count", "name" => self.counter_name, "query" => "unknown", "type" => "redis").increment(1);
+                        self.increment_counter("unknown", "redis");
                     }
                 }
                 #[cfg(feature = "kafka")]
                 Some(Frame::Kafka(_)) => {
-                    counter!("shotover_query_count", "name" => self.counter_name, "query" => "unknown", "type" => "kafka").increment(1);
+                    self.increment_counter("unknown", "kafka");
                 }
                 Some(Frame::Dummy) => {
                     // Dummy does not count as a message
@@ -80,7 +109,7 @@ impl Transform for QueryCounter {
                     todo!();
                 }
                 None => {
-                    counter!("shotover_query_count", "name" => self.counter_name, "query" => "unknown", "type" => "none").increment(1)
+                    self.increment_counter("unknown", "none");
                 }
             }
         }
