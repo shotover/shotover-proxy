@@ -28,13 +28,12 @@ pub struct QueryCounterConfig {
 }
 
 impl QueryCounter {
-    #![allow(unused_must_use)] // Allow shotover_query_count counter to be not used
     pub fn new(counter_name: String) -> Self {
         // Leaking here is fine since the builder is created only once during shotover startup.
         let counter_name_ref: &'static str = counter_name.leak();
 
         // Although not incremented, this counter needs to be created to ensure shotover_query_count is 0 on shotover startup.
-        counter!("shotover_query_count", "name" => counter_name_ref);
+        let _ = counter!("shotover_query_count", "name" => counter_name_ref);
 
         QueryCounter {
             counter_name: counter_name_ref,
