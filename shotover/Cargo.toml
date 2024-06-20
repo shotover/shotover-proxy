@@ -93,8 +93,8 @@ httparse = { version = "1.8.0", optional = true }
 http = { version = "1.0.0", optional = true }
 
 #Observability
-metrics = "0.22.0"
-metrics-exporter-prometheus = { version = "0.14.0", default-features = false }
+metrics = "0.23.0"
+metrics-exporter-prometheus = { version = "0.15.0", default-features = false }
 tracing.workspace = true
 tracing-subscriber.workspace = true
 tracing-appender.workspace = true
