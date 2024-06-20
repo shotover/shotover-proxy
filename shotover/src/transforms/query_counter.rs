@@ -33,7 +33,7 @@ impl QueryCounter {
         let counter_name_ref: &'static str = counter_name.leak();
 
         // Although not incremented, this counter needs to be created to ensure shotover_query_count is 0 on shotover startup.
-        counter!("shotover_query_count", "name" => counter_name_ref);
+        let _ = counter!("shotover_query_count", "name" => counter_name_ref);
 
         QueryCounter {
             counter_name: counter_name_ref,
