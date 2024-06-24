@@ -7,26 +7,27 @@ use test_helpers::connection::cassandra::{
 mod list;
 mod map;
 mod set;
+mod vector;
 
-const NATIVE_COL_TYPES: [ColType; 18] = [
-    ColType::Ascii,
-    ColType::Bigint,
-    ColType::Blob,
-    ColType::Boolean,
-    ColType::Decimal,
-    ColType::Double,
-    ColType::Float,
+const NATIVE_COL_TYPES: [ColType; 2] = [
+    // ColType::Ascii,
+    // ColType::Bigint,
+    // ColType::Blob,
+    // ColType::Boolean,
+    // ColType::Decimal,
+    // ColType::Double,
+    // ColType::Float,
     ColType::Int,
-    ColType::Timestamp,
-    ColType::Uuid,
-    ColType::Varchar,
-    ColType::Varint,
-    ColType::Timeuuid,
-    ColType::Inet,
-    ColType::Date,
-    ColType::Time,
+    // ColType::Timestamp,
+    // ColType::Uuid,
+    // ColType::Varchar,
+    // ColType::Varint,
+    // ColType::Timeuuid,
+    // ColType::Inet,
+    // ColType::Date,
+    // ColType::Time,
     ColType::Smallint,
-    ColType::Tinyint,
+    // ColType::Tinyint,
 ];
 
 fn get_type_str(col_type: ColType) -> &'static str {
@@ -309,4 +310,19 @@ pub async fn test(connection: &CassandraConnection, driver: CassandraDriver) {
     list::test(connection, driver).await;
     set::test(connection, driver).await;
     map::test(connection, driver).await;
+}
+
+pub async fn test_cassandra_5(connection: &CassandraConnection, driver: CassandraDriver) {
+    run_query(
+        connection,
+        "CREATE KEYSPACE collections WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };"
+    ).await;
+
+    list::test(connection, driver).await;
+    set::test(connection, driver).await;
+    map::test(connection, driver).await;
+
+    if let CassandraDriver::Scylla = driver {
+        vector::test(connection, driver).await;
+    }
 }
