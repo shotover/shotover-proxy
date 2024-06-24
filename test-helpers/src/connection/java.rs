@@ -333,7 +333,7 @@ impl Value {
         self.cast_fallible(name).unwrap()
     }
 
-    fn cast_fallible(&self, name: &str) -> Result<Self> {
+    pub(crate) fn cast_fallible(&self, name: &str) -> Result<Self> {
         let instance = self.jvm.cast(&self.instance, name)?;
         Ok(Self {
             instance,

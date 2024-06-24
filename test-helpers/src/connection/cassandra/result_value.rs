@@ -32,6 +32,7 @@ pub enum ResultValue {
     Set(Vec<ResultValue>),
     List(Vec<ResultValue>),
     Tuple(Vec<ResultValue>),
+    Vector(Vec<ResultValue>),
     Map(Vec<(ResultValue, ResultValue)>),
     Null,
     /// Never output by the DB
@@ -66,6 +67,7 @@ impl PartialEq for ResultValue {
             (Self::List(l0), Self::List(r0)) => l0 == r0,
             (Self::Tuple(l0), Self::Tuple(r0)) => l0 == r0,
             (Self::Map(l0), Self::Map(r0)) => l0 == r0,
+            (Self::Vector(l0), Self::Vector(r0)) => l0 == r0,
             (Self::Null, Self::Null) => true,
             (Self::Any, _) => true,
             (_, Self::Any) => true,
