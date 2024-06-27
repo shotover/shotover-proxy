@@ -1297,8 +1297,8 @@ routing message to a random node so that:
                     // Clear this optional field to avoid making clients trying to bypass shotover
                     // partition.current_leader and partition.preferred_read_replica are cleared due to the same reason
                     fetch.node_endpoints.clear();
-                    for fetch_response in &fetch.responses {
-                        for mut partition in &fetch_response.partitions {
+                    for fetch_response in &mut fetch.responses {
+                        for partition in &mut fetch_response.partitions {
                             partition.current_leader = LeaderIdAndEpoch::default();
                             partition.preferred_read_replica = BrokerId(-1);
                             if let Some(ResponseError::NotLeaderOrFollower) =
