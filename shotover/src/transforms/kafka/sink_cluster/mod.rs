@@ -1294,7 +1294,7 @@ routing message to a random node so that:
                     body: ResponseBody::Fetch(fetch),
                     ..
                 })) => {
-                    // Clear this optional field to avoid making clients trying to bypass shotover
+                    // Clear this optional field to avoid making clients try to bypass shotover
                     // partition.current_leader and partition.preferred_read_replica are cleared due to the same reason
                     fetch.node_endpoints.clear();
                     for fetch_response in &mut fetch.responses {
