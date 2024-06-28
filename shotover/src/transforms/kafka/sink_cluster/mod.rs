@@ -1250,10 +1250,9 @@ routing message to a random node so that:
                     ..
                 })) => {
                     // Clear this optional field to avoid making clients try to bypass shotover
-                    // response_partition.current_leader is cleared due to the same reason
                     produce.node_endpoints.clear();
                     for (topic_name, response_topic) in &mut produce.responses {
-                        for response_partition in &mut response_topic.partition_responses {
+                        for response_partition in &response_topic.partition_responses {
                             if let Some(ResponseError::NotLeaderOrFollower) =
                                 ResponseError::try_from_code(response_partition.error_code)
                             {
@@ -1288,11 +1287,12 @@ routing message to a random node so that:
                                         "Produce response included error NOT_LEADER_OR_FOLLOWER and so cleared topic {:?}",
                                         topic_name,
                                     );
-                                    response_partition.current_leader =
-                                        ProduceResponseLeaderIdAndEpoch::default();
                                     break;
                                 }
                             }
+                        }
+                        for response_partition in &mut response_topic.partition_responses {
+                            // Clear this optional field to avoid making clients try to bypass shotover
                             response_partition.current_leader =
                                 ProduceResponseLeaderIdAndEpoch::default();
                         }
