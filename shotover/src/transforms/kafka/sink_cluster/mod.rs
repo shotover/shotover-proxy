@@ -12,9 +12,10 @@ use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use dashmap::DashMap;
 use kafka_protocol::messages::fetch_request::FetchTopic;
-use kafka_protocol::messages::fetch_response::LeaderIdAndEpoch;
+use kafka_protocol::messages::fetch_response::LeaderIdAndEpoch as FetchResponseLeaderIdAndEpoch;
 use kafka_protocol::messages::metadata_request::MetadataRequestTopic;
 use kafka_protocol::messages::metadata_response::MetadataResponseBroker;
+use kafka_protocol::messages::produce_response::LeaderIdAndEpoch as ProduceResponseLeaderIdAndEpoch;
 use kafka_protocol::messages::{
     ApiKey, BrokerId, FetchRequest, FindCoordinatorRequest, FindCoordinatorResponse, GroupId,
     HeartbeatRequest, JoinGroupRequest, LeaveGroupRequest, MetadataRequest, MetadataResponse,
@@ -1248,8 +1249,11 @@ routing message to a random node so that:
                     body: ResponseBody::Produce(produce),
                     ..
                 })) => {
-                    for (topic_name, response_topic) in &produce.responses {
-                        for response_partition in &response_topic.partition_responses {
+                    // Clear this optional field to avoid making clients try to bypass shotover
+                    // response_partition.current_leader is cleared due to the same reason
+                    produce.node_endpoints.clear();
+                    for (topic_name, response_topic) in &mut produce.responses {
+                        for response_partition in &mut response_topic.partition_responses {
                             if let Some(ResponseError::NotLeaderOrFollower) =
                                 ResponseError::try_from_code(response_partition.error_code)
                             {
@@ -1284,11 +1288,16 @@ routing message to a random node so that:
                                         "Produce response included error NOT_LEADER_OR_FOLLOWER and so cleared topic {:?}",
                                         topic_name,
                                     );
+                                    response_partition.current_leader =
+                                        ProduceResponseLeaderIdAndEpoch::default();
                                     break;
                                 }
                             }
+                            response_partition.current_leader =
+                                ProduceResponseLeaderIdAndEpoch::default();
                         }
                     }
+                    response.invalidate_cache();
                 }
                 Some(Frame::Kafka(KafkaFrame::Response {
                     body: ResponseBody::Fetch(fetch),
@@ -1299,7 +1308,7 @@ routing message to a random node so that:
                     fetch.node_endpoints.clear();
                     for fetch_response in &mut fetch.responses {
                         for partition in &mut fetch_response.partitions {
-                            partition.current_leader = LeaderIdAndEpoch::default();
+                            partition.current_leader = FetchResponseLeaderIdAndEpoch::default();
                             partition.preferred_read_replica = BrokerId(-1);
                             if let Some(ResponseError::NotLeaderOrFollower) =
                                 ResponseError::try_from_code(partition.error_code)
