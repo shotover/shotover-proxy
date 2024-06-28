@@ -12,6 +12,7 @@ use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use dashmap::DashMap;
 use kafka_protocol::messages::fetch_request::FetchTopic;
+use kafka_protocol::messages::fetch_response::LeaderIdAndEpoch;
 use kafka_protocol::messages::metadata_request::MetadataRequestTopic;
 use kafka_protocol::messages::metadata_response::MetadataResponseBroker;
 use kafka_protocol::messages::{
@@ -1293,24 +1294,30 @@ routing message to a random node so that:
                     body: ResponseBody::Fetch(fetch),
                     ..
                 })) => {
-                    for response in &fetch.responses {
-                        for partition in &response.partitions {
+                    // Clear this optional field to avoid making clients try to bypass shotover
+                    // partition.current_leader and partition.preferred_read_replica are cleared due to the same reason
+                    fetch.node_endpoints.clear();
+                    for fetch_response in &mut fetch.responses {
+                        for partition in &mut fetch_response.partitions {
+                            partition.current_leader = LeaderIdAndEpoch::default();
+                            partition.preferred_read_replica = BrokerId(-1);
                             if let Some(ResponseError::NotLeaderOrFollower) =
                                 ResponseError::try_from_code(partition.error_code)
                             {
-                                // The fetch response includes the leader_id which a client could could use to route a fetch request to,
+                                // The fetch response includes the leader_id which a client could use to route a fetch request to,
                                 // but we cant use it to fix our list of replicas, so our only option is to clear the whole thing.
-                                self.topic_by_name.remove(&response.topic);
-                                self.topic_by_id.remove(&response.topic_id);
+                                self.topic_by_name.remove(&fetch_response.topic);
+                                self.topic_by_id.remove(&fetch_response.topic_id);
                                 tracing::info!(
                                     "Fetch response included error NOT_LEADER_OR_FOLLOWER and so cleared topic {:?} {:?}",
-                                    response.topic,
-                                    response.topic_id
+                                    fetch_response.topic,
+                                    fetch_response.topic_id
                                 );
                                 break;
                             }
                         }
                     }
+                    response.invalidate_cache();
                 }
                 Some(Frame::Kafka(KafkaFrame::Response {
                     body: ResponseBody::Heartbeat(heartbeat),
