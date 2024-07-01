@@ -27,7 +27,7 @@ use scylla::batch::Batch as ScyllaBatch;
 use scylla::frame::types::Consistency as ScyllaConsistency;
 use scylla::frame::value::{CqlDate, CqlDecimal, CqlTime, CqlTimestamp};
 use scylla::prepared_statement::PreparedStatement as PreparedStatementScylla;
-use scylla::serialize::value::SerializeCql;
+use scylla::serialize::value::SerializeValue;
 use scylla::statement::query::Query as ScyllaQuery;
 use scylla::transport::errors::{DbError, QueryError};
 use scylla::{
@@ -698,11 +698,11 @@ impl CassandraConnection {
     }
 
     // TODO: lets return Vec<CqlValue> instead, as it provides better guarantees for correctness
-    fn build_values_scylla(values: &[ResultValue]) -> Vec<Box<dyn SerializeCql + '_>> {
+    fn build_values_scylla(values: &[ResultValue]) -> Vec<Box<dyn SerializeValue + '_>> {
         values
             .iter()
             .map(|v| match v {
-                ResultValue::Int(v) => Box::new(v) as Box<dyn SerializeCql>,
+                ResultValue::Int(v) => Box::new(v) as Box<dyn SerializeValue>,
                 ResultValue::Ascii(v) => Box::new(v),
                 ResultValue::BigInt(v) => Box::new(v),
                 ResultValue::Blob(v) => Box::new(v),

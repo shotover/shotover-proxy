@@ -2360,7 +2360,7 @@ dependencies = [
  "httpdate",
  "itoa",
  "pin-project-lite",
- "socket2 0.5.7",
+ "socket2 0.4.10",
  "tokio",
  "tower-service",
  "tracing",
@@ -2591,6 +2591,15 @@ name = "itertools"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ba291022dbbd398a455acf126c1e341954079855bc60dfdda641363bd6922569"
+dependencies = [
+ "either",
+]
+
+[[package]]
+name = "itertools"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "413ee7dfc52ee1a4949ceeb7dbc8a33f2d6c088194d9f922fb8318faf1f01186"
 dependencies = [
  "either",
 ]
@@ -4331,8 +4340,7 @@ dependencies = [
 [[package]]
 name = "scylla"
 version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9439d92eea9f86c07175c819c3a129ca28b02477b47df26db354a1f4ea7ee276"
+source = "git+https://github.com/rukai/scylla-rust-driver?branch=shotover#af063ceeec06991b99ac5c33490d192514f5c4d6"
 dependencies = [
  "arc-swap",
  "async-trait",
@@ -4343,7 +4351,7 @@ dependencies = [
  "futures",
  "hashbrown 0.14.5",
  "histogram",
- "itertools 0.11.0",
+ "itertools 0.13.0",
  "lazy_static",
  "lz4_flex",
  "openssl",
@@ -4364,8 +4372,7 @@ dependencies = [
 [[package]]
 name = "scylla-cql"
 version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "64037fb9d9c59ae15137fff9a56c4d528908dfd38d09e75b5f8e56e3894966dd"
+source = "git+https://github.com/rukai/scylla-rust-driver?branch=shotover#af063ceeec06991b99ac5c33490d192514f5c4d6"
 dependencies = [
  "async-trait",
  "byteorder",
@@ -4381,8 +4388,7 @@ dependencies = [
 [[package]]
 name = "scylla-macros"
 version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7e5fe1d389adebe6a1a27bce18b81a65ff18c25d58a795de490e18b0e7a27b9f"
+source = "git+https://github.com/rukai/scylla-rust-driver?branch=shotover#af063ceeec06991b99ac5c33490d192514f5c4d6"
 dependencies = [
  "darling",
  "proc-macro2",

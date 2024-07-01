@@ -2,6 +2,7 @@ use super::{Duration, GenericValue, IntSize};
 use crate::frame::cassandra::to_cassandra_type;
 use bigdecimal::BigDecimal;
 use bytes::Bytes;
+use cassandra_protocol::frame::message_result::ColType;
 use cassandra_protocol::frame::Serialize as FrameSerialize;
 use cassandra_protocol::types::CInt;
 use cassandra_protocol::{
@@ -25,6 +26,18 @@ impl From<&Operand> for GenericValue {
     }
 }
 
+/// This type is a hack and should eventually be removed.
+/// To properly resolve this we really need to:
+/// * remove GenericValue from the cassandra AST
+///      + its a holdover from a long time ago
+///          - shotover no longer attempts to provide a generic abstraction over multiple DB types
+/// * Replace cassandra-protocol with something simpler and faster.
+/// Once that is done we can just include `Custom` directly as a variant within our own CassandraType enum.
+enum CustomOrStandardType {
+    Custom(Option<Vec<u8>>),
+    Standard(CassandraType),
+}
+
 impl GenericValue {
     pub fn value_byte_string(string: String) -> GenericValue {
         GenericValue::Bytes(Bytes::from(string))
@@ -40,16 +53,27 @@ impl GenericValue {
         data: &CBytes,
     ) -> GenericValue {
         let cassandra_type = GenericValue::into_cassandra_type(version, &spec.col_type, data);
-        GenericValue::create_element(cassandra_type)
+        match cassandra_type {
+            CustomOrStandardType::Custom(Some(bytes)) => GenericValue::Custom(bytes.into()),
+            CustomOrStandardType::Custom(None) => GenericValue::Null,
+            CustomOrStandardType::Standard(element) => Self::create_element(element),
+        }
     }
 
     fn into_cassandra_type(
         version: Version,
         col_type: &ColTypeOption,
         data: &CBytes,
-    ) -> CassandraType {
-        let wrapper = wrapper_fn(&col_type.id);
-        wrapper(data, col_type, version).unwrap()
+    ) -> CustomOrStandardType {
+        // cassandra-protocol will error on an unknown custom type,
+        // but we need to continue succesfully with custom types even if that means treating them as a magical bag of bytes.
+        // so we check for custom type before running the cassandra-protocol parser.
+        if col_type.id == ColType::Custom {
+            CustomOrStandardType::Custom(data.clone().into_bytes())
+        } else {
+            let wrapper = wrapper_fn(&col_type.id);
+            CustomOrStandardType::Standard(wrapper(data, col_type, version).unwrap())
+        }
     }
 
     fn create_element(element: CassandraType) -> GenericValue {
@@ -120,6 +144,7 @@ impl GenericValue {
     pub fn cassandra_serialize(&self, cursor: &mut Cursor<&mut Vec<u8>>) {
         match self {
             GenericValue::Null => cursor.write_all(&[255, 255, 255, 255]).unwrap(),
+            GenericValue::Custom(b) => serialize_bytes(cursor, b),
             GenericValue::Bytes(b) => serialize_bytes(cursor, b),
             GenericValue::Strings(s) => serialize_bytes(cursor, s.as_bytes()),
             GenericValue::Integer(x, size) => match size {
