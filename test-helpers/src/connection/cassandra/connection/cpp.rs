@@ -1,14 +1,16 @@
+use super::scylla::SessionScylla;
 use super::{Compression, Consistency, PreparedQuery, ProtocolVersion, Tls};
 use crate::connection::cassandra::ResultValue;
 use cassandra_cpp::{
-    BatchType, CassErrorCode, CassResult, Cluster, Consistency as DatastaxConsistency, Error,
-    ErrorKind, LendingIterator, Session as DatastaxSession, Statement as StatementCpp,
+    BatchType, CassErrorCode, CassResult, Cluster, Consistency as ConsistencyCpp, Error, ErrorKind,
+    LendingIterator, Session, Statement as StatementCpp,
 };
 use cdrs_tokio::frame::message_error::{ErrorBody, ErrorType};
-use scylla::Session as SessionScylla;
+
+pub use cassandra_cpp::{PreparedStatement as PreparedStatementCpp, Ssl as SslCpp};
 
 pub struct CppConnection {
-    pub session: DatastaxSession,
+    pub session: Session,
     pub schema_awaiter: Option<SessionScylla>,
 }
 
@@ -89,8 +91,8 @@ impl CppConnection {
         statement.set_tracing(true).unwrap();
         statement
             .set_consistency(match consistency {
-                Consistency::All => DatastaxConsistency::ALL,
-                Consistency::One => DatastaxConsistency::ONE,
+                Consistency::All => ConsistencyCpp::ALL,
+                Consistency::One => ConsistencyCpp::ONE,
             })
             .unwrap();
         Self::process_datastax_response(statement.execute().await)

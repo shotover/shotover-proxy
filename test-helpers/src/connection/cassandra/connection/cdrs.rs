@@ -1,3 +1,4 @@
+use super::scylla::SessionScylla;
 use super::{Compression, Consistency, PreparedQuery, ProtocolVersion, Tls, TIMEOUT};
 use crate::connection::cassandra::ResultValue;
 use cassandra_protocol::query::QueryValues;
@@ -7,7 +8,7 @@ use cdrs_tokio::query::{QueryParams, QueryParamsBuilder};
 use cdrs_tokio::statement::{StatementParams, StatementParamsBuilder};
 use cdrs_tokio::{
     authenticators::StaticPasswordAuthenticatorProvider,
-    cluster::session::{Session as CdrsTokioSession, SessionBuilder, TcpSessionBuilder},
+    cluster::session::{Session, SessionBuilder, TcpSessionBuilder},
     cluster::{NodeAddress, NodeTcpConfigBuilder, TcpConnectionManager},
     consistency::Consistency as CdrsConsistency,
     frame::{message_response::ResponseBody, message_result::ResResultBody, Envelope, Version},
@@ -16,15 +17,13 @@ use cdrs_tokio::{
     query_values,
     transport::TransportTcp,
 };
-use scylla::Session as SessionScylla;
 use std::net::IpAddr;
 use std::sync::Arc;
-use std::time::Duration;
 use tokio::time::timeout;
 
 pub use cdrs_tokio::query::PreparedQuery as CdrsTokioPreparedQuery;
 
-pub type CdrsTokioSessionInstance = CdrsTokioSession<
+pub type CdrsTokioSessionInstance = Session<
     TransportTcp,
     TcpConnectionManager,
     TopologyAwareLoadBalancingStrategy<TransportTcp, TcpConnectionManager>,
@@ -64,7 +63,7 @@ impl CdrsConnection {
             });
         }
 
-        let config = timeout(Duration::from_secs(TIMEOUT), node_config_builder.build())
+        let config = timeout(TIMEOUT, node_config_builder.build())
             .await
             .unwrap()
             .unwrap();
@@ -81,7 +80,7 @@ impl CdrsConnection {
             session_builder = session_builder.with_compression(compression);
         }
 
-        let session = timeout(Duration::from_secs(TIMEOUT), session_builder.build())
+        let session = timeout(TIMEOUT, session_builder.build())
             .await
             .unwrap()
             .unwrap();

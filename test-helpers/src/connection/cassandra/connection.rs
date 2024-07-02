@@ -1,14 +1,12 @@
 use super::result_value::ResultValue;
-use ::scylla::SessionBuilder as SessionBuilderScylla;
-#[cfg(feature = "cassandra-cpp-driver-tests")]
-use cassandra_cpp::{PreparedStatement as PreparedStatementCpp, Ssl};
 use cassandra_protocol::frame::message_error::ErrorBody;
 use cdrs::CdrsTokioPreparedQuery;
 use cdrs::{CdrsConnection, CdrsTokioSessionInstance};
-use cpp::CppConnection;
+#[cfg(feature = "cassandra-cpp-driver-tests")]
+use cpp::{CppConnection, PreparedStatementCpp, SslCpp};
 use openssl::ssl::{SslContext, SslMethod};
 use pretty_assertions::assert_eq;
-use scylla::{PreparedStatementScylla, ScyllaConnection};
+use scylla::{PreparedStatementScylla, ScyllaConnection, SessionBuilderScylla};
 #[cfg(feature = "cassandra-cpp-driver-tests")]
 use std::fs::read_to_string;
 use std::net::IpAddr;
@@ -19,7 +17,7 @@ mod cdrs;
 mod cpp;
 mod scylla;
 
-const TIMEOUT: u64 = 10;
+const TIMEOUT: Duration = Duration::from_secs(10);
 
 pub struct CassandraConnectionBuilder {
     contact_points: String,
@@ -57,19 +55,20 @@ impl CassandraConnectionBuilder {
         self
     }
 
+    // TODO: move this logic into the driver specific modules
     pub async fn build(self) -> CassandraConnection {
         let tls = if let Some(ca_cert_path) = self.ca_cert_path {
             match self.driver {
                 #[cfg(feature = "cassandra-cpp-driver-tests")]
                 CassandraDriver::Cpp => {
                     let ca_cert = read_to_string(ca_cert_path).unwrap();
-                    let mut ssl = Ssl::default();
-                    Ssl::add_trusted_cert(&mut ssl, &ca_cert).unwrap();
+                    let mut ssl = SslCpp::default();
+                    SslCpp::add_trusted_cert(&mut ssl, &ca_cert).unwrap();
 
                     Some(Tls::Cpp(ssl))
                 }
                 // TODO actually implement TLS for cdrs-tokio
-                CassandraDriver::CdrsTokio => todo!(),
+                CassandraDriver::Cdrs => todo!(),
                 CassandraDriver::Scylla => {
                     let mut context = SslContext::builder(SslMethod::tls()).unwrap();
                     context.set_ca_file(ca_cert_path).unwrap();
@@ -146,7 +145,7 @@ pub enum Consistency {
 
 pub enum Tls {
     #[cfg(feature = "cassandra-cpp-driver-tests")]
-    Cpp(Ssl),
+    Cpp(SslCpp),
     Scylla(SslContext),
 }
 
@@ -154,7 +153,7 @@ pub enum Tls {
 pub enum CassandraDriver {
     #[cfg(feature = "cassandra-cpp-driver-tests")]
     Cpp,
-    CdrsTokio,
+    Cdrs,
     Scylla,
 }
 
@@ -179,7 +178,7 @@ impl CassandraConnection {
             CassandraDriver::Cpp => CassandraConnection::Cpp(
                 CppConnection::new(contact_points, port, compression, tls, protocol).await,
             ),
-            CassandraDriver::CdrsTokio => CassandraConnection::Cdrs(
+            CassandraDriver::Cdrs => CassandraConnection::Cdrs(
                 CdrsConnection::new(contact_points, port, compression, tls, protocol).await,
             ),
             CassandraDriver::Scylla => CassandraConnection::Scylla(
@@ -197,7 +196,7 @@ impl CassandraConnection {
 
     pub fn is(&self, drivers: &[CassandraDriver]) -> bool {
         match self {
-            Self::Cdrs { .. } => drivers.contains(&CassandraDriver::CdrsTokio),
+            Self::Cdrs { .. } => drivers.contains(&CassandraDriver::Cdrs),
             #[cfg(feature = "cassandra-cpp-driver-tests")]
             Self::Cpp { .. } => drivers.contains(&CassandraDriver::Cpp),
             Self::Scylla { .. } => drivers.contains(&CassandraDriver::Scylla),
@@ -249,12 +248,9 @@ impl CassandraConnection {
     }
 
     pub async fn execute_fallible(&self, query: &str) -> Result<Vec<Vec<ResultValue>>, ErrorBody> {
-        tokio::time::timeout(
-            Duration::from_secs(TIMEOUT),
-            self.execute_fallible_inner(query),
-        )
-        .await
-        .unwrap_or_else(|_| panic!("The CQL query: {query}\nTimed out after 10s"))
+        tokio::time::timeout(TIMEOUT, self.execute_fallible_inner(query))
+            .await
+            .unwrap_or_else(|_| panic!("The CQL query: {query}\nTimed out after 10s"))
     }
 
     pub async fn execute_fallible_inner(
@@ -282,12 +278,9 @@ impl CassandraConnection {
         query: &str,
         timestamp: i64,
     ) -> Result<Vec<Vec<ResultValue>>, ErrorBody> {
-        tokio::time::timeout(
-            Duration::from_secs(TIMEOUT),
-            self.execute_with_timestamp_inner(query, timestamp),
-        )
-        .await
-        .unwrap_or_else(|_| panic!("The CQL query: {query}\nTimed out after 10s"))
+        tokio::time::timeout(TIMEOUT, self.execute_with_timestamp_inner(query, timestamp))
+            .await
+            .unwrap_or_else(|_| panic!("The CQL query: {query}\nTimed out after 10s"))
     }
 
     pub async fn execute_with_timestamp_inner(
@@ -312,7 +305,7 @@ impl CassandraConnection {
     }
 
     pub async fn prepare(&self, query: &str) -> PreparedQuery {
-        tokio::time::timeout(Duration::from_secs(TIMEOUT), self.prepare_inner(query))
+        tokio::time::timeout(TIMEOUT, self.prepare_inner(query))
             .await
             .unwrap_or_else(|_| panic!("Preparing the CQL query: {query}\nTimed out after 10s"))
     }
@@ -332,7 +325,7 @@ impl CassandraConnection {
         values: &[ResultValue],
     ) -> IpAddr {
         tokio::time::timeout(
-            Duration::from_secs(TIMEOUT),
+            TIMEOUT,
             self.execute_prepared_coordinator_node_inner(prepared_query, values),
         )
         .await
@@ -367,7 +360,7 @@ impl CassandraConnection {
         consistency: Consistency,
     ) -> Result<Vec<Vec<ResultValue>>, ErrorBody> {
         tokio::time::timeout(
-            Duration::from_secs(TIMEOUT),
+            TIMEOUT,
             self.execute_prepared_inner(prepared_query, values, consistency),
         )
         .await
@@ -404,12 +397,9 @@ impl CassandraConnection {
         &self,
         queries: Vec<String>,
     ) -> Result<Vec<Vec<ResultValue>>, ErrorBody> {
-        tokio::time::timeout(
-            Duration::from_secs(TIMEOUT),
-            self.execute_batch_fallible_inner(queries.clone()),
-        )
-        .await
-        .expect("timed out after executing cassandra batch for 10s")
+        tokio::time::timeout(TIMEOUT, self.execute_batch_fallible_inner(queries.clone()))
+            .await
+            .expect("timed out after executing cassandra batch for 10s")
     }
 
     pub async fn execute_batch_fallible_inner(

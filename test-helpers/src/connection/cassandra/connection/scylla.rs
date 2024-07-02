@@ -1,19 +1,19 @@
 use super::{Compression, Consistency, PreparedQuery, ProtocolVersion, Tls};
 use crate::connection::cassandra::ResultValue;
 use cdrs_tokio::frame::message_error::{ErrorBody, ErrorType};
-use scylla::batch::Batch as ScyllaBatch;
+use scylla::batch::Batch;
 use scylla::frame::types::Consistency as ScyllaConsistency;
 use scylla::frame::value::{CqlDate, CqlDecimal, CqlTime, CqlTimestamp};
 use scylla::serialize::value::SerializeCql;
-use scylla::statement::query::Query as ScyllaQuery;
+use scylla::statement::query::Query;
 use scylla::transport::errors::{DbError, QueryError};
-use scylla::{
-    ExecutionProfile, QueryResult, Session as SessionScylla, SessionBuilder as SessionBuilderScylla,
-};
+use scylla::{ExecutionProfile, QueryResult};
 use std::net::IpAddr;
 use std::time::Duration;
 
 pub use scylla::prepared_statement::PreparedStatement as PreparedStatementScylla;
+pub use scylla::Session as SessionScylla;
+pub use scylla::SessionBuilder as SessionBuilderScylla;
 
 pub struct ScyllaConnection {
     session: SessionScylla,
@@ -91,7 +91,7 @@ impl ScyllaConnection {
         queries: Vec<String>,
     ) -> Result<Vec<Vec<ResultValue>>, ErrorBody> {
         let mut values = vec![];
-        let mut batch: ScyllaBatch = Default::default();
+        let mut batch: Batch = Default::default();
         for query in queries {
             batch.append_statement(query.as_str());
             values.push(());
@@ -109,7 +109,7 @@ impl ScyllaConnection {
         query: &str,
         timestamp: i64,
     ) -> Result<Vec<Vec<ResultValue>>, ErrorBody> {
-        let mut query = ScyllaQuery::new(query);
+        let mut query = Query::new(query);
         query.set_timestamp(Some(timestamp));
         Self::process_scylla_response(self.session.query(query, ()).await)
     }
