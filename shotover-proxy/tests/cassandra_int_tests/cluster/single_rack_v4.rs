@@ -68,7 +68,7 @@ async fn test_rewrite_system_peers_dummy_peers(
         ResultValue::Any,
         // Unfortunately token generation appears to be non-deterministic but we can at least assert that
         // there are 128 tokens per node
-        if let CassandraDriver::CdrsTokio = driver {
+        if let CassandraDriver::Cdrs = driver {
             ResultValue::List(std::iter::repeat(ResultValue::Any).take(3 * 128).collect())
         } else {
             ResultValue::Set(std::iter::repeat(ResultValue::Any).take(3 * 128).collect())
@@ -87,7 +87,7 @@ async fn test_rewrite_system_peers_dummy_peers(
         ResultValue::Any,
         // Unfortunately token generation appears to be non-deterministic but we can at least assert that
         // there are 128 tokens per node
-        if let CassandraDriver::CdrsTokio = driver {
+        if let CassandraDriver::Cdrs = driver {
             ResultValue::List(std::iter::repeat(ResultValue::Any).take(3 * 128).collect())
         } else {
             ResultValue::Set(std::iter::repeat(ResultValue::Any).take(3 * 128).collect())
@@ -137,7 +137,7 @@ async fn test_rewrite_system_peers_v2_dummy_peers(
         ResultValue::Any,
         // Unfortunately token generation appears to be non-deterministic but we can at least assert that
         // there are 128 tokens per node
-        if let CassandraDriver::CdrsTokio = driver {
+        if let CassandraDriver::Cdrs = driver {
             ResultValue::List(std::iter::repeat(ResultValue::Any).take(3 * 128).collect())
         } else {
             ResultValue::Set(std::iter::repeat(ResultValue::Any).take(3 * 128).collect())
@@ -158,7 +158,7 @@ async fn test_rewrite_system_peers_v2_dummy_peers(
         ResultValue::Any,
         // Unfortunately token generation appears to be non-deterministic but we can at least assert that
         // there are 128 tokens per node
-        if let CassandraDriver::CdrsTokio = driver {
+        if let CassandraDriver::Cdrs = driver {
             ResultValue::List(std::iter::repeat(ResultValue::Any).take(3 * 128).collect())
         } else {
             ResultValue::Set(std::iter::repeat(ResultValue::Any).take(3 * 128).collect())
@@ -214,7 +214,7 @@ async fn test_rewrite_system_local(connection: &CassandraConnection, driver: Cas
         ResultValue::Any,
         // Unfortunately token generation appears to be non-deterministic but we can at least assert that
         // there are 128 tokens per node
-        if let CassandraDriver::CdrsTokio = driver {
+        if let CassandraDriver::Cdrs = driver {
             ResultValue::List(std::iter::repeat(ResultValue::Any).take(3 * 128).collect())
         } else {
             ResultValue::Set(std::iter::repeat(ResultValue::Any).take(3 * 128).collect())
@@ -356,7 +356,7 @@ pub async fn test_node_going_down(compose: &mut DockerCompose, driver: Cassandra
             .build()
             .await;
         test_connection_handles_node_down_with_one_retry(&new_connection).await;
-        if connection_shotover.is(&[CassandraDriver::CdrsTokio, CassandraDriver::Scylla]) {
+        if connection_shotover.is(&[CassandraDriver::Cdrs, CassandraDriver::Scylla]) {
             test_connection_handles_node_down_with_one_retry(&connection_shotover).await;
         }
     }
@@ -372,7 +372,7 @@ pub async fn test_node_going_down(compose: &mut DockerCompose, driver: Cassandra
             .build()
             .await;
         test_connection_handles_node_down_with_one_retry(&new_connection).await;
-        if connection_shotover.is(&[CassandraDriver::CdrsTokio, CassandraDriver::Scylla]) {
+        if connection_shotover.is(&[CassandraDriver::Cdrs, CassandraDriver::Scylla]) {
             test_connection_handles_node_down_with_one_retry(&connection_shotover).await;
         }
     }
@@ -387,16 +387,14 @@ struct EventConnections {
 
 impl EventConnections {
     async fn new() -> Self {
-        let direct =
-            CassandraConnectionBuilder::new("172.16.1.2", 9044, CassandraDriver::CdrsTokio)
-                .build()
-                .await;
+        let direct = CassandraConnectionBuilder::new("172.16.1.2", 9044, CassandraDriver::Cdrs)
+            .build()
+            .await;
         let recv_direct = direct.as_cdrs().create_event_receiver();
 
-        let shotover =
-            CassandraConnectionBuilder::new("127.0.0.1", 9042, CassandraDriver::CdrsTokio)
-                .build()
-                .await;
+        let shotover = CassandraConnectionBuilder::new("127.0.0.1", 9042, CassandraDriver::Cdrs)
+            .build()
+            .await;
         let recv_shotover = shotover.as_cdrs().create_event_receiver();
 
         EventConnections {

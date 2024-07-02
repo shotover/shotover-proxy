@@ -25,7 +25,7 @@ fn values() -> Vec<ResultValue> {
 
 async fn insert(connection: &CassandraConnection, replication_factor: u32) {
     #[cfg(feature = "cassandra-cpp-driver-tests")]
-    let datastax = matches!(connection, CassandraConnection::Datastax { .. });
+    let datastax = matches!(connection, CassandraConnection::Cpp { .. });
     #[cfg(not(feature = "cassandra-cpp-driver-tests"))]
     let datastax = false;
 
@@ -75,7 +75,7 @@ async fn insert(connection: &CassandraConnection, replication_factor: u32) {
 }
 
 async fn select(connection: &CassandraConnection, replication_factor: u32) {
-    if let CassandraConnection::CdrsTokio { .. } = connection {
+    if let CassandraConnection::Cdrs { .. } = connection {
         // workaround cdrs-tokio having broken encoding for bytes
         assert_query_result(
             connection,

@@ -287,7 +287,7 @@ async fn select_table(
     // TODO: fix upstream to remove hack
     //       because cdrs-tokio doesnt support set properly, we need to map any sets into lists
     #[allow(irrefutable_let_patterns)]
-    if let CassandraDriver::CdrsTokio = driver {
+    if let CassandraDriver::Cdrs = driver {
         for value in &mut results {
             set_to_list(value);
         }
