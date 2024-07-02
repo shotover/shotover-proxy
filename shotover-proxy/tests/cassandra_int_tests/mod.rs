@@ -12,7 +12,7 @@ use rstest_reuse::{self, *};
 use scylla::SessionBuilder;
 use std::net::SocketAddr;
 #[cfg(feature = "cassandra-cpp-driver-tests")]
-use test_helpers::connection::cassandra::CassandraDriver::Datastax;
+use test_helpers::connection::cassandra::CassandraDriver::Cpp;
 use test_helpers::connection::cassandra::Compression;
 #[cfg(feature = "alpha-transforms")]
 use test_helpers::connection::cassandra::ProtocolVersion;
@@ -86,7 +86,7 @@ where
 #[template]
 #[rstest]
 #[case::cdrs(CdrsTokio)]
-#[cfg_attr(feature = "cassandra-cpp-driver-tests", case::datastax(Datastax))]
+#[cfg_attr(feature = "cassandra-cpp-driver-tests", case::cpp(Cpp))]
 #[case::scylla(Scylla)]
 fn all_cassandra_drivers(#[case] driver: CassandraDriver) {}
 
@@ -209,7 +209,7 @@ async fn source_tls_and_single_tls(#[case] driver: CassandraDriver) {
 
 #[rstest]
 //#[case::cdrs(CdrsTokio)] // TODO
-#[cfg_attr(feature = "cassandra-cpp-driver-tests", case::datastax(Datastax))]
+#[cfg_attr(feature = "cassandra-cpp-driver-tests", case::cpp(Cpp))]
 #[case::scylla(Scylla)]
 #[tokio::test(flavor = "multi_thread")]
 async fn cluster_single_rack_v3(#[case] driver: CassandraDriver) {
@@ -299,7 +299,7 @@ async fn cluster_single_rack_v4(#[case] driver: CassandraDriver) {
 
 #[rstest]
 //#[case::cdrs(CdrsTokio)] // TODO
-#[cfg_attr(feature = "cassandra-cpp-driver-tests", case::datastax(Datastax))]
+#[cfg_attr(feature = "cassandra-cpp-driver-tests", case::cpp(Cpp))]
 #[case::scylla(Scylla)]
 #[tokio::test(flavor = "multi_thread")]
 async fn cluster_multi_rack_1_per_rack(#[case] driver: CassandraDriver) {
@@ -486,7 +486,7 @@ async fn cassandra_redis_cache(#[case] driver: CassandraDriver) {
 #[cfg(feature = "alpha-transforms")]
 #[rstest]
 // #[case::cdrs(CdrsTokio)] // TODO
-#[cfg_attr(feature = "cassandra-cpp-driver-tests", case::datastax(Datastax))]
+#[cfg_attr(feature = "cassandra-cpp-driver-tests", case::cpp(Cpp))]
 #[case::scylla(Scylla)]
 #[tokio::test(flavor = "multi_thread")]
 async fn protect_transform_local(#[case] driver: CassandraDriver) {
@@ -510,7 +510,7 @@ async fn protect_transform_local(#[case] driver: CassandraDriver) {
 #[cfg(feature = "alpha-transforms")]
 #[rstest]
 //#[case::cdrs(CdrsTokio)] // TODO
-#[cfg_attr(feature = "cassandra-cpp-driver-tests", case::datastax(Datastax))]
+#[cfg_attr(feature = "cassandra-cpp-driver-tests", case::cpp(Cpp))]
 #[case::scylla(Scylla)]
 #[tokio::test(flavor = "multi_thread")]
 async fn protect_transform_aws(#[case] driver: CassandraDriver) {
@@ -534,7 +534,7 @@ async fn protect_transform_aws(#[case] driver: CassandraDriver) {
 
 #[rstest]
 //#[case::cdrs(CdrsTokio)] // TODO
-#[cfg_attr(feature = "cassandra-cpp-driver-tests", case::datastax(Datastax))]
+#[cfg_attr(feature = "cassandra-cpp-driver-tests", case::cpp(Cpp))]
 #[case::scylla(Scylla)]
 #[tokio::test(flavor = "multi_thread")]
 async fn peers_rewrite_v4(#[case] driver: CassandraDriver) {
@@ -634,7 +634,7 @@ async fn peers_rewrite_v4(#[case] driver: CassandraDriver) {
 #[rstest]
 //#[case::cdrs(CdrsTokio)] // Disabled due to intermittent failure that only occurs on v3
 #[case::scylla(Scylla)]
-#[cfg_attr(feature = "cassandra-cpp-driver-tests", case::datastax(Datastax))]
+#[cfg_attr(feature = "cassandra-cpp-driver-tests", case::cpp(Cpp))]
 #[tokio::test(flavor = "multi_thread")]
 async fn peers_rewrite_v3(#[case] driver: CassandraDriver) {
     let _docker_compose = docker_compose(
@@ -669,7 +669,7 @@ async fn peers_rewrite_v3(#[case] driver: CassandraDriver) {
 #[rstest]
 //#[case::cdrs(CdrsTokio)] // TODO: cdrs-tokio seems to be sending extra messages triggering the rate limiter
 #[case::scylla(Scylla)]
-#[cfg_attr(feature = "cassandra-cpp-driver-tests", case::datastax(Datastax))]
+#[cfg_attr(feature = "cassandra-cpp-driver-tests", case::cpp(Cpp))]
 #[tokio::test(flavor = "multi_thread")]
 async fn request_throttling(#[case] driver: CassandraDriver) {
     let _docker_compose =

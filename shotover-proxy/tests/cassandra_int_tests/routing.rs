@@ -390,7 +390,7 @@ pub async fn test(
 ) {
     // execute_prepared_coordinator_node doesnt support cassandra-cpp yet.
     #[cfg(feature = "cassandra-cpp-driver-tests")]
-    let run = !matches!(driver, CassandraDriver::Datastax);
+    let run = !matches!(driver, CassandraDriver::Cpp);
     #[cfg(not(feature = "cassandra-cpp-driver-tests"))]
     let run = true;
 
