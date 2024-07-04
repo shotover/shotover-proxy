@@ -18,7 +18,8 @@ use test_helpers::connection::cassandra::Compression;
 use test_helpers::connection::cassandra::ProtocolVersion;
 use test_helpers::connection::cassandra::{
     assert_query_result, run_query, CassandraConnection, CassandraConnectionBuilder,
-    CassandraDriver, CassandraDriver::Cdrs, CassandraDriver::Scylla, CqlWsSession, ResultValue,
+    CassandraDriver, CassandraDriver::Cdrs, CassandraDriver::Java, CassandraDriver::Scylla,
+    CqlWsSession, ResultValue,
 };
 use test_helpers::connection::redis_connection;
 use test_helpers::docker_compose::docker_compose;
@@ -84,9 +85,10 @@ where
 
 #[template]
 #[rstest]
-#[case::cdrs(Cdrs)]
 #[cfg_attr(feature = "cassandra-cpp-driver-tests", case::cpp(Cpp))]
 #[case::scylla(Scylla)]
+#[case::cdrs(Cdrs)]
+#[case::java(Java)]
 fn all_cassandra_drivers(#[case] driver: CassandraDriver) {}
 
 #[apply(all_cassandra_drivers)]

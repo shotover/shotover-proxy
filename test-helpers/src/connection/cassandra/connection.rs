@@ -4,6 +4,7 @@ use cdrs::CdrsTokioPreparedQuery;
 use cdrs::{CdrsConnection, CdrsTokioSessionInstance};
 #[cfg(feature = "cassandra-cpp-driver-tests")]
 use cpp::{CppConnection, PreparedStatementCpp, SslCpp};
+use java::JavaConnection;
 use openssl::ssl::{SslContext, SslMethod};
 use pretty_assertions::assert_eq;
 use scylla::{PreparedStatementScylla, ScyllaConnection, SessionBuilderScylla};
@@ -15,6 +16,7 @@ use std::time::Duration;
 mod cdrs;
 #[cfg(feature = "cassandra-cpp-driver-tests")]
 mod cpp;
+mod java;
 mod scylla;
 
 const TIMEOUT: Duration = Duration::from_secs(10);
@@ -69,6 +71,8 @@ impl CassandraConnectionBuilder {
                 }
                 // TODO actually implement TLS for cdrs-tokio
                 CassandraDriver::Cdrs => todo!(),
+                // TODO actually implement TLS for java
+                CassandraDriver::Java => todo!(),
                 CassandraDriver::Scylla => {
                     let mut context = SslContext::builder(SslMethod::tls()).unwrap();
                     context.set_ca_file(ca_cert_path).unwrap();
@@ -155,6 +159,7 @@ pub enum CassandraDriver {
     Cpp,
     Cdrs,
     Scylla,
+    Java,
 }
 
 pub enum CassandraConnection {
@@ -162,6 +167,7 @@ pub enum CassandraConnection {
     Cpp(CppConnection),
     Cdrs(CdrsConnection),
     Scylla(ScyllaConnection),
+    Java(JavaConnection),
 }
 
 impl CassandraConnection {
@@ -184,6 +190,9 @@ impl CassandraConnection {
             CassandraDriver::Scylla => CassandraConnection::Scylla(
                 ScyllaConnection::new(contact_points, port, compression, tls, protocol).await,
             ),
+            CassandraDriver::Java => CassandraConnection::Java(
+                JavaConnection::new(contact_points, port, compression, tls, protocol).await,
+            ),
         }
     }
 
@@ -200,6 +209,7 @@ impl CassandraConnection {
             #[cfg(feature = "cassandra-cpp-driver-tests")]
             Self::Cpp { .. } => drivers.contains(&CassandraDriver::Cpp),
             Self::Scylla { .. } => drivers.contains(&CassandraDriver::Scylla),
+            Self::Java { .. } => drivers.contains(&CassandraDriver::Java),
         }
     }
 
@@ -215,6 +225,7 @@ impl CassandraConnection {
             Self::Cpp(connection) => &mut connection.schema_awaiter,
             Self::Cdrs(connection) => &mut connection.schema_awaiter,
             Self::Scylla(connection) => &mut connection.schema_awaiter,
+            Self::Java(connection) => &mut connection.schema_awaiter,
         };
 
         *schema_awaiter = Some(
@@ -234,6 +245,7 @@ impl CassandraConnection {
             Self::Cpp(connection) => &connection.schema_awaiter,
             Self::Cdrs(connection) => &connection.schema_awaiter,
             Self::Scylla(connection) => &connection.schema_awaiter,
+            Self::Java(connection) => &connection.schema_awaiter,
         };
         if let Some(schema_awaiter) = schema_awaiter {
             schema_awaiter.await_schema_agreement().await.unwrap();
@@ -262,6 +274,7 @@ impl CassandraConnection {
             Self::Cpp(connection) => connection.execute_fallible(query).await,
             Self::Cdrs(connection) => connection.execute_fallible(query).await,
             Self::Scylla(connection) => connection.execute_fallible(query).await,
+            Self::Java(connection) => connection.execute_fallible(query).await,
         };
 
         let query = query.to_uppercase();
@@ -293,6 +306,7 @@ impl CassandraConnection {
             Self::Cpp(connection) => connection.execute_with_timestamp(query, timestamp).await,
             Self::Cdrs(connection) => connection.execute_with_timestamp(query, timestamp).await,
             Self::Scylla(connection) => connection.execute_with_timestamp(query, timestamp).await,
+            Self::Java(connection) => connection.execute_with_timestamp(query, timestamp).await,
         };
 
         let query = query.to_uppercase();
@@ -316,6 +330,7 @@ impl CassandraConnection {
             Self::Cpp(connection) => connection.prepare(query).await,
             Self::Cdrs(connection) => connection.prepare(query).await,
             Self::Scylla(connection) => connection.prepare(query).await,
+            Self::Java(connection) => connection.prepare(query).await,
         }
     }
 
@@ -346,6 +361,11 @@ impl CassandraConnection {
                     .await
             }
             Self::Scylla(connection) => {
+                connection
+                    .execute_prepared_coordinator_node(prepared_query, values)
+                    .await
+            }
+            Self::Java(connection) => {
                 connection
                     .execute_prepared_coordinator_node(prepared_query, values)
                     .await
@@ -390,6 +410,11 @@ impl CassandraConnection {
                     .execute_prepared(prepared_query, values, consistency)
                     .await
             }
+            Self::Java(connection) => {
+                connection
+                    .execute_prepared(prepared_query, values, consistency)
+                    .await
+            }
         }
     }
 
@@ -411,6 +436,7 @@ impl CassandraConnection {
             Self::Cpp(connection) => connection.execute_batch_fallible(queries).await,
             Self::Cdrs(connection) => connection.execute_batch_fallible(queries).await,
             Self::Scylla(connection) => connection.execute_batch_fallible(queries).await,
+            Self::Java(connection) => connection.execute_batch_fallible(queries).await,
         }
     }
 

@@ -233,6 +233,13 @@ impl Value {
     }
 }
 
+impl std::fmt::Debug for Value {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let string: String = self.call("toString", vec![]).into_rust();
+        write!(f, "{string}")
+    }
+}
+
 impl IntoIterator for Value {
     type Item = Value;
 
