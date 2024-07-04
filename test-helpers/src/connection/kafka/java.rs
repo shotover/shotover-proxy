@@ -2,28 +2,25 @@ use super::{
     Acl, AclOperation, AclPermissionType, AlterConfig, ExpectedResponse, NewPartition, NewTopic,
     Record, ResourcePatternType, ResourceSpecifier, ResourceType, TopicDescription,
 };
+use crate::connection::java::Value;
 use anyhow::Result;
-use j4rs::{errors::J4RsError, Instance, InvocationArg, Jvm, JvmBuilder, MavenArtifact};
+use j4rs::{InvocationArg, Jvm, JvmBuilder, MavenArtifact};
 use pretty_assertions::assert_eq;
 use std::{
     collections::{HashMap, VecDeque},
     rc::Rc,
 };
 
-fn properties(jvm: &Jvm, props: &HashMap<String, String>) -> Instance {
-    let properties = jvm
-        .create_instance("java.util.Properties", InvocationArg::empty())
-        .unwrap();
+fn properties(jvm: &Rc<Jvm>, props: &HashMap<String, String>) -> Value {
+    let properties = Value::new(jvm, "java.util.Properties", &[]);
     for (key, value) in props.iter() {
-        jvm.invoke(
-            &properties,
+        properties.call(
             "setProperty",
             &[
-                InvocationArg::try_from(key).unwrap(),
-                InvocationArg::try_from(value).unwrap(),
+                &InvocationArg::try_from(key).unwrap(),
+                &InvocationArg::try_from(value).unwrap(),
             ],
-        )
-        .unwrap();
+        );
     }
     properties
 }
@@ -38,7 +35,7 @@ impl KafkaConnectionBuilderJava {
         let jvm = Rc::new(JvmBuilder::new().build().unwrap());
 
         // specify maven dep for kafka-clients and all of its dependencies since j4rs does not support dependency resolution
-        // The list of dependencies can be found here: https://repo1.maven.org/maven2/org/apache/kafka/kafka-clients/3.7.0/kafka-clients-3.7.0.pom6
+        // The list of dependencies can be found here: https://repo1.maven.org/maven2/org/apache/kafka/kafka-clients/3.7.0/kafka-clients-3.7.0.pom
         // These are deployed to and loaded from a path like target/debug/jassets
         jvm.deploy_artifact(&MavenArtifact::from("org.apache.kafka:kafka-clients:3.7.0"))
             .unwrap();
@@ -105,13 +102,11 @@ impl KafkaConnectionBuilderJava {
         );
 
         let properties = properties(&self.jvm, &config);
-        let producer = self
-            .jvm
-            .create_instance(
-                "org.apache.kafka.clients.producer.KafkaProducer",
-                &[&properties.into()],
-            )
-            .unwrap();
+        let producer = Value::new(
+            &self.jvm,
+            "org.apache.kafka.clients.producer.KafkaProducer",
+            &[&properties.into()],
+        );
 
         let jvm = self.jvm.clone();
         KafkaProducerJava { jvm, producer }
@@ -133,24 +128,19 @@ impl KafkaConnectionBuilderJava {
         );
 
         let properties = properties(&self.jvm, &config);
-        let consumer = self
-            .jvm
-            .create_instance(
-                "org.apache.kafka.clients.consumer.KafkaConsumer",
-                &[&properties.into()],
-            )
-            .unwrap();
-        self.jvm
-            .invoke(
-                &consumer,
-                "subscribe",
-                &[&self
-                    .jvm
-                    .java_list("java.lang.String", vec![topic_name])
-                    .unwrap()
-                    .into()],
-            )
-            .unwrap();
+        let consumer = Value::new(
+            &self.jvm,
+            "org.apache.kafka.clients.consumer.KafkaConsumer",
+            &[&properties.into()],
+        );
+        consumer.call(
+            "subscribe",
+            &[&self
+                .jvm
+                .java_list("java.lang.String", vec![topic_name])
+                .unwrap()
+                .into()],
+        );
 
         let jvm = self.jvm.clone();
         KafkaConsumerJava {
@@ -162,63 +152,49 @@ impl KafkaConnectionBuilderJava {
 
     pub async fn connect_admin(&self) -> KafkaAdminJava {
         let properties = properties(&self.jvm, &self.base_config);
-        let admin = self
-            .jvm
-            .invoke_static(
-                "org.apache.kafka.clients.admin.Admin",
-                "create",
-                &[&properties.into()],
-            )
-            .unwrap();
+        let admin = Value::invoke_static(
+            &self.jvm,
+            "org.apache.kafka.clients.admin.Admin",
+            "create",
+            &[&properties.into()],
+        );
         let jvm = self.jvm.clone();
         KafkaAdminJava { jvm, admin }
     }
 }
 pub struct KafkaProducerJava {
     jvm: Rc<Jvm>,
-    producer: Instance,
+    producer: Value,
 }
 
 impl KafkaProducerJava {
     pub async fn assert_produce(&self, record: Record<'_>, expected_offset: Option<i64>) {
         let record = match record.key {
-            Some(key) => self
-                .jvm
-                .create_instance(
-                    "org.apache.kafka.clients.producer.ProducerRecord",
-                    &[
-                        InvocationArg::try_from(record.topic_name).unwrap(),
-                        InvocationArg::try_from(key).unwrap(),
-                        InvocationArg::try_from(record.payload).unwrap(),
-                    ],
-                )
-                .unwrap(),
-            None => self
-                .jvm
-                .create_instance(
-                    "org.apache.kafka.clients.producer.ProducerRecord",
-                    &[
-                        InvocationArg::try_from(record.topic_name).unwrap(),
-                        InvocationArg::try_from(record.payload).unwrap(),
-                    ],
-                )
-                .unwrap(),
+            Some(key) => Value::new(
+                &self.jvm,
+                "org.apache.kafka.clients.producer.ProducerRecord",
+                &[
+                    &InvocationArg::try_from(record.topic_name).unwrap(),
+                    &InvocationArg::try_from(key).unwrap(),
+                    &InvocationArg::try_from(record.payload).unwrap(),
+                ],
+            ),
+            None => Value::new(
+                &self.jvm,
+                "org.apache.kafka.clients.producer.ProducerRecord",
+                &[
+                    &InvocationArg::try_from(record.topic_name).unwrap(),
+                    &InvocationArg::try_from(record.payload).unwrap(),
+                ],
+            ),
         };
-        let result = self
-            .jvm
-            .invoke_async(&self.producer, "send", &[record.into()])
-            .await
-            .unwrap();
         let actual_offset: i64 = self
-            .jvm
-            .chain(&result)
-            .unwrap()
+            .producer
+            .call_async("send", &[record.into()])
+            .await
             .cast("org.apache.kafka.clients.producer.RecordMetadata")
-            .unwrap()
-            .invoke("offset", &[])
-            .unwrap()
-            .to_rust()
-            .unwrap();
+            .call("offset", &[])
+            .into_rust();
 
         if let Some(expected_offset) = expected_offset {
             assert_eq!(expected_offset, actual_offset);
@@ -228,8 +204,8 @@ impl KafkaProducerJava {
 
 pub struct KafkaConsumerJava {
     jvm: Rc<Jvm>,
-    consumer: Instance,
-    waiting_records: VecDeque<Instance>,
+    consumer: Value,
+    waiting_records: VecDeque<Value>,
 }
 
 impl KafkaConsumerJava {
@@ -246,35 +222,18 @@ impl KafkaConsumerJava {
     }
 
     fn fetch_from_broker(&mut self) {
-        let timeout = self
-            .jvm
-            .invoke_static(
-                "java.time.Duration",
-                "ofSeconds",
-                &[InvocationArg::try_from(30_i64)
-                    .unwrap()
-                    .into_primitive()
-                    .unwrap()],
-            )
-            .unwrap();
-
-        let result = tokio::task::block_in_place(|| {
-            self.jvm
-                .invoke(&self.consumer, "poll", &[&timeout.into()])
-                .unwrap()
-        });
-
-        let iterator = JavaIterator::new(
-            self.jvm
-                .invoke(&result, "iterator", InvocationArg::empty())
-                .unwrap(),
+        let timeout = Value::invoke_static(
+            &self.jvm,
+            "java.time.Duration",
+            "ofSeconds",
+            &[&Value::new_long(&self.jvm, 30_i64).instance.into()],
         );
-        while let Some(record) = iterator.next(&self.jvm) {
-            let record = self
-                .jvm
-                .cast(&record, "org.apache.kafka.clients.consumer.ConsumerRecord")
-                .unwrap();
-            self.waiting_records.push_back(record);
+
+        let result = tokio::task::block_in_place(|| self.consumer.call("poll", &[&timeout.into()]));
+
+        for record in result.call("iterator", &[]) {
+            self.waiting_records
+                .push_back(record.cast("org.apache.kafka.clients.consumer.ConsumerRecord"));
         }
     }
 
@@ -284,41 +243,10 @@ impl KafkaConsumerJava {
             .pop_front()
             .expect("KafkaConsumer.poll timed out");
 
-        let offset: i64 = self
-            .jvm
-            .chain(&record)
-            .unwrap()
-            .invoke("offset", &[])
-            .unwrap()
-            .to_rust()
-            .unwrap();
-
-        let topic_name: String = self
-            .jvm
-            .chain(&record)
-            .unwrap()
-            .invoke("topic", &[])
-            .unwrap()
-            .to_rust()
-            .unwrap();
-
-        let message: String = self
-            .jvm
-            .chain(&record)
-            .unwrap()
-            .invoke("value", &[])
-            .unwrap()
-            .to_rust()
-            .unwrap();
-
-        let key: Option<String> = self
-            .jvm
-            .chain(&record)
-            .unwrap()
-            .invoke("key", &[])
-            .unwrap()
-            .to_rust()
-            .unwrap();
+        let offset: i64 = record.call("offset", &[]).into_rust();
+        let topic_name: String = record.call("topic", &[]).into_rust();
+        let message: String = record.call("value", &[]).into_rust();
+        let key: Option<String> = record.call("key", &[]).into_rust();
 
         ExpectedResponse {
             message,
@@ -331,17 +259,13 @@ impl KafkaConsumerJava {
 
 impl Drop for KafkaConsumerJava {
     fn drop(&mut self) {
-        tokio::task::block_in_place(|| {
-            self.jvm
-                .invoke(&self.consumer, "close", InvocationArg::empty())
-                .unwrap()
-        });
+        tokio::task::block_in_place(|| self.consumer.call("close", &[]));
     }
 }
 
 pub struct KafkaAdminJava {
     jvm: Rc<Jvm>,
-    admin: Instance,
+    admin: Value,
 }
 
 impl KafkaAdminJava {
@@ -355,19 +279,19 @@ impl KafkaAdminJava {
             .java_list("java.lang.String", vec![topic_name])
             .unwrap();
 
-        let result = self
-            .jvm
-            .invoke(&self.admin, "describeTopics", &[&topics.into()])
-            .unwrap();
-        self.jvm.invoke_async(&result, "allTopicNames", &[]).await?;
+        self.admin
+            .call("describeTopics", &[&topics.into()])
+            .call_async_fallible("allTopicNames", &[])
+            .await?;
         Ok(TopicDescription {})
     }
 
     pub async fn create_topics_fallible(&self, topics: &[NewTopic<'_>]) -> Result<()> {
-        let topics: Vec<_> = topics
+        let topics: Vec<InvocationArg> = topics
             .iter()
             .map(|topic| {
-                self.jvm.create_instance(
+                Value::new(
+                    &self.jvm,
                     "org.apache.kafka.clients.admin.NewTopic",
                     &[
                         &topic.name.try_into().unwrap(),
@@ -381,32 +305,33 @@ impl KafkaAdminJava {
                             .unwrap(),
                     ],
                 )
+                .into()
             })
             .collect();
-        let topics = self
-            .jvm
-            .java_list("org.apache.kafka.clients.admin.NewTopic", topics)
-            .unwrap();
+        let topics = Value::new_list(
+            &self.jvm,
+            "org.apache.kafka.clients.admin.NewTopic",
+            &topics,
+        );
 
-        let result = self
-            .jvm
-            .invoke(&self.admin, "createTopics", &[&topics.into()])
-            .unwrap();
-        self.jvm.invoke_async(&result, "all", &[]).await?;
+        self.admin
+            .call("createTopics", &[&topics.into()])
+            .call_async_fallible("all", &[])
+            .await?;
         Ok(())
     }
 
     pub async fn delete_topics(&self, to_delete: &[&str]) {
-        let topics = self
-            .jvm
-            .java_list("java.lang.String", to_delete.to_vec())
-            .unwrap();
+        let to_delete: Vec<InvocationArg> = to_delete
+            .iter()
+            .map(|x| InvocationArg::try_from(*x).unwrap())
+            .collect();
+        let topics = Value::new_list(&self.jvm, "java.lang.String", &to_delete);
 
-        let result = self
-            .jvm
-            .invoke(&self.admin, "deleteTopics", &[&topics.into()])
-            .unwrap();
-        self.jvm.invoke_async(&result, "all", &[]).await.unwrap();
+        self.admin
+            .call("deleteTopics", &[&topics.into()])
+            .call_async("all", &[])
+            .await;
     }
 
     pub async fn create_partitions(&self, partitions: &[NewPartition<'_>]) {
@@ -435,11 +360,10 @@ impl KafkaAdminJava {
             )
             .unwrap();
 
-        let result = self
-            .jvm
-            .invoke(&self.admin, "createPartitions", &[&partitions.into()])
-            .unwrap();
-        self.jvm.invoke_async(&result, "all", &[]).await.unwrap();
+        self.admin
+            .call("createPartitions", &[&partitions.into()])
+            .call_async("all", &[])
+            .await;
     }
 
     pub async fn describe_configs(&self, resources: &[ResourceSpecifier<'_>]) {
@@ -448,31 +372,34 @@ impl KafkaAdminJava {
             .static_class("org.apache.kafka.common.config.ConfigResource$Type")
             .unwrap();
 
-        let resources: Vec<_> = resources
+        let resources: Vec<InvocationArg> = resources
             .iter()
             .map(|resource| {
-                self.jvm.create_instance(
+                let args = match resource {
+                    ResourceSpecifier::Topic(topic) => [
+                        self.jvm.field(&resource_type, "TOPIC").unwrap().into(),
+                        InvocationArg::try_from(*topic).unwrap(),
+                    ],
+                };
+                Value::new(
+                    &self.jvm,
                     "org.apache.kafka.common.config.ConfigResource",
-                    &match resource {
-                        ResourceSpecifier::Topic(topic) => [
-                            self.jvm.field(&resource_type, "TOPIC").unwrap().into(),
-                            InvocationArg::try_from(*topic).unwrap(),
-                        ],
-                    },
+                    &args.iter().collect::<Vec<&InvocationArg>>(),
                 )
+                .into()
             })
             .collect();
 
-        let resources = self
-            .jvm
-            .java_list("org.apache.kafka.common.config.ConfigResource", resources)
-            .unwrap();
+        let resources = Value::new_list(
+            &self.jvm,
+            "org.apache.kafka.common.config.ConfigResource",
+            &resources,
+        );
 
-        let result = self
-            .jvm
-            .invoke(&self.admin, "describeConfigs", &[&resources.into()])
-            .unwrap();
-        self.jvm.invoke_async(&result, "all", &[]).await.unwrap();
+        self.admin
+            .call("describeConfigs", &[&resources.into()])
+            .call_async("all", &[])
+            .await;
     }
 
     pub async fn alter_configs(&self, alter_configs: &[AlterConfig<'_>]) {
@@ -484,55 +411,54 @@ impl KafkaAdminJava {
         let alter_configs: Vec<_> = alter_configs
             .iter()
             .map(|alter_config| {
-                let entries: Vec<Result<Instance, J4RsError>> = alter_config
+                let entries: Vec<InvocationArg> = alter_config
                     .entries
                     .iter()
                     .map(|entry| {
-                        self.jvm.create_instance(
+                        Value::new(
+                            &self.jvm,
                             "org.apache.kafka.clients.admin.ConfigEntry",
                             &[
-                                InvocationArg::try_from(entry.key.as_str()).unwrap(),
-                                InvocationArg::try_from(entry.value.as_str()).unwrap(),
+                                &InvocationArg::try_from(entry.key.as_str()).unwrap(),
+                                &InvocationArg::try_from(entry.value.as_str()).unwrap(),
                             ],
                         )
+                        .into()
                     })
                     .collect();
+
+                let resource_args = match &alter_config.specifier {
+                    ResourceSpecifier::Topic(topic) => [
+                        self.jvm.field(&resource_type, "TOPIC").unwrap().into(),
+                        InvocationArg::try_from(*topic).unwrap(),
+                    ],
+                };
                 (
-                    self.jvm
-                        .create_instance(
-                            "org.apache.kafka.common.config.ConfigResource",
-                            &match &alter_config.specifier {
-                                ResourceSpecifier::Topic(topic) => [
-                                    self.jvm.field(&resource_type, "TOPIC").unwrap().into(),
-                                    InvocationArg::try_from(*topic).unwrap(),
-                                ],
-                            },
+                    Value::new(
+                        &self.jvm,
+                        "org.apache.kafka.common.config.ConfigResource",
+                        &resource_args.iter().collect::<Vec<&InvocationArg>>(),
+                    ),
+                    Value::new(
+                        &self.jvm,
+                        "org.apache.kafka.clients.admin.Config",
+                        &[&Value::new_list(
+                            &self.jvm,
+                            "org.apache.kafka.clients.admin.ConfigEntry",
+                            &entries,
                         )
-                        .unwrap(),
-                    self.jvm
-                        .create_instance(
-                            "org.apache.kafka.clients.admin.Config",
-                            &[&self
-                                .jvm
-                                .java_list("org.apache.kafka.clients.admin.ConfigEntry", entries)
-                                .unwrap()
-                                .into()],
-                        )
-                        .unwrap(),
+                        .into()],
+                    ),
                 )
             })
             .collect();
 
-        let alter_configs = self.java_map(alter_configs);
+        let alter_configs = Value::new_map(&self.jvm, alter_configs);
 
-        let result = self
-            .jvm
-            .invoke(&self.admin, "alterConfigs", &[&alter_configs.into()])
-            .unwrap();
-        self.jvm
-            .invoke_async(&result, "all", InvocationArg::empty())
-            .await
-            .unwrap();
+        self.admin
+            .call("alterConfigs", &[&alter_configs.into()])
+            .call_async("all", &[])
+            .await;
     }
 
     pub async fn create_acls(&self, acls: Vec<Acl>) {
@@ -642,48 +568,9 @@ impl KafkaAdminJava {
             .java_list("org.apache.kafka.common.acl.AclBinding", acls)
             .unwrap();
 
-        let result = self
-            .jvm
-            .invoke(&self.admin, "createAcls", &[&acls.into()])
-            .unwrap();
-        self.jvm
-            .invoke_async(&result, "all", InvocationArg::empty())
-            .await
-            .unwrap();
-    }
-
-    fn java_map(&self, key_values: Vec<(Instance, Instance)>) -> Instance {
-        let map = self
-            .jvm
-            .create_instance("java.util.HashMap", InvocationArg::empty())
-            .unwrap();
-        for (k, v) in key_values {
-            self.jvm
-                .invoke(&map, "put", &[&k.into(), &v.into()])
-                .unwrap();
-        }
-        map
-    }
-}
-
-struct JavaIterator(Instance);
-
-impl JavaIterator {
-    fn new(iterator_instance: Instance) -> Self {
-        JavaIterator(iterator_instance)
-    }
-
-    fn next(&self, jvm: &Jvm) -> Option<Instance> {
-        let has_next: bool = jvm
-            .to_rust(
-                jvm.invoke(&self.0, "hasNext", InvocationArg::empty())
-                    .unwrap(),
-            )
-            .unwrap();
-        if has_next {
-            Some(jvm.invoke(&self.0, "next", InvocationArg::empty()).unwrap())
-        } else {
-            None
-        }
+        self.admin
+            .call("createAcls", &[&acls.into()])
+            .call_async("all", &[])
+            .await;
     }
 }
