@@ -1,5 +1,5 @@
 use anyhow::Result;
-use j4rs::{Instance, InvocationArg, Jvm};
+use j4rs::{Instance, InvocationArg, Jvm, JvmBuilder, MavenArtifact};
 use serde::de::DeserializeOwned;
 use std::{any::Any, rc::Rc};
 
@@ -24,66 +24,103 @@ impl Iterator for JavaIterator {
     }
 }
 
-struct Java(Rc<Jvm>);
+#[derive(Clone)]
+pub(crate) struct Java(Rc<Jvm>);
 
-impl Java {}
+impl Java {
+    pub(crate) fn new(deps: &[&str]) -> Self {
+        let jvm = Rc::new(JvmBuilder::new().build().unwrap());
 
-// enum ValueTy {
-//     Arg(InvocationArg),
-//     Instance(Instance),
-// }
-
-pub(crate) struct Value {
-    pub instance: Instance,
-    jvm: Rc<Jvm>,
-}
-
-impl Value {
-    pub(crate) fn new_int(jvm: &Rc<Jvm>, int: i32) -> Self {
-        Self {
-            instance: InvocationArg::try_from(int).unwrap().instance().unwrap(),
-            jvm: jvm.clone(),
+        for dep in deps {
+            jvm.deploy_artifact(&MavenArtifact::from(*dep)).unwrap();
         }
+        Self(jvm)
     }
 
-    pub(crate) fn new_long(jvm: &Rc<Jvm>, int: i64) -> Self {
-        Self {
-            instance: Self::new(
-                jvm,
-                "java.lang.Long",
-                &[&InvocationArg::try_from(int)
-                    .unwrap()
-                    .into_primitive()
-                    .unwrap()],
-            )
-            .call("longValue", &[])
-            .instance,
-            jvm: jvm.clone(),
-        }
+    /// Call the java constructor with the provided name and args
+    pub(crate) fn construct(&self, name: &str, args: Vec<Value>) -> Value {
+        self.construct_fallible(name, args).unwrap()
     }
 
-    pub(crate) fn new(jvm: &Rc<Jvm>, name: &str, args: &[&InvocationArg]) -> Self {
-        Self::new_fallible(jvm, name, args).unwrap()
-    }
-
-    pub(crate) fn new_fallible(jvm: &Rc<Jvm>, name: &str, args: &[&InvocationArg]) -> Result<Self> {
-        Ok(Self {
-            instance: jvm.create_instance(name, args)?,
-            jvm: jvm.clone(),
+    /// Call the java constructor with the provided name and args
+    pub(crate) fn construct_fallible(&self, name: &str, args: Vec<Value>) -> Result<Value> {
+        let args: Vec<InvocationArg> = args.into_iter().map(|x| x.instance.into()).collect();
+        Ok(Value {
+            instance: self.0.create_instance(name, &args)?,
+            jvm: self.0.clone(),
         })
     }
 
-    pub(crate) fn new_list(jvm: &Rc<Jvm>, inner_class_name: &str, args: &[InvocationArg]) -> Self {
-        // TODO: Discuss with upstream why this was deprecated, `Jvm::java_list` is very difficult to use due to Result in input.
-        Self {
-            #[allow(deprecated)]
-            instance: jvm.create_java_list(inner_class_name, args).unwrap(),
-            jvm: jvm.clone(),
+    pub(crate) fn new_string(&self, string: &str) -> Value {
+        Value {
+            instance: self
+                .0
+                .create_instance(
+                    "java.lang.String",
+                    &[&InvocationArg::try_from(string).unwrap()],
+                )
+                .unwrap(),
+            jvm: self.0.clone(),
         }
     }
 
-    pub(crate) fn new_map(jvm: &Rc<Jvm>, key_values: Vec<(Value, Value)>) -> Value {
-        let map = Value::new(jvm, "java.util.HashMap", &[]);
+    fn new_primitive(&self, class_name: &str, convert_method: &str, value: InvocationArg) -> Value {
+        Value {
+            instance: self
+                .0
+                .invoke(
+                    &self
+                        .0
+                        .create_instance(
+                            // e.g. "java.lang.Long",
+                            class_name,
+                            &[&value.into_primitive().unwrap()],
+                        )
+                        .unwrap(),
+                    // e.g. "longValue"
+                    convert_method,
+                    InvocationArg::empty(),
+                )
+                .unwrap(),
+            jvm: self.0.clone(),
+        }
+    }
+
+    pub(crate) fn new_long(&self, value: i64) -> Value {
+        self.new_primitive(
+            "java.lang.Long",
+            "longValue",
+            InvocationArg::try_from(value).unwrap(),
+        )
+    }
+
+    pub(crate) fn new_int(&self, value: i32) -> Value {
+        self.new_primitive(
+            "java.lang.Integer",
+            "intValue",
+            InvocationArg::try_from(value).unwrap(),
+        )
+    }
+
+    pub(crate) fn new_short(&self, value: i16) -> Value {
+        self.new_primitive(
+            "java.lang.Short",
+            "shortValue",
+            InvocationArg::try_from(value).unwrap(),
+        )
+    }
+
+    pub(crate) fn new_list(&self, inner_class_name: &str, args: &[InvocationArg]) -> Value {
+        // TODO: Discuss with upstream why this was deprecated, `Jvm::java_list` is very difficult to use due to Result in input.
+        Value {
+            #[allow(deprecated)]
+            instance: self.0.create_java_list(inner_class_name, args).unwrap(),
+            jvm: self.0.clone(),
+        }
+    }
+
+    pub(crate) fn new_map(&self, key_values: Vec<(Value, Value)>) -> Value {
+        let map = self.construct("java.util.HashMap", vec![]);
         for (k, v) in key_values {
             map.call("put", &[&k.into(), &v.into()]);
         }
@@ -91,26 +128,45 @@ impl Value {
     }
 
     pub(crate) fn invoke_static(
-        jvm: &Rc<Jvm>,
+        &self,
         class_name: &str,
         method_name: &str,
         args: &[&InvocationArg],
-    ) -> Self {
-        Self::invoke_static_fallible(jvm, class_name, method_name, args).unwrap()
+    ) -> Value {
+        self.invoke_static_fallible(class_name, method_name, args)
+            .unwrap()
     }
 
     pub(crate) fn invoke_static_fallible(
-        jvm: &Rc<Jvm>,
+        &self,
         class_name: &str,
         method_name: &str,
         args: &[&InvocationArg],
-    ) -> Result<Self> {
-        Ok(Self {
-            instance: jvm.invoke_static(class_name, method_name, args)?,
-            jvm: jvm.clone(),
+    ) -> Result<Value> {
+        Ok(Value {
+            instance: self.0.invoke_static(class_name, method_name, args)?,
+            jvm: self.0.clone(),
         })
     }
 
+    pub(crate) fn static_class(&self, class_name: &str) -> Value {
+        self.static_class_fallible(class_name).unwrap()
+    }
+
+    fn static_class_fallible(&self, class_name: &str) -> Result<Value> {
+        Ok(Value {
+            instance: self.0.static_class(class_name)?,
+            jvm: self.0.clone(),
+        })
+    }
+}
+
+pub(crate) struct Value {
+    pub instance: Instance,
+    jvm: Rc<Jvm>,
+}
+
+impl Value {
     pub(crate) fn call(&self, name: &str, args: &[&InvocationArg]) -> Self {
         self.call_fallible(name, args).unwrap()
     }
@@ -145,6 +201,18 @@ impl Value {
 
     fn cast_fallible(&self, name: &str) -> Result<Self> {
         let instance = self.jvm.cast(&self.instance, name)?;
+        Ok(Self {
+            instance,
+            jvm: self.jvm.clone(),
+        })
+    }
+
+    pub(crate) fn field(&self, field_name: &str) -> Self {
+        self.field_fallible(field_name).unwrap()
+    }
+
+    fn field_fallible(&self, field_name: &str) -> Result<Self> {
+        let instance = self.jvm.field(&self.instance, field_name)?;
         Ok(Self {
             instance,
             jvm: self.jvm.clone(),
