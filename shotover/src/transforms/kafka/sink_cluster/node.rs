@@ -141,10 +141,15 @@ impl ConnectionFactory {
             ));
         }
 
+        let delegation_token = scram_over_mtls
+            .token_task
+            .get_token_for_user(scram_over_mtls.username.clone())
+            .await?;
+
         // SCRAM client-first
         let mut scram = Scram::<Sha256>::new(
-            scram_over_mtls.delegation_token.token_id.clone(),
-            scram_over_mtls.delegation_token.hmac.to_string(),
+            delegation_token.token_id,
+            delegation_token.hmac.to_string(),
             ChannelBinding::None,
             "tokenauth=true".to_owned(),
             String::new(),
@@ -170,7 +175,7 @@ impl ConnectionFactory {
             .context("Server gave invalid final response to delegation token SCRAM")
     }
 
-    /// For SASL plain it is sufficient to replay the requests made in a succesful exchange.
+    /// For SASL plain it is sufficient to replay the requests made in a successful exchange.
     /// This method performs such a replay on the passed connection.
     async fn replay_sasl(&self, connection: &mut SinkConnection) -> Result<()> {
         connection.send(self.auth_requests.clone())?;

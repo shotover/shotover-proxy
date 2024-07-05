@@ -221,7 +221,7 @@ async fn wait_until_delegation_token_ready_on_all_brokers(
             while !is_delegation_token_ready(connection, create_response, username.clone())
                 .await
                 .with_context(|| {
-                    format!("Failed to check delegation token was ready on broker {address:?}. Succesful connections {i}/{nodes_len}")
+                    format!("Failed to check delegation token was ready on broker {address:?}. Successful connections {i}/{nodes_len}")
                 })?
             {
                 tokio::time::sleep(Duration::from_millis(10)).await;
