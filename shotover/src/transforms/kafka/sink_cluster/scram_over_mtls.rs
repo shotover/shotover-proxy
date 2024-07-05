@@ -231,10 +231,7 @@ impl AuthorizeScramOverMtlsBuilder {
         AuthorizeScramOverMtls {
             original_scram_state: OriginalScramState::WaitingOnServerFirst,
             token_task: self.token_task.clone(),
-            delegation_token: DelegationToken {
-                token_id: String::new(),
-                hmac: StrBytes::default(),
-            },
+            username: String::new(),
         }
     }
 }
@@ -242,10 +239,10 @@ impl AuthorizeScramOverMtlsBuilder {
 pub struct AuthorizeScramOverMtls {
     /// Tracks the state of the original scram connections responses created from the clients actual requests
     pub original_scram_state: OriginalScramState,
-    /// Shared task that fetches and caches delegation tokens
+    /// Shared task that fetches delegation tokens
     pub token_task: TokenTask,
-    /// The delegation token generated from the username used in the original scram auth
-    pub delegation_token: DelegationToken,
+    /// The username used in the original scram auth to generate the delegation token
+    pub username: String,
 }
 
 pub enum OriginalScramState {

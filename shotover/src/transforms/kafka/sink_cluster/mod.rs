@@ -457,10 +457,7 @@ impl KafkaSinkCluster {
                     })) => {
                         if let Some(scram_over_mtls) = &mut self.authorize_scram_over_mtls {
                             if let Some(username) = get_username_from_scram_request(auth_bytes) {
-                                scram_over_mtls.delegation_token = scram_over_mtls
-                                    .token_task
-                                    .get_token_for_user(username)
-                                    .await?;
+                                scram_over_mtls.username = username;
                             }
                         }
                         self.connection_factory.add_auth_request(request.clone());
@@ -477,11 +474,11 @@ impl KafkaSinkCluster {
 
                         if let Some(scram_over_mtls) = &self.authorize_scram_over_mtls {
                             // When performing SCRAM over mTLS, we need this security check to ensure that the
-                            // client cannot access delegation tokens that it has not succesfully authenticated for.
+                            // client cannot access delegation tokens that it has not successfully authenticated for.
                             //
                             // If the client were to send a request directly after the SCRAM requests,
                             // without waiting for responses to those scram requests first,
-                            // this error would be triggered even if the SCRAM requests were succesful.
+                            // this error would be triggered even if the SCRAM requests were successful.
                             // However that would be a violation of the SCRAM protocol as the client is supposed to check
                             // the server's signature contained in the server's final message in order to authenticate the server.
                             // So I dont think this problem is worth solving.
@@ -489,7 +486,7 @@ impl KafkaSinkCluster {
                                 scram_over_mtls.original_scram_state,
                                 OriginalScramState::AuthSuccess
                             ) {
-                                return Err(anyhow!("Client attempted to send requests before a succesful auth was completed or after an unsuccesful auth"));
+                                return Err(anyhow!("Client attempted to send requests before a successful auth was completed or after an unsuccessful auth"));
                             }
                         }
 
