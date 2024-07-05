@@ -148,7 +148,7 @@ impl ConnectionFactory {
 
         // SCRAM client-first
         let mut scram = Scram::<Sha256>::new(
-            delegation_token.token_id.clone(),
+            delegation_token.token_id,
             delegation_token.hmac.to_string(),
             ChannelBinding::None,
             "tokenauth=true".to_owned(),
