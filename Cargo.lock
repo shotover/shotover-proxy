@@ -5001,6 +5001,7 @@ dependencies = [
  "rustls 0.21.12",
  "rustls-pemfile 1.0.4",
  "scylla",
+ "serde",
  "subprocess",
  "tokio",
  "tokio-bin-process",
