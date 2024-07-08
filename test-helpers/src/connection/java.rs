@@ -74,6 +74,134 @@ impl Jvm {
         )
     }
 
+    /// Create a java `short`.
+    pub(crate) fn new_byte(&self, value: i8) -> Value {
+        self.new_primitive(
+            "java.lang.Byte",
+            "byteValue",
+            InvocationArg::try_from(value).unwrap(),
+        )
+    }
+
+    /// Create a java.lang.Long
+    pub(crate) fn new_long_object(&self, value: i64) -> Value {
+        Value {
+            instance: self
+                .0
+                .create_instance(
+                    "java.lang.Long",
+                    &[InvocationArg::try_from(value)
+                        .unwrap()
+                        .into_primitive()
+                        .unwrap()],
+                )
+                .unwrap(),
+            jvm: self.0.clone(),
+        }
+    }
+
+    /// Create a java.lang.Integer
+    pub(crate) fn new_int_object(&self, value: i32) -> Value {
+        Value {
+            instance: self
+                .0
+                .create_instance(
+                    "java.lang.Integer",
+                    &[InvocationArg::try_from(value)
+                        .unwrap()
+                        .into_primitive()
+                        .unwrap()],
+                )
+                .unwrap(),
+            jvm: self.0.clone(),
+        }
+    }
+
+    /// Create a java.lang.Integer
+    pub(crate) fn new_short_object(&self, value: i16) -> Value {
+        Value {
+            instance: self
+                .0
+                .create_instance(
+                    "java.lang.Short",
+                    &[InvocationArg::try_from(value)
+                        .unwrap()
+                        .into_primitive()
+                        .unwrap()],
+                )
+                .unwrap(),
+            jvm: self.0.clone(),
+        }
+    }
+
+    /// Create a java.lang.Byte
+    pub(crate) fn new_byte_object(&self, value: i8) -> Value {
+        Value {
+            instance: self
+                .0
+                .create_instance(
+                    "java.lang.Byte",
+                    &[InvocationArg::try_from(value)
+                        .unwrap()
+                        .into_primitive()
+                        .unwrap()],
+                )
+                .unwrap(),
+            jvm: self.0.clone(),
+        }
+    }
+
+    /// Create a java.lang.Boolean
+    pub(crate) fn new_bool_object(&self, value: bool) -> Value {
+        Value {
+            instance: self
+                .0
+                .create_instance(
+                    "java.lang.Boolean",
+                    &[InvocationArg::try_from(value)
+                        .unwrap()
+                        .into_primitive()
+                        .unwrap()],
+                )
+                .unwrap(),
+            jvm: self.0.clone(),
+        }
+    }
+
+    /// Create a java.lang.Float
+    pub(crate) fn new_float_object(&self, value: f32) -> Value {
+        Value {
+            instance: self
+                .0
+                .create_instance(
+                    "java.lang.Float",
+                    &[InvocationArg::try_from(value)
+                        .unwrap()
+                        .into_primitive()
+                        .unwrap()],
+                )
+                .unwrap(),
+            jvm: self.0.clone(),
+        }
+    }
+
+    /// Create a java.lang.Double
+    pub(crate) fn new_double_object(&self, value: f64) -> Value {
+        Value {
+            instance: self
+                .0
+                .create_instance(
+                    "java.lang.Double",
+                    &[InvocationArg::try_from(value)
+                        .unwrap()
+                        .into_primitive()
+                        .unwrap()],
+                )
+                .unwrap(),
+            jvm: self.0.clone(),
+        }
+    }
+
     fn new_primitive(&self, class_name: &str, convert_method: &str, value: InvocationArg) -> Value {
         Value {
             instance: self
@@ -92,6 +220,15 @@ impl Jvm {
                     InvocationArg::empty(),
                 )
                 .unwrap(),
+            jvm: self.0.clone(),
+        }
+    }
+
+    /// Construct a java array containing the provided elements
+    pub(crate) fn new_array(&self, element_type: &str, elements: Vec<Value>) -> Value {
+        let args: Vec<InvocationArg> = elements.into_iter().map(|x| x.instance.into()).collect();
+        Value {
+            instance: self.0.create_java_array(element_type, &args).unwrap(),
             jvm: self.0.clone(),
         }
     }

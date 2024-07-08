@@ -4,7 +4,7 @@ use cdrs::CdrsTokioPreparedQuery;
 use cdrs::{CdrsConnection, CdrsTokioSessionInstance};
 #[cfg(feature = "cassandra-cpp-driver-tests")]
 use cpp::{CppConnection, PreparedStatementCpp, SslCpp};
-use java::JavaConnection;
+use java::{JavaConnection, PreparedStatementJava};
 use openssl::ssl::{SslContext, SslMethod};
 use pretty_assertions::assert_eq;
 use scylla::{PreparedStatementScylla, ScyllaConnection, SessionBuilderScylla};
@@ -103,6 +103,7 @@ pub enum PreparedQuery {
     Cpp(PreparedStatementCpp),
     CdrsTokio(CdrsTokioPreparedQuery),
     Scylla(PreparedStatementScylla),
+    Java(PreparedStatementJava),
 }
 
 impl PreparedQuery {
@@ -125,6 +126,13 @@ impl PreparedQuery {
         match self {
             PreparedQuery::Scylla(s) => s,
             _ => panic!("Not PreparedQuery::Scylla"),
+        }
+    }
+
+    pub fn as_java(&self) -> &PreparedStatementJava {
+        match self {
+            PreparedQuery::Java(j) => j,
+            _ => panic!("Not PreparedQuery::Java"),
         }
     }
 }

@@ -1,6 +1,6 @@
 use pretty_assertions::assert_eq;
 use test_helpers::connection::cassandra::{
-    assert_query_result, run_query, CassandraConnection, Consistency, ResultValue,
+    assert_query_result, run_query, CassandraConnection, CassandraDriver, Consistency, ResultValue,
 };
 
 fn values() -> Vec<ResultValue> {
@@ -25,11 +25,11 @@ fn values() -> Vec<ResultValue> {
 
 async fn insert(connection: &CassandraConnection, replication_factor: u32) {
     #[cfg(feature = "cassandra-cpp-driver-tests")]
-    let datastax = matches!(connection, CassandraConnection::Cpp { .. });
+    let no_decimal_support = [CassandraDriver::Cpp, CassandraDriver::Java];
     #[cfg(not(feature = "cassandra-cpp-driver-tests"))]
-    let datastax = false;
+    let no_decimal_support = [CassandraDriver::Java];
 
-    if datastax {
+    if connection.is(&no_decimal_support) {
         // workaround cassandra-cpp not yet supporting binding decimal values
         let prepared = connection
                 .prepare(&format!("INSERT INTO test_prepare_statements_all{replication_factor}.test (id, v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13) VALUES (?, ?, ?, ?, ?, 1.0, ?, ?, ?, ?, ?, ?, ?, ?, ?);"))
