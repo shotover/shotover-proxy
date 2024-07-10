@@ -126,6 +126,7 @@ async fn task(
 
                 // TODO: We would expire the old token here if it were possible, but it is not since kafka will not allow users (even super users) to expire a token belonging to another user.
                 // See details in https://github.com/shotover/shotover-proxy/pull/1685
+                // However, at this point, the token will automatically expire itself in delegation_token_lifetime / 2, so it is not a huge concern.
             }
             result = rx.recv() => {
                 if let Some(request) = result {
