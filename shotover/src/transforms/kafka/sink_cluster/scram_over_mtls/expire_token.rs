@@ -1,6 +1,9 @@
 use std::time::Duration;
 
 use anyhow::{anyhow, Context};
+use base64::engine::general_purpose;
+use base64::Engine;
+use bytes::Bytes;
 use kafka_protocol::messages::{ApiKey, ExpireDelegationTokenRequest, RequestHeader};
 use kafka_protocol::protocol::{Builder, StrBytes};
 use kafka_protocol::ResponseError;
@@ -35,6 +38,7 @@ pub(crate) async fn expire_delegation_token(
     rng: &mut SmallRng,
 ) -> anyhow::Result<()> {
     let connection = get_node_connection(nodes, rng).await?;
+    let hmac_raw_bytes = Bytes::from(general_purpose::STANDARD.decode(hmac.to_string()).unwrap());
 
     connection.send(vec![Message::from_frame(Frame::Kafka(
         KafkaFrame::Request {
@@ -45,7 +49,7 @@ pub(crate) async fn expire_delegation_token(
                 .unwrap(),
             body: RequestBody::ExpireDelegationToken(
                 ExpireDelegationTokenRequest::builder()
-                    .hmac(hmac.into_bytes())
+                    .hmac(hmac_raw_bytes)
                     .expiry_time_period_ms(-1) // Invalidate the token immediately
                     .build()
                     .unwrap(),
