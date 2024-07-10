@@ -21,7 +21,6 @@ pub(crate) async fn expire_delegation_token_with_timeout(
     username: &str,
     hmac: StrBytes,
 ) -> anyhow::Result<()> {
-    let username = StrBytes::from_string(username.to_owned());
     // We apply a 120s timeout to token expiration with the same reason as create_token_with_timeout
     tokio::time::timeout(
         Duration::from_secs(120),
