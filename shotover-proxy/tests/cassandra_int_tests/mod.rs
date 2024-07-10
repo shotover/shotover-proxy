@@ -18,7 +18,8 @@ use test_helpers::connection::cassandra::Compression;
 use test_helpers::connection::cassandra::ProtocolVersion;
 use test_helpers::connection::cassandra::{
     assert_query_result, run_query, CassandraConnection, CassandraConnectionBuilder,
-    CassandraDriver, CassandraDriver::Cdrs, CassandraDriver::Scylla, CqlWsSession, ResultValue,
+    CassandraDriver, CassandraDriver::Cdrs, CassandraDriver::Java, CassandraDriver::Scylla,
+    CqlWsSession, ResultValue,
 };
 use test_helpers::connection::redis_connection;
 use test_helpers::docker_compose::docker_compose;
@@ -84,9 +85,10 @@ where
 
 #[template]
 #[rstest]
-#[case::cdrs(Cdrs)]
 #[cfg_attr(feature = "cassandra-cpp-driver-tests", case::cpp(Cpp))]
 #[case::scylla(Scylla)]
+#[case::cdrs(Cdrs)]
+#[case::java(Java)]
 fn all_cassandra_drivers(#[case] driver: CassandraDriver) {}
 
 #[apply(all_cassandra_drivers)]
@@ -240,7 +242,11 @@ async fn cluster_single_rack_v3(#[case] driver: CassandraDriver) {
     cluster::single_rack_v3::test_topology_task(None).await;
 }
 
-#[apply(all_cassandra_drivers)]
+#[rstest]
+#[cfg_attr(feature = "cassandra-cpp-driver-tests", case::cpp(Cpp))]
+#[case::scylla(Scylla)]
+#[case::cdrs(Cdrs)]
+//#[case::java(Java)] // Need to create JVM in builder to avoid recreating for each connection instance.
 #[tokio::test(flavor = "multi_thread")]
 async fn cluster_single_rack_v4(#[case] driver: CassandraDriver) {
     let mut compose = docker_compose("tests/test-configs/cassandra/cluster-v4/docker-compose.yaml");
@@ -1074,7 +1080,10 @@ async fn cassandra_5(#[case] driver: CassandraDriver) {
     shotover.shutdown_and_then_consume_events(&[]).await;
 }
 
-#[apply(all_cassandra_drivers)]
+#[rstest]
+#[cfg_attr(feature = "cassandra-cpp-driver-tests", case::cpp(Cpp))]
+#[case::scylla(Scylla)]
+#[case::cdrs(Cdrs)]
 #[tokio::test(flavor = "multi_thread")]
 async fn cassandra_5_cluster(#[case] driver: CassandraDriver) {
     let _compose = docker_compose("tests/test-configs/cassandra/cluster-v5/docker-compose.yaml");
