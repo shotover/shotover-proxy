@@ -40,7 +40,7 @@ pub(crate) async fn expire_delegation_token(
         KafkaFrame::Request {
             header: RequestHeader::builder()
                 .request_api_key(ApiKey::ExpireDelegationTokenKey as i16)
-                .request_api_version(3)
+                .request_api_version(2)
                 .build()
                 .unwrap(),
             body: RequestBody::ExpireDelegationToken(
