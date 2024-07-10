@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use anyhow::{anyhow, Context, Result};
 use base64::{engine::general_purpose, Engine};
+use kafka_protocol::messages::DescribeDelegationTokenResponse;
 use kafka_protocol::{
     messages::{
         describe_delegation_token_request::DescribeDelegationTokenOwner, ApiKey,
@@ -50,9 +51,10 @@ pub(crate) async fn create_token_with_timeout(
     .with_context(|| format!("Delegation token creation for {username:?} timedout"))?
 }
 
-/// populate existing nodes
-/// If no nodes have a connection open an error will be returned.
-async fn find_new_brokers(nodes: &mut Vec<Node>, rng: &mut SmallRng) -> Result<()> {
+pub(crate) async fn get_node_connection<'a>(
+    nodes: &'a mut [Node],
+    rng: &mut SmallRng,
+) -> Result<&'a mut SinkConnection> {
     let Some(node) = nodes
         .iter_mut()
         .filter(|node| node.connection.is_some())
@@ -60,10 +62,38 @@ async fn find_new_brokers(nodes: &mut Vec<Node>, rng: &mut SmallRng) -> Result<(
     else {
         return Err(anyhow!("No nodes have an open connection"));
     };
-    let connection = node
+
+    Ok(node
         .connection
         .as_mut()
-        .expect("Guaranteed due to above filter");
+        .expect("Guaranteed due to above filter"))
+}
+
+pub(crate) async fn create_node_connection_if_none(
+    node: &mut Node,
+    mtls_connection_factory: &ConnectionFactory,
+) -> Result<()> {
+    if node.connection.is_none() {
+        let address = &node.address;
+        node.connection = match mtls_connection_factory
+            // Must be unauthed since mTLS is its own auth.
+            .create_connection_unauthed(address)
+            .await
+        {
+            Ok(connection) => Some(connection),
+            Err(err) => {
+                tracing::error!("Token Task: Failed to create connection for {address:?} during token wait {err}");
+                None
+            }
+        };
+    }
+    Ok(())
+}
+
+/// populate existing nodes
+/// If no nodes have a connection open an error will be returned.
+pub(crate) async fn find_new_brokers(nodes: &mut Vec<Node>, rng: &mut SmallRng) -> Result<()> {
+    let connection = get_node_connection(nodes, rng).await?;
 
     let request = Message::from_frame(Frame::Kafka(KafkaFrame::Request {
         header: RequestHeader::builder()
@@ -106,6 +136,52 @@ async fn find_new_brokers(nodes: &mut Vec<Node>, rng: &mut SmallRng) -> Result<(
     }
 }
 
+pub(crate) async fn describe_delegation_token_for_user(
+    connection: &mut SinkConnection,
+    username: StrBytes,
+) -> Result<DescribeDelegationTokenResponse> {
+    // TODO: Create a single request Message, convert it into raw bytes, and then reuse for all following requests
+    //       This will avoid many allocations for each sent request
+    //       It is left as a TODO since shotover does not currently support this. But we should support it in the future.
+    connection.send(vec![Message::from_frame(Frame::Kafka(
+        KafkaFrame::Request {
+            header: RequestHeader::builder()
+                .request_api_key(ApiKey::DescribeDelegationTokenKey as i16)
+                .request_api_version(3)
+                .build()
+                .unwrap(),
+            body: RequestBody::DescribeDelegationToken(
+                DescribeDelegationTokenRequest::builder()
+                    .owners(Some(vec![DescribeDelegationTokenOwner::builder()
+                        .principal_type(StrBytes::from_static_str("User"))
+                        .principal_name(username)
+                        .build()
+                        .unwrap()]))
+                    .build()
+                    .unwrap(),
+            ),
+        },
+    ))])?;
+    let response = connection.recv().await?.pop().unwrap();
+    match response.into_frame() {
+        Some(Frame::Kafka(KafkaFrame::Response {
+            body: ResponseBody::DescribeDelegationToken(response),
+            ..
+        })) => {
+            if let Some(err) = ResponseError::try_from_code(response.error_code) {
+                Err(anyhow!(
+                    "Kafka's response to DescribeDelegationToken was an error: {err}"
+                ))
+            } else {
+                Ok(response)
+            }
+        }
+        response => Err(anyhow!(
+            "Unexpected response to DescribeDelegationToken {response:?}"
+        )),
+    }
+}
+
 /// Create a delegation token for the provided user.
 /// If no nodes have a connection open an error will be returned.
 async fn create_delegation_token_for_user(
@@ -114,17 +190,7 @@ async fn create_delegation_token_for_user(
     rng: &mut SmallRng,
     token_lifetime: Duration,
 ) -> Result<CreateDelegationTokenResponse> {
-    let Some(node) = nodes
-        .iter_mut()
-        .filter(|node| node.connection.is_some())
-        .choose(rng)
-    else {
-        return Err(anyhow!("No nodes have an open connection"));
-    };
-    let connection = node
-        .connection
-        .as_mut()
-        .expect("Guaranteed due to above filter");
+    let connection = get_node_connection(nodes, rng).await?;
 
     connection.send(vec![Message::from_frame(Frame::Kafka(
         KafkaFrame::Request {
@@ -203,21 +269,9 @@ async fn wait_until_delegation_token_ready_on_all_brokers(
 ) -> Result<()> {
     let nodes_len = nodes.len();
     for (i, node) in nodes.iter_mut().enumerate() {
-        let address = &node.address;
-        if node.connection.is_none() {
-            node.connection = match mtls_connection_factory
-                // Must be unauthed since mTLS is its own auth.
-                .create_connection_unauthed(address)
-                .await
-            {
-                Ok(connection) => Some(connection),
-                Err(err) => {
-                    tracing::error!("Token Task: Failed to create connection for {address:?} during token wait {err}");
-                    None
-                }
-            };
-        }
+        create_node_connection_if_none(node, mtls_connection_factory).await?;
         if let Some(connection) = &mut node.connection {
+            let address = &node.address;
             while !is_delegation_token_ready(connection, create_response, username.clone())
                 .await
                 .with_context(|| {
@@ -226,7 +280,7 @@ async fn wait_until_delegation_token_ready_on_all_brokers(
             {
                 tokio::time::sleep(Duration::from_millis(10)).await;
             }
-            tracing::debug!("finished checking token is ready on broker {address:?}");
+            tracing::debug!("Finished checking token is ready on broker {address:?}");
         }
     }
 
@@ -241,51 +295,14 @@ async fn is_delegation_token_ready(
     create_response: &CreateDelegationTokenResponse,
     username: StrBytes,
 ) -> Result<bool> {
-    // TODO: Create a single request Message, convert it into raw bytes, and then reuse for all following requests
-    //       This will avoid many allocations for each sent request
-    //       It is left as a TODO since shotover does not currently support this. But we should support it in the future.
-    connection.send(vec![Message::from_frame(Frame::Kafka(
-        KafkaFrame::Request {
-            header: RequestHeader::builder()
-                .request_api_key(ApiKey::DescribeDelegationTokenKey as i16)
-                .request_api_version(3)
-                .build()
-                .unwrap(),
-            body: RequestBody::DescribeDelegationToken(
-                DescribeDelegationTokenRequest::builder()
-                    .owners(Some(vec![DescribeDelegationTokenOwner::builder()
-                        .principal_type(StrBytes::from_static_str("User"))
-                        .principal_name(username)
-                        .build()
-                        .unwrap()]))
-                    .build()
-                    .unwrap(),
-            ),
-        },
-    ))])?;
-    let mut response = connection.recv().await?.pop().unwrap();
-    if let Some(Frame::Kafka(KafkaFrame::Response {
-        body: ResponseBody::DescribeDelegationToken(response),
-        ..
-    })) = response.frame()
+    let response = describe_delegation_token_for_user(connection, username).await?;
+    if response
+        .tokens
+        .iter()
+        .any(|x| x.hmac == create_response.hmac && x.token_id == create_response.token_id)
     {
-        if let Some(err) = ResponseError::try_from_code(response.error_code) {
-            return Err(anyhow!(
-                "Kafka's response to DescribeDelegationToken was an error: {err}"
-            ));
-        }
-        if response
-            .tokens
-            .iter()
-            .any(|x| x.hmac == create_response.hmac && x.token_id == create_response.token_id)
-        {
-            Ok(true)
-        } else {
-            Ok(false)
-        }
+        Ok(true)
     } else {
-        Err(anyhow!(
-            "Unexpected response to CreateDelegationToken {response:?}"
-        ))
+        Ok(false)
     }
 }

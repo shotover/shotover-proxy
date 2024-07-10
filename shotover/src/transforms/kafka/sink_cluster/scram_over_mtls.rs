@@ -23,6 +23,7 @@ use crate::{
 use super::node::{ConnectionFactory, KafkaAddress};
 
 mod create_token;
+mod expire_token;
 mod recreate_token_queue;
 
 pub struct TokenRequest {
@@ -99,7 +100,7 @@ async fn task(
     token_creation_time_metric: &Histogram,
 ) -> Result<()> {
     let mut rng = SmallRng::from_rng(rand::thread_rng())?;
-    let mut username_to_token = HashMap::new();
+    let mut username_to_token: HashMap<String, DelegationToken> = HashMap::new();
     let mut recreate_queue =
         recreate_token_queue::RecreateTokenQueue::new(delegation_token_lifetime);
     let mut nodes = vec![];
@@ -108,8 +109,9 @@ async fn task(
         tokio::select! {
             biased;
             username = recreate_queue.next() => {
+                let old_token = username_to_token.get(&username).cloned();
                 let instant = Instant::now();
-                let token = create_token::create_token_with_timeout(
+                let new_token = create_token::create_token_with_timeout(
                     &mut nodes,
                     &mut rng,
                     mtls_connection_factory,
@@ -117,12 +119,24 @@ async fn task(
                     delegation_token_lifetime
                 ).await
                 .with_context(|| format!("Failed to recreate delegation token for {:?}", username))?;
-                username_to_token.insert(username.clone(), token);
+
+                username_to_token.insert(username.clone(), new_token);
                 recreate_queue.push(username.clone());
 
                 let passed = instant.elapsed();
                 tracing::info!("Delegation token for {username:?} recreated in {passed:?}");
                 token_creation_time_metric.record(passed);
+
+                if let Some(old_token) = old_token {
+                    expire_token::expire_delegation_token_with_timeout(
+                        &mut nodes,
+                        &mut rng, &username,
+                        old_token.hmac,
+                        mtls_connection_factory
+                    ).await
+                    .with_context(|| format!("Failed to expire old delegation token for {:?}", username))?;
+                    tracing::info!("Expired old delegation token for {username:?}");
+                }
             }
             result = rx.recv() => {
                 if let Some(request) = result {
