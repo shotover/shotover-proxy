@@ -109,7 +109,6 @@ async fn task(
         tokio::select! {
             biased;
             username = recreate_queue.next() => {
-                let old_token = username_to_token.get(&username).cloned();
                 let instant = Instant::now();
                 let new_token = create_token::create_token_with_timeout(
                     &mut nodes,
@@ -120,7 +119,7 @@ async fn task(
                 ).await
                 .with_context(|| format!("Failed to recreate delegation token for {:?}", username))?;
 
-                username_to_token.insert(username.clone(), new_token);
+                let old_token = username_to_token.insert(username.clone(), new_token);
                 recreate_queue.push(username.clone());
 
                 let passed = instant.elapsed();
@@ -132,7 +131,6 @@ async fn task(
                         &mut nodes,
                         &mut rng, &username,
                         old_token.hmac,
-                        mtls_connection_factory
                     ).await
                     .with_context(|| format!("Failed to expire old delegation token for {:?}", username))?;
                     tracing::info!("Expired old delegation token for {username:?}");
