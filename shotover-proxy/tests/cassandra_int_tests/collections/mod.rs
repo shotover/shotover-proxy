@@ -8,26 +8,52 @@ mod list;
 mod map;
 mod set;
 
-const NATIVE_COL_TYPES: [ColType; 18] = [
-    ColType::Ascii,
-    ColType::Bigint,
-    ColType::Blob,
-    ColType::Boolean,
-    ColType::Decimal,
-    ColType::Double,
-    ColType::Float,
-    ColType::Int,
-    ColType::Timestamp,
-    ColType::Uuid,
-    ColType::Varchar,
-    ColType::Varint,
-    ColType::Timeuuid,
-    ColType::Inet,
-    ColType::Date,
-    ColType::Time,
-    ColType::Smallint,
-    ColType::Tinyint,
-];
+fn supported_native_col_types(connection: &CassandraConnection) -> &'static [ColType] {
+    match connection {
+        CassandraConnection::Java(_) => &[
+            ColType::Ascii,
+            ColType::Bigint,
+            ColType::Blob,
+            ColType::Boolean,
+            // TODO: Need to change to a proper representation instead of raw bytes to enable with java driver.
+            //ColType::Decimal,
+            ColType::Double,
+            ColType::Float,
+            ColType::Int,
+            ColType::Timestamp,
+            ColType::Uuid,
+            ColType::Varchar,
+            // TODO: Need to change to a proper representation instead of raw bytes to enable with java driver.
+            //ColType::Varint,
+            ColType::Timeuuid,
+            ColType::Inet,
+            ColType::Date,
+            ColType::Time,
+            ColType::Smallint,
+            ColType::Tinyint,
+        ],
+        _ => &[
+            ColType::Ascii,
+            ColType::Bigint,
+            ColType::Blob,
+            ColType::Boolean,
+            ColType::Decimal,
+            ColType::Double,
+            ColType::Float,
+            ColType::Int,
+            ColType::Timestamp,
+            ColType::Uuid,
+            ColType::Varchar,
+            ColType::Varint,
+            ColType::Timeuuid,
+            ColType::Inet,
+            ColType::Date,
+            ColType::Time,
+            ColType::Smallint,
+            ColType::Tinyint,
+        ],
+    }
+}
 
 fn get_type_str(col_type: ColType) -> &'static str {
     match col_type {
@@ -220,10 +246,10 @@ async fn create_table(
     name: &str,
     collection_type: fn(&str) -> String,
 ) {
-    let columns = NATIVE_COL_TYPES
-        .into_iter()
+    let columns = supported_native_col_types(connection)
+        .iter()
         .enumerate()
-        .map(|(i, col_type)| format!("col_{i} {}", collection_type(get_type_str(col_type))))
+        .map(|(i, col_type)| format!("col_{i} {}", collection_type(get_type_str(*col_type))))
         .format(", ");
     run_query(
         connection,
@@ -237,10 +263,11 @@ async fn insert_table(
     name: &str,
     collection_type: fn(Vec<&str>) -> String,
 ) {
-    let columns = column_list(&NATIVE_COL_TYPES);
-    let values = NATIVE_COL_TYPES
-        .into_iter()
-        .map(|col_type| collection_type(get_type_example(col_type)))
+    let native_col_types = supported_native_col_types(connection);
+    let columns = column_list(native_col_types);
+    let values = native_col_types
+        .iter()
+        .map(|col_type| collection_type(get_type_example(*col_type)))
         .format(", ");
     run_query(
         connection,
@@ -278,10 +305,11 @@ async fn select_table(
     collection_type: fn(Vec<ResultValue>) -> ResultValue,
     driver: CassandraDriver,
 ) {
-    let columns = column_list(&NATIVE_COL_TYPES);
-    let mut results: Vec<_> = NATIVE_COL_TYPES
-        .into_iter()
-        .map(|x| collection_type(get_type_example_result_value(x)))
+    let native_col_types = supported_native_col_types(connection);
+    let columns = column_list(native_col_types);
+    let mut results: Vec<_> = native_col_types
+        .iter()
+        .map(|x| collection_type(get_type_example_result_value(*x)))
         .collect();
 
     // TODO: fix upstream to remove hack
