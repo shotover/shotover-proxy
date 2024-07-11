@@ -7,7 +7,7 @@ This guide describes how to setup and use your environment for contributing to s
 Shotover requires [rustup](https://rustup.rs/) to be installed so that the project specific rust version will be used.
 
 The rest of the setup is specific to your operating system.
-Shotover supports development on linux and partiallly supports macOS.
+Shotover supports development on linux and partially supports macOS.
 
 ### Setting up on Linux
 
@@ -17,7 +17,7 @@ See the [Linux specific setup instructions](setting-up-linux.md)
 
 ### Setting up on macOS
 
-* All tests that use a single docker instance will pass. But anything with more than one docker instance will fail.
+* All tests that use a single docker instance will pass. But some tests with more than one docker instance will fail.
 * Tests that rely on external C++ dependencies cannot be built.
   * They are hidden behind the `cassandra-cpp-driver-tests` and `kafka-cpp-driver-tests` feature flags to allow the rest of the tests to build on macOS
 
