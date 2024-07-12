@@ -1,7 +1,5 @@
 use super::TransformContextBuilder;
-#[cfg(feature = "alpha-transforms")]
 use super::{DownChainProtocol, UpChainProtocol};
-#[cfg(feature = "alpha-transforms")]
 use crate::frame::MessageType;
 use crate::frame::{
     value::GenericValue, CassandraFrame, CassandraOperation, CassandraResult, Frame,
@@ -33,7 +31,6 @@ pub struct ProtectConfig {
 }
 
 const NAME: &str = "Protect";
-#[cfg(feature = "alpha-transforms")]
 #[typetag::serde(name = "Protect")]
 #[async_trait(?Send)]
 impl crate::transforms::TransformConfig for ProtectConfig {
@@ -75,7 +72,7 @@ impl crate::transforms::TransformConfig for ProtectConfig {
 }
 
 #[derive(Clone)]
-pub struct Protect {
+struct Protect {
     /// map of keyspace Identifiers to map of table Identifiers to column Identifiers
     keyspace_table_columns: HashMap<Identifier, HashMap<Identifier, Vec<Identifier>>>,
     key_source: KeyManager,

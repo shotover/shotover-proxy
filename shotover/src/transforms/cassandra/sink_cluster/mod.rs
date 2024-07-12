@@ -41,8 +41,8 @@ mod test_router;
 mod token_ring;
 pub mod topology;
 
-pub type KeyspaceChanTx = watch::Sender<HashMap<String, KeyspaceMetadata>>;
-pub type KeyspaceChanRx = watch::Receiver<HashMap<String, KeyspaceMetadata>>;
+type KeyspaceChanTx = watch::Sender<HashMap<String, KeyspaceMetadata>>;
+type KeyspaceChanRx = watch::Receiver<HashMap<String, KeyspaceMetadata>>;
 
 const SYSTEM_KEYSPACES: [IdentifierRef<'static>; 3] = [
     IdentifierRef::Quoted("system"),
@@ -106,7 +106,7 @@ impl TransformConfig for CassandraSinkClusterConfig {
     }
 }
 
-pub struct CassandraSinkClusterBuilder {
+struct CassandraSinkClusterBuilder {
     contact_points: Vec<String>,
     connection_factory: ConnectionFactory,
     failed_requests: Counter,
@@ -118,7 +118,7 @@ pub struct CassandraSinkClusterBuilder {
 }
 
 impl CassandraSinkClusterBuilder {
-    pub fn new(
+    fn new(
         contact_points: Vec<String>,
         shotover_peers: Vec<ShotoverNode>,
         chain_name: String,
@@ -205,7 +205,7 @@ pub struct ShotoverNode {
     pub host_id: Uuid,
 }
 
-pub struct CassandraSinkCluster {
+struct CassandraSinkCluster {
     contact_points: Vec<String>,
 
     connection_factory: ConnectionFactory,

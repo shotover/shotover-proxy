@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::time::Instant;
 
 #[derive(Clone)]
-pub struct Coalesce {
+struct Coalesce {
     flush_when_buffered_message_count: Option<usize>,
     flush_when_millis_since_last_flush: Option<u128>,
     buffer: Messages,

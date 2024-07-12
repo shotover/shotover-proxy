@@ -13,12 +13,12 @@ use serde::{Deserialize, Serialize};
 use std::future::Future;
 use std::pin::Pin;
 
-pub struct ParallelMapBuilder {
+struct ParallelMapBuilder {
     chains: Vec<TransformChainBuilder>,
     ordered: bool,
 }
 
-pub struct ParallelMap {
+struct ParallelMap {
     chains: Vec<TransformChain>,
     ordered: bool,
 }
@@ -32,7 +32,7 @@ impl<T> UOFutures<T>
 where
     T: Future,
 {
-    pub fn new(ordered: bool) -> Self {
+    fn new(ordered: bool) -> Self {
         if ordered {
             Self::Ordered(FuturesOrdered::new())
         } else {
@@ -40,7 +40,7 @@ where
         }
     }
 
-    pub fn push(&mut self, future: T) {
+    fn push(&mut self, future: T) {
         match self {
             UOFutures::Ordered(o) => o.push_back(future),
             UOFutures::Unordered(u) => u.push(future),

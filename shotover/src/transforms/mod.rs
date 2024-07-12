@@ -24,17 +24,15 @@ pub mod filter;
 pub mod kafka;
 pub mod load_balance;
 pub mod loopback;
-pub mod noop;
 pub mod null;
 #[cfg(all(feature = "alpha-transforms", feature = "opensearch"))]
 pub mod opensearch;
 pub mod parallel_map;
-#[cfg(feature = "cassandra")]
+#[cfg(all(feature = "alpha-transforms", feature = "cassandra"))]
 pub mod protect;
 pub mod query_counter;
 #[cfg(feature = "redis")]
 pub mod redis;
-pub mod sampler;
 pub mod tee;
 #[cfg(feature = "cassandra")]
 pub mod throttling;
@@ -265,8 +263,7 @@ pub trait Transform: Send {
     ///
     /// * Terminating specific invariants
     ///     + Your transform can also choose not to call `requests_wrapper.call_next_transform()` if it sends the
-    /// messages to an external system or generates its own response to the query e.g.
-    /// [`crate::transforms::cassandra::sink_single::CassandraSinkSingle`].
+    /// messages to an external system or generates its own response to the query e.g. `CassandraSinkSingle`.
     ///     + This type of transform is called a Terminating transform (as no subsequent transforms in the chain will be called).
     ///
     /// * Request/Response invariants:
@@ -276,7 +273,7 @@ pub trait Transform: Send {
     ///           But it must be returned eventually over the lifetime of the transform.
     ///         - If a transform deletes a request it must return a simulated response message with its request_id set to the deleted request.
     ///             * For in order protocols: this simulated message must be in the correct location within the list of responses
-    ///                 - The best way to achieve this is storing the [`MessageId`] of the message before the deleted message.
+    ///                 - The best way to achieve this is storing the [`crate::message::MessageId`] of the message before the deleted message.
     ///         - If a transform introduces a new request into the requests_wrapper the response must be located and
     ///           removed from the list of returned responses.
     ///     + For in order protocols, transforms must ensure that responses are kept in the same order in which they are received.
