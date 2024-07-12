@@ -56,7 +56,7 @@ impl TransformConfig for CassandraSinkSingleConfig {
     }
 }
 
-pub struct CassandraSinkSingleBuilder {
+struct CassandraSinkSingleBuilder {
     version: Option<Version>,
     address: String,
     failed_requests: Counter,
@@ -67,7 +67,7 @@ pub struct CassandraSinkSingleBuilder {
 }
 
 impl CassandraSinkSingleBuilder {
-    pub fn new(
+    fn new(
         address: String,
         chain_name: String,
         tls: Option<TlsConnector>,
@@ -115,7 +115,7 @@ impl TransformBuilder for CassandraSinkSingleBuilder {
     }
 }
 
-pub struct CassandraSinkSingle {
+struct CassandraSinkSingle {
     version: Option<Version>,
     address: String,
     connection: Option<SinkConnection>,

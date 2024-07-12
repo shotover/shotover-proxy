@@ -1,4 +1,4 @@
-//! Taken from https://github.com/scylladb/scylla-rust-driver/blob/4a4fd0e5e785031956f560ecf22cb8653eea122b/scylla/src/routing.rs
+//! Taken from <https://github.com/scylladb/scylla-rust-driver/blob/4a4fd0e5e785031956f560ecf22cb8653eea122b/scylla/src/routing.rs>
 //! We cant import it as that would bring the openssl dependency into shotover.
 
 use bytes::Buf;

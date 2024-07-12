@@ -15,7 +15,6 @@ use tracing::{error, info};
 pub struct DebugLogToFileConfig;
 
 const NAME: &str = "DebugLogToFile";
-#[cfg(feature = "alpha-transforms")]
 #[typetag::serde(name = "DebugLogToFile")]
 #[async_trait(?Send)]
 impl crate::transforms::TransformConfig for DebugLogToFileConfig {
@@ -40,7 +39,7 @@ impl crate::transforms::TransformConfig for DebugLogToFileConfig {
     }
 }
 
-pub struct DebugLogToFileBuilder {
+struct DebugLogToFileBuilder {
     connection_counter: Arc<AtomicU64>,
 }
 
@@ -77,7 +76,7 @@ impl TransformBuilder for DebugLogToFileBuilder {
     }
 }
 
-pub struct DebugLogToFile {
+struct DebugLogToFile {
     request_counter: u64,
     response_counter: u64,
     requests: PathBuf,

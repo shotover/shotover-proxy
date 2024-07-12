@@ -86,7 +86,7 @@ impl ShotoverNodeConfig {
 }
 
 #[derive(Clone)]
-pub struct ShotoverNode {
+struct ShotoverNode {
     pub address: KafkaAddress,
     pub rack: StrBytes,
     pub broker_id: BrokerId,
@@ -142,7 +142,7 @@ impl TransformConfig for KafkaSinkClusterConfig {
     }
 }
 
-pub struct KafkaSinkClusterBuilder {
+struct KafkaSinkClusterBuilder {
     // contains address and port
     first_contact_points: Vec<String>,
     shotover_nodes: Vec<ShotoverNode>,
@@ -265,7 +265,7 @@ impl AtomicBrokerId {
     }
 }
 
-pub struct KafkaSinkCluster {
+struct KafkaSinkCluster {
     first_contact_points: Vec<String>,
     shotover_nodes: Vec<ShotoverNode>,
     rack: StrBytes,

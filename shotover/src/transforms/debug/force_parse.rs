@@ -5,12 +5,9 @@ use crate::message::Messages;
 /// The use of this transform is to allow benchmarking the performance impact of parsing messages
 /// without worrying about the performance impact of other transform logic.
 /// It could also be used to ensure that messages round trip correctly when parsed.
-#[cfg(feature = "alpha-transforms")]
 use crate::transforms::TransformConfig;
 use crate::transforms::TransformContextBuilder;
-#[cfg(feature = "alpha-transforms")]
 use crate::transforms::TransformContextConfig;
-#[cfg(feature = "alpha-transforms")]
 use crate::transforms::{DownChainProtocol, UpChainProtocol};
 use crate::transforms::{Transform, TransformBuilder, Wrapper};
 use anyhow::Result;
@@ -26,7 +23,6 @@ pub struct DebugForceParseConfig {
     pub parse_responses: bool,
 }
 
-#[cfg(feature = "alpha-transforms")]
 #[typetag::serde(name = "DebugForceParse")]
 #[async_trait(?Send)]
 impl TransformConfig for DebugForceParseConfig {
@@ -61,7 +57,6 @@ pub struct DebugForceEncodeConfig {
 }
 
 const NAME: &str = "DebugForceEncode";
-#[cfg(feature = "alpha-transforms")]
 #[typetag::serde(name = "DebugForceEncode")]
 #[async_trait(?Send)]
 impl TransformConfig for DebugForceEncodeConfig {
@@ -87,7 +82,7 @@ impl TransformConfig for DebugForceEncodeConfig {
 }
 
 #[derive(Clone)]
-pub struct DebugForceParse {
+struct DebugForceParse {
     parse_requests: bool,
     parse_responses: bool,
     encode_requests: bool,
