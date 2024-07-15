@@ -3,7 +3,6 @@ use super::{Compression, Consistency, PreparedQuery, ProtocolVersion, Tls};
 use crate::connection::cassandra::ResultValue;
 use crate::connection::java::{Jvm, Value};
 use cdrs_tokio::frame::message_error::ErrorBody;
-use cdrs_tokio::frame::message_result::ColType;
 use std::net::IpAddr;
 
 pub struct JavaConnection {
@@ -249,7 +248,17 @@ impl JavaConnection {
                     })
                     .collect()
             }),
-            ty => todo!("{ty}"),
+            ColType::Vector => ResultValue::Vector({
+                value
+                    .cast("com.datastax.oss.driver.api.core.data.CqlVector")
+                    .call("iterator", vec![])
+                    .into_iter()
+                    // TODO: no way to provide a correct raw_bytes value here,
+                    // need to change tests to not use raw_bytes instead.
+                    .map(|value| Self::java_value_to_rust(value, raw_bytes, &ty.element_col_type()))
+                    .collect()
+            }),
+            ty => todo!("{ty:?}"),
         }
     }
 
@@ -410,7 +419,46 @@ struct DataType(Value);
 impl DataType {
     fn col_type(&self) -> ColType {
         let code: i32 = self.0.call("getProtocolCode", vec![]).into_rust();
-        ColType::try_from(code as i16).unwrap()
+        match code {
+            0x00 => {
+                if self
+                    .0
+                    .cast_fallible("com.datastax.oss.driver.api.core.type.VectorType")
+                    .is_ok()
+                {
+                    ColType::Vector
+                } else {
+                    ColType::Custom
+                }
+            }
+            0x01 => ColType::Ascii,
+            0x02 => ColType::Bigint,
+            0x03 => ColType::Blob,
+            0x04 => ColType::Boolean,
+            0x05 => ColType::Counter,
+            0x06 => ColType::Decimal,
+            0x07 => ColType::Double,
+            0x08 => ColType::Float,
+            0x09 => ColType::Int,
+            0x0B => ColType::Timestamp,
+            0x0C => ColType::Uuid,
+            0x0D => ColType::Varchar,
+            0x0E => ColType::Varint,
+            0x0F => ColType::Timeuuid,
+            0x10 => ColType::Inet,
+            0x11 => ColType::Date,
+            0x12 => ColType::Time,
+            0x13 => ColType::Smallint,
+            0x14 => ColType::Tinyint,
+            0x15 => ColType::Duration,
+            0x20 => ColType::List,
+            0x21 => ColType::Map,
+            0x22 => ColType::Set,
+            0x30 => ColType::Udt,
+            0x31 => ColType::Tuple,
+            0x80 => ColType::Varchar,
+            code => panic!("unknown type code {code:?}"),
+        }
     }
 
     fn element_col_type(&self) -> DataType {
@@ -428,4 +476,35 @@ impl DataType {
             DataType(map_type.call("getValueType", vec![])),
         )
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum ColType {
+    Custom,
+    Ascii,
+    Bigint,
+    Blob,
+    Boolean,
+    Counter,
+    Decimal,
+    Double,
+    Float,
+    Int,
+    Timestamp,
+    Uuid,
+    Varchar,
+    Varint,
+    Timeuuid,
+    Inet,
+    Date,
+    Time,
+    Smallint,
+    Tinyint,
+    Duration,
+    List,
+    Map,
+    Set,
+    Udt,
+    Tuple,
+    Vector,
 }
