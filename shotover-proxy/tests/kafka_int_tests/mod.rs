@@ -7,6 +7,7 @@ use std::time::Duration;
 use std::time::Instant;
 use test_cases::produce_consume_partitions1;
 use test_cases::{assert_topic_creation_is_denied_due_to_acl, setup_basic_user_acls};
+use test_helpers::connection::kafka::node::run_node_smoke_test_scram;
 use test_helpers::connection::kafka::{KafkaConnectionBuilder, KafkaDriver};
 use test_helpers::docker_compose::docker_compose;
 use test_helpers::shotover_process::{Count, EventMatcher};
@@ -25,6 +26,24 @@ async fn passthrough_standard(#[case] driver: KafkaDriver) {
 
     let connection_builder = KafkaConnectionBuilder::new(driver, "127.0.0.1:9192");
     test_cases::standard_test_suite(&connection_builder).await;
+
+    tokio::time::timeout(
+        Duration::from_secs(10),
+        shotover.shutdown_and_then_consume_events(&[]),
+    )
+    .await
+    .expect("Shotover did not shutdown within 10s");
+}
+
+#[tokio::test]
+async fn passthrough_nodejs() {
+    let _docker_compose =
+        docker_compose("tests/test-configs/kafka/passthrough/docker-compose.yaml");
+    let shotover = shotover_process("tests/test-configs/kafka/passthrough/topology.yaml")
+        .start()
+        .await;
+
+    test_helpers::connection::kafka::node::run_node_smoke_test("127.0.0.1:9192").await;
 
     tokio::time::timeout(
         Duration::from_secs(10),
@@ -433,6 +452,29 @@ async fn assert_connection_fails_with_incorrect_password(driver: KafkaDriver, us
         connection_builder.assert_admin_error().await.to_string(),
         "org.apache.kafka.common.errors.SaslAuthenticationException: Authentication failed during authentication due to invalid credentials with SASL mechanism SCRAM-SHA-256\n"
     );
+}
+
+#[rstest]
+#[tokio::test]
+async fn cluster_sasl_scram_over_mtls_nodejs() {
+    test_helpers::cert::generate_kafka_test_certs();
+
+    let _docker_compose =
+        docker_compose("tests/test-configs/kafka/cluster-sasl-scram-over-mtls/docker-compose.yaml");
+    let shotover = shotover_process(
+        "tests/test-configs/kafka/cluster-sasl-scram-over-mtls/topology-single.yaml",
+    )
+    .start()
+    .await;
+
+    run_node_smoke_test_scram("127.0.0.1:9192", "super_user", "super_password").await;
+
+    tokio::time::timeout(
+        Duration::from_secs(10),
+        shotover.shutdown_and_then_consume_events(&[]),
+    )
+    .await
+    .expect("Shotover did not shutdown within 10s");
 }
 
 #[rstest]
