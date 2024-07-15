@@ -1,9 +1,8 @@
-use std::{
-    collections::HashMap,
-    sync::Arc,
-    time::{Duration, Instant},
+use super::node::{ConnectionFactory, KafkaAddress};
+use crate::{
+    connection::SinkConnection,
+    tls::{TlsConnector, TlsConnectorConfig},
 };
-
 use anyhow::{Context, Result};
 use futures::stream::FuturesUnordered;
 use kafka_protocol::protocol::StrBytes;
@@ -11,16 +10,14 @@ use metrics::{histogram, Histogram};
 use rand::rngs::SmallRng;
 use rand::SeedableRng;
 use serde::{Deserialize, Serialize};
+use std::{
+    collections::HashMap,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 use tokio::sync::Notify;
 use tokio::sync::{mpsc, oneshot};
 use tokio_stream::StreamExt;
-
-use crate::{
-    connection::SinkConnection,
-    tls::{TlsConnector, TlsConnectorConfig},
-};
-
-use super::node::{ConnectionFactory, KafkaAddress};
 
 mod create_token;
 mod recreate_token_queue;
@@ -68,6 +65,18 @@ impl TokenTask {
             }
         });
         TokenTask { tx }
+    }
+
+    /// Informs the token task that we will need this token soon so it should start creating it if needed.
+    pub async fn prefetch_token_for_user(&self, username: String) -> Result<()> {
+        let (response_tx, _response_rx) = oneshot::channel();
+        self.tx
+            .send(TokenRequest {
+                username,
+                response_tx,
+            })
+            .await
+            .context("Failed to request delegation token from token task")
     }
 
     /// Request a token from the task.
@@ -244,9 +253,31 @@ pub struct AuthorizeScramOverMtls {
     /// Tracks the state of the original scram connections responses created from the clients actual requests
     pub original_scram_state: OriginalScramState,
     /// Shared task that fetches delegation tokens
-    pub token_task: TokenTask,
+    token_task: TokenTask,
     /// The username used in the original scram auth to generate the delegation token
-    pub username: String,
+    username: String,
+}
+
+impl AuthorizeScramOverMtls {
+    pub async fn set_username(&mut self, username: String) -> Result<()> {
+        self.token_task
+            .prefetch_token_for_user(username.clone())
+            .await?;
+        self.username = username;
+        Ok(())
+    }
+
+    pub async fn get_token_for_user(&self) -> Result<DelegationToken> {
+        if !matches!(self.original_scram_state, OriginalScramState::AuthSuccess) {
+            // This should be enforced by logic that occurs before calling this method.
+            // This is a final check to enforce security, if this panic occurs it indicates a bug elsewhere in shotover.
+            panic!("Cannot hand out tokens to a connection that has not authenticated yet.")
+        }
+
+        self.token_task
+            .get_token_for_user(self.username.clone())
+            .await
+    }
 }
 
 pub enum OriginalScramState {
