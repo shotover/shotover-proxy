@@ -63,6 +63,27 @@ where
     timestamp::test(&connection).await;
 }
 
+async fn standard_test_suite_cassandra5<Fut>(
+    connection_creator: impl Fn() -> Fut,
+    driver: CassandraDriver,
+) where
+    Fut: Future<Output = CassandraConnection>,
+{
+    // reuse a single connection a bunch to save time recreating connections
+    let connection = connection_creator().await;
+
+    keyspace::test(&connection).await;
+    table::test(&connection).await;
+    udt::test(&connection).await;
+    native_types::test(&connection).await;
+    collections::test_cassandra_5(&connection, driver).await;
+    functions::test(&connection).await;
+    prepared_statements_simple::test(&connection, connection_creator, 1).await;
+    prepared_statements_all::test(&connection, 1).await;
+    batch_statements::test(&connection).await;
+    timestamp::test(&connection).await;
+}
+
 async fn standard_test_suite_rf3<Fut>(connection_creator: impl Fn() -> Fut, driver: CassandraDriver)
 where
     Fut: Future<Output = CassandraConnection>,
@@ -1066,7 +1087,7 @@ async fn passthrough_tls_websockets() {
 
 #[apply(all_cassandra_drivers)]
 #[tokio::test(flavor = "multi_thread")]
-async fn cassandra_5(#[case] driver: CassandraDriver) {
+async fn cassandra_5_passthrough(#[case] driver: CassandraDriver) {
     let _compose = docker_compose("tests/test-configs/cassandra/cassandra-5/docker-compose.yaml");
 
     let shotover = shotover_process("tests/test-configs/cassandra/cassandra-5/topology.yaml")
@@ -1075,7 +1096,7 @@ async fn cassandra_5(#[case] driver: CassandraDriver) {
 
     let connection = || CassandraConnectionBuilder::new("127.0.0.1", 9042, driver).build();
 
-    standard_test_suite(&connection, driver).await;
+    standard_test_suite_cassandra5(&connection, driver).await;
 
     shotover.shutdown_and_then_consume_events(&[]).await;
 }
@@ -1102,7 +1123,7 @@ async fn cassandra_5_cluster(#[case] driver: CassandraDriver) {
         connection
     };
 
-    standard_test_suite(&connection, driver).await;
+    standard_test_suite_cassandra5(&connection, driver).await;
 
     shotover.shutdown_and_then_consume_events(&[]).await;
 }
