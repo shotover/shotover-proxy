@@ -457,7 +457,7 @@ impl KafkaSinkCluster {
                     })) => {
                         if let Some(scram_over_mtls) = &mut self.authorize_scram_over_mtls {
                             if let Some(username) = get_username_from_scram_request(auth_bytes) {
-                                scram_over_mtls.username = username;
+                                scram_over_mtls.set_username(username).await?;
                             }
                         }
                         self.connection_factory.add_auth_request(request.clone());

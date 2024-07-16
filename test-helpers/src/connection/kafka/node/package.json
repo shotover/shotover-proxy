@@ -1,0 +1,14 @@
+{
+  "name": "kafkajs_wrapper",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "author": "",
+  "license": "Apache-2.0",
+  "description": "",
+  "dependencies": {
+    "kafkajs": "^2.2.4"
+  }
+}
