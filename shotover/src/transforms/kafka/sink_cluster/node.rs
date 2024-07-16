@@ -5,6 +5,7 @@ use crate::frame::kafka::{KafkaFrame, RequestBody, ResponseBody};
 use crate::frame::Frame;
 use crate::message::Message;
 use crate::tls::TlsConnector;
+use crate::transforms::kafka::sink_cluster::scram_over_mtls::OriginalScramState;
 use crate::transforms::kafka::sink_cluster::SASL_SCRAM_MECHANISMS;
 use anyhow::{anyhow, Context, Result};
 use bytes::Bytes;
@@ -89,9 +90,8 @@ impl ConnectionFactory {
             if let Some(scram_over_mtls) = authorize_scram_over_mtls {
                 if let Some(sasl_mechanism) = sasl_mechanism {
                     if SASL_SCRAM_MECHANISMS.contains(&sasl_mechanism.as_str()) {
-                        self.perform_tokenauth_scram_exchange(scram_over_mtls, &mut connection)
-                            .await
-                            .context("Failed to perform delegation token SCRAM exchange")?;
+                        self.scram_over_mtls(scram_over_mtls, &mut connection)
+                            .await?;
                     } else {
                         self.replay_sasl(&mut connection).await?;
                     }
@@ -104,6 +104,29 @@ impl ConnectionFactory {
         }
 
         Ok(connection)
+    }
+
+    async fn scram_over_mtls(
+        &self,
+        scram_over_mtls: &AuthorizeScramOverMtls,
+        connection: &mut SinkConnection,
+    ) -> Result<()> {
+        if matches!(
+            scram_over_mtls.original_scram_state,
+            OriginalScramState::AuthSuccess
+        ) {
+            // The original connection is authorized, so we are free to make authorize more session
+            self.perform_tokenauth_scram_exchange(scram_over_mtls, connection)
+                .await
+                .context("Failed to perform delegation token SCRAM exchange")
+        } else {
+            // If the original session has not authenticated yet, this is probably the first outgoing connection.
+            // So just create it with no outgoing connections, the client will perform the remainder of the scram handshake.
+            //
+            // If the original session failed to authenticate we cannot authorize this session.
+            // So just perform no scram handshake and let kafka uphold the authorization requirements for us.
+            Ok(())
+        }
     }
 
     /// authorize_scram_over_mtls creates new connections via delegation tokens.
@@ -141,10 +164,7 @@ impl ConnectionFactory {
             ));
         }
 
-        let delegation_token = scram_over_mtls
-            .token_task
-            .get_token_for_user(scram_over_mtls.username.clone())
-            .await?;
+        let delegation_token = scram_over_mtls.get_token_for_user().await?;
 
         // SCRAM client-first
         let mut scram = Scram::<Sha256>::new(

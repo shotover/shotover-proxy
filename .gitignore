@@ -12,3 +12,4 @@
 /docs/mdbook_bin
 /shotover-proxy/build/packages
 /some_local_file
+/test-helpers/src/connection/kafka/node/node_modules
