@@ -22,7 +22,7 @@ debug = true
 [workspace.dependencies]
 scylla = { version = "0.13.0", features = ["ssl"] }
 bytes = { version = "1.0.0", features = ["serde"] }
-tokio = { version = "1.25.0", features = ["full", "macros"] }
+tokio = { version = "1.25.0", features = ["full"] }
 tokio-util = { version = "0.7.7", features = ["codec"] }
 tokio-openssl = "0.6.2"
 itertools = "0.12.0"
