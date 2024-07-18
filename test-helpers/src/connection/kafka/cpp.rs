@@ -1,7 +1,8 @@
+use std::collections::{HashMap, HashSet};
 // Allow direct usage of the APIs when the feature is enabled
 pub use rdkafka;
 
-use super::{ExpectedResponse, NewPartition, Record};
+use super::{ExpectedResponse, NewPartition, Record, TopicPartition};
 use anyhow::Result;
 use pretty_assertions::assert_eq;
 use rdkafka::admin::AdminClient;
@@ -156,6 +157,66 @@ impl KafkaConsumerCpp {
             topic_name: message.topic().to_owned(),
             offset: Some(message.offset()),
         }
+    }
+
+    /// The offset to be committed should be lastProcessedMessageOffset + 1.
+    pub fn commit_sync(&self, offsets: &HashMap<TopicPartition, i64>) {
+        let offsets_map: HashMap<(String, i32), rdkafka::Offset> = offsets
+            .iter()
+            .map(|(tp, offset)| {
+                (
+                    (tp.topic_name.clone(), tp.partition),
+                    rdkafka::Offset::Offset(*offset),
+                )
+            })
+            .collect();
+
+        let offsets_list = rdkafka::TopicPartitionList::from_topic_map(&offsets_map).unwrap();
+
+        self.consumer
+            .commit(&offsets_list, rdkafka::consumer::CommitMode::Sync)
+            .unwrap();
+    }
+
+    pub fn committed_offsets(
+        &self,
+        partitions: HashSet<TopicPartition>,
+    ) -> HashMap<TopicPartition, i64> {
+        let mut offsets = HashMap::new();
+        let mut tpl = rdkafka::TopicPartitionList::with_capacity(partitions.len());
+
+        // This TopicPartitionList is used to query the committed offsets for the partitions
+        // Hence offset is set to Invalid
+        for tp in &partitions {
+            tpl.add_partition_offset(
+                tp.topic_name.as_str(),
+                tp.partition,
+                rdkafka::Offset::Invalid,
+            )
+            .expect("Failed to add the topic and partition");
+        }
+
+        let committed_offsets = self
+            .consumer
+            .committed_offsets(tpl, Timeout::After(Duration::from_secs(30)))
+            .unwrap();
+
+        for tp in &partitions {
+            for tp_offset in committed_offsets.elements_for_topic(tp.topic_name.as_str()) {
+                offsets.insert(
+                    TopicPartition {
+                        topic_name: tp_offset.topic().to_string(),
+                        partition: tp_offset.partition(),
+                    },
+                    match tp_offset.offset() {
+                        rdkafka::Offset::Offset(offset) => offset,
+                        _ => continue,
+                    },
+                );
+            }
+        }
+
+        offsets
     }
 }
 

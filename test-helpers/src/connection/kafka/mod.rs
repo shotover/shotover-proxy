@@ -169,7 +169,7 @@ impl<'a> KafkaConsumer {
     pub fn assert_commit_sync(&self, offsets: HashMap<TopicPartition, i64>) {
         match self {
             #[cfg(feature = "kafka-cpp-driver-tests")]
-            Self::Cpp(_) => unimplemented!("TODO"),
+            Self::Cpp(cpp) => cpp.commit_sync(&offsets),
             Self::Java(java) => java.commit_sync(&offsets),
         }
 
@@ -177,7 +177,7 @@ impl<'a> KafkaConsumer {
 
         let responses = match self {
             #[cfg(feature = "kafka-cpp-driver-tests")]
-            Self::Cpp(_) => unimplemented!("TODO"),
+            Self::Cpp(cpp) => cpp.committed_offsets(partitions),
             Self::Java(java) => java.committed(partitions),
         };
 
