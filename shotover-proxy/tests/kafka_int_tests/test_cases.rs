@@ -1,7 +1,8 @@
+use std::collections::HashMap;
 use test_helpers::connection::kafka::{
     Acl, AclOperation, AclPermissionType, AlterConfig, ConfigEntry, ExpectedResponse,
     KafkaConnectionBuilder, NewPartition, NewTopic, Record, ResourcePatternType, ResourceSpecifier,
-    ResourceType,
+    ResourceType, TopicPartition,
 };
 
 async fn admin_setup(connection_builder: &KafkaConnectionBuilder) {
@@ -116,6 +117,16 @@ pub async fn produce_consume_partitions1(
                     offset: Some(i * 2 + 1),
                 })
                 .await;
+
+            let offset1 = HashMap::from([(
+                TopicPartition {
+                    topic_name: topic_name.to_owned(),
+                    partition: 0,
+                },
+                i * 2 + 2,
+            )]);
+            consumer.assert_commit_sync(offset1);
+
             consumer
                 .assert_consume(ExpectedResponse {
                     message: "Message2".to_owned(),
@@ -124,7 +135,15 @@ pub async fn produce_consume_partitions1(
                     offset: Some(i * 2 + 2),
                 })
                 .await;
-            consumer.assert_commit_sync();
+
+            let offset2 = HashMap::from([(
+                TopicPartition {
+                    topic_name: topic_name.to_owned(),
+                    partition: 0,
+                },
+                i * 2 + 3,
+            )]);
+            consumer.assert_commit_sync(offset2);
         }
     }
 

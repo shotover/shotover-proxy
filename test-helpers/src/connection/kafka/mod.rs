@@ -1,4 +1,5 @@
 use pretty_assertions::assert_eq;
+use std::collections::{HashMap, HashSet};
 
 #[cfg(feature = "kafka-cpp-driver-tests")]
 pub mod cpp;
@@ -164,33 +165,27 @@ impl<'a> KafkaConsumer {
         }
     }
 
-    pub fn assert_commit_sync(&self) {
+    /// The offset to be committed should be lastProcessedMessageOffset + 1.
+    pub fn assert_commit_sync(&self, offsets: HashMap<TopicPartition, i64>) {
         match self {
             #[cfg(feature = "kafka-cpp-driver-tests")]
             Self::Cpp(_) => unimplemented!("TODO"),
-            Self::Java(java) => java.commit_sync(),
+            Self::Java(java) => java.commit_sync(&offsets),
+        }
+
+        let partitions = offsets.keys().cloned().collect::<HashSet<_>>();
+
+        let responses = match self {
+            #[cfg(feature = "kafka-cpp-driver-tests")]
+            Self::Cpp(_) => unimplemented!("TODO"),
+            Self::Java(java) => java.committed(partitions),
+        };
+
+        for (topic_partition, offset) in offsets {
+            let response_offset = responses.get(&topic_partition).unwrap();
+            assert_eq!(offset, *response_offset);
         }
     }
-    // pub fn assert_commit_sync(&self, offsets: HashMap<TopicPartition<'a>, i64>) {
-    //     match self {
-    //         #[cfg(feature = "kafka-cpp-driver-tests")]
-    //         Self::Cpp(_) => unimplemented!("TODO"),
-    //         Self::Java(java) => java.commit_sync(&offsets),
-    //     }
-    //
-    //     let partitions = offsets.keys().collect::<HashSet<_>>();
-    //
-    //     let responses = match self {
-    //         #[cfg(feature = "kafka-cpp-driver-tests")]
-    //         Self::Cpp(_) => unimplemented!("TODO"),
-    //         Self::Java(java) => java.committed(partitions),
-    //     };
-    //
-    //     for (topic_partition, offset) in offsets {
-    //         let response_offset = responses.get(&topic_partition).unwrap();
-    //         assert_eq!(offset, *response_offset);
-    //     }
-    // }
 }
 
 #[derive(Debug, Clone)]
@@ -301,8 +296,8 @@ pub struct NewPartition<'a> {
 }
 
 #[derive(Clone, Eq, PartialEq, Hash)]
-pub struct TopicPartition<'a> {
-    pub topic_name: &'a str,
+pub struct TopicPartition {
+    pub topic_name: String,
     pub partition: i32,
 }
 

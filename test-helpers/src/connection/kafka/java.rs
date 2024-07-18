@@ -1,11 +1,11 @@
 use super::{
     Acl, AclOperation, AclPermissionType, AlterConfig, ExpectedResponse, NewPartition, NewTopic,
-    Record, ResourcePatternType, ResourceSpecifier, ResourceType, TopicDescription,
+    Record, ResourcePatternType, ResourceSpecifier, ResourceType, TopicDescription, TopicPartition,
 };
 use crate::connection::java::{Jvm, Value};
 use anyhow::Result;
 use pretty_assertions::assert_eq;
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 fn properties(jvm: &Jvm, props: &HashMap<String, String>) -> Value {
     let properties = jvm.construct("java.util.Properties", vec![]);
@@ -236,52 +236,60 @@ impl<'a> KafkaConsumerJava {
         }
     }
 
-    pub fn commit_sync(&self) {
-        self.consumer.call("commitSync", vec![]);
+    /// The offset to be committed should be lastProcessedMessageOffset + 1.
+    pub fn commit_sync(&self, offsets: &HashMap<TopicPartition, i64>) {
+        let offsets_vec: Vec<(Value, Value)> = offsets
+            .iter()
+            .map(|(tp, offset)| {
+                (
+                    self.jvm.construct(
+                        "org.apache.kafka.common.TopicPartition",
+                        vec![
+                            self.jvm.new_string(&tp.topic_name),
+                            self.jvm.new_int(tp.partition),
+                        ],
+                    ),
+                    self.jvm.construct(
+                        "org.apache.kafka.clients.consumer.OffsetAndMetadata",
+                        vec![self.jvm.new_long(*offset)],
+                    ),
+                )
+            })
+            .collect();
+        let offsets_map = self.jvm.new_map(offsets_vec);
+
+        self.consumer.call("commitSync", vec![offsets_map]);
     }
 
-    // pub fn commit_sync(&self, offsets: &HashMap<TopicPartition<'a>, i64>) {
-    //     let offsets_vec: Vec<(Value, Value)> = offsets
-    //         .iter()
-    //         .map(|(tp, offset)| {
-    //             (
-    //                 self.jvm.construct(
-    //                     "org.apache.kafka.common.TopicPartition",
-    //                     vec![self.jvm.new_string(&tp.topic_name), self.jvm.new_int(tp.partition)],
-    //                 ),
-    //                 self.jvm.construct(
-    //                     "org.apache.kafka.clients.consumer.OffsetAndMetadata",
-    //                     vec![self.jvm.new_long(*offset)],
-    //                 ),
-    //             )
-    //         })
-    //         .collect();
-    //     let offsets_map = self.jvm.new_map(offsets_vec);
-    //
-    //     self.consumer.call("commitSync", vec![offsets_map]);
-    // }
-    //
-    // pub fn committed(&self, partitions: HashSet<&'a TopicPartition>) -> HashMap<&'a TopicPartition, i64> {
-    //     let mut offsets = HashMap::new();
-    //
-    //     for tp in partitions {
-    //         let topic_partition = self.jvm.construct(
-    //             "org.apache.kafka.common.TopicPartition",
-    //             vec![self.jvm.new_string(&tp.topic_name), self.jvm.new_int(tp.partition)],
-    //         );
-    //
-    //         let timeout = self.jvm.call_static(
-    //             "java.time.Duration",
-    //             "ofSeconds",
-    //             vec![self.jvm.new_long(30)],
-    //         );
-    //
-    //         let committed = self.consumer.call("committed", vec![topic_partition, timeout]);
-    //         let offset: i64 = committed.cast("org.apache.kafka.clients.consumer.OffsetAndMetadata").call("offset", vec![]).into_rust();
-    //         offsets.insert(tp, offset);
-    //     }
-    //     offsets
-    // }
+    pub fn committed(&self, partitions: HashSet<TopicPartition>) -> HashMap<TopicPartition, i64> {
+        let mut offsets = HashMap::new();
+
+        for tp in partitions {
+            let topic_partition = self.jvm.construct(
+                "org.apache.kafka.common.TopicPartition",
+                vec![
+                    self.jvm.new_string(&tp.topic_name),
+                    self.jvm.new_int(tp.partition),
+                ],
+            );
+
+            let timeout = self.jvm.call_static(
+                "java.time.Duration",
+                "ofSeconds",
+                vec![self.jvm.new_long(30)],
+            );
+
+            let committed = self
+                .consumer
+                .call("committed", vec![topic_partition, timeout]);
+            let offset: i64 = committed
+                .cast("org.apache.kafka.clients.consumer.OffsetAndMetadata")
+                .call("offset", vec![])
+                .into_rust();
+            offsets.insert(tp, offset);
+        }
+        offsets
+    }
 }
 
 impl Drop for KafkaConsumerJava {
