@@ -129,7 +129,7 @@ pub enum KafkaConsumer {
     Java(KafkaConsumerJava),
 }
 
-impl KafkaConsumer {
+impl<'a> KafkaConsumer {
     pub async fn assert_consume(&mut self, expected_response: ExpectedResponse) {
         let response = match self {
             #[cfg(feature = "kafka-cpp-driver-tests")]
@@ -163,6 +163,34 @@ impl KafkaConsumer {
             }
         }
     }
+
+    pub fn assert_commit_sync(&self) {
+        match self {
+            #[cfg(feature = "kafka-cpp-driver-tests")]
+            Self::Cpp(_) => unimplemented!("TODO"),
+            Self::Java(java) => java.commit_sync(),
+        }
+    }
+    // pub fn assert_commit_sync(&self, offsets: HashMap<TopicPartition<'a>, i64>) {
+    //     match self {
+    //         #[cfg(feature = "kafka-cpp-driver-tests")]
+    //         Self::Cpp(_) => unimplemented!("TODO"),
+    //         Self::Java(java) => java.commit_sync(&offsets),
+    //     }
+    //
+    //     let partitions = offsets.keys().collect::<HashSet<_>>();
+    //
+    //     let responses = match self {
+    //         #[cfg(feature = "kafka-cpp-driver-tests")]
+    //         Self::Cpp(_) => unimplemented!("TODO"),
+    //         Self::Java(java) => java.committed(partitions),
+    //     };
+    //
+    //     for (topic_partition, offset) in offsets {
+    //         let response_offset = responses.get(&topic_partition).unwrap();
+    //         assert_eq!(offset, *response_offset);
+    //     }
+    // }
 }
 
 #[derive(Debug, Clone)]
@@ -270,6 +298,12 @@ pub struct NewTopic<'a> {
 pub struct NewPartition<'a> {
     pub topic_name: &'a str,
     pub new_partition_count: i32,
+}
+
+#[derive(Clone, Eq, PartialEq, Hash)]
+pub struct TopicPartition<'a> {
+    pub topic_name: &'a str,
+    pub partition: i32,
 }
 
 pub enum ResourceSpecifier<'a> {

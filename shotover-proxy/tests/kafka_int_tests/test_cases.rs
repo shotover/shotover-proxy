@@ -124,10 +124,11 @@ pub async fn produce_consume_partitions1(
                     offset: Some(i * 2 + 2),
                 })
                 .await;
+            consumer.assert_commit_sync();
         }
     }
 
-    // if we create a new consumer it will start from the begginning since `auto.offset.reset = earliest`
+    // if we create a new consumer it will start from the beginning since `auto.offset.reset = earliest`
     // so we test that we can access all records ever created on this topic
     let mut consumer = connection_builder.connect_consumer(topic_name).await;
     consumer
