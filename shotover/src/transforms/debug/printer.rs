@@ -33,7 +33,7 @@ impl TransformConfig for DebugPrinterConfig {
 }
 
 #[derive(Clone)]
-pub struct DebugPrinter {
+pub(crate) struct DebugPrinter {
     counter: i32,
 }
 
@@ -44,7 +44,7 @@ impl Default for DebugPrinter {
 }
 
 impl DebugPrinter {
-    pub fn new() -> DebugPrinter {
+    pub(crate) fn new() -> DebugPrinter {
         DebugPrinter { counter: 0 }
     }
 }

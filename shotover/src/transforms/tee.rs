@@ -18,17 +18,17 @@ use std::sync::atomic::Ordering;
 use std::{net::SocketAddr, str, sync::Arc};
 use tracing::{debug, error, trace, warn};
 
-pub struct TeeBuilder {
-    pub tx: TransformChainBuilder,
-    pub buffer_size: usize,
-    pub behavior: ConsistencyBehaviorBuilder,
-    pub timeout_micros: Option<u64>,
+struct TeeBuilder {
+    tx: TransformChainBuilder,
+    buffer_size: usize,
+    behavior: ConsistencyBehaviorBuilder,
+    timeout_micros: Option<u64>,
     dropped_messages: Counter,
     result_source: Arc<AtomicResultSource>,
     protocol_is_inorder: bool,
 }
 
-pub enum ConsistencyBehaviorBuilder {
+enum ConsistencyBehaviorBuilder {
     Ignore,
     LogWarningOnMismatch,
     FailOnMismatch,
@@ -36,7 +36,7 @@ pub enum ConsistencyBehaviorBuilder {
 }
 
 impl TeeBuilder {
-    pub fn new(
+    fn new(
         tx: TransformChainBuilder,
         buffer_size: usize,
         behavior: ConsistencyBehaviorBuilder,
@@ -85,7 +85,6 @@ impl TransformBuilder for TeeBuilder {
                     )
                 }
             },
-            buffer_size: self.buffer_size,
             timeout_micros: self.timeout_micros,
             dropped_messages: self.dropped_messages.clone(),
             result_source: self.result_source.clone(),
@@ -132,18 +131,17 @@ impl TransformBuilder for TeeBuilder {
     }
 }
 
-pub struct Tee {
-    pub tx: BufferedChain,
-    pub buffer_size: usize,
-    pub behavior: ConsistencyBehavior,
-    pub timeout_micros: Option<u64>,
+struct Tee {
+    tx: BufferedChain,
+    behavior: ConsistencyBehavior,
+    timeout_micros: Option<u64>,
     dropped_messages: Counter,
     result_source: Arc<AtomicResultSource>,
     incoming_responses: IncomingResponses,
 }
 
 #[atomic_enum]
-pub enum ResultSource {
+enum ResultSource {
     RegularChain,
     TeeChain,
 }
@@ -157,7 +155,7 @@ impl fmt::Display for ResultSource {
     }
 }
 
-pub enum ConsistencyBehavior {
+enum ConsistencyBehavior {
     Ignore,
     LogWarningOnMismatch,
     FailOnMismatch,

@@ -48,7 +48,7 @@ impl TransformConfig for RequestThrottlingConfig {
 }
 
 #[derive(Clone)]
-pub struct RequestThrottling {
+struct RequestThrottling {
     limiter: Arc<RateLimiter<NotKeyed, InMemoryState, DefaultClock, NoOpMiddleware>>,
     max_requests_per_second: NonZeroU32,
     throttled_requests: MessageIdMap<Message>,

@@ -7,6 +7,7 @@ use test_helpers::connection::cassandra::{
 mod list;
 mod map;
 mod set;
+mod vector;
 
 fn supported_native_col_types(connection: &CassandraConnection) -> &'static [ColType] {
     match connection {
@@ -337,4 +338,19 @@ pub async fn test(connection: &CassandraConnection, driver: CassandraDriver) {
     list::test(connection, driver).await;
     set::test(connection, driver).await;
     map::test(connection, driver).await;
+}
+
+pub async fn test_cassandra_5(connection: &CassandraConnection, driver: CassandraDriver) {
+    run_query(
+        connection,
+        "CREATE KEYSPACE collections WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };"
+    ).await;
+
+    list::test(connection, driver).await;
+    set::test(connection, driver).await;
+    map::test(connection, driver).await;
+
+    if let CassandraDriver::Java = driver {
+        vector::test(connection).await;
+    }
 }

@@ -45,7 +45,6 @@ Future transforms won't be added to the public API while in alpha. But in these 
 | [RedisSinkSingle](#redissinksingle)                      | ✅          | Beta                  |
 | [Tee](#tee)                                              | ✅          | Alpha                 |
 | [RequestThrottling](#requestthrottling)                  |❌           | Alpha                 |
-<!--| [DebugRandomDelay](#debugrandomdelay)                 | ❌          | Alpha                 |-->
 
 ### CassandraSinkCluster
 
@@ -224,21 +223,6 @@ This transform will drop any messages it receives and return the supplied respon
     # To intentionally fail, use this variant 
     # Fail
 ```
-
-<!-- commented out until included in the public API
-### DebugRandomDelay
-
-Delay the transform chain at the position that this transform sits at.
-
-```yaml
-- DebugRandomDelay
-  # length of time to delay in milliseconds
-  delay: 1000
-  
-  # optionally provide a distribution for a random amount to add to the base delay
-  distribution: 500
-```
--->
 
 ### KafkaSinkCluster
 

@@ -54,7 +54,7 @@ impl TransformConfig for KafkaSinkSingleConfig {
     }
 }
 
-pub struct KafkaSinkSingleBuilder {
+struct KafkaSinkSingleBuilder {
     // contains address and port
     address_port: u16,
     connect_timeout: Duration,
@@ -63,7 +63,7 @@ pub struct KafkaSinkSingleBuilder {
 }
 
 impl KafkaSinkSingleBuilder {
-    pub fn new(
+    fn new(
         address_port: u16,
         _chain_name: String,
         connect_timeout_ms: u64,
@@ -102,7 +102,7 @@ impl TransformBuilder for KafkaSinkSingleBuilder {
     }
 }
 
-pub struct KafkaSinkSingle {
+struct KafkaSinkSingle {
     address_port: u16,
     connection: Option<SinkConnection>,
     connect_timeout: Duration,

@@ -39,6 +39,7 @@ pub enum GenericValue {
     Counter(i64),
     Tuple(Vec<GenericValue>),
     Udt(BTreeMap<String, GenericValue>),
+    Custom(Bytes),
 }
 
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize, Hash, Eq, PartialOrd, Ord)]

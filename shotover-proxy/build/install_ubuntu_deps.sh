@@ -23,6 +23,9 @@ usermod -aG docker $USER`
 # Install dependencies for kafka java driver tests
 sudo apt-get install -y default-jre-headless`
 
+# Install dependencies for npm tests
+sudo apt-get install -y npm`
+
 # The remaining dependencies are for tests behind optional features.
 # So feel free to skip them.
 
