@@ -62,11 +62,11 @@ impl KafkaConnectionBuilderCpp {
         }
     }
 
-    pub async fn connect_consumer(&self, topic_name: &str) -> KafkaConsumerCpp {
+    pub async fn connect_consumer(&self, topic_name: &str, group: &str) -> KafkaConsumerCpp {
         let consumer: StreamConsumer = self
             .client
             .clone()
-            .set("group.id", "some_group")
+            .set("group.id", group)
             .set("session.timeout.ms", "6000")
             .set("auto.offset.reset", "earliest")
             .set("enable.auto.commit", "false")

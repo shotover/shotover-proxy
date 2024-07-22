@@ -101,9 +101,9 @@ impl KafkaConnectionBuilderJava {
         KafkaProducerJava { jvm, producer }
     }
 
-    pub async fn connect_consumer(&self, topic_name: &str) -> KafkaConsumerJava {
+    pub async fn connect_consumer(&self, topic_name: &str, group: &str) -> KafkaConsumerJava {
         let mut config = self.base_config.clone();
-        config.insert("group.id".to_owned(), "some_group".to_owned());
+        config.insert("group.id".to_owned(), group.to_owned());
         config.insert("session.timeout.ms".to_owned(), "6000".to_owned());
         config.insert("auto.offset.reset".to_owned(), "earliest".to_owned());
         config.insert("enable.auto.commit".to_owned(), "false".to_owned());

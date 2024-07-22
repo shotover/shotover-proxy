@@ -64,11 +64,11 @@ impl KafkaConnectionBuilder {
         }
     }
 
-    pub async fn connect_consumer(&self, topic_name: &str) -> KafkaConsumer {
+    pub async fn connect_consumer(&self, topic_name: &str, group: &str) -> KafkaConsumer {
         match self {
             #[cfg(feature = "kafka-cpp-driver-tests")]
-            Self::Cpp(cpp) => KafkaConsumer::Cpp(cpp.connect_consumer(topic_name).await),
-            Self::Java(java) => KafkaConsumer::Java(java.connect_consumer(topic_name).await),
+            Self::Cpp(cpp) => KafkaConsumer::Cpp(cpp.connect_consumer(topic_name, group).await),
+            Self::Java(java) => KafkaConsumer::Java(java.connect_consumer(topic_name, group).await),
         }
     }
 
@@ -166,7 +166,7 @@ impl<'a> KafkaConsumer {
     }
 
     /// The offset to be committed should be lastProcessedMessageOffset + 1.
-    pub fn assert_commit_sync(&self, offsets: HashMap<TopicPartition, i64>) {
+    pub fn assert_commit_offsets(&self, offsets: HashMap<TopicPartition, i64>) {
         match self {
             #[cfg(feature = "kafka-cpp-driver-tests")]
             Self::Cpp(cpp) => cpp.commit_sync(&offsets),
