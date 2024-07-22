@@ -45,7 +45,10 @@ async fn main() {
         return;
     }
 
-    let aws = Aws::builder(CleanupResources::AllResources).build().await;
+    let aws = Aws::builder(CleanupResources::AllResources)
+        .use_az(Some("us-east-1b".into()))
+        .build()
+        .await;
     let instance_type = InstanceType::from(args.instance_type.as_str());
     let instance = aws
         .create_ec2_instance(Ec2InstanceDefinition::new(instance_type).volume_size_gigabytes(40))

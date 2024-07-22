@@ -24,6 +24,7 @@ impl AwsInstances {
     pub async fn new() -> Self {
         AwsInstances {
             aws: Aws::builder(CleanupResources::WithAppTag(AWS_THROWAWAY_TAG.to_owned()))
+                .use_az(Some("us-east-1b".into()))
                 // shotover metrics port
                 .expose_ports_to_internet(vec![9001])
                 .build()
