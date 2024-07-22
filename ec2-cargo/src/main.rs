@@ -45,7 +45,10 @@ async fn main() {
         return;
     }
 
-    let aws = Aws::builder(CleanupResources::AllResources).build().await;
+    let aws = Aws::builder(CleanupResources::AllResources)
+        .use_az(Some("us-east-1b".into()))
+        .build()
+        .await;
     let instance_type = InstanceType::from(args.instance_type.as_str());
     let instance = aws
         .create_ec2_instance(Ec2InstanceDefinition::new(instance_type).volume_size_gigabytes(40))
@@ -66,7 +69,7 @@ until sudo apt-get update -qq
 do
   sleep 1
 done
-sudo apt-get install -y cmake pkg-config g++ libssl-dev librdkafka-dev unzip
+sudo apt-get install -y cmake pkg-config g++ libssl-dev librdkafka-dev unzip default-jre-headless npm
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 
 curl -sSL https://get.docker.com/ | sudo sh
