@@ -1,4 +1,5 @@
 use pretty_assertions::assert_eq;
+use std::collections::{HashMap, HashSet};
 
 #[cfg(feature = "kafka-cpp-driver-tests")]
 pub mod cpp;
@@ -64,11 +65,11 @@ impl KafkaConnectionBuilder {
         }
     }
 
-    pub async fn connect_consumer(&self, topic_name: &str) -> KafkaConsumer {
+    pub async fn connect_consumer(&self, topic_name: &str, group: &str) -> KafkaConsumer {
         match self {
             #[cfg(feature = "kafka-cpp-driver-tests")]
-            Self::Cpp(cpp) => KafkaConsumer::Cpp(cpp.connect_consumer(topic_name).await),
-            Self::Java(java) => KafkaConsumer::Java(java.connect_consumer(topic_name).await),
+            Self::Cpp(cpp) => KafkaConsumer::Cpp(cpp.connect_consumer(topic_name, group).await),
+            Self::Java(java) => KafkaConsumer::Java(java.connect_consumer(topic_name, group).await),
         }
     }
 
@@ -162,6 +163,29 @@ impl KafkaConsumer {
                 }
                 None => panic!("An expected response was not found in the actual responses\nExpected responses:{full_expected_responses:#?}\nActual responses:{full_responses:#?}"),
             }
+        }
+    }
+
+    /// The offset to be committed should be lastProcessedMessageOffset + 1.
+    pub fn assert_commit_offsets(&self, offsets: HashMap<TopicPartition, i64>) {
+        match self {
+            #[cfg(feature = "kafka-cpp-driver-tests")]
+            Self::Cpp(cpp) => cpp.commit(&offsets),
+            Self::Java(java) => java.commit(&offsets),
+        }
+
+        let partitions = offsets.keys().cloned().collect::<HashSet<_>>();
+
+        let responses = match self {
+            #[cfg(feature = "kafka-cpp-driver-tests")]
+            Self::Cpp(cpp) => cpp.committed_offsets(partitions),
+            Self::Java(java) => java.committed_offsets(partitions),
+        };
+
+        assert_eq!(responses.len(), offsets.len());
+        for (topic_partition, offset) in offsets {
+            let response_offset = responses.get(&topic_partition).unwrap();
+            assert_eq!(*response_offset, offset);
         }
     }
 }
@@ -271,6 +295,12 @@ pub struct NewTopic<'a> {
 pub struct NewPartition<'a> {
     pub topic_name: &'a str,
     pub new_partition_count: i32,
+}
+
+#[derive(Clone, Eq, PartialEq, Hash)]
+pub struct TopicPartition {
+    pub topic_name: String,
+    pub partition: i32,
 }
 
 pub enum ResourceSpecifier<'a> {
