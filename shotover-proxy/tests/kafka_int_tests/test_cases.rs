@@ -1,7 +1,8 @@
+use std::collections::HashMap;
 use test_helpers::connection::kafka::{
     Acl, AclOperation, AclPermissionType, AlterConfig, ConfigEntry, ExpectedResponse,
     KafkaConnectionBuilder, NewPartition, NewTopic, Record, ResourcePatternType, ResourceSpecifier,
-    ResourceType,
+    ResourceType, TopicPartition,
 };
 
 async fn admin_setup(connection_builder: &KafkaConnectionBuilder) {
@@ -10,6 +11,11 @@ async fn admin_setup(connection_builder: &KafkaConnectionBuilder) {
         .create_topics(&[
             NewTopic {
                 name: "partitions1",
+                num_partitions: 1,
+                replication_factor: 1,
+            },
+            NewTopic {
+                name: "partitions1_with_offset",
                 num_partitions: 1,
                 replication_factor: 1,
             },
@@ -75,7 +81,9 @@ pub async fn produce_consume_partitions1(
             )
             .await;
 
-        let mut consumer = connection_builder.connect_consumer(topic_name).await;
+        let mut consumer = connection_builder
+            .connect_consumer(topic_name, "some_group")
+            .await;
         consumer
             .assert_consume(ExpectedResponse {
                 message: "initial".to_owned(),
@@ -116,6 +124,7 @@ pub async fn produce_consume_partitions1(
                     offset: Some(i * 2 + 1),
                 })
                 .await;
+
             consumer
                 .assert_consume(ExpectedResponse {
                     message: "Message2".to_owned(),
@@ -127,9 +136,11 @@ pub async fn produce_consume_partitions1(
         }
     }
 
-    // if we create a new consumer it will start from the begginning since `auto.offset.reset = earliest`
+    // if we create a new consumer it will start from the beginning since auto.offset.reset = earliest and enable.auto.commit false
     // so we test that we can access all records ever created on this topic
-    let mut consumer = connection_builder.connect_consumer(topic_name).await;
+    let mut consumer = connection_builder
+        .connect_consumer(topic_name, "some_group")
+        .await;
     consumer
         .assert_consume(ExpectedResponse {
             message: "initial".to_owned(),
@@ -158,10 +169,138 @@ pub async fn produce_consume_partitions1(
     }
 }
 
+pub async fn produce_consume_commit_offsets_partitions1(
+    connection_builder: &KafkaConnectionBuilder,
+    topic_name: &str,
+) {
+    {
+        let producer = connection_builder.connect_producer(1).await;
+        producer
+            .assert_produce(
+                Record {
+                    payload: "Initial",
+                    topic_name,
+                    key: Some("Key"),
+                },
+                Some(0),
+            )
+            .await;
+
+        let mut consumer = connection_builder
+            .connect_consumer(topic_name, "consumer_group_with_offsets")
+            .await;
+        consumer
+            .assert_consume(ExpectedResponse {
+                message: "Initial".to_owned(),
+                key: Some("Key".to_owned()),
+                topic_name: topic_name.to_owned(),
+                offset: Some(0),
+            })
+            .await;
+
+        // The offset to be committed should be lastProcessedMessageOffset + 1
+        let offset1 = HashMap::from([(
+            TopicPartition {
+                topic_name: topic_name.to_owned(),
+                partition: 0,
+            },
+            1,
+        )]);
+        consumer.assert_commit_offsets(offset1);
+
+        producer
+            .assert_produce(
+                Record {
+                    payload: "Message1",
+                    topic_name,
+                    key: Some("Key"),
+                },
+                Some(1),
+            )
+            .await;
+
+        consumer
+            .assert_consume(ExpectedResponse {
+                message: "Message1".to_owned(),
+                key: Some("Key".to_owned()),
+                topic_name: topic_name.to_owned(),
+                offset: Some(1),
+            })
+            .await;
+
+        let offset2 = HashMap::from([(
+            TopicPartition {
+                topic_name: topic_name.to_owned(),
+                partition: 0,
+            },
+            2,
+        )]);
+        consumer.assert_commit_offsets(offset2);
+
+        producer
+            .assert_produce(
+                Record {
+                    payload: "Message2",
+                    topic_name,
+                    key: Some("Key"),
+                },
+                Some(2),
+            )
+            .await;
+    }
+
+    {
+        // The new consumer should consume Message2 which is at the last uncommitted offset
+        let mut consumer = connection_builder
+            .connect_consumer(topic_name, "consumer_group_with_offsets")
+            .await;
+        consumer
+            .assert_consume(ExpectedResponse {
+                message: "Message2".to_owned(),
+                key: Some("Key".to_owned()),
+                topic_name: topic_name.to_owned(),
+                offset: Some(2),
+            })
+            .await;
+    }
+
+    {
+        // The new consumer should still consume Message2 as its offset has not been committed
+        let mut consumer = connection_builder
+            .connect_consumer(topic_name, "consumer_group_with_offsets")
+            .await;
+        consumer
+            .assert_consume(ExpectedResponse {
+                message: "Message2".to_owned(),
+                key: Some("Key".to_owned()),
+                topic_name: topic_name.to_owned(),
+                offset: Some(2),
+            })
+            .await;
+    }
+
+    {
+        // A new consumer in another group should consume from the beginning since auto.offset.reset = earliest and enable.auto.commit false
+        let mut consumer = connection_builder
+            .connect_consumer(topic_name, "consumer_group_without_offsets")
+            .await;
+        consumer
+            .assert_consume(ExpectedResponse {
+                message: "Initial".to_owned(),
+                key: Some("Key".to_owned()),
+                topic_name: topic_name.to_owned(),
+                offset: Some(0),
+            })
+            .await;
+    }
+}
+
 async fn produce_consume_partitions3(connection_builder: &KafkaConnectionBuilder) {
     let topic_name = "partitions3";
     let producer = connection_builder.connect_producer(1).await;
-    let mut consumer = connection_builder.connect_consumer(topic_name).await;
+    let mut consumer = connection_builder
+        .connect_consumer(topic_name, "some_group")
+        .await;
 
     for _ in 0..5 {
         producer
@@ -222,7 +361,9 @@ async fn produce_consume_acks0(connection_builder: &KafkaConnectionBuilder) {
             .await;
     }
 
-    let mut consumer = connection_builder.connect_consumer(topic_name).await;
+    let mut consumer = connection_builder
+        .connect_consumer(topic_name, "some_group")
+        .await;
 
     for j in 0..10 {
         consumer
@@ -240,6 +381,7 @@ pub async fn standard_test_suite(connection_builder: &KafkaConnectionBuilder) {
     admin_setup(connection_builder).await;
     produce_consume_partitions1(connection_builder, "partitions1").await;
     produce_consume_partitions1(connection_builder, "unknown_topic").await;
+    produce_consume_commit_offsets_partitions1(connection_builder, "partitions1_with_offset").await;
     produce_consume_partitions3(connection_builder).await;
 
     // Only run this test case on the java driver,

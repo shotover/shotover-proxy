@@ -64,6 +64,11 @@ pub static IMAGE_WAITERS: [Image; 11] = [
         timeout: Duration::from_secs(120),
     },
     Image {
+        name: "shotover/cassandra-test:5.0-rc1-r3",
+        log_regex_to_wait_for: r"Starting listening for CQL clients",
+        timeout: Duration::from_secs(120),
+    },
+    Image {
         name: "bitnami/kafka:3.6.1-debian-11-r24",
         log_regex_to_wait_for: r"Kafka Server started",
         timeout: Duration::from_secs(120),
@@ -71,11 +76,6 @@ pub static IMAGE_WAITERS: [Image; 11] = [
     Image {
         name: "opensearchproject/opensearch:2.9.0",
         log_regex_to_wait_for: r"Node started",
-        timeout: Duration::from_secs(120),
-    },
-    Image {
-        name: "shotover/cassandra-test:5.0-beta1-r2",
-        log_regex_to_wait_for: r"Starting listening for CQL clients",
         timeout: Duration::from_secs(120),
     },
 ];

@@ -652,6 +652,13 @@ impl KafkaSinkCluster {
                     self.route_to_coordinator(message, group_id);
                 }
                 Some(Frame::Kafka(KafkaFrame::Request {
+                    body: RequestBody::OffsetCommit(offset_commit),
+                    ..
+                })) => {
+                    let group_id = offset_commit.group_id.clone();
+                    self.route_to_coordinator(message, group_id);
+                }
+                Some(Frame::Kafka(KafkaFrame::Request {
                     body: RequestBody::JoinGroup(join_group),
                     ..
                 })) => {
