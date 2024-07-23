@@ -304,7 +304,7 @@ enum PendingRequestTy {
     /// The request has been sent to the specified broker and we are now awaiting a response from that broker.
     Sent {
         destination: BrokerId,
-        /// How many responses must be received before this respose is received.
+        /// How many responses must be received before this response is received.
         /// When this is 0 the next response from the broker will be for this request.
         /// This field must be manually decremented when another response for this broker comes through.
         index: usize,
@@ -1074,8 +1074,10 @@ routing message to a random node so that:
         Ok(())
     }
 
-    /// Convert some PendingRequestTy::Sent into PendingRequestTy::Received
+    /// Receive all responses from the outgoing connections, returns all responses that are ready to be returned.
+    /// For response ordering reasons, some responses will remain in self.pending_requests until other responses are received.
     fn recv_responses(&mut self) -> Result<Vec<Message>> {
+        // Convert all received PendingRequestTy::Sent into PendingRequestTy::Received
         for node in &mut self.nodes {
             if let Some(connection) = node.get_connection_if_open() {
                 self.temp_responses_buffer.clear();
@@ -1087,6 +1089,9 @@ routing message to a random node so that:
                                 &mut pending_request.ty
                             {
                                 if *destination == node.broker_id {
+                                    // Store the PendingRequestTy::Received at the location of the next PendingRequestTy::Sent
+                                    // All other PendingRequestTy::Sent need to be decremented, in order to determine the PendingRequestTy::Sent
+                                    // to be used next time, and the time after that, and ...
                                     if *index == 0 {
                                         pending_request.ty = PendingRequestTy::Received {
                                             response: response.take().unwrap(),
@@ -1102,6 +1107,7 @@ routing message to a random node so that:
             }
         }
 
+        // Remove and return all PendingRequestTy::Received that are ready to be received.
         let mut responses = vec![];
         while let Some(pending_request) = self.pending_requests.front() {
             let all_combined_received = (0..pending_request.combine_responses).all(|i| {
@@ -1247,7 +1253,7 @@ routing message to a random node so that:
                     body: ResponseBody::SaslAuthenticate(authenticate),
                     ..
                 })) => {
-                    self.process_sasl_authenticate(authenticate).await?;
+                    self.process_sasl_authenticate(authenticate)?;
                 }
                 Some(Frame::Kafka(KafkaFrame::Response {
                     body: ResponseBody::Produce(produce),
@@ -1424,7 +1430,7 @@ routing message to a random node so that:
         }
     }
 
-    async fn process_sasl_authenticate(
+    fn process_sasl_authenticate(
         &mut self,
         authenticate: &mut SaslAuthenticateResponse,
     ) -> Result<()> {
