@@ -160,11 +160,7 @@ impl KafkaConsumerCpp {
     }
 
     /// The offset to be committed should be lastProcessedMessageOffset + 1.
-    pub fn commit(
-        &self,
-        offsets: &HashMap<TopicPartition, i64>,
-        commit_mode: rdkafka::consumer::CommitMode,
-    ) {
+    pub fn commit(&self, offsets: &HashMap<TopicPartition, i64>) {
         let offsets_map: HashMap<(String, i32), rdkafka::Offset> = offsets
             .iter()
             .map(|(tp, offset)| {
@@ -177,7 +173,11 @@ impl KafkaConsumerCpp {
 
         let offsets_list = rdkafka::TopicPartitionList::from_topic_map(&offsets_map).unwrap();
 
-        self.consumer.commit(&offsets_list, commit_mode).unwrap();
+        tokio::task::block_in_place(|| {
+            self.consumer
+                .commit(&offsets_list, rdkafka::consumer::CommitMode::Sync)
+                .unwrap()
+        });
     }
 
     pub fn committed_offsets(
@@ -198,24 +198,23 @@ impl KafkaConsumerCpp {
             .expect("Failed to add the topic and partition");
         }
 
-        let committed_offsets = self
-            .consumer
-            .committed_offsets(tpl, Timeout::After(Duration::from_secs(30)))
-            .unwrap();
+        let committed_offsets = tokio::task::block_in_place(|| {
+            self.consumer
+                .committed_offsets(tpl, Timeout::After(Duration::from_secs(30)))
+                .unwrap()
+        });
 
-        for tp in &partitions {
-            for tp_offset in committed_offsets.elements_for_topic(tp.topic_name.as_str()) {
-                offsets.insert(
-                    TopicPartition {
-                        topic_name: tp_offset.topic().to_string(),
-                        partition: tp_offset.partition(),
-                    },
-                    match tp_offset.offset() {
-                        rdkafka::Offset::Offset(offset) => offset,
-                        _ => continue,
-                    },
-                );
-            }
+        for tp_offset in committed_offsets.elements() {
+            offsets.insert(
+                TopicPartition {
+                    topic_name: tp_offset.topic().to_string(),
+                    partition: tp_offset.partition(),
+                },
+                match tp_offset.offset() {
+                    rdkafka::Offset::Offset(offset) => offset,
+                    _ => continue,
+                },
+            );
         }
 
         offsets

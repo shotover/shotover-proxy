@@ -237,7 +237,7 @@ impl KafkaConsumerJava {
     }
 
     /// The offset to be committed should be lastProcessedMessageOffset + 1.
-    pub fn commit_sync(&self, offsets: &HashMap<TopicPartition, i64>) {
+    pub fn commit(&self, offsets: &HashMap<TopicPartition, i64>) {
         let offsets_vec: Vec<(Value, Value)> = offsets
             .iter()
             .map(|(tp, offset)| {
@@ -258,10 +258,13 @@ impl KafkaConsumerJava {
             .collect();
         let offsets_map = self.jvm.new_map(offsets_vec);
 
-        self.consumer.call("commitSync", vec![offsets_map]);
+        tokio::task::block_in_place(|| self.consumer.call("commitSync", vec![offsets_map]));
     }
 
-    pub fn committed(&self, partitions: HashSet<TopicPartition>) -> HashMap<TopicPartition, i64> {
+    pub fn committed_offsets(
+        &self,
+        partitions: HashSet<TopicPartition>,
+    ) -> HashMap<TopicPartition, i64> {
         let mut offsets = HashMap::new();
 
         for tp in partitions {
@@ -279,9 +282,11 @@ impl KafkaConsumerJava {
                 vec![self.jvm.new_long(30)],
             );
 
-            let committed = self
-                .consumer
-                .call("committed", vec![topic_partition, timeout]);
+            let committed = tokio::task::block_in_place(|| {
+                self.consumer
+                    .call("committed", vec![topic_partition, timeout])
+            });
+
             let offset: i64 = committed
                 .cast("org.apache.kafka.clients.consumer.OffsetAndMetadata")
                 .call("offset", vec![])

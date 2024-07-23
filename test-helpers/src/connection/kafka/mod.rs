@@ -170,8 +170,8 @@ impl KafkaConsumer {
     pub fn assert_commit_offsets(&self, offsets: HashMap<TopicPartition, i64>) {
         match self {
             #[cfg(feature = "kafka-cpp-driver-tests")]
-            Self::Cpp(cpp) => cpp.commit(&offsets, rdkafka::consumer::CommitMode::Sync),
-            Self::Java(java) => java.commit_sync(&offsets),
+            Self::Cpp(cpp) => cpp.commit(&offsets),
+            Self::Java(java) => java.commit(&offsets),
         }
 
         let partitions = offsets.keys().cloned().collect::<HashSet<_>>();
@@ -179,12 +179,13 @@ impl KafkaConsumer {
         let responses = match self {
             #[cfg(feature = "kafka-cpp-driver-tests")]
             Self::Cpp(cpp) => cpp.committed_offsets(partitions),
-            Self::Java(java) => java.committed(partitions),
+            Self::Java(java) => java.committed_offsets(partitions),
         };
 
+        assert_eq!(responses.len(), offsets.len());
         for (topic_partition, offset) in offsets {
             let response_offset = responses.get(&topic_partition).unwrap();
-            assert_eq!(offset, *response_offset);
+            assert_eq!(*response_offset, offset);
         }
     }
 }

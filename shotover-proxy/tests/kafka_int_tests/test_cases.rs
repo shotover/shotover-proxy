@@ -187,7 +187,7 @@ pub async fn produce_consume_commit_offsets_partitions1(
             .await;
 
         let mut consumer = connection_builder
-            .connect_consumer(topic_name, "consumer_group_using_offsets")
+            .connect_consumer(topic_name, "consumer_group_with_offsets")
             .await;
         consumer
             .assert_consume(ExpectedResponse {
@@ -252,7 +252,7 @@ pub async fn produce_consume_commit_offsets_partitions1(
     {
         // The new consumer should consume Message2 which is at the last uncommitted offset
         let mut consumer = connection_builder
-            .connect_consumer(topic_name, "consumer_group_using_offsets")
+            .connect_consumer(topic_name, "consumer_group_with_offsets")
             .await;
         consumer
             .assert_consume(ExpectedResponse {
@@ -267,7 +267,7 @@ pub async fn produce_consume_commit_offsets_partitions1(
     {
         // The new consumer should still consume Message2 as its offset has not been committed
         let mut consumer = connection_builder
-            .connect_consumer(topic_name, "consumer_group_using_offsets")
+            .connect_consumer(topic_name, "consumer_group_with_offsets")
             .await;
         consumer
             .assert_consume(ExpectedResponse {
@@ -275,6 +275,21 @@ pub async fn produce_consume_commit_offsets_partitions1(
                 key: Some("Key".to_owned()),
                 topic_name: topic_name.to_owned(),
                 offset: Some(2),
+            })
+            .await;
+    }
+
+    {
+        // A new consumer in another group should consume from the beginning since auto.offset.reset = earliest and enable.auto.commit false
+        let mut consumer = connection_builder
+            .connect_consumer(topic_name, "consumer_group_without_offsets")
+            .await;
+        consumer
+            .assert_consume(ExpectedResponse {
+                message: "Initial".to_owned(),
+                key: Some("Key".to_owned()),
+                topic_name: topic_name.to_owned(),
+                offset: Some(0),
             })
             .await;
     }
