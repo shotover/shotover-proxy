@@ -22,7 +22,7 @@ use kafka_protocol::messages::{
     OffsetFetchRequest, RequestHeader, SaslAuthenticateRequest, SaslAuthenticateResponse,
     SaslHandshakeRequest, SyncGroupRequest, TopicName,
 };
-use kafka_protocol::protocol::{Builder, StrBytes};
+use kafka_protocol::protocol::StrBytes;
 use kafka_protocol::ResponseError;
 use metrics::{counter, Counter};
 use node::{ConnectionFactory, KafkaAddress, KafkaNode};
@@ -899,18 +899,14 @@ routing message to a random node so that:
         group: GroupId,
     ) -> Result<KafkaNode, FindCoordinatorError> {
         let request = Message::from_frame(Frame::Kafka(KafkaFrame::Request {
-            header: RequestHeader::builder()
-                .request_api_key(ApiKey::FindCoordinatorKey as i16)
-                .request_api_version(2)
-                .correlation_id(0)
-                .build()
-                .unwrap(),
+            header: RequestHeader::default()
+                .with_request_api_key(ApiKey::FindCoordinatorKey as i16)
+                .with_request_api_version(2)
+                .with_correlation_id(0),
             body: RequestBody::FindCoordinator(
-                FindCoordinatorRequest::builder()
-                    .key_type(0)
-                    .key(group.0)
-                    .build()
-                    .unwrap(),
+                FindCoordinatorRequest::default()
+                    .with_key_type(0)
+                    .with_key(group.0),
             ),
         }));
 
@@ -945,34 +941,22 @@ routing message to a random node so that:
     ) -> Result<Message> {
         let api_version = if topic_ids.is_empty() { 4 } else { 12 };
         let request = Message::from_frame(Frame::Kafka(KafkaFrame::Request {
-            header: RequestHeader::builder()
-                .request_api_key(ApiKey::MetadataKey as i16)
-                .request_api_version(api_version)
-                .correlation_id(0)
-                .build()
-                .unwrap(),
+            header: RequestHeader::default()
+                .with_request_api_key(ApiKey::MetadataKey as i16)
+                .with_request_api_version(api_version)
+                .with_correlation_id(0),
             body: RequestBody::Metadata(
-                MetadataRequest::builder()
-                    .topics(Some(
-                        topic_names
-                            .into_iter()
-                            .map(|name| {
-                                MetadataRequestTopic::builder()
-                                    .name(Some(name))
-                                    .build()
-                                    .unwrap()
-                            })
-                            .chain(topic_ids.into_iter().map(|id| {
-                                MetadataRequestTopic::builder()
-                                    .name(None)
-                                    .topic_id(id)
-                                    .build()
-                                    .unwrap()
-                            }))
-                            .collect(),
-                    ))
-                    .build()
-                    .unwrap(),
+                MetadataRequest::default().with_topics(Some(
+                    topic_names
+                        .into_iter()
+                        .map(|name| MetadataRequestTopic::default().with_name(Some(name)))
+                        .chain(topic_ids.into_iter().map(|id| {
+                            MetadataRequestTopic::default()
+                                .with_name(None)
+                                .with_topic_id(id)
+                        }))
+                        .collect(),
+                )),
             ),
         }));
 
@@ -1658,12 +1642,10 @@ routing message to a random node so that:
             .map(|shotover_node| {
                 (
                     shotover_node.broker_id,
-                    MetadataResponseBroker::builder()
-                        .host(shotover_node.address.host.clone())
-                        .port(shotover_node.address.port)
-                        .rack(Some(shotover_node.rack.clone()))
-                        .build()
-                        .unwrap(),
+                    MetadataResponseBroker::default()
+                        .with_host(shotover_node.address.host.clone())
+                        .with_port(shotover_node.address.port)
+                        .with_rack(Some(shotover_node.rack.clone())),
                 )
             })
             .collect();

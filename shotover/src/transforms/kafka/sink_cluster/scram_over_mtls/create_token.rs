@@ -8,7 +8,7 @@ use kafka_protocol::{
         CreateDelegationTokenRequest, CreateDelegationTokenResponse,
         DescribeDelegationTokenRequest, MetadataRequest, RequestHeader,
     },
-    protocol::{Builder, StrBytes},
+    protocol::StrBytes,
     ResponseError,
 };
 use rand::{rngs::SmallRng, seq::IteratorRandom};
@@ -66,13 +66,11 @@ async fn find_new_brokers(nodes: &mut Vec<Node>, rng: &mut SmallRng) -> Result<(
         .expect("Guaranteed due to above filter");
 
     let request = Message::from_frame(Frame::Kafka(KafkaFrame::Request {
-        header: RequestHeader::builder()
-            .request_api_key(ApiKey::MetadataKey as i16)
-            .request_api_version(4)
-            .correlation_id(0)
-            .build()
-            .unwrap(),
-        body: RequestBody::Metadata(MetadataRequest::builder().build().unwrap()),
+        header: RequestHeader::default()
+            .with_request_api_key(ApiKey::MetadataKey as i16)
+            .with_request_api_version(4)
+            .with_correlation_id(0),
+        body: RequestBody::Metadata(MetadataRequest::default()),
     }));
     connection.send(vec![request])?;
 
@@ -128,18 +126,14 @@ async fn create_delegation_token_for_user(
 
     connection.send(vec![Message::from_frame(Frame::Kafka(
         KafkaFrame::Request {
-            header: RequestHeader::builder()
-                .request_api_key(ApiKey::CreateDelegationTokenKey as i16)
-                .request_api_version(3)
-                .build()
-                .unwrap(),
+            header: RequestHeader::default()
+                .with_request_api_key(ApiKey::CreateDelegationTokenKey as i16)
+                .with_request_api_version(3),
             body: RequestBody::CreateDelegationToken(
-                CreateDelegationTokenRequest::builder()
-                    .owner_principal_type(Some(StrBytes::from_static_str("User")))
-                    .max_lifetime_ms(token_lifetime.as_millis() as i64)
-                    .owner_principal_name(Some(username.clone()))
-                    .build()
-                    .unwrap(),
+                CreateDelegationTokenRequest::default()
+                    .with_owner_principal_type(Some(StrBytes::from_static_str("User")))
+                    .with_max_lifetime_ms(token_lifetime.as_millis() as i64)
+                    .with_owner_principal_name(Some(username.clone())),
             ),
         },
     ))])?;
@@ -246,20 +240,15 @@ async fn is_delegation_token_ready(
     //       It is left as a TODO since shotover does not currently support this. But we should support it in the future.
     connection.send(vec![Message::from_frame(Frame::Kafka(
         KafkaFrame::Request {
-            header: RequestHeader::builder()
-                .request_api_key(ApiKey::DescribeDelegationTokenKey as i16)
-                .request_api_version(3)
-                .build()
-                .unwrap(),
+            header: RequestHeader::default()
+                .with_request_api_key(ApiKey::DescribeDelegationTokenKey as i16)
+                .with_request_api_version(3),
             body: RequestBody::DescribeDelegationToken(
-                DescribeDelegationTokenRequest::builder()
-                    .owners(Some(vec![DescribeDelegationTokenOwner::builder()
-                        .principal_type(StrBytes::from_static_str("User"))
-                        .principal_name(username)
-                        .build()
-                        .unwrap()]))
-                    .build()
-                    .unwrap(),
+                DescribeDelegationTokenRequest::default().with_owners(Some(vec![
+                    DescribeDelegationTokenOwner::default()
+                        .with_principal_type(StrBytes::from_static_str("User"))
+                        .with_principal_name(username),
+                ])),
             ),
         },
     ))])?;
