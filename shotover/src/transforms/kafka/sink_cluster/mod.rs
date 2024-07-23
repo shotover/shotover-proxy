@@ -418,17 +418,28 @@ impl KafkaSinkCluster {
         }
     }
 
+    /// Ensure that every shared node is copied into local nodes by either:
+    /// * replacing existing equivalent nodes
+    /// * inserting new nodes
     async fn update_local_nodes(&mut self) {
+        tracing::info!("local_nodes : {:#?}", self.nodes);
+        tracing::info!("nodes_shared: {:#?}", self.nodes_shared);
         for shared_node in self.nodes_shared.read().await.iter() {
-            let mut found = false;
+            // Update initial contact point nodes
             for node in &mut self.nodes {
-                if shared_node.kafka_address == node.kafka_address {
-                    found = true;
-                    node.broker_id = shared_node.broker_id;
+                if node.broker_id == -1 && shared_node.kafka_address == node.kafka_address {
+                    let connection = node.connection.take();
+                    *node = shared_node.clone();
+                    node.connection = connection;
                 }
             }
-            if !found {
-                self.nodes.push(shared_node.clone())
+
+            // add missing nodes
+            for node in &mut self.nodes {
+                if shared_node.broker_id == node.broker_id {
+                    self.nodes.push(shared_node.clone());
+                    break;
+                }
             }
         }
     }
@@ -1806,6 +1817,7 @@ routing message to a random node so that:
     }
 
     async fn add_node_if_new(&mut self, new_node: KafkaNode) {
+        // perform an initial check with read access to allow concurrent access in the vast majority of cases.
         let missing_from_shared = self
             .nodes_shared
             .read()
@@ -1813,7 +1825,14 @@ routing message to a random node so that:
             .iter()
             .all(|node| node.broker_id != new_node.broker_id);
         if missing_from_shared {
-            self.nodes_shared.write().await.push(new_node);
+            // Need to reperform check now that we have exclusive access to nodes_shared
+            let mut nodes_shared = self.nodes_shared.write().await;
+            let missing_from_shared = nodes_shared
+                .iter()
+                .all(|node| node.broker_id != new_node.broker_id);
+            if missing_from_shared {
+                nodes_shared.push(new_node);
+            }
         }
 
         // We need to run this every time, not just when missing_from_shared.

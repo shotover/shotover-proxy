@@ -8,6 +8,7 @@ use crate::tls::TlsConnector;
 use crate::transforms::kafka::sink_cluster::scram_over_mtls::OriginalScramState;
 use crate::transforms::kafka::sink_cluster::SASL_SCRAM_MECHANISMS;
 use anyhow::{anyhow, Context, Result};
+use atomic_enum::atomic_enum;
 use bytes::Bytes;
 use derivative::Derivative;
 use kafka_protocol::messages::{ApiKey, BrokerId, RequestHeader, SaslAuthenticateRequest};
@@ -282,19 +283,27 @@ impl KafkaAddress {
     }
 }
 
+#[atomic_enum]
+pub enum NodeState {
+    Up,
+    Down,
+}
+
 #[derive(Derivative)]
 #[derivative(Debug)]
 pub struct KafkaNode {
+    pub state: Box<NodeState>,
     pub broker_id: BrokerId,
     pub rack: Option<StrBytes>,
     pub kafka_address: KafkaAddress,
     #[derivative(Debug = "ignore")]
-    connection: Option<SinkConnection>,
+    pub connection: Option<SinkConnection>,
 }
 
 impl Clone for KafkaNode {
     fn clone(&self) -> Self {
         Self {
+            state: self.state.clone(),
             broker_id: self.broker_id,
             rack: self.rack.clone(),
             kafka_address: self.kafka_address.clone(),
@@ -306,6 +315,7 @@ impl Clone for KafkaNode {
 impl KafkaNode {
     pub fn new(broker_id: BrokerId, kafka_address: KafkaAddress, rack: Option<StrBytes>) -> Self {
         KafkaNode {
+            state: Box::new(NodeState::Up),
             broker_id,
             kafka_address,
             rack,
