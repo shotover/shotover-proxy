@@ -189,7 +189,7 @@ pub struct KafkaConsumerJava {
     waiting_records: VecDeque<Value>,
 }
 
-impl<'a> KafkaConsumerJava {
+impl KafkaConsumerJava {
     pub async fn consume(&mut self) -> ExpectedResponse {
         // This method asserts that we have consumed a single record from the broker.
         // Internally we may have actually received multiple records from the broker.
