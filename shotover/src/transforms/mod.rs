@@ -49,6 +49,8 @@ pub struct TransformContextBuilder {
     /// * This must be used when a sink transform has asynchronously received responses in the background
     /// * This should be used when a transform needs to generate or flush messages after some kind of timeout or background process completes.
     pub force_run_chain: Arc<Notify>,
+
+    /// IP address of the client
     pub client_details: String,
 }
 
@@ -63,32 +65,57 @@ impl TransformContextBuilder {
 }
 
 pub trait TransformBuilder: Send + Sync {
+    /// Builds a single instance of the transform.
+    /// Shotover will create a new transform instance by calling this method for every time this transform is configured in the `topology.yaml`.
     fn build(&self, transform_context: TransformContextBuilder) -> Box<dyn Transform>;
 
+    /// Name of the transform used in logs and displayed to the user
     fn get_name(&self) -> &'static str;
 
+    /// Transform specific validation can be implemented here.
+    /// Any strings returned are considered a validation error that will be logged and cause shotover to fail to startup.
     fn validate(&self) -> Vec<String> {
         vec![]
     }
 
+    // TODO: remove in favor of down_chain_protocol
     fn is_terminating(&self) -> bool {
         false
     }
 }
 
+/// Defines the configuration fields of a transform as they appear in the `topology.yaml`,
+/// along with other metadata provided as implemented trait methods
 #[typetag::serde]
 #[async_trait(?Send)]
 pub trait TransformConfig: Debug {
+    /// Returns the builder used to create instances of this transform.
+    /// Shotover will only call this method once.
     async fn get_builder(
         &self,
         transform_context: TransformContextConfig,
     ) -> Result<Box<dyn TransformBuilder>>;
 
+    /// Defines which protocols this transform will:
+    /// * Accept requests as
+    /// * Send responses as
+    /// Shotover will use the results of this method to validate that a transform
+    /// is compatible with the other transforms it is connected to.
+    /// If the configuration is invalid shotover will log the issue and fail to start.
     fn up_chain_protocol(&self) -> UpChainProtocol;
 
+    /// Defines which protocols this transform will:
+    /// * Accept responses as
+    /// * Send requests as
+    /// Shotover will use the results of this method to validate that a transform
+    /// is compatible with the other transforms and sources it is connected to.
+    /// If the configuration is invalid shotover will log the issue and fail to start.
     fn down_chain_protocol(&self) -> DownChainProtocol;
 }
 
+/// Defines which protocols a transform will:
+/// * Accept requests as
+/// * Send responses as
 pub enum UpChainProtocol {
     /// This transform will only accept the specified protocols from up chain.
     MustBeOneOf(Vec<MessageType>),
@@ -96,6 +123,9 @@ pub enum UpChainProtocol {
     Any,
 }
 
+/// Defines which protocols a transform will:
+/// * Accept responses as
+/// * Send requests as
 pub enum DownChainProtocol {
     /// The protocol sent down the chain will be this protocol.
     TransformedTo(MessageType),
@@ -108,7 +138,10 @@ pub enum DownChainProtocol {
 /// Provides extra context that may be needed when creating a TransformBuilder
 #[derive(Clone)]
 pub struct TransformContextConfig {
+    /// The name of the chain that this transform is configured in.
     pub chain_name: String,
+    // TODO: rename to up_chain_protocol
+    /// The protocol that the transform will receive requests in.
     pub protocol: MessageType,
 }
 
@@ -116,6 +149,7 @@ pub struct TransformContextConfig {
 /// remaining transforms that will process the messages attached to this [`Wrapper`].
 /// Most [`Transform`] authors will only be interested in [`wrapper.requests`].
 pub struct Wrapper<'a> {
+    /// Requests received from the client
     pub requests: Messages,
     transforms: IterMut<'a, TransformAndMetrics>,
     /// Contains the shotover source's ip address and port which the message was received on
@@ -295,6 +329,7 @@ pub trait Transform: Send {
     /// You can have have a transform that is both non-terminating and a sink.
     async fn transform<'a>(&'a mut self, requests_wrapper: Wrapper<'a>) -> Result<Messages>;
 
+    /// Name of the transform used in logs and displayed to the user
     fn get_name(&self) -> &'static str;
 }
 
