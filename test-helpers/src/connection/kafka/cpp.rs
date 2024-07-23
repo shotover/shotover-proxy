@@ -160,7 +160,11 @@ impl KafkaConsumerCpp {
     }
 
     /// The offset to be committed should be lastProcessedMessageOffset + 1.
-    pub fn commit_sync(&self, offsets: &HashMap<TopicPartition, i64>) {
+    pub fn commit(
+        &self,
+        offsets: &HashMap<TopicPartition, i64>,
+        commit_mode: rdkafka::consumer::CommitMode,
+    ) {
         let offsets_map: HashMap<(String, i32), rdkafka::Offset> = offsets
             .iter()
             .map(|(tp, offset)| {
@@ -173,9 +177,7 @@ impl KafkaConsumerCpp {
 
         let offsets_list = rdkafka::TopicPartitionList::from_topic_map(&offsets_map).unwrap();
 
-        self.consumer
-            .commit(&offsets_list, rdkafka::consumer::CommitMode::Sync)
-            .unwrap();
+        self.consumer.commit(&offsets_list, commit_mode).unwrap();
     }
 
     pub fn committed_offsets(

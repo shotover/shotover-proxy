@@ -131,7 +131,7 @@ pub enum KafkaConsumer {
     Java(KafkaConsumerJava),
 }
 
-impl<'a> KafkaConsumer {
+impl KafkaConsumer {
     pub async fn assert_consume(&mut self, expected_response: ExpectedResponse) {
         let response = match self {
             #[cfg(feature = "kafka-cpp-driver-tests")]
@@ -170,7 +170,7 @@ impl<'a> KafkaConsumer {
     pub fn assert_commit_offsets(&self, offsets: HashMap<TopicPartition, i64>) {
         match self {
             #[cfg(feature = "kafka-cpp-driver-tests")]
-            Self::Cpp(cpp) => cpp.commit_sync(&offsets),
+            Self::Cpp(cpp) => cpp.commit(&offsets, rdkafka::consumer::CommitMode::Sync),
             Self::Java(java) => java.commit_sync(&offsets),
         }
 
