@@ -25,7 +25,7 @@ use kafka_protocol::messages::{
 use kafka_protocol::protocol::{Builder, StrBytes};
 use kafka_protocol::ResponseError;
 use metrics::{counter, Counter};
-use node::{ConnectionFactory, KafkaAddress, KafkaNode};
+use node::{ConnectionFactory, KafkaAddress, KafkaNode, NodeState};
 use rand::rngs::SmallRng;
 use rand::seq::{IteratorRandom, SliceRandom};
 use rand::SeedableRng;
@@ -215,7 +215,6 @@ impl TransformBuilder for KafkaSinkClusterBuilder {
                 self.read_timeout,
                 transform_context.force_run_chain,
             ),
-            first_contact_node: None,
             control_connection: None,
             pending_requests: Default::default(),
             // TODO: this approach with `find_coordinator_requests` and `routed_to_coordinator_for_group`
@@ -278,7 +277,16 @@ struct KafkaSinkCluster {
     rng: SmallRng,
     auth_complete: bool,
     connection_factory: ConnectionFactory,
-    first_contact_node: Option<KafkaAddress>,
+    /// The control connection is a bit weird:
+    /// * while !auth_complete it needs to be routed to via Destination::ControlConnection
+    /// * However, once auth_complete is true, control_connection should never be routed to.
+    ///     Instead, at this point control_send_receive must be called which will immediately return a
+    ///     response in place without going through the routing logic.
+    ///
+    /// TODO: In the future it might make sense to remove control_send_receive in favor of always routing to the control connection.
+    ///       This will avoid latency spikes where a response is delayed because we have to wait for a metadata request to come back.
+    ///       However, to implement this we will need to allow request routing to be suspended and resumed once the required response came back.
+    ///       So it might not be worth it.
     control_connection: Option<SinkConnection>,
     /// Maintains the state of each request/response pair.
     /// Ordering must be maintained to ensure responses match up with their request.
@@ -298,12 +306,12 @@ struct KafkaSinkCluster {
 enum PendingRequestTy {
     /// A route has been determined for this request but it has not yet been sent.
     Routed {
-        destination: BrokerId,
+        destination: Destination,
         request: Message,
     },
     /// The request has been sent to the specified broker and we are now awaiting a response from that broker.
     Sent {
-        destination: BrokerId,
+        destination: Destination,
         /// How many responses must be received before this response is received.
         /// When this is 0 the next response from the broker will be for this request.
         /// This field must be manually decremented when another response for this broker comes through.
@@ -312,6 +320,12 @@ enum PendingRequestTy {
     /// The broker has returned a Response to this request.
     /// Returning this response may be delayed until a response to an earlier request comes back from another broker.
     Received { response: Message },
+}
+
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
+enum Destination {
+    Id(BrokerId),
+    ControlConnection,
 }
 
 struct PendingRequest {
@@ -380,12 +394,33 @@ impl KafkaSinkCluster {
     /// Send a request over the control connection and immediately receive the response.
     /// Since we always await the response we know for sure that the response will not get mixed up with any other incoming responses.
     async fn control_send_receive(&mut self, requests: Message) -> Result<Message> {
+        assert!(
+            self.auth_complete,
+            "control_send_receive cannot be called until auth is complete. Otherwise it would collide with the control connection being used for regular routing."
+        );
+        let connection = self.get_control_connection().await?;
+        connection.send(vec![requests])?;
+        Ok(connection.recv().await?.remove(0))
+    }
+
+    async fn get_control_connection(&mut self) -> Result<&mut SinkConnection> {
         if self.control_connection.is_none() {
-            let address = &self.nodes.choose(&mut self.rng).unwrap().kafka_address;
+            let address = match &self
+                .nodes
+                .iter()
+                .filter(|x| matches!(*x.state, NodeState::Up))
+                .choose(&mut self.rng)
+            {
+                Some(node) => node.kafka_address.clone(),
+                None => {
+                    let address = self.first_contact_points.choose(&mut self.rng).unwrap();
+                    KafkaAddress::from_str(address).unwrap()
+                }
+            };
             self.control_connection = Some(
                 self.connection_factory
                     .create_connection(
-                        address,
+                        &address,
                         &self.authorize_scram_over_mtls,
                         &self.sasl_mechanism,
                     )
@@ -393,9 +428,7 @@ impl KafkaSinkCluster {
                     .context("Failed to create control connection")?,
             );
         }
-        let connection = self.control_connection.as_mut().unwrap();
-        connection.send(vec![requests])?;
-        Ok(connection.recv().await?.remove(0))
+        Ok(self.control_connection.as_mut().unwrap())
     }
 
     fn store_topic_names(&self, topics: &mut Vec<TopicName>, topic: TopicName) {
@@ -418,30 +451,19 @@ impl KafkaSinkCluster {
         }
     }
 
-    /// Ensure that every shared node is copied into local nodes by either:
-    /// * replacing existing equivalent nodes
-    /// * inserting new nodes
+    /// Replace local nodes with shared nodes while maintaining open connections
     async fn update_local_nodes(&mut self) {
-        tracing::info!("local_nodes : {:#?}", self.nodes);
-        tracing::info!("nodes_shared: {:#?}", self.nodes_shared);
-        for shared_node in self.nodes_shared.read().await.iter() {
-            // Update initial contact point nodes
-            for node in &mut self.nodes {
-                if node.broker_id == -1 && shared_node.kafka_address == node.kafka_address {
-                    let connection = node.connection.take();
-                    *node = shared_node.clone();
-                    node.connection = connection;
-                }
-            }
-
-            // add missing nodes
-            for node in &mut self.nodes {
-                if shared_node.broker_id == node.broker_id {
-                    self.nodes.push(shared_node.clone());
-                    break;
+        tracing::info!("start local_nodes: {:#?}", self.nodes);
+        let mut old_nodes = std::mem::take(&mut self.nodes);
+        self.nodes.clone_from(&*self.nodes_shared.read().await);
+        for new_node in &mut self.nodes {
+            for old_node in &mut old_nodes {
+                if old_node.kafka_address == new_node.kafka_address {
+                    new_node.connection = old_node.connection.take();
                 }
             }
         }
+        tracing::info!("end local_nodes: {:#?}", self.nodes);
     }
 
     async fn route_requests(&mut self, mut requests: Vec<Message>) -> Result<()> {
@@ -506,19 +528,18 @@ impl KafkaSinkCluster {
                     }
                 }
             }
-            // route all handshake messages
-            for _ in 0..handshake_request_count {
-                let request = requests.remove(0);
-                self.route_to_first_contact_node(request.clone());
+            // route all handshake requests
+            for request in requests.drain(0..handshake_request_count) {
+                self.route_to_control_connection(request);
             }
 
             if requests.is_empty() {
-                // all messages received in this batch are handshake messages,
-                // so dont continue with regular message handling
+                // all requests received in this batch are handshake requests,
+                // so dont continue with regular request handling
                 return Ok(());
             } else {
-                // the later messages in this batch are not handshake messages,
-                // so continue onto the regular message handling
+                // the later requests in this batch are not handshake requests,
+                // so continue onto the regular request handling
             }
         }
 
@@ -702,7 +723,7 @@ impl KafkaSinkCluster {
                     let destination = self.nodes.choose(&mut self.rng).unwrap().broker_id;
                     self.pending_requests.push_back(PendingRequest {
                         ty: PendingRequestTy::Routed {
-                            destination,
+                            destination: Destination::Id(destination),
                             request: message,
                         },
                         combine_responses: 1,
@@ -754,7 +775,7 @@ routing message to a random node so that:
 
             self.pending_requests.push_back(PendingRequest {
                 ty: PendingRequestTy::Routed {
-                    destination,
+                    destination: Destination::Id(destination),
                     request: message,
                 },
                 combine_responses: 1,
@@ -868,7 +889,7 @@ routing message to a random node so that:
 
                 self.pending_requests.push_back(PendingRequest {
                     ty: PendingRequestTy::Routed {
-                        destination,
+                        destination: Destination::Id(destination),
                         request: message,
                     },
                     combine_responses: 1,
@@ -888,7 +909,7 @@ routing message to a random node so that:
                 fetch.topics = topics;
                 self.pending_requests.push_back(PendingRequest {
                     ty: PendingRequestTy::Routed {
-                        destination,
+                        destination: Destination::Id(destination),
                         request: message,
                     },
                     combine_responses: 1,
@@ -919,7 +940,7 @@ routing message to a random node so that:
                     }
                     self.pending_requests.push_back(PendingRequest {
                         ty: PendingRequestTy::Routed {
-                            destination,
+                            destination: Destination::Id(destination),
                             request,
                         },
                         combine_responses,
@@ -1023,7 +1044,7 @@ routing message to a random node so that:
             already_pending: usize,
         }
 
-        let mut broker_to_routed_requests: HashMap<BrokerId, RoutedRequests> = HashMap::new();
+        let mut broker_to_routed_requests: HashMap<Destination, RoutedRequests> = HashMap::new();
         for i in 0..self.pending_requests.len() {
             if let PendingRequestTy::Routed { destination, .. } = &self.pending_requests[i].ty {
                 let routed_requests = broker_to_routed_requests
@@ -1058,31 +1079,66 @@ routing message to a random node so that:
         }
 
         for (destination, requests) in broker_to_routed_requests {
-            let node = self
-                .nodes
-                .iter_mut()
-                .find(|x| x.broker_id == destination)
-                .unwrap();
+            match destination {
+                Destination::Id(id) => {
+                    let node = self.nodes.iter_mut().find(|x| *x.broker_id == id).unwrap();
 
-            if node
-                .rack
-                .as_ref()
-                .map(|rack| rack != &self.rack)
-                .unwrap_or(false)
-            {
-                self.out_of_rack_requests.increment(1);
+                    if node
+                        .rack
+                        .as_ref()
+                        .map(|rack| rack != &self.rack)
+                        .unwrap_or(false)
+                    {
+                        self.out_of_rack_requests.increment(1);
+                    }
+
+                    node.get_connection(
+                        &self.connection_factory,
+                        &self.authorize_scram_over_mtls,
+                        &self.sasl_mechanism,
+                    )
+                    .await?
+                    .send(requests.requests)?;
+                }
+                Destination::ControlConnection => {
+                    self.get_control_connection()
+                        .await?
+                        .send(requests.requests)?;
+                }
             }
-
-            node.get_connection(
-                &self.connection_factory,
-                &self.authorize_scram_over_mtls,
-                &self.sasl_mechanism,
-            )
-            .await?
-            .send(requests.requests)?;
         }
 
         Ok(())
+    }
+
+    fn receive_responses_for_connection(
+        temp_responses_buffer: &mut Vec<Message>,
+        pending_requests: &mut VecDeque<PendingRequest>,
+        connection_destination: Destination,
+        connection: &mut SinkConnection,
+    ) {
+        temp_responses_buffer.clear();
+        if let Ok(()) = connection.try_recv_into(temp_responses_buffer) {
+            for response in temp_responses_buffer.drain(..) {
+                let mut response = Some(response);
+                for pending_request in pending_requests.iter_mut() {
+                    if let PendingRequestTy::Sent { destination, index } = &mut pending_request.ty {
+                        if *destination == connection_destination {
+                            // Store the PendingRequestTy::Received at the location of the next PendingRequestTy::Sent
+                            // All other PendingRequestTy::Sent need to be decremented, in order to determine the PendingRequestTy::Sent
+                            // to be used next time, and the time after that, and ...
+                            if *index == 0 {
+                                pending_request.ty = PendingRequestTy::Received {
+                                    response: response.take().unwrap(),
+                                };
+                            } else {
+                                *index -= 1;
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     /// Receive all responses from the outgoing connections, returns all responses that are ready to be returned.
@@ -1090,31 +1146,24 @@ routing message to a random node so that:
     fn recv_responses(&mut self) -> Result<Vec<Message>> {
         // Convert all received PendingRequestTy::Sent into PendingRequestTy::Received
         for node in &mut self.nodes {
+            let broker_id = node.broker_id;
             if let Some(connection) = node.get_connection_if_open() {
-                self.temp_responses_buffer.clear();
-                if let Ok(()) = connection.try_recv_into(&mut self.temp_responses_buffer) {
-                    for response in self.temp_responses_buffer.drain(..) {
-                        let mut response = Some(response);
-                        for pending_request in &mut self.pending_requests {
-                            if let PendingRequestTy::Sent { destination, index } =
-                                &mut pending_request.ty
-                            {
-                                if *destination == node.broker_id {
-                                    // Store the PendingRequestTy::Received at the location of the next PendingRequestTy::Sent
-                                    // All other PendingRequestTy::Sent need to be decremented, in order to determine the PendingRequestTy::Sent
-                                    // to be used next time, and the time after that, and ...
-                                    if *index == 0 {
-                                        pending_request.ty = PendingRequestTy::Received {
-                                            response: response.take().unwrap(),
-                                        };
-                                    } else {
-                                        *index -= 1;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+                Self::receive_responses_for_connection(
+                    &mut self.temp_responses_buffer,
+                    &mut self.pending_requests,
+                    Destination::Id(broker_id),
+                    connection,
+                );
+            }
+        }
+        if !self.auth_complete {
+            if let Some(connection) = &mut self.control_connection {
+                Self::receive_responses_for_connection(
+                    &mut self.temp_responses_buffer,
+                    &mut self.pending_requests,
+                    Destination::ControlConnection,
+                    connection,
+                );
             }
         }
 
@@ -1475,22 +1524,14 @@ routing message to a random node so that:
         Ok(())
     }
 
-    fn route_to_first_contact_node(&mut self, request: Message) {
-        let destination = if let Some(first_contact_node) = &self.first_contact_node {
-            self.nodes
-                .iter_mut()
-                .find(|node| node.kafka_address == *first_contact_node)
-                .unwrap()
-                .broker_id
-        } else {
-            let node = self.nodes.get_mut(0).unwrap();
-            self.first_contact_node = Some(node.kafka_address.clone());
-            node.broker_id
-        };
-
+    fn route_to_control_connection(&mut self, request: Message) {
+        assert!(
+            !self.auth_complete,
+            "route_to_control_connection cannot be called after auth is complete. Otherwise it would collide with control_send_receive"
+        );
         self.pending_requests.push_back(PendingRequest {
             ty: PendingRequestTy::Routed {
-                destination,
+                destination: Destination::ControlConnection,
                 request,
             },
             combine_responses: 1,
@@ -1511,7 +1552,7 @@ routing message to a random node so that:
 
         self.pending_requests.push_back(PendingRequest {
             ty: PendingRequestTy::Routed {
-                destination,
+                destination: Destination::Id(destination),
                 request,
             },
             combine_responses: 1,
@@ -1532,7 +1573,7 @@ routing message to a random node so that:
 
         self.pending_requests.push_back(PendingRequest {
             ty: PendingRequestTy::Routed {
-                destination,
+                destination: Destination::Id(destination),
                 request,
             },
             combine_responses: 1,
