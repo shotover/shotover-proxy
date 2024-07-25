@@ -314,6 +314,15 @@ enum PendingRequestTy {
     Received { response: Message },
 }
 
+impl PendingRequestTy {
+    fn routed(broker_id: BrokerId, request: Message) -> Self {
+        Self::Routed {
+            destination: broker_id,
+            request,
+        }
+    }
+}
+
 struct PendingRequest {
     ty: PendingRequestTy,
     /// Combine the next N responses into a single response
@@ -690,10 +699,7 @@ impl KafkaSinkCluster {
                 _ => {
                     let destination = self.nodes.choose(&mut self.rng).unwrap().broker_id;
                     self.pending_requests.push_back(PendingRequest {
-                        ty: PendingRequestTy::Routed {
-                            destination,
-                            request: message,
-                        },
+                        ty: PendingRequestTy::routed(destination, message),
                         combine_responses: 1,
                     });
                 }
@@ -742,10 +748,7 @@ routing message to a random node so that:
             };
 
             self.pending_requests.push_back(PendingRequest {
-                ty: PendingRequestTy::Routed {
-                    destination,
-                    request: message,
-                },
+                ty: PendingRequestTy::routed(destination, message),
                 combine_responses: 1,
             });
         }
@@ -856,10 +859,7 @@ routing message to a random node so that:
                 let destination = self.nodes.choose(&mut self.rng).unwrap().broker_id;
 
                 self.pending_requests.push_back(PendingRequest {
-                    ty: PendingRequestTy::Routed {
-                        destination,
-                        request: message,
-                    },
+                    ty: PendingRequestTy::routed(destination, message),
                     combine_responses: 1,
                 });
             } else if routing.len() == 1 {
@@ -876,10 +876,7 @@ routing message to a random node so that:
 
                 fetch.topics = topics;
                 self.pending_requests.push_back(PendingRequest {
-                    ty: PendingRequestTy::Routed {
-                        destination,
-                        request: message,
-                    },
+                    ty: PendingRequestTy::routed(destination, message),
                     combine_responses: 1,
                 });
             } else {
@@ -907,10 +904,7 @@ routing message to a random node so that:
                         fetch.topics = topics;
                     }
                     self.pending_requests.push_back(PendingRequest {
-                        ty: PendingRequestTy::Routed {
-                            destination,
-                            request,
-                        },
+                        ty: PendingRequestTy::routed(destination, request),
                         combine_responses,
                     });
                 }
@@ -1478,10 +1472,7 @@ routing message to a random node so that:
         };
 
         self.pending_requests.push_back(PendingRequest {
-            ty: PendingRequestTy::Routed {
-                destination,
-                request,
-            },
+            ty: PendingRequestTy::routed(destination, request),
             combine_responses: 1,
         });
     }
@@ -1499,10 +1490,7 @@ routing message to a random node so that:
         };
 
         self.pending_requests.push_back(PendingRequest {
-            ty: PendingRequestTy::Routed {
-                destination,
-                request,
-            },
+            ty: PendingRequestTy::routed(destination, request),
             combine_responses: 1,
         });
     }
@@ -1520,10 +1508,7 @@ routing message to a random node so that:
         };
 
         self.pending_requests.push_back(PendingRequest {
-            ty: PendingRequestTy::Routed {
-                destination,
-                request,
-            },
+            ty: PendingRequestTy::routed(destination, request),
             combine_responses: 1,
         });
     }
