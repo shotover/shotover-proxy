@@ -32,6 +32,7 @@ impl From<&Operand> for GenericValue {
 ///      + its a holdover from a long time ago
 ///          - shotover no longer attempts to provide a generic abstraction over multiple DB types
 /// * Replace cassandra-protocol with something simpler and faster.
+///
 /// Once that is done we can just include `Custom` directly as a variant within our own CassandraType enum.
 enum CustomOrStandardType {
     Custom(Option<Vec<u8>>),

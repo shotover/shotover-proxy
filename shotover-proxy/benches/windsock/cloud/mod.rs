@@ -174,7 +174,7 @@ impl Cloud for AwsCloud {
         {
             let mut futures =
                 FuturesUnordered::<Pin<Box<dyn Future<Output = Result<()>> + Send>>>::new();
-            for instance in &mut resources.bencher {
+            if let Some(instance) = &mut resources.bencher {
                 futures.push(Box::pin(instance.reinit()));
             }
             for instance in &mut resources.docker {

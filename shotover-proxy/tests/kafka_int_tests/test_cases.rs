@@ -422,6 +422,7 @@ pub async fn setup_basic_user_acls(connection: &KafkaConnectionBuilder, username
 
 /// Invariants:
 /// * The passed connection is a user setup with the ACL's of `setup_basic_user_acls`
+///
 /// Assertions:
 /// * Asserts that the user cannot perform the admin operation of creating new topics (not allowed by ACL)
 ///     + Asserts that the topic was not created as a result of the failed topic creation.
