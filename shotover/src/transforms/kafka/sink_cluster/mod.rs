@@ -1790,6 +1790,7 @@ routing message to a random node so that:
     }
 
     async fn add_node_if_new(&mut self, new_node: KafkaNode) {
+        // perform an initial check with read access to allow concurrent access in the vast majority of cases.
         let missing_from_shared = self
             .nodes_shared
             .read()
@@ -1797,7 +1798,14 @@ routing message to a random node so that:
             .iter()
             .all(|node| node.broker_id != new_node.broker_id);
         if missing_from_shared {
-            self.nodes_shared.write().await.push(new_node);
+            // Need to reperform check now that we have exclusive access to nodes_shared
+            let mut nodes_shared = self.nodes_shared.write().await;
+            let missing_from_shared = nodes_shared
+                .iter()
+                .all(|node| node.broker_id != new_node.broker_id);
+            if missing_from_shared {
+                nodes_shared.push(new_node);
+            }
         }
 
         // We need to run this every time, not just when missing_from_shared.
