@@ -121,9 +121,15 @@ impl TransformConfig for KafkaSinkClusterConfig {
             })?;
         shotover_nodes.sort_by_key(|x| x.broker_id);
 
+        let first_contact_points: Result<Vec<_>> = self
+            .first_contact_points
+            .iter()
+            .map(|x| KafkaAddress::from_str(x))
+            .collect();
+
         Ok(Box::new(KafkaSinkClusterBuilder::new(
             transform_context.chain_name,
-            self.first_contact_points.clone(),
+            first_contact_points?,
             &self.authorize_scram_over_mtls,
             shotover_nodes,
             rack,
@@ -144,7 +150,7 @@ impl TransformConfig for KafkaSinkClusterConfig {
 
 struct KafkaSinkClusterBuilder {
     // contains address and port
-    first_contact_points: Vec<String>,
+    first_contact_points: Vec<KafkaAddress>,
     shotover_nodes: Vec<ShotoverNode>,
     rack: StrBytes,
     connect_timeout: Duration,
@@ -163,7 +169,7 @@ impl KafkaSinkClusterBuilder {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         chain_name: String,
-        first_contact_points: Vec<String>,
+        first_contact_points: Vec<KafkaAddress>,
         authorize_scram_over_mtls: &Option<AuthorizeScramOverMtlsConfig>,
         shotover_nodes: Vec<ShotoverNode>,
         rack: StrBytes,
@@ -266,7 +272,7 @@ impl AtomicBrokerId {
 }
 
 struct KafkaSinkCluster {
-    first_contact_points: Vec<String>,
+    first_contact_points: Vec<KafkaAddress>,
     shotover_nodes: Vec<ShotoverNode>,
     rack: StrBytes,
     nodes: Vec<KafkaNode>,
@@ -314,6 +320,15 @@ enum PendingRequestTy {
     Received { response: Message },
 }
 
+impl PendingRequestTy {
+    fn routed(broker_id: BrokerId, request: Message) -> Self {
+        Self::Routed {
+            destination: broker_id,
+            request,
+        }
+    }
+}
+
 struct PendingRequest {
     ty: PendingRequestTy,
     /// Combine the next N responses into a single response
@@ -329,18 +344,11 @@ impl Transform for KafkaSinkCluster {
 
     async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Messages> {
         if self.nodes.is_empty() {
-            let nodes: Result<Vec<KafkaNode>> = self
+            self.nodes = self
                 .first_contact_points
                 .iter()
-                .map(|address| {
-                    Ok(KafkaNode::new(
-                        BrokerId(-1),
-                        KafkaAddress::from_str(address)?,
-                        None,
-                    ))
-                })
+                .map(|address| KafkaNode::new(BrokerId(-1), address.clone(), None))
                 .collect();
-            self.nodes = nodes?;
         }
 
         let mut responses = if requests_wrapper.requests.is_empty() {
@@ -690,10 +698,7 @@ impl KafkaSinkCluster {
                 _ => {
                     let destination = self.nodes.choose(&mut self.rng).unwrap().broker_id;
                     self.pending_requests.push_back(PendingRequest {
-                        ty: PendingRequestTy::Routed {
-                            destination,
-                            request: message,
-                        },
+                        ty: PendingRequestTy::routed(destination, message),
                         combine_responses: 1,
                     });
                 }
@@ -742,10 +747,7 @@ routing message to a random node so that:
             };
 
             self.pending_requests.push_back(PendingRequest {
-                ty: PendingRequestTy::Routed {
-                    destination,
-                    request: message,
-                },
+                ty: PendingRequestTy::routed(destination, message),
                 combine_responses: 1,
             });
         }
@@ -856,10 +858,7 @@ routing message to a random node so that:
                 let destination = self.nodes.choose(&mut self.rng).unwrap().broker_id;
 
                 self.pending_requests.push_back(PendingRequest {
-                    ty: PendingRequestTy::Routed {
-                        destination,
-                        request: message,
-                    },
+                    ty: PendingRequestTy::routed(destination, message),
                     combine_responses: 1,
                 });
             } else if routing.len() == 1 {
@@ -876,10 +875,7 @@ routing message to a random node so that:
 
                 fetch.topics = topics;
                 self.pending_requests.push_back(PendingRequest {
-                    ty: PendingRequestTy::Routed {
-                        destination,
-                        request: message,
-                    },
+                    ty: PendingRequestTy::routed(destination, message),
                     combine_responses: 1,
                 });
             } else {
@@ -907,10 +903,7 @@ routing message to a random node so that:
                         fetch.topics = topics;
                     }
                     self.pending_requests.push_back(PendingRequest {
-                        ty: PendingRequestTy::Routed {
-                            destination,
-                            request,
-                        },
+                        ty: PendingRequestTy::routed(destination, request),
                         combine_responses,
                     });
                 }
@@ -1478,10 +1471,7 @@ routing message to a random node so that:
         };
 
         self.pending_requests.push_back(PendingRequest {
-            ty: PendingRequestTy::Routed {
-                destination,
-                request,
-            },
+            ty: PendingRequestTy::routed(destination, request),
             combine_responses: 1,
         });
     }
@@ -1499,10 +1489,7 @@ routing message to a random node so that:
         };
 
         self.pending_requests.push_back(PendingRequest {
-            ty: PendingRequestTy::Routed {
-                destination,
-                request,
-            },
+            ty: PendingRequestTy::routed(destination, request),
             combine_responses: 1,
         });
     }
@@ -1520,10 +1507,7 @@ routing message to a random node so that:
         };
 
         self.pending_requests.push_back(PendingRequest {
-            ty: PendingRequestTy::Routed {
-                destination,
-                request,
-            },
+            ty: PendingRequestTy::routed(destination, request),
             combine_responses: 1,
         });
     }
