@@ -171,10 +171,9 @@ impl ConnectionFactory {
             delegation_token.token_id,
             delegation_token.hmac.to_string(),
             ChannelBinding::None,
-            "tokenauth=true".to_owned(),
-            String::new(),
         )
-        .map_err(|x| anyhow!("{x:?}"))?;
+        .map_err(|x| anyhow!("{x:?}"))?
+        .with_first_extensions("tokenauth=true".to_owned());
         connection.send(vec![Self::create_auth_request(scram.initial())?])?;
 
         // SCRAM server-first
