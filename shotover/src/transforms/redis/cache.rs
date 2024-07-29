@@ -24,6 +24,7 @@ use tracing::{error, warn};
 /// * The name of the hash is constructed from: the FROM component and partition + range keys as per the TableCacheSchema configuration
 /// * The name of the field in the hash is constructed from: the SELECT component and the WHERE component excluding the partition + range keys used in the hash name
 /// * The contents of field in the hash is: the raw bytes of a cassandra response from a SELECT
+///
 /// The cache is addressed in this way to allow all caches matching a specific partition + range keys to be deleted at once when invalidated via an INSERT or UPDATE
 ///
 /// e.g.

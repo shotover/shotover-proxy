@@ -56,7 +56,7 @@ impl KafkaConnectionBuilderCpp {
                 .client
                 .clone()
                 .set("message.timeout.ms", "5000")
-                .set("acks", &acks.to_string())
+                .set("acks", acks.to_string())
                 .create()
                 .unwrap(),
         }
