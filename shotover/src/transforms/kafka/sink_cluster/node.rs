@@ -282,7 +282,6 @@ pub struct KafkaNode {
     pub broker_id: BrokerId,
     pub rack: Option<StrBytes>,
     pub kafka_address: KafkaAddress,
-    #[allow(unused)]
     pub state: Arc<AtomicNodeState>,
 }
 
