@@ -8,8 +8,8 @@ use crate::tls::TlsConnector;
 use crate::transforms::kafka::sink_cluster::scram_over_mtls::OriginalScramState;
 use crate::transforms::kafka::sink_cluster::SASL_SCRAM_MECHANISMS;
 use anyhow::{anyhow, Context, Result};
+use atomic_enum::atomic_enum;
 use bytes::Bytes;
-use derivative::Derivative;
 use kafka_protocol::messages::{ApiKey, BrokerId, RequestHeader, SaslAuthenticateRequest};
 use kafka_protocol::protocol::{Builder, StrBytes};
 use kafka_protocol::ResponseError;
@@ -281,25 +281,13 @@ impl KafkaAddress {
     }
 }
 
-#[derive(Derivative)]
-#[derivative(Debug)]
+#[derive(Debug, Clone)]
 pub struct KafkaNode {
     pub broker_id: BrokerId,
     pub rack: Option<StrBytes>,
     pub kafka_address: KafkaAddress,
-    #[derivative(Debug = "ignore")]
-    connection: Option<SinkConnection>,
-}
-
-impl Clone for KafkaNode {
-    fn clone(&self) -> Self {
-        Self {
-            broker_id: self.broker_id,
-            rack: self.rack.clone(),
-            kafka_address: self.kafka_address.clone(),
-            connection: None,
-        }
-    }
+    #[allow(unused)]
+    pub state: Box<NodeState>,
 }
 
 impl KafkaNode {
@@ -308,32 +296,13 @@ impl KafkaNode {
             broker_id,
             kafka_address,
             rack,
-            connection: None,
+            state: Box::new(NodeState::Up),
         }
     }
+}
 
-    pub async fn get_connection(
-        &mut self,
-        connection_factory: &ConnectionFactory,
-        authorize_scram_over_mtls: &Option<AuthorizeScramOverMtls>,
-        sasl_mechanism: &Option<String>,
-    ) -> Result<&mut SinkConnection> {
-        if self.connection.is_none() {
-            self.connection = Some(
-                connection_factory
-                    .create_connection(
-                        &self.kafka_address,
-                        authorize_scram_over_mtls,
-                        sasl_mechanism,
-                    )
-                    .await
-                    .context("Failed to create a new connection")?,
-            );
-        }
-        Ok(self.connection.as_mut().unwrap())
-    }
-
-    pub fn get_connection_if_open(&mut self) -> Option<&mut SinkConnection> {
-        self.connection.as_mut()
-    }
+#[atomic_enum]
+pub enum NodeState {
+    Up,
+    Down,
 }
