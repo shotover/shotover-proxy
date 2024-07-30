@@ -3654,16 +3654,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rand_distr"
-version = "0.4.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "32cb0b9bc82b0a0876c2dd994a7e7a2683d3e7390ca40e6886785ef0c7e3ee31"
-dependencies = [
- "num-traits",
- "rand",
-]
-
-[[package]]
 name = "rand_pcg"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4669,12 +4659,11 @@ dependencies = [
  "metrics",
  "metrics-exporter-prometheus",
  "nonzero_ext",
- "num",
+ "num-bigint",
  "ordered-float",
  "pretty-hex",
  "pretty_assertions",
  "rand",
- "rand_distr",
  "redis-protocol",
  "rustls 0.23.12",
  "rustls-pemfile 2.1.2",
@@ -4723,7 +4712,6 @@ dependencies = [
  "pretty_assertions",
  "prometheus-parse",
  "rand",
- "rand_distr",
  "redis",
  "redis-protocol",
  "regex",

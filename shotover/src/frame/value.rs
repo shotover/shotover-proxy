@@ -6,7 +6,7 @@ mod redis;
 
 use bigdecimal::BigDecimal;
 use bytes::Bytes;
-use num::BigInt;
+use num_bigint::BigInt;
 use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
