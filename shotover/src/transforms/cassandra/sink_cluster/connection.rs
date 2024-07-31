@@ -15,8 +15,6 @@ use fnv::FnvBuildHasher;
 pub struct CassandraConnection {
     connection: SinkConnection,
     pending_request_stream_ids: HashSet<i16, FnvBuildHasher>,
-    // Does not neccesarily equal pending_request_stream_ids.len() since the client could reuse stream_ids
-    pending_request_count: usize,
 }
 
 impl CassandraConnection {
@@ -24,12 +22,10 @@ impl CassandraConnection {
         CassandraConnection {
             connection,
             pending_request_stream_ids: Default::default(),
-            pending_request_count: 0,
         }
     }
 
     pub fn send(&mut self, requests: Vec<Message>) -> Result<(), ConnectionError> {
-        self.pending_request_count += requests.len();
         self.pending_request_stream_ids
             .extend(requests.iter().map(|x| x.stream_id().unwrap()));
         self.connection.send(requests)
@@ -56,12 +52,14 @@ impl CassandraConnection {
         responses: &mut Vec<Message>,
         version: Version,
     ) -> Result<(), ()> {
-        if self.pending_request_count == 0 {
+        // connection.pending_requests_count() does not neccesarily equal pending_request_stream_ids.len()
+        // since the client could reuse stream_ids
+        if self.connection.pending_requests_count() == 0 {
             // There are no pending responses to await but we still need to check for any pending events.
             return self.try_recv(responses, version);
         }
 
-        while self.pending_request_count > 0 {
+        while self.connection.pending_requests_count() > 0 {
             let previous_len = responses.len();
             let recv_result = self.connection.recv_into(responses).await;
             // we need to process responses even if there was an error
@@ -82,7 +80,6 @@ impl CassandraConnection {
                 if !self.pending_request_stream_ids.remove(&stream_id) {
                     tracing::warn!("received response to stream id {stream_id} but that stream id was never sent or was already received");
                 }
-                self.pending_request_count -= 1;
             }
         }
     }
