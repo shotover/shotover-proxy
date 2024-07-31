@@ -78,7 +78,7 @@ csv = { workspace = true, optional = true }
 hex = { workspace = true, optional = true }
 async-trait.workspace = true
 typetag.workspace = true
-tokio-tungstenite = "0.21.0"
+tokio-tungstenite = "0.23.0"
 
 # Error handling
 thiserror = "1.0"
