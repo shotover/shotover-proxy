@@ -88,6 +88,9 @@ impl SinkConnection {
         self.dummy_response_inserter.pending_requests_count()
     }
 
+    /// This method must only be called when the read or write tasks have closed their `in_` or `out_` channel.
+    /// In this case it is gauranteed that the `connection_closed_` channel will
+    /// have an error sent to it before the closing of `in_` or `out_`.
     fn set_get_error(&mut self) -> ConnectionError {
         self.error = Some(self.connection_closed_rx.try_recv().unwrap());
         self.error.clone().unwrap()
@@ -245,7 +248,7 @@ fn spawn_read_write_tasks<
     rx: R,
     tx: W,
     in_tx: mpsc::Sender<Messages>,
-    out_rx: UnboundedReceiver<Messages>,
+    mut out_rx: UnboundedReceiver<Messages>,
     out_tx: UnboundedSender<Messages>,
     force_run_chain: Arc<Notify>,
     connection_closed_tx: mpsc::Sender<ConnectionError>,
@@ -267,16 +270,16 @@ fn spawn_read_write_tasks<
     // 2. The reader task detects that in_rx has dropped and terminates, the last out_tx instance is dropped
     // 3. The writer task detects that the last out_tx is dropped by out_rx returning None and terminates
     //
-    // Client closes connection and then shotover tries to receive:
+    // Destination closes connection and then shotover tries to receive:
     // 1.   The reader task detects that the client has closed the connection via reader returning None and terminates,
-    // 1.1. in_tx and the first out_tx are dropped
-    // 1.2. connect_closed_tx is sent `ConnectionError::OtherSideClosed`
-    // 2.   The `Connection::recv/recv_try` detects that in_tx is dropped by in_rx returning None and returns the ConnectionError::OtherSideClosed received from connect_closed_rx.
+    // 1.1. connection_closed_tx is sent `ConnectionError::OtherSideClosed`
+    // 1.2. in_tx and the first out_tx are dropped
+    // 2.   The `Connection::recv/recv_try` detects that in_tx is dropped by in_rx returning None and returns the ConnectionError::OtherSideClosed received from connection_closed_rx.
     // 2.1. `Connection::recv/recv_try` prevents any future sends or receives by storing the ConnectionError
     // 3.   Once the user handles the error by dropping the Connection out_tx is dropped, the writer task detects this by out_rx returning None causing the task to terminate.
     // 3.1. The writer task could also close early by detecting that the client has closed the connection via writer returning BrokenPipe
     //
-    // Client closes connection and then shotover tries to send:
+    // Destination closes connection and then shotover tries to send:
     // if a send or recv has not been attempted yet the send will appear to have succeeded.
     // if a recv was already attempted, then the logic is the same as the above example.
     // if a send was already attempted, then the following logic occurs:
@@ -293,7 +296,7 @@ fn spawn_read_write_tasks<
         async move {
             match reader_task::<C, _>(
                 reader,
-                in_tx,
+                &in_tx,
                 out_tx,
                 force_run_chain,
                 request_pending2,
@@ -304,6 +307,10 @@ fn spawn_read_write_tasks<
                 Ok(()) => {}
                 Err(err) => {
                     connection_closed_tx2.try_send(err).ok();
+                    // Drop in_tx only after sending the error message.
+                    // This ensures the handle side logic will always have an
+                    // error available to consult as to why the `in_` channel was closed.
+                    std::mem::drop(in_tx);
                 }
             }
         }
@@ -312,10 +319,14 @@ fn spawn_read_write_tasks<
 
     tokio::spawn(
         async move {
-            match writer_task::<C, _>(writer, out_rx, request_pending).await {
+            match writer_task::<C, _>(writer, &mut out_rx, request_pending).await {
                 Ok(()) => {}
                 Err(err) => {
                     connection_closed_tx.try_send(err).ok();
+                    // Drop out_rx only after sending the error message.
+                    // This ensures the handle side logic will always have an
+                    // error available to consult as to why the `out_` channel was closed.
+                    std::mem::drop(out_rx);
                 }
             }
         }
@@ -325,7 +336,7 @@ fn spawn_read_write_tasks<
 
 async fn reader_task<C: CodecBuilder + 'static, R: AsyncRead + Unpin + Send + 'static>(
     mut reader: FramedRead<R, <C as CodecBuilder>::Decoder>,
-    in_tx: mpsc::Sender<Messages>,
+    in_tx: &mpsc::Sender<Messages>,
     out_tx: UnboundedSender<Messages>,
     force_run_chain: Arc<Notify>,
     request_pending: Arc<RequestPending>,
@@ -400,7 +411,7 @@ async fn sleep_for_duration_or_forever(duration: Option<Duration>) {
 
 async fn writer_task<C: CodecBuilder + 'static, W: AsyncWrite + Unpin + Send + 'static>(
     mut writer: FramedWrite<W, <C as CodecBuilder>::Encoder>,
-    mut out_rx: UnboundedReceiver<Messages>,
+    out_rx: &mut UnboundedReceiver<Messages>,
     request_pending: Arc<RequestPending>,
 ) -> Result<(), ConnectionError> {
     loop {
