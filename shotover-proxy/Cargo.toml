@@ -38,7 +38,6 @@ hex-literal.workspace = true
 cassandra-protocol.workspace = true
 bytes.workspace = true
 rand.workspace = true
-rand_distr.workspace = true
 async-trait.workspace = true
 tracing-subscriber.workspace = true
 tracing-appender.workspace = true
