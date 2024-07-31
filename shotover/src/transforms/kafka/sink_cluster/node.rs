@@ -11,7 +11,7 @@ use anyhow::{anyhow, Context, Result};
 use atomic_enum::atomic_enum;
 use bytes::Bytes;
 use kafka_protocol::messages::{ApiKey, BrokerId, RequestHeader, SaslAuthenticateRequest};
-use kafka_protocol::protocol::{Builder, StrBytes};
+use kafka_protocol::protocol::StrBytes;
 use kafka_protocol::ResponseError;
 use sasl::client::mechanisms::Scram;
 use sasl::client::Mechanism;
@@ -174,7 +174,7 @@ impl ConnectionFactory {
         )
         .map_err(|x| anyhow!("{x:?}"))?
         .with_first_extensions("tokenauth=true".to_owned());
-        connection.send(vec![Self::create_auth_request(scram.initial())?])?;
+        connection.send(vec![Self::create_auth_request(scram.initial())])?;
 
         // SCRAM server-first
         let first_scram_response = connection.recv().await?.pop().unwrap();
@@ -183,7 +183,7 @@ impl ConnectionFactory {
 
         // SCRAM client-final
         let final_scram_request = scram.response(&first_scram_response)?;
-        connection.send(vec![Self::create_auth_request(final_scram_request)?])?;
+        connection.send(vec![Self::create_auth_request(final_scram_request)])?;
 
         // SCRAM server-final
         let final_scram_response = connection.recv().await?.pop().unwrap();
@@ -211,19 +211,15 @@ impl ConnectionFactory {
             .context("Unexpected response to replayed SASL requests")
     }
 
-    fn create_auth_request(bytes: Vec<u8>) -> Result<Message> {
-        Ok(Message::from_frame(Frame::Kafka(KafkaFrame::Request {
-            header: RequestHeader::builder()
-                .request_api_key(ApiKey::SaslAuthenticateKey as i16)
-                .request_api_version(2)
-                .build()
-                .unwrap(),
+    fn create_auth_request(bytes: Vec<u8>) -> Message {
+        Message::from_frame(Frame::Kafka(KafkaFrame::Request {
+            header: RequestHeader::default()
+                .with_request_api_key(ApiKey::SaslAuthenticateKey as i16)
+                .with_request_api_version(2),
             body: RequestBody::SaslAuthenticate(
-                SaslAuthenticateRequest::builder()
-                    .auth_bytes(bytes.into())
-                    .build()?,
+                SaslAuthenticateRequest::default().with_auth_bytes(bytes.into()),
             ),
-        })))
+        }))
     }
 
     fn process_auth_response(mut response: Message) -> Result<Bytes> {
