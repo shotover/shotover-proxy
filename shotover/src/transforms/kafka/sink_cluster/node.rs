@@ -283,7 +283,7 @@ pub struct KafkaNode {
     pub rack: Option<StrBytes>,
     pub kafka_address: KafkaAddress,
     #[allow(unused)]
-    pub state: Box<NodeState>,
+    pub state: Arc<AtomicNodeState>,
 }
 
 impl KafkaNode {
@@ -292,7 +292,7 @@ impl KafkaNode {
             broker_id,
             kafka_address,
             rack,
-            state: Box::new(NodeState::Up),
+            state: Arc::new(AtomicNodeState::new(NodeState::Up)),
         }
     }
 }
