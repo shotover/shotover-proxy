@@ -3,7 +3,10 @@ use anyhow::{Context, Result};
 use fnv::FnvBuildHasher;
 use kafka_protocol::{messages::BrokerId, protocol::StrBytes};
 use metrics::Counter;
-use rand::{rngs::SmallRng, seq::SliceRandom};
+use rand::{
+    rngs::SmallRng,
+    seq::{IteratorRandom, SliceRandom},
+};
 use std::{collections::HashMap, sync::atomic::Ordering};
 
 use super::{
@@ -76,10 +79,15 @@ impl Connections {
             let address = match &node {
                 Some(node) => &node.kafka_address,
                 None => {
-                    // TODO: filter out down nodes
-                    //       if no up nodes, return error.
-                    //       do it in this PR.
-                    self.control_connection_address = contact_points.choose(rng).cloned();
+                    // If we have a node in the nodes list that is up use its address.
+                    // Otherwise fall back to the first contact points
+                    let address_from_node = nodes
+                        .iter()
+                        .filter(|x| matches!(x.state.load(Ordering::Relaxed), NodeState::Up))
+                        .choose(rng)
+                        .map(|x| x.kafka_address.clone());
+                    self.control_connection_address =
+                        address_from_node.or_else(|| contact_points.iter().choose(rng).cloned());
                     self.control_connection_address.as_ref().unwrap()
                 }
             };

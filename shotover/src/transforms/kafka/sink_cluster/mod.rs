@@ -1080,8 +1080,7 @@ routing message to a random node so that:
                 .await?
                 .send(requests.requests)
             {
-                // Attempt to reopen connection for the side effect of setting node state to down.
-                // Dont actually use the connection though since we cant resend a failed a request.
+                // Dont retry the send on the new connection since we cant tell if the broker received the request or not.
                 self.connections
                     .handle_connection_error(
                         &mut self.rng,
@@ -1106,7 +1105,7 @@ routing message to a random node so that:
     /// For response ordering reasons, some responses will remain in self.pending_requests until other responses are received.
     async fn recv_responses(&mut self) -> Result<Vec<Message>> {
         // Convert all received PendingRequestTy::Sent into PendingRequestTy::Received
-        let mut connections_to_reopen = vec![];
+        let mut connection_errors = vec![];
         for (connection_destination, connection) in &mut self.connections.connections {
             self.temp_responses_buffer.clear();
             match connection.try_recv_into(&mut self.temp_responses_buffer) {
@@ -1133,15 +1132,11 @@ routing message to a random node so that:
                         }
                     }
                 }
-                Err(err) => connections_to_reopen.push((*connection_destination, err)),
+                Err(err) => connection_errors.push((*connection_destination, err)),
             }
         }
 
-        for (destination, err) in connections_to_reopen {
-            // Attempt to reopen connection for the side effects of:
-            // * setting node state to down
-            // * removing connections to down nodes so we dont continue attempting to receive from it.
-            // We do not attempt to receive from the node again, since if there actually were any pending responses we would need to give up.
+        for (destination, err) in connection_errors {
             self.connections
                 .handle_connection_error(
                     &mut self.rng,
