@@ -1,5 +1,4 @@
-use super::TransformContextBuilder;
-use crate::message::Messages;
+use super::{Responses, TransformContextBuilder};
 use crate::transforms::{Transform, TransformBuilder, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
@@ -29,12 +28,12 @@ impl Transform for Loopback {
         NAME
     }
 
-    async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Messages> {
+    async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Responses> {
         // This transform ultimately doesnt make a lot of sense semantically
         // but make a vague attempt to follow transform invariants anyway.
         for request in &mut requests_wrapper.requests {
             request.set_request_id(request.id());
         }
-        Ok(requests_wrapper.requests)
+        Ok(Responses::return_to_client(requests_wrapper.requests))
     }
 }

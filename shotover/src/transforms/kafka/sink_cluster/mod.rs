@@ -1,13 +1,13 @@
 use crate::frame::kafka::{KafkaFrame, RequestBody, ResponseBody};
 use crate::frame::{Frame, MessageType};
-use crate::message::{Message, MessageIdMap, Messages};
+use crate::message::{Message, MessageIdMap};
 use crate::tls::{TlsConnector, TlsConnectorConfig};
 use crate::transforms::{
-    DownChainProtocol, Transform, TransformBuilder, TransformContextBuilder, UpChainProtocol,
-    Wrapper,
+    DownChainProtocol, Responses, Transform, TransformBuilder, TransformContextBuilder,
+    UpChainProtocol, Wrapper,
 };
 use crate::transforms::{TransformConfig, TransformContextConfig};
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use connections::{Connections, Destination};
 use dashmap::DashMap;
@@ -339,7 +339,7 @@ impl Transform for KafkaSinkCluster {
         NAME
     }
 
-    async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Messages> {
+    async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Responses> {
         let mut responses = if requests_wrapper.requests.is_empty() {
             // there are no requests, so no point sending any, but we should check for any responses without awaiting
             self.recv_responses()?
@@ -368,8 +368,11 @@ impl Transform for KafkaSinkCluster {
             self.recv_responses()?
         };
 
-        self.process_responses(&mut responses).await?;
-        Ok(responses)
+        let close_connection = self.process_responses(&mut responses).await?;
+        Ok(Responses {
+            responses,
+            close_connection,
+        })
     }
 }
 
@@ -1029,24 +1032,23 @@ routing message to a random node so that:
         // Convert all received PendingRequestTy::Sent into PendingRequestTy::Received
         for (connection_destination, connection) in &mut self.connections.connections {
             self.temp_responses_buffer.clear();
-            if let Ok(()) = connection.try_recv_into(&mut self.temp_responses_buffer) {
-                for response in self.temp_responses_buffer.drain(..) {
-                    let mut response = Some(response);
-                    for pending_request in &mut self.pending_requests {
-                        if let PendingRequestTy::Sent { destination, index } =
-                            &mut pending_request.ty
-                        {
-                            if destination == connection_destination {
-                                // Store the PendingRequestTy::Received at the location of the next PendingRequestTy::Sent
-                                // All other PendingRequestTy::Sent need to be decremented, in order to determine the PendingRequestTy::Sent
-                                // to be used next time, and the time after that, and ...
-                                if *index == 0 {
-                                    pending_request.ty = PendingRequestTy::Received {
-                                        response: response.take().unwrap(),
-                                    };
-                                } else {
-                                    *index -= 1;
-                                }
+            connection
+                .try_recv_into(&mut self.temp_responses_buffer)
+                .with_context(|| format!("Failed to receive from {connection_destination:?}"))?;
+            for response in self.temp_responses_buffer.drain(..) {
+                let mut response = Some(response);
+                for pending_request in &mut self.pending_requests {
+                    if let PendingRequestTy::Sent { destination, index } = &mut pending_request.ty {
+                        if destination == connection_destination {
+                            // Store the PendingRequestTy::Received at the location of the next PendingRequestTy::Sent
+                            // All other PendingRequestTy::Sent need to be decremented, in order to determine the PendingRequestTy::Sent
+                            // to be used next time, and the time after that, and ...
+                            if *index == 0 {
+                                pending_request.ty = PendingRequestTy::Received {
+                                    response: response.take().unwrap(),
+                                };
+                            } else {
+                                *index -= 1;
                             }
                         }
                     }
@@ -1154,7 +1156,8 @@ routing message to a random node so that:
         Ok(base)
     }
 
-    async fn process_responses(&mut self, responses: &mut [Message]) -> Result<()> {
+    async fn process_responses(&mut self, responses: &mut [Message]) -> Result<bool> {
+        let mut close_connection = false;
         for response in responses.iter_mut() {
             let request_id = response.request_id().unwrap();
             match response.frame() {
@@ -1200,6 +1203,9 @@ routing message to a random node so that:
                     body: ResponseBody::SaslAuthenticate(authenticate),
                     ..
                 })) => {
+                    if authenticate.error_code != 0 {
+                        close_connection = true;
+                    }
                     self.process_sasl_authenticate(authenticate)?;
                 }
                 Some(Frame::Kafka(KafkaFrame::Response {
@@ -1360,7 +1366,7 @@ routing message to a random node so that:
             }
         }
 
-        Ok(())
+        Ok(close_connection)
     }
 
     /// This method must be called for every response to a request that was routed via `route_to_coordinator`

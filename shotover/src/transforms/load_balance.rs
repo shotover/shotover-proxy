@@ -1,6 +1,7 @@
-use super::{DownChainProtocol, TransformContextBuilder, TransformContextConfig, UpChainProtocol};
+use super::{
+    DownChainProtocol, Responses, TransformContextBuilder, TransformContextConfig, UpChainProtocol,
+};
 use crate::config::chain::TransformChainConfig;
-use crate::message::Messages;
 use crate::transforms::chain::{BufferedChain, TransformChainBuilder};
 use crate::transforms::{Transform, TransformBuilder, TransformConfig, Wrapper};
 use anyhow::Result;
@@ -85,7 +86,7 @@ impl Transform for ConnectionBalanceAndPool {
         NAME
     }
 
-    async fn transform<'a>(&'a mut self, requests_wrapper: Wrapper<'a>) -> Result<Messages> {
+    async fn transform<'a>(&'a mut self, requests_wrapper: Wrapper<'a>) -> Result<Responses> {
         if self.active_connection.is_none() {
             let mut all_connections = self.all_connections.lock().await;
             if all_connections.len() < self.max_connections {

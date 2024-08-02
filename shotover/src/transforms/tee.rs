@@ -1,7 +1,9 @@
-use super::{DownChainProtocol, TransformContextBuilder, TransformContextConfig, UpChainProtocol};
+use super::{
+    DownChainProtocol, Responses, TransformContextBuilder, TransformContextConfig, UpChainProtocol,
+};
 use crate::config::chain::TransformChainConfig;
 use crate::http::HttpServerError;
-use crate::message::{Message, MessageIdMap, Messages};
+use crate::message::{Message, MessageIdMap};
 use crate::transforms::chain::{BufferedChain, TransformChainBuilder};
 use crate::transforms::{Transform, TransformBuilder, TransformConfig, Wrapper};
 use anyhow::{anyhow, Context, Result};
@@ -243,7 +245,7 @@ impl Transform for Tee {
         NAME
     }
 
-    async fn transform<'a>(&'a mut self, requests_wrapper: Wrapper<'a>) -> Result<Messages> {
+    async fn transform<'a>(&'a mut self, requests_wrapper: Wrapper<'a>) -> Result<Responses> {
         match &mut self.behavior {
             ConsistencyBehavior::Ignore => self.ignore_behaviour(requests_wrapper).await,
             ConsistencyBehavior::FailOnMismatch => {
@@ -348,19 +350,19 @@ impl IncomingResponses {
     /// Responses with no corresponding request are immediately returned or dropped as they will not have any pair.
     fn new_responses<F>(
         &mut self,
-        tee_responses: Vec<Message>,
-        chain_responses: Vec<Message>,
+        tee_responses: Responses,
+        chain_responses: Responses,
         keep: ResultSource,
         mut on_mismatch: F,
-    ) -> Vec<Message>
+    ) -> Responses
     where
         F: FnMut(&mut Message, Message),
     {
         let mut result = vec![];
         match self {
             IncomingResponses::InOrder { tee, chain } => {
-                tee.extend(tee_responses);
-                chain.extend(chain_responses);
+                tee.extend(tee_responses.responses);
+                chain.extend(chain_responses.responses);
 
                 // process all responses where we have received from tee and chain
                 while !tee.is_empty() && !chain.is_empty() {
@@ -415,7 +417,7 @@ impl IncomingResponses {
                 chain_by_request_id,
             } => {
                 // Handle all incoming tee responses that have a matching stored chain response
-                for mut tee_response in tee_responses {
+                for mut tee_response in tee_responses.responses {
                     if let Some(request_id) = tee_response.request_id() {
                         // a requested response, compare against the other chain before sending it on.
                         if let Some(mut chain_response) = chain_by_request_id.remove(&request_id) {
@@ -445,7 +447,7 @@ impl IncomingResponses {
                 }
 
                 // Handle all incoming chain responses that have a matching tee response which was just added in the previous block
-                for mut chain_response in chain_responses {
+                for mut chain_response in chain_responses.responses {
                     if let Some(request_id) = chain_response.request_id() {
                         // a requested response, compare against the other chain before sending it on.
                         if let Some(mut tee_response) = tee_by_request_id.remove(&request_id) {
@@ -475,12 +477,21 @@ impl IncomingResponses {
                 }
             }
         }
-        result
+        Responses {
+            responses: result,
+            close_connection: match keep {
+                ResultSource::RegularChain => chain_responses.close_connection,
+                ResultSource::TeeChain => tee_responses.close_connection,
+            },
+        }
     }
 }
 
 impl Tee {
-    async fn ignore_behaviour<'a>(&'a mut self, requests_wrapper: Wrapper<'a>) -> Result<Messages> {
+    async fn ignore_behaviour<'a>(
+        &'a mut self,
+        requests_wrapper: Wrapper<'a>,
+    ) -> Result<Responses> {
         let result_source: ResultSource = self.result_source.load(Ordering::Relaxed);
         match result_source {
             ResultSource::RegularChain => {

@@ -1,8 +1,9 @@
 use crate::frame::Frame;
 use crate::frame::MessageType;
 use crate::frame::RedisFrame;
-use crate::message::{MessageIdMap, Messages};
+use crate::message::MessageIdMap;
 use crate::transforms::DownChainProtocol;
+use crate::transforms::Responses;
 use crate::transforms::TransformContextBuilder;
 use crate::transforms::TransformContextConfig;
 use crate::transforms::UpChainProtocol;
@@ -76,7 +77,7 @@ impl Transform for RedisClusterPortsRewrite {
         NAME
     }
 
-    async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Messages> {
+    async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Responses> {
         for message in requests_wrapper.requests.iter_mut() {
             let message_id = message.id();
             if let Some(frame) = message.frame() {
@@ -94,7 +95,7 @@ impl Transform for RedisClusterPortsRewrite {
 
         let mut responses = requests_wrapper.call_next_transform().await?;
 
-        for response in &mut responses {
+        for response in &mut responses.responses {
             if let Some(request_id) = response.request_id() {
                 match self.request_type.remove(&request_id) {
                     // Rewrite the ports in the cluster slots responses

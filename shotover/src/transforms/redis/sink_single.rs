@@ -1,11 +1,10 @@
 use crate::codec::{CodecBuilder, Direction};
 use crate::connection::SinkConnection;
 use crate::frame::{Frame, MessageType, RedisFrame};
-use crate::message::Messages;
 use crate::tls::{TlsConnector, TlsConnectorConfig};
 use crate::transforms::{
-    DownChainProtocol, Transform, TransformBuilder, TransformConfig, TransformContextBuilder,
-    UpChainProtocol, Wrapper,
+    DownChainProtocol, Responses, Transform, TransformBuilder, TransformConfig,
+    TransformContextBuilder, UpChainProtocol, Wrapper,
 };
 use crate::{codec::redis::RedisCodecBuilder, transforms::TransformContextConfig};
 use anyhow::Result;
@@ -114,7 +113,7 @@ impl Transform for RedisSinkSingle {
         NAME
     }
 
-    async fn transform<'a>(&'a mut self, requests_wrapper: Wrapper<'a>) -> Result<Messages> {
+    async fn transform<'a>(&'a mut self, requests_wrapper: Wrapper<'a>) -> Result<Responses> {
         if self.connection.is_none() {
             let codec = RedisCodecBuilder::new(Direction::Sink, "RedisSinkSingle".to_owned());
             self.connection = Some(
@@ -172,6 +171,6 @@ impl Transform for RedisSinkSingle {
                 }
             }
         }
-        Ok(responses)
+        Ok(Responses::return_to_client(responses))
     }
 }

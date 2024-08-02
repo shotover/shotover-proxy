@@ -1,6 +1,8 @@
-use super::{DownChainProtocol, TransformContextBuilder, TransformContextConfig, UpChainProtocol};
+use super::{
+    DownChainProtocol, Responses, TransformContextBuilder, TransformContextConfig, UpChainProtocol,
+};
 use crate::frame::MessageType;
-use crate::message::{Message, MessageIdMap, Messages};
+use crate::message::{Message, MessageIdMap};
 use crate::transforms::{Transform, TransformBuilder, TransformConfig, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
@@ -81,7 +83,7 @@ impl Transform for RequestThrottling {
         NAME
     }
 
-    async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Messages> {
+    async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Responses> {
         for request in &mut requests_wrapper.requests {
             if let Ok(cell_count) = request.cell_count() {
                 let throttle = match self.limiter.check_n(cell_count) {
@@ -107,7 +109,7 @@ impl Transform for RequestThrottling {
         let mut responses = requests_wrapper.call_next_transform().await?;
 
         // replace dummy responses with throttle messages
-        for response in responses.iter_mut() {
+        for response in responses.responses.iter_mut() {
             if let Some(request_id) = response.request_id() {
                 if let Some(error_response) = self.throttled_requests.remove(&request_id) {
                     *response = error_response;

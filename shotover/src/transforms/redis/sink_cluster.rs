@@ -1,14 +1,14 @@
 use crate::codec::redis::RedisCodecBuilder;
 use crate::codec::{CodecBuilder, Direction};
 use crate::frame::{Frame, MessageType, RedisFrame};
-use crate::message::{Message, Messages};
+use crate::message::Message;
 use crate::tls::TlsConnectorConfig;
 use crate::transforms::redis::RedisError;
 use crate::transforms::redis::TransformError;
 use crate::transforms::util::cluster_connection_pool::{Authenticator, ConnectionPool};
 use crate::transforms::util::{Request, Response};
 use crate::transforms::{
-    DownChainProtocol, ResponseFuture, Transform, TransformBuilder, TransformConfig,
+    DownChainProtocol, ResponseFuture, Responses, Transform, TransformBuilder, TransformConfig,
     TransformContextBuilder, TransformContextConfig, UpChainProtocol, Wrapper,
 };
 use anyhow::{anyhow, bail, ensure, Context, Result};
@@ -1017,7 +1017,7 @@ impl Transform for RedisSinkCluster {
         NAME
     }
 
-    async fn transform<'a>(&'a mut self, requests_wrapper: Wrapper<'a>) -> Result<Messages> {
+    async fn transform<'a>(&'a mut self, requests_wrapper: Wrapper<'a>) -> Result<Responses> {
         if !self.has_run_init {
             self.topology = (*self.shared_topology.read().await).clone();
             if self.topology.channels.is_empty() {
@@ -1107,7 +1107,7 @@ impl Transform for RedisSinkCluster {
                 _ => response_buffer.push(response),
             }
         }
-        Ok(response_buffer)
+        Ok(Responses::return_to_client(response_buffer))
     }
 }
 

@@ -20,7 +20,7 @@ use shotover::transforms::query_counter::QueryCounter;
 use shotover::transforms::redis::cluster_ports_rewrite::RedisClusterPortsRewrite;
 use shotover::transforms::throttling::RequestThrottlingConfig;
 use shotover::transforms::{
-    TransformConfig, TransformContextBuilder, TransformContextConfig, Wrapper,
+    Responses, TransformConfig, TransformContextBuilder, TransformContextConfig, Wrapper,
 };
 
 fn criterion_benchmark(c: &mut Criterion) {
@@ -370,7 +370,7 @@ impl<'a> BenchInput<'a> {
         }
     }
 
-    async fn bench(mut self) -> (Vec<Message>, TransformChain) {
+    async fn bench(mut self) -> (Responses, TransformChain) {
         // Return both the chain itself and the response to avoid measuring the time to drop the values in the benchmark
         (
             self.chain.process_request(self.wrapper).await.unwrap(),

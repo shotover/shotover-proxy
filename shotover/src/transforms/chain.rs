@@ -1,4 +1,4 @@
-use super::TransformContextBuilder;
+use super::{Responses, TransformContextBuilder};
 use crate::message::Messages;
 use crate::transforms::{Transform, TransformBuilder, Wrapper};
 use anyhow::{anyhow, Result};
@@ -14,16 +14,16 @@ type InnerChain = Vec<TransformAndMetrics>;
 #[derive(Debug)]
 pub struct BufferedChainMessages {
     pub local_addr: SocketAddr,
-    pub messages: Messages,
+    pub requests: Messages,
     pub flush: bool,
-    pub return_chan: Option<oneshot::Sender<Result<Messages>>>,
+    pub return_chan: Option<oneshot::Sender<Result<Responses>>>,
 }
 
 impl BufferedChainMessages {
     pub fn new_with_no_return(m: Messages, local_addr: SocketAddr) -> Self {
         BufferedChainMessages {
             local_addr,
-            messages: m,
+            requests: m,
             flush: false,
             return_chan: None,
         }
@@ -33,11 +33,11 @@ impl BufferedChainMessages {
         m: Messages,
         local_addr: SocketAddr,
         flush: bool,
-        return_chan: oneshot::Sender<Result<Messages>>,
+        return_chan: oneshot::Sender<Result<Responses>>,
     ) -> Self {
         BufferedChainMessages {
             local_addr,
-            messages: m,
+            requests: m,
             flush,
             return_chan: Some(return_chan),
         }
@@ -74,7 +74,7 @@ impl BufferedChain {
         &mut self,
         wrapper: Wrapper<'_>,
         buffer_timeout_micros: Option<u64>,
-    ) -> Result<Messages> {
+    ) -> Result<Responses> {
         self.process_request_with_receiver(wrapper, buffer_timeout_micros)
             .await?
             .await?
@@ -84,8 +84,8 @@ impl BufferedChain {
         &mut self,
         wrapper: Wrapper<'_>,
         buffer_timeout_micros: Option<u64>,
-    ) -> Result<oneshot::Receiver<Result<Messages>>> {
-        let (one_tx, one_rx) = oneshot::channel::<Result<Messages>>();
+    ) -> Result<oneshot::Receiver<Result<Responses>>> {
+        let (one_tx, one_rx) = oneshot::channel::<Result<Responses>>();
         match buffer_timeout_micros {
             None => {
                 self.send_handle
@@ -157,7 +157,7 @@ impl BufferedChain {
 }
 
 impl TransformChain {
-    pub async fn process_request(&mut self, mut wrapper: Wrapper<'_>) -> Result<Messages> {
+    pub async fn process_request(&mut self, mut wrapper: Wrapper<'_>) -> Result<Responses> {
         let start = Instant::now();
         wrapper.reset(&mut self.chain);
 
@@ -308,7 +308,7 @@ impl TransformChainBuilder {
                 while let Some(BufferedChainMessages {
                     local_addr,
                     return_chan,
-                    messages,
+                    requests: messages,
                     flush,
                 }) = rx.recv().await
                 {

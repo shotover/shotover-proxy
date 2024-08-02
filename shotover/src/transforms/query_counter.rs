@@ -1,5 +1,4 @@
 use crate::frame::Frame;
-use crate::message::Messages;
 use crate::transforms::TransformConfig;
 use crate::transforms::TransformContextBuilder;
 use crate::transforms::{Transform, TransformBuilder, Wrapper};
@@ -12,6 +11,7 @@ use serde::Serialize;
 use std::collections::HashMap;
 
 use super::DownChainProtocol;
+use super::Responses;
 use super::TransformContextConfig;
 use super::UpChainProtocol;
 
@@ -64,7 +64,7 @@ impl Transform for QueryCounter {
         NAME
     }
 
-    async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Messages> {
+    async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Responses> {
         for m in &mut requests_wrapper.requests {
             match m.frame() {
                 #[cfg(feature = "cassandra")]

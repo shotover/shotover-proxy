@@ -5,7 +5,7 @@ use crate::message::{Message, MessageIdMap, Messages, Metadata};
 use crate::sources::Transport;
 use crate::tls::{AcceptError, TlsAcceptor};
 use crate::transforms::chain::{TransformChain, TransformChainBuilder};
-use crate::transforms::{TransformContextBuilder, TransformContextConfig, Wrapper};
+use crate::transforms::{Responses, TransformContextBuilder, TransformContextConfig, Wrapper};
 use anyhow::{anyhow, Context, Result};
 use bytes::BytesMut;
 use futures::future::join_all;
@@ -634,9 +634,10 @@ impl<C: CodecBuilder + 'static> Handler<C> {
             .process_messages(&client_details, local_addr, in_rx, out_tx, force_run_chain)
             .await;
 
-        // Only flush messages if we are shutting down due to application shutdown
+        // Only flush messages if we are shutting down due to shotover shutdown or client disconnect
         // If a Transform::transform returns an Err the transform is no longer in a usable state and needs to be destroyed without reusing.
-        if result.is_ok() {
+        // A transform could also request a shutdown as part of the protocol it is implementing, in which case we should also skip flushing.
+        if let Ok(CloseReason::Shutdown | CloseReason::ClientClosed) = result {
             match self.chain.process_request(Wrapper::flush()).await {
                 Ok(_) => {}
                 Err(e) => error!(
@@ -649,7 +650,7 @@ impl<C: CodecBuilder + 'static> Handler<C> {
             }
         }
 
-        result
+        result.map(|_| ())
     }
 
     async fn receive_with_timeout(
@@ -677,7 +678,7 @@ impl<C: CodecBuilder + 'static> Handler<C> {
         mut in_rx: mpsc::Receiver<Messages>,
         out_tx: mpsc::UnboundedSender<Messages>,
         force_run_chain: Arc<Notify>,
-    ) -> Result<()> {
+    ) -> Result<CloseReason> {
         // As long as the shutdown signal has not been received, try to read a
         // new request frame.
         while !self.shutdown.is_shutdown() {
@@ -688,7 +689,7 @@ impl<C: CodecBuilder + 'static> Handler<C> {
                 _ = self.shutdown.recv() => {
                     // If a shutdown signal is received, return from `run`.
                     // This will result in the task terminating.
-                    return Ok(());
+                    return Ok(CloseReason::Shutdown);
                 }
                 () = force_run_chain.notified() => {
                     let mut requests = vec!();
@@ -709,23 +710,27 @@ impl<C: CodecBuilder + 'static> Handler<C> {
                         }
                         None => {
                             // Either we timed out the connection or the client disconnected, so terminate this connection
-                            return Ok(())
+                            return Ok(CloseReason::ClientClosed)
                         }
                     }
                 },
             };
 
             // send the result of the process up stream
-            if !responses.is_empty() {
-                debug!("sending response to client: {:?}", responses);
-                if out_tx.send(responses).is_err() {
+            if !responses.responses.is_empty() {
+                debug!("sending response to client: {:?}", responses.responses);
+                if out_tx.send(responses.responses).is_err() {
                     // the client has disconnected so we should terminate this connection
-                    return Ok(());
+                    return Ok(CloseReason::ClientClosed);
+                }
+                if responses.close_connection {
+                    // The transform has requested we close the connection on the client.
+                    return Ok(CloseReason::TransformRequested);
                 }
             }
         }
 
-        Ok(())
+        Ok(CloseReason::Shutdown)
     }
 
     async fn process(
@@ -733,7 +738,7 @@ impl<C: CodecBuilder + 'static> Handler<C> {
         local_addr: SocketAddr,
         out_tx: &mpsc::UnboundedSender<Messages>,
         requests: Messages,
-    ) -> Result<Messages> {
+    ) -> Result<Responses> {
         self.pending_requests.process_requests(&requests);
 
         let wrapper = Wrapper::new_with_addr(requests, local_addr);
@@ -753,6 +758,12 @@ impl<C: CodecBuilder + 'static> Handler<C> {
             }
         }
     }
+}
+
+enum CloseReason {
+    TransformRequested,
+    ClientClosed,
+    Shutdown,
 }
 
 /// Listens for the server shutdown signal.
@@ -846,10 +857,11 @@ impl PendingRequests {
         }
     }
 
-    fn process_responses(&mut self, responses: &[Message]) {
+    fn process_responses(&mut self, responses: &Responses) {
         match self {
             PendingRequests::Ordered(pending_requests) => {
                 let responses_received = responses
+                    .responses
                     .iter()
                     .filter(|x| x.request_id().is_some())
                     .count();
@@ -861,7 +873,7 @@ impl PendingRequests {
                 }
             }
             PendingRequests::Unordered(pending_requests) => {
-                for response in responses {
+                for response in &responses.responses {
                     if let Some(id) = response.request_id() {
                         pending_requests.remove(&id);
                     }

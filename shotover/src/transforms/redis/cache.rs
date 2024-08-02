@@ -3,8 +3,8 @@ use crate::frame::{CassandraFrame, CassandraOperation, Frame, MessageType, Redis
 use crate::message::{Message, MessageIdMap, Messages, Metadata};
 use crate::transforms::chain::{TransformChain, TransformChainBuilder};
 use crate::transforms::{
-    DownChainProtocol, Transform, TransformBuilder, TransformConfig, TransformContextBuilder,
-    TransformContextConfig, UpChainProtocol, Wrapper,
+    DownChainProtocol, Responses, Transform, TransformBuilder, TransformConfig,
+    TransformContextBuilder, TransformContextConfig, UpChainProtocol, Wrapper,
 };
 use anyhow::{bail, Result};
 use async_trait::async_trait;
@@ -299,7 +299,7 @@ impl SimpleRedisCache {
             .process_request(Wrapper::new_with_addr(redis_requests, local_addr))
             .await?;
 
-        self.unwrap_cache_response(redis_responses);
+        self.unwrap_cache_response(redis_responses.responses);
 
         Ok(())
     }
@@ -384,7 +384,7 @@ impl SimpleRedisCache {
             .iter_mut()
             .map(|message| message.frame().cloned())
             .collect();
-        let mut response_messages = requests_wrapper.call_next_transform().await?;
+        let mut response_messages = requests_wrapper.call_next_transform().await?.responses;
 
         let mut cache_messages = vec![];
         for (request, response) in request_messages
@@ -618,7 +618,7 @@ impl Transform for SimpleRedisCache {
         NAME
     }
 
-    async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Messages> {
+    async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Responses> {
         self.read_from_cache(&mut requests_wrapper.requests, requests_wrapper.local_addr)
             .await
             .unwrap_or_else(|err| error!("Failed to fetch from cache: {err:?}"));
@@ -637,7 +637,7 @@ impl Transform for SimpleRedisCache {
         // add the cache hits to the final response
         responses.append(&mut self.cache_hit_cassandra_responses);
 
-        Ok(responses)
+        Ok(Responses::return_to_client(responses))
     }
 }
 

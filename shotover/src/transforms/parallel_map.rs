@@ -1,6 +1,7 @@
-use super::{DownChainProtocol, TransformContextBuilder, TransformContextConfig, UpChainProtocol};
+use super::{
+    DownChainProtocol, Responses, TransformContextBuilder, TransformContextConfig, UpChainProtocol,
+};
 use crate::config::chain::TransformChainConfig;
-use crate::message::Messages;
 use crate::transforms::chain::{TransformChain, TransformChainBuilder};
 use crate::transforms::{Transform, TransformBuilder, TransformConfig, Wrapper};
 use anyhow::Result;
@@ -108,7 +109,7 @@ impl Transform for ParallelMap {
         NAME
     }
 
-    async fn transform<'a>(&'a mut self, requests_wrapper: Wrapper<'a>) -> Result<Messages> {
+    async fn transform<'a>(&'a mut self, requests_wrapper: Wrapper<'a>) -> Result<Responses> {
         let mut results = Vec::with_capacity(requests_wrapper.requests.len());
         let mut message_iter = requests_wrapper.requests.into_iter();
         while message_iter.len() != 0 {
@@ -128,12 +129,12 @@ impl Transform for ParallelMap {
                     .collect::<Vec<_>>()
                     .await
                     .into_iter()
-                    .collect::<anyhow::Result<Vec<Messages>>>()
+                    .collect::<anyhow::Result<Vec<Responses>>>()
                     .into_iter()
-                    .flat_map(|ms| ms.into_iter().flatten()),
+                    .flat_map(|x| x.into_iter().flat_map(|x| x.responses)),
             );
         }
-        Ok(results)
+        Ok(Responses::return_to_client(results))
     }
 }
 

@@ -1,7 +1,7 @@
-use crate::message::{Message, Messages};
+use crate::message::Message;
 use crate::transforms::{
-    DownChainProtocol, Transform, TransformBuilder, TransformConfig, TransformContextBuilder,
-    TransformContextConfig, UpChainProtocol, Wrapper,
+    DownChainProtocol, Responses, Transform, TransformBuilder, TransformConfig,
+    TransformContextBuilder, TransformContextConfig, UpChainProtocol, Wrapper,
 };
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
@@ -75,7 +75,7 @@ impl Transform for DebugReturner {
         NAME
     }
 
-    async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Messages> {
+    async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Responses> {
         requests_wrapper
             .requests
             .iter_mut()
@@ -97,6 +97,7 @@ impl Transform for DebugReturner {
                 }
                 Response::Fail => Err(anyhow!("Intentional Fail")),
             })
-            .collect()
+            .collect::<Result<Vec<_>>>()
+            .map(Responses::return_to_client)
     }
 }

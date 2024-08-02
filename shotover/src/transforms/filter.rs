@@ -1,5 +1,7 @@
-use super::{DownChainProtocol, TransformContextBuilder, TransformContextConfig, UpChainProtocol};
-use crate::message::{Message, MessageIdMap, Messages, QueryType};
+use super::{
+    DownChainProtocol, Responses, TransformContextBuilder, TransformContextConfig, UpChainProtocol,
+};
+use crate::message::{Message, MessageIdMap, QueryType};
 use crate::transforms::{Transform, TransformBuilder, TransformConfig, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
@@ -64,7 +66,7 @@ impl Transform for QueryTypeFilter {
         NAME
     }
 
-    async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Messages> {
+    async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Responses> {
         for request in requests_wrapper.requests.iter_mut() {
             let filter_out = match &self.filter {
                 Filter::AllowList(allow_list) => !allow_list.contains(&request.get_query_type()),
@@ -85,7 +87,7 @@ impl Transform for QueryTypeFilter {
         }
 
         let mut responses = requests_wrapper.call_next_transform().await?;
-        for response in responses.iter_mut() {
+        for response in responses.responses.iter_mut() {
             if let Some(request_id) = response.request_id() {
                 if let Some(error_response) = self.filtered_requests.remove(&request_id) {
                     *response = error_response;
@@ -112,7 +114,7 @@ mod test {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_filter_denylist() {
-        let mut filter_transform = QueryTypeFilter {
+        let mut filter = QueryTypeFilter {
             filter: Filter::DenyList(vec![QueryType::Read]),
             filtered_requests: MessageIdMap::default(),
         };
@@ -136,9 +138,9 @@ mod test {
             })
             .collect();
 
-        let mut requests_wrapper = Wrapper::new_test(messages);
-        requests_wrapper.reset(&mut chain);
-        let result = filter_transform.transform(requests_wrapper).await.unwrap();
+        let mut requests = Wrapper::new_test(messages);
+        requests.reset(&mut chain);
+        let result = filter.transform(requests).await.unwrap().responses;
 
         assert_eq!(result.len(), 26);
 
@@ -167,7 +169,7 @@ mod test {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_filter_allowlist() {
-        let mut filter_transform = QueryTypeFilter {
+        let mut filter = QueryTypeFilter {
             filter: Filter::AllowList(vec![QueryType::Write]),
             filtered_requests: MessageIdMap::default(),
         };
@@ -191,9 +193,9 @@ mod test {
             })
             .collect();
 
-        let mut requests_wrapper = Wrapper::new_test(messages);
-        requests_wrapper.reset(&mut chain);
-        let result = filter_transform.transform(requests_wrapper).await.unwrap();
+        let mut requests = Wrapper::new_test(messages);
+        requests.reset(&mut chain);
+        let result = filter.transform(requests).await.unwrap().responses;
 
         assert_eq!(result.len(), 26);
 

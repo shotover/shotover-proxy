@@ -3,6 +3,13 @@
 Any breaking changes to the `topology.yaml` or `shotover` rust API should be documented here.
 This assists us in knowing when to make the next release a breaking release and assists users with making upgrades to new breaking releases.
 
+## 0.5.0
+
+### shotover rust API
+
+Transform::transform previously returned `Result<Vec<Message>>` now it returns a new struct `shotover::transforms::Responses`.
+This new struct contains a `responses` field containing the responses as normal, but it also contains a `connection_closed` field which determines whether the connection to the client should be closed.
+
 ## 0.4.0
 
 ### shotover rust API

@@ -1,4 +1,3 @@
-use crate::message::Messages;
 /// This transform will by default parse requests and responses that pass through it.
 /// request and response parsing can be individually disabled if desired.
 ///
@@ -8,7 +7,7 @@ use crate::message::Messages;
 use crate::transforms::TransformConfig;
 use crate::transforms::TransformContextBuilder;
 use crate::transforms::TransformContextConfig;
-use crate::transforms::{DownChainProtocol, UpChainProtocol};
+use crate::transforms::{DownChainProtocol, Responses, UpChainProtocol};
 use crate::transforms::{Transform, TransformBuilder, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
@@ -105,7 +104,7 @@ impl Transform for DebugForceParse {
         NAME
     }
 
-    async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Messages> {
+    async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Responses> {
         for message in &mut requests_wrapper.requests {
             if self.parse_requests {
                 message.frame();
@@ -115,19 +114,17 @@ impl Transform for DebugForceParse {
             }
         }
 
-        let mut response = requests_wrapper.call_next_transform().await;
+        let mut responses = requests_wrapper.call_next_transform().await?;
 
-        if let Ok(response) = response.as_mut() {
-            for message in response {
-                if self.parse_responses {
-                    message.frame();
-                }
-                if self.encode_responses {
-                    message.invalidate_cache();
-                }
+        for message in &mut responses.responses {
+            if self.parse_responses {
+                message.frame();
+            }
+            if self.encode_responses {
+                message.invalidate_cache();
             }
         }
 
-        response
+        Ok(responses)
     }
 }

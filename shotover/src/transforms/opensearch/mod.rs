@@ -1,7 +1,9 @@
-use super::{DownChainProtocol, TransformContextBuilder, TransformContextConfig, UpChainProtocol};
+use super::{
+    DownChainProtocol, Responses, TransformContextBuilder, TransformContextConfig, UpChainProtocol,
+};
 use crate::frame::MessageType;
 use crate::tcp;
-use crate::transforms::{Messages, Transform, TransformBuilder, TransformConfig, Wrapper};
+use crate::transforms::{Transform, TransformBuilder, TransformConfig, Wrapper};
 use crate::{
     codec::{opensearch::OpenSearchCodecBuilder, CodecBuilder, Direction},
     transforms::util::{
@@ -95,11 +97,11 @@ impl Transform for OpenSearchSinkSingle {
         NAME
     }
 
-    async fn transform<'a>(&'a mut self, requests_wrapper: Wrapper<'a>) -> Result<Messages> {
+    async fn transform<'a>(&'a mut self, requests_wrapper: Wrapper<'a>) -> Result<Responses> {
         // Return immediately if we have no messages.
         // If we tried to send no messages we would block forever waiting for a reply that will never come.
         if requests_wrapper.requests.is_empty() {
-            return Ok(requests_wrapper.requests);
+            return Ok(Responses::return_to_client(vec![]));
         }
 
         if self.connection.is_none() {
@@ -129,6 +131,6 @@ impl Transform for OpenSearchSinkSingle {
             result.push(message);
         }
 
-        Ok(result)
+        Ok(Responses::return_to_client(result))
     }
 }

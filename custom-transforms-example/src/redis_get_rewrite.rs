@@ -2,8 +2,10 @@ use anyhow::Result;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use shotover::frame::{Frame, MessageType, RedisFrame};
-use shotover::message::{MessageIdSet, Messages};
-use shotover::transforms::{DownChainProtocol, TransformContextBuilder, UpChainProtocol};
+use shotover::message::MessageIdSet;
+use shotover::transforms::{
+    DownChainProtocol, Responses, TransformContextBuilder, UpChainProtocol,
+};
 use shotover::transforms::{
     Transform, TransformBuilder, TransformConfig, TransformContextConfig, Wrapper,
 };
@@ -64,7 +66,7 @@ impl Transform for RedisGetRewrite {
         NAME
     }
 
-    async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Messages> {
+    async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Responses> {
         for message in requests_wrapper.requests.iter_mut() {
             if let Some(frame) = message.frame() {
                 if is_get(frame) {
@@ -74,7 +76,7 @@ impl Transform for RedisGetRewrite {
         }
         let mut responses = requests_wrapper.call_next_transform().await?;
 
-        for response in responses.iter_mut() {
+        for response in responses.responses.iter_mut() {
             if response
                 .request_id()
                 .map(|id| self.get_requests.remove(&id))

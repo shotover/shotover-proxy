@@ -2,9 +2,8 @@ use crate::codec::{kafka::KafkaCodecBuilder, CodecBuilder, Direction};
 use crate::connection::SinkConnection;
 use crate::frame::kafka::{KafkaFrame, RequestBody, ResponseBody};
 use crate::frame::{Frame, MessageType};
-use crate::message::Messages;
 use crate::tls::{TlsConnector, TlsConnectorConfig};
-use crate::transforms::{DownChainProtocol, TransformConfig, UpChainProtocol};
+use crate::transforms::{DownChainProtocol, Responses, TransformConfig, UpChainProtocol};
 use crate::transforms::{
     Transform, TransformBuilder, TransformContextBuilder, TransformContextConfig, Wrapper,
 };
@@ -117,7 +116,7 @@ impl Transform for KafkaSinkSingle {
         NAME
     }
 
-    async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Messages> {
+    async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Responses> {
         if self.connection.is_none() {
             let codec = KafkaCodecBuilder::new(Direction::Sink, "KafkaSinkSingle".to_owned());
             let address = (requests_wrapper.local_addr.ip(), self.address_port);
@@ -213,6 +212,6 @@ impl Transform for KafkaSinkSingle {
             }
         }
 
-        Ok(responses)
+        Ok(Responses::return_to_client(responses))
     }
 }

@@ -1,10 +1,10 @@
 use super::TransformContextBuilder;
-use super::{DownChainProtocol, UpChainProtocol};
+use super::{DownChainProtocol, Responses, UpChainProtocol};
 use crate::frame::MessageType;
 use crate::frame::{
     value::GenericValue, CassandraFrame, CassandraOperation, CassandraResult, Frame,
 };
-use crate::message::{Message, MessageIdMap, Messages};
+use crate::message::{Message, MessageIdMap};
 use crate::transforms::protect::key_management::KeyManager;
 pub use crate::transforms::protect::key_management::KeyManagerConfig;
 use crate::transforms::{Transform, TransformBuilder, Wrapper};
@@ -184,7 +184,7 @@ impl Transform for Protect {
         NAME
     }
 
-    async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Messages> {
+    async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Responses> {
         // encrypt the values included in any INSERT or UPDATE queries
         for message in requests_wrapper.requests.iter_mut() {
             let mut invalidate_cache = false;
@@ -202,7 +202,7 @@ impl Transform for Protect {
         requests_wrapper.clone_requests_into_hashmap(&mut self.requests);
         let mut responses = requests_wrapper.call_next_transform().await?;
 
-        for response in &mut responses {
+        for response in &mut responses.responses {
             if let Some(request_id) = response.request_id() {
                 let mut request = self.requests.remove(&request_id).unwrap();
 
