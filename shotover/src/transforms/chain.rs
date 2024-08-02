@@ -91,7 +91,7 @@ impl BufferedChain {
                 self.send_handle
                     .send(BufferedChainMessages::new(
                         wrapper.requests,
-                        wrapper.local_addr,
+                        *wrapper.local_addr,
                         wrapper.flush,
                         one_tx,
                     ))
@@ -103,7 +103,7 @@ impl BufferedChain {
                     .send_timeout(
                         BufferedChainMessages::new(
                             wrapper.requests,
-                            wrapper.local_addr,
+                            *wrapper.local_addr,
                             wrapper.flush,
                             one_tx,
                         ),
@@ -133,7 +133,7 @@ impl BufferedChain {
                     self.send_handle
                         .send(BufferedChainMessages::new_with_no_return(
                             wrapper.requests,
-                            wrapper.local_addr,
+                            *wrapper.local_addr,
                         ))
                         .map_err(|e| anyhow!("Couldn't send message to wrapped chain {:?}", e))
                         .await?
@@ -143,7 +143,7 @@ impl BufferedChain {
                         .send_timeout(
                             BufferedChainMessages::new_with_no_return(
                                 wrapper.requests,
-                                wrapper.local_addr,
+                                *wrapper.local_addr,
                             ),
                             Duration::from_micros(timeout),
                         )
@@ -306,7 +306,7 @@ impl TransformChainBuilder {
         let _jh = tokio::spawn(
             async move {
                 while let Some(BufferedChainMessages {
-                    local_addr,
+                    mut local_addr,
                     return_chan,
                     messages,
                     flush,
@@ -317,7 +317,7 @@ impl TransformChainBuilder {
                         count_clone.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                     }
 
-                    let mut wrapper = Wrapper::new_with_addr(messages, local_addr);
+                    let mut wrapper = Wrapper::new_with_addr(messages, &mut local_addr);
                     wrapper.flush = flush;
                     let chain_response = chain.process_request(wrapper).await;
 

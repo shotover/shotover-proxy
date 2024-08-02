@@ -273,7 +273,7 @@ impl Transform for Tee {
                 Ok(responses)
             }
             ConsistencyBehavior::SubchainOnMismatch(mismatch_chain, requests) => {
-                let address = requests_wrapper.local_addr;
+                let mut address = *requests_wrapper.local_addr;
                 for request in &requests_wrapper.requests {
                     requests.insert(request.id(), request.clone());
                 }
@@ -296,7 +296,10 @@ impl Transform for Tee {
                     },
                 );
                 mismatch_chain
-                    .process_request(Wrapper::new_with_addr(mismatched_requests, address), None)
+                    .process_request(
+                        Wrapper::new_with_addr(mismatched_requests, &mut address),
+                        None,
+                    )
                     .await?;
 
                 Ok(responses)

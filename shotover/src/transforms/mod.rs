@@ -153,7 +153,7 @@ pub struct Wrapper<'a> {
     pub requests: Messages,
     transforms: IterMut<'a, TransformAndMetrics>,
     /// Contains the shotover source's ip address and port which the message was received on
-    pub local_addr: SocketAddr,
+    pub local_addr: &'a SocketAddr,
     /// When true transforms must flush any buffered messages into the messages field.
     /// This can occur at any time but will always occur before the transform is destroyed due to either
     /// shotover or the transform's chain shutting down.
@@ -218,15 +218,16 @@ impl<'a> Wrapper<'a> {
 
     #[cfg(test)]
     pub fn new_test(requests: Messages) -> Self {
-        Wrapper {
-            requests,
-            transforms: [].iter_mut(),
-            local_addr: "127.0.0.1:8000".parse().unwrap(),
-            flush: false,
-        }
+        todo!()
+        // Wrapper {
+        //     requests,
+        //     transforms: [].iter_mut(),
+        //     local_addr: "127.0.0.1:8000".parse().unwrap(),
+        //     flush: false,
+        // }
     }
 
-    pub fn new_with_addr(requests: Messages, local_addr: SocketAddr) -> Self {
+    pub fn new_with_addr(requests: Messages, local_addr: &'a SocketAddr) -> Self {
         Wrapper {
             requests,
             transforms: [].iter_mut(),
@@ -236,13 +237,14 @@ impl<'a> Wrapper<'a> {
     }
 
     pub fn flush() -> Self {
-        Wrapper {
-            requests: vec![],
-            transforms: [].iter_mut(),
-            // The connection is closed so we need to just fake an address here
-            local_addr: "127.0.0.1:10000".parse().unwrap(),
-            flush: true,
-        }
+        todo!()
+        // Wrapper {
+        //     requests: vec![],
+        //     transforms: [].iter_mut(),
+        //     // The connection is closed so we need to just fake an address here
+        //     local_addr: Box::new("127.0.0.1:10000".parse().unwrap()).leak(),
+        //     flush: true,
+        // }
     }
 
     /// Helper for writing debug logs while testing

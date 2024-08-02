@@ -730,13 +730,13 @@ impl<C: CodecBuilder + 'static> Handler<C> {
 
     async fn process(
         &mut self,
-        local_addr: SocketAddr,
+        mut local_addr: SocketAddr,
         out_tx: &mpsc::UnboundedSender<Messages>,
         requests: Messages,
     ) -> Result<Messages> {
         self.pending_requests.process_requests(&requests);
 
-        let wrapper = Wrapper::new_with_addr(requests, local_addr);
+        let wrapper = Wrapper::new_with_addr(requests, &mut local_addr);
 
         match self.chain.process_request(wrapper).await.context(
             "Chain failed to send and/or receive messages, the connection will now be closed.",

@@ -117,7 +117,7 @@ impl Transform for ParallelMap {
                 if let Some(message) = message_iter.next() {
                     future.push(chain.process_request(Wrapper::new_with_addr(
                         vec![message],
-                        requests_wrapper.local_addr,
+                        &requests_wrapper.local_addr,
                     )));
                 }
             }

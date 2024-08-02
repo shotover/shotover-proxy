@@ -22,19 +22,21 @@ use shotover::transforms::throttling::RequestThrottlingConfig;
 use shotover::transforms::{
     TransformConfig, TransformContextBuilder, TransformContextConfig, Wrapper,
 };
+use std::net::SocketAddr;
 
 fn criterion_benchmark(c: &mut Criterion) {
     crate::init();
     let rt = tokio::runtime::Runtime::new().unwrap();
     let mut group = c.benchmark_group("transform");
     group.noise_threshold(0.2);
+    let ip = "127.0.0.1:6379".parse().unwrap();
 
     // loopback is the fastest possible transform as it does not even have to drop the received requests
     {
         let chain = TransformChainBuilder::new(vec![Box::<Loopback>::default()], "bench");
         let wrapper = Wrapper::new_with_addr(
             vec![Message::from_frame(Frame::Redis(RedisFrame::Null))],
-            "127.0.0.1:6379".parse().unwrap(),
+            &ip,
         );
 
         group.bench_function("loopback", |b| {
@@ -50,7 +52,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         let chain = TransformChainBuilder::new(vec![Box::<NullSink>::default()], "bench");
         let wrapper = Wrapper::new_with_addr(
             vec![Message::from_frame(Frame::Redis(RedisFrame::Null))],
-            "127.0.0.1:6379".parse().unwrap(),
+            &ip,
         );
 
         group.bench_function("nullsink", |b| {
@@ -85,7 +87,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                     RedisFrame::BulkString(Bytes::from_static(b"foo")),
                 ]))),
             ],
-            "127.0.0.1:6379".parse().unwrap(),
+            &ip,
         );
 
         group.bench_function("redis_filter", |b| {
@@ -111,7 +113,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                 RedisFrame::BulkString(Bytes::from_static(b"foo")),
                 RedisFrame::BulkString(Bytes::from_static(b"bar")),
             ])))],
-            "127.0.0.1:6379".parse().unwrap(),
+            &ip,
         );
 
         group.bench_function("redis_cluster_ports_rewrite", |b| {
@@ -155,7 +157,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                     compression: Compression::None,
                 },
             )],
-            "127.0.0.1:6379".parse().unwrap(),
+            &ip,
         );
 
         group.bench_function("cassandra_request_throttling_unparsed", |b| {
@@ -206,7 +208,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                     compression: Compression::None,
                 },
             )],
-            "127.0.0.1:6379".parse().unwrap(),
+            &ip,
         );
 
         group.bench_function("cassandra_rewrite_peers_passthrough", |b| {
@@ -249,7 +251,8 @@ fn criterion_benchmark(c: &mut Criterion) {
         );
 
         let wrapper = cassandra_parsed_query(
-            "INSERT INTO test_protect_keyspace.unprotected_table (pk, cluster, col1, col2, col3) VALUES ('pk1', 'cluster', 'I am gonna get encrypted!!', 42, true);"
+            "INSERT INTO test_protect_keyspace.unprotected_table (pk, cluster, col1, col2, col3) VALUES ('pk1', 'cluster', 'I am gonna get encrypted!!', 42, true);",
+            &ip,
         );
 
         group.bench_function("cassandra_protect_unprotected", |b| {
@@ -261,7 +264,8 @@ fn criterion_benchmark(c: &mut Criterion) {
         });
 
         let wrapper = cassandra_parsed_query(
-            "INSERT INTO test_protect_keyspace.protected_table (pk, cluster, col1, col2, col3) VALUES ('pk1', 'cluster', 'I am gonna get encrypted!!', 42, true);"
+            "INSERT INTO test_protect_keyspace.protected_table (pk, cluster, col1, col2, col3) VALUES ('pk1', 'cluster', 'I am gonna get encrypted!!', 42, true);",
+            &ip
         );
 
         group.bench_function("cassandra_protect_protected", |b| {
@@ -293,7 +297,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                     RedisFrame::BulkString(Bytes::from_static(b"foo")),
                 ]))),
             ],
-            "127.0.0.1:6379".parse().unwrap(),
+            &ip,
         );
 
         group.bench_function("query_counter_fresh", |b| {
@@ -315,7 +319,9 @@ fn criterion_benchmark(c: &mut Criterion) {
 }
 
 #[cfg(feature = "alpha-transforms")]
-fn cassandra_parsed_query(query: &str) -> Wrapper {
+fn cassandra_parsed_query<'a>(query: &str, ip: &'a SocketAddr) -> Wrapper<'a> {
+    use std::net::SocketAddr;
+
     Wrapper::new_with_addr(
         vec![Message::from_frame(Frame::Cassandra(CassandraFrame {
             version: Version::V4,
@@ -337,7 +343,7 @@ fn cassandra_parsed_query(query: &str) -> Wrapper {
                 }),
             },
         }))],
-        "127.0.0.1:6379".parse().unwrap(),
+        &ip,
     )
 }
 
