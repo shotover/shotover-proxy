@@ -7,7 +7,7 @@ use crate::transforms::{
     Wrapper,
 };
 use crate::transforms::{TransformConfig, TransformContextConfig};
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use connections::{Connections, Destination};
 use dashmap::DashMap;
@@ -342,7 +342,8 @@ impl Transform for KafkaSinkCluster {
     async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Messages> {
         let mut responses = if requests_wrapper.requests.is_empty() {
             // there are no requests, so no point sending any, but we should check for any responses without awaiting
-            self.recv_responses()?
+            self.recv_responses()
+                .context("Failed to receive responses (without sending requests)")?
         } else {
             self.update_local_nodes().await;
 
@@ -363,12 +364,17 @@ impl Transform for KafkaSinkCluster {
                 }
             }
 
-            self.route_requests(requests_wrapper.requests).await?;
+            self.route_requests(requests_wrapper.requests)
+                .await
+                .context("Failed to route requests")?;
             self.send_requests().await?;
-            self.recv_responses()?
+            self.recv_responses()
+                .context("Failed to receive responses")?
         };
 
-        self.process_responses(&mut responses).await?;
+        self.process_responses(&mut responses)
+            .await
+            .context("Failed to process responses")?;
         Ok(responses)
     }
 }
