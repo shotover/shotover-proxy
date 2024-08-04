@@ -157,7 +157,10 @@ impl BufferedChain {
 }
 
 impl TransformChain {
-    pub async fn process_request(&mut self, mut wrapper: Wrapper<'_>) -> Result<Messages> {
+    pub async fn process_request<'a>(
+        &'a mut self,
+        wrapper: &'a mut Wrapper<'a>,
+    ) -> Result<Messages> {
         let start = Instant::now();
         wrapper.reset(&mut self.chain);
 
@@ -319,7 +322,7 @@ impl TransformChainBuilder {
 
                     let mut wrapper = Wrapper::new_with_addr(messages, local_addr);
                     wrapper.flush = flush;
-                    let chain_response = chain.process_request(wrapper).await;
+                    let chain_response = chain.process_request(&mut wrapper).await;
 
                     if let Err(e) = &chain_response {
                         error!("Internal error in buffered chain: {e:?}");
@@ -338,7 +341,7 @@ impl TransformChainBuilder {
                 debug!("buffered chain processing thread exiting, stopping chain loop and dropping");
 
                 match chain
-                    .process_request(Wrapper::flush())
+                    .process_request(&mut Wrapper::flush())
                     .await
                 {
                     Ok(_) => info!("Buffered chain {} was shutdown", chain.name),

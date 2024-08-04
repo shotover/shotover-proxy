@@ -243,7 +243,10 @@ impl Transform for Tee {
         NAME
     }
 
-    async fn transform<'a>(&'a mut self, requests_wrapper: Wrapper<'a>) -> Result<Messages> {
+    async fn transform<'a>(
+        &'a mut self,
+        requests_wrapper: &'a mut Wrapper<'a>,
+    ) -> Result<Messages> {
         match &mut self.behavior {
             ConsistencyBehavior::Ignore => self.ignore_behaviour(requests_wrapper).await,
             ConsistencyBehavior::FailOnMismatch => {
@@ -480,7 +483,10 @@ impl IncomingResponses {
 }
 
 impl Tee {
-    async fn ignore_behaviour<'a>(&'a mut self, requests_wrapper: Wrapper<'a>) -> Result<Messages> {
+    async fn ignore_behaviour<'a>(
+        &'a mut self,
+        requests_wrapper: &'a mut Wrapper<'a>,
+    ) -> Result<Messages> {
         let result_source: ResultSource = self.result_source.load(Ordering::Relaxed);
         match result_source {
             ResultSource::RegularChain => {

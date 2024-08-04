@@ -108,17 +108,24 @@ impl Transform for ParallelMap {
         NAME
     }
 
-    async fn transform<'a>(&'a mut self, requests_wrapper: Wrapper<'a>) -> Result<Messages> {
+    async fn transform<'a>(
+        &'a mut self,
+        requests_wrapper: &'a mut Wrapper<'a>,
+    ) -> Result<Messages> {
         let mut results = Vec::with_capacity(requests_wrapper.requests.len());
-        let mut message_iter = requests_wrapper.requests.into_iter();
+        let mut message_iter = requests_wrapper.requests.drain(..);
         while message_iter.len() != 0 {
             let mut future = UOFutures::new(self.ordered);
             for chain in self.chains.iter_mut() {
                 if let Some(message) = message_iter.next() {
-                    future.push(chain.process_request(Wrapper::new_with_addr(
-                        vec![message],
-                        requests_wrapper.local_addr,
-                    )));
+                    future.push(async {
+                        chain
+                            .process_request(&mut Wrapper::new_with_addr(
+                                vec![message],
+                                requests_wrapper.local_addr,
+                            ))
+                            .await
+                    });
                 }
             }
             // We do this gnarly functional chain to unwrap each individual result and pop an error on the first one

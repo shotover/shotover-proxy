@@ -89,7 +89,10 @@ impl Transform for DebugLogToFile {
         NAME
     }
 
-    async fn transform<'a>(&'a mut self, requests_wrapper: Wrapper<'a>) -> Result<Vec<Message>> {
+    async fn transform<'a>(
+        &'a mut self,
+        requests_wrapper: &'a mut Wrapper<'a>,
+    ) -> Result<Vec<Message>> {
         for message in &requests_wrapper.requests {
             self.request_counter += 1;
             let path = self

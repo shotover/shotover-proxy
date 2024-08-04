@@ -114,7 +114,10 @@ impl Transform for RedisSinkSingle {
         NAME
     }
 
-    async fn transform<'a>(&'a mut self, requests_wrapper: Wrapper<'a>) -> Result<Messages> {
+    async fn transform<'a>(
+        &'a mut self,
+        requests_wrapper: &'a mut Wrapper<'a>,
+    ) -> Result<Messages> {
         if self.connection.is_none() {
             let codec = RedisCodecBuilder::new(Direction::Sink, "RedisSinkSingle".to_owned());
             self.connection = Some(
@@ -151,7 +154,7 @@ impl Transform for RedisSinkSingle {
             self.connection
                 .as_mut()
                 .unwrap()
-                .send(requests_wrapper.requests)?;
+                .send(std::mem::take(&mut requests_wrapper.requests))?;
 
             let mut responses_count = 0;
             while responses_count < requests_count {

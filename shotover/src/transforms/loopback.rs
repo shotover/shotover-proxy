@@ -29,12 +29,15 @@ impl Transform for Loopback {
         NAME
     }
 
-    async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Messages> {
+    async fn transform<'a>(
+        &'a mut self,
+        requests_wrapper: &'a mut Wrapper<'a>,
+    ) -> Result<Messages> {
         // This transform ultimately doesnt make a lot of sense semantically
         // but make a vague attempt to follow transform invariants anyway.
         for request in &mut requests_wrapper.requests {
             request.set_request_id(request.id());
         }
-        Ok(requests_wrapper.requests)
+        Ok(std::mem::take(&mut requests_wrapper.requests))
     }
 }

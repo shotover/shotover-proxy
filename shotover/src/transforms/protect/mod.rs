@@ -184,7 +184,10 @@ impl Transform for Protect {
         NAME
     }
 
-    async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Messages> {
+    async fn transform<'a>(
+        &'a mut self,
+        requests_wrapper: &'a mut Wrapper<'a>,
+    ) -> Result<Messages> {
         // encrypt the values included in any INSERT or UPDATE queries
         for message in requests_wrapper.requests.iter_mut() {
             let mut invalidate_cache = false;

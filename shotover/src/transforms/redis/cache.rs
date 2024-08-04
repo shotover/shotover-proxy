@@ -296,7 +296,7 @@ impl SimpleRedisCache {
 
         let redis_responses = self
             .cache_chain
-            .process_request(Wrapper::new_with_addr(redis_requests, local_addr))
+            .process_request(&mut Wrapper::new_with_addr(redis_requests, local_addr))
             .await?;
 
         self.unwrap_cache_response(redis_responses);
@@ -376,7 +376,7 @@ impl SimpleRedisCache {
     /// calls the next transform and process the result for caching.
     async fn execute_upstream_and_write_to_cache<'a>(
         &mut self,
-        mut requests_wrapper: Wrapper<'a>,
+        requests_wrapper: &'a mut Wrapper<'a>,
     ) -> Result<Messages> {
         let local_addr = requests_wrapper.local_addr;
         let mut request_messages: Vec<_> = requests_wrapper
@@ -415,7 +415,7 @@ impl SimpleRedisCache {
         if !cache_messages.is_empty() {
             let result = self
                 .cache_chain
-                .process_request(Wrapper::new_with_addr(cache_messages, local_addr))
+                .process_request(&mut Wrapper::new_with_addr(cache_messages, local_addr))
                 .await;
             if let Err(err) = result {
                 warn!("Cache error: {err}");
@@ -618,7 +618,10 @@ impl Transform for SimpleRedisCache {
         NAME
     }
 
-    async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Messages> {
+    async fn transform<'a>(
+        &'a mut self,
+        requests_wrapper: &'a mut Wrapper<'a>,
+    ) -> Result<Messages> {
         self.read_from_cache(&mut requests_wrapper.requests, requests_wrapper.local_addr)
             .await
             .unwrap_or_else(|err| error!("Failed to fetch from cache: {err:?}"));
