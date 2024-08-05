@@ -21,5 +21,8 @@ jobs:
     name: License Check
     steps:
       - uses: actions/checkout@v4
-      - run: cargo install --locked cargo-deny
+      - name: Install cargo deny
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny@0.15.1
       - run: cargo deny check licenses
