@@ -75,7 +75,10 @@ impl Transform for DebugReturner {
         NAME
     }
 
-    async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Messages> {
+    async fn transform<'a>(
+        &'a mut self,
+        requests_wrapper: &'a mut Wrapper<'a>,
+    ) -> Result<Messages> {
         requests_wrapper
             .requests
             .iter_mut()

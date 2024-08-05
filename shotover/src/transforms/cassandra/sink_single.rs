@@ -212,7 +212,11 @@ impl Transform for CassandraSinkSingle {
         NAME
     }
 
-    async fn transform<'a>(&'a mut self, requests_wrapper: Wrapper<'a>) -> Result<Messages> {
-        self.send_message(requests_wrapper.requests).await
+    async fn transform<'a>(
+        &'a mut self,
+        requests_wrapper: &'a mut Wrapper<'a>,
+    ) -> Result<Messages> {
+        self.send_message(std::mem::take(&mut requests_wrapper.requests))
+            .await
     }
 }

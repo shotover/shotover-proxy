@@ -1017,7 +1017,10 @@ impl Transform for RedisSinkCluster {
         NAME
     }
 
-    async fn transform<'a>(&'a mut self, requests_wrapper: Wrapper<'a>) -> Result<Messages> {
+    async fn transform<'a>(
+        &'a mut self,
+        requests_wrapper: &'a mut Wrapper<'a>,
+    ) -> Result<Messages> {
         if !self.has_run_init {
             self.topology = (*self.shared_topology.read().await).clone();
             if self.topology.channels.is_empty() {
@@ -1052,7 +1055,7 @@ impl Transform for RedisSinkCluster {
 
         let mut requests = requests_wrapper.requests.clone();
         requests.reverse();
-        for message in requests_wrapper.requests {
+        for message in requests_wrapper.requests.drain(..) {
             responses.push_back(match self.dispatch_message(message).await {
                 Ok(response) => response,
                 Err(e) => short_circuit(RedisFrame::Error(format!("ERR {e}").into())).unwrap(),

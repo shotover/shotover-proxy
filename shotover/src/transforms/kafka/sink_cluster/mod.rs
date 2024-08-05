@@ -339,7 +339,10 @@ impl Transform for KafkaSinkCluster {
         NAME
     }
 
-    async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Messages> {
+    async fn transform<'a>(
+        &'a mut self,
+        requests_wrapper: &'a mut Wrapper<'a>,
+    ) -> Result<Messages> {
         let mut responses = if requests_wrapper.requests.is_empty() {
             // there are no requests, so no point sending any, but we should check for any responses without awaiting
             self.recv_responses()
@@ -364,7 +367,7 @@ impl Transform for KafkaSinkCluster {
                 }
             }
 
-            self.route_requests(requests_wrapper.requests)
+            self.route_requests(std::mem::take(&mut requests_wrapper.requests))
                 .await
                 .context("Failed to route requests")?;
             self.send_requests().await?;

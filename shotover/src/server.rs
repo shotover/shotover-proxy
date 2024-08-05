@@ -637,7 +637,7 @@ impl<C: CodecBuilder + 'static> Handler<C> {
         // Only flush messages if we are shutting down due to application shutdown
         // If a Transform::transform returns an Err the transform is no longer in a usable state and needs to be destroyed without reusing.
         if result.is_ok() {
-            match self.chain.process_request(Wrapper::flush()).await {
+            match self.chain.process_request(&mut Wrapper::flush()).await {
                 Ok(_) => {}
                 Err(e) => error!(
                     "{:?}",
@@ -736,9 +736,9 @@ impl<C: CodecBuilder + 'static> Handler<C> {
     ) -> Result<Messages> {
         self.pending_requests.process_requests(&requests);
 
-        let wrapper = Wrapper::new_with_addr(requests, local_addr);
+        let mut wrapper = Wrapper::new_with_addr(requests, local_addr);
 
-        match self.chain.process_request(wrapper).await.context(
+        match self.chain.process_request(&mut wrapper).await.context(
             "Chain failed to send and/or receive messages, the connection will now be closed.",
         ) {
             Ok(x) => {

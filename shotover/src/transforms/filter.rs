@@ -64,7 +64,10 @@ impl Transform for QueryTypeFilter {
         NAME
     }
 
-    async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Messages> {
+    async fn transform<'a>(
+        &'a mut self,
+        requests_wrapper: &'a mut Wrapper<'a>,
+    ) -> Result<Messages> {
         for request in requests_wrapper.requests.iter_mut() {
             let filter_out = match &self.filter {
                 Filter::AllowList(allow_list) => !allow_list.contains(&request.get_query_type()),
@@ -138,7 +141,10 @@ mod test {
 
         let mut requests_wrapper = Wrapper::new_test(messages);
         requests_wrapper.reset(&mut chain);
-        let result = filter_transform.transform(requests_wrapper).await.unwrap();
+        let result = filter_transform
+            .transform(&mut requests_wrapper)
+            .await
+            .unwrap();
 
         assert_eq!(result.len(), 26);
 
@@ -193,7 +199,10 @@ mod test {
 
         let mut requests_wrapper = Wrapper::new_test(messages);
         requests_wrapper.reset(&mut chain);
-        let result = filter_transform.transform(requests_wrapper).await.unwrap();
+        let result = filter_transform
+            .transform(&mut requests_wrapper)
+            .await
+            .unwrap();
 
         assert_eq!(result.len(), 26);
 

@@ -85,7 +85,10 @@ impl Transform for ConnectionBalanceAndPool {
         NAME
     }
 
-    async fn transform<'a>(&'a mut self, requests_wrapper: Wrapper<'a>) -> Result<Messages> {
+    async fn transform<'a>(
+        &'a mut self,
+        requests_wrapper: &'a mut Wrapper<'a>,
+    ) -> Result<Messages> {
         if self.active_connection.is_none() {
             let mut all_connections = self.all_connections.lock().await;
             if all_connections.len() < self.max_connections {
@@ -105,7 +108,7 @@ impl Transform for ConnectionBalanceAndPool {
         self.active_connection
             .as_mut()
             .unwrap()
-            .process_request(requests_wrapper, None)
+            .process_request(requests_wrapper.take(), None)
             .await
     }
 }

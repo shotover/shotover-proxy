@@ -81,7 +81,10 @@ impl Transform for Coalesce {
         NAME
     }
 
-    async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Messages> {
+    async fn transform<'a>(
+        &'a mut self,
+        requests_wrapper: &'a mut Wrapper<'a>,
+    ) -> Result<Messages> {
         self.buffer.append(&mut requests_wrapper.requests);
 
         let flush_buffer = requests_wrapper.flush
@@ -198,7 +201,7 @@ mod test {
         let mut wrapper = Wrapper::new_test(requests.to_vec());
         wrapper.reset(chain);
         assert_eq!(
-            coalesce.transform(wrapper).await.unwrap().len(),
+            coalesce.transform(&mut wrapper).await.unwrap().len(),
             expected_len
         );
     }

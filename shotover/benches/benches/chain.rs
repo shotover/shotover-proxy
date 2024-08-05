@@ -362,7 +362,7 @@ impl<'a> BenchInput<'a> {
         let mut chain = chain.build(TransformContextBuilder::new_test());
 
         // Run the chain once so we are measuring the chain once each transform has been fully initialized
-        futures::executor::block_on(chain.process_request(wrapper.clone())).unwrap();
+        futures::executor::block_on(chain.process_request(&mut wrapper.clone())).unwrap();
 
         BenchInput {
             chain,
@@ -372,8 +372,9 @@ impl<'a> BenchInput<'a> {
 
     async fn bench(mut self) -> (Vec<Message>, TransformChain) {
         // Return both the chain itself and the response to avoid measuring the time to drop the values in the benchmark
+        let mut wrapper = self.wrapper;
         (
-            self.chain.process_request(self.wrapper).await.unwrap(),
+            self.chain.process_request(&mut wrapper).await.unwrap(),
             self.chain,
         )
     }

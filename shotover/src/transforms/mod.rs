@@ -175,6 +175,15 @@ impl<'a> Clone for Wrapper<'a> {
 }
 
 impl<'a> Wrapper<'a> {
+    fn take(&mut self) -> Self {
+        Wrapper {
+            requests: std::mem::take(&mut self.requests),
+            transforms: std::mem::take(&mut self.transforms),
+            local_addr: self.local_addr,
+            flush: self.flush,
+        }
+    }
+
     /// This function will take a mutable reference to the next transform out of the [`Wrapper`] structs
     /// vector of transform references. It then sets up the chain name and transform name in the local
     /// thread scope for structured logging.
@@ -183,7 +192,7 @@ impl<'a> Wrapper<'a> {
     /// the execution time of the [Transform::transform] function as a metrics latency histogram.
     ///
     /// The result of calling the next transform is then provided as a response.
-    pub async fn call_next_transform(mut self) -> Result<Messages> {
+    pub async fn call_next_transform(&'a mut self) -> Result<Messages> {
         let TransformAndMetrics {
             transform,
             transform_total,
@@ -327,7 +336,8 @@ pub trait Transform: Send {
     /// * Transform that do call subsquent chains via `requests_wrapper.call_next_transform()` are non-terminating transforms.
     ///
     /// You can have have a transform that is both non-terminating and a sink.
-    async fn transform<'a>(&'a mut self, requests_wrapper: Wrapper<'a>) -> Result<Messages>;
+    async fn transform<'a>(&'a mut self, requests_wrapper: &'a mut Wrapper<'a>)
+        -> Result<Messages>;
 
     /// Name of the transform used in logs and displayed to the user
     fn get_name(&self) -> &'static str;

@@ -52,12 +52,15 @@ impl Transform for NullSink {
         NAME
     }
 
-    async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Messages> {
+    async fn transform<'a>(
+        &'a mut self,
+        requests_wrapper: &'a mut Wrapper<'a>,
+    ) -> Result<Messages> {
         for request in &mut requests_wrapper.requests {
             // reuse the requests to hold the responses to avoid an allocation
             *request = request
                 .from_request_to_error_response("Handled by shotover null transform".to_string())?;
         }
-        Ok(requests_wrapper.requests)
+        Ok(std::mem::take(&mut requests_wrapper.requests))
     }
 }

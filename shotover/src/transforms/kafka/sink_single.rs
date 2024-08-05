@@ -117,7 +117,10 @@ impl Transform for KafkaSinkSingle {
         NAME
     }
 
-    async fn transform<'a>(&'a mut self, mut requests_wrapper: Wrapper<'a>) -> Result<Messages> {
+    async fn transform<'a>(
+        &'a mut self,
+        requests_wrapper: &'a mut Wrapper<'a>,
+    ) -> Result<Messages> {
         if self.connection.is_none() {
             let codec = KafkaCodecBuilder::new(Direction::Sink, "KafkaSinkSingle".to_owned());
             let address = (requests_wrapper.local_addr.ip(), self.address_port);
@@ -161,7 +164,7 @@ impl Transform for KafkaSinkSingle {
             // send
             let connection = self.connection.as_mut().unwrap();
             let requests_count = requests_wrapper.requests.len();
-            connection.send(requests_wrapper.requests)?;
+            connection.send(std::mem::take(&mut requests_wrapper.requests))?;
 
             // receive
             while responses.len() < requests_count {

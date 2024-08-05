@@ -95,11 +95,14 @@ impl Transform for OpenSearchSinkSingle {
         NAME
     }
 
-    async fn transform<'a>(&'a mut self, requests_wrapper: Wrapper<'a>) -> Result<Messages> {
+    async fn transform<'a>(
+        &'a mut self,
+        requests_wrapper: &'a mut Wrapper<'a>,
+    ) -> Result<Messages> {
         // Return immediately if we have no messages.
         // If we tried to send no messages we would block forever waiting for a reply that will never come.
         if requests_wrapper.requests.is_empty() {
-            return Ok(requests_wrapper.requests);
+            return Ok(vec![]);
         }
 
         if self.connection.is_none() {
@@ -115,7 +118,7 @@ impl Transform for OpenSearchSinkSingle {
         let messages_len = requests_wrapper.requests.len();
 
         let mut result = Vec::with_capacity(messages_len);
-        for message in requests_wrapper.requests {
+        for message in requests_wrapper.requests.drain(..) {
             let (tx, rx) = oneshot::channel();
 
             connection
