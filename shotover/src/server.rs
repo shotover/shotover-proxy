@@ -634,9 +634,9 @@ impl<C: CodecBuilder + 'static> Handler<C> {
             .process_messages(&client_details, local_addr, in_rx, out_tx, force_run_chain)
             .await;
 
-        // Only flush messages if we are shutting down due to application shutdown
+        // Only flush messages if we are shutting down due to shotover shutdown or client disconnect
         // If a Transform::transform returns an Err the transform is no longer in a usable state and needs to be destroyed without reusing.
-        if result.is_ok() {
+        if let Ok(CloseReason::ShotoverShutdown | CloseReason::ClientClosed) = result {
             match self.chain.process_request(&mut Wrapper::flush()).await {
                 Ok(_) => {}
                 Err(e) => error!(
@@ -649,7 +649,7 @@ impl<C: CodecBuilder + 'static> Handler<C> {
             }
         }
 
-        result
+        result.map(|_| ())
     }
 
     async fn receive_with_timeout(
@@ -677,7 +677,7 @@ impl<C: CodecBuilder + 'static> Handler<C> {
         mut in_rx: mpsc::Receiver<Messages>,
         out_tx: mpsc::UnboundedSender<Messages>,
         force_run_chain: Arc<Notify>,
-    ) -> Result<()> {
+    ) -> Result<CloseReason> {
         // As long as the shutdown signal has not been received, try to read a
         // new request frame.
         while !self.shutdown.is_shutdown() {
@@ -688,7 +688,7 @@ impl<C: CodecBuilder + 'static> Handler<C> {
                 _ = self.shutdown.recv() => {
                     // If a shutdown signal is received, return from `run`.
                     // This will result in the task terminating.
-                    return Ok(());
+                    return Ok(CloseReason::ShotoverShutdown);
                 }
                 () = force_run_chain.notified() => {
                     let mut requests = vec!();
@@ -696,7 +696,13 @@ impl<C: CodecBuilder + 'static> Handler<C> {
                         requests.extend(x);
                     }
                     debug!("A transform in the chain requested that a chain run occur, requests {:?}", requests);
-                    self.process(local_addr, &out_tx, requests).await?
+                    let mut wrapper = Wrapper::new_with_addr(requests, local_addr);
+                    let responses = self.process(&mut wrapper, &out_tx).await?;
+                    if wrapper.close_client_connection {
+                        // The transform has requested we close the connection on the client.
+                        return Ok(CloseReason::TransformRequested);
+                    }
+                    responses
                 },
                 requests = Self::receive_with_timeout(self.timeout, &mut in_rx, client_details) => {
                     match requests {
@@ -705,11 +711,17 @@ impl<C: CodecBuilder + 'static> Handler<C> {
                                 requests.extend(x);
                             }
                             debug!("Received requests from client {:?}", requests);
-                            self.process(local_addr, &out_tx, requests).await?
+                            let mut wrapper = Wrapper::new_with_addr(requests, local_addr);
+                            let responses = self.process(&mut wrapper, &out_tx).await?;
+                            if wrapper.close_client_connection {
+                                // The transform has requested we close the connection on the client.
+                                return Ok(CloseReason::TransformRequested);
+                            }
+                            responses
                         }
                         None => {
                             // Either we timed out the connection or the client disconnected, so terminate this connection
-                            return Ok(())
+                            return Ok(CloseReason::ClientClosed)
                         }
                     }
                 },
@@ -720,25 +732,22 @@ impl<C: CodecBuilder + 'static> Handler<C> {
                 debug!("sending response to client: {:?}", responses);
                 if out_tx.send(responses).is_err() {
                     // the client has disconnected so we should terminate this connection
-                    return Ok(());
+                    return Ok(CloseReason::ClientClosed);
                 }
             }
         }
 
-        Ok(())
+        Ok(CloseReason::ShotoverShutdown)
     }
 
-    async fn process(
-        &mut self,
-        local_addr: SocketAddr,
+    async fn process<'shorter, 'longer: 'shorter>(
+        &'longer mut self,
+        wrapper: &'shorter mut Wrapper<'longer>,
         out_tx: &mpsc::UnboundedSender<Messages>,
-        requests: Messages,
     ) -> Result<Messages> {
-        self.pending_requests.process_requests(&requests);
+        self.pending_requests.process_requests(&wrapper.requests);
 
-        let mut wrapper = Wrapper::new_with_addr(requests, local_addr);
-
-        match self.chain.process_request(&mut wrapper).await.context(
+        match self.chain.process_request(wrapper).await.context(
             "Chain failed to send and/or receive messages, the connection will now be closed.",
         ) {
             Ok(x) => {
@@ -753,6 +762,12 @@ impl<C: CodecBuilder + 'static> Handler<C> {
             }
         }
     }
+}
+
+enum CloseReason {
+    TransformRequested,
+    ClientClosed,
+    ShotoverShutdown,
 }
 
 /// Listens for the server shutdown signal.
