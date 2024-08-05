@@ -3,6 +3,12 @@
 Any breaking changes to the `topology.yaml` or `shotover` rust API should be documented here.
 This assists us in knowing when to make the next release a breaking release and assists users with making upgrades to new breaking releases.
 
+## 0.5.0
+
+### shotover rust API
+
+`Transform::transform` now takes `&mut Wrapper` instead of `Wrapper`.
+
 ## 0.4.0
 
 ### shotover rust API

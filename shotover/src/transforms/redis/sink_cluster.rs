@@ -1017,9 +1017,9 @@ impl Transform for RedisSinkCluster {
         NAME
     }
 
-    async fn transform<'a>(
-        &'a mut self,
-        requests_wrapper: &'a mut Wrapper<'a>,
+    async fn transform<'shorter, 'longer: 'shorter>(
+        &mut self,
+        requests_wrapper: &'shorter mut Wrapper<'longer>,
     ) -> Result<Messages> {
         if !self.has_run_init {
             self.topology = (*self.shared_topology.read().await).clone();
