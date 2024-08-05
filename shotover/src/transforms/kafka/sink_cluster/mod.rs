@@ -375,9 +375,12 @@ impl Transform for KafkaSinkCluster {
                 .context("Failed to receive responses")?
         };
 
-        self.process_responses(&mut responses)
-            .await
-            .context("Failed to process responses")?;
+        self.process_responses(
+            &mut responses,
+            &mut requests_wrapper.close_client_connection,
+        )
+        .await
+        .context("Failed to process responses")?;
         Ok(responses)
     }
 }
@@ -1163,7 +1166,11 @@ routing message to a random node so that:
         Ok(base)
     }
 
-    async fn process_responses(&mut self, responses: &mut [Message]) -> Result<()> {
+    async fn process_responses(
+        &mut self,
+        responses: &mut [Message],
+        close_client_connection: &mut bool,
+    ) -> Result<()> {
         for response in responses.iter_mut() {
             let request_id = response.request_id().unwrap();
             match response.frame() {
@@ -1209,7 +1216,7 @@ routing message to a random node so that:
                     body: ResponseBody::SaslAuthenticate(authenticate),
                     ..
                 })) => {
-                    self.process_sasl_authenticate(authenticate)?;
+                    self.process_sasl_authenticate(authenticate, close_client_connection)?;
                 }
                 Some(Frame::Kafka(KafkaFrame::Response {
                     body: ResponseBody::Produce(produce),
@@ -1389,7 +1396,15 @@ routing message to a random node so that:
     fn process_sasl_authenticate(
         &mut self,
         authenticate: &mut SaslAuthenticateResponse,
+        close_client_connection: &mut bool,
     ) -> Result<()> {
+        // The broker always closes the connection after an auth failure response,
+        // so we should do the same.
+        if authenticate.error_code != 0 {
+            tracing::debug!("Closing connection to client due to auth failure");
+            *close_client_connection = true;
+        }
+
         if let Some(sasl_mechanism) = &self.sasl_mechanism {
             if SASL_SCRAM_MECHANISMS.contains(&sasl_mechanism.as_str()) {
                 if let Some(scram_over_mtls) = &mut self.authorize_scram_over_mtls {
