@@ -29,9 +29,9 @@ impl Transform for Loopback {
         NAME
     }
 
-    async fn transform<'a>(
-        &'a mut self,
-        requests_wrapper: &'a mut Wrapper<'a>,
+    async fn transform<'shorter, 'longer: 'shorter>(
+        &mut self,
+        requests_wrapper: &'shorter mut Wrapper<'longer>,
     ) -> Result<Messages> {
         // This transform ultimately doesnt make a lot of sense semantically
         // but make a vague attempt to follow transform invariants anyway.

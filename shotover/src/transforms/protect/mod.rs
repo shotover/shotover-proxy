@@ -184,9 +184,9 @@ impl Transform for Protect {
         NAME
     }
 
-    async fn transform<'a>(
-        &'a mut self,
-        requests_wrapper: &'a mut Wrapper<'a>,
+    async fn transform<'shorter, 'longer: 'shorter>(
+        &mut self,
+        requests_wrapper: &'shorter mut Wrapper<'longer>,
     ) -> Result<Messages> {
         // encrypt the values included in any INSERT or UPDATE queries
         for message in requests_wrapper.requests.iter_mut() {
