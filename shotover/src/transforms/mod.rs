@@ -158,6 +158,8 @@ pub struct Wrapper<'a> {
     /// This can occur at any time but will always occur before the transform is destroyed due to either
     /// shotover or the transform's chain shutting down.
     pub flush: bool,
+    /// When true the connection to the client is closed after the stack of `Transform::transform` calls returns.
+    pub close_client_connection: bool,
 }
 
 /// [`Wrapper`] will not (cannot) bring the current list of transforms that it needs to traverse with it
@@ -170,6 +172,7 @@ impl<'a> Clone for Wrapper<'a> {
             transforms: [].iter_mut(),
             local_addr: self.local_addr,
             flush: self.flush,
+            close_client_connection: self.close_client_connection,
         }
     }
 }
@@ -181,6 +184,7 @@ impl<'shorter, 'longer: 'shorter> Wrapper<'longer> {
             transforms: std::mem::take(&mut self.transforms),
             local_addr: self.local_addr,
             flush: self.flush,
+            close_client_connection: self.close_client_connection,
         }
     }
 
@@ -232,6 +236,7 @@ impl<'shorter, 'longer: 'shorter> Wrapper<'longer> {
             transforms: [].iter_mut(),
             local_addr: "127.0.0.1:8000".parse().unwrap(),
             flush: false,
+            close_client_connection: false,
         }
     }
 
@@ -241,6 +246,7 @@ impl<'shorter, 'longer: 'shorter> Wrapper<'longer> {
             transforms: [].iter_mut(),
             local_addr,
             flush: false,
+            close_client_connection: false,
         }
     }
 
@@ -251,6 +257,7 @@ impl<'shorter, 'longer: 'shorter> Wrapper<'longer> {
             // The connection is closed so we need to just fake an address here
             local_addr: "127.0.0.1:10000".parse().unwrap(),
             flush: true,
+            close_client_connection: false,
         }
     }
 
