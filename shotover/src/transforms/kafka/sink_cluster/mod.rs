@@ -406,8 +406,8 @@ impl KafkaSinkCluster {
                 Destination::ControlConnection,
             )
             .await?;
-        connection.send(vec![requests])?;
-        Ok(connection.recv().await?.remove(0))
+        connection.connection.send(vec![requests])?;
+        Ok(connection.connection.recv().await?.remove(0))
     }
 
     fn store_topic_names(&self, topics: &mut Vec<TopicName>, topic: TopicName) {
@@ -1029,6 +1029,7 @@ routing message to a random node so that:
                     destination,
                 )
                 .await?
+                .connection
                 .send(requests.requests)?;
         }
 
