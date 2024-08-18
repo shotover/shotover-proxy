@@ -374,9 +374,9 @@ impl SimpleRedisCache {
     }
 
     /// calls the next transform and process the result for caching.
-    async fn execute_upstream_and_write_to_cache<'a>(
+    async fn execute_upstream_and_write_to_cache(
         &mut self,
-        requests_wrapper: &'a mut Wrapper<'a>,
+        requests_wrapper: &mut Wrapper<'_>,
     ) -> Result<Messages> {
         let local_addr = requests_wrapper.local_addr;
         let mut request_messages: Vec<_> = requests_wrapper
@@ -618,9 +618,9 @@ impl Transform for SimpleRedisCache {
         NAME
     }
 
-    async fn transform<'a>(
-        &'a mut self,
-        requests_wrapper: &'a mut Wrapper<'a>,
+    async fn transform<'shorter, 'longer: 'shorter>(
+        &mut self,
+        requests_wrapper: &'shorter mut Wrapper<'longer>,
     ) -> Result<Messages> {
         self.read_from_cache(&mut requests_wrapper.requests, requests_wrapper.local_addr)
             .await

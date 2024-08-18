@@ -243,9 +243,9 @@ impl Transform for Tee {
         NAME
     }
 
-    async fn transform<'a>(
-        &'a mut self,
-        requests_wrapper: &'a mut Wrapper<'a>,
+    async fn transform<'shorter, 'longer: 'shorter>(
+        &mut self,
+        requests_wrapper: &'shorter mut Wrapper<'longer>,
     ) -> Result<Messages> {
         match &mut self.behavior {
             ConsistencyBehavior::Ignore => self.ignore_behaviour(requests_wrapper).await,
@@ -483,9 +483,9 @@ impl IncomingResponses {
 }
 
 impl Tee {
-    async fn ignore_behaviour<'a>(
-        &'a mut self,
-        requests_wrapper: &'a mut Wrapper<'a>,
+    async fn ignore_behaviour<'shorter, 'longer: 'shorter>(
+        &mut self,
+        requests_wrapper: &'shorter mut Wrapper<'longer>,
     ) -> Result<Messages> {
         let result_source: ResultSource = self.result_source.load(Ordering::Relaxed);
         match result_source {

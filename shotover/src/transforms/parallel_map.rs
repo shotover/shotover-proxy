@@ -108,9 +108,9 @@ impl Transform for ParallelMap {
         NAME
     }
 
-    async fn transform<'a>(
-        &'a mut self,
-        requests_wrapper: &'a mut Wrapper<'a>,
+    async fn transform<'shorter, 'longer: 'shorter>(
+        &mut self,
+        requests_wrapper: &'shorter mut Wrapper<'longer>,
     ) -> Result<Messages> {
         let mut results = Vec::with_capacity(requests_wrapper.requests.len());
         let mut message_iter = requests_wrapper.requests.drain(..);
