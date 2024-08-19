@@ -18,7 +18,8 @@ impl Samply {
                 "--git",
                 "https://github.com/mstange/samply",
                 "--rev",
-                "59a03a716cadab7835e3a961d0107ec797e458ec",
+                "75a8971b4291db8091a346431a1727ffcec4f038",
+                "--locked",
             ],
         )
         .await;
