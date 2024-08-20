@@ -82,7 +82,7 @@ impl TransformConfig for ParallelMapConfig {
         for _ in 0..self.parallelism {
             let transform_context_config = TransformContextConfig {
                 chain_name: "parallel_map_chain".into(),
-                protocol: transform_context.protocol,
+                up_chain_protocol: transform_context.up_chain_protocol,
             };
             chains.push(self.chain.get_builder(transform_context_config).await?);
         }

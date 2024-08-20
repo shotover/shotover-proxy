@@ -103,7 +103,7 @@ impl TransformConfig for RedisConfig {
 
         let transform_context_config = TransformContextConfig {
             chain_name: "cache_chain".into(),
-            protocol: MessageType::Redis,
+            up_chain_protocol: MessageType::Redis,
         };
 
         Ok(Box::new(SimpleRedisCacheBuilder {

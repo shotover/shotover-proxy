@@ -21,7 +21,7 @@ impl TransformChainConfig {
         mut transform_context: TransformContextConfig,
     ) -> Result<TransformChainBuilder> {
         let mut transforms: Vec<Box<dyn TransformBuilder>> = Vec::new();
-        let mut upchain_protocol = transform_context.protocol;
+        let mut upchain_protocol = transform_context.up_chain_protocol;
         for (i, tc) in self.0.iter().enumerate() {
             let name = tc.typetag_name();
             match tc.up_chain_protocol() {
@@ -34,7 +34,7 @@ impl TransformChainConfig {
                     // anything is fine
                 }
             }
-            transform_context.protocol = upchain_protocol;
+            transform_context.up_chain_protocol = upchain_protocol;
             transforms.push(tc.get_builder(transform_context.clone()).await?);
 
             upchain_protocol = match tc.down_chain_protocol() {
