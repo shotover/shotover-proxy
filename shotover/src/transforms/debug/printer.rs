@@ -1,7 +1,7 @@
 use crate::message::Messages;
 use crate::transforms::{
-    ChainState, DownChainProtocol, Transform, TransformBuilder, TransformConfig,
-    TransformContextBuilder, TransformContextConfig, UpChainProtocol,
+    ChainState, DownChainProtocol, DownChainTransforms, Transform, TransformBuilder,
+    TransformConfig, TransformContextBuilder, TransformContextConfig, UpChainProtocol,
 };
 use anyhow::Result;
 use async_trait::async_trait;
@@ -65,16 +65,17 @@ impl Transform for DebugPrinter {
         NAME
     }
 
-    async fn transform<'shorter, 'longer: 'shorter>(
+    async fn transform(
         &mut self,
-        chain_state: &'shorter mut ChainState<'longer>,
+        chain_state: &mut ChainState,
+        down_chain: DownChainTransforms<'_>,
     ) -> Result<Messages> {
         for request in &mut chain_state.requests {
             info!("Request: {}", request.to_high_level_string());
         }
 
         self.counter += 1;
-        let mut responses = chain_state.call_next_transform().await?;
+        let mut responses = down_chain.call_next_transform(chain_state).await?;
 
         for response in &mut responses {
             info!("Response: {}", response.to_high_level_string());

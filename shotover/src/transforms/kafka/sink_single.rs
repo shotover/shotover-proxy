@@ -5,7 +5,8 @@ use crate::frame::{Frame, MessageType};
 use crate::message::Messages;
 use crate::tls::{TlsConnector, TlsConnectorConfig};
 use crate::transforms::{
-    ChainState, Transform, TransformBuilder, TransformContextBuilder, TransformContextConfig,
+    ChainState, DownChainTransforms, Transform, TransformBuilder, TransformContextBuilder,
+    TransformContextConfig,
 };
 use crate::transforms::{DownChainProtocol, TransformConfig, UpChainProtocol};
 use anyhow::Result;
@@ -117,9 +118,10 @@ impl Transform for KafkaSinkSingle {
         NAME
     }
 
-    async fn transform<'shorter, 'longer: 'shorter>(
+    async fn transform(
         &mut self,
-        chain_state: &'shorter mut ChainState<'longer>,
+        chain_state: &mut ChainState,
+        _down_chain: DownChainTransforms<'_>,
     ) -> Result<Messages> {
         if self.connection.is_none() {
             let codec = KafkaCodecBuilder::new(Direction::Sink, "KafkaSinkSingle".to_owned());

@@ -1,4 +1,7 @@
-use super::{DownChainProtocol, TransformContextBuilder, TransformContextConfig, UpChainProtocol};
+use super::{
+    DownChainProtocol, DownChainTransforms, TransformContextBuilder, TransformContextConfig,
+    UpChainProtocol,
+};
 use crate::frame::MessageType;
 use crate::message::{Message, MessageIdMap, Messages};
 use crate::transforms::{ChainState, Transform, TransformBuilder, TransformConfig};
@@ -81,9 +84,10 @@ impl Transform for RequestThrottling {
         NAME
     }
 
-    async fn transform<'shorter, 'longer: 'shorter>(
+    async fn transform(
         &mut self,
-        chain_state: &'shorter mut ChainState<'longer>,
+        chain_state: &mut ChainState,
+        down_chain: DownChainTransforms<'_>,
     ) -> Result<Messages> {
         for request in &mut chain_state.requests {
             if let Ok(cell_count) = request.cell_count() {
@@ -107,7 +111,7 @@ impl Transform for RequestThrottling {
         }
 
         // send allowed messages to Cassandra
-        let mut responses = chain_state.call_next_transform().await?;
+        let mut responses = down_chain.call_next_transform(chain_state).await?;
 
         // replace dummy responses with throttle messages
         for response in responses.iter_mut() {

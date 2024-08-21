@@ -3,6 +3,7 @@ use crate::frame::MessageType;
 use crate::frame::RedisFrame;
 use crate::message::{MessageIdMap, Messages};
 use crate::transforms::DownChainProtocol;
+use crate::transforms::DownChainTransforms;
 use crate::transforms::TransformContextBuilder;
 use crate::transforms::TransformContextConfig;
 use crate::transforms::UpChainProtocol;
@@ -76,9 +77,10 @@ impl Transform for RedisClusterPortsRewrite {
         NAME
     }
 
-    async fn transform<'shorter, 'longer: 'shorter>(
+    async fn transform(
         &mut self,
-        chain_state: &'shorter mut ChainState<'longer>,
+        chain_state: &mut ChainState,
+        down_chain: DownChainTransforms<'_>,
     ) -> Result<Messages> {
         for message in chain_state.requests.iter_mut() {
             let message_id = message.id();
@@ -95,7 +97,7 @@ impl Transform for RedisClusterPortsRewrite {
             }
         }
 
-        let mut responses = chain_state.call_next_transform().await?;
+        let mut responses = down_chain.call_next_transform(chain_state).await?;
 
         for response in &mut responses {
             if let Some(request_id) = response.request_id() {

@@ -341,14 +341,14 @@ fn cassandra_parsed_query(query: &str) -> ChainState {
     )
 }
 
-struct BenchInput<'a> {
+struct BenchInput {
     chain: TransformChain,
-    chain_state: ChainState<'a>,
+    chain_state: ChainState,
 }
 
-impl<'a> BenchInput<'a> {
+impl BenchInput {
     // Setup the bench such that the chain is completely fresh
-    fn new_fresh(chain: &TransformChainBuilder, chain_state: &ChainState<'a>) -> Self {
+    fn new_fresh(chain: &TransformChainBuilder, chain_state: &ChainState) -> Self {
         BenchInput {
             chain: chain.build(TransformContextBuilder::new_test()),
             chain_state: chain_state.clone(),
@@ -358,7 +358,7 @@ impl<'a> BenchInput<'a> {
     // Setup the bench such that the chain has already had the test chain_state passed through it.
     // This ensures that any adhoc setup for that message type has been performed.
     // This is a more realistic bench for typical usage.
-    fn new_pre_used(chain: &TransformChainBuilder, chain_state: &ChainState<'a>) -> Self {
+    fn new_pre_used(chain: &TransformChainBuilder, chain_state: &ChainState) -> Self {
         let mut chain = chain.build(TransformContextBuilder::new_test());
 
         // Run the chain once so we are measuring the chain once each transform has been fully initialized

@@ -1,4 +1,5 @@
 use crate::message::Messages;
+use crate::transforms::DownChainTransforms;
 /// This transform will by default parse requests and responses that pass through it.
 /// request and response parsing can be individually disabled if desired.
 ///
@@ -105,9 +106,10 @@ impl Transform for DebugForceParse {
         NAME
     }
 
-    async fn transform<'shorter, 'longer: 'shorter>(
+    async fn transform(
         &mut self,
-        chain_state: &'shorter mut ChainState<'longer>,
+        chain_state: &mut ChainState,
+        down_chain: DownChainTransforms<'_>,
     ) -> Result<Messages> {
         for message in &mut chain_state.requests {
             if self.parse_requests {
@@ -118,7 +120,7 @@ impl Transform for DebugForceParse {
             }
         }
 
-        let mut response = chain_state.call_next_transform().await;
+        let mut response = down_chain.call_next_transform(chain_state).await;
 
         if let Ok(response) = response.as_mut() {
             for message in response {

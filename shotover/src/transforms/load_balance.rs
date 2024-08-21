@@ -1,4 +1,7 @@
-use super::{DownChainProtocol, TransformContextBuilder, TransformContextConfig, UpChainProtocol};
+use super::{
+    DownChainProtocol, DownChainTransforms, TransformContextBuilder, TransformContextConfig,
+    UpChainProtocol,
+};
 use crate::config::chain::TransformChainConfig;
 use crate::message::Messages;
 use crate::transforms::chain::{BufferedChain, TransformChainBuilder};
@@ -85,9 +88,10 @@ impl Transform for ConnectionBalanceAndPool {
         NAME
     }
 
-    async fn transform<'shorter, 'longer: 'shorter>(
+    async fn transform(
         &mut self,
-        chain_state: &'shorter mut ChainState<'longer>,
+        chain_state: &mut ChainState,
+        _down_chain: DownChainTransforms<'_>,
     ) -> Result<Messages> {
         if self.active_connection.is_none() {
             let mut all_connections = self.all_connections.lock().await;

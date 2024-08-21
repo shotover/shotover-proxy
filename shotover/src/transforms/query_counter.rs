@@ -12,6 +12,7 @@ use serde::Serialize;
 use std::collections::HashMap;
 
 use super::DownChainProtocol;
+use super::DownChainTransforms;
 use super::TransformContextConfig;
 use super::UpChainProtocol;
 
@@ -64,9 +65,10 @@ impl Transform for QueryCounter {
         NAME
     }
 
-    async fn transform<'shorter, 'longer: 'shorter>(
+    async fn transform(
         &mut self,
-        chain_state: &'shorter mut ChainState<'longer>,
+        chain_state: &mut ChainState,
+        down_chain: DownChainTransforms<'_>,
     ) -> Result<Messages> {
         for m in &mut chain_state.requests {
             match m.frame() {
@@ -101,7 +103,7 @@ impl Transform for QueryCounter {
             }
         }
 
-        chain_state.call_next_transform().await
+        down_chain.call_next_transform(chain_state).await
     }
 }
 

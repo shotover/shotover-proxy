@@ -1,4 +1,7 @@
-use super::{DownChainProtocol, TransformContextBuilder, TransformContextConfig, UpChainProtocol};
+use super::{
+    DownChainProtocol, DownChainTransforms, TransformContextBuilder, TransformContextConfig,
+    UpChainProtocol,
+};
 use crate::message::Messages;
 use crate::transforms::{ChainState, Transform, TransformBuilder, TransformConfig};
 use anyhow::Result;
@@ -52,9 +55,10 @@ impl Transform for NullSink {
         NAME
     }
 
-    async fn transform<'shorter, 'longer: 'shorter>(
+    async fn transform(
         &mut self,
-        chain_state: &'shorter mut ChainState<'longer>,
+        chain_state: &mut ChainState,
+        _down_chain: DownChainTransforms<'_>,
     ) -> Result<Messages> {
         for request in &mut chain_state.requests {
             // reuse the requests to hold the responses to avoid an allocation

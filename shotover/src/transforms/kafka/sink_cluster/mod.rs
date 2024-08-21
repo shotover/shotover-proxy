@@ -3,8 +3,8 @@ use crate::frame::{Frame, MessageType};
 use crate::message::{Message, MessageIdMap, Messages};
 use crate::tls::{TlsConnector, TlsConnectorConfig};
 use crate::transforms::{
-    ChainState, DownChainProtocol, Transform, TransformBuilder, TransformContextBuilder,
-    UpChainProtocol,
+    ChainState, DownChainProtocol, DownChainTransforms, Transform, TransformBuilder,
+    TransformContextBuilder, UpChainProtocol,
 };
 use crate::transforms::{TransformConfig, TransformContextConfig};
 use anyhow::{anyhow, Context, Result};
@@ -341,9 +341,10 @@ impl Transform for KafkaSinkCluster {
         NAME
     }
 
-    async fn transform<'shorter, 'longer: 'shorter>(
+    async fn transform(
         &mut self,
-        chain_state: &'shorter mut ChainState<'longer>,
+        chain_state: &mut ChainState,
+        _down_chain: DownChainTransforms<'_>,
     ) -> Result<Messages> {
         let mut responses = if chain_state.requests.is_empty() {
             // there are no requests, so no point sending any, but we should check for any responses without awaiting

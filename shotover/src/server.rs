@@ -727,10 +727,11 @@ impl<C: CodecBuilder + 'static> Handler<C> {
         out_tx: &mpsc::UnboundedSender<Messages>,
         requests: Messages,
     ) -> Result<Option<CloseReason>> {
-        let mut wrapper = ChainState::new_with_addr(requests, local_addr);
+        let mut chain_state = ChainState::new_with_addr(requests, local_addr);
 
-        self.pending_requests.process_requests(&wrapper.requests);
-        let responses = match self.chain.process_request(&mut wrapper).await {
+        self.pending_requests
+            .process_requests(&chain_state.requests);
+        let responses = match self.chain.process_request(&mut chain_state).await {
             Ok(x) => x,
             Err(err) => {
                 let err = err.context("Chain failed to send and/or receive messages, the connection will now be closed.");
@@ -752,7 +753,7 @@ impl<C: CodecBuilder + 'static> Handler<C> {
         }
 
         // if requested by a transform, close connection AFTER sending any responses back to the client
-        if wrapper.close_client_connection {
+        if chain_state.close_client_connection {
             return Ok(Some(CloseReason::TransformRequested));
         }
 

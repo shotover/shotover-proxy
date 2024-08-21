@@ -1,4 +1,7 @@
-use super::{DownChainProtocol, TransformContextBuilder, TransformContextConfig, UpChainProtocol};
+use super::{
+    DownChainProtocol, DownChainTransforms, TransformContextBuilder, TransformContextConfig,
+    UpChainProtocol,
+};
 use crate::config::chain::TransformChainConfig;
 use crate::http::HttpServerError;
 use crate::message::{Message, MessageIdMap, Messages};
@@ -243,17 +246,18 @@ impl Transform for Tee {
         NAME
     }
 
-    async fn transform<'shorter, 'longer: 'shorter>(
+    async fn transform(
         &mut self,
-        chain_state: &'shorter mut ChainState<'longer>,
+        chain_state: &mut ChainState,
+        down_chain: DownChainTransforms<'_>,
     ) -> Result<Messages> {
         match &mut self.behavior {
-            ConsistencyBehavior::Ignore => self.ignore_behaviour(chain_state).await,
+            ConsistencyBehavior::Ignore => self.ignore_behaviour(chain_state, down_chain).await,
             ConsistencyBehavior::FailOnMismatch => {
                 let (tee_result, chain_result) = tokio::join!(
                     self.tx
                         .process_request(chain_state.clone(), self.timeout_micros),
-                    chain_state.call_next_transform()
+                    down_chain.call_next_transform(chain_state)
                 );
 
                 let keep: ResultSource = self.result_source.load(Ordering::Relaxed);
@@ -283,7 +287,7 @@ impl Transform for Tee {
                 let (tee_result, chain_result) = tokio::join!(
                     self.tx
                         .process_request(chain_state.clone(), self.timeout_micros),
-                    chain_state.call_next_transform()
+                    down_chain.call_next_transform(chain_state)
                 );
 
                 let mut mismatched_requests = vec![];
@@ -311,7 +315,7 @@ impl Transform for Tee {
                 let (tee_result, chain_result) = tokio::join!(
                     self.tx
                         .process_request(chain_state.clone(), self.timeout_micros),
-                    chain_state.call_next_transform()
+                    down_chain.call_next_transform(chain_state)
                 );
 
                 let keep: ResultSource = self.result_source.load(Ordering::Relaxed);
@@ -486,9 +490,10 @@ impl IncomingResponses {
 }
 
 impl Tee {
-    async fn ignore_behaviour<'shorter, 'longer: 'shorter>(
+    async fn ignore_behaviour(
         &mut self,
-        chain_state: &'shorter mut ChainState<'longer>,
+        chain_state: &mut ChainState,
+        down_chain: DownChainTransforms<'_>,
     ) -> Result<Messages> {
         let result_source: ResultSource = self.result_source.load(Ordering::Relaxed);
         match result_source {
@@ -496,7 +501,7 @@ impl Tee {
                 let (tee_result, chain_result) = tokio::join!(
                     self.tx
                         .process_request_no_return(chain_state.clone(), self.timeout_micros),
-                    chain_state.call_next_transform()
+                    down_chain.call_next_transform(chain_state)
                 );
                 if let Err(e) = tee_result {
                     self.dropped_messages.increment(1);
@@ -508,7 +513,7 @@ impl Tee {
                 let (tee_result, chain_result) = tokio::join!(
                     self.tx
                         .process_request(chain_state.clone(), self.timeout_micros),
-                    chain_state.call_next_transform()
+                    down_chain.call_next_transform(chain_state)
                 );
                 if let Err(e) = chain_result {
                     self.dropped_messages.increment(1);

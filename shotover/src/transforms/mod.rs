@@ -146,10 +146,10 @@ pub struct TransformContextConfig {
 /// The [`Wrapper`] struct is passed into each transform and contains a list of mutable references to the
 /// remaining transforms that will process the messages attached to this [`Wrapper`].
 /// Most [`Transform`] authors will only be interested in [`wrapper.requests`].
-pub struct ChainState<'a> {
+#[derive(Clone)]
+pub struct ChainState {
     /// Requests received from the client
     pub requests: Messages,
-    transforms: IterMut<'a, TransformAndMetrics>,
     /// Contains the shotover source's ip address and port which the message was received on
     pub local_addr: SocketAddr,
     /// When true transforms must flush any buffered messages into the messages field.
@@ -163,32 +163,15 @@ pub struct ChainState<'a> {
     pub close_client_connection: bool,
 }
 
-/// [`Wrapper`] will not (cannot) bring the current list of transforms that it needs to traverse with it
-/// This is purely to make it convenient to clone all the data within Wrapper rather than it's transform
-/// state.
-impl<'a> Clone for ChainState<'a> {
-    fn clone(&self) -> Self {
-        ChainState {
-            requests: self.requests.clone(),
-            transforms: [].iter_mut(),
-            local_addr: self.local_addr,
-            flush: self.flush,
-            close_client_connection: self.close_client_connection,
-        }
+pub struct DownChainTransforms<'a>(IterMut<'a, TransformAndMetrics>);
+
+impl<'a> DownChainTransforms<'a> {
+    fn new(transforms: &'a mut [TransformAndMetrics]) -> Self {
+        DownChainTransforms(transforms.iter_mut())
     }
 }
 
-impl<'shorter, 'longer: 'shorter> ChainState<'longer> {
-    fn take(&mut self) -> Self {
-        ChainState {
-            requests: std::mem::take(&mut self.requests),
-            transforms: std::mem::take(&mut self.transforms),
-            local_addr: self.local_addr,
-            flush: self.flush,
-            close_client_connection: self.close_client_connection,
-        }
-    }
-
+impl DownChainTransforms<'_> {
     /// This function will take a mutable reference to the next transform out of the [`Wrapper`] structs
     /// vector of transform references. It then sets up the chain name and transform name in the local
     /// thread scope for structured logging.
@@ -197,14 +180,14 @@ impl<'shorter, 'longer: 'shorter> ChainState<'longer> {
     /// the execution time of the [Transform::transform] function as a metrics latency histogram.
     ///
     /// The result of calling the next transform is then provided as a response.
-    pub async fn call_next_transform(&'shorter mut self) -> Result<Messages> {
+    pub async fn call_next_transform(mut self, chain_state: &mut ChainState) -> Result<Messages> {
         let TransformAndMetrics {
             transform,
             transform_total,
             transform_failures,
             transform_latency,
             ..
-        } = match self.transforms.next() {
+        } = match self.0.next() {
             Some(transform) => transform,
             None => panic!("The transform chain does not end with a terminating transform. If you want to throw the messages away use a NullSink transform, otherwise use a terminating sink transform to send the messages somewhere.")
         };
@@ -213,7 +196,7 @@ impl<'shorter, 'longer: 'shorter> ChainState<'longer> {
 
         let start = Instant::now();
         let result = transform
-            .transform(self)
+            .transform(chain_state, self)
             .await
             .map_err(|e| e.context(anyhow!("{transform_name} transform failed")));
         transform_total.increment(1);
@@ -222,6 +205,17 @@ impl<'shorter, 'longer: 'shorter> ChainState<'longer> {
         }
         transform_latency.record(start.elapsed());
         result
+    }
+}
+
+impl ChainState {
+    fn take(&mut self) -> Self {
+        ChainState {
+            requests: std::mem::take(&mut self.requests),
+            local_addr: self.local_addr,
+            flush: self.flush,
+            close_client_connection: self.close_client_connection,
+        }
     }
 
     pub fn clone_requests_into_hashmap(&self, destination: &mut MessageIdMap<Message>) {
@@ -234,8 +228,7 @@ impl<'shorter, 'longer: 'shorter> ChainState<'longer> {
     pub fn new_test(requests: Messages) -> Self {
         ChainState {
             requests,
-            transforms: [].iter_mut(),
-            local_addr: DUMMY_ADDRESS,
+            local_addr: "127.0.0.1:8000".parse().unwrap(),
             flush: false,
             close_client_connection: false,
         }
@@ -244,7 +237,6 @@ impl<'shorter, 'longer: 'shorter> ChainState<'longer> {
     pub fn new_with_addr(requests: Messages, local_addr: SocketAddr) -> Self {
         ChainState {
             requests,
-            transforms: [].iter_mut(),
             local_addr,
             flush: false,
             close_client_connection: false,
@@ -254,7 +246,6 @@ impl<'shorter, 'longer: 'shorter> ChainState<'longer> {
     pub fn flush() -> Self {
         ChainState {
             requests: vec![],
-            transforms: [].iter_mut(),
             // The connection is closed so we need to just fake an address here
             local_addr: DUMMY_ADDRESS,
             flush: true,
@@ -272,10 +263,6 @@ impl<'shorter, 'longer: 'shorter> ChainState<'longer> {
             .map(|x| x.to_high_level_string())
             .collect::<Vec<_>>();
         format!("{:?}", messages)
-    }
-
-    pub fn reset(&mut self, transforms: &'longer mut [TransformAndMetrics]) {
-        self.transforms = transforms.iter_mut();
     }
 }
 
@@ -346,9 +333,10 @@ pub trait Transform: Send {
     /// * Transform that do call subsquent chains via `chain_state.call_next_transform()` are non-terminating transforms.
     ///
     /// You can have have a transform that is both non-terminating and a sink.
-    async fn transform<'shorter, 'longer: 'shorter>(
+    async fn transform(
         &mut self,
-        chain_state: &'shorter mut ChainState<'longer>,
+        chain_state: &mut ChainState,
+        down_chain: DownChainTransforms<'_>,
     ) -> Result<Messages>;
 
     /// Name of the transform used in logs and displayed to the user
