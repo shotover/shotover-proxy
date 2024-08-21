@@ -19,6 +19,7 @@ use tokio::sync::Notify;
 use tokio::sync::{mpsc, oneshot};
 use tokio_stream::StreamExt;
 
+pub(crate) mod connection;
 mod create_token;
 mod recreate_token_queue;
 

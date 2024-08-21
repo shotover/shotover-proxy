@@ -1040,24 +1040,31 @@ routing message to a random node so that:
     fn recv_responses(&mut self) -> Result<Vec<Message>> {
         // Convert all received PendingRequestTy::Sent into PendingRequestTy::Received
         for (connection_destination, connection) in &mut self.connections.connections {
-            self.temp_responses_buffer.clear();
-            connection
-                .try_recv_into(&mut self.temp_responses_buffer)
-                .with_context(|| format!("Failed to receive from {connection_destination:?}"))?;
-            for response in self.temp_responses_buffer.drain(..) {
-                let mut response = Some(response);
-                for pending_request in &mut self.pending_requests {
-                    if let PendingRequestTy::Sent { destination, index } = &mut pending_request.ty {
-                        if destination == connection_destination {
-                            // Store the PendingRequestTy::Received at the location of the next PendingRequestTy::Sent
-                            // All other PendingRequestTy::Sent need to be decremented, in order to determine the PendingRequestTy::Sent
-                            // to be used next time, and the time after that, and ...
-                            if *index == 0 {
-                                pending_request.ty = PendingRequestTy::Received {
-                                    response: response.take().unwrap(),
-                                };
-                            } else {
-                                *index -= 1;
+            // skip recv when no pending requests to avoid timeouts on old connections
+            if connection.pending_requests_count() != 0 {
+                self.temp_responses_buffer.clear();
+                connection
+                    .try_recv_into(&mut self.temp_responses_buffer)
+                    .with_context(|| {
+                        format!("Failed to receive from {connection_destination:?}")
+                    })?;
+                for response in self.temp_responses_buffer.drain(..) {
+                    let mut response = Some(response);
+                    for pending_request in &mut self.pending_requests {
+                        if let PendingRequestTy::Sent { destination, index } =
+                            &mut pending_request.ty
+                        {
+                            if destination == connection_destination {
+                                // Store the PendingRequestTy::Received at the location of the next PendingRequestTy::Sent
+                                // All other PendingRequestTy::Sent need to be decremented, in order to determine the PendingRequestTy::Sent
+                                // to be used next time, and the time after that, and ...
+                                if *index == 0 {
+                                    pending_request.ty = PendingRequestTy::Received {
+                                        response: response.take().unwrap(),
+                                    };
+                                } else {
+                                    *index -= 1;
+                                }
                             }
                         }
                     }
