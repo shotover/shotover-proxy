@@ -6,7 +6,7 @@ use crate::transforms::DownChainProtocol;
 use crate::transforms::TransformContextBuilder;
 use crate::transforms::TransformContextConfig;
 use crate::transforms::UpChainProtocol;
-use crate::transforms::{Transform, TransformBuilder, TransformConfig, Wrapper};
+use crate::transforms::{ChainState, Transform, TransformBuilder, TransformConfig};
 use anyhow::{anyhow, bail, Context, Result};
 use async_trait::async_trait;
 use bytes::{BufMut, Bytes, BytesMut};
@@ -78,9 +78,9 @@ impl Transform for RedisClusterPortsRewrite {
 
     async fn transform<'shorter, 'longer: 'shorter>(
         &mut self,
-        requests_wrapper: &'shorter mut Wrapper<'longer>,
+        chain_state: &'shorter mut ChainState<'longer>,
     ) -> Result<Messages> {
-        for message in requests_wrapper.requests.iter_mut() {
+        for message in chain_state.requests.iter_mut() {
             let message_id = message.id();
             if let Some(frame) = message.frame() {
                 if is_cluster_slots(frame) {
@@ -95,7 +95,7 @@ impl Transform for RedisClusterPortsRewrite {
             }
         }
 
-        let mut responses = requests_wrapper.call_next_transform().await?;
+        let mut responses = chain_state.call_next_transform().await?;
 
         for response in &mut responses {
             if let Some(request_id) = response.request_id() {

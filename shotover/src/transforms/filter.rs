@@ -1,6 +1,6 @@
 use super::{DownChainProtocol, TransformContextBuilder, TransformContextConfig, UpChainProtocol};
 use crate::message::{Message, MessageIdMap, Messages, QueryType};
-use crate::transforms::{Transform, TransformBuilder, TransformConfig, Wrapper};
+use crate::transforms::{ChainState, Transform, TransformBuilder, TransformConfig};
 use anyhow::Result;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -66,9 +66,9 @@ impl Transform for QueryTypeFilter {
 
     async fn transform<'shorter, 'longer: 'shorter>(
         &mut self,
-        requests_wrapper: &'shorter mut Wrapper<'longer>,
+        chain_state: &'shorter mut ChainState<'longer>,
     ) -> Result<Messages> {
-        for request in requests_wrapper.requests.iter_mut() {
+        for request in chain_state.requests.iter_mut() {
             let filter_out = match &self.filter {
                 Filter::AllowList(allow_list) => !allow_list.contains(&request.get_query_type()),
                 Filter::DenyList(deny_list) => deny_list.contains(&request.get_query_type()),
@@ -87,7 +87,7 @@ impl Transform for QueryTypeFilter {
             }
         }
 
-        let mut responses = requests_wrapper.call_next_transform().await?;
+        let mut responses = chain_state.call_next_transform().await?;
         for response in responses.iter_mut() {
             if let Some(request_id) = response.request_id() {
                 if let Some(error_response) = self.filtered_requests.remove(&request_id) {
@@ -110,7 +110,7 @@ mod test {
     use crate::transforms::chain::TransformAndMetrics;
     use crate::transforms::filter::QueryTypeFilter;
     use crate::transforms::loopback::Loopback;
-    use crate::transforms::{Transform, Wrapper};
+    use crate::transforms::{ChainState, Transform};
     use pretty_assertions::assert_eq;
 
     #[tokio::test(flavor = "multi_thread")]
@@ -139,12 +139,9 @@ mod test {
             })
             .collect();
 
-        let mut requests_wrapper = Wrapper::new_test(messages);
-        requests_wrapper.reset(&mut chain);
-        let result = filter_transform
-            .transform(&mut requests_wrapper)
-            .await
-            .unwrap();
+        let mut chain_state = ChainState::new_test(messages);
+        chain_state.reset(&mut chain);
+        let result = filter_transform.transform(&mut chain_state).await.unwrap();
 
         assert_eq!(result.len(), 26);
 
@@ -197,12 +194,9 @@ mod test {
             })
             .collect();
 
-        let mut requests_wrapper = Wrapper::new_test(messages);
-        requests_wrapper.reset(&mut chain);
-        let result = filter_transform
-            .transform(&mut requests_wrapper)
-            .await
-            .unwrap();
+        let mut chain_state = ChainState::new_test(messages);
+        chain_state.reset(&mut chain);
+        let result = filter_transform.transform(&mut chain_state).await.unwrap();
 
         assert_eq!(result.len(), 26);
 
