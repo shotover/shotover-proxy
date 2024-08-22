@@ -38,7 +38,7 @@ use std::collections::{HashMap, VecDeque};
 use std::hash::Hasher;
 use std::sync::atomic::AtomicI64;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
@@ -400,6 +400,7 @@ impl KafkaSinkCluster {
                 &self.nodes,
                 &self.first_contact_points,
                 &self.rack,
+                Instant::now(),
                 Destination::ControlConnection,
             )
             .await?;
@@ -1013,6 +1014,7 @@ routing message to a random node so that:
             }
         }
 
+        let recent_instant = Instant::now();
         for (destination, requests) in broker_to_routed_requests {
             self.connections
                 .get_or_open_connection(
@@ -1023,6 +1025,7 @@ routing message to a random node so that:
                     &self.nodes,
                     &self.first_contact_points,
                     &self.rack,
+                    recent_instant,
                     destination,
                 )
                 .await?
@@ -1037,8 +1040,14 @@ routing message to a random node so that:
     fn recv_responses(&mut self) -> Result<Vec<Message>> {
         // Convert all received PendingRequestTy::Sent into PendingRequestTy::Received
         for (connection_destination, connection) in &mut self.connections.connections {
-            self.temp_responses_buffer.clear();
-            if let Ok(()) = connection.try_recv_into(&mut self.temp_responses_buffer) {
+            // skip recv when no pending requests to avoid timeouts on old connections
+            if connection.pending_requests_count() != 0 {
+                self.temp_responses_buffer.clear();
+                connection
+                    .try_recv_into(&mut self.temp_responses_buffer)
+                    .with_context(|| {
+                        format!("Failed to receive from {connection_destination:?}")
+                    })?;
                 for response in self.temp_responses_buffer.drain(..) {
                     let mut response = Some(response);
                     for pending_request in &mut self.pending_requests {

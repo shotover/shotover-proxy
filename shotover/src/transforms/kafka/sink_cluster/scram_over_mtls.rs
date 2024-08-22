@@ -19,6 +19,7 @@ use tokio::sync::Notify;
 use tokio::sync::{mpsc, oneshot};
 use tokio_stream::StreamExt;
 
+pub(crate) mod connection;
 mod create_token;
 mod recreate_token_queue;
 
@@ -225,18 +226,21 @@ impl AuthorizeScramOverMtlsConfig {
             .iter()
             .map(|x| KafkaAddress::from_str(x))
             .collect();
+        let delegation_token_lifetime = Duration::from_secs(self.delegation_token_lifetime_seconds);
         Ok(AuthorizeScramOverMtlsBuilder {
             token_task: TokenTask::new(
                 mtls_connection_factory,
                 contact_points?,
-                Duration::from_secs(self.delegation_token_lifetime_seconds),
+                delegation_token_lifetime,
             ),
+            delegation_token_lifetime,
         })
     }
 }
 
 pub struct AuthorizeScramOverMtlsBuilder {
     pub token_task: TokenTask,
+    pub delegation_token_lifetime: Duration,
 }
 
 impl AuthorizeScramOverMtlsBuilder {
@@ -245,6 +249,7 @@ impl AuthorizeScramOverMtlsBuilder {
             original_scram_state: OriginalScramState::WaitingOnServerFirst,
             token_task: self.token_task.clone(),
             username: String::new(),
+            delegation_token_lifetime: self.delegation_token_lifetime,
         }
     }
 }
@@ -256,6 +261,7 @@ pub struct AuthorizeScramOverMtls {
     token_task: TokenTask,
     /// The username used in the original scram auth to generate the delegation token
     username: String,
+    pub delegation_token_lifetime: Duration,
 }
 
 impl AuthorizeScramOverMtls {
