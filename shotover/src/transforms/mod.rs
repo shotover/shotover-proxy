@@ -7,7 +7,7 @@ use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use futures::Future;
 use std::fmt::Debug;
-use std::net::SocketAddr;
+use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::pin::Pin;
 use std::slice::IterMut;
 use std::sync::Arc;
@@ -236,7 +236,7 @@ impl<'shorter, 'longer: 'shorter> ChainState<'longer> {
         ChainState {
             requests,
             transforms: [].iter_mut(),
-            local_addr: "127.0.0.1:8000".parse().unwrap(),
+            local_addr: DUMMY_ADDRESS,
             flush: false,
             close_client_connection: false,
         }
@@ -257,7 +257,7 @@ impl<'shorter, 'longer: 'shorter> ChainState<'longer> {
             requests: vec![],
             transforms: [].iter_mut(),
             // The connection is closed so we need to just fake an address here
-            local_addr: "127.0.0.1:10000".parse().unwrap(),
+            local_addr: DUMMY_ADDRESS,
             flush: true,
             close_client_connection: false,
         }
@@ -279,6 +279,8 @@ impl<'shorter, 'longer: 'shorter> ChainState<'longer> {
         self.transforms = transforms.iter_mut();
     }
 }
+
+const DUMMY_ADDRESS: SocketAddr = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0));
 
 /// This trait is the primary extension point for Shotover-proxy.
 /// A [`Transform`] is a struct that implements the Transform trait and enables you to modify and observe database
