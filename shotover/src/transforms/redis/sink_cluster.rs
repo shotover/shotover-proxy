@@ -8,8 +8,8 @@ use crate::transforms::redis::TransformError;
 use crate::transforms::util::cluster_connection_pool::{Authenticator, ConnectionPool};
 use crate::transforms::util::{Request, Response};
 use crate::transforms::{
-    DownChainProtocol, ResponseFuture, Transform, TransformBuilder, TransformConfig,
-    TransformContextBuilder, TransformContextConfig, UpChainProtocol, Wrapper,
+    ChainState, DownChainProtocol, ResponseFuture, Transform, TransformBuilder, TransformConfig,
+    TransformContextBuilder, TransformContextConfig, UpChainProtocol,
 };
 use anyhow::{anyhow, bail, ensure, Context, Result};
 use async_trait::async_trait;
@@ -1019,7 +1019,7 @@ impl Transform for RedisSinkCluster {
 
     async fn transform<'shorter, 'longer: 'shorter>(
         &mut self,
-        requests_wrapper: &'shorter mut Wrapper<'longer>,
+        chain_state: &'shorter mut ChainState<'longer>,
     ) -> Result<Messages> {
         if !self.has_run_init {
             self.topology = (*self.shared_topology.read().await).clone();
@@ -1053,9 +1053,9 @@ impl Transform for RedisSinkCluster {
 
         let mut responses = FuturesOrdered::new();
 
-        let mut requests = requests_wrapper.requests.clone();
+        let mut requests = chain_state.requests.clone();
         requests.reverse();
-        for message in requests_wrapper.requests.drain(..) {
+        for message in chain_state.requests.drain(..) {
             responses.push_back(match self.dispatch_message(message).await {
                 Ok(response) => response,
                 Err(e) => short_circuit(RedisFrame::Error(format!("ERR {e}").into())).unwrap(),

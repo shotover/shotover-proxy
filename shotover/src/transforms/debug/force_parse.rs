@@ -8,8 +8,8 @@ use crate::message::Messages;
 use crate::transforms::TransformConfig;
 use crate::transforms::TransformContextBuilder;
 use crate::transforms::TransformContextConfig;
+use crate::transforms::{ChainState, Transform, TransformBuilder};
 use crate::transforms::{DownChainProtocol, UpChainProtocol};
-use crate::transforms::{Transform, TransformBuilder, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -107,9 +107,9 @@ impl Transform for DebugForceParse {
 
     async fn transform<'shorter, 'longer: 'shorter>(
         &mut self,
-        requests_wrapper: &'shorter mut Wrapper<'longer>,
+        chain_state: &'shorter mut ChainState<'longer>,
     ) -> Result<Messages> {
-        for message in &mut requests_wrapper.requests {
+        for message in &mut chain_state.requests {
             if self.parse_requests {
                 message.frame();
             }
@@ -118,7 +118,7 @@ impl Transform for DebugForceParse {
             }
         }
 
-        let mut response = requests_wrapper.call_next_transform().await;
+        let mut response = chain_state.call_next_transform().await;
 
         if let Ok(response) = response.as_mut() {
             for message in response {

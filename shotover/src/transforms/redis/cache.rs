@@ -3,8 +3,8 @@ use crate::frame::{CassandraFrame, CassandraOperation, Frame, MessageType, Redis
 use crate::message::{Message, MessageIdMap, Messages, Metadata};
 use crate::transforms::chain::{TransformChain, TransformChainBuilder};
 use crate::transforms::{
-    DownChainProtocol, Transform, TransformBuilder, TransformConfig, TransformContextBuilder,
-    TransformContextConfig, UpChainProtocol, Wrapper,
+    ChainState, DownChainProtocol, Transform, TransformBuilder, TransformConfig,
+    TransformContextBuilder, TransformContextConfig, UpChainProtocol,
 };
 use anyhow::{bail, Result};
 use async_trait::async_trait;
@@ -296,7 +296,7 @@ impl SimpleRedisCache {
 
         let redis_responses = self
             .cache_chain
-            .process_request(&mut Wrapper::new_with_addr(redis_requests, local_addr))
+            .process_request(&mut ChainState::new_with_addr(redis_requests, local_addr))
             .await?;
 
         self.unwrap_cache_response(redis_responses);
@@ -376,15 +376,15 @@ impl SimpleRedisCache {
     /// calls the next transform and process the result for caching.
     async fn execute_upstream_and_write_to_cache(
         &mut self,
-        requests_wrapper: &mut Wrapper<'_>,
+        chain_state: &mut ChainState<'_>,
     ) -> Result<Messages> {
-        let local_addr = requests_wrapper.local_addr;
-        let mut request_messages: Vec<_> = requests_wrapper
+        let local_addr = chain_state.local_addr;
+        let mut request_messages: Vec<_> = chain_state
             .requests
             .iter_mut()
             .map(|message| message.frame().cloned())
             .collect();
-        let mut response_messages = requests_wrapper.call_next_transform().await?;
+        let mut response_messages = chain_state.call_next_transform().await?;
 
         let mut cache_messages = vec![];
         for (request, response) in request_messages
@@ -415,7 +415,7 @@ impl SimpleRedisCache {
         if !cache_messages.is_empty() {
             let result = self
                 .cache_chain
-                .process_request(&mut Wrapper::new_with_addr(cache_messages, local_addr))
+                .process_request(&mut ChainState::new_with_addr(cache_messages, local_addr))
                 .await;
             if let Err(err) = result {
                 warn!("Cache error: {err}");
@@ -620,21 +620,21 @@ impl Transform for SimpleRedisCache {
 
     async fn transform<'shorter, 'longer: 'shorter>(
         &mut self,
-        requests_wrapper: &'shorter mut Wrapper<'longer>,
+        chain_state: &'shorter mut ChainState<'longer>,
     ) -> Result<Messages> {
-        self.read_from_cache(&mut requests_wrapper.requests, requests_wrapper.local_addr)
+        self.read_from_cache(&mut chain_state.requests, chain_state.local_addr)
             .await
             .unwrap_or_else(|err| error!("Failed to fetch from cache: {err:?}"));
 
         // send the cache misses to cassandra
-        // since requests_wrapper.requests is now empty we can just swap the two vectors to avoid reallocations
-        assert!(requests_wrapper.requests.is_empty());
+        // since chain_state.requests is now empty we can just swap the two vectors to avoid reallocations
+        assert!(chain_state.requests.is_empty());
         std::mem::swap(
-            &mut requests_wrapper.requests,
+            &mut chain_state.requests,
             &mut self.cache_miss_cassandra_requests,
         );
         let mut responses = self
-            .execute_upstream_and_write_to_cache(requests_wrapper)
+            .execute_upstream_and_write_to_cache(chain_state)
             .await?;
 
         // add the cache hits to the final response

@@ -2,7 +2,7 @@ use super::{DownChainProtocol, TransformContextBuilder, TransformContextConfig, 
 use crate::config::chain::TransformChainConfig;
 use crate::message::Messages;
 use crate::transforms::chain::{BufferedChain, TransformChainBuilder};
-use crate::transforms::{Transform, TransformBuilder, TransformConfig, Wrapper};
+use crate::transforms::{ChainState, Transform, TransformBuilder, TransformConfig};
 use anyhow::Result;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -87,7 +87,7 @@ impl Transform for ConnectionBalanceAndPool {
 
     async fn transform<'shorter, 'longer: 'shorter>(
         &mut self,
-        requests_wrapper: &'shorter mut Wrapper<'longer>,
+        chain_state: &'shorter mut ChainState<'longer>,
     ) -> Result<Messages> {
         if self.active_connection.is_none() {
             let mut all_connections = self.all_connections.lock().await;
@@ -108,7 +108,7 @@ impl Transform for ConnectionBalanceAndPool {
         self.active_connection
             .as_mut()
             .unwrap()
-            .process_request(requests_wrapper.take(), None)
+            .process_request(chain_state.take(), None)
             .await
     }
 }

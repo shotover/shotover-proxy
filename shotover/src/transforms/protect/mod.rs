@@ -7,7 +7,7 @@ use crate::frame::{
 use crate::message::{Message, MessageIdMap, Messages};
 use crate::transforms::protect::key_management::KeyManager;
 pub use crate::transforms::protect::key_management::KeyManagerConfig;
-use crate::transforms::{Transform, TransformBuilder, Wrapper};
+use crate::transforms::{ChainState, Transform, TransformBuilder};
 use anyhow::Result;
 use async_trait::async_trait;
 use cql3_parser::cassandra_statement::CassandraStatement;
@@ -186,10 +186,10 @@ impl Transform for Protect {
 
     async fn transform<'shorter, 'longer: 'shorter>(
         &mut self,
-        requests_wrapper: &'shorter mut Wrapper<'longer>,
+        chain_state: &'shorter mut ChainState<'longer>,
     ) -> Result<Messages> {
         // encrypt the values included in any INSERT or UPDATE queries
-        for message in requests_wrapper.requests.iter_mut() {
+        for message in chain_state.requests.iter_mut() {
             let mut invalidate_cache = false;
 
             if let Some(Frame::Cassandra(CassandraFrame { operation, .. })) = message.frame() {
@@ -202,8 +202,8 @@ impl Transform for Protect {
             }
         }
 
-        requests_wrapper.clone_requests_into_hashmap(&mut self.requests);
-        let mut responses = requests_wrapper.call_next_transform().await?;
+        chain_state.clone_requests_into_hashmap(&mut self.requests);
+        let mut responses = chain_state.call_next_transform().await?;
 
         for response in &mut responses {
             if let Some(request_id) = response.request_id() {

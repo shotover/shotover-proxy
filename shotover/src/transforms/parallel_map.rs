@@ -2,7 +2,7 @@ use super::{DownChainProtocol, TransformContextBuilder, TransformContextConfig, 
 use crate::config::chain::TransformChainConfig;
 use crate::message::Messages;
 use crate::transforms::chain::{TransformChain, TransformChainBuilder};
-use crate::transforms::{Transform, TransformBuilder, TransformConfig, Wrapper};
+use crate::transforms::{ChainState, Transform, TransformBuilder, TransformConfig};
 use anyhow::Result;
 use async_trait::async_trait;
 use futures::stream::{FuturesOrdered, FuturesUnordered};
@@ -110,19 +110,19 @@ impl Transform for ParallelMap {
 
     async fn transform<'shorter, 'longer: 'shorter>(
         &mut self,
-        requests_wrapper: &'shorter mut Wrapper<'longer>,
+        chain_state: &'shorter mut ChainState<'longer>,
     ) -> Result<Messages> {
-        let mut results = Vec::with_capacity(requests_wrapper.requests.len());
-        let mut message_iter = requests_wrapper.requests.drain(..);
+        let mut results = Vec::with_capacity(chain_state.requests.len());
+        let mut message_iter = chain_state.requests.drain(..);
         while message_iter.len() != 0 {
             let mut future = UOFutures::new(self.ordered);
             for chain in self.chains.iter_mut() {
                 if let Some(message) = message_iter.next() {
                     future.push(async {
                         chain
-                            .process_request(&mut Wrapper::new_with_addr(
+                            .process_request(&mut ChainState::new_with_addr(
                                 vec![message],
-                                requests_wrapper.local_addr,
+                                chain_state.local_addr,
                             ))
                             .await
                     });

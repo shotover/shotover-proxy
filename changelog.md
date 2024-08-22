@@ -7,7 +7,8 @@ This assists us in knowing when to make the next release a breaking release and 
 
 ### shotover rust API
 
-`Transform::transform` now takes `&mut Wrapper` instead of `Wrapper`.
+* `Transform::transform` now takes `&mut Wrapper` instead of `Wrapper`.
+* `Wrapper` is renamed to ChainState.
 
 ## 0.4.0
 

@@ -3,8 +3,8 @@ use crate::frame::{Frame, MessageType};
 use crate::message::{Message, MessageIdMap, Messages};
 use crate::tls::{TlsConnector, TlsConnectorConfig};
 use crate::transforms::{
-    DownChainProtocol, Transform, TransformBuilder, TransformContextBuilder, UpChainProtocol,
-    Wrapper,
+    ChainState, DownChainProtocol, Transform, TransformBuilder, TransformContextBuilder,
+    UpChainProtocol,
 };
 use crate::transforms::{TransformConfig, TransformContextConfig};
 use anyhow::{anyhow, Context, Result};
@@ -341,16 +341,16 @@ impl Transform for KafkaSinkCluster {
 
     async fn transform<'shorter, 'longer: 'shorter>(
         &mut self,
-        requests_wrapper: &'shorter mut Wrapper<'longer>,
+        chain_state: &'shorter mut ChainState<'longer>,
     ) -> Result<Messages> {
-        let mut responses = if requests_wrapper.requests.is_empty() {
+        let mut responses = if chain_state.requests.is_empty() {
             // there are no requests, so no point sending any, but we should check for any responses without awaiting
             self.recv_responses()
                 .context("Failed to receive responses (without sending requests)")?
         } else {
             self.update_local_nodes().await;
 
-            for request in &mut requests_wrapper.requests {
+            for request in &mut chain_state.requests {
                 let id = request.id();
                 if let Some(Frame::Kafka(KafkaFrame::Request {
                     body: RequestBody::FindCoordinator(find_coordinator),
@@ -367,7 +367,7 @@ impl Transform for KafkaSinkCluster {
                 }
             }
 
-            self.route_requests(std::mem::take(&mut requests_wrapper.requests))
+            self.route_requests(std::mem::take(&mut chain_state.requests))
                 .await
                 .context("Failed to route requests")?;
             self.send_requests().await?;
@@ -375,12 +375,9 @@ impl Transform for KafkaSinkCluster {
                 .context("Failed to receive responses")?
         };
 
-        self.process_responses(
-            &mut responses,
-            &mut requests_wrapper.close_client_connection,
-        )
-        .await
-        .context("Failed to process responses")?;
+        self.process_responses(&mut responses, &mut chain_state.close_client_connection)
+            .await
+            .context("Failed to process responses")?;
         Ok(responses)
     }
 }

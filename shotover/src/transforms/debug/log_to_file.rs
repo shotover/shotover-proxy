@@ -1,7 +1,7 @@
 use crate::message::{Encodable, Message};
+use crate::transforms::{ChainState, Transform, TransformBuilder, TransformContextBuilder};
 #[cfg(feature = "alpha-transforms")]
 use crate::transforms::{DownChainProtocol, UpChainProtocol};
-use crate::transforms::{Transform, TransformBuilder, TransformContextBuilder, Wrapper};
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -91,9 +91,9 @@ impl Transform for DebugLogToFile {
 
     async fn transform<'shorter, 'longer: 'shorter>(
         &mut self,
-        requests_wrapper: &'shorter mut Wrapper<'longer>,
+        chain_state: &'shorter mut ChainState<'longer>,
     ) -> Result<Vec<Message>> {
-        for message in &requests_wrapper.requests {
+        for message in &chain_state.requests {
             self.request_counter += 1;
             let path = self
                 .requests
@@ -101,7 +101,7 @@ impl Transform for DebugLogToFile {
             log_message(message, path.as_path()).await?;
         }
 
-        let response = requests_wrapper.call_next_transform().await?;
+        let response = chain_state.call_next_transform().await?;
 
         for message in &response {
             self.response_counter += 1;

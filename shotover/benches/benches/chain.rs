@@ -20,7 +20,7 @@ use shotover::transforms::query_counter::QueryCounter;
 use shotover::transforms::redis::cluster_ports_rewrite::RedisClusterPortsRewrite;
 use shotover::transforms::throttling::RequestThrottlingConfig;
 use shotover::transforms::{
-    TransformConfig, TransformContextBuilder, TransformContextConfig, Wrapper,
+    ChainState, TransformConfig, TransformContextBuilder, TransformContextConfig,
 };
 
 fn criterion_benchmark(c: &mut Criterion) {
@@ -32,14 +32,14 @@ fn criterion_benchmark(c: &mut Criterion) {
     // loopback is the fastest possible transform as it does not even have to drop the received requests
     {
         let chain = TransformChainBuilder::new(vec![Box::<Loopback>::default()], "bench");
-        let wrapper = Wrapper::new_with_addr(
+        let chain_state = ChainState::new_with_addr(
             vec![Message::from_frame(Frame::Redis(RedisFrame::Null))],
             "127.0.0.1:6379".parse().unwrap(),
         );
 
         group.bench_function("loopback", |b| {
             b.to_async(&rt).iter_batched(
-                || BenchInput::new_pre_used(&chain, &wrapper),
+                || BenchInput::new_pre_used(&chain, &chain_state),
                 BenchInput::bench,
                 BatchSize::SmallInput,
             )
@@ -48,14 +48,14 @@ fn criterion_benchmark(c: &mut Criterion) {
 
     {
         let chain = TransformChainBuilder::new(vec![Box::<NullSink>::default()], "bench");
-        let wrapper = Wrapper::new_with_addr(
+        let chain_state = ChainState::new_with_addr(
             vec![Message::from_frame(Frame::Redis(RedisFrame::Null))],
             "127.0.0.1:6379".parse().unwrap(),
         );
 
         group.bench_function("nullsink", |b| {
             b.to_async(&rt).iter_batched(
-                || BenchInput::new_pre_used(&chain, &wrapper),
+                || BenchInput::new_pre_used(&chain, &chain_state),
                 BenchInput::bench,
                 BatchSize::SmallInput,
             )
@@ -73,7 +73,7 @@ fn criterion_benchmark(c: &mut Criterion) {
             ],
             "bench",
         );
-        let wrapper = Wrapper::new_with_addr(
+        let chain_state = ChainState::new_with_addr(
             vec![
                 Message::from_frame(Frame::Redis(RedisFrame::Array(vec![
                     RedisFrame::BulkString(Bytes::from_static(b"SET")),
@@ -90,7 +90,7 @@ fn criterion_benchmark(c: &mut Criterion) {
 
         group.bench_function("redis_filter", |b| {
             b.to_async(&rt).iter_batched(
-                || BenchInput::new_pre_used(&chain, &wrapper),
+                || BenchInput::new_pre_used(&chain, &chain_state),
                 BenchInput::bench,
                 BatchSize::SmallInput,
             )
@@ -105,7 +105,7 @@ fn criterion_benchmark(c: &mut Criterion) {
             ],
             "bench",
         );
-        let wrapper = Wrapper::new_with_addr(
+        let chain_state = ChainState::new_with_addr(
             vec![Message::from_frame(Frame::Redis(RedisFrame::Array(vec![
                 RedisFrame::BulkString(Bytes::from_static(b"SET")),
                 RedisFrame::BulkString(Bytes::from_static(b"foo")),
@@ -116,7 +116,7 @@ fn criterion_benchmark(c: &mut Criterion) {
 
         group.bench_function("redis_cluster_ports_rewrite", |b| {
             b.to_async(&rt).iter_batched(
-                || BenchInput::new_pre_used(&chain, &wrapper),
+                || BenchInput::new_pre_used(&chain, &chain_state),
                 BenchInput::bench,
                 BatchSize::SmallInput,
             )
@@ -141,7 +141,7 @@ fn criterion_benchmark(c: &mut Criterion) {
             ],
             "bench",
         );
-        let wrapper = Wrapper::new_with_addr(
+        let chain_state = ChainState::new_with_addr(
             vec![Message::from_bytes(
                 Bytes::from(
                     // a simple select query
@@ -160,7 +160,7 @@ fn criterion_benchmark(c: &mut Criterion) {
 
         group.bench_function("cassandra_request_throttling_unparsed", |b| {
             b.to_async(&rt).iter_batched(
-                || BenchInput::new_pre_used(&chain, &wrapper),
+                || BenchInput::new_pre_used(&chain, &chain_state),
                 BenchInput::bench,
                 BatchSize::SmallInput,
             )
@@ -176,7 +176,7 @@ fn criterion_benchmark(c: &mut Criterion) {
             "bench",
         );
 
-        let wrapper = Wrapper::new_with_addr(
+        let chain_state = ChainState::new_with_addr(
             vec![Message::from_bytes(
                 CassandraFrame {
                     version: Version::V4,
@@ -211,7 +211,7 @@ fn criterion_benchmark(c: &mut Criterion) {
 
         group.bench_function("cassandra_rewrite_peers_passthrough", |b| {
             b.to_async(&rt).iter_batched(
-                || BenchInput::new_pre_used(&chain, &wrapper),
+                || BenchInput::new_pre_used(&chain, &chain_state),
                 BenchInput::bench,
                 BatchSize::SmallInput,
             )
@@ -248,25 +248,25 @@ fn criterion_benchmark(c: &mut Criterion) {
             "bench",
         );
 
-        let wrapper = cassandra_parsed_query(
+        let chain_state = cassandra_parsed_query(
             "INSERT INTO test_protect_keyspace.unprotected_table (pk, cluster, col1, col2, col3) VALUES ('pk1', 'cluster', 'I am gonna get encrypted!!', 42, true);"
         );
 
         group.bench_function("cassandra_protect_unprotected", |b| {
             b.to_async(&rt).iter_batched(
-                || BenchInput::new_pre_used(&chain, &wrapper),
+                || BenchInput::new_pre_used(&chain, &chain_state),
                 BenchInput::bench,
                 BatchSize::SmallInput,
             )
         });
 
-        let wrapper = cassandra_parsed_query(
+        let chain_state = cassandra_parsed_query(
             "INSERT INTO test_protect_keyspace.protected_table (pk, cluster, col1, col2, col3) VALUES ('pk1', 'cluster', 'I am gonna get encrypted!!', 42, true);"
         );
 
         group.bench_function("cassandra_protect_protected", |b| {
             b.to_async(&rt).iter_batched(
-                || BenchInput::new_pre_used(&chain, &wrapper),
+                || BenchInput::new_pre_used(&chain, &chain_state),
                 BenchInput::bench,
                 BatchSize::SmallInput,
             )
@@ -281,7 +281,7 @@ fn criterion_benchmark(c: &mut Criterion) {
             ],
             "bench",
         );
-        let wrapper = Wrapper::new_with_addr(
+        let chain_state = ChainState::new_with_addr(
             vec![
                 Message::from_frame(Frame::Redis(RedisFrame::Array(vec![
                     RedisFrame::BulkString(Bytes::from_static(b"SET")),
@@ -298,7 +298,7 @@ fn criterion_benchmark(c: &mut Criterion) {
 
         group.bench_function("query_counter_fresh", |b| {
             b.to_async(&rt).iter_batched(
-                || BenchInput::new_fresh(&chain, &wrapper),
+                || BenchInput::new_fresh(&chain, &chain_state),
                 BenchInput::bench,
                 BatchSize::SmallInput,
             )
@@ -306,7 +306,7 @@ fn criterion_benchmark(c: &mut Criterion) {
 
         group.bench_function("query_counter_pre_used", |b| {
             b.to_async(&rt).iter_batched(
-                || BenchInput::new_pre_used(&chain, &wrapper),
+                || BenchInput::new_pre_used(&chain, &chain_state),
                 BenchInput::bench,
                 BatchSize::SmallInput,
             )
@@ -315,8 +315,8 @@ fn criterion_benchmark(c: &mut Criterion) {
 }
 
 #[cfg(feature = "alpha-transforms")]
-fn cassandra_parsed_query(query: &str) -> Wrapper {
-    Wrapper::new_with_addr(
+fn cassandra_parsed_query(query: &str) -> ChainState {
+    ChainState::new_with_addr(
         vec![Message::from_frame(Frame::Cassandra(CassandraFrame {
             version: Version::V4,
             stream_id: 0,
@@ -343,38 +343,38 @@ fn cassandra_parsed_query(query: &str) -> Wrapper {
 
 struct BenchInput<'a> {
     chain: TransformChain,
-    wrapper: Wrapper<'a>,
+    chain_state: ChainState<'a>,
 }
 
 impl<'a> BenchInput<'a> {
     // Setup the bench such that the chain is completely fresh
-    fn new_fresh(chain: &TransformChainBuilder, wrapper: &Wrapper<'a>) -> Self {
+    fn new_fresh(chain: &TransformChainBuilder, chain_state: &ChainState<'a>) -> Self {
         BenchInput {
             chain: chain.build(TransformContextBuilder::new_test()),
-            wrapper: wrapper.clone(),
+            chain_state: chain_state.clone(),
         }
     }
 
-    // Setup the bench such that the chain has already had the test wrapper passed through it.
+    // Setup the bench such that the chain has already had the test chain_state passed through it.
     // This ensures that any adhoc setup for that message type has been performed.
     // This is a more realistic bench for typical usage.
-    fn new_pre_used(chain: &TransformChainBuilder, wrapper: &Wrapper<'a>) -> Self {
+    fn new_pre_used(chain: &TransformChainBuilder, chain_state: &ChainState<'a>) -> Self {
         let mut chain = chain.build(TransformContextBuilder::new_test());
 
         // Run the chain once so we are measuring the chain once each transform has been fully initialized
-        futures::executor::block_on(chain.process_request(&mut wrapper.clone())).unwrap();
+        futures::executor::block_on(chain.process_request(&mut chain_state.clone())).unwrap();
 
         BenchInput {
             chain,
-            wrapper: wrapper.clone(),
+            chain_state: chain_state.clone(),
         }
     }
 
     async fn bench(mut self) -> (Vec<Message>, TransformChain) {
         // Return both the chain itself and the response to avoid measuring the time to drop the values in the benchmark
-        let mut wrapper = self.wrapper;
+        let mut chain_state = self.chain_state;
         (
-            self.chain.process_request(&mut wrapper).await.unwrap(),
+            self.chain.process_request(&mut chain_state).await.unwrap(),
             self.chain,
         )
     }
