@@ -3,7 +3,7 @@ use crate::config::chain::TransformChainConfig;
 use crate::http::HttpServerError;
 use crate::message::{Message, MessageIdMap, Messages};
 use crate::transforms::chain::{BufferedChain, TransformChainBuilder};
-use crate::transforms::{Transform, TransformBuilder, TransformConfig, Wrapper};
+use crate::transforms::{ChainState, Transform, TransformBuilder, TransformConfig};
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use atomic_enum::atomic_enum;
@@ -245,15 +245,15 @@ impl Transform for Tee {
 
     async fn transform<'shorter, 'longer: 'shorter>(
         &mut self,
-        requests_wrapper: &'shorter mut Wrapper<'longer>,
+        chain_state: &'shorter mut ChainState<'longer>,
     ) -> Result<Messages> {
         match &mut self.behavior {
-            ConsistencyBehavior::Ignore => self.ignore_behaviour(requests_wrapper).await,
+            ConsistencyBehavior::Ignore => self.ignore_behaviour(chain_state).await,
             ConsistencyBehavior::FailOnMismatch => {
                 let (tee_result, chain_result) = tokio::join!(
                     self.tx
-                        .process_request(requests_wrapper.clone(), self.timeout_micros),
-                    requests_wrapper.call_next_transform()
+                        .process_request(chain_state.clone(), self.timeout_micros),
+                    chain_state.call_next_transform()
                 );
 
                 let keep: ResultSource = self.result_source.load(Ordering::Relaxed);
@@ -276,14 +276,14 @@ impl Transform for Tee {
                 Ok(responses)
             }
             ConsistencyBehavior::SubchainOnMismatch(mismatch_chain, requests) => {
-                let address = requests_wrapper.local_addr;
-                for request in &requests_wrapper.requests {
+                let address = chain_state.local_addr;
+                for request in &chain_state.requests {
                     requests.insert(request.id(), request.clone());
                 }
                 let (tee_result, chain_result) = tokio::join!(
                     self.tx
-                        .process_request(requests_wrapper.clone(), self.timeout_micros),
-                    requests_wrapper.call_next_transform()
+                        .process_request(chain_state.clone(), self.timeout_micros),
+                    chain_state.call_next_transform()
                 );
 
                 let mut mismatched_requests = vec![];
@@ -299,7 +299,10 @@ impl Transform for Tee {
                     },
                 );
                 mismatch_chain
-                    .process_request(Wrapper::new_with_addr(mismatched_requests, address), None)
+                    .process_request(
+                        ChainState::new_with_addr(mismatched_requests, address),
+                        None,
+                    )
                     .await?;
 
                 Ok(responses)
@@ -307,8 +310,8 @@ impl Transform for Tee {
             ConsistencyBehavior::LogWarningOnMismatch => {
                 let (tee_result, chain_result) = tokio::join!(
                     self.tx
-                        .process_request(requests_wrapper.clone(), self.timeout_micros),
-                    requests_wrapper.call_next_transform()
+                        .process_request(chain_state.clone(), self.timeout_micros),
+                    chain_state.call_next_transform()
                 );
 
                 let keep: ResultSource = self.result_source.load(Ordering::Relaxed);
@@ -485,15 +488,15 @@ impl IncomingResponses {
 impl Tee {
     async fn ignore_behaviour<'shorter, 'longer: 'shorter>(
         &mut self,
-        requests_wrapper: &'shorter mut Wrapper<'longer>,
+        chain_state: &'shorter mut ChainState<'longer>,
     ) -> Result<Messages> {
         let result_source: ResultSource = self.result_source.load(Ordering::Relaxed);
         match result_source {
             ResultSource::RegularChain => {
                 let (tee_result, chain_result) = tokio::join!(
                     self.tx
-                        .process_request_no_return(requests_wrapper.clone(), self.timeout_micros),
-                    requests_wrapper.call_next_transform()
+                        .process_request_no_return(chain_state.clone(), self.timeout_micros),
+                    chain_state.call_next_transform()
                 );
                 if let Err(e) = tee_result {
                     self.dropped_messages.increment(1);
@@ -504,8 +507,8 @@ impl Tee {
             ResultSource::TeeChain => {
                 let (tee_result, chain_result) = tokio::join!(
                     self.tx
-                        .process_request(requests_wrapper.clone(), self.timeout_micros),
-                    requests_wrapper.call_next_transform()
+                        .process_request(chain_state.clone(), self.timeout_micros),
+                    chain_state.call_next_transform()
                 );
                 if let Err(e) = chain_result {
                     self.dropped_messages.increment(1);

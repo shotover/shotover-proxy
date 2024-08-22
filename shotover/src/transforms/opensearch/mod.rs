@@ -1,7 +1,7 @@
 use super::{DownChainProtocol, TransformContextBuilder, TransformContextConfig, UpChainProtocol};
 use crate::frame::MessageType;
 use crate::tcp;
-use crate::transforms::{Messages, Transform, TransformBuilder, TransformConfig, Wrapper};
+use crate::transforms::{ChainState, Messages, Transform, TransformBuilder, TransformConfig};
 use crate::{
     codec::{opensearch::OpenSearchCodecBuilder, CodecBuilder, Direction},
     transforms::util::{
@@ -97,11 +97,11 @@ impl Transform for OpenSearchSinkSingle {
 
     async fn transform<'shorter, 'longer: 'shorter>(
         &mut self,
-        requests_wrapper: &'shorter mut Wrapper<'longer>,
+        chain_state: &'shorter mut ChainState<'longer>,
     ) -> Result<Messages> {
         // Return immediately if we have no messages.
         // If we tried to send no messages we would block forever waiting for a reply that will never come.
-        if requests_wrapper.requests.is_empty() {
+        if chain_state.requests.is_empty() {
             return Ok(vec![]);
         }
 
@@ -115,10 +115,10 @@ impl Transform for OpenSearchSinkSingle {
 
         let connection = self.connection.as_mut().unwrap();
 
-        let messages_len = requests_wrapper.requests.len();
+        let messages_len = chain_state.requests.len();
 
         let mut result = Vec::with_capacity(messages_len);
-        for message in requests_wrapper.requests.drain(..) {
+        for message in chain_state.requests.drain(..) {
             let (tx, rx) = oneshot::channel();
 
             connection

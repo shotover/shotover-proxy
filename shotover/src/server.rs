@@ -5,7 +5,7 @@ use crate::message::{Message, MessageIdMap, Messages, Metadata};
 use crate::sources::Transport;
 use crate::tls::{AcceptError, TlsAcceptor};
 use crate::transforms::chain::{TransformChain, TransformChainBuilder};
-use crate::transforms::{TransformContextBuilder, TransformContextConfig, Wrapper};
+use crate::transforms::{ChainState, TransformContextBuilder, TransformContextConfig};
 use anyhow::{anyhow, Result};
 use bytes::BytesMut;
 use futures::future::join_all;
@@ -637,7 +637,7 @@ impl<C: CodecBuilder + 'static> Handler<C> {
         // Only flush messages if we are shutting down due to shotover shutdown or client disconnect
         // If a Transform::transform returns an Err the transform is no longer in a usable state and needs to be destroyed without reusing.
         if let Ok(CloseReason::ShotoverShutdown | CloseReason::ClientClosed) = result {
-            match self.chain.process_request(&mut Wrapper::flush()).await {
+            match self.chain.process_request(&mut ChainState::flush()).await {
                 Ok(_) => {}
                 Err(e) => error!(
                     "{:?}",
@@ -727,7 +727,7 @@ impl<C: CodecBuilder + 'static> Handler<C> {
         out_tx: &mpsc::UnboundedSender<Messages>,
         requests: Messages,
     ) -> Result<Option<CloseReason>> {
-        let mut wrapper = Wrapper::new_with_addr(requests, local_addr);
+        let mut wrapper = ChainState::new_with_addr(requests, local_addr);
 
         self.pending_requests.process_requests(&wrapper.requests);
         let responses = match self.chain.process_request(&mut wrapper).await {

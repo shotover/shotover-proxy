@@ -148,7 +148,7 @@ pub struct TransformContextConfig {
 /// The [`Wrapper`] struct is passed into each transform and contains a list of mutable references to the
 /// remaining transforms that will process the messages attached to this [`Wrapper`].
 /// Most [`Transform`] authors will only be interested in [`wrapper.requests`].
-pub struct Wrapper<'a> {
+pub struct ChainState<'a> {
     /// Requests received from the client
     pub requests: Messages,
     transforms: IterMut<'a, TransformAndMetrics>,
@@ -168,9 +168,9 @@ pub struct Wrapper<'a> {
 /// [`Wrapper`] will not (cannot) bring the current list of transforms that it needs to traverse with it
 /// This is purely to make it convenient to clone all the data within Wrapper rather than it's transform
 /// state.
-impl<'a> Clone for Wrapper<'a> {
+impl<'a> Clone for ChainState<'a> {
     fn clone(&self) -> Self {
-        Wrapper {
+        ChainState {
             requests: self.requests.clone(),
             transforms: [].iter_mut(),
             local_addr: self.local_addr,
@@ -180,9 +180,9 @@ impl<'a> Clone for Wrapper<'a> {
     }
 }
 
-impl<'shorter, 'longer: 'shorter> Wrapper<'longer> {
+impl<'shorter, 'longer: 'shorter> ChainState<'longer> {
     fn take(&mut self) -> Self {
-        Wrapper {
+        ChainState {
             requests: std::mem::take(&mut self.requests),
             transforms: std::mem::take(&mut self.transforms),
             local_addr: self.local_addr,
@@ -234,7 +234,7 @@ impl<'shorter, 'longer: 'shorter> Wrapper<'longer> {
 
     #[cfg(test)]
     pub fn new_test(requests: Messages) -> Self {
-        Wrapper {
+        ChainState {
             requests,
             transforms: [].iter_mut(),
             local_addr: DUMMY_ADDRESS,
@@ -244,7 +244,7 @@ impl<'shorter, 'longer: 'shorter> Wrapper<'longer> {
     }
 
     pub fn new_with_addr(requests: Messages, local_addr: SocketAddr) -> Self {
-        Wrapper {
+        ChainState {
             requests,
             transforms: [].iter_mut(),
             local_addr,
@@ -254,7 +254,7 @@ impl<'shorter, 'longer: 'shorter> Wrapper<'longer> {
     }
 
     pub fn flush() -> Self {
-        Wrapper {
+        ChainState {
             requests: vec![],
             transforms: [].iter_mut(),
             // The connection is closed so we need to just fake an address here
@@ -301,9 +301,9 @@ const DUMMY_ADDRESS: SocketAddr = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::UNS
 #[async_trait]
 pub trait Transform: Send {
     /// In order to implement your transform you can modify the messages:
-    /// * contained in requests_wrapper.requests
+    /// * contained in chain_state.requests
     ///     + these are the requests that will flow into the next transform in the chain.
-    /// * contained in the return value of `requests_wrapper.call_next_transform()`
+    /// * contained in the return value of `chain_state.call_next_transform()`
     ///     + These are the responses that will flow back to the previous transform in the chain.
     ///
     /// But while doing so, also make sure to follow the below invariants when modifying the messages.
@@ -312,12 +312,12 @@ pub trait Transform: Send {
     ///
     /// * Non-terminating specific invariants
     ///     + If your transform does not send the message to an external system or generate its own response to the query,
-    /// it will need to call and return the response from `requests_wrapper.call_next_transform()`.
+    /// it will need to call and return the response from `chain_state.call_next_transform()`.
     ///     + This ensures that your transform will call any subsequent downstream transforms without needing to know about what they
     /// do. This type of transform is called a non-terminating transform.
     ///
     /// * Terminating specific invariants
-    ///     + Your transform can also choose not to call `requests_wrapper.call_next_transform()` if it sends the
+    ///     + Your transform can also choose not to call `chain_state.call_next_transform()` if it sends the
     /// messages to an external system or generates its own response to the query e.g. `CassandraSinkSingle`.
     ///     + This type of transform is called a Terminating transform (as no subsequent transforms in the chain will be called).
     ///
@@ -329,7 +329,7 @@ pub trait Transform: Send {
     ///         - If a transform deletes a request it must return a simulated response message with its request_id set to the deleted request.
     ///             * For in order protocols: this simulated message must be in the correct location within the list of responses
     ///                 - The best way to achieve this is storing the [`crate::message::MessageId`] of the message before the deleted message.
-    ///         - If a transform introduces a new request into the requests_wrapper the response must be located and
+    ///         - If a transform introduces a new request into the chain_state the response must be located and
     ///           removed from the list of returned responses.
     ///     + For in order protocols, transforms must ensure that responses are kept in the same order in which they are received.
     ///         - When writing protocol generic transforms: always ensure this is upheld.
@@ -344,13 +344,13 @@ pub trait Transform: Send {
     /// # Naming
     /// Transform also have different naming conventions.
     /// * Transform that interact with an external system are called Sinks.
-    /// * Transform that don't call subsequent chains via `requests_wrapper.call_next_transform()` are called terminating transforms.
-    /// * Transform that do call subsquent chains via `requests_wrapper.call_next_transform()` are non-terminating transforms.
+    /// * Transform that don't call subsequent chains via `chain_state.call_next_transform()` are called terminating transforms.
+    /// * Transform that do call subsquent chains via `chain_state.call_next_transform()` are non-terminating transforms.
     ///
     /// You can have have a transform that is both non-terminating and a sink.
     async fn transform<'shorter, 'longer: 'shorter>(
         &mut self,
-        requests_wrapper: &'shorter mut Wrapper<'longer>,
+        chain_state: &'shorter mut ChainState<'longer>,
     ) -> Result<Messages>;
 
     /// Name of the transform used in logs and displayed to the user

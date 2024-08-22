@@ -2,8 +2,8 @@ use crate::frame::MessageType;
 use crate::message::{Message, MessageIdMap, Messages};
 use crate::transforms::cassandra::peers_rewrite::CassandraOperation::Event;
 use crate::transforms::{
-    DownChainProtocol, Transform, TransformBuilder, TransformConfig, TransformContextBuilder,
-    UpChainProtocol, Wrapper,
+    ChainState, DownChainProtocol, Transform, TransformBuilder, TransformConfig,
+    TransformContextBuilder, UpChainProtocol,
 };
 use crate::{
     frame::{
@@ -81,16 +81,16 @@ impl Transform for CassandraPeersRewrite {
 
     async fn transform<'shorter, 'longer: 'shorter>(
         &mut self,
-        requests_wrapper: &'shorter mut Wrapper<'longer>,
+        chain_state: &'shorter mut ChainState<'longer>,
     ) -> Result<Messages> {
         // Find the indices of queries to system.peers & system.peers_v2
         // we need to know which columns in which CQL queries in which messages have system peers
-        for request in &mut requests_wrapper.requests {
+        for request in &mut chain_state.requests {
             let sys_peers = extract_native_port_column(&self.peer_table, request);
             self.column_names_to_rewrite.insert(request.id(), sys_peers);
         }
 
-        let mut responses = requests_wrapper.call_next_transform().await?;
+        let mut responses = chain_state.call_next_transform().await?;
 
         for response in &mut responses {
             if let Some(Frame::Cassandra(frame)) = response.frame() {

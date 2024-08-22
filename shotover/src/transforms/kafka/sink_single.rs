@@ -4,10 +4,10 @@ use crate::frame::kafka::{KafkaFrame, RequestBody, ResponseBody};
 use crate::frame::{Frame, MessageType};
 use crate::message::Messages;
 use crate::tls::{TlsConnector, TlsConnectorConfig};
-use crate::transforms::{DownChainProtocol, TransformConfig, UpChainProtocol};
 use crate::transforms::{
-    Transform, TransformBuilder, TransformContextBuilder, TransformContextConfig, Wrapper,
+    ChainState, Transform, TransformBuilder, TransformContextBuilder, TransformContextConfig,
 };
+use crate::transforms::{DownChainProtocol, TransformConfig, UpChainProtocol};
 use anyhow::Result;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -119,11 +119,11 @@ impl Transform for KafkaSinkSingle {
 
     async fn transform<'shorter, 'longer: 'shorter>(
         &mut self,
-        requests_wrapper: &'shorter mut Wrapper<'longer>,
+        chain_state: &'shorter mut ChainState<'longer>,
     ) -> Result<Messages> {
         if self.connection.is_none() {
             let codec = KafkaCodecBuilder::new(Direction::Sink, "KafkaSinkSingle".to_owned());
-            let address = (requests_wrapper.local_addr.ip(), self.address_port);
+            let address = (chain_state.local_addr.ip(), self.address_port);
             self.connection = Some(
                 SinkConnection::new(
                     address,
@@ -138,7 +138,7 @@ impl Transform for KafkaSinkSingle {
         }
 
         let mut responses = vec![];
-        if requests_wrapper.requests.is_empty() {
+        if chain_state.requests.is_empty() {
             // there are no requests, so no point sending any, but we should check for any responses without awaiting
             self.connection
                 .as_mut()
@@ -148,7 +148,7 @@ impl Transform for KafkaSinkSingle {
             // send requests and wait until we have responses for all of them
 
             // Rewrite requests to use kafkas port instead of shotovers port
-            for request in &mut requests_wrapper.requests {
+            for request in &mut chain_state.requests {
                 if let Some(Frame::Kafka(KafkaFrame::Request {
                     body: RequestBody::LeaderAndIsr(leader_and_isr),
                     ..
@@ -163,8 +163,8 @@ impl Transform for KafkaSinkSingle {
 
             // send
             let connection = self.connection.as_mut().unwrap();
-            let requests_count = requests_wrapper.requests.len();
-            connection.send(std::mem::take(&mut requests_wrapper.requests))?;
+            let requests_count = chain_state.requests.len();
+            connection.send(std::mem::take(&mut chain_state.requests))?;
 
             // receive
             while responses.len() < requests_count {
@@ -178,7 +178,7 @@ impl Transform for KafkaSinkSingle {
 
         // Rewrite responses to use shotovers port instead of kafkas port
         for response in &mut responses {
-            let port = requests_wrapper.local_addr.port() as i32;
+            let port = chain_state.local_addr.port() as i32;
             match response.frame() {
                 Some(Frame::Kafka(KafkaFrame::Response {
                     body: ResponseBody::FindCoordinator(find_coordinator),
