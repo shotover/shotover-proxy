@@ -1,6 +1,6 @@
 use super::{DownChainProtocol, TransformContextBuilder, TransformContextConfig, UpChainProtocol};
 use crate::message::Messages;
-use crate::transforms::{Transform, TransformBuilder, TransformConfig, Wrapper};
+use crate::transforms::{ChainState, Transform, TransformBuilder, TransformConfig};
 use anyhow::Result;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -83,11 +83,11 @@ impl Transform for Coalesce {
 
     async fn transform<'shorter, 'longer: 'shorter>(
         &mut self,
-        requests_wrapper: &'shorter mut Wrapper<'longer>,
+        chain_state: &'shorter mut ChainState<'longer>,
     ) -> Result<Messages> {
-        self.buffer.append(&mut requests_wrapper.requests);
+        self.buffer.append(&mut chain_state.requests);
 
-        let flush_buffer = requests_wrapper.flush
+        let flush_buffer = chain_state.flush
             || self
                 .flush_when_buffered_message_count
                 .map(|n| self.buffer.len() >= n)
@@ -101,8 +101,8 @@ impl Transform for Coalesce {
             if self.flush_when_millis_since_last_flush.is_some() {
                 self.last_write = Instant::now()
             }
-            std::mem::swap(&mut self.buffer, &mut requests_wrapper.requests);
-            requests_wrapper.call_next_transform().await
+            std::mem::swap(&mut self.buffer, &mut chain_state.requests);
+            chain_state.call_next_transform().await
         } else {
             Ok(vec![])
         }
@@ -116,7 +116,7 @@ mod test {
     use crate::transforms::chain::TransformAndMetrics;
     use crate::transforms::coalesce::Coalesce;
     use crate::transforms::loopback::Loopback;
-    use crate::transforms::{Transform, Wrapper};
+    use crate::transforms::{ChainState, Transform};
     use pretty_assertions::assert_eq;
     use std::time::{Duration, Instant};
 
@@ -198,7 +198,7 @@ mod test {
         requests: &[Message],
         expected_len: usize,
     ) {
-        let mut wrapper = Wrapper::new_test(requests.to_vec());
+        let mut wrapper = ChainState::new_test(requests.to_vec());
         wrapper.reset(chain);
         assert_eq!(
             coalesce.transform(&mut wrapper).await.unwrap().len(),

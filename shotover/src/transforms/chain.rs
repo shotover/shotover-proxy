@@ -1,6 +1,6 @@
 use super::TransformContextBuilder;
 use crate::message::Messages;
-use crate::transforms::{Transform, TransformBuilder, Wrapper};
+use crate::transforms::{ChainState, Transform, TransformBuilder};
 use anyhow::{anyhow, Result};
 use futures::TryFutureExt;
 use metrics::{counter, histogram, Counter, Histogram};
@@ -72,17 +72,17 @@ pub struct BufferedChain {
 impl BufferedChain {
     pub async fn process_request(
         &mut self,
-        wrapper: Wrapper<'_>,
+        chain_state: ChainState<'_>,
         buffer_timeout_micros: Option<u64>,
     ) -> Result<Messages> {
-        self.process_request_with_receiver(wrapper, buffer_timeout_micros)
+        self.process_request_with_receiver(chain_state, buffer_timeout_micros)
             .await?
             .await?
     }
 
     async fn process_request_with_receiver(
         &mut self,
-        wrapper: Wrapper<'_>,
+        chain_state: ChainState<'_>,
         buffer_timeout_micros: Option<u64>,
     ) -> Result<oneshot::Receiver<Result<Messages>>> {
         let (one_tx, one_rx) = oneshot::channel::<Result<Messages>>();
@@ -90,9 +90,9 @@ impl BufferedChain {
             None => {
                 self.send_handle
                     .send(BufferedChainMessages::new(
-                        wrapper.requests,
-                        wrapper.local_addr,
-                        wrapper.flush,
+                        chain_state.requests,
+                        chain_state.local_addr,
+                        chain_state.flush,
                         one_tx,
                     ))
                     .map_err(|e| anyhow!("Couldn't send message to wrapped chain {:?}", e))
@@ -102,9 +102,9 @@ impl BufferedChain {
                 self.send_handle
                     .send_timeout(
                         BufferedChainMessages::new(
-                            wrapper.requests,
-                            wrapper.local_addr,
-                            wrapper.flush,
+                            chain_state.requests,
+                            chain_state.local_addr,
+                            chain_state.flush,
                             one_tx,
                         ),
                         Duration::from_micros(timeout),
@@ -119,21 +119,22 @@ impl BufferedChain {
 
     pub async fn process_request_no_return(
         &mut self,
-        wrapper: Wrapper<'_>,
+        chain_state: ChainState<'_>,
         buffer_timeout_micros: Option<u64>,
     ) -> Result<()> {
-        if wrapper.flush {
+        if chain_state.flush {
             // To obey flush request we need to ensure messages have completed sending before returning.
             // In order to achieve that we need to use the regular process_request method.
-            self.process_request(wrapper, buffer_timeout_micros).await?;
+            self.process_request(chain_state, buffer_timeout_micros)
+                .await?;
         } else {
             // When there is no flush we can return much earlier by not waiting for a response.
             match buffer_timeout_micros {
                 None => {
                     self.send_handle
                         .send(BufferedChainMessages::new_with_no_return(
-                            wrapper.requests,
-                            wrapper.local_addr,
+                            chain_state.requests,
+                            chain_state.local_addr,
                         ))
                         .map_err(|e| anyhow!("Couldn't send message to wrapped chain {:?}", e))
                         .await?
@@ -142,8 +143,8 @@ impl BufferedChain {
                     self.send_handle
                         .send_timeout(
                             BufferedChainMessages::new_with_no_return(
-                                wrapper.requests,
-                                wrapper.local_addr,
+                                chain_state.requests,
+                                chain_state.local_addr,
                             ),
                             Duration::from_micros(timeout),
                         )
@@ -159,13 +160,14 @@ impl BufferedChain {
 impl TransformChain {
     pub async fn process_request<'shorter, 'longer: 'shorter>(
         &'longer mut self,
-        wrapper: &'shorter mut Wrapper<'longer>,
+        chain_state: &'shorter mut ChainState<'longer>,
     ) -> Result<Messages> {
         let start = Instant::now();
-        wrapper.reset(&mut self.chain);
+        chain_state.reset(&mut self.chain);
 
-        self.chain_batch_size.record(wrapper.requests.len() as f64);
-        let result = wrapper.call_next_transform().await;
+        self.chain_batch_size
+            .record(chain_state.requests.len() as f64);
+        let result = chain_state.call_next_transform().await;
         self.chain_total.increment(1);
         if result.is_err() {
             self.chain_failures.increment(1);
@@ -320,9 +322,9 @@ impl TransformChainBuilder {
                         count_clone.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                     }
 
-                    let mut wrapper = Wrapper::new_with_addr(messages, local_addr);
-                    wrapper.flush = flush;
-                    let chain_response = chain.process_request(&mut wrapper).await;
+                    let mut chain_state = ChainState::new_with_addr(messages, local_addr);
+                    chain_state.flush = flush;
+                    let chain_response = chain.process_request(&mut chain_state).await;
 
                     if let Err(e) = &chain_response {
                         error!("Internal error in buffered chain: {e:?}");
@@ -341,7 +343,7 @@ impl TransformChainBuilder {
                 debug!("buffered chain processing thread exiting, stopping chain loop and dropping");
 
                 match chain
-                    .process_request(&mut Wrapper::flush())
+                    .process_request(&mut ChainState::flush())
                     .await
                 {
                     Ok(_) => info!("Buffered chain {} was shutdown", chain.name),

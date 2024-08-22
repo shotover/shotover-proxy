@@ -6,8 +6,8 @@ use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame, M
 use crate::message::{Message, MessageIdMap, Messages, Metadata};
 use crate::tls::{TlsConnector, TlsConnectorConfig};
 use crate::transforms::{
-    DownChainProtocol, Transform, TransformBuilder, TransformConfig, TransformContextBuilder,
-    TransformContextConfig, UpChainProtocol, Wrapper,
+    ChainState, DownChainProtocol, Transform, TransformBuilder, TransformConfig,
+    TransformContextBuilder, TransformContextConfig, UpChainProtocol,
 };
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
@@ -763,9 +763,9 @@ impl Transform for CassandraSinkCluster {
 
     async fn transform<'shorter, 'longer: 'shorter>(
         &mut self,
-        requests_wrapper: &'shorter mut Wrapper<'longer>,
+        chain_state: &'shorter mut ChainState<'longer>,
     ) -> Result<Messages> {
-        self.send_message(std::mem::take(&mut requests_wrapper.requests))
+        self.send_message(std::mem::take(&mut chain_state.requests))
             .await
     }
 }

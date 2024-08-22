@@ -4,8 +4,8 @@ use crate::frame::{Frame, MessageType, RedisFrame};
 use crate::message::Messages;
 use crate::tls::{TlsConnector, TlsConnectorConfig};
 use crate::transforms::{
-    DownChainProtocol, Transform, TransformBuilder, TransformConfig, TransformContextBuilder,
-    UpChainProtocol, Wrapper,
+    ChainState, DownChainProtocol, Transform, TransformBuilder, TransformConfig,
+    TransformContextBuilder, UpChainProtocol,
 };
 use crate::{codec::redis::RedisCodecBuilder, transforms::TransformContextConfig};
 use anyhow::Result;
@@ -116,7 +116,7 @@ impl Transform for RedisSinkSingle {
 
     async fn transform<'shorter, 'longer: 'shorter>(
         &mut self,
-        requests_wrapper: &'shorter mut Wrapper<'longer>,
+        chain_state: &'shorter mut ChainState<'longer>,
     ) -> Result<Messages> {
         if self.connection.is_none() {
             let codec = RedisCodecBuilder::new(Direction::Sink, "RedisSinkSingle".to_owned());
@@ -134,7 +134,7 @@ impl Transform for RedisSinkSingle {
         }
 
         let mut responses = vec![];
-        if requests_wrapper.requests.is_empty() {
+        if chain_state.requests.is_empty() {
             // there are no requests, so no point sending any, but we should check for any responses without awaiting
             // TODO: handle errors here
             if let Ok(()) = self
@@ -150,11 +150,11 @@ impl Transform for RedisSinkSingle {
                 }
             }
         } else {
-            let requests_count = requests_wrapper.requests.len();
+            let requests_count = chain_state.requests.len();
             self.connection
                 .as_mut()
                 .unwrap()
-                .send(std::mem::take(&mut requests_wrapper.requests))?;
+                .send(std::mem::take(&mut chain_state.requests))?;
 
             let mut responses_count = 0;
             while responses_count < requests_count {

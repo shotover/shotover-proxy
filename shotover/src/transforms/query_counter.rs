@@ -2,7 +2,7 @@ use crate::frame::Frame;
 use crate::message::Messages;
 use crate::transforms::TransformConfig;
 use crate::transforms::TransformContextBuilder;
-use crate::transforms::{Transform, TransformBuilder, Wrapper};
+use crate::transforms::{ChainState, Transform, TransformBuilder};
 use anyhow::Result;
 use async_trait::async_trait;
 use metrics::counter;
@@ -66,9 +66,9 @@ impl Transform for QueryCounter {
 
     async fn transform<'shorter, 'longer: 'shorter>(
         &mut self,
-        requests_wrapper: &'shorter mut Wrapper<'longer>,
+        chain_state: &'shorter mut ChainState<'longer>,
     ) -> Result<Messages> {
-        for m in &mut requests_wrapper.requests {
+        for m in &mut chain_state.requests {
             match m.frame() {
                 #[cfg(feature = "cassandra")]
                 Some(Frame::Cassandra(frame)) => {
@@ -101,7 +101,7 @@ impl Transform for QueryCounter {
             }
         }
 
-        requests_wrapper.call_next_transform().await
+        chain_state.call_next_transform().await
     }
 }
 

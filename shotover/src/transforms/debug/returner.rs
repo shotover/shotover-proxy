@@ -1,7 +1,7 @@
 use crate::message::{Message, Messages};
 use crate::transforms::{
-    DownChainProtocol, Transform, TransformBuilder, TransformConfig, TransformContextBuilder,
-    TransformContextConfig, UpChainProtocol, Wrapper,
+    ChainState, DownChainProtocol, Transform, TransformBuilder, TransformConfig,
+    TransformContextBuilder, TransformContextConfig, UpChainProtocol,
 };
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
@@ -77,9 +77,9 @@ impl Transform for DebugReturner {
 
     async fn transform<'shorter, 'longer: 'shorter>(
         &mut self,
-        requests_wrapper: &'shorter mut Wrapper<'longer>,
+        chain_state: &'shorter mut ChainState<'longer>,
     ) -> Result<Messages> {
-        requests_wrapper
+        chain_state
             .requests
             .iter_mut()
             .map(|request| match &self.response {
