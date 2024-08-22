@@ -95,7 +95,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
 
         let chain_usage_config = TransformContextConfig {
             chain_name: source_name.clone(),
-            protocol: codec.protocol(),
+            up_chain_protocol: codec.protocol(),
         };
         let chain_builder = chain_config
             .get_builder(chain_usage_config)

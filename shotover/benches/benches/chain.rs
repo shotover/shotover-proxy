@@ -133,7 +133,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                     }
                     .get_builder(TransformContextConfig {
                         chain_name: "".into(),
-                        protocol: MessageType::Redis,
+                        up_chain_protocol: MessageType::Redis,
                     }),
                 )
                 .unwrap(),
@@ -239,7 +239,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                     }
                     .get_builder(TransformContextConfig {
                         chain_name: "".into(),
-                        protocol: MessageType::Redis,
+                        up_chain_protocol: MessageType::Redis,
                     }),
                 )
                 .unwrap(),

@@ -140,9 +140,8 @@ pub enum DownChainProtocol {
 pub struct TransformContextConfig {
     /// The name of the chain that this transform is configured in.
     pub chain_name: String,
-    // TODO: rename to up_chain_protocol
     /// The protocol that the transform will receive requests in.
-    pub protocol: MessageType,
+    pub up_chain_protocol: MessageType,
 }
 
 /// The [`Wrapper`] struct is passed into each transform and contains a list of mutable references to the

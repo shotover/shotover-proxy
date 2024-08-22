@@ -203,7 +203,7 @@ impl TransformConfig for TeeConfig {
                     mismatch_chain
                         .get_builder(TransformContextConfig {
                             chain_name: "mismatch_chain".to_string(),
-                            protocol: transform_context.protocol,
+                            up_chain_protocol: transform_context.up_chain_protocol,
                         })
                         .await?,
                 )
@@ -214,7 +214,7 @@ impl TransformConfig for TeeConfig {
             .chain
             .get_builder(TransformContextConfig {
                 chain_name: "tee_chain".to_string(),
-                protocol: transform_context.protocol,
+                up_chain_protocol: transform_context.up_chain_protocol,
             })
             .await?;
 
@@ -224,7 +224,7 @@ impl TransformConfig for TeeConfig {
             behavior,
             self.timeout_micros,
             self.switch_port,
-            transform_context.protocol.is_inorder(),
+            transform_context.up_chain_protocol.is_inorder(),
         )))
     }
 
@@ -609,7 +609,7 @@ mod tests {
 
         let transform_context_config = TransformContextConfig {
             chain_name: "".into(),
-            protocol: MessageType::Redis,
+            up_chain_protocol: MessageType::Redis,
         };
         let transform = config.get_builder(transform_context_config).await.unwrap();
         let result = transform.validate();
@@ -628,7 +628,7 @@ mod tests {
 
         let transform_context_config = TransformContextConfig {
             chain_name: "".into(),
-            protocol: MessageType::Redis,
+            up_chain_protocol: MessageType::Redis,
         };
         let transform = config.get_builder(transform_context_config).await.unwrap();
         let result = transform.validate().join("\n");
@@ -649,7 +649,7 @@ mod tests {
         };
         let transform_context_config = TransformContextConfig {
             chain_name: "".into(),
-            protocol: MessageType::Redis,
+            up_chain_protocol: MessageType::Redis,
         };
         let transform = config.get_builder(transform_context_config).await.unwrap();
         let result = transform.validate();
@@ -667,7 +667,7 @@ mod tests {
         };
         let transform_context_config = TransformContextConfig {
             chain_name: "".into(),
-            protocol: MessageType::Redis,
+            up_chain_protocol: MessageType::Redis,
         };
         let transform = config.get_builder(transform_context_config).await.unwrap();
         let result = transform.validate();
@@ -688,7 +688,7 @@ mod tests {
 
         let transform_context_config = TransformContextConfig {
             chain_name: "".into(),
-            protocol: MessageType::Redis,
+            up_chain_protocol: MessageType::Redis,
         };
         let transform = config.get_builder(transform_context_config).await.unwrap();
         let result = transform.validate().join("\n");
@@ -712,7 +712,7 @@ mod tests {
 
         let transform_context_config = TransformContextConfig {
             chain_name: "".into(),
-            protocol: MessageType::Redis,
+            up_chain_protocol: MessageType::Redis,
         };
         let transform = config.get_builder(transform_context_config).await.unwrap();
         let result = transform.validate();
