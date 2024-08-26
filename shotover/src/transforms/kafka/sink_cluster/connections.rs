@@ -6,10 +6,7 @@ use anyhow::{Context, Result};
 use fnv::FnvBuildHasher;
 use kafka_protocol::{messages::BrokerId, protocol::StrBytes};
 use metrics::Counter;
-use rand::{
-    rngs::SmallRng,
-    seq::{IteratorRandom, SliceRandom},
-};
+use rand::{rngs::SmallRng, seq::IteratorRandom};
 use std::{collections::HashMap, sync::atomic::Ordering, time::Instant};
 
 use super::{
@@ -138,7 +135,9 @@ impl Connections {
         destination: Destination,
     ) -> Result<()> {
         let address = match &node {
+            // route to ID
             Some(node) => &node.kafka_address,
+            // route to control connection
             None => {
                 // If we have a node in the nodes list that is up use its address.
                 // Otherwise fall back to the first contact points
@@ -181,17 +180,15 @@ impl Connections {
         }
     }
 
-    /// Open a new connection to the requested Destination and return it.
-    /// Any existing cached connection is overwritten by the new one.
-    #[allow(clippy::too_many_arguments)]
+    /// Open a new connection to the requested Destination.
+    /// If the connection is succesfully created, the old connection is replace with the new one.
+    /// Otherwise the old connection is just deleted with no replacement and an error is returned.
     pub async fn handle_connection_error(
         &mut self,
-        rng: &mut SmallRng,
         connection_factory: &ConnectionFactory,
         authorize_scram_over_mtls: &Option<AuthorizeScramOverMtls>,
         sasl_mechanism: &Option<String>,
         nodes: &[KafkaNode],
-        contact_points: &[KafkaAddress],
         destination: Destination,
         error: anyhow::Error,
     ) -> Result<()> {
@@ -203,7 +200,7 @@ impl Connections {
                     .unwrap()
                     .kafka_address
             }
-            Destination::ControlConnection => contact_points.choose(rng).unwrap(),
+            Destination::ControlConnection => self.control_connection_address.as_ref().unwrap(),
         };
 
         let connection = connection_factory

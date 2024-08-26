@@ -395,27 +395,30 @@ impl KafkaSinkCluster {
                 match self
                     .connections
                     .handle_connection_error(
-                        &mut self.rng,
                         &self.connection_factory,
                         &self.authorize_scram_over_mtls,
                         &self.sasl_mechanism,
                         &self.nodes,
-                        &self.first_contact_points,
                         Destination::ControlConnection,
                         err,
                     )
                     .await
                 {
-                    // connection recreated, retry on the original node
+                    // connection recreated succesfully, retry on the original node
                     // if the request fails at this point its a bad request.
                     Ok(()) => self.control_send_receive_inner(request).await,
                     // connection failed, could be a bad node, retry on all known nodes
                     Err(err) => {
                         tracing::warn!("Failed to recreate original control connection {err:?}");
                         loop {
+                            // remove the old control connection to force control_send_receive_inner to create a new one.
+                            self.connections
+                                .connections
+                                .remove(&Destination::ControlConnection);
                             match self.control_send_receive_inner(request.clone()).await {
-                                // found a new control node that works
+                                // found a new node that works
                                 Ok(response) => return Ok(response),
+                                // this node also doesnt work, mark as bad and try a new one.
                                 Err(err) => {
                                     if self.nodes.iter().all(|x| {
                                         matches!(x.state.load(Ordering::Relaxed), NodeState::Down)
@@ -1086,12 +1089,10 @@ routing message to a random node so that:
                 // Dont retry the send on the new connection since we cant tell if the broker received the request or not.
                 self.connections
                     .handle_connection_error(
-                        &mut self.rng,
                         &self.connection_factory,
                         &self.authorize_scram_over_mtls,
                         &self.sasl_mechanism,
                         &self.nodes,
-                        &self.first_contact_points,
                         destination,
                         err.clone().into(),
                     )
@@ -1148,12 +1149,10 @@ routing message to a random node so that:
         for (destination, err) in connection_errors {
             self.connections
                 .handle_connection_error(
-                    &mut self.rng,
                     &self.connection_factory,
                     &self.authorize_scram_over_mtls,
                     &self.sasl_mechanism,
                     &self.nodes,
-                    &self.first_contact_points,
                     destination,
                     err,
                 )
