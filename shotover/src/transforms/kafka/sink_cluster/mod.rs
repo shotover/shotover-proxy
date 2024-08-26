@@ -455,27 +455,69 @@ impl KafkaSinkCluster {
                 Instant::now(),
                 Destination::ControlConnection,
             )
-            .await?;
+            .await
+            .context("Failed to get control connection")?;
         connection.send(vec![request])?;
         Ok(connection.recv().await?.remove(0))
     }
 
     fn store_topic_names(&self, topics: &mut Vec<TopicName>, topic: TopicName) {
-        if self.topic_by_name.get(&topic).is_none() && !topics.contains(&topic) && !topic.is_empty()
-        {
+        let cache_is_missing_or_outdated = match self.topic_by_name.get(&topic) {
+            Some(topic) => topic.partitions.iter().any(|partition| {
+                // refetch the metadata if the metadata believes that a partition is stored at a down node.
+                // The possible results are:
+                // * The node is actually up and the partition is there, the node will be marked as up once a request has been succesfully routed to it.
+                // * The node is actually down and the partition has moved, refetching the metadata will allow us to find the new destination.
+                // * The node is actually down and the partition has not yet moved, refetching the metadata will have us attempt to route to the down node.
+                //       Shotover will close the connection and the client will retry the request.
+                self.nodes
+                    .iter()
+                    .find(|node| node.broker_id == *partition.leader_id)
+                    .map(|node| !node.is_up())
+                    .unwrap_or(false)
+            }),
+            None => true,
+        };
+        if cache_is_missing_or_outdated && !topics.contains(&topic) && !topic.is_empty() {
             topics.push(topic);
         }
     }
 
     fn store_topic_ids(&self, topics: &mut Vec<Uuid>, topic: Uuid) {
-        if self.topic_by_id.get(&topic).is_none() && !topics.contains(&topic) && !topic.is_nil() {
+        let cache_is_missing_or_outdated = match self.topic_by_id.get(&topic) {
+            Some(topic) => topic.partitions.iter().any(|partition| {
+                // refetch the metadata if the metadata believes that a partition is stored at a down node.
+                // The possible results are:
+                // * The node is actually up and the partition is there, the node will be marked as up once a request has been succesfully routed to it.
+                // * The node is actually down and the partition has moved, refetching the metadata will allow us to find the new destination.
+                // * The node is actually down and the partition has not yet moved, refetching the metadata will have us attempt to route to the down node.
+                //       Shotover will close the connection and the client will retry the request.
+                self.nodes
+                    .iter()
+                    .find(|node| node.broker_id == *partition.leader_id)
+                    .map(|node| !node.is_up())
+                    .unwrap_or(false)
+            }),
+            None => true,
+        };
+        if cache_is_missing_or_outdated && !topics.contains(&topic) && !topic.is_nil() {
             topics.push(topic);
         }
     }
 
     fn store_group(&self, groups: &mut Vec<GroupId>, group_id: GroupId) {
-        if self.group_to_coordinator_broker.get(&group_id).is_none() && !groups.contains(&group_id)
-        {
+        let cache_is_missing_or_outdated = match self.group_to_coordinator_broker.get(&group_id) {
+            Some(broker_id) => self
+                .nodes
+                .iter()
+                .find(|node| node.broker_id == *broker_id)
+                .map(|node| !node.is_up())
+                .unwrap_or(true),
+            None => true,
+        };
+
+        if cache_is_missing_or_outdated && !groups.contains(&group_id) {
+            debug_assert!(group_id.0.as_str() != "");
             groups.push(group_id);
         }
     }
@@ -1583,12 +1625,14 @@ routing message to a random node so that:
     fn route_to_controller(&mut self, request: Message) {
         let broker_id = self.controller_broker.get().unwrap();
 
-        let destination = if let Some(node) =
-            self.nodes.iter_mut().find(|x| x.broker_id == *broker_id)
+        let destination = if let Some(node) = self
+            .nodes
+            .iter_mut()
+            .find(|x| x.broker_id == *broker_id && x.is_up())
         {
             node.broker_id
         } else {
-            tracing::warn!("no known broker with id {broker_id:?}, routing message to a random node so that a NOT_CONTROLLER or similar error is returned to the client");
+            tracing::warn!("no known broker with id {broker_id:?} that is 'up', routing message to a random node so that a NOT_CONTROLLER or similar error is returned to the client");
             random_broker_id(&self.nodes, &mut self.rng)
         };
 
@@ -1809,25 +1853,32 @@ routing message to a random node so that:
         for (_, topic) in &mut metadata.topics {
             for partition in &mut topic.partitions {
                 // Deterministically choose a single shotover node in the rack as leader based on topic + partition id
-                let leader_rack = self
+                if let Some(leader_rack) = self
                     .nodes
                     .iter()
                     .find(|x| x.broker_id == *partition.leader_id)
                     .map(|x| x.rack.clone())
-                    .unwrap();
-                let shotover_nodes_in_rack: Vec<_> = self
-                    .shotover_nodes
-                    .iter()
-                    .filter(|shotover_node| {
-                        leader_rack
-                            .as_ref()
-                            .map(|rack| rack == &shotover_node.rack)
-                            .unwrap_or(true)
-                    })
-                    .collect();
-                let hash = hash_partition(topic.topic_id, partition.partition_index);
-                let shotover_node = &shotover_nodes_in_rack[hash % shotover_nodes_in_rack.len()];
-                partition.leader_id = shotover_node.broker_id;
+                {
+                    let shotover_nodes_in_rack: Vec<_> = self
+                        .shotover_nodes
+                        .iter()
+                        .filter(|shotover_node| {
+                            leader_rack
+                                .as_ref()
+                                .map(|rack| rack == &shotover_node.rack)
+                                .unwrap_or(true)
+                        })
+                        .collect();
+                    let hash = hash_partition(topic.topic_id, partition.partition_index);
+                    let shotover_node =
+                        &shotover_nodes_in_rack[hash % shotover_nodes_in_rack.len()];
+                    partition.leader_id = shotover_node.broker_id;
+                } else {
+                    // If the cluster detects the broker is down it will not be included in the metadata list of brokers.
+                    // In that case we wont find a broker and we should just mark the leader as not existing by setting it to -1
+                    // The brokers also set the leader to -1 if they detect it is down, so this matches their behaviour.
+                    partition.leader_id = BrokerId(-1);
+                }
 
                 // Every replica node has its entire corresponding shotover rack included.
                 // Since we can set as many replica nodes as we like, we take this all out approach.
@@ -1836,23 +1887,27 @@ routing message to a random node so that:
                 // * clients evenly distribute their queries across shotover nodes
                 let mut shotover_replica_nodes = vec![];
                 for replica_node in &partition.replica_nodes {
-                    let rack = self
+                    if let Some(rack) = self
                         .nodes
                         .iter()
                         .find(|x| x.broker_id == *replica_node)
                         .map(|x| x.rack.clone())
-                        .unwrap();
-                    for shotover_node in &self.shotover_nodes {
-                        // If broker has no rack - use all shotover nodes
-                        // If broker has rack - use all shotover nodes with the same rack
-                        if rack
-                            .as_ref()
-                            .map(|rack| rack == &shotover_node.rack)
-                            .unwrap_or(true)
-                            && !shotover_replica_nodes.contains(&shotover_node.broker_id)
-                        {
-                            shotover_replica_nodes.push(shotover_node.broker_id);
+                    {
+                        for shotover_node in &self.shotover_nodes {
+                            // If broker has no rack - use all shotover nodes
+                            // If broker has rack - use all shotover nodes with the same rack
+                            if rack
+                                .as_ref()
+                                .map(|rack| rack == &shotover_node.rack)
+                                .unwrap_or(true)
+                                && !shotover_replica_nodes.contains(&shotover_node.broker_id)
+                            {
+                                shotover_replica_nodes.push(shotover_node.broker_id);
+                            }
                         }
+                    } else {
+                        // If the cluster detects the broker is down it will not be included in the metadata list of brokers.
+                        // In that case we wont find a broker and we should just skip this broker.
                     }
                 }
                 partition.replica_nodes = shotover_replica_nodes;
@@ -1863,23 +1918,27 @@ routing message to a random node so that:
                 // * clients evenly distribute their queries across shotover nodes
                 let mut shotover_isr_nodes = vec![];
                 for replica_node in &partition.isr_nodes {
-                    let rack = self
+                    if let Some(rack) = self
                         .nodes
                         .iter()
                         .find(|x| x.broker_id == *replica_node)
                         .map(|x| x.rack.clone())
-                        .unwrap();
-                    for shotover_node in &self.shotover_nodes {
-                        // If broker has no rack - use all shotover nodes
-                        // If broker has rack - use all shotover nodes with the same rack
-                        if rack
-                            .as_ref()
-                            .map(|rack| rack == &shotover_node.rack)
-                            .unwrap_or(true)
-                            && !shotover_isr_nodes.contains(&shotover_node.broker_id)
-                        {
-                            shotover_isr_nodes.push(shotover_node.broker_id);
+                    {
+                        for shotover_node in &self.shotover_nodes {
+                            // If broker has no rack - use all shotover nodes
+                            // If broker has rack - use all shotover nodes with the same rack
+                            if rack
+                                .as_ref()
+                                .map(|rack| rack == &shotover_node.rack)
+                                .unwrap_or(true)
+                                && !shotover_isr_nodes.contains(&shotover_node.broker_id)
+                            {
+                                shotover_isr_nodes.push(shotover_node.broker_id);
+                            }
                         }
+                    } else {
+                        // If the cluster detects the broker is down it will not be included in the metadata list of brokers.
+                        // In that case we wont find a broker and we should just skip this broker.
                     }
                 }
                 partition.isr_nodes = shotover_isr_nodes;
