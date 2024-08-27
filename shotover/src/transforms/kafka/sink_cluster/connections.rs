@@ -192,6 +192,8 @@ impl Connections {
         destination: Destination,
         error: anyhow::Error,
     ) -> Result<()> {
+        let old_connection = self.connections.remove(&destination);
+
         let address = match destination {
             Destination::Id(id) => {
                 &nodes
@@ -218,17 +220,21 @@ impl Connections {
                     connection,
                     None,
                 )?;
-                let old = self.connections.insert(destination, connection);
 
-                if old.map(|old| old.pending_requests_count()).unwrap_or(0) > 0 {
+                if old_connection
+                    .map(|old| old.pending_requests_count())
+                    .unwrap_or(0)
+                    > 0
+                {
                     Err(error.context("Succesfully reopened outgoing connection but previous outgoing connection had pending requests."))
                 } else {
+                    self.connections.insert(destination, connection);
                     Ok(())
                 }
             }
             Err(err) => {
                 // Recreating the node failed.
-                // So update the metadata and connection so we dont attempt to connect to it again,
+                // So update the metadata so we dont attempt to connect to it again,
                 // and then return the error
                 nodes
                     .iter()
@@ -242,7 +248,6 @@ impl Connections {
                     .state
                     .store(NodeState::Down, Ordering::Relaxed);
 
-                self.connections.remove(&destination);
                 Err(err)
             }
         }

@@ -439,7 +439,7 @@ impl KafkaSinkCluster {
         }
     }
 
-    async fn control_send_receive_inner(&mut self, requests: Message) -> Result<Message> {
+    async fn control_send_receive_inner(&mut self, request: Message) -> Result<Message> {
         assert!(
             self.auth_complete,
             "control_send_receive cannot be called until auth is complete. Otherwise it would collide with the control connection being used for regular routing."
@@ -458,7 +458,7 @@ impl KafkaSinkCluster {
                 Destination::ControlConnection,
             )
             .await?;
-        connection.send(vec![requests])?;
+        connection.send(vec![request])?;
         Ok(connection.recv().await?.remove(0))
     }
 
@@ -1108,8 +1108,10 @@ routing message to a random node so that:
     /// Receive all responses from the outgoing connections, returns all responses that are ready to be returned.
     /// For response ordering reasons, some responses will remain in self.pending_requests until other responses are received.
     async fn recv_responses(&mut self) -> Result<Vec<Message>> {
-        // Convert all received PendingRequestTy::Sent into PendingRequestTy::Received
+        // To work around borrow checker issues, store connection errors in this temporary list before handling them.
         let mut connection_errors = vec![];
+
+        // Convert all received PendingRequestTy::Sent into PendingRequestTy::Received
         for (connection_destination, connection) in &mut self.connections.connections {
             // skip recv when no pending requests to avoid timeouts on old connections
             if connection.pending_requests_count() != 0 {
@@ -1147,6 +1149,7 @@ routing message to a random node so that:
         }
 
         for (destination, err) in connection_errors {
+            // Since pending_requests_count > 0 we expect this to return an Err.
             self.connections
                 .handle_connection_error(
                     &self.connection_factory,
