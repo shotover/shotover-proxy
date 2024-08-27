@@ -6,11 +6,11 @@ use anyhow::{Context, Result};
 use fnv::FnvBuildHasher;
 use kafka_protocol::{messages::BrokerId, protocol::StrBytes};
 use metrics::Counter;
-use rand::{rngs::SmallRng, seq::SliceRandom};
-use std::{collections::HashMap, time::Instant};
+use rand::{rngs::SmallRng, seq::IteratorRandom};
+use std::{collections::HashMap, sync::atomic::Ordering, time::Instant};
 
 use super::{
-    node::{ConnectionFactory, KafkaAddress, KafkaNode},
+    node::{ConnectionFactory, KafkaAddress, KafkaNode, NodeState},
     scram_over_mtls::{connection::ScramOverMtlsConnection, AuthorizeScramOverMtls},
     SASL_SCRAM_MECHANISMS,
 };
@@ -33,6 +33,7 @@ pub enum Destination {
 
 pub struct Connections {
     pub connections: HashMap<Destination, KafkaConnection, FnvBuildHasher>,
+    control_connection_address: Option<KafkaAddress>,
     out_of_rack_requests: Counter,
 }
 
@@ -40,10 +41,13 @@ impl Connections {
     pub fn new(out_of_rack_requests: Counter) -> Self {
         Self {
             connections: Default::default(),
+            control_connection_address: None,
             out_of_rack_requests,
         }
     }
 
+    /// If a connection already exists for the requested Destination return it.
+    /// Otherwise create a new connection, cache it and return it.
     #[allow(clippy::too_many_arguments)]
     pub async fn get_or_open_connection(
         &mut self,
@@ -82,6 +86,7 @@ impl Connections {
                     connection_factory,
                     authorize_scram_over_mtls,
                     sasl_mechanism,
+                    nodes,
                     node,
                     contact_points,
                     None,
@@ -99,6 +104,7 @@ impl Connections {
                     connection_factory,
                     authorize_scram_over_mtls,
                     sasl_mechanism,
+                    nodes,
                     node,
                     contact_points,
                     old_connection,
@@ -122,14 +128,28 @@ impl Connections {
         connection_factory: &ConnectionFactory,
         authorize_scram_over_mtls: &Option<AuthorizeScramOverMtls>,
         sasl_mechanism: &Option<String>,
+        nodes: &[KafkaNode],
         node: Option<&KafkaNode>,
         contact_points: &[KafkaAddress],
         old_connection: Option<KafkaConnection>,
         destination: Destination,
     ) -> Result<()> {
         let address = match &node {
+            // route to ID
             Some(node) => &node.kafka_address,
-            None => contact_points.choose(rng).unwrap(),
+            // route to control connection
+            None => {
+                // If we have a node in the nodes list that is up use its address.
+                // Otherwise fall back to the first contact points
+                let address_from_node = nodes
+                    .iter()
+                    .filter(|x| matches!(x.state.load(Ordering::Relaxed), NodeState::Up))
+                    .choose(rng)
+                    .map(|x| x.kafka_address.clone());
+                self.control_connection_address =
+                    address_from_node.or_else(|| contact_points.iter().choose(rng).cloned());
+                self.control_connection_address.as_ref().unwrap()
+            }
         };
         let connection = connection_factory
             .create_connection(address, authorize_scram_over_mtls, sasl_mechanism)
@@ -157,6 +177,79 @@ impl Connections {
             connection.state(recent_instant)
         } else {
             ConnectionState::Unopened
+        }
+    }
+
+    /// Open a new connection to the requested Destination.
+    /// If the connection is succesfully created, the old connection is replace with the new one.
+    /// Otherwise the old connection is just deleted with no replacement and an error is returned.
+    pub async fn handle_connection_error(
+        &mut self,
+        connection_factory: &ConnectionFactory,
+        authorize_scram_over_mtls: &Option<AuthorizeScramOverMtls>,
+        sasl_mechanism: &Option<String>,
+        nodes: &[KafkaNode],
+        destination: Destination,
+        error: anyhow::Error,
+    ) -> Result<()> {
+        let old_connection = self.connections.remove(&destination);
+
+        let address = match destination {
+            Destination::Id(id) => {
+                &nodes
+                    .iter()
+                    .find(|x| x.broker_id == id)
+                    .unwrap()
+                    .kafka_address
+            }
+            Destination::ControlConnection => self.control_connection_address.as_ref().unwrap(),
+        };
+
+        let connection = connection_factory
+            .create_connection(address, authorize_scram_over_mtls, sasl_mechanism)
+            .await
+            .context("Failed to create a new connection");
+
+        match connection {
+            Ok(connection) => {
+                // Recreating the node succeeded.
+                // So store it as the new connection, as long as we werent waiting on any responses in the old connection
+                let connection = KafkaConnection::new(
+                    authorize_scram_over_mtls,
+                    sasl_mechanism,
+                    connection,
+                    None,
+                )?;
+
+                if old_connection
+                    .map(|old| old.pending_requests_count())
+                    .unwrap_or(0)
+                    > 0
+                {
+                    Err(error.context("Succesfully reopened outgoing connection but previous outgoing connection had pending requests."))
+                } else {
+                    self.connections.insert(destination, connection);
+                    Ok(())
+                }
+            }
+            Err(err) => {
+                // Recreating the node failed.
+                // So update the metadata so we dont attempt to connect to it again,
+                // and then return the error
+                nodes
+                    .iter()
+                    .find(|x| match destination {
+                        Destination::Id(id) => x.broker_id == id,
+                        Destination::ControlConnection => {
+                            &x.kafka_address == self.control_connection_address.as_ref().unwrap()
+                        }
+                    })
+                    .unwrap()
+                    .state
+                    .store(NodeState::Down, Ordering::Relaxed);
+
+                Err(err)
+            }
         }
     }
 }
