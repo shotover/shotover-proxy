@@ -210,46 +210,39 @@ impl Connections {
             .await
             .context("Failed to create a new connection");
 
-        match connection {
-            Ok(connection) => {
-                // Recreating the node succeeded.
-                // So store it as the new connection, as long as we werent waiting on any responses in the old connection
-                let connection = KafkaConnection::new(
-                    authorize_scram_over_mtls,
-                    sasl_mechanism,
-                    connection,
-                    None,
-                )?;
-
-                if old_connection
-                    .map(|old| old.pending_requests_count())
-                    .unwrap_or(0)
-                    > 0
-                {
-                    Err(error.context("Succesfully reopened outgoing connection but previous outgoing connection had pending requests."))
-                } else {
-                    self.connections.insert(destination, connection);
-                    Ok(())
+        // Update the node state according to whether we can currently open a connection.
+        let node_state = if connection.is_err() {
+            NodeState::Down
+        } else {
+            NodeState::Up
+        };
+        nodes
+            .iter()
+            .find(|x| match destination {
+                Destination::Id(id) => x.broker_id == id,
+                Destination::ControlConnection => {
+                    &x.kafka_address == self.control_connection_address.as_ref().unwrap()
                 }
-            }
-            Err(err) => {
-                // Recreating the node failed.
-                // So update the metadata so we dont attempt to connect to it again,
-                // and then return the error
-                nodes
-                    .iter()
-                    .find(|x| match destination {
-                        Destination::Id(id) => x.broker_id == id,
-                        Destination::ControlConnection => {
-                            &x.kafka_address == self.control_connection_address.as_ref().unwrap()
-                        }
-                    })
-                    .unwrap()
-                    .state
-                    .store(NodeState::Down, Ordering::Relaxed);
+            })
+            .unwrap()
+            .state
+            .store(node_state, Ordering::Relaxed);
+        let connection = connection?;
 
-                Err(err)
-            }
+        // Recreating the node succeeded.
+        // So store it as the new connection, as long as we werent waiting on any responses in the old connection
+        let connection =
+            KafkaConnection::new(authorize_scram_over_mtls, sasl_mechanism, connection, None)?;
+
+        if old_connection
+            .map(|old| old.pending_requests_count())
+            .unwrap_or(0)
+            > 0
+        {
+            Err(error.context("Succesfully reopened outgoing connection but previous outgoing connection had pending requests."))
+        } else {
+            self.connections.insert(destination, connection);
+            Ok(())
         }
     }
 }
