@@ -76,7 +76,7 @@ unzip awscliv2.zip
                 if x.is_empty() {
                     String::from("''")
                 } else {
-                    String::from_utf8(shell_quote::Bash::quote(&x)).unwrap()
+                    String::from_utf8(shell_quote::Bash::quote_vec(&x)).unwrap()
                 }
             })
             .collect();

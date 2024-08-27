@@ -21,7 +21,6 @@ cassandra = [
     "dep:aws-config",
     "dep:base64",
     "dep:serde_json",
-    "dep:halfbrown",
     "dep:chacha20poly1305",
     "dep:generic-array",
     "dep:hex",
@@ -32,7 +31,6 @@ kafka = [
     "dep:kafka-protocol",
     "dep:dashmap",
     "dep:xxhash-rust",
-    "dep:string",
     "dep:base64",
     "dep:sasl",
 ]
@@ -54,7 +52,7 @@ axum = { version = "0.7", default-features = false, features = ["tokio", "tracin
 pretty-hex = "0.4.0"
 tokio-stream = "0.1.2"
 derivative = "2.1.1"
-cached = { version = "0.51", features = ["async"], optional = true }
+cached = { version = "0.53", features = ["async"], optional = true }
 governor = { version = "0.6", default-features = false, features = ["std", "jitter", "quanta"] }
 nonzero_ext = "0.3.0"
 version-compare = { version = "0.2", optional = true }
@@ -105,7 +103,6 @@ metrics-exporter-prometheus = { version = "0.15.0", default-features = false }
 tracing.workspace = true
 tracing-subscriber.workspace = true
 tracing-appender.workspace = true
-halfbrown = { version = "0.2.1", optional = true }
 
 # Transform dependencies
 redis-protocol = { workspace = true, optional = true }
@@ -123,7 +120,6 @@ rustls = { version = "0.23.0", default-features = false, features = ["tls12"] }
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring"] }
 rustls-pemfile = "2.0.0"
 rustls-pki-types = "1.0.1"
-string = { version = "0.3.0", optional = true }
 xxhash-rust = { version = "0.8.6", features = ["xxh3"], optional = true }
 dashmap = { version = "6.0.0", optional = true }
 atoi = { version = "2.0.0", optional = true }

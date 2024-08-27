@@ -250,7 +250,7 @@ AWS_ACCESS_KEY_ID={} AWS_SECRET_ACCESS_KEY={} cargo {command} {args} 2>&1
 fn process_args(mut args: Vec<String>) -> String {
     args.remove(0);
     args.iter()
-        .map(|x| String::from_utf8(shell_quote::Bash::quote(x)).unwrap())
+        .map(|x| String::from_utf8(shell_quote::Bash::quote_vec(x)).unwrap())
         .collect::<Vec<_>>()
         .join(" ")
 }
