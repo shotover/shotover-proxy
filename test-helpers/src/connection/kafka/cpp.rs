@@ -50,13 +50,13 @@ impl KafkaConnectionBuilderCpp {
         self
     }
 
-    pub async fn connect_producer(&self, acks: i32) -> KafkaProducerCpp {
+    pub async fn connect_producer(&self, acks: &str) -> KafkaProducerCpp {
         KafkaProducerCpp {
             producer: self
                 .client
                 .clone()
                 .set("message.timeout.ms", "5000")
-                .set("acks", acks.to_string())
+                .set("acks", acks)
                 .create()
                 .unwrap(),
         }

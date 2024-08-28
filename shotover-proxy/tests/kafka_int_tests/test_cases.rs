@@ -68,7 +68,7 @@ pub async fn produce_consume_partitions1(
     topic_name: &str,
 ) {
     {
-        let producer = connection_builder.connect_producer(1).await;
+        let producer = connection_builder.connect_producer("all").await;
         // create an initial record to force kafka to create the topic if it doesnt yet exist
         producer
             .assert_produce(
@@ -174,7 +174,7 @@ pub async fn produce_consume_commit_offsets_partitions1(
     topic_name: &str,
 ) {
     {
-        let producer = connection_builder.connect_producer(1).await;
+        let producer = connection_builder.connect_producer("1").await;
         producer
             .assert_produce(
                 Record {
@@ -295,9 +295,11 @@ pub async fn produce_consume_commit_offsets_partitions1(
     }
 }
 
-async fn produce_consume_partitions3(connection_builder: &KafkaConnectionBuilder) {
-    let topic_name = "partitions3";
-    let producer = connection_builder.connect_producer(1).await;
+async fn produce_consume_partitions3(
+    connection_builder: &KafkaConnectionBuilder,
+    topic_name: &str,
+) {
+    let producer = connection_builder.connect_producer("1").await;
     let mut consumer = connection_builder
         .connect_consumer(topic_name, "some_group")
         .await;
@@ -346,7 +348,7 @@ async fn produce_consume_partitions3(connection_builder: &KafkaConnectionBuilder
 
 async fn produce_consume_acks0(connection_builder: &KafkaConnectionBuilder) {
     let topic_name = "acks0";
-    let producer = connection_builder.connect_producer(0).await;
+    let producer = connection_builder.connect_producer("0").await;
 
     for _ in 0..10 {
         producer
@@ -382,7 +384,7 @@ pub async fn standard_test_suite(connection_builder: &KafkaConnectionBuilder) {
     produce_consume_partitions1(connection_builder, "partitions1").await;
     produce_consume_partitions1(connection_builder, "unknown_topic").await;
     produce_consume_commit_offsets_partitions1(connection_builder, "partitions1_with_offset").await;
-    produce_consume_partitions3(connection_builder).await;
+    produce_consume_partitions3(connection_builder, "partitions3").await;
 
     // Only run this test case on the java driver,
     // since even without going through shotover the cpp driver fails this test.
@@ -403,6 +405,28 @@ pub async fn standard_test_suite(connection_builder: &KafkaConnectionBuilder) {
 
     produce_consume_acks0(connection_builder).await;
     connection_builder.admin_cleanup().await;
+}
+
+pub async fn cluster_test_suite(connection_builder: &KafkaConnectionBuilder) {
+    standard_test_suite(connection_builder).await;
+    let admin = connection_builder.connect_admin().await;
+    admin
+        .create_topics(&[
+            NewTopic {
+                name: "partitions1_rf3",
+                num_partitions: 1,
+                replication_factor: 3,
+            },
+            NewTopic {
+                name: "partitions3_rf3",
+                num_partitions: 3,
+                replication_factor: 3,
+            },
+        ])
+        .await;
+    tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+    produce_consume_partitions1(connection_builder, "partitions1_rf3").await;
+    produce_consume_partitions3(connection_builder, "partitions3_rf3").await;
 }
 
 pub async fn setup_basic_user_acls(connection: &KafkaConnectionBuilder, username: &str) {

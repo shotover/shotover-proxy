@@ -825,32 +825,18 @@ routing message to a random node so that:
                     let destination = if let Some(partition) =
                         topic_meta.partitions.get(partition_index)
                     {
-                        if let Some(node) = self
-                            .nodes
-                            .iter_mut()
-                            .filter(|node| {
-                                partition
-                                    .shotover_rack_replica_nodes
-                                    .contains(&node.broker_id)
-                            })
-                            .choose(&mut self.rng)
-                        {
-                            node.broker_id
-                        } else {
-                            tracing::debug!(
-                                "Routing fetch request to replica outside of shotover's rack"
+                        // While technically kafka has some support for fetching from replicas, its quite weird.
+                        // See https://cwiki.apache.org/confluence/display/KAFKA/KIP-392%3A+Allow+consumers+to+fetch+from+closest+replica
+                        // We should never route to replica_nodes from the metadata response ourselves.
+                        // Instead, when its available, we can make use of preferred_read_replica field in the fetch response as an optimization.
+                        // However its always correct to route to the partition.leader_id which is what we do here.
+                        if partition.leader_id == -1 {
+                            let topic_name = Self::format_topic_name(&topic);
+                            tracing::warn!(
+                                "leader_id is unknown for topic {topic_name} at partition index {partition_index}"
                             );
-                            self.nodes
-                                .iter_mut()
-                                .filter(|node| {
-                                    partition
-                                        .external_rack_replica_nodes
-                                        .contains(&node.broker_id)
-                                })
-                                .choose(&mut self.rng)
-                                .unwrap()
-                                .broker_id
                         }
+                        partition.leader_id
                     } else {
                         let partition_len = topic_meta.partitions.len();
                         let topic_name = Self::format_topic_name(&topic);
