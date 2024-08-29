@@ -741,7 +741,7 @@ impl KafkaSinkCluster {
                 })) => self.route_to_controller(message),
                 // route to random node
                 _ => {
-                    let destination = self.nodes.choose(&mut self.rng).unwrap().broker_id;
+                    let destination = random_broker_id(&self.nodes, &mut self.rng);
                     self.pending_requests.push_back(PendingRequest {
                         ty: PendingRequestTy::routed(destination, message),
                         combine_responses: 1,
@@ -787,7 +787,7 @@ routing message to a random node so that:
 * if auto topic creation is enabled, auto topic creation will occur
 * if auto topic creation is disabled a NOT_LEADER_OR_FOLLOWER is returned to the client"#
                     );
-                    self.nodes.choose(&mut self.rng).unwrap().broker_id
+                    random_broker_id(&self.nodes, &mut self.rng)
                 }
             };
 
@@ -900,7 +900,7 @@ routing message to a random node so that:
             if routing.is_empty() {
                 // Fetch contains no topics, so we can just pick a random destination.
                 // The message is unchanged so we can just send as is.
-                let destination = self.nodes.choose(&mut self.rng).unwrap().broker_id;
+                let destination = random_broker_id(&self.nodes, &mut self.rng);
 
                 self.pending_requests.push_back(PendingRequest {
                     ty: PendingRequestTy::routed(destination, message),
@@ -913,7 +913,7 @@ routing message to a random node so that:
                 // we dont even need to invalidate the message's cache.
                 let (destination, topics) = routing.into_iter().next().unwrap();
                 let destination = if destination == -1 {
-                    self.nodes.choose(&mut self.rng).unwrap().broker_id
+                    random_broker_id(&self.nodes, &mut self.rng)
                 } else {
                     destination
                 };
@@ -930,7 +930,7 @@ routing message to a random node so that:
                 message.invalidate_cache();
                 for (i, (destination, topics)) in routing.into_iter().enumerate() {
                     let destination = if destination == -1 {
-                        self.nodes.choose(&mut self.rng).unwrap().broker_id
+                        random_broker_id(&self.nodes, &mut self.rng)
                     } else {
                         destination
                     };
@@ -1554,7 +1554,7 @@ routing message to a random node so that:
             node.broker_id
         } else {
             tracing::warn!("no known broker with id {broker_id:?}, routing message to a random node so that a NOT_CONTROLLER or similar error is returned to the client");
-            self.nodes.choose(&mut self.rng).unwrap().broker_id
+            random_broker_id(&self.nodes, &mut self.rng)
         };
 
         self.pending_requests.push_back(PendingRequest {
@@ -1571,7 +1571,7 @@ routing message to a random node so that:
             Some(destination) => *destination,
             None => {
                 tracing::warn!("no known coordinator for {group_id:?}, routing message to a random node so that a NOT_COORDINATOR or similar error is returned to the client");
-                self.nodes.choose(&mut self.rng).unwrap().broker_id
+                random_broker_id(&self.nodes, &mut self.rng)
             }
         };
 
@@ -1929,4 +1929,12 @@ fn get_username_from_scram_request(auth_request: &[u8]) -> Option<String> {
         }
     }
     None
+}
+
+// Chooses a random broker id from the list of nodes, prioritizes "Up" nodes but fallsback to "down" nodes if needed.
+fn random_broker_id(nodes: &[KafkaNode], rng: &mut SmallRng) -> BrokerId {
+    match nodes.iter().filter(|node| node.is_up()).choose(rng) {
+        Some(broker) => broker.broker_id,
+        None => nodes.choose(rng).unwrap().broker_id,
+    }
 }

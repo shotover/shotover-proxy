@@ -17,6 +17,7 @@ use sasl::client::mechanisms::Scram;
 use sasl::client::Mechanism;
 use sasl::common::scram::Sha256;
 use sasl::common::ChannelBinding;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Notify;
@@ -294,9 +295,14 @@ impl KafkaNode {
             state: Arc::new(AtomicNodeState::new(NodeState::Up)),
         }
     }
+
+    pub fn is_up(&self) -> bool {
+        self.state.load(Ordering::Relaxed) == NodeState::Up
+    }
 }
 
 #[atomic_enum]
+#[derive(PartialEq)]
 pub enum NodeState {
     Up,
     Down,
