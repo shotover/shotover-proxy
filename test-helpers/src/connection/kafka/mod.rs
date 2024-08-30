@@ -57,7 +57,7 @@ impl KafkaConnectionBuilder {
         }
     }
 
-    pub async fn connect_producer(&self, acks: i32) -> KafkaProducer {
+    pub async fn connect_producer(&self, acks: &str) -> KafkaProducer {
         match self {
             #[cfg(feature = "kafka-cpp-driver-tests")]
             Self::Cpp(cpp) => KafkaProducer::Cpp(cpp.connect_producer(acks).await),

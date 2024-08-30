@@ -79,7 +79,7 @@ impl KafkaConnectionBuilderJava {
         self
     }
 
-    pub async fn connect_producer(&self, acks: i32) -> KafkaProducerJava {
+    pub async fn connect_producer(&self, acks: &str) -> KafkaProducerJava {
         let mut config = self.base_config.clone();
         config.insert("acks".to_owned(), acks.to_string());
         config.insert(

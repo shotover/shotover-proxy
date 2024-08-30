@@ -115,7 +115,7 @@ async fn cluster_tls(#[case] driver: KafkaDriver) {
 
     let connection_builder = KafkaConnectionBuilder::new(driver, "127.0.0.1:9192")
         .use_tls("tests/test-configs/kafka/tls/certs");
-    test_cases::standard_test_suite(&connection_builder).await;
+    test_cases::cluster_test_suite(&connection_builder).await;
 
     tokio::time::timeout(
         Duration::from_secs(10),
@@ -139,7 +139,7 @@ async fn cluster_mtls(#[case] driver: KafkaDriver) {
 
     let connection_builder = KafkaConnectionBuilder::new(driver, "127.0.0.1:9192")
         .use_tls("tests/test-configs/kafka/tls/certs");
-    test_cases::standard_test_suite(&connection_builder).await;
+    test_cases::cluster_test_suite(&connection_builder).await;
 
     tokio::time::timeout(
         Duration::from_secs(10),
@@ -254,7 +254,7 @@ async fn cluster_1_rack_single_shotover(#[case] driver: KafkaDriver) {
         .await;
 
     let connection_builder = KafkaConnectionBuilder::new(driver, "127.0.0.1:9192");
-    test_cases::standard_test_suite(&connection_builder).await;
+    test_cases::cluster_test_suite(&connection_builder).await;
 
     tokio::time::timeout(
         Duration::from_secs(10),
@@ -287,7 +287,7 @@ async fn cluster_1_rack_multi_shotover(#[case] driver: KafkaDriver) {
     }
 
     let connection_builder = KafkaConnectionBuilder::new(driver, "127.0.0.1:9192");
-    test_cases::standard_test_suite(&connection_builder).await;
+    test_cases::cluster_test_suite(&connection_builder).await;
 
     for shotover in shotovers {
         tokio::time::timeout(
@@ -324,7 +324,7 @@ async fn cluster_2_racks_multi_shotover(#[case] driver: KafkaDriver) {
     }
 
     let connection_builder = KafkaConnectionBuilder::new(driver, "127.0.0.1:9192");
-    test_cases::standard_test_suite(&connection_builder).await;
+    test_cases::cluster_test_suite(&connection_builder).await;
 
     for shotover in shotovers {
         tokio::time::timeout(
@@ -394,7 +394,7 @@ async fn cluster_sasl_scram_over_mtls_single_shotover(#[case] driver: KafkaDrive
         let connection_super = KafkaConnectionBuilder::new(driver, "127.0.0.1:9192")
             .use_sasl_scram("super_user", "super_password");
         setup_basic_user_acls(&connection_super, "basic_user").await;
-        test_cases::standard_test_suite(&connection_super).await;
+        test_cases::cluster_test_suite(&connection_super).await;
         assert_connection_fails_with_incorrect_password(driver, "super_user").await;
 
         // admin requests sent by basic user are unsuccessful
@@ -505,7 +505,7 @@ async fn cluster_sasl_scram_over_mtls_multi_shotover(#[case] driver: KafkaDriver
     let instant = Instant::now();
     let connection_builder = KafkaConnectionBuilder::new(driver, "127.0.0.1:9192")
         .use_sasl_scram("super_user", "super_password");
-    test_cases::standard_test_suite(&connection_builder).await;
+    test_cases::cluster_test_suite(&connection_builder).await;
 
     // Wait 20s since we started the initial run to ensure that we hit the 15s token lifetime limit
     tokio::time::sleep_until((instant + Duration::from_secs(20)).into()).await;
@@ -549,7 +549,7 @@ async fn cluster_sasl_plain_multi_shotover(#[case] driver: KafkaDriver) {
 
     let connection_builder =
         KafkaConnectionBuilder::new(driver, "127.0.0.1:9192").use_sasl_plain("user", "password");
-    test_cases::standard_test_suite(&connection_builder).await;
+    test_cases::cluster_test_suite(&connection_builder).await;
 
     // Test invalid credentials
     // We perform the regular test suite first in an attempt to catch a scenario
