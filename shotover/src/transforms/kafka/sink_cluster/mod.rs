@@ -19,8 +19,8 @@ use kafka_protocol::messages::produce_response::LeaderIdAndEpoch as ProduceRespo
 use kafka_protocol::messages::{
     ApiKey, BrokerId, FetchRequest, FindCoordinatorRequest, FindCoordinatorResponse, GroupId,
     HeartbeatRequest, JoinGroupRequest, LeaveGroupRequest, MetadataRequest, MetadataResponse,
-    OffsetFetchRequest, RequestHeader, SaslAuthenticateRequest, SaslAuthenticateResponse,
-    SaslHandshakeRequest, SyncGroupRequest, TopicName,
+    RequestHeader, SaslAuthenticateRequest, SaslAuthenticateResponse, SaslHandshakeRequest,
+    SyncGroupRequest, TopicName,
 };
 use kafka_protocol::protocol::StrBytes;
 use kafka_protocol::ResponseError;
@@ -593,12 +593,23 @@ impl KafkaSinkCluster {
                     body:
                         RequestBody::Heartbeat(HeartbeatRequest { group_id, .. })
                         | RequestBody::SyncGroup(SyncGroupRequest { group_id, .. })
-                        | RequestBody::OffsetFetch(OffsetFetchRequest { group_id, .. })
                         | RequestBody::JoinGroup(JoinGroupRequest { group_id, .. })
                         | RequestBody::LeaveGroup(LeaveGroupRequest { group_id, .. }),
                     ..
                 })) => {
                     self.store_group(&mut groups, group_id.clone());
+                }
+                Some(Frame::Kafka(KafkaFrame::Request {
+                    body: RequestBody::OffsetFetch(offset_fetch),
+                    header,
+                })) => {
+                    if header.request_api_version <= 7 {
+                        self.store_group(&mut groups, offset_fetch.group_id.clone());
+                    } else {
+                        for group in &offset_fetch.groups {
+                            self.store_group(&mut groups, group.group_id.clone());
+                        }
+                    }
                 }
                 _ => {}
             }
