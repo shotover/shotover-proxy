@@ -36,7 +36,7 @@ use scram_over_mtls::{
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 use std::hash::Hasher;
-use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::atomic::AtomicI64;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
@@ -420,9 +420,7 @@ impl KafkaSinkCluster {
                                 Ok(response) => return Ok(response),
                                 // this node also doesnt work, mark as bad and try a new one.
                                 Err(err) => {
-                                    if self.nodes.iter().all(|x| {
-                                        matches!(x.state.load(Ordering::Relaxed), NodeState::Down)
-                                    }) {
+                                    if self.nodes.iter().all(|x| !x.is_up()) {
                                         return Err(err.context("Failed to recreate control connection, no more nodes to retry on. Last node gave error"));
                                     } else {
                                         tracing::warn!(
@@ -1100,6 +1098,28 @@ routing message to a random node so that:
                     }
                 }
                 Err(err) => {
+                    // set node as down, the connection already failed to create so no point running through handle_connection_error,
+                    // as that will recreate the connection which we already know just failed.
+                    // Instead just directly set the node as down and return the error
+
+                    // set node as down
+                    self.nodes
+                        .iter()
+                        .find(|x| match destination {
+                            Destination::Id(id) => x.broker_id == id,
+                            Destination::ControlConnection => {
+                                &x.kafka_address
+                                    == self
+                                        .connections
+                                        .control_connection_address
+                                        .as_ref()
+                                        .unwrap()
+                            }
+                        })
+                        .unwrap()
+                        .set_state(NodeState::Down);
+
+                    // bubble up error
                     let request_types: Vec<String> = requests
                         .requests
                         .iter_mut()
@@ -1110,23 +1130,9 @@ routing message to a random node so that:
                             _ => "Unknown".to_owned(),
                         })
                         .collect();
-                    let err = err.context(format!(
+                    return Err(err.context(format!(
                         "Failed to get connection to send requests {request_types:?}"
-                    ));
-                    self.connections
-                        .handle_connection_error(
-                            &self.connection_factory,
-                            &self.authorize_scram_over_mtls,
-                            &self.sasl_mechanism,
-                            &self.nodes,
-                            destination,
-                            err,
-                        )
-                        .await?;
-                    // TODO: we could in theory retry here, if the connection is succesfully recreated, instead of always returning an error
-                    return Err(anyhow!(
-                        "Failed to create a connection and retrying other nodes not yet supported"
-                    ));
+                    )));
                 }
             }
         }
