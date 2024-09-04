@@ -1066,8 +1066,8 @@ routing message to a random node so that:
         }
 
         let recent_instant = Instant::now();
-        for (destination, requests) in broker_to_routed_requests {
-            if let Err(err) = self
+        for (destination, mut requests) in broker_to_routed_requests {
+            match self
                 .connections
                 .get_or_open_connection(
                     &mut self.rng,
@@ -1080,22 +1080,54 @@ routing message to a random node so that:
                     recent_instant,
                     destination,
                 )
-                .await?
-                .send(requests.requests)
+                .await
             {
-                // Dont retry the send on the new connection since we cant tell if the broker received the request or not.
-                self.connections
-                    .handle_connection_error(
-                        &self.connection_factory,
-                        &self.authorize_scram_over_mtls,
-                        &self.sasl_mechanism,
-                        &self.nodes,
-                        destination,
-                        err.clone().into(),
-                    )
-                    .await?;
-                // If we succesfully recreate the outgoing connection we still need to terminate this incoming connection since the request is lost.
-                return Err(err.into());
+                Ok(connection) => {
+                    if let Err(err) = connection.send(requests.requests) {
+                        // Dont retry the send on the new connection since we cant tell if the broker received the request or not.
+                        self.connections
+                            .handle_connection_error(
+                                &self.connection_factory,
+                                &self.authorize_scram_over_mtls,
+                                &self.sasl_mechanism,
+                                &self.nodes,
+                                destination,
+                                err.clone().into(),
+                            )
+                            .await?;
+                        // If we succesfully recreate the outgoing connection we still need to terminate this incoming connection since the request is lost.
+                        return Err(err.into());
+                    }
+                }
+                Err(err) => {
+                    let request_types: Vec<String> = requests
+                        .requests
+                        .iter_mut()
+                        .map(|x| match x.frame() {
+                            Some(Frame::Kafka(KafkaFrame::Request { header, .. })) => {
+                                format!("{:?}", ApiKey::try_from(header.request_api_key).unwrap())
+                            }
+                            _ => "Unknown".to_owned(),
+                        })
+                        .collect();
+                    let err = err.context(format!(
+                        "Failed to get connection to send requests {request_types:?}"
+                    ));
+                    self.connections
+                        .handle_connection_error(
+                            &self.connection_factory,
+                            &self.authorize_scram_over_mtls,
+                            &self.sasl_mechanism,
+                            &self.nodes,
+                            destination,
+                            err,
+                        )
+                        .await?;
+                    // TODO: we could in theory retry here, if the connection is succesfully recreated, instead of always returning an error
+                    return Err(anyhow!(
+                        "Failed to create a connection and retrying other nodes not yet supported"
+                    ));
+                }
             }
         }
 
