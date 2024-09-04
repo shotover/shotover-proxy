@@ -28,8 +28,8 @@ services:
       KAFKA_CFG_SASL_MECHANISM_CONTROLLER_PROTOCOL: "PLAIN"
       KAFKA_CFG_INTER_BROKER_LISTENER_NAME: "BROKER"
       KAFKA_CFG_SASL_MECHANISM_INTER_BROKER_PROTOCOL: "SCRAM-SHA-256"
-      KAFKA_INTER_BROKER_USER: "controller_user"
-      KAFKA_INTER_BROKER_PASSWORD: "controller_password"
+      KAFKA_INTER_BROKER_USER: "super_user"
+      KAFKA_INTER_BROKER_PASSWORD: "super_password"
       KAFKA_CERTIFICATE_PASSWORD: "password"
       KAFKA_KRAFT_CLUSTER_ID: "abcdefghijklmnopqrstuv"
       KAFKA_TLS_CLIENT_AUTH: required
@@ -38,6 +38,10 @@ services:
       # * the user named `user`
       # * any clients connected via a TLS certificate of `O=ShotoverTestCertificate,CN=Generic-Cert`
       KAFKA_CFG_SUPER_USERS: "User:super_user;User:O=ShotoverTestCertificate,CN=Generic-Cert"
+      # Required for high availability
+      KAFKA_CFG_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      KAFKA_CFG_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
+      KAFKA_CFG_TRANSACTION_STATE_LOG_MIN_ISR: 2
     volumes: &volumes
       - type: tmpfs
         target: /bitnami/kafka
