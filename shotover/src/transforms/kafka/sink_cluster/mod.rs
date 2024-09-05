@@ -11,16 +11,18 @@ use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use connections::{Connections, Destination};
 use dashmap::DashMap;
+use kafka_protocol::indexmap::IndexMap;
 use kafka_protocol::messages::fetch_request::FetchTopic;
 use kafka_protocol::messages::fetch_response::LeaderIdAndEpoch as FetchResponseLeaderIdAndEpoch;
 use kafka_protocol::messages::metadata_request::MetadataRequestTopic;
 use kafka_protocol::messages::metadata_response::MetadataResponseBroker;
+use kafka_protocol::messages::produce_request::TopicProduceData;
 use kafka_protocol::messages::produce_response::LeaderIdAndEpoch as ProduceResponseLeaderIdAndEpoch;
 use kafka_protocol::messages::{
-    ApiKey, BrokerId, FetchRequest, FindCoordinatorRequest, FindCoordinatorResponse, GroupId,
-    HeartbeatRequest, JoinGroupRequest, LeaveGroupRequest, MetadataRequest, MetadataResponse,
-    RequestHeader, SaslAuthenticateRequest, SaslAuthenticateResponse, SaslHandshakeRequest,
-    SyncGroupRequest, TopicName,
+    ApiKey, BrokerId, FetchRequest, FetchResponse, FindCoordinatorRequest, FindCoordinatorResponse,
+    GroupId, HeartbeatRequest, JoinGroupRequest, LeaveGroupRequest, MetadataRequest,
+    MetadataResponse, ProduceRequest, ProduceResponse, RequestHeader, SaslAuthenticateRequest,
+    SaslAuthenticateResponse, SaslHandshakeRequest, SyncGroupRequest, TopicName,
 };
 use kafka_protocol::protocol::StrBytes;
 use kafka_protocol::ResponseError;
@@ -809,46 +811,118 @@ impl KafkaSinkCluster {
             ..
         })) = message.frame()
         {
-            let mut connection = None;
-            // assume that all topics in this message have the same routing requirements
-            let (topic_name, topic_data) = produce
-                .topic_data
-                .iter()
-                .next()
-                .ok_or_else(|| anyhow!("No topics in produce message"))?;
-            if let Some(topic) = self.topic_by_name.get(topic_name) {
-                // assume that all partitions in this topic have the same routing requirements
-                let partition = &topic.partitions[topic_data
-                    .partition_data
-                    .first()
-                    .ok_or_else(|| anyhow!("No partitions in topic"))?
-                    .index as usize];
-                for node in &mut self.nodes {
-                    if node.broker_id == partition.leader_id {
-                        connection = Some(node.broker_id);
+            let routing = self.split_produce_request_by_destination(produce);
+
+            if routing.is_empty() {
+                // Produce contains no topics, so we can just pick a random destination.
+                // The message is unchanged so we can just send as is.
+                let destination = random_broker_id(&self.nodes, &mut self.rng);
+
+                self.pending_requests.push_back(PendingRequest {
+                    ty: PendingRequestTy::routed(destination, message),
+                    combine_responses: 1,
+                });
+            } else if routing.len() == 1 {
+                // Only 1 destination,
+                // so we can just reconstruct the original message as is,
+                // act like this never happened 😎,
+                // we dont even need to invalidate the message's cache.
+                let (destination, topic_data) = routing.into_iter().next().unwrap();
+                let destination = if destination == -1 {
+                    random_broker_id(&self.nodes, &mut self.rng)
+                } else {
+                    destination
+                };
+
+                produce.topic_data = topic_data;
+                self.pending_requests.push_back(PendingRequest {
+                    ty: PendingRequestTy::routed(destination, message),
+                    combine_responses: 1,
+                });
+            } else {
+                // The message has been split so it may be delivered to multiple destinations.
+                // We must generate a unique message for each destination.
+                let combine_responses = routing.len();
+                message.invalidate_cache();
+                for (i, (destination, topic_data)) in routing.into_iter().enumerate() {
+                    let destination = if destination == -1 {
+                        random_broker_id(&self.nodes, &mut self.rng)
+                    } else {
+                        destination
+                    };
+                    let mut request = if i == 0 {
+                        // First message acts as base and retains message id
+                        message.clone()
+                    } else {
+                        message.clone_with_new_id()
+                    };
+                    if let Some(Frame::Kafka(KafkaFrame::Request {
+                        body: RequestBody::Produce(produce),
+                        ..
+                    })) = request.frame()
+                    {
+                        produce.topic_data = topic_data;
                     }
+                    self.pending_requests.push_back(PendingRequest {
+                        ty: PendingRequestTy::routed(destination, request),
+                        combine_responses,
+                    });
                 }
             }
-            let destination = match connection {
-                Some(connection) => connection,
-                None => {
-                    tracing::debug!(
-                        r#"no known partition leader for {topic_name:?}
-routing message to a random node so that:
-* if auto topic creation is enabled, auto topic creation will occur
-* if auto topic creation is disabled a NOT_LEADER_OR_FOLLOWER is returned to the client"#
-                    );
-                    random_broker_id(&self.nodes, &mut self.rng)
-                }
-            };
-
-            self.pending_requests.push_back(PendingRequest {
-                ty: PendingRequestTy::routed(destination, message),
-                combine_responses: 1,
-            });
         }
 
         Ok(())
+    }
+
+    /// This method removes all topics from the produce request and returns them split up by their destination
+    /// If any topics are unroutable they will have their BrokerId set to -1
+    fn split_produce_request_by_destination(
+        &mut self,
+        produce: &mut ProduceRequest,
+    ) -> HashMap<BrokerId, IndexMap<TopicName, TopicProduceData>> {
+        let mut result: HashMap<BrokerId, IndexMap<TopicName, TopicProduceData>> =
+            Default::default();
+
+        for (name, mut topic) in produce.topic_data.drain(..) {
+            let topic_meta = self.topic_by_name.get(&name);
+            if let Some(topic_meta) = topic_meta {
+                for partition in std::mem::take(&mut topic.partition_data) {
+                    let partition_index = partition.index as usize;
+                    let destination = if let Some(partition) =
+                        topic_meta.partitions.get(partition_index)
+                    {
+                        if partition.leader_id == -1 {
+                            tracing::warn!("leader_id is unknown for topic {name:?} at partition index {partition_index}");
+                        }
+                        partition.leader_id
+                    } else {
+                        let partition_len = topic_meta.partitions.len();
+                        tracing::warn!("no known partition replica for {name:?} at partition index {partition_index} out of {partition_len} partitions, routing request to a random node so that a NOT_LEADER_OR_FOLLOWER or similar error is returned to the client");
+                        BrokerId(-1)
+                    };
+                    let dest_topics = result.entry(destination).or_default();
+                    if let Some(dest_topic) = dest_topics.get_mut(&name) {
+                        dest_topic.partition_data.push(partition);
+                    } else {
+                        let mut topic = topic.clone();
+                        topic.partition_data.push(partition);
+                        dest_topics.insert(name.clone(), topic);
+                    }
+                }
+            } else {
+                tracing::debug!(
+                    r#"no known partition leader for {name:?}
+        routing request to a random node so that:
+        * if auto topic creation is enabled, auto topic creation will occur
+        * if auto topic creation is disabled a NOT_LEADER_OR_FOLLOWER is returned to the client"#
+                );
+                let destination = BrokerId(-1);
+                let dest_topics = result.entry(destination).or_default();
+                dest_topics.insert(name, topic);
+            }
+        }
+
+        result
     }
 
     /// This method removes all topics from the fetch request and returns them split up by their destination
@@ -1276,7 +1350,7 @@ routing message to a random node so that:
                                 unreachable!("Guaranteed by all_combined_received")
                             }
                         });
-                    responses.push(Self::combine_fetch_responses(drain)?);
+                    responses.push(Self::combine_responses(drain)?);
                 }
             } else {
                 // The pending_request is not received, we need to break to maintain response ordering.
@@ -1286,57 +1360,105 @@ routing message to a random node so that:
         Ok(responses)
     }
 
-    fn combine_fetch_responses(mut drain: impl Iterator<Item = Message>) -> Result<Message> {
+    fn combine_responses(mut drain: impl Iterator<Item = Message>) -> Result<Message> {
         // Take this response as base.
         // Then iterate over all remaining combined responses and integrate them into the base.
         let mut base = drain.next().unwrap();
-        if let Some(Frame::Kafka(KafkaFrame::Response {
-            body: ResponseBody::Fetch(base_fetch),
-            ..
-        })) = base.frame()
-        {
-            for mut next in drain {
-                if let Some(Frame::Kafka(KafkaFrame::Response {
-                    body: ResponseBody::Fetch(next_fetch),
-                    ..
-                })) = next.frame()
-                {
-                    for next_response in std::mem::take(&mut next_fetch.responses) {
-                        if let Some(base_response) =
-                            base_fetch.responses.iter_mut().find(|response| {
-                                response.topic == next_response.topic
-                                    && response.topic_id == next_response.topic_id
-                            })
-                        {
-                            for next_partition in &next_response.partitions {
-                                for base_partition in &base_response.partitions {
-                                    if next_partition.partition_index
-                                        == base_partition.partition_index
-                                    {
-                                        tracing::warn!("Duplicate partition indexes in combined fetch response, if this ever occurs we should investigate the repercussions")
-                                    }
-                                }
-                            }
-                            // A partition can only be contained in one response so there is no risk of duplicating partitions
-                            base_response.partitions.extend(next_response.partitions)
-                        } else {
-                            base_fetch.responses.push(next_response);
-                        }
-                    }
-                } else {
-                    return Err(anyhow!(
-                        "Combining Fetch messages but received another message type"
-                    ));
-                }
+        base.invalidate_cache();
+
+        match base.frame() {
+            Some(Frame::Kafka(KafkaFrame::Response {
+                body: ResponseBody::Fetch(base),
+                ..
+            })) => Self::combine_fetch_responses(base, drain)?,
+            Some(Frame::Kafka(KafkaFrame::Response {
+                body: ResponseBody::Produce(base),
+                ..
+            })) => Self::combine_produce_responses(base, drain)?,
+            _ => {
+                return Err(anyhow!(
+                    "Combining of this message type is currently unsupported"
+                ))
             }
-        } else {
-            return Err(anyhow!(
-                "Combining of message types other than Fetch is currently unsupported"
-            ));
         }
 
-        base.invalidate_cache();
         Ok(base)
+    }
+
+    fn combine_fetch_responses(
+        base_fetch: &mut FetchResponse,
+        drain: impl Iterator<Item = Message>,
+    ) -> Result<()> {
+        for mut next in drain {
+            if let Some(Frame::Kafka(KafkaFrame::Response {
+                body: ResponseBody::Fetch(next_fetch),
+                ..
+            })) = next.frame()
+            {
+                for next_response in std::mem::take(&mut next_fetch.responses) {
+                    if let Some(base_response) = base_fetch.responses.iter_mut().find(|response| {
+                        response.topic == next_response.topic
+                            && response.topic_id == next_response.topic_id
+                    }) {
+                        for next_partition in &next_response.partitions {
+                            for base_partition in &base_response.partitions {
+                                if next_partition.partition_index == base_partition.partition_index
+                                {
+                                    tracing::warn!("Duplicate partition indexes in combined fetch response, if this ever occurs we should investigate the repercussions")
+                                }
+                            }
+                        }
+                        // A partition can only be contained in one response so there is no risk of duplicating partitions
+                        base_response.partitions.extend(next_response.partitions)
+                    } else {
+                        base_fetch.responses.push(next_response);
+                    }
+                }
+            } else {
+                return Err(anyhow!(
+                    "Combining Fetch responses but received another message type"
+                ));
+            }
+        }
+
+        Ok(())
+    }
+
+    fn combine_produce_responses(
+        base_produce: &mut ProduceResponse,
+        drain: impl Iterator<Item = Message>,
+    ) -> Result<()> {
+        for mut next in drain {
+            if let Some(Frame::Kafka(KafkaFrame::Response {
+                body: ResponseBody::Produce(next_produce),
+                ..
+            })) = next.frame()
+            {
+                for (next_name, next_response) in std::mem::take(&mut next_produce.responses) {
+                    if let Some(base_response) = base_produce.responses.get_mut(&next_name) {
+                        for next_partition in &next_response.partition_responses {
+                            for base_partition in &base_response.partition_responses {
+                                if next_partition.index == base_partition.index {
+                                    tracing::warn!("Duplicate partition indexes in combined produce response, if this ever occurs we should investigate the repercussions")
+                                }
+                            }
+                        }
+                        // A partition can only be contained in one response so there is no risk of duplicating partitions
+                        base_response
+                            .partition_responses
+                            .extend(next_response.partition_responses)
+                    } else {
+                        base_produce.responses.insert(next_name, next_response);
+                    }
+                }
+            } else {
+                return Err(anyhow!(
+                    "Combining Produce responses but received another message type"
+                ));
+            }
+        }
+
+        Ok(())
     }
 
     async fn process_responses(

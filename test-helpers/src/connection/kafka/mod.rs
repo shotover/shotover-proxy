@@ -67,11 +67,11 @@ impl KafkaConnectionBuilder {
         }
     }
 
-    pub async fn connect_producer(&self, acks: &str) -> KafkaProducer {
+    pub async fn connect_producer(&self, acks: &str, linger_ms: u32) -> KafkaProducer {
         match self {
             #[cfg(feature = "kafka-cpp-driver-tests")]
-            Self::Cpp(cpp) => KafkaProducer::Cpp(cpp.connect_producer(acks).await),
-            Self::Java(java) => KafkaProducer::Java(java.connect_producer(acks).await),
+            Self::Cpp(cpp) => KafkaProducer::Cpp(cpp.connect_producer(acks, linger_ms).await),
+            Self::Java(java) => KafkaProducer::Java(java.connect_producer(acks, linger_ms).await),
         }
     }
 
@@ -148,10 +148,24 @@ impl KafkaConsumer {
             Self::Cpp(cpp) => cpp.consume().await,
             Self::Java(java) => java.consume().await,
         };
-        assert_eq!(expected_response.message, response.message);
-        assert_eq!(expected_response.key, response.key);
-        assert_eq!(expected_response.topic_name, response.topic_name);
-        assert_eq!(expected_response.offset, response.offset);
+
+        let topic = &expected_response.topic_name;
+        assert_eq!(
+            expected_response.topic_name, response.topic_name,
+            "Unexpected topic"
+        );
+        assert_eq!(
+            expected_response.message, response.message,
+            "Unexpected message for topic {topic}"
+        );
+        assert_eq!(
+            expected_response.key, response.key,
+            "Unexpected key for topic {topic}"
+        );
+        assert_eq!(
+            expected_response.offset, response.offset,
+            "Unexpected offset for topic {topic}"
+        );
     }
 
     pub async fn assert_consume_in_any_order(&mut self, expected_responses: Vec<ExpectedResponse>) {
