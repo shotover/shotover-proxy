@@ -48,7 +48,7 @@ impl Connections {
 
     /// If a connection already exists for the requested Destination return it.
     /// Otherwise create a new connection, cache it and return it.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub async fn get_or_open_connection(
         &mut self,
         rng: &mut SmallRng,
@@ -121,7 +121,7 @@ impl Connections {
         Ok(self.connections.get_mut(&destination).unwrap())
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     async fn create_and_insert_connection(
         &mut self,
         rng: &mut SmallRng,

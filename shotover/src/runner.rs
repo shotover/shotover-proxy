@@ -72,7 +72,7 @@ pub struct Shotover {
 }
 
 impl Shotover {
-    #[allow(clippy::new_without_default)]
+    #[expect(clippy::new_without_default)]
     pub fn new() -> Self {
         if std::env::var("RUST_LIB_BACKTRACE").is_err() {
             std::env::set_var("RUST_LIB_BACKTRACE", "0");

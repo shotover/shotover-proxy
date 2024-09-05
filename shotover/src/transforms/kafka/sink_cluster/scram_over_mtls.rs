@@ -35,7 +35,6 @@ pub struct TokenTask {
 }
 
 impl TokenTask {
-    #[allow(clippy::new_without_default)]
     pub fn new(
         mtls_connection_factory: ConnectionFactory,
         mtls_port_contact_points: Vec<KafkaAddress>,
