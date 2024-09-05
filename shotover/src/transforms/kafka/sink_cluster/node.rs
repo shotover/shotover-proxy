@@ -283,7 +283,7 @@ pub struct KafkaNode {
     pub broker_id: BrokerId,
     pub rack: Option<StrBytes>,
     pub kafka_address: KafkaAddress,
-    pub state: Arc<AtomicNodeState>,
+    state: Arc<AtomicNodeState>,
 }
 
 impl KafkaNode {
@@ -298,6 +298,10 @@ impl KafkaNode {
 
     pub fn is_up(&self) -> bool {
         self.state.load(Ordering::Relaxed) == NodeState::Up
+    }
+
+    pub fn set_state(&self, state: NodeState) {
+        self.state.store(state, Ordering::Relaxed)
     }
 }
 

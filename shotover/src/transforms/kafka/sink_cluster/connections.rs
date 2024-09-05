@@ -7,7 +7,7 @@ use fnv::FnvBuildHasher;
 use kafka_protocol::{messages::BrokerId, protocol::StrBytes};
 use metrics::Counter;
 use rand::{rngs::SmallRng, seq::IteratorRandom};
-use std::{collections::HashMap, sync::atomic::Ordering, time::Instant};
+use std::{collections::HashMap, time::Instant};
 
 use super::{
     node::{ConnectionFactory, KafkaAddress, KafkaNode, NodeState},
@@ -33,7 +33,7 @@ pub enum Destination {
 
 pub struct Connections {
     pub connections: HashMap<Destination, KafkaConnection, FnvBuildHasher>,
-    control_connection_address: Option<KafkaAddress>,
+    pub control_connection_address: Option<KafkaAddress>,
     out_of_rack_requests: Counter,
 }
 
@@ -143,7 +143,7 @@ impl Connections {
                 // Otherwise fall back to the first contact points
                 let address_from_node = nodes
                     .iter()
-                    .filter(|x| matches!(x.state.load(Ordering::Relaxed), NodeState::Up))
+                    .filter(|x| x.is_up())
                     .choose(rng)
                     .map(|x| x.kafka_address.clone());
                 self.control_connection_address =
@@ -225,8 +225,7 @@ impl Connections {
                 }
             })
             .unwrap()
-            .state
-            .store(node_state, Ordering::Relaxed);
+            .set_state(node_state);
         let connection = connection?;
 
         // Recreating the node succeeded.
