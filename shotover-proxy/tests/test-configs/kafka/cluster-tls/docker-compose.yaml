@@ -25,6 +25,10 @@ services:
       KAFKA_CFG_NODE_ID: 0
       KAFKA_CERTIFICATE_PASSWORD: password
       KAFKA_TLS_CLIENT_AUTH: none
+      # Required for high availability
+      KAFKA_CFG_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      KAFKA_CFG_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
+      KAFKA_CFG_TRANSACTION_STATE_LOG_MIN_ISR: 2
     volumes: &volumes
       - type: tmpfs
         target: /bitnami/kafka

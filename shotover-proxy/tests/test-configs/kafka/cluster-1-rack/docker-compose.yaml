@@ -24,6 +24,10 @@ services:
       KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: "0@kafka0:9093,1@kafka1:9093,2@kafka2:9093"
       KAFKA_CFG_NODE_ID: 0
       ALLOW_PLAINTEXT_LISTENER: "yes"
+      # Required for high availability
+      KAFKA_CFG_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      KAFKA_CFG_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
+      KAFKA_CFG_TRANSACTION_STATE_LOG_MIN_ISR: 2
     volumes: &volumes
       - type: tmpfs
         target: /bitnami/kafka
