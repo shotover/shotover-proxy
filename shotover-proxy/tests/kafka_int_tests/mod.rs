@@ -247,21 +247,55 @@ async fn single_sasl_scram_plaintext_source_tls_sink(#[case] driver: KafkaDriver
 #[case::java(KafkaDriver::Java)]
 #[tokio::test(flavor = "multi_thread")] // multi_thread is needed since java driver will block when consuming, causing shotover logs to not appear
 async fn cluster_1_rack_single_shotover(#[case] driver: KafkaDriver) {
-    let _docker_compose =
+    let docker_compose =
         docker_compose("tests/test-configs/kafka/cluster-1-rack/docker-compose.yaml");
-    let shotover = shotover_process("tests/test-configs/kafka/cluster-1-rack/topology-single.yaml")
-        .start()
+
+    {
+        let shotover =
+            shotover_process("tests/test-configs/kafka/cluster-1-rack/topology-single.yaml")
+                .start()
+                .await;
+
+        let connection_builder = KafkaConnectionBuilder::new(driver, "127.0.0.1:9192");
+        test_cases::cluster_test_suite(&connection_builder).await;
+        tokio::time::timeout(
+            Duration::from_secs(10),
+            shotover.shutdown_and_then_consume_events(&[]),
+        )
+        .await
+        .expect("Shotover did not shutdown within 10s");
+    }
+
+    {
+        let shotover =
+            shotover_process("tests/test-configs/kafka/cluster-1-rack/topology-single.yaml")
+                .start()
+                .await;
+        let connection_builder = KafkaConnectionBuilder::new(driver, "127.0.0.1:9192");
+
+        test_cases::produce_consume_partitions1_kafka_node_goes_down(
+            driver,
+            &docker_compose,
+            &connection_builder,
+            "kafka_node_goes_down_test",
+        )
         .await;
 
-    let connection_builder = KafkaConnectionBuilder::new(driver, "127.0.0.1:9192");
-    test_cases::cluster_test_suite(&connection_builder).await;
-
-    tokio::time::timeout(
-        Duration::from_secs(10),
-        shotover.shutdown_and_then_consume_events(&[]),
-    )
-    .await
-    .expect("Shotover did not shutdown within 10s");
+        // Shotover can reasonably hit many kinds of errors due to a kafka node down so ignore all of them.
+        tokio::time::timeout(
+            Duration::from_secs(10),
+            shotover.shutdown_and_then_consume_events(&[
+                EventMatcher::new()
+                    .with_level(Level::Error)
+                    .with_count(Count::Any),
+                EventMatcher::new()
+                    .with_level(Level::Warn)
+                    .with_count(Count::Any),
+            ]),
+        )
+        .await
+        .expect("Shotover did not shutdown within 10s");
+    }
 }
 
 #[rstest]
@@ -376,7 +410,7 @@ async fn cluster_sasl_scram_single_shotover(#[case] driver: KafkaDriver) {
 async fn cluster_sasl_scram_over_mtls_single_shotover(#[case] driver: KafkaDriver) {
     test_helpers::cert::generate_kafka_test_certs();
 
-    let _docker_compose =
+    let docker_compose =
         docker_compose("tests/test-configs/kafka/cluster-sasl-scram-over-mtls/docker-compose.yaml");
 
     // test concurrent connections with different access levels to ensure that:
@@ -439,6 +473,41 @@ async fn cluster_sasl_scram_over_mtls_single_shotover(#[case] driver: KafkaDrive
         tokio::time::timeout(
             Duration::from_secs(10),
             shotover.shutdown_and_then_consume_events(&[]),
+        )
+        .await
+        .expect("Shotover did not shutdown within 10s");
+    }
+
+    // Test handling of down kafka nodes.
+    {
+        let shotover = shotover_process(
+            "tests/test-configs/kafka/cluster-sasl-scram-over-mtls/topology-single.yaml",
+        )
+        .start()
+        .await;
+
+        let connection = KafkaConnectionBuilder::new(driver, "127.0.0.1:9192")
+            .use_sasl_scram("super_user", "super_password");
+
+        test_cases::produce_consume_partitions1_kafka_node_goes_down(
+            driver,
+            &docker_compose,
+            &connection,
+            "kafka_node_goes_down_test",
+        )
+        .await;
+
+        // Shotover can reasonably hit many kinds of errors due to a kafka node down so ignore all of them.
+        tokio::time::timeout(
+            Duration::from_secs(10),
+            shotover.shutdown_and_then_consume_events(&[
+                EventMatcher::new()
+                    .with_level(Level::Error)
+                    .with_count(Count::Any),
+                EventMatcher::new()
+                    .with_level(Level::Warn)
+                    .with_count(Count::Any),
+            ]),
         )
         .await
         .expect("Shotover did not shutdown within 10s");
