@@ -27,6 +27,10 @@ services:
       KAFKA_TLS_CLIENT_AUTH: required
       KAFKA_CFG_AUTHORIZER_CLASS_NAME: "org.apache.kafka.metadata.authorizer.StandardAuthorizer"
       KAFKA_CFG_SUPER_USERS: "User:O=ShotoverTestCertificate,CN=Generic-Cert"
+      # Required for high availability
+      KAFKA_CFG_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      KAFKA_CFG_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
+      KAFKA_CFG_TRANSACTION_STATE_LOG_MIN_ISR: 2
     volumes: &volumes
       - type: tmpfs
         target: /bitnami/kafka

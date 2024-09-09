@@ -17,7 +17,7 @@ services:
     environment: &environment
       KAFKA_CFG_NODE_ID: 0
       KAFKA_CFG_PROCESS_ROLES: "controller,broker"
-      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: "0@kafka0:9093,1@kafka1:9093,2@kafka2:9093"
+      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: "0@kafka0:9093,1@kafka1:9093,2@kafka2:9093,3@kafka3:9093"
       KAFKA_CFG_LISTENERS: "BROKER://:9092,CONTROLLER://:9093,SHOTOVER_MTLS://:9094"
       KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:SSL,BROKER:SASL_SSL,SHOTOVER_MTLS:SSL"
       KAFKA_CFG_ADVERTISED_LISTENERS: "BROKER://172.16.1.2:9092,SHOTOVER_MTLS://172.16.1.2:9094"
@@ -28,8 +28,8 @@ services:
       KAFKA_CFG_SASL_MECHANISM_CONTROLLER_PROTOCOL: "PLAIN"
       KAFKA_CFG_INTER_BROKER_LISTENER_NAME: "BROKER"
       KAFKA_CFG_SASL_MECHANISM_INTER_BROKER_PROTOCOL: "SCRAM-SHA-256"
-      KAFKA_INTER_BROKER_USER: "controller_user"
-      KAFKA_INTER_BROKER_PASSWORD: "controller_password"
+      KAFKA_INTER_BROKER_USER: "super_user"
+      KAFKA_INTER_BROKER_PASSWORD: "super_password"
       KAFKA_CERTIFICATE_PASSWORD: "password"
       KAFKA_KRAFT_CLUSTER_ID: "abcdefghijklmnopqrstuv"
       KAFKA_TLS_CLIENT_AUTH: required
@@ -38,6 +38,10 @@ services:
       # * the user named `user`
       # * any clients connected via a TLS certificate of `O=ShotoverTestCertificate,CN=Generic-Cert`
       KAFKA_CFG_SUPER_USERS: "User:super_user;User:O=ShotoverTestCertificate,CN=Generic-Cert"
+      # Required for high availability
+      KAFKA_CFG_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      KAFKA_CFG_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
+      KAFKA_CFG_TRANSACTION_STATE_LOG_MIN_ISR: 2
     volumes: &volumes
       - type: tmpfs
         target: /bitnami/kafka
@@ -63,4 +67,14 @@ services:
       <<: *environment
       KAFKA_CFG_ADVERTISED_LISTENERS: "BROKER://172.16.1.4:9092,SHOTOVER_MTLS://172.16.1.4:9094"
       KAFKA_CFG_NODE_ID: 2
+    volumes: *volumes
+  kafka3:
+    image: *image
+    networks:
+      cluster_subnet:
+        ipv4_address: 172.16.1.5
+    environment:
+      <<: *environment
+      KAFKA_CFG_ADVERTISED_LISTENERS: "BROKER://172.16.1.5:9092,SHOTOVER_MTLS://172.16.1.5:9094"
+      KAFKA_CFG_NODE_ID: 3
     volumes: *volumes

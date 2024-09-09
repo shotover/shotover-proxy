@@ -7,7 +7,7 @@ use fnv::FnvBuildHasher;
 use kafka_protocol::{messages::BrokerId, protocol::StrBytes};
 use metrics::Counter;
 use rand::{rngs::SmallRng, seq::IteratorRandom};
-use std::{collections::HashMap, sync::atomic::Ordering, time::Instant};
+use std::{collections::HashMap, time::Instant};
 
 use super::{
     node::{ConnectionFactory, KafkaAddress, KafkaNode, NodeState},
@@ -33,7 +33,7 @@ pub enum Destination {
 
 pub struct Connections {
     pub connections: HashMap<Destination, KafkaConnection, FnvBuildHasher>,
-    control_connection_address: Option<KafkaAddress>,
+    pub control_connection_address: Option<KafkaAddress>,
     out_of_rack_requests: Counter,
 }
 
@@ -143,7 +143,7 @@ impl Connections {
                 // Otherwise fall back to the first contact points
                 let address_from_node = nodes
                     .iter()
-                    .filter(|x| matches!(x.state.load(Ordering::Relaxed), NodeState::Up))
+                    .filter(|x| x.is_up())
                     .choose(rng)
                     .map(|x| x.kafka_address.clone());
                 self.control_connection_address =
@@ -207,8 +207,7 @@ impl Connections {
 
         let connection = connection_factory
             .create_connection(address, authorize_scram_over_mtls, sasl_mechanism)
-            .await
-            .context("Failed to create a new connection");
+            .await;
 
         // Update the node state according to whether we can currently open a connection.
         let node_state = if connection.is_err() {
@@ -225,25 +224,26 @@ impl Connections {
                 }
             })
             .unwrap()
-            .state
-            .store(node_state, Ordering::Relaxed);
-        let connection = connection?;
-
-        // Recreating the node succeeded.
-        // So store it as the new connection, as long as we werent waiting on any responses in the old connection
-        let connection =
-            KafkaConnection::new(authorize_scram_over_mtls, sasl_mechanism, connection, None)?;
+            .set_state(node_state);
 
         if old_connection
             .map(|old| old.pending_requests_count())
             .unwrap_or(0)
             > 0
         {
-            Err(error.context("Succesfully reopened outgoing connection but previous outgoing connection had pending requests."))
-        } else {
-            self.connections.insert(destination, connection);
-            Ok(())
+            return Err(error.context("Outgoing connection had pending requests, those requests/responses are lost so connection recovery cannot be attempted."));
         }
+
+        let connection =
+            connection.context("Failed to create a new connection to test if a node is down")?;
+
+        // Recreating the node succeeded.
+        // So store it as the new connection, as long as we werent waiting on any responses in the old connection
+        let connection =
+            KafkaConnection::new(authorize_scram_over_mtls, sasl_mechanism, connection, None)?;
+
+        self.connections.insert(destination, connection);
+        Ok(())
     }
 }
 

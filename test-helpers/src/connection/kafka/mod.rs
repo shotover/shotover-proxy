@@ -18,6 +18,16 @@ pub enum KafkaDriver {
     Java,
 }
 
+impl KafkaDriver {
+    pub fn is_cpp(&self) -> bool {
+        match self {
+            #[cfg(feature = "kafka-cpp-driver-tests")]
+            KafkaDriver::Cpp => true,
+            KafkaDriver::Java => false,
+        }
+    }
+}
+
 pub enum KafkaConnectionBuilder {
     #[cfg(feature = "kafka-cpp-driver-tests")]
     Cpp(KafkaConnectionBuilderCpp),

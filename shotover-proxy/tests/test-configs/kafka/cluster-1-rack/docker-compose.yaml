@@ -21,9 +21,13 @@ services:
       KAFKA_CFG_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
       KAFKA_CFG_PROCESS_ROLES: "controller,broker"
       KAFKA_KRAFT_CLUSTER_ID: "abcdefghijklmnopqrstuv"
-      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: "0@kafka0:9093,1@kafka1:9093,2@kafka2:9093"
+      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: "0@kafka0:9093,1@kafka1:9093,2@kafka2:9093,3@kafka3:9093"
       KAFKA_CFG_NODE_ID: 0
       ALLOW_PLAINTEXT_LISTENER: "yes"
+      # Required for high availability
+      KAFKA_CFG_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      KAFKA_CFG_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
+      KAFKA_CFG_TRANSACTION_STATE_LOG_MIN_ISR: 2
     volumes: &volumes
       - type: tmpfs
         target: /bitnami/kafka
@@ -46,4 +50,14 @@ services:
       <<: *environment
       KAFKA_CFG_ADVERTISED_LISTENERS: "BROKER://172.16.1.4:9092"
       KAFKA_CFG_NODE_ID: 2
+    volumes: *volumes
+  kafka3:
+    image: *image
+    networks:
+      cluster_subnet:
+        ipv4_address: 172.16.1.5
+    environment:
+      <<: *environment
+      KAFKA_CFG_ADVERTISED_LISTENERS: "BROKER://172.16.1.5:9092"
+      KAFKA_CFG_NODE_ID: 3
     volumes: *volumes
