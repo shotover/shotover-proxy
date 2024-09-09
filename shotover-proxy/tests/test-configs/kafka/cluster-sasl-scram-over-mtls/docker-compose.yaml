@@ -17,7 +17,7 @@ services:
     environment: &environment
       KAFKA_CFG_NODE_ID: 0
       KAFKA_CFG_PROCESS_ROLES: "controller,broker"
-      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: "0@kafka0:9093,1@kafka1:9093,2@kafka2:9093"
+      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: "0@kafka0:9093,1@kafka1:9093,2@kafka2:9093,3@kafka3:9093"
       KAFKA_CFG_LISTENERS: "BROKER://:9092,CONTROLLER://:9093,SHOTOVER_MTLS://:9094"
       KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:SSL,BROKER:SASL_SSL,SHOTOVER_MTLS:SSL"
       KAFKA_CFG_ADVERTISED_LISTENERS: "BROKER://172.16.1.2:9092,SHOTOVER_MTLS://172.16.1.2:9094"
@@ -67,4 +67,14 @@ services:
       <<: *environment
       KAFKA_CFG_ADVERTISED_LISTENERS: "BROKER://172.16.1.4:9092,SHOTOVER_MTLS://172.16.1.4:9094"
       KAFKA_CFG_NODE_ID: 2
+    volumes: *volumes
+  kafka3:
+    image: *image
+    networks:
+      cluster_subnet:
+        ipv4_address: 172.16.1.5
+    environment:
+      <<: *environment
+      KAFKA_CFG_ADVERTISED_LISTENERS: "BROKER://172.16.1.5:9092,SHOTOVER_MTLS://172.16.1.5:9094"
+      KAFKA_CFG_NODE_ID: 3
     volumes: *volumes

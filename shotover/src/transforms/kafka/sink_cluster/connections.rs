@@ -207,8 +207,7 @@ impl Connections {
 
         let connection = connection_factory
             .create_connection(address, authorize_scram_over_mtls, sasl_mechanism)
-            .await
-            .context("Failed to create a new connection");
+            .await;
 
         // Update the node state according to whether we can currently open a connection.
         let node_state = if connection.is_err() {
@@ -226,23 +225,25 @@ impl Connections {
             })
             .unwrap()
             .set_state(node_state);
-        let connection = connection?;
-
-        // Recreating the node succeeded.
-        // So store it as the new connection, as long as we werent waiting on any responses in the old connection
-        let connection =
-            KafkaConnection::new(authorize_scram_over_mtls, sasl_mechanism, connection, None)?;
 
         if old_connection
             .map(|old| old.pending_requests_count())
             .unwrap_or(0)
             > 0
         {
-            Err(error.context("Succesfully reopened outgoing connection but previous outgoing connection had pending requests."))
-        } else {
-            self.connections.insert(destination, connection);
-            Ok(())
+            return Err(error.context("Outgoing connection had pending requests, those requests/responses are lost so connection recovery cannot be attempted."));
         }
+
+        let connection =
+            connection.context("Failed to create a new connection to test if a node is down")?;
+
+        // Recreating the node succeeded.
+        // So store it as the new connection, as long as we werent waiting on any responses in the old connection
+        let connection =
+            KafkaConnection::new(authorize_scram_over_mtls, sasl_mechanism, connection, None)?;
+
+        self.connections.insert(destination, connection);
+        Ok(())
     }
 }
 
