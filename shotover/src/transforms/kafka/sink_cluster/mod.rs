@@ -875,7 +875,7 @@ impl KafkaSinkCluster {
     }
 
     /// This method removes all topics from the produce request and returns them split up by their destination
-    /// If any topics are unroutable they will have their BrokerId set to -1
+    /// If any topics are unroutable they will have their destination BrokerId set to -1
     fn split_produce_request_by_destination(
         &mut self,
         produce: &mut ProduceRequest,
@@ -900,13 +900,20 @@ impl KafkaSinkCluster {
                         tracing::warn!("no known partition replica for {name:?} at partition index {partition_index} out of {partition_len} partitions, routing request to a random node so that a NOT_LEADER_OR_FOLLOWER or similar error is returned to the client");
                         BrokerId(-1)
                     };
-                    let dest_topics = result.entry(destination).or_default();
-                    if let Some(dest_topic) = dest_topics.get_mut(&name) {
-                        dest_topic.partition_data.push(partition);
+
+                    // Get the topics already routed to this destination
+                    let routed_topics = result.entry(destination).or_default();
+
+                    if let Some(routed_topic) = routed_topics.get_mut(&name) {
+                        // we have already routed this topic to this broker, add another partition
+                        routed_topic.partition_data.push(partition);
                     } else {
+                        // we have not yet routed this topic to this broker, add the first partition
+                        // Clone the original topic value, to ensure we carry over any `unknown_tagged_fields` values.
+                        // The partition_data is empty at this point due to the previous `std::mem::take`
                         let mut topic = topic.clone();
                         topic.partition_data.push(partition);
-                        dest_topics.insert(name.clone(), topic);
+                        routed_topics.insert(name.clone(), topic);
                     }
                 }
             } else {
