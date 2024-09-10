@@ -1093,9 +1093,7 @@ fn assert_cluster_ports_rewrite_nodes(res: Value, new_port: u16) {
     for result in reader.records() {
         let record = result.unwrap();
 
-        let port = record[1]
-            .split(|c| c == ':' || c == '@')
-            .collect::<Vec<&str>>();
+        let port = record[1].split([':', '@']).collect::<Vec<&str>>();
 
         assert_eq!(port[1].parse::<u16>().unwrap(), new_port);
         assertion_run = true;

@@ -201,7 +201,7 @@ fn rewrite_port_node(frame: &mut Frame, new_port: u16) -> Result<()> {
                     .next()
                     .ok_or_else(|| anyhow!("CLUSTER NODES response missing address field"))?;
 
-                let split = ip.split(|c| c == ':' || c == '@').collect::<Vec<&str>>();
+                let split = ip.split([':', '@']).collect::<Vec<&str>>();
 
                 if split.len() < 3 {
                     bail!("IP address not in valid format: {ip}");

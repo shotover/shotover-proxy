@@ -239,7 +239,7 @@ impl Jvm {
         Value {
             // TODO: Discuss with upstream why this was deprecated,
             // `Jvm::java_list` is very difficult to use due to Result in input.
-            #[allow(deprecated)]
+            #[expect(deprecated)]
             instance: self.0.create_java_list(element_type, &args).unwrap(),
             jvm: self.0.clone(),
         }
