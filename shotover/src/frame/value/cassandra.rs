@@ -241,7 +241,6 @@ fn serialize_list(cursor: &mut Cursor<&mut Vec<u8>>, values: &[GenericValue]) {
     });
 }
 
-#[allow(clippy::mutable_key_type)]
 fn serialize_set(cursor: &mut Cursor<&mut Vec<u8>>, values: &BTreeSet<GenericValue>) {
     serialize_with_length_prefix(cursor, |cursor| {
         serialize_len(cursor, values.len());
@@ -263,7 +262,6 @@ fn serialize_stringmap(cursor: &mut Cursor<&mut Vec<u8>>, values: &BTreeMap<Stri
     });
 }
 
-#[allow(clippy::mutable_key_type)]
 fn serialize_map(cursor: &mut Cursor<&mut Vec<u8>>, values: &BTreeMap<GenericValue, GenericValue>) {
     serialize_with_length_prefix(cursor, |cursor| {
         serialize_len(cursor, values.len());
