@@ -238,7 +238,7 @@ impl RequestPending {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 fn spawn_read_write_tasks<
     C: CodecBuilder + 'static,
     R: AsyncRead + Unpin + Send + 'static,

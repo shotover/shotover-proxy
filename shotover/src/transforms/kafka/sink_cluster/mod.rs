@@ -169,7 +169,7 @@ struct KafkaSinkClusterBuilder {
 }
 
 impl KafkaSinkClusterBuilder {
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         chain_name: String,
         first_contact_points: Vec<KafkaAddress>,

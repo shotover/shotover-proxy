@@ -54,7 +54,6 @@ pub struct TransformContextBuilder {
     pub client_details: String,
 }
 
-#[allow(clippy::new_without_default)]
 impl TransformContextBuilder {
     pub fn new_test() -> Self {
         TransformContextBuilder {
