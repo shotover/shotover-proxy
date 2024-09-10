@@ -226,7 +226,7 @@ impl TlsConnector {
 }
 
 #[derive(Debug)]
-pub struct SkipVerifyHostName {
+struct SkipVerifyHostName {
     verifier: Arc<WebPkiServerVerifier>,
 }
 
