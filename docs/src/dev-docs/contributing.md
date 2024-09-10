@@ -76,6 +76,9 @@ So check what its doing in `.github/workflows/lint.yaml` if you have a failure i
 
 ### Building Shotover (release)
 
-To build a release binary of shotover run `cargo build --release`.
-The built binary is located at `target/release/shotover-proxy`.
-The `--release` is very important, never deploy a non-release binary as it will be far too slow.
+To build a release binary of shotover run `cargo build --release -p shotover-proxy`:
+
+* The built binary is located at `target/release/shotover-proxy`
+* The `--release` is very important, never deploy a non-release binary as it will be far too slow.
+* The `-p shotover-proxy` is optional but skips building artifacts only used during development.
+Doing this is much faster to build and avoids extra external dependencies.
