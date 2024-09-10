@@ -2,7 +2,7 @@
 
 ## Setup
 
-1. **Download & Extract** - You can find the latest release of Shotover Proxy at our GitHub [release page](https://github.com/shotover/shotover-proxy/releases). So download and extract from there onto your Linux machine. Alternatively you can [build and run from source](../contributing.md).
+1. **Download & Extract** - You can find the latest release of Shotover Proxy at our GitHub [release page](https://github.com/shotover/shotover-proxy/releases). So download and extract from there onto your Linux machine. Alternatively you can [build and run from source](../dev-docs/contributing.md).
 2. **Run** - `cd` into the extracted `shotover` folder and run `./shotover-proxy`. Shotover will launch and display some logs.
 3. **Examine Config** - Shotover has two configuration files:
     * `config/config.yaml` - This is used to configure logging and metrics.
