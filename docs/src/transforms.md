@@ -229,7 +229,7 @@ This transform will drop any messages it receives and return the supplied respon
 This transform will route kafka messages to a broker within a Kafka cluster:
 
 * produce messages are routed to the partition leader
-* fetch messages are routed to a random partition replica
+* fetch messages are routed to the partition leader
 * heartbeat, syncgroup, offsetfetch, joingroup and leavegroup are all routed to the group coordinator
 * all other messages go to a random node.
 
@@ -237,6 +237,10 @@ The fact that Shotover is routing to multiple destination nodes will be hidden f
 Instead Shotover will pretend to be either a single Kafka node or part of a cluster of Kafka nodes consisting entirely of Shotover instances.
 
 This is achieved by rewriting the FindCoordinator, Metadata and DescribeCluster messages to contain the nodes in the shotover cluster instead of the kafka cluster.
+
+Note that:
+Produce and fetch requests will be split into multiple requests if no single broker can fulfil the request.
+e.g. A produce request contains records for topics that have leaders on different brokers in the real kafka cluster, but the shotover cluster appeared to have them hosted on the same cluster.
 
 #### SASL SCRAM
 

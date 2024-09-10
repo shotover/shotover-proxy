@@ -79,9 +79,10 @@ impl KafkaConnectionBuilderJava {
         self
     }
 
-    pub async fn connect_producer(&self, acks: &str) -> KafkaProducerJava {
+    pub async fn connect_producer(&self, acks: &str, linger_ms: u32) -> KafkaProducerJava {
         let mut config = self.base_config.clone();
         config.insert("acks".to_owned(), acks.to_string());
+        config.insert("linger.ms".to_owned(), linger_ms.to_string());
         config.insert(
             "key.serializer".to_owned(),
             "org.apache.kafka.common.serialization.StringSerializer".to_owned(),
