@@ -4,7 +4,7 @@ use cdrs_tokio::frame::message_error::{ErrorBody, ErrorType};
 use scylla::batch::Batch;
 use scylla::frame::types::Consistency as ScyllaConsistency;
 use scylla::frame::value::{CqlDate, CqlDecimal, CqlTime, CqlTimestamp};
-use scylla::serialize::value::SerializeCql;
+use scylla::serialize::value::SerializeValue;
 use scylla::statement::query::Query;
 use scylla::transport::errors::{DbError, QueryError};
 use scylla::{ExecutionProfile, QueryResult};
@@ -74,7 +74,11 @@ impl ScyllaConnection {
         let statement = prepared_query.as_scylla();
         let values = Self::build_values_scylla(values);
 
-        let response = self.session.execute(statement, values).await.unwrap();
+        let response = self
+            .session
+            .execute_unpaged(statement, values)
+            .await
+            .unwrap();
         let tracing_id = response.tracing_id.unwrap();
 
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
@@ -101,7 +105,7 @@ impl ScyllaConnection {
     }
 
     pub async fn execute_fallible(&self, query: &str) -> Result<Vec<Vec<ResultValue>>, ErrorBody> {
-        Self::process_scylla_response(self.session.query(query, ()).await)
+        Self::process_scylla_response(self.session.query_unpaged(query, ()).await)
     }
 
     pub async fn execute_with_timestamp(
@@ -111,7 +115,7 @@ impl ScyllaConnection {
     ) -> Result<Vec<Vec<ResultValue>>, ErrorBody> {
         let mut query = Query::new(query);
         query.set_timestamp(Some(timestamp));
-        Self::process_scylla_response(self.session.query(query, ()).await)
+        Self::process_scylla_response(self.session.query_unpaged(query, ()).await)
     }
 
     pub async fn prepare(&self, query: &str) -> PreparedQuery {
@@ -134,7 +138,7 @@ impl ScyllaConnection {
         });
         let values = Self::build_values_scylla(values);
 
-        Self::process_scylla_response(self.session.execute(&statement, values).await)
+        Self::process_scylla_response(self.session.execute_unpaged(&statement, values).await)
     }
 
     fn process_scylla_response(
@@ -167,11 +171,11 @@ impl ScyllaConnection {
     }
 
     // TODO: lets return Vec<CqlValue> instead, as it provides better guarantees for correctness
-    fn build_values_scylla(values: &[ResultValue]) -> Vec<Box<dyn SerializeCql + '_>> {
+    fn build_values_scylla(values: &[ResultValue]) -> Vec<Box<dyn SerializeValue + '_>> {
         values
             .iter()
             .map(|v| match v {
-                ResultValue::Int(v) => Box::new(v) as Box<dyn SerializeCql>,
+                ResultValue::Int(v) => Box::new(v) as Box<dyn SerializeValue>,
                 ResultValue::Ascii(v) => Box::new(v),
                 ResultValue::BigInt(v) => Box::new(v),
                 ResultValue::Blob(v) => Box::new(v),

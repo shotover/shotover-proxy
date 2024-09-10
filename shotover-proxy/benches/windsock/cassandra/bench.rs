@@ -245,7 +245,7 @@ impl CassandraSession {
     async fn query(&self, query: &str) {
         match self {
             Self::Scylla(session) => {
-                session.query(query, ()).await.unwrap();
+                session.query_unpaged(query, ()).await.unwrap();
             }
             Self::CdrsTokio(session) => {
                 session.query(query).await.unwrap();
@@ -271,7 +271,7 @@ impl CassandraSession {
     ) -> Result<(), String> {
         match self {
             Self::Scylla(session) => session
-                .execute(prepared_statement.as_scylla(), (value,))
+                .execute_unpaged(prepared_statement.as_scylla(), (value,))
                 .await
                 .map_err(|err| format!("{err:?}"))
                 .map(|_| ()),
@@ -310,7 +310,7 @@ impl CassandraSession {
     ) -> Result<(), String> {
         match self {
             Self::Scylla(session) => session
-                .execute(prepared_statement.as_scylla(), (value, blob))
+                .execute_unpaged(prepared_statement.as_scylla(), (value, blob))
                 .await
                 .map_err(|err| format!("{err:?}"))
                 .map(|_| ()),
