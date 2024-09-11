@@ -158,7 +158,7 @@ impl KafkaProducerJava {
                 "org.apache.kafka.clients.producer.ProducerRecord",
                 vec![
                     self.jvm.new_string(record.topic_name),
-                    self.jvm.new_string(key),
+                    self.jvm.new_string(&key),
                     self.jvm.new_string(record.payload),
                 ],
             ),

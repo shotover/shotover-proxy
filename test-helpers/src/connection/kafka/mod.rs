@@ -132,7 +132,7 @@ impl KafkaProducer {
 pub struct Record<'a> {
     pub payload: &'a str,
     pub topic_name: &'a str,
-    pub key: Option<&'a str>,
+    pub key: Option<String>,
 }
 
 pub enum KafkaConsumer {
