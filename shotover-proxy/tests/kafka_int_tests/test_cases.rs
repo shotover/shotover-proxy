@@ -39,12 +39,12 @@ async fn admin_setup(connection_builder: &KafkaConnectionBuilder) {
                 replication_factor: 1,
             },
             NewTopic {
-                name: "batch_test_partitions_1",
+                name: "multi_topic_batch_partitions_1",
                 num_partitions: 1,
                 replication_factor: 1,
             },
             NewTopic {
-                name: "batch_test_partitions_3",
+                name: "multi_topic_batch_partitions_3",
                 num_partitions: 3,
                 replication_factor: 1,
             },
@@ -92,7 +92,7 @@ pub async fn produce_consume_multi_topic_batch(connection_builder: &KafkaConnect
         producer.assert_produce(
             Record {
                 payload: "initial1",
-                topic_name: "batch_test_partitions_1",
+                topic_name: "multi_topic_batch_partitions_1",
                 key: None,
             },
             Some(0),
@@ -100,7 +100,7 @@ pub async fn produce_consume_multi_topic_batch(connection_builder: &KafkaConnect
         producer.assert_produce(
             Record {
                 payload: "initial2",
-                topic_name: "batch_test_partitions_3",
+                topic_name: "multi_topic_batch_partitions_3",
                 key: Some("foo".into()),
             },
             Some(0),
@@ -116,10 +116,16 @@ pub async fn produce_consume_multi_topic_batch(connection_builder: &KafkaConnect
     );
 
     let mut consumer_partitions_1 = connection_builder
-        .connect_consumer("batch_test_partitions_1", "batch_test_partitions_1_group")
+        .connect_consumer(
+            "multi_topic_batch_partitions_1",
+            "multi_topic_batch_partitions_1_group",
+        )
         .await;
     let mut consumer_partitions_3 = connection_builder
-        .connect_consumer("batch_test_partitions_3", "batch_test_partitions_3_group")
+        .connect_consumer(
+            "multi_topic_batch_partitions_3",
+            "multi_topic_batch_partitions_3_group",
+        )
         .await;
     let mut consumer_unknown = connection_builder
         .connect_consumer("batch_test_unknown", "batch_test_unknown_group")
@@ -129,14 +135,14 @@ pub async fn produce_consume_multi_topic_batch(connection_builder: &KafkaConnect
         consumer_partitions_1.assert_consume(ExpectedResponse {
             message: "initial1".to_owned(),
             key: None,
-            topic_name: "batch_test_partitions_1".to_owned(),
+            topic_name: "multi_topic_batch_partitions_1".to_owned(),
             offset: Some(0),
         }),
         consumer_partitions_3.assert_consume(ExpectedResponse {
             message: "initial2".to_owned(),
             // ensure we route to the same partition every time, so we can assert on the offset when consuming.
             key: Some("foo".to_owned()),
-            topic_name: "batch_test_partitions_3".to_owned(),
+            topic_name: "multi_topic_batch_partitions_3".to_owned(),
             offset: Some(0),
         }),
         consumer_unknown.assert_consume(ExpectedResponse {
@@ -153,7 +159,7 @@ pub async fn produce_consume_multi_topic_batch(connection_builder: &KafkaConnect
             producer.assert_produce(
                 Record {
                     payload: "Message1",
-                    topic_name: "batch_test_partitions_1",
+                    topic_name: "multi_topic_batch_partitions_1",
                     key: None,
                 },
                 Some(i + 1),
@@ -161,7 +167,7 @@ pub async fn produce_consume_multi_topic_batch(connection_builder: &KafkaConnect
             producer.assert_produce(
                 Record {
                     payload: "Message2",
-                    topic_name: "batch_test_partitions_3",
+                    topic_name: "multi_topic_batch_partitions_3",
                     key: Some("foo".into()),
                 },
                 None,
@@ -180,13 +186,13 @@ pub async fn produce_consume_multi_topic_batch(connection_builder: &KafkaConnect
             consumer_partitions_1.assert_consume(ExpectedResponse {
                 message: "Message1".to_owned(),
                 key: None,
-                topic_name: "batch_test_partitions_1".to_owned(),
+                topic_name: "multi_topic_batch_partitions_1".to_owned(),
                 offset: Some(i + 1),
             }),
             consumer_partitions_3.assert_consume(ExpectedResponse {
                 message: "Message2".to_owned(),
                 key: Some("foo".to_owned()),
-                topic_name: "batch_test_partitions_3".to_owned(),
+                topic_name: "multi_topic_batch_partitions_3".to_owned(),
                 offset: Some(i + 1),
             }),
             consumer_unknown.assert_consume(ExpectedResponse {
@@ -251,7 +257,7 @@ pub async fn produce_consume_multi_partition_batch(connection_builder: &KafkaCon
     //         .assert_consume(ExpectedResponse {
     //             message: "Message".to_owned(),
     //             key: Some(format!("Key{i}")),
-    //             topic_name: "batch_test_partitions_3".to_owned(),
+    //             topic_name: "multi_partitions_batch".to_owned(),
     //             offset: Some(i + 1),
     //         })
     //         .await;
