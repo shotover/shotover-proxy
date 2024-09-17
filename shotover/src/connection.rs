@@ -91,11 +91,13 @@ impl SinkConnection {
     /// This method must only be called when the read or write tasks have closed their `in_` or `out_` channel.
     /// In this case it is gauranteed that the `connection_closed_` channel will
     /// have an error sent to it before the closing of `in_` or `out_`.
-    fn set_get_error(&mut self) -> ConnectionError {
+    fn get_error_for_close(&mut self) -> ConnectionError {
         self.error = Some(self.connection_closed_rx.try_recv().unwrap());
         self.error.clone().unwrap()
     }
 
+    /// This method can be called at any time.
+    /// If the connection has hit an error that error will be returned.
     pub fn get_error(&mut self) -> Option<ConnectionError> {
         if self.error.is_none() {
             self.error = self.connection_closed_rx.try_recv().ok();
@@ -110,11 +112,10 @@ impl SinkConnection {
 
         if let Some(error) = &self.error {
             Err(error.clone())
-        } else if let Ok(error) = self.connection_closed_rx.try_recv() {
-            self.error = Some(error.clone());
-            Err(error)
         } else {
-            self.out_tx.send(messages).map_err(|_| self.set_get_error())
+            self.out_tx
+                .send(messages)
+                .map_err(|_| self.get_error_for_close())
         }
     }
 
@@ -147,7 +148,7 @@ impl SinkConnection {
                     }
                 }
                 None => {
-                    return Err(self.set_get_error());
+                    return Err(self.get_error_for_close());
                 }
             }
         }
@@ -198,7 +199,7 @@ impl SinkConnection {
         initial_count: usize,
     ) -> Result<(), ConnectionError> {
         // call this first to ensure the next send call will have an error
-        let err = self.set_get_error();
+        let err = self.get_error_for_close();
 
         if responses.len() == initial_count {
             // We failed to get any messages return the error.
