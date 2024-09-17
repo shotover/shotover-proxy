@@ -120,7 +120,7 @@ impl KafkaProducerCpp {
                 .send_result(
                     FutureRecord::to(record.topic_name)
                         .payload(record.payload)
-                        .key(key),
+                        .key(&key),
                 )
                 .unwrap(),
             None => self
