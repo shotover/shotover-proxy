@@ -105,18 +105,16 @@ impl SinkConnection {
 
     /// Send messages.
     /// If there is a problem with the connection an error is returned.
-    pub fn send(&mut self, mut messages: Vec<Message>) -> Result<(), SendError> {
+    pub fn send(&mut self, mut messages: Vec<Message>) -> Result<(), ConnectionError> {
         self.dummy_response_inserter.process_requests(&mut messages);
 
         if let Some(error) = &self.error {
-            Err(SendError::RequestsUnsent(error.clone(), messages))
+            Err(error.clone())
         } else if let Ok(error) = self.connection_closed_rx.try_recv() {
             self.error = Some(error.clone());
-            Err(SendError::RequestsUnsent(error, messages))
+            Err(error)
         } else {
-            self.out_tx
-                .send(messages)
-                .map_err(|_| SendError::RequestPossiblySent(self.set_get_error()))
+            self.out_tx.send(messages).map_err(|_| self.set_get_error())
         }
     }
 
@@ -210,20 +208,6 @@ impl SinkConnection {
             Ok(())
         }
     }
-}
-
-/// This represents an error to the connection encountered while sending requests.
-/// The connection is no longer usable after this error is received.
-#[derive(thiserror::Error, Debug, Clone)]
-pub enum SendError {
-    /// The error was detected before the requests were sent
-    /// The request was not received and it can be resent on a new connection if allowed by the protocol.
-    #[error("An error was detected before the requests were sent: {0}")]
-    RequestsUnsent(ConnectionError, Vec<Message>),
-    /// The error was detected after the requests were sent.
-    /// It is unknown if the request was received or not.
-    #[error("An error was detected after the requests were sent: {0}")]
-    RequestPossiblySent(ConnectionError),
 }
 
 /// This represents an unrecoverable error to the connection.

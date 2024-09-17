@@ -1,5 +1,5 @@
 use crate::{
-    connection::{ConnectionError, SendError, SinkConnection},
+    connection::{ConnectionError, SinkConnection},
     message::Message,
     transforms::kafka::sink_cluster::connections::ConnectionState,
 };
@@ -64,7 +64,7 @@ impl ScramOverMtlsConnection {
 
     /// Send messages.
     /// If there is a problem with the connection an error is returned.
-    pub fn send(&mut self, messages: Vec<Message>) -> Result<(), SendError> {
+    pub fn send(&mut self, messages: Vec<Message>) -> Result<(), ConnectionError> {
         self.connection.send(messages)
     }
 
