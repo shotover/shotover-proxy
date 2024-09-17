@@ -373,7 +373,9 @@ impl Transform for KafkaSinkCluster {
             self.route_requests(std::mem::take(&mut chain_state.requests))
                 .await
                 .context("Failed to route requests")?;
-            self.send_requests().await?;
+            self.send_requests()
+                .await
+                .context("Failed to send requests")?;
             self.recv_responses()
                 .await
                 .context("Failed to receive responses")?
@@ -1108,11 +1110,14 @@ impl KafkaSinkCluster {
             body: RequestBody::FindCoordinator(
                 FindCoordinatorRequest::default()
                     .with_key_type(0)
-                    .with_key(group.0),
+                    .with_key(group.0.clone()),
             ),
         }));
 
-        let mut response = self.control_send_receive(request).await?;
+        let mut response = self
+            .control_send_receive(request)
+            .await
+            .with_context(|| format!("Failed to query for coordinator of group {:?}", group.0))?;
         match response.frame() {
             Some(Frame::Kafka(KafkaFrame::Response {
                 body: ResponseBody::FindCoordinator(coordinator),
@@ -1162,7 +1167,9 @@ impl KafkaSinkCluster {
             ),
         }));
 
-        self.control_send_receive(request).await
+        self.control_send_receive(request)
+            .await
+            .context("Failed to query metadata of topics")
     }
 
     /// Convert all PendingRequestTy::Routed into PendingRequestTy::Sent
