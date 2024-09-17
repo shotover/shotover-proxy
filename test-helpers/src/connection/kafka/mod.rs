@@ -162,10 +162,13 @@ impl KafkaConsumer {
             expected_response.key, response.key,
             "Unexpected key for topic {topic}"
         );
-        assert_eq!(
-            expected_response.offset, response.offset,
-            "Unexpected offset for topic {topic}"
-        );
+
+        if expected_response.offset.is_some() {
+            assert_eq!(
+                expected_response.offset, response.offset,
+                "Unexpected offset for topic {topic}"
+            );
+        }
     }
 
     pub async fn assert_consume_in_any_order(&mut self, expected_responses: Vec<ExpectedResponse>) {
