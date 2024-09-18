@@ -86,6 +86,10 @@ impl ScramOverMtlsConnection {
         }
     }
 
+    pub fn get_error(&mut self) -> Option<ConnectionError> {
+        self.connection.get_error()
+    }
+
     pub fn pending_requests_count(&self) -> usize {
         self.connection.pending_requests_count()
             + self

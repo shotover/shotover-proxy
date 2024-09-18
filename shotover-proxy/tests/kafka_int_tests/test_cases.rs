@@ -1,10 +1,10 @@
 use futures::{stream::FuturesUnordered, StreamExt};
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Duration};
 use test_helpers::{
     connection::kafka::{
         Acl, AclOperation, AclPermissionType, AlterConfig, ConfigEntry, ExpectedResponse,
-        KafkaConnectionBuilder, KafkaDriver, NewPartition, NewTopic, Record, ResourcePatternType,
-        ResourceSpecifier, ResourceType, TopicPartition,
+        KafkaConnectionBuilder, KafkaConsumer, KafkaDriver, KafkaProducer, NewPartition, NewTopic,
+        Record, ResourcePatternType, ResourceSpecifier, ResourceType, TopicPartition,
     },
     docker_compose::DockerCompose,
 };
@@ -712,6 +712,61 @@ async fn produce_consume_acks0(connection_builder: &KafkaConnectionBuilder) {
     }
 }
 
+pub async fn test_broker_idle_timeout(connection_builder: &KafkaConnectionBuilder) {
+    let admin = connection_builder.connect_admin().await;
+    admin
+        .create_topics(&[NewTopic {
+            name: "partitions3",
+            num_partitions: 3,
+            replication_factor: 1,
+        }])
+        .await;
+
+    // cpp driver hits race condition here
+    tokio::time::sleep(Duration::from_secs(2)).await;
+
+    let mut producer = connection_builder.connect_producer("all", 0).await;
+    let mut consumer = connection_builder
+        .connect_consumer("partitions3", "some_group")
+        .await;
+
+    // write to some open shotover connections
+    test_produce_consume_10_times(&mut producer, &mut consumer).await;
+
+    // allow the broker idle timeout to expire with plenty of buffer
+    let broker_idle_timeout = Duration::from_secs(20);
+    tokio::time::sleep(broker_idle_timeout.mul_f32(1.5)).await;
+
+    // write to some open shotover connections,
+    // ensuring shotover reopens any connections closed by the broker due to idle timeout.
+    test_produce_consume_10_times(&mut producer, &mut consumer).await;
+}
+
+async fn test_produce_consume_10_times(producer: &mut KafkaProducer, consumer: &mut KafkaConsumer) {
+    for _ in 0..10 {
+        // create an initial record to force kafka to create the topic if it doesnt yet exist
+        producer
+            .assert_produce(
+                Record {
+                    payload: "initial",
+                    topic_name: "partitions3",
+                    key: Some("Key".into()),
+                },
+                None,
+            )
+            .await;
+
+        consumer
+            .assert_consume(ExpectedResponse {
+                message: "initial".to_owned(),
+                key: Some("Key".to_owned()),
+                topic_name: "partitions3".to_owned(),
+                offset: None,
+            })
+            .await;
+    }
+}
+
 pub async fn standard_test_suite(connection_builder: &KafkaConnectionBuilder) {
     admin_setup(connection_builder).await;
     produce_consume_partitions1(connection_builder, "partitions1").await;
@@ -759,7 +814,7 @@ pub async fn cluster_test_suite(connection_builder: &KafkaConnectionBuilder) {
             },
         ])
         .await;
-    tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+    tokio::time::sleep(Duration::from_secs(10)).await;
     produce_consume_partitions1(connection_builder, "partitions1_rf3").await;
     produce_consume_partitions3(connection_builder, "partitions3_rf3").await;
 }

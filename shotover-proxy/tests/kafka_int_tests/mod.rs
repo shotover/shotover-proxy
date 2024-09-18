@@ -302,6 +302,37 @@ async fn cluster_1_rack_single_shotover(#[case] driver: KafkaDriver) {
 #[cfg_attr(feature = "kafka-cpp-driver-tests", case::cpp(KafkaDriver::Cpp))]
 #[case::java(KafkaDriver::Java)]
 #[tokio::test(flavor = "multi_thread")] // multi_thread is needed since java driver will block when consuming, causing shotover logs to not appear
+async fn cluster_1_rack_single_shotover_broker_idle_timeout(#[case] driver: KafkaDriver) {
+    let _docker_compose = docker_compose(
+        "tests/test-configs/kafka/cluster-1-rack/docker-compose-short-idle-timeout.yaml",
+    );
+
+    let shotover = shotover_process("tests/test-configs/kafka/cluster-1-rack/topology-single.yaml")
+        .start()
+        .await;
+
+    let connection_builder = KafkaConnectionBuilder::new(driver, "127.0.0.1:9192");
+
+    // We do not run the regular test suite since there is a race condition where the timeout
+    // could occur between checking if the connection is live and sending a request.
+    // In regular kafka usage this is acceptable, the client will just retry.
+    // But for an integration test this would lead to flakey tests which is unacceptable.
+    //
+    // So instead we rely on a test case hits the timeout with plenty of buffer to avoid the race condition.
+    test_cases::test_broker_idle_timeout(&connection_builder).await;
+
+    tokio::time::timeout(
+        Duration::from_secs(10),
+        shotover.shutdown_and_then_consume_events(&[]),
+    )
+    .await
+    .expect("Shotover did not shutdown within 10s");
+}
+
+#[rstest]
+#[cfg_attr(feature = "kafka-cpp-driver-tests", case::cpp(KafkaDriver::Cpp))]
+#[case::java(KafkaDriver::Java)]
+#[tokio::test(flavor = "multi_thread")] // multi_thread is needed since java driver will block when consuming, causing shotover logs to not appear
 async fn cluster_1_rack_multi_shotover(#[case] driver: KafkaDriver) {
     let _docker_compose =
         docker_compose("tests/test-configs/kafka/cluster-1-rack/docker-compose.yaml");
@@ -656,7 +687,7 @@ fn multi_shotover_events(driver: KafkaDriver) -> Vec<EventMatcher> {
             .with_level(Level::Warn)
             .with_target("shotover::transforms::kafka::sink_cluster")
             .with_message(
-                r#"no known coordinator for GroupId("some_group"), routing message to a random node so that a NOT_COORDINATOR or similar error is returned to the client"#,
+                r#"no known coordinator for GroupId("some_group"), routing message to a random broker so that a NOT_COORDINATOR or similar error is returned to the client"#,
             )
             .with_count(Count::Any)]
     } else {

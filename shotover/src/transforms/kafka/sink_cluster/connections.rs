@@ -2,7 +2,7 @@ use crate::{
     connection::{ConnectionError, SinkConnection},
     message::Message,
 };
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use fnv::FnvBuildHasher;
 use kafka_protocol::{messages::BrokerId, protocol::StrBytes};
 use metrics::Counter;
@@ -78,7 +78,30 @@ impl Connections {
 
         match self.get_connection_state(recent_instant, destination) {
             ConnectionState::Open => {
-                // connection already open
+                let connection = self.connections.get_mut(&destination).unwrap();
+                // connection already exists so we can just use it.
+                // however if it has an error we need to recreate it.
+                if let Some(error) = connection.get_error() {
+                    if connection.pending_requests_count() > 0 {
+                        return Err(anyhow!(error).context("get_or_open_connection: Outgoing connection had pending requests, those requests/responses are lost so connection recovery cannot be attempted."));
+                    }
+                    self.create_and_insert_connection(
+                        rng,
+                        connection_factory,
+                        authorize_scram_over_mtls,
+                        sasl_mechanism,
+                        nodes,
+                        node,
+                        contact_points,
+                        None,
+                        destination,
+                    )
+                    .await
+                    .with_context(|| {
+                        format!("Failed to recreate connection after encountering error {error:?}")
+                    })?;
+                    tracing::info!("Recreated connection after it hit error {error:?}")
+                }
             }
             ConnectionState::Unopened => {
                 self.create_and_insert_connection(
@@ -307,6 +330,13 @@ impl KafkaConnection {
         match self {
             KafkaConnection::Regular(c) => c.recv().await,
             KafkaConnection::ScramOverMtls(c) => c.recv().await,
+        }
+    }
+
+    pub fn get_error(&mut self) -> Option<ConnectionError> {
+        match self {
+            KafkaConnection::Regular(c) => c.get_error(),
+            KafkaConnection::ScramOverMtls(c) => c.get_error(),
         }
     }
 
