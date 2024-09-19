@@ -5934,9 +5934,9 @@ checksum = "589f6da84c646204747d1270a2a5661ea66ed1cced2631d546fdfb155959f9ec"
 
 [[package]]
 name = "windsock"
-version = "0.1.1"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a4fe4435a550d5c9d0361a420bd02d3fd77c7cb15d22743e7857597a5fdb8388"
+checksum = "8f186f03f8f547e6eb32a314c55e52754e3315eb299c9d27e4d1758eb1e254f8"
 dependencies = [
  "anyhow",
  "async-trait",

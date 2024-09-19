@@ -46,7 +46,7 @@ tokio-bin-process.workspace = true
 rustls-pemfile = "2.0.0"
 rustls-pki-types = "1.1.0"
 aws-throwaway.workspace = true
-windsock = "0.1.0"
+windsock = "0.2.0"
 regex = "1.7.0"
 opensearch = { version = "2.1.0", default-features = false, features = ["rustls-tls"] }
 serde_json = "1.0.103"

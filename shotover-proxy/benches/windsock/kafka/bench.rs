@@ -18,6 +18,7 @@ use shotover::transforms::kafka::sink_cluster::{KafkaSinkClusterConfig, Shotover
 use shotover::transforms::kafka::sink_single::KafkaSinkSingleConfig;
 use shotover::transforms::TransformConfig;
 use std::sync::Arc;
+use std::time::SystemTime;
 use std::{collections::HashMap, time::Duration};
 use test_helpers::connection::kafka::cpp::rdkafka::admin::{
     AdminClient, AdminOptions, NewTopic, TopicReplication,
@@ -27,6 +28,7 @@ use test_helpers::connection::kafka::cpp::rdkafka::config::ClientConfig;
 use test_helpers::connection::kafka::cpp::rdkafka::consumer::{Consumer, StreamConsumer};
 use test_helpers::connection::kafka::cpp::rdkafka::producer::{FutureProducer, FutureRecord};
 use test_helpers::connection::kafka::cpp::rdkafka::util::Timeout;
+use test_helpers::connection::kafka::cpp::rdkafka::Message;
 use test_helpers::docker_compose::docker_compose;
 use tokio::{sync::mpsc::UnboundedSender, task::JoinHandle, time::Instant};
 use windsock::{Bench, BenchParameters, Profiling, Report};
@@ -39,7 +41,9 @@ pub struct KafkaBench {
 
 #[derive(Clone)]
 pub enum Size {
-    B1,
+    // The smallest possible size is 12 bytes since any smaller would be
+    // unable to hold the timestamp used for measuring consumer latency
+    B12,
     KB1,
     KB100,
 }
@@ -252,7 +256,7 @@ impl Bench for KafkaBench {
             self.topology.to_tag(),
             self.shotover.to_tag(),
             match self.message_size {
-                Size::B1 => ("size".to_owned(), "1B".to_owned()),
+                Size::B12 => ("size".to_owned(), "12B".to_owned()),
                 Size::KB1 => ("size".to_owned(), "1KB".to_owned()),
                 Size::KB100 => ("size".to_owned(), "100KB".to_owned()),
             },
@@ -440,12 +444,12 @@ impl Bench for KafkaBench {
             .unwrap();
 
         let message = match &self.message_size {
-            Size::B1 => vec![0; 1],
+            Size::B12 => vec![0; 12],
             Size::KB1 => vec![0; 1024],
             Size::KB100 => vec![0; 1024 * 100],
         };
 
-        let producer = BenchTaskProducerKafka { producer, message };
+        let mut producer = BenchTaskProducerKafka { producer, message };
 
         // ensure topic exists
         producer.produce_one().await.unwrap();
@@ -498,7 +502,10 @@ struct BenchTaskProducerKafka {
 
 #[async_trait]
 impl BenchTaskProducer for BenchTaskProducerKafka {
-    async fn produce_one(&self) -> Result<(), String> {
+    async fn produce_one(&mut self) -> Result<(), String> {
+        // overwrite timestamp portion of the message with current timestamp
+        serialize_system_time(SystemTime::now(), &mut self.message);
+
         // key is set to None which will result in round robin routing between all brokers
         let record: FutureRecord<(), _> = FutureRecord::to("topic_foo").payload(&self.message);
         self.producer
@@ -514,7 +521,12 @@ async fn consume(consumer: &StreamConsumer, reporter: UnboundedSender<Report>) {
     let mut stream = consumer.stream();
     loop {
         let report = match stream.next().await.unwrap() {
-            Ok(_) => Report::ConsumeCompleted,
+            Ok(record) => {
+                let produce_instant: SystemTime =
+                    deserialize_system_time(record.payload().unwrap());
+                // If time has gone backwards the results of this benchmark are compromised, so just unwrap elapsed()
+                Report::ConsumeCompletedIn(Some(produce_instant.elapsed().unwrap()))
+            }
             Err(err) => Report::ConsumeErrored {
                 message: format!("{err:?}"),
             },
@@ -524,6 +536,27 @@ async fn consume(consumer: &StreamConsumer, reporter: UnboundedSender<Report>) {
             return;
         }
     }
+}
+
+/// Writes the system time into the first 12 bytes.
+///
+/// SystemTime is used instead of Instance because Instance does not expose
+/// a way to retrieve the inner value and it is therefore impossible to serialize/deserialize.
+fn serialize_system_time(time: SystemTime, dest: &mut [u8]) {
+    let duration_since_epoch = time.duration_since(SystemTime::UNIX_EPOCH).unwrap();
+    let secs = duration_since_epoch.as_secs();
+    let nanos = duration_since_epoch.subsec_nanos();
+    dest[0..8].copy_from_slice(&secs.to_be_bytes());
+    dest[8..12].copy_from_slice(&nanos.to_be_bytes());
+}
+
+/// Reads the system time from the first 12 bytes
+fn deserialize_system_time(source: &[u8]) -> SystemTime {
+    let secs = u64::from_be_bytes(source[0..8].try_into().unwrap());
+    let nanos = u32::from_be_bytes(source[8..12].try_into().unwrap());
+    SystemTime::UNIX_EPOCH
+        .checked_add(Duration::new(secs, nanos))
+        .unwrap()
 }
 
 fn spawn_consumer_tasks(
@@ -547,7 +580,7 @@ fn spawn_consumer_tasks(
 
 #[async_trait]
 pub trait BenchTaskProducer: Clone + Send + Sync + 'static {
-    async fn produce_one(&self) -> Result<(), String>;
+    async fn produce_one(&mut self) -> Result<(), String>;
 
     async fn spawn_tasks(
         self,
@@ -561,7 +594,7 @@ pub trait BenchTaskProducer: Clone + Send + Sync + 'static {
         let allocated_time_per_op = operations_per_second
             .map(|ops| (Duration::from_secs(1) * task_count as u32) / ops as u32);
         for _ in 0..task_count {
-            let task = self.clone();
+            let mut task = self.clone();
             let reporter = reporter.clone();
             tasks.push(tokio::spawn(async move {
                 let mut interval = allocated_time_per_op.map(tokio::time::interval);
