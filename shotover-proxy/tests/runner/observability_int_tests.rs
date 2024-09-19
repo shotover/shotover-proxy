@@ -11,6 +11,7 @@ async fn test_metrics() {
 
     // Expected string looks unnatural because it is sorted in alphabetical order to make it match the sorted error output
     let expected = r#"
+# TYPE connections_opened counter
 # TYPE shotover_available_connections_count gauge
 # TYPE shotover_chain_failures_count counter
 # TYPE shotover_chain_messages_per_batch_count summary
@@ -20,6 +21,7 @@ async fn test_metrics() {
 # TYPE shotover_transform_failures_count counter
 # TYPE shotover_transform_latency_seconds summary
 # TYPE shotover_transform_total_count counter
+connections_opened{source="redis"}
 shotover_available_connections_count{source="redis"}
 shotover_chain_failures_count{chain="redis"}
 shotover_chain_messages_per_batch_count_count{chain="redis"}

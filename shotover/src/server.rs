@@ -10,7 +10,7 @@ use anyhow::{anyhow, Result};
 use bytes::BytesMut;
 use futures::future::join_all;
 use futures::{SinkExt, StreamExt};
-use metrics::{gauge, Gauge};
+use metrics::{counter, gauge, Counter, Gauge};
 use std::io::ErrorKind;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -65,6 +65,7 @@ pub struct TcpCodecListener<C: CodecBuilder> {
     /// Keep track of how many connections we have received so we can use it as a request id.
     connection_count: u64,
 
+    connections_opened: Counter,
     available_connections_gauge: Gauge,
 
     /// Timeout after which to kill an idle connection. No timeout means connections will never be timed out.
@@ -91,6 +92,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
     ) -> Result<Self, Vec<String>> {
         let available_connections_gauge =
             gauge!("shotover_available_connections_count", "source" => source_name.clone());
+        let connections_opened = counter!("connections_opened", "source" => source_name.clone());
         available_connections_gauge.set(limit_connections.available_permits() as f64);
 
         let chain_usage_config = TransformContextConfig {
@@ -133,6 +135,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
             tls,
             connection_count: 0,
             available_connections_gauge,
+            connections_opened,
             timeout,
             connection_handles: vec![],
             transport,
@@ -187,6 +190,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                 debug!("got socket");
                 self.available_connections_gauge
                     .set(self.limit_connections.available_permits() as f64);
+                self.connections_opened.increment(1);
 
                 let client_details = stream
                     .peer_addr()
