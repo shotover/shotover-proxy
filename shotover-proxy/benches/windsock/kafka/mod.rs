@@ -16,7 +16,7 @@ pub fn benches() -> Vec<ShotoverBench> {
             KafkaTopology::Cluster1,
             KafkaTopology::Cluster3
         ],
-        [Size::B1, Size::KB1, Size::KB100]
+        [Size::B12, Size::KB1, Size::KB100]
     )
     .map(|(shotover, topology, size)| {
         Box::new(KafkaBench::new(shotover, topology, size)) as ShotoverBench
