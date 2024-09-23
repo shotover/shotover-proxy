@@ -1,4 +1,7 @@
-use super::{DownChainProtocol, TransformContextBuilder, TransformContextConfig, UpChainProtocol};
+use super::{
+    DownChainProtocol, DownChainTransforms, TransformContextBuilder, TransformContextConfig,
+    UpChainProtocol,
+};
 use crate::message::Messages;
 use crate::transforms::{ChainState, Transform, TransformBuilder, TransformConfig};
 use anyhow::Result;
@@ -81,9 +84,10 @@ impl Transform for Coalesce {
         NAME
     }
 
-    async fn transform<'shorter, 'longer: 'shorter>(
+    async fn transform(
         &mut self,
-        chain_state: &'shorter mut ChainState<'longer>,
+        chain_state: &mut ChainState,
+        down_chain: DownChainTransforms<'_>,
     ) -> Result<Messages> {
         self.buffer.append(&mut chain_state.requests);
 
@@ -102,7 +106,7 @@ impl Transform for Coalesce {
                 self.last_write = Instant::now()
             }
             std::mem::swap(&mut self.buffer, &mut chain_state.requests);
-            chain_state.call_next_transform().await
+            down_chain.call_next_transform(chain_state).await
         } else {
             Ok(vec![])
         }
@@ -116,7 +120,7 @@ mod test {
     use crate::transforms::chain::TransformAndMetrics;
     use crate::transforms::coalesce::Coalesce;
     use crate::transforms::loopback::Loopback;
-    use crate::transforms::{ChainState, Transform};
+    use crate::transforms::{ChainState, DownChainTransforms, Transform};
     use pretty_assertions::assert_eq;
     use std::time::{Duration, Instant};
 
@@ -199,9 +203,13 @@ mod test {
         expected_len: usize,
     ) {
         let mut wrapper = ChainState::new_test(requests.to_vec());
-        wrapper.reset(chain);
+        let transforms = DownChainTransforms::new(chain);
         assert_eq!(
-            coalesce.transform(&mut wrapper).await.unwrap().len(),
+            coalesce
+                .transform(&mut wrapper, transforms)
+                .await
+                .unwrap()
+                .len(),
             expected_len
         );
     }

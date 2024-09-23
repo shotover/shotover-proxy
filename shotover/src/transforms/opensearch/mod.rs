@@ -1,4 +1,7 @@
-use super::{DownChainProtocol, TransformContextBuilder, TransformContextConfig, UpChainProtocol};
+use super::{
+    DownChainProtocol, DownChainTransforms, TransformContextBuilder, TransformContextConfig,
+    UpChainProtocol,
+};
 use crate::frame::MessageType;
 use crate::tcp;
 use crate::transforms::{ChainState, Messages, Transform, TransformBuilder, TransformConfig};
@@ -95,9 +98,10 @@ impl Transform for OpenSearchSinkSingle {
         NAME
     }
 
-    async fn transform<'shorter, 'longer: 'shorter>(
+    async fn transform(
         &mut self,
-        chain_state: &'shorter mut ChainState<'longer>,
+        chain_state: &mut ChainState,
+        _down_chain: DownChainTransforms<'_>,
     ) -> Result<Messages> {
         // Return immediately if we have no messages.
         // If we tried to send no messages we would block forever waiting for a reply that will never come.

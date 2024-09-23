@@ -8,8 +8,9 @@ use crate::transforms::redis::TransformError;
 use crate::transforms::util::cluster_connection_pool::{Authenticator, ConnectionPool};
 use crate::transforms::util::{Request, Response};
 use crate::transforms::{
-    ChainState, DownChainProtocol, ResponseFuture, Transform, TransformBuilder, TransformConfig,
-    TransformContextBuilder, TransformContextConfig, UpChainProtocol,
+    ChainState, DownChainProtocol, DownChainTransforms, ResponseFuture, Transform,
+    TransformBuilder, TransformConfig, TransformContextBuilder, TransformContextConfig,
+    UpChainProtocol,
 };
 use anyhow::{anyhow, bail, ensure, Context, Result};
 use async_trait::async_trait;
@@ -1017,9 +1018,10 @@ impl Transform for RedisSinkCluster {
         NAME
     }
 
-    async fn transform<'shorter, 'longer: 'shorter>(
+    async fn transform(
         &mut self,
-        chain_state: &'shorter mut ChainState<'longer>,
+        chain_state: &mut ChainState,
+        _down_chain: DownChainTransforms<'_>,
     ) -> Result<Messages> {
         if !self.has_run_init {
             self.topology = (*self.shared_topology.read().await).clone();

@@ -3,8 +3,8 @@ use crate::frame::{CassandraFrame, CassandraOperation, Frame, MessageType, Redis
 use crate::message::{Message, MessageIdMap, Messages, Metadata};
 use crate::transforms::chain::{TransformChain, TransformChainBuilder};
 use crate::transforms::{
-    ChainState, DownChainProtocol, Transform, TransformBuilder, TransformConfig,
-    TransformContextBuilder, TransformContextConfig, UpChainProtocol,
+    ChainState, DownChainProtocol, DownChainTransforms, Transform, TransformBuilder,
+    TransformConfig, TransformContextBuilder, TransformContextConfig, UpChainProtocol,
 };
 use anyhow::{bail, Result};
 use async_trait::async_trait;
@@ -376,7 +376,8 @@ impl SimpleRedisCache {
     /// calls the next transform and process the result for caching.
     async fn execute_upstream_and_write_to_cache(
         &mut self,
-        chain_state: &mut ChainState<'_>,
+        chain_state: &mut ChainState,
+        down_chain: DownChainTransforms<'_>,
     ) -> Result<Messages> {
         let local_addr = chain_state.local_addr;
         let mut request_messages: Vec<_> = chain_state
@@ -384,7 +385,7 @@ impl SimpleRedisCache {
             .iter_mut()
             .map(|message| message.frame().cloned())
             .collect();
-        let mut response_messages = chain_state.call_next_transform().await?;
+        let mut response_messages = down_chain.call_next_transform(chain_state).await?;
 
         let mut cache_messages = vec![];
         for (request, response) in request_messages
@@ -618,9 +619,10 @@ impl Transform for SimpleRedisCache {
         NAME
     }
 
-    async fn transform<'shorter, 'longer: 'shorter>(
+    async fn transform(
         &mut self,
-        chain_state: &'shorter mut ChainState<'longer>,
+        chain_state: &mut ChainState,
+        down_chain: DownChainTransforms<'_>,
     ) -> Result<Messages> {
         self.read_from_cache(&mut chain_state.requests, chain_state.local_addr)
             .await
@@ -634,7 +636,7 @@ impl Transform for SimpleRedisCache {
             &mut self.cache_miss_cassandra_requests,
         );
         let mut responses = self
-            .execute_upstream_and_write_to_cache(chain_state)
+            .execute_upstream_and_write_to_cache(chain_state, down_chain)
             .await?;
 
         // add the cache hits to the final response

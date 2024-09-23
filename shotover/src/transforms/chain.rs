@@ -1,4 +1,4 @@
-use super::TransformContextBuilder;
+use super::{DownChainTransforms, TransformContextBuilder};
 use crate::message::Messages;
 use crate::transforms::{ChainState, Transform, TransformBuilder};
 use anyhow::{anyhow, Result};
@@ -72,7 +72,7 @@ pub struct BufferedChain {
 impl BufferedChain {
     pub async fn process_request(
         &mut self,
-        chain_state: ChainState<'_>,
+        chain_state: ChainState,
         buffer_timeout_micros: Option<u64>,
     ) -> Result<Messages> {
         self.process_request_with_receiver(chain_state, buffer_timeout_micros)
@@ -82,7 +82,7 @@ impl BufferedChain {
 
     async fn process_request_with_receiver(
         &mut self,
-        chain_state: ChainState<'_>,
+        chain_state: ChainState,
         buffer_timeout_micros: Option<u64>,
     ) -> Result<oneshot::Receiver<Result<Messages>>> {
         let (one_tx, one_rx) = oneshot::channel::<Result<Messages>>();
@@ -119,7 +119,7 @@ impl BufferedChain {
 
     pub async fn process_request_no_return(
         &mut self,
-        chain_state: ChainState<'_>,
+        chain_state: ChainState,
         buffer_timeout_micros: Option<u64>,
     ) -> Result<()> {
         if chain_state.flush {
@@ -158,16 +158,12 @@ impl BufferedChain {
 }
 
 impl TransformChain {
-    pub async fn process_request<'shorter, 'longer: 'shorter>(
-        &'longer mut self,
-        chain_state: &'shorter mut ChainState<'longer>,
-    ) -> Result<Messages> {
+    pub async fn process_request(&mut self, state: &mut ChainState) -> Result<Messages> {
         let start = Instant::now();
-        chain_state.reset(&mut self.chain);
+        let down_chain = DownChainTransforms::new(&mut self.chain);
 
-        self.chain_batch_size
-            .record(chain_state.requests.len() as f64);
-        let result = chain_state.call_next_transform().await;
+        self.chain_batch_size.record(state.requests.len() as f64);
+        let result = down_chain.call_next_transform(state).await;
         self.chain_total.increment(1);
         if result.is_err() {
             self.chain_failures.increment(1);
@@ -322,9 +318,9 @@ impl TransformChainBuilder {
                         count_clone.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                     }
 
-                    let mut chain_state = ChainState::new_with_addr(messages, local_addr);
-                    chain_state.flush = flush;
-                    let chain_response = chain.process_request(&mut chain_state).await;
+                    let mut wrapper = ChainState::new_with_addr(messages, local_addr);
+                    wrapper.flush = flush;
+                    let chain_response = chain.process_request(&mut wrapper).await;
 
                     if let Err(e) = &chain_response {
                         error!("Internal error in buffered chain: {e:?}");

@@ -4,7 +4,8 @@ use serde::{Deserialize, Serialize};
 use shotover::frame::{Frame, MessageType, RedisFrame};
 use shotover::message::{MessageIdSet, Messages};
 use shotover::transforms::{
-    ChainState, Transform, TransformBuilder, TransformConfig, TransformContextConfig,
+    ChainState, DownChainTransforms, Transform, TransformBuilder, TransformConfig,
+    TransformContextConfig,
 };
 use shotover::transforms::{DownChainProtocol, TransformContextBuilder, UpChainProtocol};
 
@@ -64,9 +65,10 @@ impl Transform for RedisGetRewrite {
         NAME
     }
 
-    async fn transform<'shorter, 'longer: 'shorter>(
+    async fn transform(
         &mut self,
-        chain_state: &'shorter mut ChainState<'longer>,
+        chain_state: &mut ChainState,
+        down_chain: DownChainTransforms<'_>,
     ) -> Result<Messages> {
         for message in chain_state.requests.iter_mut() {
             if let Some(frame) = message.frame() {
@@ -75,7 +77,7 @@ impl Transform for RedisGetRewrite {
                 }
             }
         }
-        let mut responses = chain_state.call_next_transform().await?;
+        let mut responses = down_chain.call_next_transform(chain_state).await?;
 
         for response in responses.iter_mut() {
             if response

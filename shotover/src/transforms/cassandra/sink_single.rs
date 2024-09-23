@@ -5,8 +5,8 @@ use crate::frame::MessageType;
 use crate::message::{Messages, Metadata};
 use crate::tls::{TlsConnector, TlsConnectorConfig};
 use crate::transforms::{
-    ChainState, DownChainProtocol, Transform, TransformBuilder, TransformConfig,
-    TransformContextBuilder, TransformContextConfig, UpChainProtocol,
+    ChainState, DownChainProtocol, DownChainTransforms, Transform, TransformBuilder,
+    TransformConfig, TransformContextBuilder, TransformContextConfig, UpChainProtocol,
 };
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
@@ -212,9 +212,10 @@ impl Transform for CassandraSinkSingle {
         NAME
     }
 
-    async fn transform<'shorter, 'longer: 'shorter>(
+    async fn transform(
         &mut self,
-        chain_state: &'shorter mut ChainState<'longer>,
+        chain_state: &mut ChainState,
+        _down_chain: DownChainTransforms<'_>,
     ) -> Result<Messages> {
         self.send_message(std::mem::take(&mut chain_state.requests))
             .await

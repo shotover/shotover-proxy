@@ -1,4 +1,7 @@
-use super::{DownChainProtocol, TransformContextBuilder, TransformContextConfig, UpChainProtocol};
+use super::{
+    DownChainProtocol, DownChainTransforms, TransformContextBuilder, TransformContextConfig,
+    UpChainProtocol,
+};
 use crate::message::{Message, MessageIdMap, Messages, QueryType};
 use crate::transforms::{ChainState, Transform, TransformBuilder, TransformConfig};
 use anyhow::Result;
@@ -64,9 +67,10 @@ impl Transform for QueryTypeFilter {
         NAME
     }
 
-    async fn transform<'shorter, 'longer: 'shorter>(
+    async fn transform(
         &mut self,
-        chain_state: &'shorter mut ChainState<'longer>,
+        chain_state: &mut ChainState,
+        down_chain: DownChainTransforms<'_>,
     ) -> Result<Messages> {
         for request in chain_state.requests.iter_mut() {
             let filter_out = match &self.filter {
@@ -87,7 +91,7 @@ impl Transform for QueryTypeFilter {
             }
         }
 
-        let mut responses = chain_state.call_next_transform().await?;
+        let mut responses = down_chain.call_next_transform(chain_state).await?;
         for response in responses.iter_mut() {
             if let Some(request_id) = response.request_id() {
                 if let Some(error_response) = self.filtered_requests.remove(&request_id) {
@@ -110,6 +114,7 @@ mod test {
     use crate::transforms::chain::TransformAndMetrics;
     use crate::transforms::filter::QueryTypeFilter;
     use crate::transforms::loopback::Loopback;
+    use crate::transforms::DownChainTransforms;
     use crate::transforms::{ChainState, Transform};
     use pretty_assertions::assert_eq;
 
@@ -140,8 +145,11 @@ mod test {
             .collect();
 
         let mut chain_state = ChainState::new_test(messages);
-        chain_state.reset(&mut chain);
-        let result = filter_transform.transform(&mut chain_state).await.unwrap();
+        let transforms = DownChainTransforms::new(&mut chain);
+        let result = filter_transform
+            .transform(&mut chain_state, transforms)
+            .await
+            .unwrap();
 
         assert_eq!(result.len(), 26);
 
@@ -195,8 +203,11 @@ mod test {
             .collect();
 
         let mut chain_state = ChainState::new_test(messages);
-        chain_state.reset(&mut chain);
-        let result = filter_transform.transform(&mut chain_state).await.unwrap();
+        let transforms = DownChainTransforms::new(&mut chain);
+        let result = filter_transform
+            .transform(&mut chain_state, transforms)
+            .await
+            .unwrap();
 
         assert_eq!(result.len(), 26);
 

@@ -1,4 +1,4 @@
-use super::TransformContextBuilder;
+use super::{DownChainTransforms, TransformContextBuilder};
 use crate::message::Messages;
 use crate::transforms::{ChainState, Transform, TransformBuilder};
 use anyhow::Result;
@@ -29,9 +29,10 @@ impl Transform for Loopback {
         NAME
     }
 
-    async fn transform<'shorter, 'longer: 'shorter>(
+    async fn transform(
         &mut self,
-        chain_state: &'shorter mut ChainState<'longer>,
+        chain_state: &mut ChainState,
+        _down_chain: DownChainTransforms<'_>,
     ) -> Result<Messages> {
         // This transform ultimately doesnt make a lot of sense semantically
         // but make a vague attempt to follow transform invariants anyway.

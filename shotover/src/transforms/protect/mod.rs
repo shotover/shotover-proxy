@@ -1,5 +1,5 @@
-use super::TransformContextBuilder;
 use super::{DownChainProtocol, UpChainProtocol};
+use super::{DownChainTransforms, TransformContextBuilder};
 use crate::frame::MessageType;
 use crate::frame::{
     value::GenericValue, CassandraFrame, CassandraOperation, CassandraResult, Frame,
@@ -184,9 +184,10 @@ impl Transform for Protect {
         NAME
     }
 
-    async fn transform<'shorter, 'longer: 'shorter>(
+    async fn transform(
         &mut self,
-        chain_state: &'shorter mut ChainState<'longer>,
+        chain_state: &mut ChainState,
+        down_chain: DownChainTransforms<'_>,
     ) -> Result<Messages> {
         // encrypt the values included in any INSERT or UPDATE queries
         for message in chain_state.requests.iter_mut() {
@@ -203,7 +204,7 @@ impl Transform for Protect {
         }
 
         chain_state.clone_requests_into_hashmap(&mut self.requests);
-        let mut responses = chain_state.call_next_transform().await?;
+        let mut responses = down_chain.call_next_transform(chain_state).await?;
 
         for response in &mut responses {
             if let Some(request_id) = response.request_id() {
