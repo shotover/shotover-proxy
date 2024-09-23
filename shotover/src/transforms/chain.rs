@@ -246,6 +246,9 @@ impl TransformChainBuilder {
             }
         ).collect();
 
+        // This is deprecated but give users some time to migrate to the requests/responses versions that have replaced this metric
+        histogram!("shotover_chain_messages_per_batch_count", "chain" => name).record(0);
+
         let chain_requests_batch_size =
             histogram!("shotover_chain_requests_batch_size", "chain" => name);
         let chain_responses_batch_size =

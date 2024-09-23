@@ -14,6 +14,7 @@ async fn test_metrics() {
 # TYPE connections_opened counter
 # TYPE shotover_available_connections_count gauge
 # TYPE shotover_chain_failures_count counter
+# TYPE shotover_chain_messages_per_batch_count summary
 # TYPE shotover_chain_requests_batch_size summary
 # TYPE shotover_chain_responses_batch_size summary
 # TYPE shotover_chain_total_count counter
@@ -25,6 +26,16 @@ async fn test_metrics() {
 connections_opened{source="redis"}
 shotover_available_connections_count{source="redis"}
 shotover_chain_failures_count{chain="redis"}
+shotover_chain_messages_per_batch_count_count{chain="redis"}
+shotover_chain_messages_per_batch_count_sum{chain="redis"}
+shotover_chain_messages_per_batch_count{chain="redis",quantile="0"}
+shotover_chain_messages_per_batch_count{chain="redis",quantile="0.1"}
+shotover_chain_messages_per_batch_count{chain="redis",quantile="0.5"}
+shotover_chain_messages_per_batch_count{chain="redis",quantile="0.9"}
+shotover_chain_messages_per_batch_count{chain="redis",quantile="0.95"}
+shotover_chain_messages_per_batch_count{chain="redis",quantile="0.99"}
+shotover_chain_messages_per_batch_count{chain="redis",quantile="0.999"}
+shotover_chain_messages_per_batch_count{chain="redis",quantile="1"}
 shotover_chain_requests_batch_size_count{chain="redis"}
 shotover_chain_requests_batch_size_sum{chain="redis"}
 shotover_chain_requests_batch_size{chain="redis",quantile="0"}
