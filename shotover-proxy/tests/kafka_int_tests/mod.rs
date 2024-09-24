@@ -772,7 +772,7 @@ fn multi_shotover_events(driver: KafkaDriver) -> Vec<EventMatcher> {
                  .with_level(Level::Warn)
                  .with_target("shotover::transforms::kafka::sink_cluster")
                  .with_message(
-                     r#"no known coordinator for GroupId("some_group"), routing message to a random broker so that a NOT_COORDINATOR or similar error is returned to the client"#, 
+                     r#"no known coordinator for "some_group", routing message to a random broker so that a NOT_COORDINATOR or similar error is returned to the client"#, 
                  )
                  .with_count(Count::Any));
     }

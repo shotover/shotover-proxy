@@ -199,7 +199,7 @@ impl Transform for KafkaSinkSingle {
                     ..
                 })) => {
                     for broker in &mut metadata.brokers {
-                        broker.1.port = port;
+                        broker.port = port;
                     }
                     response.invalidate_cache();
                 }
@@ -208,7 +208,7 @@ impl Transform for KafkaSinkSingle {
                     ..
                 })) => {
                     for broker in &mut describe_cluster.brokers {
-                        broker.1.port = port;
+                        broker.port = port;
                     }
                     response.invalidate_cache();
                 }

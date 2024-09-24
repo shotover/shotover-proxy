@@ -17,10 +17,8 @@ scylla.workspace = true
 anyhow.workspace = true
 tokio.workspace = true
 tracing.workspace = true
-clap.workspace = true
 rstest = "0.22.0"
 rstest_reuse = "0.7.0"
-cassandra-cpp = { version = "3.0.0", default-features = false }
 test-helpers = { path = "../test-helpers" }
 redis.workspace = true
 chacha20poly1305.workspace = true
@@ -30,11 +28,9 @@ uuid.workspace = true
 itertools.workspace = true
 cdrs-tokio.workspace = true
 redis-protocol.workspace = true
-tokio-util.workspace = true
 bincode.workspace = true
 futures.workspace = true
 hex.workspace = true
-hex-literal.workspace = true
 cassandra-protocol.workspace = true
 bytes.workspace = true
 rand.workspace = true

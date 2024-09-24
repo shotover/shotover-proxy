@@ -115,7 +115,8 @@ aws-config = { version = "1.0.0", optional = true }
 aws-sdk-kms = { version = "1.1.0", optional = true }
 chacha20poly1305 = { version = "0.10.0", features = ["std"], optional = true }
 generic-array = { version = "0.14", features = ["serde"], optional = true }
-kafka-protocol = { version = "0.12.0", optional = true, default-features = false, features = ["messages_enums", "broker", "client"] }
+#kafka-protocol = { version = "0.12.0", optional = true, default-features = false, features = ["messages_enums", "broker", "client"] }
+kafka-protocol = { version = "0.12.0", optional = true, default-features = false, features = ["messages_enums", "broker", "client"], git = "https://github.com/rukai/kafka-protocol-rs", branch = "replace_indexmap_with_vec" }
 rustls = { version = "0.23.0", default-features = false, features = ["tls12"] }
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring"] }
 rustls-pemfile = "2.0.0"
@@ -125,6 +126,11 @@ dashmap = { version = "6.0.0", optional = true }
 atoi = { version = "2.0.0", optional = true }
 fnv = "1.0.7"
 sasl = { version = "0.5.1", optional = true, default-features = false, features = ["scram"] }
+
+# Force C dependencies to be built in parallel e.g. ring has some C code it compiles with cc
+# Remove this if we no longer have cc in our dep tree.
+[build-dependencies]
+cc = { version = "1.0", features = ["parallel"] }
 
 [dev-dependencies]
 criterion = { version = "2.6.0", features = ["async_tokio"], package = "codspeed-criterion-compat" }
