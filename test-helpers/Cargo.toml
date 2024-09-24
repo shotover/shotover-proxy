@@ -33,12 +33,12 @@ anyhow.workspace = true
 rcgen.workspace = true
 rdkafka = { version = "0.36", features = ["cmake-build"], optional = true }
 docker-compose-runner = "0.3.0"
-j4rs = "0.20.0"
+j4rs = "0.21.0"
 futures-util = "0.3.28"
 http = "1.1.0"
 rustls = { version = "0.23.2", default-features = false }
 rustls-pki-types = "1.0.1"
 rustls-pemfile = "2.0.0"
-tokio-tungstenite = { version = "0.23", features = ["rustls-tls-native-roots"] }
+tokio-tungstenite = { version = "0.24", features = ["rustls-tls-native-roots"] }
 pretty_assertions.workspace = true
 serde.workspace = true
