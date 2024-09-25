@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 // Allow direct usage of the APIs when the feature is enabled
 pub use rdkafka;
 
-use super::{ExpectedResponse, NewPartition, Record, TopicPartition};
+use super::{ConsumerConfig, ExpectedResponse, NewPartition, Record, TopicPartition};
 use anyhow::Result;
 use pretty_assertions::assert_eq;
 use rdkafka::admin::AdminClient;
@@ -63,17 +63,21 @@ impl KafkaConnectionBuilderCpp {
         }
     }
 
-    pub async fn connect_consumer(&self, topic_name: &str, group: &str) -> KafkaConsumerCpp {
+    pub async fn connect_consumer(&self, config: ConsumerConfig) -> KafkaConsumerCpp {
         let consumer: StreamConsumer = self
             .client
             .clone()
-            .set("group.id", group)
+            .set("group.id", &config.group)
             .set("session.timeout.ms", "6000")
             .set("auto.offset.reset", "earliest")
             .set("enable.auto.commit", "false")
+            // this has a different name to the java driver 😭
+            .set("fetch.wait.max.ms", config.fetch_max_wait_ms.to_string())
+            .set("fetch.min.bytes", config.fetch_min_bytes.to_string())
             .create()
             .unwrap();
-        consumer.subscribe(&[topic_name]).unwrap();
+
+        consumer.subscribe(&[&config.topic_name]).unwrap();
         KafkaConsumerCpp { consumer }
     }
 
