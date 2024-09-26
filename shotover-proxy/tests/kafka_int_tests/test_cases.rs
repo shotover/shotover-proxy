@@ -2,9 +2,10 @@ use futures::{stream::FuturesUnordered, StreamExt};
 use std::{collections::HashMap, time::Duration};
 use test_helpers::{
     connection::kafka::{
-        Acl, AclOperation, AclPermissionType, AlterConfig, ConfigEntry, ExpectedResponse,
-        KafkaConnectionBuilder, KafkaConsumer, KafkaDriver, KafkaProducer, NewPartition, NewTopic,
-        Record, ResourcePatternType, ResourceSpecifier, ResourceType, TopicPartition,
+        Acl, AclOperation, AclPermissionType, AlterConfig, ConfigEntry, ConsumerConfig,
+        ExpectedResponse, KafkaConnectionBuilder, KafkaConsumer, KafkaDriver, KafkaProducer,
+        NewPartition, NewTopic, Record, ResourcePatternType, ResourceSpecifier, ResourceType,
+        TopicPartition,
     },
     docker_compose::DockerCompose,
 };
@@ -25,6 +26,26 @@ async fn admin_setup(connection_builder: &KafkaConnectionBuilder) {
             },
             NewTopic {
                 name: "partitions3",
+                num_partitions: 3,
+                replication_factor: 1,
+            },
+            NewTopic {
+                name: "partitions3_case1",
+                num_partitions: 3,
+                replication_factor: 1,
+            },
+            NewTopic {
+                name: "partitions3_case2",
+                num_partitions: 3,
+                replication_factor: 1,
+            },
+            NewTopic {
+                name: "partitions3_case3",
+                num_partitions: 3,
+                replication_factor: 1,
+            },
+            NewTopic {
+                name: "partitions3_case4",
                 num_partitions: 3,
                 replication_factor: 1,
             },
@@ -117,18 +138,21 @@ pub async fn produce_consume_multi_topic_batch(connection_builder: &KafkaConnect
 
     let mut consumer_partitions_1 = connection_builder
         .connect_consumer(
-            "multi_topic_batch_partitions_1",
-            "multi_topic_batch_partitions_1_group",
+            ConsumerConfig::consume_from_topic("multi_topic_batch_partitions_1".to_owned())
+                .with_group("multi_topic_batch_partitions_1_group"),
         )
         .await;
     let mut consumer_partitions_3 = connection_builder
         .connect_consumer(
-            "multi_topic_batch_partitions_3",
-            "multi_topic_batch_partitions_3_group",
+            ConsumerConfig::consume_from_topic("multi_topic_batch_partitions_3".to_owned())
+                .with_group("multi_topic_batch_partitions_3_group"),
         )
         .await;
     let mut consumer_unknown = connection_builder
-        .connect_consumer("batch_test_unknown", "batch_test_unknown_group")
+        .connect_consumer(
+            ConsumerConfig::consume_from_topic("batch_test_unknown".to_owned())
+                .with_group("batch_test_unknown_group"),
+        )
         .await;
 
     tokio::join!(
@@ -223,7 +247,10 @@ pub async fn produce_consume_multi_partition_batch(connection_builder: &KafkaCon
         .await;
 
     let mut consumer = connection_builder
-        .connect_consumer("multi_partitions_batch", "multi_partitions_batch_group")
+        .connect_consumer(
+            ConsumerConfig::consume_from_topic("multi_partitions_batch".to_owned())
+                .with_group("multi_partitions_batch_group"),
+        )
         .await;
 
     consumer
@@ -283,7 +310,9 @@ pub async fn produce_consume_partitions1(
             .await;
 
         let mut consumer = connection_builder
-            .connect_consumer(topic_name, "some_group")
+            .connect_consumer(
+                ConsumerConfig::consume_from_topic(topic_name.to_owned()).with_group("some_group"),
+            )
             .await;
         consumer
             .assert_consume(ExpectedResponse {
@@ -340,7 +369,9 @@ pub async fn produce_consume_partitions1(
     // if we create a new consumer it will start from the beginning since auto.offset.reset = earliest and enable.auto.commit false
     // so we test that we can access all records ever created on this topic
     let mut consumer = connection_builder
-        .connect_consumer(topic_name, "some_group")
+        .connect_consumer(
+            ConsumerConfig::consume_from_topic(topic_name.to_owned()).with_group("some_group"),
+        )
         .await;
     consumer
         .assert_consume(ExpectedResponse {
@@ -413,7 +444,10 @@ pub async fn produce_consume_partitions1_kafka_node_goes_down(
             .await;
 
         let mut consumer = connection_builder
-            .connect_consumer(topic_name, "kafka_node_goes_down_test_group")
+            .connect_consumer(
+                ConsumerConfig::consume_from_topic(topic_name.to_owned())
+                    .with_group("kafka_node_goes_down_test_group"),
+            )
             .await;
         consumer
             .assert_consume(ExpectedResponse {
@@ -472,7 +506,10 @@ pub async fn produce_consume_partitions1_kafka_node_goes_down(
     // if we create a new consumer it will start from the beginning since auto.offset.reset = earliest and enable.auto.commit false
     // so we test that we can access all records ever created on this topic
     let mut consumer = connection_builder
-        .connect_consumer(topic_name, "kafka_node_goes_down_test_group_new")
+        .connect_consumer(
+            ConsumerConfig::consume_from_topic(topic_name.to_owned())
+                .with_group("kafka_node_goes_down_test_group_new"),
+        )
         .await;
     consumer
         .assert_consume(ExpectedResponse {
@@ -520,7 +557,10 @@ pub async fn produce_consume_commit_offsets_partitions1(
             .await;
 
         let mut consumer = connection_builder
-            .connect_consumer(topic_name, "consumer_group_with_offsets")
+            .connect_consumer(
+                ConsumerConfig::consume_from_topic(topic_name.to_owned())
+                    .with_group("consumer_group_with_offsets"),
+            )
             .await;
         consumer
             .assert_consume(ExpectedResponse {
@@ -585,7 +625,10 @@ pub async fn produce_consume_commit_offsets_partitions1(
     {
         // The new consumer should consume Message2 which is at the last uncommitted offset
         let mut consumer = connection_builder
-            .connect_consumer(topic_name, "consumer_group_with_offsets")
+            .connect_consumer(
+                ConsumerConfig::consume_from_topic(topic_name.to_owned())
+                    .with_group("consumer_group_with_offsets"),
+            )
             .await;
         consumer
             .assert_consume(ExpectedResponse {
@@ -600,7 +643,10 @@ pub async fn produce_consume_commit_offsets_partitions1(
     {
         // The new consumer should still consume Message2 as its offset has not been committed
         let mut consumer = connection_builder
-            .connect_consumer(topic_name, "consumer_group_with_offsets")
+            .connect_consumer(
+                ConsumerConfig::consume_from_topic(topic_name.to_owned())
+                    .with_group("consumer_group_with_offsets"),
+            )
             .await;
         consumer
             .assert_consume(ExpectedResponse {
@@ -615,7 +661,10 @@ pub async fn produce_consume_commit_offsets_partitions1(
     {
         // A new consumer in another group should consume from the beginning since auto.offset.reset = earliest and enable.auto.commit false
         let mut consumer = connection_builder
-            .connect_consumer(topic_name, "consumer_group_without_offsets")
+            .connect_consumer(
+                ConsumerConfig::consume_from_topic(topic_name.to_owned())
+                    .with_group("consumer_group_without_offsets"),
+            )
             .await;
         consumer
             .assert_consume(ExpectedResponse {
@@ -631,10 +680,17 @@ pub async fn produce_consume_commit_offsets_partitions1(
 async fn produce_consume_partitions3(
     connection_builder: &KafkaConnectionBuilder,
     topic_name: &str,
+    fetch_min_bytes: i32,
+    fetch_wait_max_ms: i32,
 ) {
     let producer = connection_builder.connect_producer("1", 0).await;
     let mut consumer = connection_builder
-        .connect_consumer(topic_name, "some_group")
+        .connect_consumer(
+            ConsumerConfig::consume_from_topic(topic_name.to_owned())
+                .with_group("some_group")
+                .with_fetch_min_bytes(fetch_min_bytes)
+                .with_fetch_max_wait_ms(fetch_wait_max_ms),
+        )
         .await;
 
     for _ in 0..5 {
@@ -697,7 +753,9 @@ async fn produce_consume_acks0(connection_builder: &KafkaConnectionBuilder) {
     }
 
     let mut consumer = connection_builder
-        .connect_consumer(topic_name, "some_group")
+        .connect_consumer(
+            ConsumerConfig::consume_from_topic(topic_name.to_owned()).with_group("some_group"),
+        )
         .await;
 
     for j in 0..10 {
@@ -727,7 +785,9 @@ pub async fn test_broker_idle_timeout(connection_builder: &KafkaConnectionBuilde
 
     let mut producer = connection_builder.connect_producer("all", 0).await;
     let mut consumer = connection_builder
-        .connect_consumer("partitions3", "some_group")
+        .connect_consumer(
+            ConsumerConfig::consume_from_topic("partitions3".to_owned()).with_group("some_group"),
+        )
         .await;
 
     // write to some open shotover connections
@@ -772,9 +832,17 @@ pub async fn standard_test_suite(connection_builder: &KafkaConnectionBuilder) {
     produce_consume_partitions1(connection_builder, "partitions1").await;
     produce_consume_partitions1(connection_builder, "unknown_topic").await;
     produce_consume_commit_offsets_partitions1(connection_builder, "partitions1_with_offset").await;
-    produce_consume_partitions3(connection_builder, "partitions3").await;
     produce_consume_multi_topic_batch(connection_builder).await;
     produce_consume_multi_partition_batch(connection_builder).await;
+
+    // test with minimum limits
+    produce_consume_partitions3(connection_builder, "partitions3_case1", 1, 0).await;
+    // test with minimum limits that results in a delay
+    produce_consume_partitions3(connection_builder, "partitions3_case2", 1, 1).await;
+    // test with default limits
+    produce_consume_partitions3(connection_builder, "partitions3_case3", 1, 500).await;
+    // set the bytes limit to 1MB so that we will not reach it and will hit the 100ms timeout every time.
+    produce_consume_partitions3(connection_builder, "partitions3_case4", 1_000_000, 100).await;
 
     // Only run this test case on the java driver,
     // since even without going through shotover the cpp driver fails this test.
@@ -816,7 +884,7 @@ pub async fn cluster_test_suite(connection_builder: &KafkaConnectionBuilder) {
         .await;
     tokio::time::sleep(Duration::from_secs(10)).await;
     produce_consume_partitions1(connection_builder, "partitions1_rf3").await;
-    produce_consume_partitions3(connection_builder, "partitions3_rf3").await;
+    produce_consume_partitions3(connection_builder, "partitions3_rf3", 1, 500).await;
 }
 
 pub async fn setup_basic_user_acls(connection: &KafkaConnectionBuilder, username: &str) {

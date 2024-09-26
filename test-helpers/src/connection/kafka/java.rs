@@ -1,6 +1,7 @@
 use super::{
-    Acl, AclOperation, AclPermissionType, AlterConfig, ExpectedResponse, NewPartition, NewTopic,
-    Record, ResourcePatternType, ResourceSpecifier, ResourceType, TopicDescription, TopicPartition,
+    Acl, AclOperation, AclPermissionType, AlterConfig, ConsumerConfig, ExpectedResponse,
+    NewPartition, NewTopic, Record, ResourcePatternType, ResourceSpecifier, ResourceType,
+    TopicDescription, TopicPartition,
 };
 use crate::connection::java::{Jvm, Value};
 use anyhow::Result;
@@ -102,12 +103,20 @@ impl KafkaConnectionBuilderJava {
         KafkaProducerJava { jvm, producer }
     }
 
-    pub async fn connect_consumer(&self, topic_name: &str, group: &str) -> KafkaConsumerJava {
+    pub async fn connect_consumer(&self, consumer_config: ConsumerConfig) -> KafkaConsumerJava {
         let mut config = self.base_config.clone();
-        config.insert("group.id".to_owned(), group.to_owned());
+        config.insert("group.id".to_owned(), consumer_config.group);
         config.insert("session.timeout.ms".to_owned(), "6000".to_owned());
         config.insert("auto.offset.reset".to_owned(), "earliest".to_owned());
         config.insert("enable.auto.commit".to_owned(), "false".to_owned());
+        config.insert(
+            "fetch.max.wait.ms".to_owned(),
+            consumer_config.fetch_max_wait_ms.to_string(),
+        );
+        config.insert(
+            "fetch.min.bytes".to_owned(),
+            consumer_config.fetch_min_bytes.to_string(),
+        );
         config.insert(
             "key.deserializer".to_owned(),
             "org.apache.kafka.common.serialization.StringDeserializer".to_owned(),
@@ -123,9 +132,10 @@ impl KafkaConnectionBuilderJava {
         );
         consumer.call(
             "subscribe",
-            vec![self
-                .jvm
-                .new_list("java.lang.String", vec![self.jvm.new_string(topic_name)])],
+            vec![self.jvm.new_list(
+                "java.lang.String",
+                vec![self.jvm.new_string(&consumer_config.topic_name)],
+            )],
         );
 
         let jvm = self.jvm.clone();
