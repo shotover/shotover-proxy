@@ -14,7 +14,8 @@ use pretty_assertions::assert_eq;
 use shotover::config::chain::TransformChainConfig;
 use shotover::sources::SourceConfig;
 use shotover::transforms::debug::force_parse::DebugForceEncodeConfig;
-use shotover::transforms::kafka::sink_cluster::{KafkaSinkClusterConfig, ShotoverNodeConfig};
+use shotover::transforms::kafka::sink_cluster::shotover_node::ShotoverNodeConfig;
+use shotover::transforms::kafka::sink_cluster::KafkaSinkClusterConfig;
 use shotover::transforms::kafka::sink_single::KafkaSinkSingleConfig;
 use shotover::transforms::TransformConfig;
 use std::sync::Arc;
@@ -96,6 +97,7 @@ impl KafkaBench {
             KafkaTopology::Cluster1 | KafkaTopology::Cluster3 => Box::new(KafkaSinkClusterConfig {
                 connect_timeout_ms: 3000,
                 read_timeout: None,
+                check_shotover_peers_delay_ms: None,
                 first_contact_points: vec![kafka_address],
                 shotover_nodes: vec![ShotoverNodeConfig {
                     address: host_address.parse().unwrap(),

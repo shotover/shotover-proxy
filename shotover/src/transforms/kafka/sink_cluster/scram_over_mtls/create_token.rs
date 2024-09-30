@@ -13,7 +13,7 @@ use kafka_protocol::{
 };
 use rand::{rngs::SmallRng, seq::IteratorRandom};
 
-use crate::transforms::kafka::sink_cluster::node::{ConnectionFactory, KafkaAddress};
+use crate::transforms::kafka::sink_cluster::kafka_node::{ConnectionFactory, KafkaAddress};
 use crate::transforms::kafka::sink_cluster::scram_over_mtls::{DelegationToken, Node};
 use crate::{
     connection::SinkConnection,
