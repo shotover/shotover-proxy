@@ -75,11 +75,11 @@ impl KafkaConnectionBuilder {
         }
     }
 
-    pub async fn connect_consumer(&self, topic_name: &str, group: &str) -> KafkaConsumer {
+    pub async fn connect_consumer(&self, config: ConsumerConfig) -> KafkaConsumer {
         match self {
             #[cfg(feature = "kafka-cpp-driver-tests")]
-            Self::Cpp(cpp) => KafkaConsumer::Cpp(cpp.connect_consumer(topic_name, group).await),
-            Self::Java(java) => KafkaConsumer::Java(java.connect_consumer(topic_name, group).await),
+            Self::Cpp(cpp) => KafkaConsumer::Cpp(cpp.connect_consumer(config).await),
+            Self::Java(java) => KafkaConsumer::Java(java.connect_consumer(config).await),
         }
     }
 
@@ -397,4 +397,38 @@ pub struct TopicDescription {
     // None of our tests actually make use of the contents of TopicDescription,
     // instead they just check if the describe succeeded or failed,
     // so this is intentionally left empty for now
+}
+
+#[derive(Default)]
+pub struct ConsumerConfig {
+    topic_name: String,
+    group: String,
+    fetch_min_bytes: i32,
+    fetch_max_wait_ms: i32,
+}
+
+impl ConsumerConfig {
+    pub fn consume_from_topic(topic_name: String) -> Self {
+        Self {
+            topic_name,
+            group: "default_group".to_owned(),
+            fetch_min_bytes: 1,
+            fetch_max_wait_ms: 500,
+        }
+    }
+
+    pub fn with_group(mut self, group: &str) -> Self {
+        self.group = group.to_owned();
+        self
+    }
+
+    pub fn with_fetch_min_bytes(mut self, fetch_min_bytes: i32) -> Self {
+        self.fetch_min_bytes = fetch_min_bytes;
+        self
+    }
+
+    pub fn with_fetch_max_wait_ms(mut self, fetch_max_wait_ms: i32) -> Self {
+        self.fetch_max_wait_ms = fetch_max_wait_ms;
+        self
+    }
 }
