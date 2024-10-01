@@ -14,7 +14,7 @@ pub struct ShotoverNodeConfig {
 }
 
 impl ShotoverNodeConfig {
-    pub fn build(self) -> anyhow::Result<ShotoverNode> {
+    pub(crate) fn build(self) -> anyhow::Result<ShotoverNode> {
         Ok(ShotoverNode {
             address: KafkaAddress::from_str(&self.address)?,
             rack: StrBytes::from_string(self.rack),
@@ -25,7 +25,7 @@ impl ShotoverNodeConfig {
 }
 
 #[derive(Clone)]
-pub struct ShotoverNode {
+pub(crate) struct ShotoverNode {
     pub address: KafkaAddress,
     pub rack: StrBytes,
     pub broker_id: BrokerId,
@@ -35,7 +35,7 @@ pub struct ShotoverNode {
 
 #[atomic_enum]
 #[derive(PartialEq)]
-pub enum ShotoverNodeState {
+pub(crate) enum ShotoverNodeState {
     Up,
     Down,
 }
