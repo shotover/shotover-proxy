@@ -1,4 +1,4 @@
-use super::node::{ConnectionFactory, KafkaAddress};
+use super::kafka_node::{ConnectionFactory, KafkaAddress};
 use crate::{
     connection::SinkConnection,
     tls::{TlsConnector, TlsConnectorConfig},

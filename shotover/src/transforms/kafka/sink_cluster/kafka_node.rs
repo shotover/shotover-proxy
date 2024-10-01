@@ -283,7 +283,7 @@ pub struct KafkaNode {
     pub broker_id: BrokerId,
     pub rack: Option<StrBytes>,
     pub kafka_address: KafkaAddress,
-    state: Arc<AtomicNodeState>,
+    state: Arc<AtomicKafkaNodeState>,
 }
 
 impl KafkaNode {
@@ -292,22 +292,22 @@ impl KafkaNode {
             broker_id,
             kafka_address,
             rack,
-            state: Arc::new(AtomicNodeState::new(NodeState::Up)),
+            state: Arc::new(AtomicKafkaNodeState::new(KafkaNodeState::Up)),
         }
     }
 
     pub fn is_up(&self) -> bool {
-        self.state.load(Ordering::Relaxed) == NodeState::Up
+        self.state.load(Ordering::Relaxed) == KafkaNodeState::Up
     }
 
-    pub fn set_state(&self, state: NodeState) {
+    pub fn set_state(&self, state: KafkaNodeState) {
         self.state.store(state, Ordering::Relaxed)
     }
 }
 
 #[atomic_enum]
 #[derive(PartialEq)]
-pub enum NodeState {
+pub enum KafkaNodeState {
     Up,
     Down,
 }

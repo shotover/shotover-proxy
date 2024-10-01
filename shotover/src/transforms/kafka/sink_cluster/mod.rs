@@ -11,6 +11,7 @@ use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use connections::{Connections, Destination};
 use dashmap::DashMap;
+use kafka_node::{ConnectionFactory, KafkaAddress, KafkaNode, KafkaNodeState};
 use kafka_protocol::indexmap::IndexMap;
 use kafka_protocol::messages::fetch_request::FetchTopic;
 use kafka_protocol::messages::fetch_response::LeaderIdAndEpoch as FetchResponseLeaderIdAndEpoch;
@@ -27,7 +28,6 @@ use kafka_protocol::messages::{
 use kafka_protocol::protocol::StrBytes;
 use kafka_protocol::ResponseError;
 use metrics::{counter, Counter};
-use node::{ConnectionFactory, KafkaAddress, KafkaNode, NodeState};
 use rand::rngs::SmallRng;
 use rand::seq::{IteratorRandom, SliceRandom};
 use rand::SeedableRng;
@@ -36,6 +36,7 @@ use scram_over_mtls::{
     OriginalScramState,
 };
 use serde::{Deserialize, Serialize};
+use shotover_node::{ShotoverNode, ShotoverNodeConfig};
 use std::collections::{HashMap, VecDeque};
 use std::hash::Hasher;
 use std::sync::atomic::AtomicI64;
@@ -45,8 +46,9 @@ use tokio::sync::RwLock;
 use uuid::Uuid;
 
 mod connections;
-mod node;
+mod kafka_node;
 mod scram_over_mtls;
+pub mod shotover_node;
 
 const SASL_SCRAM_MECHANISMS: [&str; 2] = ["SCRAM-SHA-256", "SCRAM-SHA-512"];
 
@@ -66,33 +68,9 @@ pub struct KafkaSinkClusterConfig {
     pub local_shotover_broker_id: i32,
     pub connect_timeout_ms: u64,
     pub read_timeout: Option<u64>,
+    pub check_shotover_peers_delay_ms: Option<u64>,
     pub tls: Option<TlsConnectorConfig>,
     pub authorize_scram_over_mtls: Option<AuthorizeScramOverMtlsConfig>,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-#[serde(deny_unknown_fields)]
-pub struct ShotoverNodeConfig {
-    pub address: String,
-    pub rack: String,
-    pub broker_id: i32,
-}
-
-impl ShotoverNodeConfig {
-    fn build(self) -> Result<ShotoverNode> {
-        Ok(ShotoverNode {
-            address: KafkaAddress::from_str(&self.address)?,
-            rack: StrBytes::from_string(self.rack),
-            broker_id: BrokerId(self.broker_id),
-        })
-    }
-}
-
-#[derive(Clone)]
-struct ShotoverNode {
-    pub address: KafkaAddress,
-    pub rack: StrBytes,
-    pub broker_id: BrokerId,
 }
 
 const NAME: &str = "KafkaSinkCluster";
@@ -1268,7 +1246,7 @@ impl KafkaSinkCluster {
                             }
                         })
                         .unwrap()
-                        .set_state(NodeState::Down);
+                        .set_state(KafkaNodeState::Down);
 
                     // bubble up error
                     let request_types: Vec<String> = requests

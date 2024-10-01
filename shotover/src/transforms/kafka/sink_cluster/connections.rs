@@ -10,7 +10,7 @@ use rand::{rngs::SmallRng, seq::IteratorRandom};
 use std::{collections::HashMap, time::Instant};
 
 use super::{
-    node::{ConnectionFactory, KafkaAddress, KafkaNode, NodeState},
+    kafka_node::{ConnectionFactory, KafkaAddress, KafkaNode, KafkaNodeState},
     scram_over_mtls::{connection::ScramOverMtlsConnection, AuthorizeScramOverMtls},
     SASL_SCRAM_MECHANISMS,
 };
@@ -234,9 +234,9 @@ impl Connections {
 
         // Update the node state according to whether we can currently open a connection.
         let node_state = if connection.is_err() {
-            NodeState::Down
+            KafkaNodeState::Down
         } else {
-            NodeState::Up
+            KafkaNodeState::Up
         };
         nodes
             .iter()
