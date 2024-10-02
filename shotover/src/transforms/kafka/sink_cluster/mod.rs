@@ -22,11 +22,11 @@ use kafka_protocol::messages::metadata_response::MetadataResponseBroker;
 use kafka_protocol::messages::produce_request::TopicProduceData;
 use kafka_protocol::messages::produce_response::LeaderIdAndEpoch as ProduceResponseLeaderIdAndEpoch;
 use kafka_protocol::messages::{
-    ApiKey, BrokerId, FetchRequest, FetchResponse, FindCoordinatorRequest, FindCoordinatorResponse,
-    GroupId, HeartbeatRequest, JoinGroupRequest, LeaveGroupRequest, ListOffsetsRequest,
-    ListOffsetsResponse, MetadataRequest, MetadataResponse, ProduceRequest, ProduceResponse,
-    RequestHeader, SaslAuthenticateRequest, SaslAuthenticateResponse, SaslHandshakeRequest,
-    SyncGroupRequest, TopicName,
+    ApiKey, BrokerId, EndTxnRequest, FetchRequest, FetchResponse, FindCoordinatorRequest,
+    FindCoordinatorResponse, GroupId, HeartbeatRequest, InitProducerIdRequest, JoinGroupRequest,
+    LeaveGroupRequest, ListOffsetsRequest, ListOffsetsResponse, MetadataRequest, MetadataResponse,
+    ProduceRequest, ProduceResponse, RequestHeader, SaslAuthenticateRequest,
+    SaslAuthenticateResponse, SaslHandshakeRequest, SyncGroupRequest, TopicName, TransactionalId,
 };
 use kafka_protocol::protocol::StrBytes;
 use kafka_protocol::ResponseError;
@@ -143,6 +143,7 @@ struct KafkaSinkClusterBuilder {
     read_timeout: Option<Duration>,
     controller_broker: Arc<AtomicBrokerId>,
     group_to_coordinator_broker: Arc<DashMap<GroupId, BrokerId>>,
+    transaction_to_coordinator_broker: Arc<DashMap<TransactionalId, BrokerId>>,
     topic_by_name: Arc<DashMap<TopicName, Topic>>,
     topic_by_id: Arc<DashMap<Uuid, Topic>>,
     nodes_shared: Arc<RwLock<Vec<KafkaNode>>>,
@@ -191,6 +192,7 @@ impl KafkaSinkClusterBuilder {
             read_timeout,
             controller_broker: Arc::new(AtomicBrokerId::new()),
             group_to_coordinator_broker: Arc::new(DashMap::new()),
+            transaction_to_coordinator_broker: Arc::new(DashMap::new()),
             topic_by_name: Arc::new(DashMap::new()),
             topic_by_id: Arc::new(DashMap::new()),
             nodes_shared: Arc::new(RwLock::new(vec![])),
@@ -211,6 +213,7 @@ impl TransformBuilder for KafkaSinkClusterBuilder {
             nodes_shared: self.nodes_shared.clone(),
             controller_broker: self.controller_broker.clone(),
             group_to_coordinator_broker: self.group_to_coordinator_broker.clone(),
+            transaction_to_coordinator_broker: self.transaction_to_coordinator_broker.clone(),
             topic_by_name: self.topic_by_name.clone(),
             topic_by_id: self.topic_by_id.clone(),
             rng: SmallRng::from_rng(rand::thread_rng()).unwrap(),
@@ -272,6 +275,7 @@ struct KafkaSinkCluster {
     nodes_shared: Arc<RwLock<Vec<KafkaNode>>>,
     controller_broker: Arc<AtomicBrokerId>,
     group_to_coordinator_broker: Arc<DashMap<GroupId, BrokerId>>,
+    transaction_to_coordinator_broker: Arc<DashMap<TransactionalId, BrokerId>>,
     topic_by_name: Arc<DashMap<TopicName, Topic>>,
     topic_by_id: Arc<DashMap<Uuid, Topic>>,
     rng: SmallRng,
@@ -339,6 +343,8 @@ enum PendingRequestTy {
     FindCoordinator(FindCoordinator),
     // Covers multiple request types: JoinGroup, DeleteGroups etc.
     RoutedToGroup(GroupId),
+    // Covers multiple request types: InitProducerId, EndTxn etc.
+    RoutedToTransaction(TransactionalId),
     Other,
 }
 
@@ -520,6 +526,28 @@ impl KafkaSinkCluster {
         }
     }
 
+    fn store_transaction(
+        &self,
+        transactions: &mut Vec<TransactionalId>,
+        transaction: TransactionalId,
+    ) {
+        let cache_is_missing_or_outdated =
+            match self.transaction_to_coordinator_broker.get(&transaction) {
+                Some(broker_id) => self
+                    .nodes
+                    .iter()
+                    .find(|node| node.broker_id == *broker_id)
+                    .map(|node| !node.is_up())
+                    .unwrap_or(true),
+                None => true,
+            };
+
+        if cache_is_missing_or_outdated && !transactions.contains(&transaction) {
+            debug_assert!(transaction.0.as_str() != "");
+            transactions.push(transaction);
+        }
+    }
+
     async fn update_local_nodes(&mut self) {
         self.nodes.clone_from(&*self.nodes_shared.read().await);
     }
@@ -605,6 +633,7 @@ impl KafkaSinkCluster {
         let mut topic_names = vec![];
         let mut topic_ids = vec![];
         let mut groups = vec![];
+        let mut transactions = vec![];
         for request in &mut requests {
             match request.frame() {
                 Some(Frame::Kafka(KafkaFrame::Request {
@@ -646,6 +675,43 @@ impl KafkaSinkCluster {
                     self.store_group(&mut groups, group_id.clone());
                 }
                 Some(Frame::Kafka(KafkaFrame::Request {
+                    body:
+                        // TODO: only keep the ones we actually to route for
+                        // RequestBody::TxnOffsetCommit(TxnOffsetCommitRequest {
+                        //     transactional_id, ..
+                        // })|
+                        RequestBody::InitProducerId(InitProducerIdRequest {
+                            transactional_id: Some(transactional_id), ..
+                        })
+                        | RequestBody::EndTxn(EndTxnRequest {
+                            transactional_id, ..
+                        }),
+                        // | RequestBody::AddOffsetsToTxn(AddOffsetsToTxnRequest {
+                        //     transactional_id, ..
+                        // }),
+                    ..
+                })) => {
+                    self.store_transaction(&mut transactions, transactional_id.clone());
+                }
+                Some(Frame::Kafka(KafkaFrame::Request {
+                    body:
+                        RequestBody::AddPartitionsToTxn(add_partitions_to_txn_request)
+                        ,
+                    header,
+                })) => {
+                    if header.request_api_version <= 3 {
+                        self.store_transaction(
+                            &mut transactions,
+                            add_partitions_to_txn_request.v3_and_below_transactional_id.clone()
+                        );
+                    }
+                    else {
+                        for transaction in add_partitions_to_txn_request.transactions.keys() {
+                            self.store_transaction(&mut transactions, transaction.clone());
+                        }
+                    }
+                }
+                Some(Frame::Kafka(KafkaFrame::Request {
                     body: RequestBody::OffsetFetch(offset_fetch),
                     header,
                 })) => {
@@ -662,7 +728,10 @@ impl KafkaSinkCluster {
         }
 
         for group in groups {
-            match self.find_coordinator_of_group(group.clone()).await {
+            match self
+                .find_coordinator(CoordinatorKey::Group(group.clone()))
+                .await
+            {
                 Ok(node) => {
                     tracing::debug!(
                         "Storing group_to_coordinator_broker metadata, group {:?} -> broker {}",
@@ -671,6 +740,31 @@ impl KafkaSinkCluster {
                     );
                     self.group_to_coordinator_broker
                         .insert(group, node.broker_id);
+                    self.add_node_if_new(node).await;
+                }
+                Err(FindCoordinatorError::CoordinatorNotAvailable) => {
+                    // We cant find the coordinator so do nothing so that the request will be routed to a random node:
+                    // * If it happens to be the coordinator all is well
+                    // * If its not the coordinator then it will return a NOT_COORDINATOR message to
+                    //   the client prompting it to retry the whole process again.
+                }
+                Err(FindCoordinatorError::Unrecoverable(err)) => Err(err)?,
+            }
+        }
+
+        for transaction in transactions {
+            match self
+                .find_coordinator(CoordinatorKey::Transaction(transaction.clone()))
+                .await
+            {
+                Ok(node) => {
+                    tracing::debug!(
+                        "Storing transaction_to_coordinator_broker metadata, transaction {:?} -> broker {}",
+                        transaction.0,
+                        node.broker_id.0
+                    );
+                    self.transaction_to_coordinator_broker
+                        .insert(transaction, node.broker_id);
                     self.add_node_if_new(node).await;
                 }
                 Err(FindCoordinatorError::CoordinatorNotAvailable) => {
@@ -742,14 +836,49 @@ impl KafkaSinkCluster {
                     ..
                 })) => {
                     let group_id = heartbeat.group_id.clone();
-                    self.route_to_coordinator(message, group_id);
+                    self.route_to_group_coordinator(message, group_id);
+                }
+                Some(Frame::Kafka(KafkaFrame::Request {
+                    body: RequestBody::AddPartitionsToTxn(add_partitions_to_txn),
+                    header,
+                })) => {
+                    if header.request_api_version <= 3 {
+                        let transaction_id =
+                            add_partitions_to_txn.v3_and_below_transactional_id.clone();
+                        self.route_to_transaction_coordinator(message, transaction_id);
+                    } else {
+                        // TODO: split request
+                        #[allow(clippy::never_loop)]
+                        for transaction_id in add_partitions_to_txn.transactions.keys() {
+                            let transaction_id = transaction_id.clone();
+                            self.route_to_transaction_coordinator(message, transaction_id);
+                            break;
+                        }
+                    }
+                }
+                Some(Frame::Kafka(KafkaFrame::Request {
+                    body: RequestBody::EndTxn(end_txn),
+                    ..
+                })) => {
+                    let transaction_id = end_txn.transactional_id.clone();
+                    self.route_to_transaction_coordinator(message, transaction_id);
+                }
+                Some(Frame::Kafka(KafkaFrame::Request {
+                    body: RequestBody::InitProducerId(init_producer_id),
+                    ..
+                })) => {
+                    if let Some(transaction_id) = init_producer_id.transactional_id.clone() {
+                        self.route_to_transaction_coordinator(message, transaction_id);
+                    } else {
+                        self.route_to_random_broker(message);
+                    }
                 }
                 Some(Frame::Kafka(KafkaFrame::Request {
                     body: RequestBody::SyncGroup(sync_group),
                     ..
                 })) => {
                     let group_id = sync_group.group_id.clone();
-                    self.route_to_coordinator(message, group_id);
+                    self.route_to_group_coordinator(message, group_id);
                 }
                 Some(Frame::Kafka(KafkaFrame::Request {
                     body: RequestBody::OffsetFetch(offset_fetch),
@@ -766,28 +895,28 @@ impl KafkaSinkCluster {
                         // For now just pick the first group as that is sufficient for the simple cases.
                         offset_fetch.groups.first().unwrap().group_id.clone()
                     };
-                    self.route_to_coordinator(message, group_id);
+                    self.route_to_group_coordinator(message, group_id);
                 }
                 Some(Frame::Kafka(KafkaFrame::Request {
                     body: RequestBody::OffsetCommit(offset_commit),
                     ..
                 })) => {
                     let group_id = offset_commit.group_id.clone();
-                    self.route_to_coordinator(message, group_id);
+                    self.route_to_group_coordinator(message, group_id);
                 }
                 Some(Frame::Kafka(KafkaFrame::Request {
                     body: RequestBody::JoinGroup(join_group),
                     ..
                 })) => {
                     let group_id = join_group.group_id.clone();
-                    self.route_to_coordinator(message, group_id);
+                    self.route_to_group_coordinator(message, group_id);
                 }
                 Some(Frame::Kafka(KafkaFrame::Request {
                     body: RequestBody::LeaveGroup(leave_group),
                     ..
                 })) => {
                     let group_id = leave_group.group_id.clone();
-                    self.route_to_coordinator(message, group_id);
+                    self.route_to_group_coordinator(message, group_id);
                 }
                 Some(Frame::Kafka(KafkaFrame::Request {
                     body: RequestBody::DeleteGroups(groups),
@@ -795,7 +924,7 @@ impl KafkaSinkCluster {
                 })) => {
                     // TODO: we need to split this up into multiple requests so it can be correctly routed to all possible nodes
                     let group_id = groups.groups_names.first().unwrap().clone();
-                    self.route_to_coordinator(message, group_id);
+                    self.route_to_group_coordinator(message, group_id);
                 }
                 Some(Frame::Kafka(KafkaFrame::Request {
                     body: RequestBody::FindCoordinator(_),
@@ -809,19 +938,20 @@ impl KafkaSinkCluster {
                     body: RequestBody::CreateTopics(_),
                     ..
                 })) => self.route_to_controller(message),
-                // route to random node
-                _ => {
-                    let destination = random_broker_id(&self.nodes, &mut self.rng);
-                    tracing::debug!("Routing request to random broker {}", destination.0);
-                    self.pending_requests.push_back(PendingRequest {
-                        state: PendingRequestState::routed(destination, message),
-                        ty: PendingRequestTy::Other,
-                        combine_responses: 1,
-                    });
-                }
+                _ => self.route_to_random_broker(message),
             }
         }
         Ok(())
+    }
+
+    fn route_to_random_broker(&mut self, request: Message) {
+        let destination = random_broker_id(&self.nodes, &mut self.rng);
+        tracing::debug!("Routing request to random broker {}", destination.0);
+        self.pending_requests.push_back(PendingRequest {
+            state: PendingRequestState::routed(destination, request),
+            ty: PendingRequestTy::Other,
+            combine_responses: 1,
+        });
     }
 
     fn route_produce_request(&mut self, mut message: Message) -> Result<()> {
@@ -1263,9 +1393,9 @@ impl KafkaSinkCluster {
         Ok(())
     }
 
-    async fn find_coordinator_of_group(
+    async fn find_coordinator(
         &mut self,
-        group: GroupId,
+        key: CoordinatorKey,
     ) -> Result<KafkaNode, FindCoordinatorError> {
         let request = Message::from_frame(Frame::Kafka(KafkaFrame::Request {
             header: RequestHeader::default()
@@ -1274,15 +1404,21 @@ impl KafkaSinkCluster {
                 .with_correlation_id(0),
             body: RequestBody::FindCoordinator(
                 FindCoordinatorRequest::default()
-                    .with_key_type(0)
-                    .with_key(group.0.clone()),
+                    .with_key_type(match key {
+                        CoordinatorKey::Group(_) => 0,
+                        CoordinatorKey::Transaction(_) => 1,
+                    })
+                    .with_key(match &key {
+                        CoordinatorKey::Group(id) => id.0.clone(),
+                        CoordinatorKey::Transaction(id) => id.0.clone(),
+                    }),
             ),
         }));
 
         let mut response = self
             .control_send_receive(request)
             .await
-            .with_context(|| format!("Failed to query for coordinator of group {:?}", group.0))?;
+            .with_context(|| format!("Failed to query for coordinator of {key:?}"))?;
         match response.frame() {
             Some(Frame::Kafka(KafkaFrame::Response {
                 body: ResponseBody::FindCoordinator(coordinator),
@@ -1380,6 +1516,7 @@ impl KafkaSinkCluster {
                         }
                     }
                     PendingRequestTy::RoutedToGroup(_) => None,
+                    PendingRequestTy::RoutedToTransaction(_) => None,
                     PendingRequestTy::FindCoordinator(_) => None,
                     PendingRequestTy::Other => None,
                 };
@@ -1994,6 +2131,40 @@ impl KafkaSinkCluster {
                 ..
             })) => self.handle_group_coordinator_routing_error(&request_ty, leave_group.error_code),
             Some(Frame::Kafka(KafkaFrame::Response {
+                body: ResponseBody::EndTxn(end_txn),
+                ..
+            })) => {
+                self.handle_transaction_coordinator_routing_error(&request_ty, end_txn.error_code)
+            }
+            Some(Frame::Kafka(KafkaFrame::Response {
+                body: ResponseBody::InitProducerId(init_producer_id),
+                ..
+            })) => self.handle_transaction_coordinator_routing_error(
+                &request_ty,
+                init_producer_id.error_code,
+            ),
+            Some(Frame::Kafka(KafkaFrame::Response {
+                body: ResponseBody::AddPartitionsToTxn(response),
+                version,
+                ..
+            })) => {
+                if *version <= 3 {
+                    for topic_result in response.results_by_topic_v3_and_below.values() {
+                        for partition_result in topic_result.results_by_partition.values() {
+                            self.handle_transaction_coordinator_routing_error(
+                                &request_ty,
+                                partition_result.partition_error_code,
+                            )
+                        }
+                    }
+                } else {
+                    self.handle_transaction_coordinator_routing_error(
+                        &request_ty,
+                        response.error_code,
+                    )
+                }
+            }
+            Some(Frame::Kafka(KafkaFrame::Response {
                 body: ResponseBody::DeleteGroups(delete_groups),
                 ..
             })) => {
@@ -2047,7 +2218,7 @@ impl KafkaSinkCluster {
         Ok(())
     }
 
-    /// This method must be called for every response to a request that was routed via `route_to_coordinator`
+    /// This method must be called for every response to a request that was routed via `route_to_group_coordinator`
     fn handle_group_coordinator_routing_error(
         &mut self,
         pending_request_ty: &PendingRequestTy,
@@ -2055,10 +2226,34 @@ impl KafkaSinkCluster {
     ) {
         if let Some(ResponseError::NotCoordinator) = ResponseError::try_from_code(error_code) {
             if let PendingRequestTy::RoutedToGroup(group_id) = pending_request_ty {
-                let broker_id = self.group_to_coordinator_broker.remove(group_id);
+                let broker_id = self
+                    .group_to_coordinator_broker
+                    .remove(group_id)
+                    .map(|x| x.1);
                 tracing::info!(
                     "Response was error NOT_COORDINATOR and so cleared group id {:?} coordinator mapping to broker {:?}",
                     group_id,
+                    broker_id,
+                );
+            }
+        }
+    }
+
+    /// This method must be called for every response to a request that was routed via `route_to_transaction_coordinator`
+    fn handle_transaction_coordinator_routing_error(
+        &mut self,
+        pending_request_ty: &PendingRequestTy,
+        error_code: i16,
+    ) {
+        if let Some(ResponseError::NotCoordinator) = ResponseError::try_from_code(error_code) {
+            if let PendingRequestTy::RoutedToTransaction(transaction_id) = pending_request_ty {
+                let broker_id = self
+                    .transaction_to_coordinator_broker
+                    .remove(transaction_id)
+                    .map(|x| x.1);
+                tracing::info!(
+                    "Response was error NOT_COORDINATOR and so cleared transaction id {:?} coordinator mapping to broker {:?}",
+                    transaction_id,
                     broker_id,
                 );
             }
@@ -2148,7 +2343,7 @@ impl KafkaSinkCluster {
         );
     }
 
-    fn route_to_coordinator(&mut self, request: Message, group_id: GroupId) {
+    fn route_to_group_coordinator(&mut self, request: Message, group_id: GroupId) {
         let destination = self.group_to_coordinator_broker.get(&group_id);
         let destination = match destination {
             Some(destination) => *destination,
@@ -2167,6 +2362,33 @@ impl KafkaSinkCluster {
         self.pending_requests.push_back(PendingRequest {
             state: PendingRequestState::routed(destination, request),
             ty: PendingRequestTy::RoutedToGroup(group_id),
+            combine_responses: 1,
+        });
+    }
+
+    fn route_to_transaction_coordinator(
+        &mut self,
+        request: Message,
+        transaction_id: TransactionalId,
+    ) {
+        let destination = self.transaction_to_coordinator_broker.get(&transaction_id);
+        let destination = match destination {
+            Some(destination) => *destination,
+            None => {
+                tracing::info!("no known coordinator for {transaction_id:?}, routing message to a random broker so that a NOT_COORDINATOR or similar error is returned to the client");
+                random_broker_id(&self.nodes, &mut self.rng)
+            }
+        };
+
+        tracing::debug!(
+            "Routing request relating to transaction id {:?} to broker {}",
+            transaction_id.0,
+            destination.0
+        );
+
+        self.pending_requests.push_back(PendingRequest {
+            state: PendingRequestState::routed(destination, request),
+            ty: PendingRequestTy::RoutedToTransaction(transaction_id),
             combine_responses: 1,
         });
     }
@@ -2574,6 +2796,12 @@ impl KafkaSinkCluster {
                     .unwrap_or(false)
         })
     }
+}
+
+#[derive(Debug)]
+enum CoordinatorKey {
+    Group(GroupId),
+    Transaction(TransactionalId),
 }
 
 fn hash_partition(topic_id: Uuid, partition_index: i32) -> usize {

@@ -111,6 +111,35 @@ impl KafkaConnectionBuilderJava {
         KafkaProducerJava { jvm, producer }
     }
 
+    pub async fn connect_producer_with_transactions(
+        &self,
+        transaction_id: String,
+    ) -> KafkaProducerJava {
+        let mut config = self.base_config.clone();
+        config.insert("acks".to_owned(), "all".to_owned());
+        config.insert("linger.ms".to_owned(), "0".to_owned());
+        config.insert("transactional.id".to_owned(), transaction_id);
+        config.insert(
+            "key.serializer".to_owned(),
+            "org.apache.kafka.common.serialization.StringSerializer".to_owned(),
+        );
+        config.insert(
+            "value.serializer".to_owned(),
+            "org.apache.kafka.common.serialization.StringSerializer".to_owned(),
+        );
+
+        let properties = properties(&self.jvm, &config);
+        let producer = self.jvm.construct(
+            "org.apache.kafka.clients.producer.KafkaProducer",
+            vec![properties],
+        );
+
+        producer.call("initTransactions", vec![]);
+
+        let jvm = self.jvm.clone();
+        KafkaProducerJava { jvm, producer }
+    }
+
     pub async fn connect_consumer(&self, consumer_config: ConsumerConfig) -> KafkaConsumerJava {
         let mut config = self.base_config.clone();
         config.insert("group.id".to_owned(), consumer_config.group);
@@ -200,6 +229,26 @@ impl KafkaProducerJava {
             assert_eq!(expected_offset, actual_offset);
         }
     }
+
+    pub fn begin_transaction(&self) {
+        self.producer.call("beginTransaction", vec![]);
+    }
+
+    pub fn commit_transaction(&self) {
+        self.producer.call("commitTransaction", vec![]);
+    }
+
+    pub fn send_offsets_to_transaction(&self, consumer: &KafkaConsumerJava) {
+        let offsets = self.jvm.new_map(vec![]);
+
+        let consumer_group_id = consumer
+            .consumer
+            .call("groupMetadata", vec![])
+            .call("groupId", vec![]);
+
+        self.producer
+            .call("sendOffsetsToTransaction", vec![offsets, consumer_group_id]);
+    }
 }
 
 pub struct KafkaConsumerJava {
@@ -222,17 +271,31 @@ impl KafkaConsumerJava {
     }
 
     fn fetch_from_broker(&mut self) {
-        let timeout = self.jvm.call_static(
-            "java.time.Duration",
-            "ofSeconds",
-            vec![self.jvm.new_long(30)],
-        );
+        let timeout_seconds = 30;
+        let instant = std::time::Instant::now();
+        let mut finished = false;
+        while !finished {
+            let timeout = self.jvm.call_static(
+                "java.time.Duration",
+                "ofSeconds",
+                vec![self.jvm.new_long(timeout_seconds as i64)],
+            );
+            // the poll method documentation claims that it will await the timeout if there are no records available.
+            // but it will actually return immediately if it receives a transaction control record,
+            // so we need to add to wrap it in our own timeout logic.
+            let result = tokio::task::block_in_place(|| self.consumer.call("poll", vec![timeout]));
 
-        let result = tokio::task::block_in_place(|| self.consumer.call("poll", vec![timeout]));
+            for record in result.call("iterator", vec![]) {
+                self.waiting_records
+                    .push_back(record.cast("org.apache.kafka.clients.consumer.ConsumerRecord"));
+                // finished because at least one record was received
+                finished = true;
+            }
 
-        for record in result.call("iterator", vec![]) {
-            self.waiting_records
-                .push_back(record.cast("org.apache.kafka.clients.consumer.ConsumerRecord"));
+            if instant.elapsed() > std::time::Duration::from_secs(timeout_seconds) {
+                // finished because timeout elapsed
+                finished = true;
+            }
         }
     }
 
