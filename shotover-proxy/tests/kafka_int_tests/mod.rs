@@ -404,7 +404,7 @@ async fn cluster_2_racks_multi_shotover(#[case] driver: KafkaDriver) {
 #[cfg_attr(feature = "kafka-cpp-driver-tests", case::cpp(KafkaDriver::Cpp))]
 #[case::java(KafkaDriver::Java)]
 #[tokio::test(flavor = "multi_thread")] // multi_thread is needed since java driver will block when consuming, causing shotover logs to not appear
-async fn cluster_2_racks_multi_shotover_one_shotover_node_goes_down(#[case] driver: KafkaDriver) {
+async fn cluster_2_racks_multi_shotover_with_one_shotover_down(#[case] _driver: KafkaDriver) {
     let _docker_compose =
         docker_compose("tests/test-configs/kafka/cluster-2-racks/docker-compose.yaml");
 
@@ -424,9 +424,10 @@ async fn cluster_2_racks_multi_shotover_one_shotover_node_goes_down(#[case] driv
         );
     }
 
-    let connection_builder = KafkaConnectionBuilder::new(driver, "127.0.0.1:9192");
-    test_cases::cluster_test_suite(&connection_builder).await;
+    // Wait for check_shotover_peers to start
+    tokio::time::sleep(Duration::from_secs(15)).await;
 
+    // Kill one shotover node
     tokio::time::timeout(
         Duration::from_secs(10),
         shotovers.remove(0).shutdown_and_then_consume_events(&[]),
@@ -434,20 +435,27 @@ async fn cluster_2_racks_multi_shotover_one_shotover_node_goes_down(#[case] driv
     .await
     .expect("Shotover did not shutdown within 10s");
 
-    // Wait for the other shotover node to detect the down peer
-    tokio::time::sleep(Duration::from_secs(10)).await;
+    // Wait for the other shotover node to detect the down node
+    tokio::time::sleep(Duration::from_secs(5)).await;
 
     for shotover in shotovers {
-        tokio::time::timeout(
+        let events = tokio::time::timeout(
             Duration::from_secs(10),
             shotover.shutdown_and_then_consume_events(&[EventMatcher::new()
                 .with_level(Level::Warn)
                 .with_target("shotover::transforms::kafka::sink_cluster::shotover_node")
                 .with_message(r#"Shotover peer 127.0.0.1:9191 is down"#)
-                .with_count(Count::Any)]),
+                .with_count(Count::Any)]), // with count > 0 is not supported
         )
         .await
         .expect("Shotover did not shutdown within 10s");
+
+        events.assert_contains(
+            &EventMatcher::new()
+                .with_level(Level::Warn)
+                .with_target("shotover::transforms::kafka::sink_cluster::shotover_node")
+                .with_message(r#"Shotover peer 127.0.0.1:9191 is down"#),
+        );
     }
 }
 
