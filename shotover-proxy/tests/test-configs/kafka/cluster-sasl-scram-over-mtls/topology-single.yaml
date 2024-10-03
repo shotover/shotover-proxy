@@ -20,6 +20,7 @@ sources:
                 verify_hostname: true
               delegation_token_lifetime_seconds: 86400 # 1 day
             connect_timeout_ms: 3000
+            check_shotover_peers_delay_ms: 3000
             tls:
               certificate_authority_path: "tests/test-configs/kafka/tls/certs/localhost_CA.crt"
               certificate_path: "tests/test-configs/kafka/tls/certs/localhost.crt"

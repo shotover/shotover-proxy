@@ -6,12 +6,13 @@ sources:
       chain:
         - KafkaSinkCluster:
             shotover_nodes:
-              - address: "localhost:9191"
+              - address: "127.0.0.1:9191"
                 rack: "rack1"
                 broker_id: 0
-              - address: "localhost:9192"
+              - address: "127.0.0.1:9192"
                 rack: "rack2"
                 broker_id: 1
             local_shotover_broker_id: 0
             first_contact_points: ["172.16.1.5:9092"]
             connect_timeout_ms: 3000
+            check_shotover_peers_delay_ms: 3000

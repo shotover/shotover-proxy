@@ -10,3 +10,4 @@ sources:
         - KafkaSinkSingle:
             destination_port: 9092
             connect_timeout_ms: 3000
+            check_shotover_peers_delay_ms: 3000

@@ -7,6 +7,7 @@ sources:
         - KafkaSinkSingle:
             destination_port: 9092
             connect_timeout_ms: 3000
+            check_shotover_peers_delay_ms: 3000
             tls:
               certificate_authority_path: "tests/test-configs/kafka/tls/certs/localhost_CA.crt"
               verify_hostname: true

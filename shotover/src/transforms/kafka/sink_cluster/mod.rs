@@ -2,6 +2,7 @@ use crate::frame::kafka::{KafkaFrame, RequestBody, ResponseBody};
 use crate::frame::{Frame, MessageType};
 use crate::message::{Message, MessageIdMap, Messages};
 use crate::tls::{TlsConnector, TlsConnectorConfig};
+use crate::transforms::kafka::sink_cluster::shotover_node::start_shotover_peers_check;
 use crate::transforms::{
     ChainState, DownChainProtocol, Transform, TransformBuilder, TransformContextBuilder,
     UpChainProtocol,
@@ -68,7 +69,7 @@ pub struct KafkaSinkClusterConfig {
     pub local_shotover_broker_id: i32,
     pub connect_timeout_ms: u64,
     pub read_timeout: Option<u64>,
-    pub check_shotover_peers_delay_ms: Option<u64>,
+    pub check_shotover_peers_delay_ms: u64,
     pub tls: Option<TlsConnectorConfig>,
     pub authorize_scram_over_mtls: Option<AuthorizeScramOverMtlsConfig>,
 }
@@ -113,9 +114,11 @@ impl TransformConfig for KafkaSinkClusterConfig {
             first_contact_points?,
             &self.authorize_scram_over_mtls,
             shotover_nodes,
+            self.local_shotover_broker_id,
             rack,
             self.connect_timeout_ms,
             self.read_timeout,
+            self.check_shotover_peers_delay_ms,
             tls,
         )?))
     }
@@ -153,13 +156,26 @@ impl KafkaSinkClusterBuilder {
         first_contact_points: Vec<KafkaAddress>,
         authorize_scram_over_mtls: &Option<AuthorizeScramOverMtlsConfig>,
         shotover_nodes: Vec<ShotoverNode>,
+        local_shotover_broker_id: i32,
         rack: StrBytes,
         connect_timeout_ms: u64,
         timeout: Option<u64>,
+        check_shotover_peers_delay_ms: u64,
         tls: Option<TlsConnector>,
     ) -> Result<KafkaSinkClusterBuilder> {
         let read_timeout = timeout.map(Duration::from_secs);
         let connect_timeout = Duration::from_millis(connect_timeout_ms);
+        let shotover_peers = shotover_nodes
+            .iter()
+            .filter(|x| x.broker_id.0 != local_shotover_broker_id)
+            .cloned()
+            .collect();
+
+        start_shotover_peers_check(
+            shotover_peers,
+            check_shotover_peers_delay_ms,
+            connect_timeout_ms,
+        );
 
         Ok(KafkaSinkClusterBuilder {
             first_contact_points,
@@ -2116,8 +2132,9 @@ impl KafkaSinkCluster {
                     })
                     .unwrap();
 
-                find_coordinator.host = shotover_node.address.host.clone();
-                find_coordinator.port = shotover_node.address.port;
+                find_coordinator.host =
+                    StrBytes::from_string(shotover_node.address.ip().to_string());
+                find_coordinator.port = shotover_node.address.port().into();
                 find_coordinator.node_id = shotover_node.broker_id;
             }
         } else {
@@ -2148,8 +2165,9 @@ impl KafkaSinkCluster {
                                 .unwrap_or(true)
                         })
                         .unwrap();
-                    coordinator.host = shotover_node.address.host.clone();
-                    coordinator.port = shotover_node.address.port;
+                    coordinator.host =
+                        StrBytes::from_string(shotover_node.address.ip().to_string());
+                    coordinator.port = shotover_node.address.port().into();
                     coordinator.node_id = shotover_node.broker_id;
                 }
             }
@@ -2166,8 +2184,10 @@ impl KafkaSinkCluster {
                 (
                     shotover_node.broker_id,
                     MetadataResponseBroker::default()
-                        .with_host(shotover_node.address.host.clone())
-                        .with_port(shotover_node.address.port)
+                        .with_host(StrBytes::from_string(
+                            shotover_node.address.ip().to_string(),
+                        ))
+                        .with_port(shotover_node.address.port().into())
                         .with_rack(Some(shotover_node.rack.clone())),
                 )
             })

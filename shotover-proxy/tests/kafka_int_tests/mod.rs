@@ -400,6 +400,54 @@ async fn cluster_2_racks_multi_shotover(#[case] driver: KafkaDriver) {
         .expect("Shotover did not shutdown within 10s");
     }
 }
+#[rstest]
+#[cfg_attr(feature = "kafka-cpp-driver-tests", case::cpp(KafkaDriver::Cpp))]
+#[case::java(KafkaDriver::Java)]
+#[tokio::test(flavor = "multi_thread")] // multi_thread is needed since java driver will block when consuming, causing shotover logs to not appear
+async fn cluster_2_racks_multi_shotover_offline(#[case] driver: KafkaDriver) {
+    let docker_compose =
+        docker_compose("tests/test-configs/kafka/cluster-2-racks/docker-compose.yaml");
+
+    // One shotover instance per rack
+    let mut shotovers = vec![];
+    for i in 1..3 {
+        shotovers.push(
+            shotover_process(&format!(
+                "tests/test-configs/kafka/cluster-2-racks/topology-rack{i}.yaml"
+            ))
+            .with_config(&format!(
+                "tests/test-configs/shotover-config/config{i}.yaml"
+            ))
+            .with_log_name(&format!("shotover{i}"))
+            .start()
+            .await,
+        );
+    }
+
+    let connection_builder = KafkaConnectionBuilder::new(driver, "127.0.0.1:9192");
+
+    test_cases::produce_consume_partitions1_shotover_node_goes_down(
+        driver,
+        &docker_compose,
+        &connection_builder,
+        "shotover_node_goes_down_test",
+        "shotover1",
+    )
+    .await;
+
+    for shotover in shotovers {
+        tokio::time::timeout(
+            Duration::from_secs(10),
+            shotover.shutdown_and_then_consume_events(&[EventMatcher::new()
+                .with_level(Level::Warn)
+                .with_target("shotover::transforms::kafka::sink_cluster::shotover_node")
+                .with_message(r#"Shotover peer 127.0.0.1:9191 is down"#)
+                .with_count(Count::Any)]),
+        )
+        .await
+        .expect("Shotover did not shutdown within 10s");
+    }
+}
 
 #[rstest]
 //#[cfg_attr(feature = "kafka-cpp-driver-tests", case::cpp(KafkaDriver::Cpp))] // CPP driver does not support scram
