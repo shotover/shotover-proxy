@@ -404,8 +404,8 @@ async fn cluster_2_racks_multi_shotover(#[case] driver: KafkaDriver) {
 #[cfg_attr(feature = "kafka-cpp-driver-tests", case::cpp(KafkaDriver::Cpp))]
 #[case::java(KafkaDriver::Java)]
 #[tokio::test(flavor = "multi_thread")] // multi_thread is needed since java driver will block when consuming, causing shotover logs to not appear
-async fn cluster_2_racks_multi_shotover_offline(#[case] driver: KafkaDriver) {
-    let docker_compose =
+async fn cluster_2_racks_multi_shotover_one_shotover_node_goes_down(#[case] driver: KafkaDriver) {
+    let _docker_compose =
         docker_compose("tests/test-configs/kafka/cluster-2-racks/docker-compose.yaml");
 
     // One shotover instance per rack
@@ -425,15 +425,17 @@ async fn cluster_2_racks_multi_shotover_offline(#[case] driver: KafkaDriver) {
     }
 
     let connection_builder = KafkaConnectionBuilder::new(driver, "127.0.0.1:9192");
+    test_cases::cluster_test_suite(&connection_builder).await;
 
-    test_cases::produce_consume_partitions1_shotover_node_goes_down(
-        driver,
-        &docker_compose,
-        &connection_builder,
-        "shotover_node_goes_down_test",
-        "shotover1",
+    tokio::time::timeout(
+        Duration::from_secs(10),
+        shotovers.remove(0).shutdown_and_then_consume_events(&[]),
     )
-    .await;
+    .await
+    .expect("Shotover did not shutdown within 10s");
+
+    // Wait for the other shotover node to detect the down peer
+    tokio::time::sleep(Duration::from_secs(10)).await;
 
     for shotover in shotovers {
         tokio::time::timeout(
