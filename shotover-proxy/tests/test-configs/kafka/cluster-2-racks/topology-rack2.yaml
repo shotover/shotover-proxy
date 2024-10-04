@@ -12,6 +12,6 @@ sources:
               - address: "localhost:9192"
                 rack: "rack2"
                 broker_id: 1
-            local_shotover_broker_id: 0
+            local_shotover_broker_id: 1
             first_contact_points: ["172.16.1.5:9092"]
             connect_timeout_ms: 3000
