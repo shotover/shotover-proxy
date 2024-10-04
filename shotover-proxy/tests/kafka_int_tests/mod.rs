@@ -444,7 +444,7 @@ async fn cluster_2_racks_multi_shotover_with_one_shotover_down(#[case] _driver: 
             shotover.shutdown_and_then_consume_events(&[EventMatcher::new()
                 .with_level(Level::Warn)
                 .with_target("shotover::transforms::kafka::sink_cluster::shotover_node")
-                .with_message(r#"Shotover peer 127.0.0.1:9191 is down"#)
+                .with_message(r#"Shotover peer localhost:9191 is down"#)
                 .with_count(Count::Any)]), // with count > 0 is not supported
         )
         .await
@@ -454,7 +454,7 @@ async fn cluster_2_racks_multi_shotover_with_one_shotover_down(#[case] _driver: 
             &EventMatcher::new()
                 .with_level(Level::Warn)
                 .with_target("shotover::transforms::kafka::sink_cluster::shotover_node")
-                .with_message(r#"Shotover peer 127.0.0.1:9191 is down"#),
+                .with_message(r#"Shotover peer localhost:9191 is down"#),
         );
     }
 }
