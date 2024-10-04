@@ -15,7 +15,7 @@ sources:
               - address: "127.0.0.1:9193"
                 rack: "rack0"
                 broker_id: 2
-            local_shotover_broker_id: 0
+            local_shotover_broker_id: 2
             first_contact_points: ["172.16.1.2:9092"]
             authorize_scram_over_mtls:
               # every shotover node purposefully tests a different number of contact points
