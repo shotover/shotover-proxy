@@ -103,7 +103,10 @@ async fn check_shotover_peers(
                     shotover_peer.set_state(ShotoverNodeState::Up);
                 }
                 Err(_) => {
-                    tracing::warn!("Shotover peer {:?} is down", shotover_peer.address);
+                    tracing::warn!(
+                        "Shotover peer {} is down",
+                        shotover_peer.address.to_string()
+                    );
                     shotover_peer.set_state(ShotoverNodeState::Down);
                 }
             }
