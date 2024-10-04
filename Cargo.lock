@@ -4629,6 +4629,7 @@ dependencies = [
  "pretty-hex",
  "pretty_assertions",
  "rand",
+ "rand_core",
  "redis-protocol",
  "rustls 0.23.12",
  "rustls-pemfile 2.1.3",

@@ -1,11 +1,12 @@
 use crate::tcp::tcp_stream;
+use crate::transforms::kafka::sink_cluster::kafka_node::KafkaAddress;
 use atomic_enum::atomic_enum;
 use kafka_protocol::messages::BrokerId;
 use kafka_protocol::protocol::StrBytes;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
+use rand_core::Error;
 use serde::{Deserialize, Serialize};
-use std::net::SocketAddr;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
@@ -22,7 +23,7 @@ pub struct ShotoverNodeConfig {
 impl ShotoverNodeConfig {
     pub(crate) fn build(self) -> anyhow::Result<ShotoverNode> {
         Ok(ShotoverNode {
-            address: self.address.parse::<SocketAddr>()?,
+            address: KafkaAddress::from_str(&self.address)?,
             rack: StrBytes::from_string(self.rack),
             broker_id: BrokerId(self.broker_id),
             state: Arc::new(AtomicShotoverNodeState::new(ShotoverNodeState::Up)),
@@ -32,7 +33,7 @@ impl ShotoverNodeConfig {
 
 #[derive(Clone)]
 pub(crate) struct ShotoverNode {
-    pub address: SocketAddr,
+    pub address: KafkaAddress,
     pub rack: StrBytes,
     pub broker_id: BrokerId,
     #[allow(unused)]
@@ -66,12 +67,18 @@ pub(crate) fn start_shotover_peers_check(
         // Wait for all shotover nodes to start
         sleep(Duration::from_secs(10)).await;
         loop {
-            check_shotover_peers(
+            match check_shotover_peers(
                 &shotover_peers,
                 check_shotover_peers_delay_ms,
                 connect_timeout_ms,
             )
-            .await;
+            .await
+            {
+                Ok(_) => {}
+                Err(err) => {
+                    tracing::error!("Restarting the shotover peers check due to error: {err:?}");
+                }
+            };
         }
     });
 }
@@ -80,15 +87,15 @@ async fn check_shotover_peers(
     shotover_peers: &[ShotoverNode],
     check_shotover_peers_delay_ms: u64,
     connect_timeout_ms: u64,
-) {
+) -> Result<(), Error> {
     let mut shotover_peers_cycle = shotover_peers.iter().cycle();
-    let mut rng = StdRng::from_rng(rand::thread_rng()).unwrap();
+    let mut rng = StdRng::from_rng(rand::thread_rng())?;
     let check_shotover_peers_delay_ms = check_shotover_peers_delay_ms as i64;
     loop {
         if let Some(shotover_peer) = shotover_peers_cycle.next() {
             let tcp_stream = tcp_stream(
                 Duration::from_millis(connect_timeout_ms),
-                &shotover_peer.address,
+                &shotover_peer.address.to_string().as_str(),
             )
             .await;
             match tcp_stream {
@@ -96,7 +103,7 @@ async fn check_shotover_peers(
                     shotover_peer.set_state(ShotoverNodeState::Up);
                 }
                 Err(_) => {
-                    tracing::warn!("Shotover peer {} is down", shotover_peer.address);
+                    tracing::warn!("Shotover peer {:?} is down", shotover_peer.address);
                     shotover_peer.set_state(ShotoverNodeState::Down);
                 }
             }

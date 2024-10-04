@@ -2141,9 +2141,8 @@ impl KafkaSinkCluster {
                     })
                     .unwrap();
 
-                find_coordinator.host =
-                    StrBytes::from_string(shotover_node.address.ip().to_string());
-                find_coordinator.port = shotover_node.address.port().into();
+                find_coordinator.host = shotover_node.address.host.clone();
+                find_coordinator.port = shotover_node.address.port;
                 find_coordinator.node_id = shotover_node.broker_id;
             }
         } else {
@@ -2174,9 +2173,8 @@ impl KafkaSinkCluster {
                                 .unwrap_or(true)
                         })
                         .unwrap();
-                    coordinator.host =
-                        StrBytes::from_string(shotover_node.address.ip().to_string());
-                    coordinator.port = shotover_node.address.port().into();
+                    coordinator.host = shotover_node.address.host.clone();
+                    coordinator.port = shotover_node.address.port;
                     coordinator.node_id = shotover_node.broker_id;
                 }
             }
@@ -2193,10 +2191,8 @@ impl KafkaSinkCluster {
                 (
                     shotover_node.broker_id,
                     MetadataResponseBroker::default()
-                        .with_host(StrBytes::from_string(
-                            shotover_node.address.ip().to_string(),
-                        ))
-                        .with_port(shotover_node.address.port().into())
+                        .with_host(shotover_node.address.host.clone())
+                        .with_port(shotover_node.address.port)
                         .with_rack(Some(shotover_node.rack.clone())),
                 )
             })

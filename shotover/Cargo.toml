@@ -125,6 +125,7 @@ dashmap = { version = "6.0.0", optional = true }
 atoi = { version = "2.0.0", optional = true }
 fnv = "1.0.7"
 sasl = { version = "0.5.1", optional = true, default-features = false, features = ["scram"] }
+rand_core = "0.6.4"
 
 [dev-dependencies]
 criterion = { version = "2.6.0", features = ["async_tokio"], package = "codspeed-criterion-compat" }
