@@ -63,24 +63,28 @@ pub(crate) fn start_shotover_peers_check(
     check_shotover_peers_delay_ms: u64,
     connect_timeout_ms: u64,
 ) {
-    tokio::spawn(async move {
-        // Wait for all shotover nodes to start
-        sleep(Duration::from_secs(10)).await;
-        loop {
-            match check_shotover_peers(
-                &shotover_peers,
-                check_shotover_peers_delay_ms,
-                connect_timeout_ms,
-            )
-            .await
-            {
-                Ok(_) => {}
-                Err(err) => {
-                    tracing::error!("Restarting the shotover peers check due to error: {err:?}");
-                }
-            };
-        }
-    });
+    if !shotover_peers.is_empty() {
+        tokio::spawn(async move {
+            // Wait for all shotover nodes to start
+            sleep(Duration::from_secs(10)).await;
+            loop {
+                match check_shotover_peers(
+                    &shotover_peers,
+                    check_shotover_peers_delay_ms,
+                    connect_timeout_ms,
+                )
+                .await
+                {
+                    Ok(_) => {}
+                    Err(err) => {
+                        tracing::error!(
+                            "Restarting the shotover peers check due to error: {err:?}"
+                        );
+                    }
+                };
+            }
+        });
+    }
 }
 
 async fn check_shotover_peers(
