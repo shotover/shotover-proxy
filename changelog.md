@@ -10,6 +10,10 @@ This assists us in knowing when to make the next release a breaking release and 
 * `Transform::transform` now takes `&mut Wrapper` instead of `Wrapper`.
 * `Wrapper` is renamed to ChainState.
 
+### topology.yaml
+
+* A new mandatory configuration `check_shotover_peers_delay_ms` is added for `KafkaSinkCluster`. See [transform.md](docs/src/transforms.md) for details on this configuration.
+
 ## 0.4.0
 
 ### shotover rust API
