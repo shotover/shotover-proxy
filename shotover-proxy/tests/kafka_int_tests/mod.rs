@@ -445,11 +445,12 @@ async fn cluster_2_racks_multi_shotover_with_one_shotover_down(#[case] _driver: 
                 .with_level(Level::Warn)
                 .with_target("shotover::transforms::kafka::sink_cluster::shotover_node")
                 .with_message(r#"Shotover peer localhost:9191 is down"#)
-                .with_count(Count::Any)]), // with count > 0 is not supported
+                .with_count(Count::Any)]),
         )
         .await
         .expect("Shotover did not shutdown within 10s");
 
+        // We need another assertion because Count::Any includes 0 and Count::Some (count >= 1) is currently not supported
         events.assert_contains(
             &EventMatcher::new()
                 .with_level(Level::Warn)

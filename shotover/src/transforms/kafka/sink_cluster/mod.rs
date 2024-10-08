@@ -174,7 +174,7 @@ impl KafkaSinkClusterBuilder {
         start_shotover_peers_check(
             shotover_peers,
             check_shotover_peers_delay_ms,
-            connect_timeout_ms,
+            connect_timeout,
         );
 
         Ok(KafkaSinkClusterBuilder {

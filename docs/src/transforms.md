@@ -293,8 +293,8 @@ If SCRAM authentication against the first kafka broker fails, shotover will term
     # When a timeout occurs the connection to the client is immediately closed.
     # read_timeout: 60
 
-    # Delay in milliseconds before the local shotover node checks its next peer's node state.
-    # The local shotover node will try to establish a TCP connection with the next peer in the list.
+    # If shotover detects that a peer is down shotover will exclude the down peer from its metadata reports to the client.
+    # Each peer is checked in a round robin fashion and this `check_shotover_peers_delay_ms` field defines the milliseconds delay taken before moving onto the next peer to check.
     # If the connection cannot be established within connect_timeout_ms, then the peer is considered down.
     check_shotover_peers_delay_ms: 3000
 

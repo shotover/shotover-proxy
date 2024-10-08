@@ -5,7 +5,6 @@ use kafka_protocol::messages::BrokerId;
 use kafka_protocol::protocol::StrBytes;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
-use rand_core::Error;
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -61,7 +60,7 @@ pub(crate) enum ShotoverNodeState {
 pub(crate) fn start_shotover_peers_check(
     shotover_peers: Vec<ShotoverNode>,
     check_shotover_peers_delay_ms: u64,
-    connect_timeout_ms: u64,
+    connect_timeout: Duration,
 ) {
     if !shotover_peers.is_empty() {
         tokio::spawn(async move {
@@ -71,7 +70,7 @@ pub(crate) fn start_shotover_peers_check(
                 match check_shotover_peers(
                     &shotover_peers,
                     check_shotover_peers_delay_ms,
-                    connect_timeout_ms,
+                    connect_timeout,
                 )
                 .await
                 {
@@ -90,16 +89,19 @@ pub(crate) fn start_shotover_peers_check(
 async fn check_shotover_peers(
     shotover_peers: &[ShotoverNode],
     check_shotover_peers_delay_ms: u64,
-    connect_timeout_ms: u64,
-) -> Result<(), Error> {
+    connect_timeout: Duration,
+) -> Result<(), anyhow::Error> {
     let mut shotover_peers_cycle = shotover_peers.iter().cycle();
     let mut rng = StdRng::from_rng(rand::thread_rng())?;
     let check_shotover_peers_delay_ms = check_shotover_peers_delay_ms as i64;
     loop {
         if let Some(shotover_peer) = shotover_peers_cycle.next() {
             let tcp_stream = tcp_stream(
-                Duration::from_millis(connect_timeout_ms),
-                &shotover_peer.address.to_string().as_str(),
+                connect_timeout,
+                (
+                    shotover_peer.address.host.as_str(),
+                    shotover_peer.address.port as u16,
+                ),
             )
             .await;
             match tcp_stream {
@@ -107,10 +109,7 @@ async fn check_shotover_peers(
                     shotover_peer.set_state(ShotoverNodeState::Up);
                 }
                 Err(_) => {
-                    tracing::warn!(
-                        "Shotover peer {} is down",
-                        shotover_peer.address.to_string()
-                    );
+                    tracing::warn!("Shotover peer {} is down", shotover_peer.address);
                     shotover_peer.set_state(ShotoverNodeState::Down);
                 }
             }
