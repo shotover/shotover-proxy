@@ -105,16 +105,16 @@ impl Transform for RedisClusterPortsRewrite {
                         if let Some(frame) = response.frame() {
                             rewrite_port_slot(frame, self.new_port)
                                 .context("failed to rewrite CLUSTER SLOTS port")?;
+                            response.invalidate_cache();
                         }
-                        response.invalidate_cache();
                     }
                     // Rewrite the ports in the cluster nodes responses
                     Some(RequestType::ClusterNodes) => {
                         if let Some(frame) = response.frame() {
                             rewrite_port_node(frame, self.new_port)
                                 .context("failed to rewrite CLUSTER NODES port")?;
+                            response.invalidate_cache();
                         }
-                        response.invalidate_cache();
                     }
                     None => {}
                 }
