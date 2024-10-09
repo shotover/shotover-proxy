@@ -1,7 +1,7 @@
 use super::{
     Acl, AclOperation, AclPermissionType, AlterConfig, ConsumerConfig, ExpectedResponse,
-    NewPartition, NewTopic, Record, ResourcePatternType, ResourceSpecifier, ResourceType,
-    TopicDescription, TopicPartition,
+    ListOffsetsResultInfo, NewPartition, NewTopic, OffsetSpec, Record, ResourcePatternType,
+    ResourceSpecifier, ResourceType, TopicDescription, TopicPartition,
 };
 use crate::connection::java::{Jvm, Value};
 use anyhow::Result;
@@ -34,6 +34,14 @@ impl KafkaConnectionBuilderJava {
             "org.slf4j:slf4j-api:1.7.36",
             "org.slf4j:slf4j-simple:1.7.36",
         ]);
+        jvm.call_static(
+            "java.lang.System",
+            "setProperty",
+            vec![
+                jvm.new_string("org.slf4j.simpleLogger.defaultLogLevel"),
+                jvm.new_string("WARN"),
+            ],
+        );
 
         let base_config = HashMap::from([("bootstrap.servers".to_owned(), address.to_owned())]);
         KafkaConnectionBuilderJava { jvm, base_config }
@@ -253,13 +261,7 @@ impl KafkaConsumerJava {
             .iter()
             .map(|(tp, offset)| {
                 (
-                    self.jvm.construct(
-                        "org.apache.kafka.common.TopicPartition",
-                        vec![
-                            self.jvm.new_string(&tp.topic_name),
-                            self.jvm.new_int(tp.partition),
-                        ],
-                    ),
+                    create_topic_partition(&self.jvm, tp),
                     self.jvm.construct(
                         "org.apache.kafka.clients.consumer.OffsetAndMetadata",
                         vec![self.jvm.new_long(*offset)],
@@ -279,13 +281,7 @@ impl KafkaConsumerJava {
         let mut offsets = HashMap::new();
 
         for tp in partitions {
-            let topic_partition = self.jvm.construct(
-                "org.apache.kafka.common.TopicPartition",
-                vec![
-                    self.jvm.new_string(&tp.topic_name),
-                    self.jvm.new_int(tp.partition),
-                ],
-            );
+            let topic_partition = create_topic_partition(&self.jvm, &tp);
 
             let timeout = self.jvm.call_static(
                 "java.time.Duration",
@@ -471,6 +467,49 @@ impl KafkaAdminJava {
             .await;
     }
 
+    pub async fn list_offsets(
+        &self,
+        topic_partitions: HashMap<TopicPartition, OffsetSpec>,
+    ) -> HashMap<TopicPartition, ListOffsetsResultInfo> {
+        let offset_spec_class = "org.apache.kafka.clients.admin.OffsetSpec";
+        let topic_partitions_java: Vec<_> = topic_partitions
+            .iter()
+            .map(|(topic_partition, offset_spec)| {
+                (
+                    create_topic_partition(&self.jvm, topic_partition),
+                    match offset_spec {
+                        OffsetSpec::Earliest => {
+                            self.jvm.call_static(offset_spec_class, "earliest", vec![])
+                        }
+                        OffsetSpec::Latest => {
+                            self.jvm.call_static(offset_spec_class, "latest", vec![])
+                        }
+                    },
+                )
+            })
+            .collect();
+        let topic_partitions_java = self.jvm.new_map(topic_partitions_java);
+
+        let java_results = self
+            .admin
+            .call("listOffsets", vec![topic_partitions_java])
+            .call_async("all", vec![])
+            .await;
+
+        let mut results = HashMap::new();
+        for topic_partition in topic_partitions.into_keys() {
+            let result = java_results
+                .call(
+                    "get",
+                    vec![create_topic_partition(&self.jvm, &topic_partition)],
+                )
+                .cast("org.apache.kafka.clients.admin.ListOffsetsResult$ListOffsetsResultInfo");
+            let offset: i32 = result.call("offset", vec![]).into_rust();
+            results.insert(topic_partition, ListOffsetsResultInfo { offset });
+        }
+        results
+    }
+
     pub async fn create_acls(&self, acls: Vec<Acl>) {
         let resource_type = self
             .jvm
@@ -551,4 +590,11 @@ impl KafkaAdminJava {
             .call_async("all", vec![])
             .await;
     }
+}
+
+fn create_topic_partition(jvm: &Jvm, tp: &TopicPartition) -> Value {
+    jvm.construct(
+        "org.apache.kafka.common.TopicPartition",
+        vec![jvm.new_string(&tp.topic_name), jvm.new_int(tp.partition)],
+    )
 }

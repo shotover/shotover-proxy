@@ -280,6 +280,17 @@ impl KafkaAdmin {
         }
     }
 
+    pub async fn list_offsets(
+        &self,
+        topic_partitions: HashMap<TopicPartition, OffsetSpec>,
+    ) -> HashMap<TopicPartition, ListOffsetsResultInfo> {
+        match self {
+            #[cfg(feature = "kafka-cpp-driver-tests")]
+            Self::Cpp(_) => panic!("rdkafka-rs driver does not support list_offsets"),
+            Self::Java(java) => java.list_offsets(topic_partitions).await,
+        }
+    }
+
     pub async fn create_partitions(&self, partitions: &[NewPartition<'_>]) {
         match self {
             #[cfg(feature = "kafka-cpp-driver-tests")]
@@ -313,6 +324,11 @@ impl KafkaAdmin {
     }
 }
 
+#[derive(Eq, PartialEq, Debug)]
+pub struct ListOffsetsResultInfo {
+    pub offset: i32,
+}
+
 pub struct NewTopic<'a> {
     pub name: &'a str,
     pub num_partitions: i32,
@@ -324,7 +340,7 @@ pub struct NewPartition<'a> {
     pub new_partition_count: i32,
 }
 
-#[derive(Clone, Eq, PartialEq, Hash)]
+#[derive(Clone, Eq, PartialEq, Hash, Debug)]
 pub struct TopicPartition {
     pub topic_name: String,
     pub partition: i32,
@@ -397,6 +413,11 @@ pub struct TopicDescription {
     // None of our tests actually make use of the contents of TopicDescription,
     // instead they just check if the describe succeeded or failed,
     // so this is intentionally left empty for now
+}
+
+pub enum OffsetSpec {
+    Earliest,
+    Latest,
 }
 
 #[derive(Default)]
