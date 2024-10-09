@@ -1516,7 +1516,6 @@ impl KafkaSinkCluster {
         // Take this response as base.
         // Then iterate over all remaining combined responses and integrate them into the base.
         let mut base = drain.next().unwrap();
-        base.invalidate_cache();
 
         match base.frame() {
             Some(Frame::Kafka(KafkaFrame::Response {
@@ -1533,6 +1532,8 @@ impl KafkaSinkCluster {
                 ))
             }
         }
+
+        base.invalidate_cache();
 
         Ok(base)
     }

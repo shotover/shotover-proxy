@@ -359,6 +359,9 @@ impl Message {
     /// This must be called after any modifications to the return value of `Message::frame()`.
     /// Otherwise values returned by getter methods and the message sent to the DB will be outdated.
     ///
+    /// An error will be logged if this method is called without first making a call to `Message::frame()` that returns Some(_).
+    /// This is because it is a noop in that case and likely a mistake.
+    ///
     /// ## Performance implications
     /// * Clears caches used by getter methods
     /// * If `Message::frame()` has been called the message bytes must be regenerated from the `Frame` when sent to the DB
@@ -598,7 +601,10 @@ impl MessageInner {
 
     fn invalidate_cache(self) -> Self {
         match self {
-            MessageInner::RawBytes { .. } => self,
+            MessageInner::RawBytes { .. } => {
+                tracing::error!("Invalidated cache but the frame was not parsed");
+                self
+            }
             MessageInner::Parsed { frame, .. } => MessageInner::Modified { frame },
             MessageInner::Modified { .. } => self,
         }

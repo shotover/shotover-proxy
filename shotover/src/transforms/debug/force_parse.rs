@@ -109,24 +109,26 @@ impl Transform for DebugForceParse {
         &mut self,
         chain_state: &'shorter mut ChainState<'longer>,
     ) -> Result<Messages> {
-        for message in &mut chain_state.requests {
+        for request in &mut chain_state.requests {
             if self.parse_requests {
-                message.frame();
+                request.frame();
             }
             if self.encode_requests {
-                message.invalidate_cache();
+                request.frame();
+                request.invalidate_cache();
             }
         }
 
         let mut response = chain_state.call_next_transform().await;
 
-        if let Ok(response) = response.as_mut() {
-            for message in response {
+        if let Ok(responses) = response.as_mut() {
+            for response in responses {
                 if self.parse_responses {
-                    message.frame();
+                    response.frame();
                 }
                 if self.encode_responses {
-                    message.invalidate_cache();
+                    response.frame();
+                    response.invalidate_cache();
                 }
             }
         }
