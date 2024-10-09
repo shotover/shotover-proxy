@@ -400,6 +400,61 @@ async fn cluster_2_racks_multi_shotover(#[case] driver: KafkaDriver) {
         .expect("Shotover did not shutdown within 10s");
     }
 }
+#[rstest]
+#[cfg_attr(feature = "kafka-cpp-driver-tests", case::cpp(KafkaDriver::Cpp))]
+#[case::java(KafkaDriver::Java)]
+#[tokio::test(flavor = "multi_thread")] // multi_thread is needed since java driver will block when consuming, causing shotover logs to not appear
+async fn cluster_2_racks_multi_shotover_with_one_shotover_down(#[case] driver: KafkaDriver) {
+    let _docker_compose =
+        docker_compose("tests/test-configs/kafka/cluster-2-racks/docker-compose.yaml");
+
+    // One shotover instance per rack
+    let mut shotovers = vec![];
+    for i in 1..3 {
+        shotovers.push(
+            shotover_process(&format!(
+                "tests/test-configs/kafka/cluster-2-racks/topology-rack{i}.yaml"
+            ))
+            .with_config(&format!(
+                "tests/test-configs/shotover-config/config{i}.yaml"
+            ))
+            .with_log_name(&format!("shotover{i}"))
+            .start()
+            .await,
+        );
+    }
+
+    // Wait for check_shotover_peers to start
+    tokio::time::sleep(Duration::from_secs(15)).await;
+
+    // Kill one shotover node
+    tokio::time::timeout(
+        Duration::from_secs(10),
+        shotovers.remove(0).shutdown_and_then_consume_events(&[]),
+    )
+    .await
+    .expect("Shotover did not shutdown within 10s");
+
+    // Wait for the other shotover node to detect the down node
+    tokio::time::sleep(Duration::from_secs(5)).await;
+
+    for shotover in shotovers {
+        let events = tokio::time::timeout(
+            Duration::from_secs(10),
+            shotover.shutdown_and_then_consume_events(&multi_shotover_events(driver)),
+        )
+        .await
+        .expect("Shotover did not shutdown within 10s");
+
+        // Check if the other shotover node detected the killed node
+        events.assert_contains(
+            &EventMatcher::new()
+                .with_level(Level::Warn)
+                .with_target("shotover::transforms::kafka::sink_cluster::shotover_node")
+                .with_message(r#"Shotover peer localhost:9191 is down"#),
+        );
+    }
+}
 
 #[rstest]
 //#[cfg_attr(feature = "kafka-cpp-driver-tests", case::cpp(KafkaDriver::Cpp))] // CPP driver does not support scram
@@ -676,6 +731,36 @@ async fn cluster_sasl_plain_multi_shotover(#[case] driver: KafkaDriver) {
 }
 
 fn multi_shotover_events(driver: KafkaDriver) -> Vec<EventMatcher> {
+    // Shotover nodes can be detected as down during shutdown.
+    // We should ignore "Shotover peer ... is down" for multi-shotover tests where shotover nodes are not killed.
+    let mut expected_events = vec![
+        EventMatcher::new()
+            .with_level(Level::Warn)
+            .with_target("shotover::transforms::kafka::sink_cluster::shotover_node")
+            .with_message(r#"Shotover peer 127.0.0.1:9191 is down"#)
+            .with_count(Count::Any),
+        EventMatcher::new()
+            .with_level(Level::Warn)
+            .with_target("shotover::transforms::kafka::sink_cluster::shotover_node")
+            .with_message(r#"Shotover peer 127.0.0.1:9192 is down"#)
+            .with_count(Count::Any),
+        EventMatcher::new()
+            .with_level(Level::Warn)
+            .with_target("shotover::transforms::kafka::sink_cluster::shotover_node")
+            .with_message(r#"Shotover peer 127.0.0.1:9193 is down"#)
+            .with_count(Count::Any),
+        EventMatcher::new()
+            .with_level(Level::Warn)
+            .with_target("shotover::transforms::kafka::sink_cluster::shotover_node")
+            .with_message(r#"Shotover peer localhost:9191 is down"#)
+            .with_count(Count::Any),
+        EventMatcher::new()
+            .with_level(Level::Warn)
+            .with_target("shotover::transforms::kafka::sink_cluster::shotover_node")
+            .with_message(r#"Shotover peer localhost:9192 is down"#)
+            .with_count(Count::Any),
+    ];
+
     #[allow(irrefutable_let_patterns)]
     if let KafkaDriver::Java = driver {
         // The java driver manages to send requests fast enough that shotover's find_coordinator_of_group method
@@ -683,14 +768,14 @@ fn multi_shotover_events(driver: KafkaDriver) -> Vec<EventMatcher> {
         // If the client were connecting directly to kafka it would get this same error, so it doesnt make sense for us to retry on error.
         // Instead we just let shotover pass on the NOT_COORDINATOR error to the client which triggers this warning in the process.
         // So we ignore the warning in this case.
-        vec![EventMatcher::new()
-            .with_level(Level::Warn)
-            .with_target("shotover::transforms::kafka::sink_cluster")
-            .with_message(
-                r#"no known coordinator for GroupId("some_group"), routing message to a random broker so that a NOT_COORDINATOR or similar error is returned to the client"#,
-            )
-            .with_count(Count::Any)]
-    } else {
-        vec![]
+        expected_events.push(EventMatcher::new()
+                 .with_level(Level::Warn)
+                 .with_target("shotover::transforms::kafka::sink_cluster")
+                 .with_message(
+                     r#"no known coordinator for GroupId("some_group"), routing message to a random broker so that a NOT_COORDINATOR or similar error is returned to the client"#, 
+                 )
+                 .with_count(Count::Any));
     }
+
+    expected_events
 }

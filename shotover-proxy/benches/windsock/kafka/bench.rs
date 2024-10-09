@@ -97,7 +97,7 @@ impl KafkaBench {
             KafkaTopology::Cluster1 | KafkaTopology::Cluster3 => Box::new(KafkaSinkClusterConfig {
                 connect_timeout_ms: 3000,
                 read_timeout: None,
-                check_shotover_peers_delay_ms: None,
+                check_shotover_peers_delay_ms: 3000,
                 first_contact_points: vec![kafka_address],
                 shotover_nodes: vec![ShotoverNodeConfig {
                     address: host_address.parse().unwrap(),

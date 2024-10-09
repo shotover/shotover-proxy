@@ -17,6 +17,7 @@ use sasl::client::mechanisms::Scram;
 use sasl::client::Mechanism;
 use sasl::common::scram::Sha256;
 use sasl::common::ChannelBinding;
+use std::fmt::Display;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
@@ -275,6 +276,12 @@ impl KafkaAddress {
                 .parse()
                 .map_err(|_| anyhow!("Failed to parse address port as integer"))?,
         })
+    }
+}
+
+impl Display for KafkaAddress {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}:{}", self.host.as_str(), self.port)
     }
 }
 
