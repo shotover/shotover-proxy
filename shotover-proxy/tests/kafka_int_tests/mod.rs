@@ -742,13 +742,40 @@ fn multi_shotover_events(driver: KafkaDriver) -> Vec<EventMatcher> {
         // If the client were connecting directly to kafka it would get this same error, so it doesnt make sense for us to retry on error.
         // Instead we just let shotover pass on the NOT_COORDINATOR error to the client which triggers this warning in the process.
         // So we ignore the warning in this case.
+        // In addition, shotover nodes can be detected as down during shutdown.
+        // We should ignore "Shotover peer ... is down" for multi-shotover tests where shotover nodes are not killed.
         vec![EventMatcher::new()
-            .with_level(Level::Warn)
-            .with_target("shotover::transforms::kafka::sink_cluster")
-            .with_message(
-                r#"no known coordinator for GroupId("some_group"), routing message to a random broker so that a NOT_COORDINATOR or similar error is returned to the client"#,
-            )
-            .with_count(Count::Any)]
+                 .with_level(Level::Warn)
+                 .with_target("shotover::transforms::kafka::sink_cluster")
+                 .with_message(
+                     r#"no known coordinator for GroupId("some_group"), routing message to a random broker so that a NOT_COORDINATOR or similar error is returned to the client"#, 
+                 )
+                 .with_count(Count::Any),
+             EventMatcher::new()
+                 .with_level(Level::Warn)
+                 .with_target("shotover::transforms::kafka::sink_cluster::shotover_node")
+                 .with_message(r#"Shotover peer 127.0.0.1:9191 is down"#)
+                 .with_count(Count::Any),
+             EventMatcher::new()
+                 .with_level(Level::Warn)
+                 .with_target("shotover::transforms::kafka::sink_cluster::shotover_node")
+                 .with_message(r#"Shotover peer 127.0.0.1:9192 is down"#)
+                 .with_count(Count::Any),
+             EventMatcher::new()
+                 .with_level(Level::Warn)
+                 .with_target("shotover::transforms::kafka::sink_cluster::shotover_node")
+                 .with_message(r#"Shotover peer 127.0.0.1:9193 is down"#)
+                 .with_count(Count::Any),
+             EventMatcher::new()
+                 .with_level(Level::Warn)
+                 .with_target("shotover::transforms::kafka::sink_cluster::shotover_node")
+                 .with_message(r#"Shotover peer localhost:9191 is down"#)
+                 .with_count(Count::Any),
+             EventMatcher::new()
+                 .with_level(Level::Warn)
+                 .with_target("shotover::transforms::kafka::sink_cluster::shotover_node")
+                 .with_message(r#"Shotover peer localhost:9192 is down"#)
+                 .with_count(Count::Any),]
     } else {
         vec![]
     }
