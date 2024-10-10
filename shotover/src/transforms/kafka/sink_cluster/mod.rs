@@ -742,14 +742,14 @@ impl KafkaSinkCluster {
                     ..
                 })) => {
                     let group_id = heartbeat.group_id.clone();
-                    self.route_to_coordinator(message, group_id);
+                    self.route_to_group_coordinator(message, group_id);
                 }
                 Some(Frame::Kafka(KafkaFrame::Request {
                     body: RequestBody::SyncGroup(sync_group),
                     ..
                 })) => {
                     let group_id = sync_group.group_id.clone();
-                    self.route_to_coordinator(message, group_id);
+                    self.route_to_group_coordinator(message, group_id);
                 }
                 Some(Frame::Kafka(KafkaFrame::Request {
                     body: RequestBody::OffsetFetch(offset_fetch),
@@ -766,28 +766,28 @@ impl KafkaSinkCluster {
                         // For now just pick the first group as that is sufficient for the simple cases.
                         offset_fetch.groups.first().unwrap().group_id.clone()
                     };
-                    self.route_to_coordinator(message, group_id);
+                    self.route_to_group_coordinator(message, group_id);
                 }
                 Some(Frame::Kafka(KafkaFrame::Request {
                     body: RequestBody::OffsetCommit(offset_commit),
                     ..
                 })) => {
                     let group_id = offset_commit.group_id.clone();
-                    self.route_to_coordinator(message, group_id);
+                    self.route_to_group_coordinator(message, group_id);
                 }
                 Some(Frame::Kafka(KafkaFrame::Request {
                     body: RequestBody::JoinGroup(join_group),
                     ..
                 })) => {
                     let group_id = join_group.group_id.clone();
-                    self.route_to_coordinator(message, group_id);
+                    self.route_to_group_coordinator(message, group_id);
                 }
                 Some(Frame::Kafka(KafkaFrame::Request {
                     body: RequestBody::LeaveGroup(leave_group),
                     ..
                 })) => {
                     let group_id = leave_group.group_id.clone();
-                    self.route_to_coordinator(message, group_id);
+                    self.route_to_group_coordinator(message, group_id);
                 }
                 Some(Frame::Kafka(KafkaFrame::Request {
                     body: RequestBody::DeleteGroups(groups),
@@ -795,7 +795,7 @@ impl KafkaSinkCluster {
                 })) => {
                     // TODO: we need to split this up into multiple requests so it can be correctly routed to all possible nodes
                     let group_id = groups.groups_names.first().unwrap().clone();
-                    self.route_to_coordinator(message, group_id);
+                    self.route_to_group_coordinator(message, group_id);
                 }
                 Some(Frame::Kafka(KafkaFrame::Request {
                     body: RequestBody::FindCoordinator(_),
@@ -2148,12 +2148,12 @@ impl KafkaSinkCluster {
         );
     }
 
-    fn route_to_coordinator(&mut self, request: Message, group_id: GroupId) {
+    fn route_to_group_coordinator(&mut self, request: Message, group_id: GroupId) {
         let destination = self.group_to_coordinator_broker.get(&group_id);
         let destination = match destination {
             Some(destination) => *destination,
             None => {
-                tracing::warn!("no known coordinator for {group_id:?}, routing message to a random broker so that a NOT_COORDINATOR or similar error is returned to the client");
+                tracing::info!("no known coordinator for {group_id:?}, routing message to a random broker so that a NOT_COORDINATOR or similar error is returned to the client");
                 random_broker_id(&self.nodes, &mut self.rng)
             }
         };
