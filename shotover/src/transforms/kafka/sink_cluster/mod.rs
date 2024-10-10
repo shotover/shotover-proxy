@@ -13,7 +13,6 @@ use async_trait::async_trait;
 use connections::{Connections, Destination};
 use dashmap::DashMap;
 use kafka_node::{ConnectionFactory, KafkaAddress, KafkaNode, KafkaNodeState};
-use kafka_protocol::indexmap::IndexMap;
 use kafka_protocol::messages::fetch_request::FetchTopic;
 use kafka_protocol::messages::fetch_response::LeaderIdAndEpoch as FetchResponseLeaderIdAndEpoch;
 use kafka_protocol::messages::list_offsets_request::ListOffsetsTopic;
@@ -611,8 +610,8 @@ impl KafkaSinkCluster {
                     body: RequestBody::Produce(produce),
                     ..
                 })) => {
-                    for (name, _) in &produce.topic_data {
-                        self.store_topic_names(&mut topic_names, name.clone());
+                    for topic_data in &produce.topic_data {
+                        self.store_topic_names(&mut topic_names, topic_data.name.clone());
                     }
                 }
                 Some(Frame::Kafka(KafkaFrame::Request {
@@ -694,7 +693,7 @@ impl KafkaSinkCluster {
                     body: ResponseBody::Metadata(metadata),
                     ..
                 })) => {
-                    for topic in metadata.topics.values() {
+                    for topic in &metadata.topics {
                         match ResponseError::try_from_code(topic.error_code) {
                             Some(ResponseError::UnknownTopicOrPartition) => {
                                 // We need to look up all topics sent to us by the client
@@ -858,7 +857,7 @@ impl KafkaSinkCluster {
                     destination
                 };
 
-                produce.topic_data = topic_data;
+                produce.topic_data = topic_data.into_values().collect();
                 self.pending_requests.push_back(PendingRequest {
                     state: PendingRequestState::routed(destination, message),
                     ty: PendingRequestTy::Other,
@@ -890,7 +889,7 @@ impl KafkaSinkCluster {
                         ..
                     })) = request.frame()
                     {
-                        produce.topic_data = topic_data;
+                        produce.topic_data = topic_data.into_values().collect();
                     }
                     self.pending_requests.push_back(PendingRequest {
                         state: PendingRequestState::routed(destination, request),
@@ -910,12 +909,13 @@ impl KafkaSinkCluster {
     fn split_produce_request_by_destination(
         &mut self,
         produce: &mut ProduceRequest,
-    ) -> HashMap<BrokerId, IndexMap<TopicName, TopicProduceData>> {
-        let mut result: HashMap<BrokerId, IndexMap<TopicName, TopicProduceData>> =
+    ) -> HashMap<BrokerId, HashMap<TopicName, TopicProduceData>> {
+        let mut result: HashMap<BrokerId, HashMap<TopicName, TopicProduceData>> =
             Default::default();
 
-        for (name, mut topic) in produce.topic_data.drain(..) {
-            let topic_meta = self.topic_by_name.get(&name);
+        for mut topic in produce.topic_data.drain(..) {
+            let name = &topic.name;
+            let topic_meta = self.topic_by_name.get(name);
             if let Some(topic_meta) = topic_meta {
                 for partition in std::mem::take(&mut topic.partition_data) {
                     let partition_index = partition.index as usize;
@@ -940,7 +940,7 @@ impl KafkaSinkCluster {
                     // Get the topics already routed to this destination
                     let routed_topics = result.entry(destination).or_default();
 
-                    if let Some(routed_topic) = routed_topics.get_mut(&name) {
+                    if let Some(routed_topic) = routed_topics.get_mut(name) {
                         // we have already routed this topic to this broker, add another partition
                         routed_topic.partition_data.push(partition);
                     } else {
@@ -961,7 +961,7 @@ impl KafkaSinkCluster {
                 );
                 let destination = BrokerId(-1);
                 let dest_topics = result.entry(destination).or_default();
-                dest_topics.insert(name, topic);
+                dest_topics.insert(name.clone(), topic);
             }
         }
 
@@ -1793,8 +1793,13 @@ impl KafkaSinkCluster {
                 ..
             })) = next.frame()
             {
-                for (next_name, next_response) in std::mem::take(&mut next_produce.responses) {
-                    if let Some(base_response) = base_produce.responses.get_mut(&next_name) {
+                for next_response in std::mem::take(&mut next_produce.responses) {
+                    // TODO: evaluate if this linear lookup is ok.
+                    if let Some(base_response) = base_produce
+                        .responses
+                        .iter_mut()
+                        .find(|x| x.name == next_response.name)
+                    {
                         for next_partition in &next_response.partition_responses {
                             for base_partition in &base_response.partition_responses {
                                 if next_partition.index == base_partition.index {
@@ -1807,7 +1812,7 @@ impl KafkaSinkCluster {
                             .partition_responses
                             .extend(next_response.partition_responses)
                     } else {
-                        base_produce.responses.insert(next_name, next_response);
+                        base_produce.responses.push(next_response);
                     }
                 }
             } else {
@@ -1875,7 +1880,8 @@ impl KafkaSinkCluster {
             })) => {
                 // Clear this optional field to avoid making clients try to bypass shotover
                 produce.node_endpoints.clear();
-                for (topic_name, response_topic) in &mut produce.responses {
+                for response_topic in &mut produce.responses {
+                    let topic_name = &response_topic.name;
                     for response_partition in &response_topic.partition_responses {
                         if let Some(ResponseError::NotLeaderOrFollower) =
                             ResponseError::try_from_code(response_partition.error_code)
@@ -1998,7 +2004,8 @@ impl KafkaSinkCluster {
                 ..
             })) => {
                 // clear metadata that resulted in NotCoordinator error
-                for (group_id, result) in &delete_groups.results {
+                for result in &delete_groups.results {
+                    let group_id = &result.group_id;
                     if let Some(ResponseError::NotCoordinator) =
                         ResponseError::try_from_code(result.error_code)
                     {
@@ -2010,7 +2017,7 @@ impl KafkaSinkCluster {
                 body: ResponseBody::CreateTopics(create_topics),
                 ..
             })) => {
-                for topic in create_topics.topics.values() {
+                for topic in &create_topics.topics {
                     if let Some(ResponseError::NotController) =
                         ResponseError::try_from_code(topic.error_code)
                     {
@@ -2193,9 +2200,9 @@ impl KafkaSinkCluster {
     }
 
     async fn process_metadata_response(&mut self, metadata: &MetadataResponse) {
-        for (id, broker) in &metadata.brokers {
+        for broker in &metadata.brokers {
             let node = KafkaNode::new(
-                *id,
+                broker.node_id,
                 KafkaAddress::new(broker.host.clone(), broker.port),
                 broker.rack.clone(),
             );
@@ -2208,7 +2215,7 @@ impl KafkaSinkCluster {
         );
         self.controller_broker.set(metadata.controller_id);
 
-        for (topic_name, topic) in &metadata.topics {
+        for topic in &metadata.topics {
             if ResponseError::try_from_code(topic.error_code).is_none() {
                 // We use the response's partitions list as a base
                 // since if it has deleted an entry then we also want to delete that entry.
@@ -2238,40 +2245,42 @@ impl KafkaSinkCluster {
                 // If topic_by_name contains any partitions with a more recent leader_epoch use that instead.
                 // The out of date epoch is probably caused by requesting metadata from a broker that is slightly out of date.
                 // We use topic_by_name instead of topic_by_id since its always used regardless of protocol version.
-                if let Some(topic) = self.topic_by_name.get(topic_name) {
-                    for old_partition in &topic.partitions {
-                        if let Some(new_partition) = new_partitions
-                            .iter_mut()
-                            .find(|p| p.index == old_partition.index)
-                        {
-                            if old_partition.leader_epoch > new_partition.leader_epoch {
-                                new_partition.leader_id = old_partition.leader_id;
-                                new_partition
-                                    .shotover_rack_replica_nodes
-                                    .clone_from(&old_partition.shotover_rack_replica_nodes);
-                                new_partition
-                                    .external_rack_replica_nodes
-                                    .clone_from(&old_partition.external_rack_replica_nodes);
+                if let Some(topic_name) = &topic.name {
+                    if let Some(topic) = self.topic_by_name.get(topic_name) {
+                        for old_partition in &topic.partitions {
+                            if let Some(new_partition) = new_partitions
+                                .iter_mut()
+                                .find(|p| p.index == old_partition.index)
+                            {
+                                if old_partition.leader_epoch > new_partition.leader_epoch {
+                                    new_partition.leader_id = old_partition.leader_id;
+                                    new_partition
+                                        .shotover_rack_replica_nodes
+                                        .clone_from(&old_partition.shotover_rack_replica_nodes);
+                                    new_partition
+                                        .external_rack_replica_nodes
+                                        .clone_from(&old_partition.external_rack_replica_nodes);
+                                }
                             }
                         }
-                    }
-                };
+                    };
+                }
 
-                let has_topic_name = !topic_name.is_empty();
+                let has_topic_name = topic.name.is_some();
                 let has_topic_id = !topic.topic_id.is_nil();
 
                 // Since new_partitions can be quite long we avoid logging it twice to keep the debug logs somewhat readable.
                 if has_topic_name && has_topic_id {
                     tracing::debug!(
                         "Storing topic_by_name and topic_by_id metadata: topic {:?} {} -> {:?}",
-                        topic_name.0,
+                        topic.name,
                         topic.topic_id,
                         new_partitions
                     );
                 } else if has_topic_name {
                     tracing::debug!(
                         "Storing topic_by_name metadata: topic {:?} -> {new_partitions:?}",
-                        topic_name.0
+                        topic.name
                     );
                 } else if has_topic_id {
                     tracing::debug!(
@@ -2280,7 +2289,7 @@ impl KafkaSinkCluster {
                     );
                 }
 
-                if has_topic_name {
+                if let Some(topic_name) = &topic.name {
                     self.topic_by_name.insert(
                         topic_name.clone(),
                         Topic {
@@ -2398,18 +2407,16 @@ impl KafkaSinkCluster {
             .shotover_nodes
             .iter()
             .map(|shotover_node| {
-                (
-                    shotover_node.broker_id,
-                    MetadataResponseBroker::default()
-                        .with_host(shotover_node.address.host.clone())
-                        .with_port(shotover_node.address.port)
-                        .with_rack(Some(shotover_node.rack.clone())),
-                )
+                MetadataResponseBroker::default()
+                    .with_node_id(shotover_node.broker_id)
+                    .with_host(shotover_node.address.host.clone())
+                    .with_port(shotover_node.address.port)
+                    .with_rack(Some(shotover_node.rack.clone()))
             })
             .collect();
 
         // Overwrite the list of partitions to point at all shotover nodes within the same rack
-        for (_, topic) in &mut metadata.topics {
+        for topic in &mut metadata.topics {
             for partition in &mut topic.partitions {
                 // Deterministically choose a single shotover node in the rack as leader based on topic + partition id
                 if let Some(leader_rack) = self

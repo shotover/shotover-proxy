@@ -82,7 +82,7 @@ async fn find_new_brokers(nodes: &mut Vec<Node>, rng: &mut SmallRng) -> Result<(
         })) => {
             let new_nodes: Vec<Node> = metadata
                 .brokers
-                .into_values()
+                .into_iter()
                 .filter_map(|broker| {
                     let address = KafkaAddress::new(broker.host, broker.port);
                     if nodes.iter().any(|node| node.address == address) {
