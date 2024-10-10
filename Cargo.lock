@@ -5107,9 +5107,9 @@ dependencies = [
 
 [[package]]
 name = "tokio-bin-process"
-version = "0.5.1"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f87d6f60ca44257ebb6a0f8b73a3d2747ba75c5aacbc84dcc874319146beb6b6"
+checksum = "0581e13b120b43f94b33fac60d6d7b37327e1dddad1b422b72b8dfbda0a453cd"
 dependencies = [
  "anyhow",
  "cargo_metadata",
@@ -5117,7 +5117,7 @@ dependencies = [
  "itertools 0.13.0",
  "nix 0.29.0",
  "nu-ansi-term 0.50.1",
- "once_cell",
+ "regex-lite",
  "serde",
  "serde_json",
  "subprocess",
