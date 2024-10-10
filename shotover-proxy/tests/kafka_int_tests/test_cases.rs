@@ -677,7 +677,7 @@ pub async fn produce_consume_commit_offsets_partitions1(
     }
 }
 
-async fn produce_consume_partitions3(
+pub async fn produce_consume_partitions3(
     connection_builder: &KafkaConnectionBuilder,
     topic_name: &str,
     fetch_min_bytes: i32,
