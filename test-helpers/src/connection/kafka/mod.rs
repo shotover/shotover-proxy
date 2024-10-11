@@ -75,6 +75,22 @@ impl KafkaConnectionBuilder {
         }
     }
 
+    pub async fn connect_producer_with_transactions(
+        &self,
+        transaction_id: String,
+    ) -> KafkaProducer {
+        match self {
+            #[cfg(feature = "kafka-cpp-driver-tests")]
+            Self::Cpp(cpp) => {
+                KafkaProducer::Cpp(cpp.connect_producer_with_transactions(transaction_id))
+            }
+            Self::Java(java) => KafkaProducer::Java(
+                java.connect_producer_with_transactions(transaction_id)
+                    .await,
+            ),
+        }
+    }
+
     pub async fn connect_consumer(&self, config: ConsumerConfig) -> KafkaConsumer {
         match self {
             #[cfg(feature = "kafka-cpp-driver-tests")]
@@ -125,6 +141,41 @@ impl KafkaProducer {
             #[cfg(feature = "kafka-cpp-driver-tests")]
             Self::Cpp(cpp) => cpp.assert_produce(record, expected_offset).await,
             Self::Java(java) => java.assert_produce(record, expected_offset).await,
+        }
+    }
+
+    pub fn begin_transaction(&self) {
+        match self {
+            #[cfg(feature = "kafka-cpp-driver-tests")]
+            Self::Cpp(cpp) => cpp.begin_transaction(),
+            Self::Java(java) => java.begin_transaction(),
+        }
+    }
+
+    pub fn commit_transaction(&self) {
+        match self {
+            #[cfg(feature = "kafka-cpp-driver-tests")]
+            Self::Cpp(cpp) => cpp.commit_transaction(),
+            Self::Java(java) => java.commit_transaction(),
+        }
+    }
+
+    pub fn send_offsets_to_transaction(&self, consumer: &KafkaConsumer) {
+        match self {
+            #[cfg(feature = "kafka-cpp-driver-tests")]
+            Self::Cpp(cpp) => match consumer {
+                KafkaConsumer::Cpp(consumer) => cpp.send_offsets_to_transaction(consumer),
+                KafkaConsumer::Java(_) => {
+                    panic!("Cannot use transactions across java and cpp driver")
+                }
+            },
+            Self::Java(java) => match consumer {
+                KafkaConsumer::Java(consumer) => java.send_offsets_to_transaction(consumer),
+                #[cfg(feature = "kafka-cpp-driver-tests")]
+                KafkaConsumer::Cpp(_) => {
+                    panic!("Cannot use transactions across java and cpp driver")
+                }
+            },
         }
     }
 }
