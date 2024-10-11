@@ -74,6 +74,16 @@ async fn admin_setup(connection_builder: &KafkaConnectionBuilder) {
                 num_partitions: 3,
                 replication_factor: 1,
             },
+            NewTopic {
+                name: "transaction_topic1",
+                num_partitions: 3,
+                replication_factor: 1,
+            },
+            NewTopic {
+                name: "transaction_topic2",
+                num_partitions: 3,
+                replication_factor: 1,
+            },
         ])
         .await;
 
@@ -735,6 +745,111 @@ async fn produce_consume_partitions3(
     }
 }
 
+async fn produce_consume_transactions(connection_builder: &KafkaConnectionBuilder) {
+    let producer = connection_builder.connect_producer("1", 0).await;
+    for i in 0..5 {
+        producer
+            .assert_produce(
+                Record {
+                    payload: &format!("Message1_{i}"),
+                    topic_name: "transaction_topic1",
+                    key: Some("Key".into()),
+                },
+                Some(i * 2),
+            )
+            .await;
+        producer
+            .assert_produce(
+                Record {
+                    payload: &format!("Message2_{i}"),
+                    topic_name: "transaction_topic1",
+                    key: Some("Key".into()),
+                },
+                Some(i * 2 + 1),
+            )
+            .await;
+    }
+
+    let transaction_producer = connection_builder
+        .connect_producer_with_transactions("some_transaction_id".to_owned())
+        .await;
+    let mut consumer_topic1 = connection_builder
+        .connect_consumer(
+            ConsumerConfig::consume_from_topic("transaction_topic1".to_owned())
+                .with_group("some_group1"),
+        )
+        .await;
+    let mut consumer_topic2 = connection_builder
+        .connect_consumer(
+            ConsumerConfig::consume_from_topic("transaction_topic2".to_owned())
+                .with_group("some_group2"),
+        )
+        .await;
+
+    for i in 0..5 {
+        consumer_topic1
+            .assert_consume(ExpectedResponse {
+                message: format!("Message1_{i}"),
+                key: Some("Key".to_owned()),
+                topic_name: "transaction_topic1".to_owned(),
+                offset: Some(i * 2),
+            })
+            .await;
+        consumer_topic1
+            .assert_consume(ExpectedResponse {
+                message: format!("Message2_{i}"),
+                key: Some("Key".into()),
+                topic_name: "transaction_topic1".to_owned(),
+                offset: Some(i * 2 + 1),
+            })
+            .await;
+        transaction_producer.begin_transaction();
+
+        transaction_producer
+            .assert_produce(
+                Record {
+                    payload: &format!("Message1_{i}"),
+                    topic_name: "transaction_topic2",
+                    key: Some("Key".into()),
+                },
+                // Not sure where the extra offset per loop comes from
+                // Possibly the transaction commit counts as a record
+                Some(i * 3),
+            )
+            .await;
+        transaction_producer
+            .assert_produce(
+                Record {
+                    payload: &format!("Message2_{i}"),
+                    topic_name: "transaction_topic2",
+                    key: Some("Key".into()),
+                },
+                Some(i * 3 + 1),
+            )
+            .await;
+
+        transaction_producer.send_offsets_to_transaction(&consumer_topic1);
+        transaction_producer.commit_transaction();
+
+        consumer_topic2
+            .assert_consume_in_any_order(vec![
+                ExpectedResponse {
+                    message: format!("Message1_{i}"),
+                    key: Some("Key".to_owned()),
+                    topic_name: "transaction_topic2".to_owned(),
+                    offset: Some(i * 3),
+                },
+                ExpectedResponse {
+                    message: format!("Message2_{i}"),
+                    key: Some("Key".to_owned()),
+                    topic_name: "transaction_topic2".to_owned(),
+                    offset: Some(i * 3 + 1),
+                },
+            ])
+            .await;
+    }
+}
+
 async fn produce_consume_acks0(connection_builder: &KafkaConnectionBuilder) {
     let topic_name = "acks0";
     let producer = connection_builder.connect_producer("0", 0).await;
@@ -843,6 +958,8 @@ pub async fn standard_test_suite(connection_builder: &KafkaConnectionBuilder) {
     produce_consume_partitions3(connection_builder, "partitions3_case3", 1, 500).await;
     // set the bytes limit to 1MB so that we will not reach it and will hit the 100ms timeout every time.
     produce_consume_partitions3(connection_builder, "partitions3_case4", 1_000_000, 100).await;
+
+    produce_consume_transactions(connection_builder).await;
 
     // Only run this test case on the java driver,
     // since even without going through shotover the cpp driver fails this test.

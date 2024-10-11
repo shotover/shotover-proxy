@@ -13,10 +13,10 @@ use rdkafka::admin::{
 use rdkafka::client::DefaultClientContext;
 use rdkafka::config::ClientConfig;
 use rdkafka::consumer::{Consumer, StreamConsumer};
-use rdkafka::producer::{FutureProducer, FutureRecord};
+use rdkafka::producer::{FutureProducer, FutureRecord, Producer};
 use rdkafka::types::RDKafkaErrorCode;
 use rdkafka::util::Timeout;
-use rdkafka::Message;
+use rdkafka::{Message, TopicPartitionList};
 use std::time::Duration;
 
 pub struct KafkaConnectionBuilderCpp {
@@ -61,6 +61,22 @@ impl KafkaConnectionBuilderCpp {
                 .create()
                 .unwrap(),
         }
+    }
+
+    pub fn connect_producer_with_transactions(&self, transaction_id: String) -> KafkaProducerCpp {
+        let producer: FutureProducer = self
+            .client
+            .clone()
+            .set("transactional.id", transaction_id)
+            .set("message.timeout.ms", "5000")
+            .set("linger.ms", "0")
+            .set("acks", "all")
+            .create()
+            .unwrap();
+        // If the timeout is too low we hit: Transaction error: Failed to initialize Producer ID: Broker: Coordinator load in progress
+        // 5s seems fine
+        producer.init_transactions(Duration::from_secs(5)).unwrap();
+        KafkaProducerCpp { producer }
     }
 
     pub async fn connect_consumer(&self, config: ConsumerConfig) -> KafkaConsumerCpp {
@@ -141,6 +157,24 @@ impl KafkaProducerCpp {
         if let Some(offset) = expected_offset {
             assert_eq!(delivery_status.1, offset, "Unexpected offset");
         }
+    }
+
+    pub fn begin_transaction(&self) {
+        self.producer.begin_transaction().unwrap();
+    }
+
+    pub fn send_offsets_to_transaction(&self, consumer: &KafkaConsumerCpp) {
+        let topic_partitions = TopicPartitionList::new();
+        let consumer_group = consumer.consumer.group_metadata().unwrap();
+        self.producer
+            .send_offsets_to_transaction(&topic_partitions, &consumer_group, Duration::from_secs(1))
+            .unwrap();
+    }
+
+    pub fn commit_transaction(&self) {
+        self.producer
+            .commit_transaction(Duration::from_secs(1))
+            .unwrap();
     }
 }
 
