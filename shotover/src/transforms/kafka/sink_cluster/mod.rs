@@ -2501,7 +2501,7 @@ impl KafkaSinkCluster {
         let destination = match destination {
             Some(destination) => *destination,
             None => {
-                tracing::warn!("no known coordinator for {group_id:?}, routing message to a random broker so that a NOT_COORDINATOR or similar error is returned to the client");
+                tracing::info!("no known coordinator for {group_id:?}, routing message to a random broker so that a NOT_COORDINATOR or similar error is returned to the client");
                 random_broker_id(&self.nodes, &mut self.rng)
             }
         };
