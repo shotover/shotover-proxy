@@ -20,7 +20,9 @@ use kafka_protocol::messages::list_offsets_request::ListOffsetsTopic;
 use kafka_protocol::messages::metadata_request::MetadataRequestTopic;
 use kafka_protocol::messages::metadata_response::MetadataResponseBroker;
 use kafka_protocol::messages::produce_request::TopicProduceData;
-use kafka_protocol::messages::produce_response::LeaderIdAndEpoch as ProduceResponseLeaderIdAndEpoch;
+use kafka_protocol::messages::produce_response::{
+    LeaderIdAndEpoch as ProduceResponseLeaderIdAndEpoch, TopicProduceResponse,
+};
 use kafka_protocol::messages::{
     AddPartitionsToTxnRequest, AddPartitionsToTxnResponse, ApiKey, BrokerId, EndTxnRequest,
     FetchRequest, FetchResponse, FindCoordinatorRequest, FindCoordinatorResponse, GroupId,
@@ -1893,6 +1895,11 @@ impl KafkaSinkCluster {
         base_produce: &mut ProduceResponse,
         drain: impl Iterator<Item = Message>,
     ) -> Result<()> {
+        let mut base_responses: HashMap<TopicName, TopicProduceResponse> =
+            std::mem::take(&mut base_produce.responses)
+                .into_iter()
+                .map(|response| (response.name.clone(), response))
+                .collect();
         for mut next in drain {
             if let Some(Frame::Kafka(KafkaFrame::Response {
                 body: ResponseBody::Produce(next_produce),
@@ -1900,12 +1907,7 @@ impl KafkaSinkCluster {
             })) = next.frame()
             {
                 for next_response in std::mem::take(&mut next_produce.responses) {
-                    // TODO: evaluate if this linear lookup is ok.
-                    if let Some(base_response) = base_produce
-                        .responses
-                        .iter_mut()
-                        .find(|x| x.name == next_response.name)
-                    {
+                    if let Some(base_response) = base_responses.get_mut(&next_response.name) {
                         for next_partition in &next_response.partition_responses {
                             for base_partition in &base_response.partition_responses {
                                 if next_partition.index == base_partition.index {
@@ -1918,7 +1920,7 @@ impl KafkaSinkCluster {
                             .partition_responses
                             .extend(next_response.partition_responses)
                     } else {
-                        base_produce.responses.push(next_response);
+                        base_responses.insert(next_response.name.clone(), next_response);
                     }
                 }
             } else {
@@ -1927,6 +1929,8 @@ impl KafkaSinkCluster {
                 ));
             }
         }
+
+        base_produce.responses.extend(base_responses.into_values());
 
         Ok(())
     }
