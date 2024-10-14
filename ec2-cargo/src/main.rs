@@ -1,4 +1,6 @@
-use aws_throwaway::{Aws, CleanupResources, Ec2Instance, Ec2InstanceDefinition, InstanceType};
+use aws_throwaway::{
+    Aws, CleanupResources, Ec2Instance, Ec2InstanceDefinition, IngressRestriction, InstanceType,
+};
 use cargo_metadata::{Metadata, MetadataCommand};
 use clap::Parser;
 use shellfish::{async_fn, handler::DefaultAsyncHandler, rustyline::DefaultEditor, Command, Shell};
@@ -47,6 +49,7 @@ async fn main() {
 
     let aws = Aws::builder(CleanupResources::AllResources)
         .use_az(Some("us-east-1b".into()))
+        .use_ingress_restriction(IngressRestriction::LocalPublicAddress)
         .build()
         .await;
     let instance_type = InstanceType::from(args.instance_type.as_str());

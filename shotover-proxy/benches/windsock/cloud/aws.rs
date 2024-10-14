@@ -1,5 +1,5 @@
 use anyhow::Result;
-use aws_throwaway::{Aws, Ec2Instance, InstanceType};
+use aws_throwaway::{Aws, Ec2Instance, IngressRestriction, InstanceType};
 use aws_throwaway::{CleanupResources, Ec2InstanceDefinition};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -25,6 +25,7 @@ impl AwsInstances {
         AwsInstances {
             aws: Aws::builder(CleanupResources::WithAppTag(AWS_THROWAWAY_TAG.to_owned()))
                 .use_az(Some("us-east-1b".into()))
+                .use_ingress_restriction(IngressRestriction::LocalPublicAddress)
                 // shotover metrics port
                 .expose_ports_to_internet(vec![9001])
                 .build()

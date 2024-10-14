@@ -9,4 +9,3 @@ license = "Apache-2.0"
 [dependencies]
 shell-quote.workspace = true
 tokio.workspace = true
-subprocess.workspace = true
