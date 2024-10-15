@@ -3,9 +3,9 @@ use std::{collections::HashMap, time::Duration};
 use test_helpers::{
     connection::kafka::{
         Acl, AclOperation, AclPermissionType, AlterConfig, ConfigEntry, ConsumerConfig,
-        ExpectedResponse, KafkaConnectionBuilder, KafkaConsumer, KafkaDriver, KafkaProducer,
-        ListOffsetsResultInfo, NewPartition, NewTopic, OffsetSpec, Record, ResourcePatternType,
-        ResourceSpecifier, ResourceType, TopicPartition,
+        ExpectedResponse, IsolationLevel, KafkaConnectionBuilder, KafkaConsumer, KafkaDriver,
+        KafkaProducer, ListOffsetsResultInfo, NewPartition, NewTopic, OffsetAndMetadata,
+        OffsetSpec, Record, ResourcePatternType, ResourceSpecifier, ResourceType, TopicPartition,
     },
     docker_compose::DockerCompose,
 };
@@ -75,12 +75,22 @@ async fn admin_setup(connection_builder: &KafkaConnectionBuilder) {
                 replication_factor: 1,
             },
             NewTopic {
-                name: "transaction_topic1",
+                name: "transaction_topic1_in",
                 num_partitions: 3,
                 replication_factor: 1,
             },
             NewTopic {
-                name: "transaction_topic2",
+                name: "transaction_topic1_out",
+                num_partitions: 3,
+                replication_factor: 1,
+            },
+            NewTopic {
+                name: "transaction_topic2_in",
+                num_partitions: 3,
+                replication_factor: 1,
+            },
+            NewTopic {
+                name: "transaction_topic2_out",
                 num_partitions: 3,
                 replication_factor: 1,
             },
@@ -285,7 +295,7 @@ pub async fn produce_consume_multi_partition_batch(connection_builder: &KafkaCon
             None,
         ))
     }
-    while let Some(()) = futures.next().await {}
+    while futures.next().await.is_some() {}
 
     // TODO: Would be good to assert this, but first we would need to allow producing to be properly ordered by adding a `produce` method that returns a future.
     //       So its disabled for now.
@@ -745,14 +755,14 @@ async fn produce_consume_partitions3(
     }
 }
 
-async fn produce_consume_transactions(connection_builder: &KafkaConnectionBuilder) {
+async fn produce_consume_transactions_with_abort(connection_builder: &KafkaConnectionBuilder) {
     let producer = connection_builder.connect_producer("1", 0).await;
     for i in 0..5 {
         producer
             .assert_produce(
                 Record {
                     payload: &format!("Message1_{i}"),
-                    topic_name: "transaction_topic1",
+                    topic_name: "transaction_topic1_in",
                     key: Some("Key".into()),
                 },
                 Some(i * 2),
@@ -762,7 +772,7 @@ async fn produce_consume_transactions(connection_builder: &KafkaConnectionBuilde
             .assert_produce(
                 Record {
                     payload: &format!("Message2_{i}"),
-                    topic_name: "transaction_topic1",
+                    topic_name: "transaction_topic1_in",
                     key: Some("Key".into()),
                 },
                 Some(i * 2 + 1),
@@ -773,33 +783,34 @@ async fn produce_consume_transactions(connection_builder: &KafkaConnectionBuilde
     let transaction_producer = connection_builder
         .connect_producer_with_transactions("some_transaction_id".to_owned())
         .await;
-    let mut consumer_topic1 = connection_builder
+    let mut consumer_topic_in = connection_builder
         .connect_consumer(
-            ConsumerConfig::consume_from_topic("transaction_topic1".to_owned())
+            ConsumerConfig::consume_from_topic("transaction_topic1_in".to_owned())
                 .with_group("some_group1"),
         )
         .await;
-    let mut consumer_topic2 = connection_builder
+    let mut consumer_topic_out = connection_builder
         .connect_consumer(
-            ConsumerConfig::consume_from_topic("transaction_topic2".to_owned())
+            ConsumerConfig::consume_from_topic("transaction_topic1_out".to_owned())
+                .with_isolation_level(IsolationLevel::ReadCommitted)
                 .with_group("some_group2"),
         )
         .await;
 
     for i in 0..5 {
-        consumer_topic1
+        consumer_topic_in
             .assert_consume(ExpectedResponse {
                 message: format!("Message1_{i}"),
                 key: Some("Key".to_owned()),
-                topic_name: "transaction_topic1".to_owned(),
+                topic_name: "transaction_topic1_in".to_owned(),
                 offset: Some(i * 2),
             })
             .await;
-        consumer_topic1
+        consumer_topic_in
             .assert_consume(ExpectedResponse {
                 message: format!("Message2_{i}"),
                 key: Some("Key".into()),
-                topic_name: "transaction_topic1".to_owned(),
+                topic_name: "transaction_topic1_in".to_owned(),
                 offset: Some(i * 2 + 1),
             })
             .await;
@@ -809,7 +820,7 @@ async fn produce_consume_transactions(connection_builder: &KafkaConnectionBuilde
             .assert_produce(
                 Record {
                     payload: &format!("Message1_{i}"),
-                    topic_name: "transaction_topic2",
+                    topic_name: "transaction_topic1_out",
                     key: Some("Key".into()),
                 },
                 // Not sure where the extra offset per loop comes from
@@ -821,33 +832,200 @@ async fn produce_consume_transactions(connection_builder: &KafkaConnectionBuilde
             .assert_produce(
                 Record {
                     payload: &format!("Message2_{i}"),
-                    topic_name: "transaction_topic2",
+                    topic_name: "transaction_topic1_out",
                     key: Some("Key".into()),
                 },
                 Some(i * 3 + 1),
             )
             .await;
 
-        transaction_producer.send_offsets_to_transaction(&consumer_topic1);
-        transaction_producer.commit_transaction();
+        // send empty request, has no effect just want to make sure shotover handles this.
+        transaction_producer.send_offsets_to_transaction(&consumer_topic_in, Default::default());
 
-        consumer_topic2
-            .assert_consume_in_any_order(vec![
-                ExpectedResponse {
-                    message: format!("Message1_{i}"),
-                    key: Some("Key".to_owned()),
-                    topic_name: "transaction_topic2".to_owned(),
-                    offset: Some(i * 3),
+        transaction_producer.abort_transaction();
+    }
+
+    consumer_topic_out
+        .assert_no_consume_within_timeout(Duration::from_secs(2))
+        .await;
+}
+
+async fn produce_consume_transactions_with_commit(connection_builder: &KafkaConnectionBuilder) {
+    let producer = connection_builder.connect_producer("1", 0).await;
+    for i in 0..3 {
+        producer
+            .assert_produce(
+                Record {
+                    payload: &format!("Message1_{i}"),
+                    topic_name: "transaction_topic2_in",
+                    key: Some("Key".into()),
                 },
-                ExpectedResponse {
-                    message: format!("Message2_{i}"),
-                    key: Some("Key".to_owned()),
-                    topic_name: "transaction_topic2".to_owned(),
-                    offset: Some(i * 3 + 1),
+                Some(i * 2),
+            )
+            .await;
+        producer
+            .assert_produce(
+                Record {
+                    payload: &format!("Message2_{i}"),
+                    topic_name: "transaction_topic2_in",
+                    key: Some("Key".into()),
                 },
-            ])
+                Some(i * 2 + 1),
+            )
             .await;
     }
+    {
+        let transaction_producer = connection_builder
+            .connect_producer_with_transactions("some_transaction_id".to_owned())
+            .await;
+        let mut consumer_topic_in = connection_builder
+            .connect_consumer(
+                ConsumerConfig::consume_from_topic("transaction_topic2_in".to_owned())
+                    .with_group("some_group1"),
+            )
+            .await;
+        let mut consumer_topic_out_committed = connection_builder
+            .connect_consumer(
+                ConsumerConfig::consume_from_topic("transaction_topic2_out".to_owned())
+                    .with_isolation_level(IsolationLevel::ReadCommitted)
+                    .with_group("some_group2"),
+            )
+            .await;
+
+        let mut consumer_topic_out_uncommitted = connection_builder
+            .connect_consumer(
+                ConsumerConfig::consume_from_topic("transaction_topic2_out".to_owned())
+                    .with_isolation_level(IsolationLevel::ReadUncommitted)
+                    .with_group("some_group3"),
+            )
+            .await;
+
+        for i in 0..3 {
+            consumer_topic_in
+                .assert_consume(ExpectedResponse {
+                    message: format!("Message1_{i}"),
+                    key: Some("Key".to_owned()),
+                    topic_name: "transaction_topic2_in".to_owned(),
+                    offset: Some(i * 2),
+                })
+                .await;
+            consumer_topic_in
+                .assert_consume(ExpectedResponse {
+                    message: format!("Message2_{i}"),
+                    key: Some("Key".into()),
+                    topic_name: "transaction_topic2_in".to_owned(),
+                    offset: Some(i * 2 + 1),
+                })
+                .await;
+            transaction_producer.begin_transaction();
+
+            transaction_producer
+                .assert_produce(
+                    Record {
+                        payload: &format!("Message1_{i}"),
+                        topic_name: "transaction_topic2_out",
+                        key: Some("Key".into()),
+                    },
+                    // Not sure where the extra offset per loop comes from
+                    // Possibly the transaction commit counts as a record
+                    Some(i * 3),
+                )
+                .await;
+            let result = transaction_producer
+                .assert_produce(
+                    Record {
+                        payload: &format!("Message2_{i}"),
+                        topic_name: "transaction_topic2_out",
+                        key: Some("Key".into()),
+                    },
+                    Some(i * 3 + 1),
+                )
+                .await;
+
+            // commit the offsets to the records we read from the in topic
+            let offsets = HashMap::from([(
+                TopicPartition {
+                    topic_name: "transaction_topic2_in".to_owned(),
+                    // Since all produces use the same key we can assume they are all going to the same partition.
+                    partition: result.partition,
+                },
+                OffsetAndMetadata {
+                    offset: (i + 1) * 2,
+                },
+            )]);
+            transaction_producer.send_offsets_to_transaction(&consumer_topic_in, offsets);
+
+            // before we commit, records are only received on uncommitted consumer
+            consumer_topic_out_committed
+                .assert_no_consume_within_timeout(Duration::from_secs(2))
+                .await;
+            consumer_topic_out_uncommitted
+                .assert_consume_in_any_order(vec![
+                    ExpectedResponse {
+                        message: format!("Message1_{i}"),
+                        key: Some("Key".to_owned()),
+                        topic_name: "transaction_topic2_out".to_owned(),
+                        offset: Some(i * 3),
+                    },
+                    ExpectedResponse {
+                        message: format!("Message2_{i}"),
+                        key: Some("Key".to_owned()),
+                        topic_name: "transaction_topic2_out".to_owned(),
+                        offset: Some(i * 3 + 1),
+                    },
+                ])
+                .await;
+            transaction_producer.commit_transaction();
+
+            // after we commit, receive committed records
+            consumer_topic_out_committed
+                .assert_consume_in_any_order(vec![
+                    ExpectedResponse {
+                        message: format!("Message1_{i}"),
+                        key: Some("Key".to_owned()),
+                        topic_name: "transaction_topic2_out".to_owned(),
+                        offset: Some(i * 3),
+                    },
+                    ExpectedResponse {
+                        message: format!("Message2_{i}"),
+                        key: Some("Key".to_owned()),
+                        topic_name: "transaction_topic2_out".to_owned(),
+                        offset: Some(i * 3 + 1),
+                    },
+                ])
+                .await;
+        }
+
+        // add a final record to help check offset committing
+        transaction_producer.begin_transaction();
+        transaction_producer
+            .assert_produce(
+                Record {
+                    payload: "Final",
+                    topic_name: "transaction_topic2_in",
+                    key: Some("Key".into()),
+                },
+                None,
+            )
+            .await;
+        transaction_producer.commit_transaction();
+    }
+
+    // send_offsets_to_transaction should result in commits to the consumer offset of the input topic
+    let mut consumer_topic_in_new = connection_builder
+        .connect_consumer(
+            ConsumerConfig::consume_from_topic("transaction_topic2_in".to_owned())
+                .with_group("some_group1"),
+        )
+        .await;
+    consumer_topic_in_new
+        .assert_consume(ExpectedResponse {
+            message: "Final".to_owned(),
+            key: Some("Key".into()),
+            topic_name: "transaction_topic2_in".to_owned(),
+            offset: None,
+        })
+        .await;
 }
 
 async fn produce_consume_acks0(connection_builder: &KafkaConnectionBuilder) {
@@ -959,7 +1137,8 @@ pub async fn standard_test_suite(connection_builder: &KafkaConnectionBuilder) {
     // set the bytes limit to 1MB so that we will not reach it and will hit the 100ms timeout every time.
     produce_consume_partitions3(connection_builder, "partitions3_case4", 1_000_000, 100).await;
 
-    produce_consume_transactions(connection_builder).await;
+    produce_consume_transactions_with_abort(connection_builder).await;
+    produce_consume_transactions_with_commit(connection_builder).await;
 
     // Only run this test case on the java driver,
     // since even without going through shotover the cpp driver fails this test.

@@ -1,5 +1,8 @@
 use pretty_assertions::assert_eq;
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    time::Duration,
+};
 
 #[cfg(feature = "kafka-cpp-driver-tests")]
 pub mod cpp;
@@ -135,8 +138,16 @@ pub enum KafkaProducer {
     Java(KafkaProducerJava),
 }
 
+pub struct ProduceResult {
+    pub partition: i32,
+}
+
 impl KafkaProducer {
-    pub async fn assert_produce(&self, record: Record<'_>, expected_offset: Option<i64>) {
+    pub async fn assert_produce(
+        &self,
+        record: Record<'_>,
+        expected_offset: Option<i64>,
+    ) -> ProduceResult {
         match self {
             #[cfg(feature = "kafka-cpp-driver-tests")]
             Self::Cpp(cpp) => cpp.assert_produce(record, expected_offset).await,
@@ -160,17 +171,31 @@ impl KafkaProducer {
         }
     }
 
-    pub fn send_offsets_to_transaction(&self, consumer: &KafkaConsumer) {
+    pub fn abort_transaction(&self) {
+        match self {
+            #[cfg(feature = "kafka-cpp-driver-tests")]
+            Self::Cpp(cpp) => cpp.abort_transaction(),
+            Self::Java(java) => java.abort_transaction(),
+        }
+    }
+
+    pub fn send_offsets_to_transaction(
+        &self,
+        consumer: &KafkaConsumer,
+        offsets: HashMap<TopicPartition, OffsetAndMetadata>,
+    ) {
         match self {
             #[cfg(feature = "kafka-cpp-driver-tests")]
             Self::Cpp(cpp) => match consumer {
-                KafkaConsumer::Cpp(consumer) => cpp.send_offsets_to_transaction(consumer),
+                KafkaConsumer::Cpp(consumer) => cpp.send_offsets_to_transaction(consumer, offsets),
                 KafkaConsumer::Java(_) => {
                     panic!("Cannot use transactions across java and cpp driver")
                 }
             },
             Self::Java(java) => match consumer {
-                KafkaConsumer::Java(consumer) => java.send_offsets_to_transaction(consumer),
+                KafkaConsumer::Java(consumer) => {
+                    java.send_offsets_to_transaction(consumer, offsets)
+                }
                 #[cfg(feature = "kafka-cpp-driver-tests")]
                 KafkaConsumer::Cpp(_) => {
                     panic!("Cannot use transactions across java and cpp driver")
@@ -194,11 +219,7 @@ pub enum KafkaConsumer {
 
 impl KafkaConsumer {
     pub async fn assert_consume(&mut self, expected_response: ExpectedResponse) {
-        let response = match self {
-            #[cfg(feature = "kafka-cpp-driver-tests")]
-            Self::Cpp(cpp) => cpp.consume().await,
-            Self::Java(java) => java.consume().await,
-        };
+        let response = self.consume(Duration::from_secs(30)).await;
 
         let topic = &expected_response.topic_name;
         assert_eq!(
@@ -222,14 +243,26 @@ impl KafkaConsumer {
         }
     }
 
+    async fn consume(&mut self, timeout: Duration) -> ExpectedResponse {
+        match self {
+            #[cfg(feature = "kafka-cpp-driver-tests")]
+            Self::Cpp(cpp) => cpp.consume(timeout).await,
+            Self::Java(java) => java.consume(timeout).await,
+        }
+    }
+
+    pub async fn assert_no_consume_within_timeout(&mut self, timeout: Duration) {
+        match self {
+            #[cfg(feature = "kafka-cpp-driver-tests")]
+            Self::Cpp(cpp) => cpp.assert_no_consume_within_timeout(timeout).await,
+            Self::Java(java) => java.assert_no_consume_within_timeout(timeout).await,
+        }
+    }
+
     pub async fn assert_consume_in_any_order(&mut self, expected_responses: Vec<ExpectedResponse>) {
         let mut responses = vec![];
         while responses.len() < expected_responses.len() {
-            match self {
-                #[cfg(feature = "kafka-cpp-driver-tests")]
-                Self::Cpp(cpp) => responses.push(cpp.consume().await),
-                Self::Java(java) => responses.push(java.consume().await),
-            }
+            responses.push(self.consume(Duration::from_secs(30)).await);
         }
         let full_responses = responses.clone();
         let full_expected_responses = expected_responses.clone();
@@ -471,12 +504,12 @@ pub enum OffsetSpec {
     Latest,
 }
 
-#[derive(Default)]
 pub struct ConsumerConfig {
     topic_name: String,
     group: String,
     fetch_min_bytes: i32,
     fetch_max_wait_ms: i32,
+    isolation_level: IsolationLevel,
 }
 
 impl ConsumerConfig {
@@ -486,6 +519,7 @@ impl ConsumerConfig {
             group: "default_group".to_owned(),
             fetch_min_bytes: 1,
             fetch_max_wait_ms: 500,
+            isolation_level: IsolationLevel::ReadUncommitted,
         }
     }
 
@@ -503,4 +537,27 @@ impl ConsumerConfig {
         self.fetch_max_wait_ms = fetch_max_wait_ms;
         self
     }
+
+    pub fn with_isolation_level(mut self, isolation_level: IsolationLevel) -> Self {
+        self.isolation_level = isolation_level;
+        self
+    }
+}
+
+pub enum IsolationLevel {
+    ReadCommitted,
+    ReadUncommitted,
+}
+
+impl IsolationLevel {
+    fn as_str(&self) -> &'static str {
+        match self {
+            IsolationLevel::ReadCommitted => "read_committed",
+            IsolationLevel::ReadUncommitted => "read_uncommitted",
+        }
+    }
+}
+
+pub struct OffsetAndMetadata {
+    pub offset: i64,
 }

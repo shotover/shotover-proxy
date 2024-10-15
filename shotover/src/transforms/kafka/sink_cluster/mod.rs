@@ -23,12 +23,13 @@ use kafka_protocol::messages::metadata_response::MetadataResponseBroker;
 use kafka_protocol::messages::produce_request::TopicProduceData;
 use kafka_protocol::messages::produce_response::LeaderIdAndEpoch as ProduceResponseLeaderIdAndEpoch;
 use kafka_protocol::messages::{
-    AddPartitionsToTxnRequest, AddPartitionsToTxnResponse, ApiKey, BrokerId, EndTxnRequest,
-    FetchRequest, FetchResponse, FindCoordinatorRequest, FindCoordinatorResponse, GroupId,
-    HeartbeatRequest, InitProducerIdRequest, JoinGroupRequest, LeaveGroupRequest,
-    ListOffsetsRequest, ListOffsetsResponse, MetadataRequest, MetadataResponse, ProduceRequest,
-    ProduceResponse, RequestHeader, SaslAuthenticateRequest, SaslAuthenticateResponse,
-    SaslHandshakeRequest, SyncGroupRequest, TopicName, TransactionalId,
+    AddOffsetsToTxnRequest, AddPartitionsToTxnRequest, AddPartitionsToTxnResponse, ApiKey,
+    BrokerId, EndTxnRequest, FetchRequest, FetchResponse, FindCoordinatorRequest,
+    FindCoordinatorResponse, GroupId, HeartbeatRequest, InitProducerIdRequest, JoinGroupRequest,
+    LeaveGroupRequest, ListOffsetsRequest, ListOffsetsResponse, MetadataRequest, MetadataResponse,
+    ProduceRequest, ProduceResponse, RequestHeader, SaslAuthenticateRequest,
+    SaslAuthenticateResponse, SaslHandshakeRequest, SyncGroupRequest, TopicName, TransactionalId,
+    TxnOffsetCommitRequest,
 };
 use kafka_protocol::protocol::StrBytes;
 use kafka_protocol::ResponseError;
@@ -678,7 +679,8 @@ impl KafkaSinkCluster {
                         RequestBody::Heartbeat(HeartbeatRequest { group_id, .. })
                         | RequestBody::SyncGroup(SyncGroupRequest { group_id, .. })
                         | RequestBody::JoinGroup(JoinGroupRequest { group_id, .. })
-                        | RequestBody::LeaveGroup(LeaveGroupRequest { group_id, .. }),
+                        | RequestBody::LeaveGroup(LeaveGroupRequest { group_id, .. })
+                        | RequestBody::TxnOffsetCommit(TxnOffsetCommitRequest { group_id, .. }),
                     ..
                 })) => {
                     self.store_group(&mut groups, group_id.clone());
@@ -690,6 +692,9 @@ impl KafkaSinkCluster {
                             ..
                         })
                         | RequestBody::EndTxn(EndTxnRequest {
+                            transactional_id, ..
+                        })
+                        | RequestBody::AddOffsetsToTxn(AddOffsetsToTxnRequest {
                             transactional_id, ..
                         }),
                     ..
@@ -893,6 +898,14 @@ impl KafkaSinkCluster {
                     let group_id = groups.groups_names.first().unwrap().clone();
                     self.route_to_group_coordinator(message, group_id);
                 }
+                Some(Frame::Kafka(KafkaFrame::Request {
+                    body: RequestBody::TxnOffsetCommit(txn_offset_commit),
+                    ..
+                })) => {
+                    let group_id = txn_offset_commit.group_id.clone();
+                    // Despite being a transaction request this request is routed by group_id
+                    self.route_to_group_coordinator(message, group_id);
+                }
 
                 // route to transaction coordinator
                 Some(Frame::Kafka(KafkaFrame::Request {
@@ -916,6 +929,13 @@ impl KafkaSinkCluster {
                     body: RequestBody::AddPartitionsToTxn(_),
                     ..
                 })) => self.route_add_partitions_to_txn(message)?,
+                Some(Frame::Kafka(KafkaFrame::Request {
+                    body: RequestBody::AddOffsetsToTxn(add_offsets_to_txn),
+                    ..
+                })) => {
+                    let transaction_id = add_offsets_to_txn.transactional_id.clone();
+                    self.route_to_transaction_coordinator(message, transaction_id);
+                }
 
                 Some(Frame::Kafka(KafkaFrame::Request {
                     body: RequestBody::FindCoordinator(_),
@@ -2113,6 +2133,26 @@ impl KafkaSinkCluster {
                 ..
             })) => {
                 self.handle_transaction_coordinator_routing_error(&request_ty, end_txn.error_code)
+            }
+            Some(Frame::Kafka(KafkaFrame::Response {
+                body: ResponseBody::AddOffsetsToTxn(add_offsets_to_txn),
+                ..
+            })) => self.handle_transaction_coordinator_routing_error(
+                &request_ty,
+                add_offsets_to_txn.error_code,
+            ),
+            Some(Frame::Kafka(KafkaFrame::Response {
+                body: ResponseBody::TxnOffsetCommit(txn_offset_commit),
+                ..
+            })) => {
+                for topic in &txn_offset_commit.topics {
+                    for partition in &topic.partitions {
+                        self.handle_group_coordinator_routing_error(
+                            &request_ty,
+                            partition.error_code,
+                        );
+                    }
+                }
             }
             Some(Frame::Kafka(KafkaFrame::Response {
                 body: ResponseBody::InitProducerId(init_producer_id),

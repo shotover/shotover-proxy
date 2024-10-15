@@ -1,12 +1,15 @@
 use super::{
     Acl, AclOperation, AclPermissionType, AlterConfig, ConsumerConfig, ExpectedResponse,
-    ListOffsetsResultInfo, NewPartition, NewTopic, OffsetSpec, Record, ResourcePatternType,
-    ResourceSpecifier, ResourceType, TopicDescription, TopicPartition,
+    ListOffsetsResultInfo, NewPartition, NewTopic, OffsetAndMetadata, OffsetSpec, ProduceResult,
+    Record, ResourcePatternType, ResourceSpecifier, ResourceType, TopicDescription, TopicPartition,
 };
 use crate::connection::java::{Jvm, Value};
 use anyhow::Result;
 use pretty_assertions::assert_eq;
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::{
+    collections::{HashMap, HashSet, VecDeque},
+    time::Duration,
+};
 
 fn properties(jvm: &Jvm, props: &HashMap<String, String>) -> Value {
     let properties = jvm.construct("java.util.Properties", vec![]);
@@ -147,6 +150,10 @@ impl KafkaConnectionBuilderJava {
         config.insert("auto.offset.reset".to_owned(), "earliest".to_owned());
         config.insert("enable.auto.commit".to_owned(), "false".to_owned());
         config.insert(
+            "isolation.level".to_owned(),
+            consumer_config.isolation_level.as_str().to_owned(),
+        );
+        config.insert(
             "fetch.max.wait.ms".to_owned(),
             consumer_config.fetch_max_wait_ms.to_string(),
         );
@@ -199,7 +206,11 @@ pub struct KafkaProducerJava {
 }
 
 impl KafkaProducerJava {
-    pub async fn assert_produce(&self, record: Record<'_>, expected_offset: Option<i64>) {
+    pub async fn assert_produce(
+        &self,
+        record: Record<'_>,
+        expected_offset: Option<i64>,
+    ) -> ProduceResult {
         let record = match record.key {
             Some(key) => self.jvm.construct(
                 "org.apache.kafka.clients.producer.ProducerRecord",
@@ -217,16 +228,21 @@ impl KafkaProducerJava {
                 ],
             ),
         };
-        let actual_offset: i64 = self
+        let result = self
             .producer
             .call_async("send", vec![record])
             .await
-            .cast("org.apache.kafka.clients.producer.RecordMetadata")
-            .call("offset", vec![])
-            .into_rust();
+            .cast("org.apache.kafka.clients.producer.RecordMetadata");
+
+        let actual_offset: i64 = result.call("offset", vec![]).into_rust();
+        let actual_partition: i32 = result.call("partition", vec![]).into_rust();
 
         if let Some(expected_offset) = expected_offset {
             assert_eq!(expected_offset, actual_offset);
+        }
+
+        ProduceResult {
+            partition: actual_partition,
         }
     }
 
@@ -238,8 +254,29 @@ impl KafkaProducerJava {
         self.producer.call("commitTransaction", vec![]);
     }
 
-    pub fn send_offsets_to_transaction(&self, consumer: &KafkaConsumerJava) {
-        let offsets = self.jvm.new_map(vec![]);
+    pub fn abort_transaction(&self) {
+        self.producer.call("abortTransaction", vec![]);
+    }
+
+    pub fn send_offsets_to_transaction(
+        &self,
+        consumer: &KafkaConsumerJava,
+        offsets: HashMap<TopicPartition, OffsetAndMetadata>,
+    ) {
+        let offsets = self.jvm.new_map(
+            offsets
+                .into_iter()
+                .map(|(tp, offset_and_metadata)| {
+                    (
+                        create_topic_partition(&self.jvm, &tp),
+                        self.jvm.construct(
+                            "org.apache.kafka.clients.consumer.OffsetAndMetadata",
+                            vec![self.jvm.new_long(offset_and_metadata.offset)],
+                        ),
+                    )
+                })
+                .collect(),
+        );
 
         let consumer_group_id = consumer
             .consumer
@@ -258,32 +295,49 @@ pub struct KafkaConsumerJava {
 }
 
 impl KafkaConsumerJava {
-    pub async fn consume(&mut self) -> ExpectedResponse {
+    pub async fn assert_no_consume_within_timeout(&mut self, timeout: Duration) {
+        if !self.waiting_records.is_empty() {
+            panic!(
+                "There are pending records from the previous consume {:?}",
+                self.waiting_records
+            );
+        }
+
+        self.fetch_from_broker(timeout).await;
+
+        if !self.waiting_records.is_empty() {
+            panic!(
+                "Records were received from this consume {:?}",
+                self.waiting_records
+            );
+        }
+    }
+    pub async fn consume(&mut self, timeout: Duration) -> ExpectedResponse {
         // This method asserts that we have consumed a single record from the broker.
         // Internally we may have actually received multiple records from the broker.
         // But that is hidden from the test by storing any extra messages for use in the next call to `consume`
 
         if self.waiting_records.is_empty() {
-            self.fetch_from_broker();
+            self.fetch_from_broker(timeout).await;
         }
 
         self.pop_one_record()
     }
 
-    fn fetch_from_broker(&mut self) {
-        let timeout_seconds = 30;
+    pub async fn fetch_from_broker(&mut self, timeout: Duration) {
         let instant = std::time::Instant::now();
         let mut finished = false;
         while !finished {
-            let timeout = self.jvm.call_static(
+            let java_timeout = self.jvm.call_static(
                 "java.time.Duration",
                 "ofSeconds",
-                vec![self.jvm.new_long(timeout_seconds as i64)],
+                vec![self.jvm.new_long(timeout.as_secs() as i64)],
             );
             // the poll method documentation claims that it will await the timeout if there are no records available.
             // but it will actually return immediately if it receives a transaction control record,
-            // so we need to add to wrap it in our own timeout logic.
-            let result = tokio::task::block_in_place(|| self.consumer.call("poll", vec![timeout]));
+            // so we need to wrap it in our own timeout logic.
+            let result =
+                tokio::task::block_in_place(|| self.consumer.call("poll", vec![java_timeout]));
 
             for record in result.call("iterator", vec![]) {
                 self.waiting_records
@@ -292,7 +346,7 @@ impl KafkaConsumerJava {
                 finished = true;
             }
 
-            if instant.elapsed() > std::time::Duration::from_secs(timeout_seconds) {
+            if instant.elapsed() > timeout {
                 // finished because timeout elapsed
                 finished = true;
             }
