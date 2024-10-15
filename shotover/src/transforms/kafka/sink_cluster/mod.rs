@@ -73,7 +73,7 @@ pub struct KafkaSinkClusterConfig {
     pub local_shotover_broker_id: i32,
     pub connect_timeout_ms: u64,
     pub read_timeout: Option<u64>,
-    pub check_shotover_peers_delay_ms: u64,
+    pub check_shotover_peers_delay_ms: Option<u64>,
     pub tls: Option<TlsConnectorConfig>,
     pub authorize_scram_over_mtls: Option<AuthorizeScramOverMtlsConfig>,
 }
@@ -165,7 +165,7 @@ impl KafkaSinkClusterBuilder {
         rack: StrBytes,
         connect_timeout_ms: u64,
         timeout: Option<u64>,
-        check_shotover_peers_delay_ms: u64,
+        check_shotover_peers_delay_ms: Option<u64>,
         tls: Option<TlsConnector>,
     ) -> Result<KafkaSinkClusterBuilder> {
         let read_timeout = timeout.map(Duration::from_secs);
@@ -176,11 +176,13 @@ impl KafkaSinkClusterBuilder {
             .cloned()
             .collect();
 
-        start_shotover_peers_check(
-            shotover_peers,
-            check_shotover_peers_delay_ms,
-            connect_timeout,
-        );
+        if let Some(check_shotover_peers_delay_ms) = check_shotover_peers_delay_ms {
+            start_shotover_peers_check(
+                shotover_peers,
+                check_shotover_peers_delay_ms,
+                connect_timeout,
+            );
+        }
 
         Ok(KafkaSinkClusterBuilder {
             first_contact_points,
