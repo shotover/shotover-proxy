@@ -42,7 +42,7 @@ use scram_over_mtls::{
 };
 use serde::{Deserialize, Serialize};
 use shotover_node::{ShotoverNode, ShotoverNodeConfig};
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::hash::Hasher;
 use std::sync::atomic::AtomicI64;
 use std::sync::Arc;
@@ -2714,8 +2714,7 @@ impl KafkaSinkCluster {
             // For version <= 3 we only have one coordinator to replace,
             // so we try to deterministically pick one UP shotover node in the rack of the coordinator.
             // If there is no UP shotover node in the rack,
-            // we try to deterministically pick one UP shotover node out of the rack of the coordinator.
-            // If there is no UP shotover node at all, return the COORDINATOR_NOT_AVAILABLE error.
+            // try to deterministically pick one UP shotover node out of the rack.
 
             // skip rewriting on error
             if find_coordinator.error_code == 0 {
@@ -2728,21 +2727,13 @@ impl KafkaSinkCluster {
                     .as_ref();
 
                 let hash = hash_str_bytes(request.key.clone());
-
-                let (shotover_nodes_in_rack, shotover_nodes_out_of_rack): (
-                    Vec<&ShotoverNode>,
-                    Vec<&ShotoverNode>,
-                ) = up_shotover_nodes.iter().partition(|shotover_node| {
-                    coordinator_rack
-                        .map(|rack| rack == &shotover_node.rack)
-                        .unwrap_or(true)
-                });
-
-                let shotover_node: Option<&&ShotoverNode> = shotover_nodes_in_rack
-                    .get(hash % shotover_nodes_in_rack.len())
-                    .or_else(|| {
-                        shotover_nodes_out_of_rack.get(hash % shotover_nodes_out_of_rack.len())
-                    });
+                let (shotover_nodes_in_rack, shotover_nodes_out_of_rack) =
+                    partition_shotover_nodes_by_rack(&up_shotover_nodes, coordinator_rack);
+                let shotover_node = select_shotover_node_by_hash(
+                    shotover_nodes_in_rack,
+                    shotover_nodes_out_of_rack,
+                    hash,
+                );
 
                 match shotover_node {
                     Some(shotover_node) => {
@@ -2751,8 +2742,7 @@ impl KafkaSinkCluster {
                         find_coordinator.node_id = shotover_node.broker_id;
                     }
                     None => {
-                        // Return the COORDINATOR_NOT_AVAILABLE error if all shotover nodes are down
-                        find_coordinator.error_code = 15;
+                        // The local shotover node is always UP, so this should never happen.
                     }
                 }
             }
@@ -2765,12 +2755,10 @@ impl KafkaSinkCluster {
             // https://github.com/apache/kafka/blob/4825c89d14e5f1b2da7e1f48dac97888602028d7/clients/src/main/java/org/apache/kafka/clients/consumer/internals/AbstractCoordinator.java#L921
             //
             // So, just like with version <= 3, we try to deterministically pick one UP shotover node in the rack of the coordinator for each coordinator.
-            // If there is no UP shotover node in the rack, we try to deterministically pick one UP shotover node out of the rack of the coordinator.
-            // If there is no UP shotover node at all, return the COORDINATOR_NOT_AVAILABLE error.
+            // If there is no UP shotover node in the rack, try to deterministically pick one UP shotover node out of the rack.
             for coordinator in &mut find_coordinator.coordinators {
                 // skip rewriting on error
                 if coordinator.error_code == 0 {
-                    let hash = hash_str_bytes(coordinator.key.clone());
                     let coordinator_rack = &self
                         .nodes
                         .iter()
@@ -2779,30 +2767,23 @@ impl KafkaSinkCluster {
                         .rack
                         .as_ref();
 
-                    let (shotover_nodes_in_rack, shotover_nodes_out_of_rack): (
-                        Vec<&ShotoverNode>,
-                        Vec<&ShotoverNode>,
-                    ) = up_shotover_nodes.iter().partition(|shotover_node| {
-                        coordinator_rack
-                            .map(|rack| rack == &shotover_node.rack)
-                            .unwrap_or(true)
-                    });
-
-                    let shotover_node: Option<&&ShotoverNode> = shotover_nodes_in_rack
-                        .get(hash % shotover_nodes_in_rack.len())
-                        .or_else(|| {
-                            shotover_nodes_out_of_rack.get(hash % shotover_nodes_out_of_rack.len())
-                        });
+                    let hash = hash_str_bytes(coordinator.key.clone());
+                    let (shotover_nodes_in_rack, shotover_nodes_out_of_rack) =
+                        partition_shotover_nodes_by_rack(&up_shotover_nodes, coordinator_rack);
+                    let shotover_node = select_shotover_node_by_hash(
+                        shotover_nodes_in_rack,
+                        shotover_nodes_out_of_rack,
+                        hash,
+                    );
 
                     match shotover_node {
                         Some(shotover_node) => {
-                            find_coordinator.host = shotover_node.address.host.clone();
-                            find_coordinator.port = shotover_node.address.port;
-                            find_coordinator.node_id = shotover_node.broker_id;
+                            coordinator.host = shotover_node.address.host.clone();
+                            coordinator.port = shotover_node.address.port;
+                            coordinator.node_id = shotover_node.broker_id;
                         }
                         None => {
-                            // Return the COORDINATOR_NOT_AVAILABLE error if all shotover nodes are down
-                            find_coordinator.error_code = 15;
+                            // The local shotover node is always UP, so this should never happen.
                         }
                     }
                 }
@@ -2813,10 +2794,11 @@ impl KafkaSinkCluster {
     /// Rewrite metadata response to appear as if the shotover cluster is the real cluster and the real kafka brokers do not exist
     fn rewrite_metadata_response(&self, metadata: &mut MetadataResponse) -> Result<()> {
         // Exclude DOWN shotover nodes in metadata responses
+        //
         // TODO: Ensure metadata responses are still deterministic and consistent even when some shotover nodes are down
         // Metadata responses can be temporarily inconsistent when some shotover nodes are DOWN because shotover nodes always consider themselves UP,
         // meaning the list of UP shotover nodes can be different on different shotover nodes.
-        // This scenario should be rare since shotover nodes are usually either accessible to both clients and other nodes or not at all,
+        // This scenario should be rare since shotover nodes are usually either accessible to both clients and peer shotover nodes or not at all,
         // which means the DOWN shotover nodes should not be able to send the inconsistent responses back to clients.
         let up_shotover_nodes: Vec<_> = self
             .shotover_nodes
@@ -2851,31 +2833,23 @@ impl KafkaSinkCluster {
                         .map(|x| x.rack.clone())
                     {
                         let hash = hash_partition(topic.topic_id, partition.partition_index);
-
-                        let (shotover_nodes_in_rack, shotover_nodes_out_of_rack): (
-                            Vec<&ShotoverNode>,
-                            Vec<&ShotoverNode>,
-                        ) = up_shotover_nodes.iter().partition(|shotover_node| {
-                            leader_rack
-                                .as_ref()
-                                .map(|rack| rack == &shotover_node.rack)
-                                .unwrap_or(true)
-                        });
-
-                        let shotover_node: Option<&&ShotoverNode> = shotover_nodes_in_rack
-                            .get(hash % shotover_nodes_in_rack.len())
-                            .or_else(|| {
-                                shotover_nodes_out_of_rack
-                                    .get(hash % shotover_nodes_out_of_rack.len())
-                            });
+                        let (shotover_nodes_in_rack, shotover_nodes_out_of_rack) =
+                            partition_shotover_nodes_by_rack(
+                                &up_shotover_nodes,
+                                &leader_rack.as_ref(),
+                            );
+                        let shotover_node = select_shotover_node_by_hash(
+                            shotover_nodes_in_rack,
+                            shotover_nodes_out_of_rack,
+                            hash,
+                        );
 
                         match shotover_node {
                             Some(shotover_node) => {
                                 partition.leader_id = shotover_node.broker_id;
                             }
                             None => {
-                                // If all shotover nodes are down, we should mark the leader as not existing by setting it to -1.
-                                partition.leader_id = BrokerId(-1);
+                                // The local shotover node is always UP, so this should never happen.
                             }
                         }
                     } else {
@@ -2898,18 +2872,19 @@ impl KafkaSinkCluster {
                             .find(|x| x.broker_id == *replica_node)
                             .map(|x| x.rack.clone())
                         {
-                            for shotover_node in &up_shotover_nodes {
-                                // If broker has no rack - use all UP shotover nodes
-                                // If broker has rack - use all UP shotover nodes with the same rack
-                                if rack
-                                    .as_ref()
-                                    .map(|rack| rack == &shotover_node.rack)
-                                    .unwrap_or(true)
-                                    && !shotover_replica_nodes.contains(&shotover_node.broker_id)
-                                {
-                                    shotover_replica_nodes.push(shotover_node.broker_id);
-                                }
-                            }
+                            // If broker has no rack - use all UP shotover nodes.
+                            // If broker has rack - use all UP shotover nodes with the same rack if available,
+                            // and fall back to use all UP shotover nodes out of the rack otherwise.
+                            let (shotover_nodes_in_rack, shotover_nodes_out_of_rack) =
+                                partition_shotover_nodes_by_rack(
+                                    &up_shotover_nodes,
+                                    &rack.as_ref(),
+                                );
+                            let unique_broker_ids = collect_unique_broker_ids(
+                                shotover_nodes_in_rack,
+                                shotover_nodes_out_of_rack,
+                            );
+                            shotover_replica_nodes.extend(unique_broker_ids);
                         } else {
                             // If the cluster detects the broker is down it will not be included in the metadata list of brokers.
                             // In that case we wont find a broker and we should just skip this broker.
@@ -2929,18 +2904,19 @@ impl KafkaSinkCluster {
                             .find(|x| x.broker_id == *replica_node)
                             .map(|x| x.rack.clone())
                         {
-                            for shotover_node in &up_shotover_nodes {
-                                // If broker has no rack - use all UP shotover nodes
-                                // If broker has rack - use all UP shotover nodes with the same rack
-                                if rack
-                                    .as_ref()
-                                    .map(|rack| rack == &shotover_node.rack)
-                                    .unwrap_or(true)
-                                    && !shotover_isr_nodes.contains(&shotover_node.broker_id)
-                                {
-                                    shotover_isr_nodes.push(shotover_node.broker_id);
-                                }
-                            }
+                            // If broker has no rack - use all UP shotover nodes.
+                            // If broker has rack - use all UP shotover nodes with the same rack if available,
+                            // and fall back to use all UP shotover nodes out of the rack otherwise.
+                            let (shotover_nodes_in_rack, shotover_nodes_out_of_rack) =
+                                partition_shotover_nodes_by_rack(
+                                    &up_shotover_nodes,
+                                    &rack.as_ref(),
+                                );
+                            let unique_broker_ids = collect_unique_broker_ids(
+                                shotover_nodes_in_rack,
+                                shotover_nodes_out_of_rack,
+                            );
+                            shotover_isr_nodes.extend(unique_broker_ids);
                         } else {
                             // If the cluster detects the broker is down it will not be included in the metadata list of brokers.
                             // In that case we wont find a broker and we should just skip this broker.
@@ -2953,28 +2929,36 @@ impl KafkaSinkCluster {
                 }
             }
 
-            if let Some(controller_node) = self
+            if let Some(controller_node_rack) = self
                 .nodes
                 .iter()
                 .find(|node| node.broker_id == metadata.controller_id)
+                .map(|x| x.rack.clone())
             {
-                // If broker has no rack - use the first UP shotover node
-                // If broker has rack - use the first UP shotover node with the same rack
-                // This is deterministic on UP shotover nodes because the list of UP shotover nodes is sorted.
-                // Note that it can be different on DOWN shotover nodes because they can have different lists of UP shotover nodes.
-                if let Some(shotover_node) = up_shotover_nodes.iter().find(|shotover_node| {
-                    controller_node
-                        .rack
-                        .as_ref()
-                        .map(|rack| rack == &shotover_node.rack)
-                        .unwrap_or(true)
-                }) {
-                    metadata.controller_id = shotover_node.broker_id;
-                } else {
-                    tracing::warn!(
-                        "No UP shotover node configured to handle kafka rack {:?}",
-                        controller_node.rack
+                // If broker has no rack - use the first UP shotover node.
+                // If broker has rack - use the first UP shotover node with the same rack if available,
+                // and fall back to use the first UP shotover node out of the rack otherwise.
+                // This is deterministic because the list of UP shotover nodes is sorted.
+                let (shotover_nodes_in_rack, shotover_nodes_out_of_rack) =
+                    partition_shotover_nodes_by_rack(
+                        &up_shotover_nodes,
+                        &controller_node_rack.as_ref(),
                     );
+                let shotover_node = shotover_nodes_in_rack
+                    .first()
+                    .or_else(|| shotover_nodes_out_of_rack.first());
+
+                match shotover_node {
+                    Some(shotover_node) => {
+                        metadata.controller_id = shotover_node.broker_id;
+                    }
+                    None => {
+                        // The local shotover node is always UP, so this should never happen.
+                        tracing::warn!(
+                            "No UP shotover node configured to handle kafka rack {:?}",
+                            controller_node_rack
+                        );
+                    }
                 }
             } else {
                 return Err(anyhow!(
@@ -3039,9 +3023,9 @@ fn hash_partition(topic_id: Uuid, partition_index: i32) -> usize {
     hasher.finish() as usize
 }
 
-fn hash_str_bytes(input: StrBytes) -> usize {
+fn hash_str_bytes(str_bytes: StrBytes) -> usize {
     let mut hasher = xxhash_rust::xxh3::Xxh3::new();
-    hasher.write(input.as_bytes());
+    hasher.write(str_bytes.as_bytes());
     hasher.finish() as usize
 }
 
@@ -3095,4 +3079,51 @@ impl<'a> std::fmt::Display for FormatTopicName<'a> {
             write!(f, "topic with name {:?}", self.0.as_str())
         }
     }
+}
+
+/// Partitions the given shotover nodes based on their rack placement.
+/// Returns a tuple of two vectors: (shotover_nodes_in_rack, shotover_nodes_out_of_rack).
+/// If rack is None, all shotover nodes are considered to be in the rack.
+fn partition_shotover_nodes_by_rack<'a>(
+    shotover_nodes: &[&'a ShotoverNode],
+    rack: &Option<&StrBytes>,
+) -> (Vec<&'a ShotoverNode>, Vec<&'a ShotoverNode>) {
+    shotover_nodes
+        .iter()
+        .partition(|shotover_node| rack.map(|rack| rack == &shotover_node.rack).unwrap_or(true))
+}
+
+/// Tries to deterministically select a shotover node based on a hash value.
+/// Prioritizes nodes in the rack if available, falls back to nodes out of the rack.
+fn select_shotover_node_by_hash<'a>(
+    shotover_nodes_in_rack: Vec<&'a ShotoverNode>,
+    shotover_nodes_out_of_rack: Vec<&'a ShotoverNode>,
+    hash: usize,
+) -> Option<&'a ShotoverNode> {
+    if !shotover_nodes_in_rack.is_empty() {
+        shotover_nodes_in_rack
+            .get(hash % shotover_nodes_in_rack.len())
+            .cloned()
+    } else if !shotover_nodes_out_of_rack.is_empty() {
+        shotover_nodes_out_of_rack
+            .get(hash % shotover_nodes_out_of_rack.len())
+            .cloned()
+    } else {
+        None
+    }
+}
+
+/// Returns a set of unique broker IDs from available shotover nodes.
+/// Prioritizes nodes in the rack if available, falls back to nodes out of the rack.
+fn collect_unique_broker_ids(
+    shotover_nodes_in_rack: Vec<&ShotoverNode>,
+    shotover_nodes_out_of_rack: Vec<&ShotoverNode>,
+) -> HashSet<BrokerId> {
+    let nodes = if !shotover_nodes_in_rack.is_empty() {
+        &shotover_nodes_in_rack
+    } else {
+        &shotover_nodes_out_of_rack
+    };
+
+    nodes.iter().map(|node| node.broker_id).collect()
 }
