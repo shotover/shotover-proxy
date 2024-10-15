@@ -1,0 +1,122 @@
+networks:
+  cluster_subnet:
+    name: cluster_subnet
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.16.1.0/24
+          gateway: 172.16.1.1
+services:
+  kafka0:
+    image: &image 'bitnami/kafka:3.6.1-debian-11-r24'
+    networks:
+      cluster_subnet:
+        ipv4_address: 172.16.1.2
+    environment: &environment
+      KAFKA_CFG_LISTENERS: "BROKER://:9092,CONTROLLER://:9093"
+      KAFKA_CFG_ADVERTISED_LISTENERS: "BROKER://172.16.1.2:9092"
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,BROKER:PLAINTEXT"
+      KAFKA_CFG_INTER_BROKER_LISTENER_NAME: "BROKER"
+      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      KAFKA_CFG_PROCESS_ROLES: "controller,broker"
+      KAFKA_KRAFT_CLUSTER_ID: "abcdefghijklmnopqrstuv"
+      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: "0@kafka0:9093,1@kafka1:9093,2@kafka2:9093,3@kafka3:9093,4@kafka4:9093,5@kafka5:9093,6@kafka3:9093,7@kafka4:9093,8@kafka5:9093"
+      KAFKA_CFG_NODE_ID: 0
+      KAFKA_CFG_BROKER_RACK: "rack1"
+      ALLOW_PLAINTEXT_LISTENER: "yes"
+      # Required for high availability
+      KAFKA_CFG_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      KAFKA_CFG_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
+      KAFKA_CFG_TRANSACTION_STATE_LOG_MIN_ISR: 2
+    volumes: &volumes
+      - type: tmpfs
+        target: /bitnami/kafka
+  kafka1:
+    image: *image
+    networks:
+      cluster_subnet:
+        ipv4_address: 172.16.1.3
+    environment:
+      <<: *environment
+      KAFKA_CFG_ADVERTISED_LISTENERS: "BROKER://172.16.1.3:9092"
+      KAFKA_CFG_NODE_ID: 1
+      KAFKA_CFG_BROKER_RACK: "rack1"
+    volumes: *volumes
+  kafka2:
+    image: *image
+    networks:
+      cluster_subnet:
+        ipv4_address: 172.16.1.4
+    environment:
+      <<: *environment
+      KAFKA_CFG_ADVERTISED_LISTENERS: "BROKER://172.16.1.4:9092"
+      KAFKA_CFG_NODE_ID: 2
+      KAFKA_CFG_BROKER_RACK: "rack1"
+    volumes: *volumes
+  kafka3:
+    image: *image
+    networks:
+      cluster_subnet:
+        ipv4_address: 172.16.1.5
+    environment:
+      <<: *environment
+      KAFKA_CFG_ADVERTISED_LISTENERS: "BROKER://172.16.1.5:9092"
+      KAFKA_CFG_NODE_ID: 3
+      KAFKA_CFG_BROKER_RACK: "rack2"
+    volumes: *volumes
+  kafka4:
+    image: *image
+    networks:
+      cluster_subnet:
+        ipv4_address: 172.16.1.6
+    environment:
+      <<: *environment
+      KAFKA_CFG_ADVERTISED_LISTENERS: "BROKER://172.16.1.6:9092"
+      KAFKA_CFG_NODE_ID: 4
+      KAFKA_CFG_BROKER_RACK: "rack2"
+    volumes: *volumes
+  kafka5:
+    image: *image
+    networks:
+      cluster_subnet:
+        ipv4_address: 172.16.1.7
+    environment:
+      <<: *environment
+      KAFKA_CFG_ADVERTISED_LISTENERS: "BROKER://172.16.1.7:9092"
+      KAFKA_CFG_NODE_ID: 5
+      KAFKA_CFG_BROKER_RACK: "rack2"
+    volumes: *volumes
+  kafka6:
+    image: *image
+    networks:
+      cluster_subnet:
+        ipv4_address: 172.16.1.8
+    environment:
+      <<: *environment
+      KAFKA_CFG_ADVERTISED_LISTENERS: "BROKER://172.16.1.8:9092"
+      KAFKA_CFG_NODE_ID: 6
+      KAFKA_CFG_BROKER_RACK: "rack3"
+    volumes: *volumes
+  kafka7:
+    image: *image
+    networks:
+      cluster_subnet:
+        ipv4_address: 172.16.1.9
+    environment:
+      <<: *environment
+      KAFKA_CFG_ADVERTISED_LISTENERS: "BROKER://172.16.1.9:9092"
+      KAFKA_CFG_NODE_ID: 7
+      KAFKA_CFG_BROKER_RACK: "rack3"
+    volumes: *volumes
+  kafka8:
+    image: *image
+    networks:
+      cluster_subnet:
+        ipv4_address: 172.16.1.10
+    environment:
+      <<: *environment
+      KAFKA_CFG_ADVERTISED_LISTENERS: "BROKER://172.16.1.10:9092"
+      KAFKA_CFG_NODE_ID: 8
+      KAFKA_CFG_BROKER_RACK: "rack3"
+    volumes: *volumes
