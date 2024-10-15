@@ -309,17 +309,29 @@ fn criterion_benchmark(c: &mut Criterion) {
 
         encoder.set_startup_state_ext("NONE".to_string(), Version::V5);
 
-        let mut bytes = BytesMut::new();
-        group.bench_function("encode_system.local_result_v5_no_compression", |b| {
-            b.iter_batched(
-                || messages.clone(),
-                |messages| {
-                    bytes.clear();
-                    encoder.encode(messages, &mut bytes).unwrap();
-                },
-                BatchSize::SmallInput,
-            )
-        });
+        // This bench is disabled because it is incredibly noisy.
+        // The noisiness actually indicates a real problem, which is why this bench is commented out instead of removed.
+        // The cassandra frame requires many allocations, consider the realistic value returned by peers_v2_results:
+        // there are hundreds of allocations required due to all those individually allocated strings.
+        // Lots of allocations results in noisy performance because allocating and deallocating allocations can be:
+        // * fast - there is memory in the heap ready to go
+        // * or slow - we need to ask the OS for more memory or ask the OS to take back some memory or ...
+        //
+        // However fixing this problem properly by reducing allocations would require rewriting cassandra-protocol
+        // which is months of development time and improving cassandra performance just isnt a priority right now.
+        // So instead of fixing it, we just commented it out to stop giving us false positives in CI.
+        //
+        //let mut bytes = BytesMut::new();
+        // group.bench_function("encode_system.local_result_v5_no_compression", |b| {
+        //     b.iter_batched(
+        //         || messages.clone(),
+        //         |messages| {
+        //             bytes.clear();
+        //             encoder.encode(messages, &mut bytes).unwrap();
+        //         },
+        //         BatchSize::SmallInput,
+        //     )
+        // });
 
         let (mut decoder, mut encoder) =
             CassandraCodecBuilder::new(Direction::Sink, "cassandra".to_owned()).build();
