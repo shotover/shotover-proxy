@@ -2103,8 +2103,8 @@ impl KafkaSinkCluster {
                 ..
             })) => {
                 if let PendingRequestTy::FindCoordinator(request) = request_ty {
-                    self.process_find_coordinator_response(*version, request, find_coordinator);
-                    self.rewrite_find_coordinator_response(*version, find_coordinator);
+                    self.process_find_coordinator_response(*version, &request, find_coordinator);
+                    self.rewrite_find_coordinator_response(*version, &request, find_coordinator);
                     response.invalidate_cache();
                 } else {
                     return Err(anyhow!("Received find_coordinator but not requested"));
@@ -2678,14 +2678,14 @@ impl KafkaSinkCluster {
     fn process_find_coordinator_response(
         &mut self,
         version: i16,
-        request: FindCoordinator,
+        request: &FindCoordinator,
         find_coordinator: &FindCoordinatorResponse,
     ) {
         if request.key_type == 0 {
             if version <= 3 {
                 if find_coordinator.error_code == 0 {
                     self.group_to_coordinator_broker
-                        .insert(GroupId(request.key), find_coordinator.node_id);
+                        .insert(GroupId(request.key.clone()), find_coordinator.node_id);
                 }
             } else {
                 for coordinator in &find_coordinator.coordinators {
@@ -2701,12 +2701,21 @@ impl KafkaSinkCluster {
     fn rewrite_find_coordinator_response(
         &self,
         version: i16,
+        request: &FindCoordinator,
         find_coordinator: &mut FindCoordinatorResponse,
     ) {
+        let up_shotover_nodes: Vec<_> = self
+            .shotover_nodes
+            .iter()
+            .filter(|shotover_node| shotover_node.is_up())
+            .collect();
+
         if version <= 3 {
             // For version <= 3 we only have one coordinator to replace,
-            // so we just pick the first UP shotover node in the rack of the coordinator.
-            // If there is no UP shotover node in the rack, return the COORDINATOR_NOT_AVAILABLE error
+            // so we try to deterministically pick one UP shotover node in the rack of the coordinator.
+            // If there is no UP shotover node in the rack,
+            // we try to deterministically pick one UP shotover node out of the rack of the coordinator.
+            // If there is no UP shotover node at all, return the COORDINATOR_NOT_AVAILABLE error.
 
             // skip rewriting on error
             if find_coordinator.error_code == 0 {
@@ -2717,18 +2726,34 @@ impl KafkaSinkCluster {
                     .unwrap()
                     .rack
                     .as_ref();
-                if let Some(shotover_node) = self.shotover_nodes.iter().find(|shotover_node| {
-                    shotover_node.is_up()
-                        && coordinator_rack
-                            .map(|rack| rack == &shotover_node.rack)
-                            .unwrap_or(true)
-                }) {
-                    find_coordinator.host = shotover_node.address.host.clone();
-                    find_coordinator.port = shotover_node.address.port;
-                    find_coordinator.node_id = shotover_node.broker_id;
-                } else {
-                    // Return the COORDINATOR_NOT_AVAILABLE error
-                    find_coordinator.error_code = 15;
+
+                let hash = hash_str_bytes(request.key.clone());
+
+                let (shotover_nodes_in_rack, shotover_nodes_out_of_rack): (
+                    Vec<&ShotoverNode>,
+                    Vec<&ShotoverNode>,
+                ) = up_shotover_nodes.iter().partition(|shotover_node| {
+                    coordinator_rack
+                        .map(|rack| rack == &shotover_node.rack)
+                        .unwrap_or(true)
+                });
+
+                let shotover_node: Option<&&ShotoverNode> = shotover_nodes_in_rack
+                    .get(hash % shotover_nodes_in_rack.len())
+                    .or_else(|| {
+                        shotover_nodes_out_of_rack.get(hash % shotover_nodes_out_of_rack.len())
+                    });
+
+                match shotover_node {
+                    Some(shotover_node) => {
+                        find_coordinator.host = shotover_node.address.host.clone();
+                        find_coordinator.port = shotover_node.address.port;
+                        find_coordinator.node_id = shotover_node.broker_id;
+                    }
+                    None => {
+                        // Return the COORDINATOR_NOT_AVAILABLE error if all shotover nodes are down
+                        find_coordinator.error_code = 15;
+                    }
                 }
             }
         } else {
@@ -2739,11 +2764,13 @@ impl KafkaSinkCluster {
             // In fact the java driver doesnt even support multiple coordinators of different types yet:
             // https://github.com/apache/kafka/blob/4825c89d14e5f1b2da7e1f48dac97888602028d7/clients/src/main/java/org/apache/kafka/clients/consumer/internals/AbstractCoordinator.java#L921
             //
-            // So, just like with version <= 3, we just pick the first UP shotover node in the rack of the coordinator for each coordinator.
-            // If there is no UP shotover node in the rack, return the COORDINATOR_NOT_AVAILABLE error
+            // So, just like with version <= 3, we try to deterministically pick one UP shotover node in the rack of the coordinator for each coordinator.
+            // If there is no UP shotover node in the rack, we try to deterministically pick one UP shotover node out of the rack of the coordinator.
+            // If there is no UP shotover node at all, return the COORDINATOR_NOT_AVAILABLE error.
             for coordinator in &mut find_coordinator.coordinators {
                 // skip rewriting on error
                 if coordinator.error_code == 0 {
+                    let hash = hash_str_bytes(coordinator.key.clone());
                     let coordinator_rack = &self
                         .nodes
                         .iter()
@@ -2751,18 +2778,32 @@ impl KafkaSinkCluster {
                         .unwrap()
                         .rack
                         .as_ref();
-                    if let Some(shotover_node) = self.shotover_nodes.iter().find(|shotover_node| {
-                        shotover_node.is_up()
-                            && coordinator_rack
-                                .map(|rack| rack == &shotover_node.rack)
-                                .unwrap_or(true)
-                    }) {
-                        coordinator.host = shotover_node.address.host.clone();
-                        coordinator.port = shotover_node.address.port;
-                        coordinator.node_id = shotover_node.broker_id;
-                    } else {
-                        // Return the COORDINATOR_NOT_AVAILABLE error
-                        coordinator.error_code = 15;
+
+                    let (shotover_nodes_in_rack, shotover_nodes_out_of_rack): (
+                        Vec<&ShotoverNode>,
+                        Vec<&ShotoverNode>,
+                    ) = up_shotover_nodes.iter().partition(|shotover_node| {
+                        coordinator_rack
+                            .map(|rack| rack == &shotover_node.rack)
+                            .unwrap_or(true)
+                    });
+
+                    let shotover_node: Option<&&ShotoverNode> = shotover_nodes_in_rack
+                        .get(hash % shotover_nodes_in_rack.len())
+                        .or_else(|| {
+                            shotover_nodes_out_of_rack.get(hash % shotover_nodes_out_of_rack.len())
+                        });
+
+                    match shotover_node {
+                        Some(shotover_node) => {
+                            find_coordinator.host = shotover_node.address.host.clone();
+                            find_coordinator.port = shotover_node.address.port;
+                            find_coordinator.node_id = shotover_node.broker_id;
+                        }
+                        None => {
+                            // Return the COORDINATOR_NOT_AVAILABLE error if all shotover nodes are down
+                            find_coordinator.error_code = 15;
+                        }
                     }
                 }
             }
@@ -2798,7 +2839,8 @@ impl KafkaSinkCluster {
                 })
                 .collect();
 
-            // Overwrite the list of partitions to point at all UP shotover nodes within the same rack
+            // Overwrite the list of partitions to point at UP shotover nodes within the same rack if any
+            // If there is no UP shotover node within the same rack, fall back to UP shotover nodes out of the rack
             for (_, topic) in &mut metadata.topics {
                 for partition in &mut topic.partitions {
                     // Try to deterministically choose a single UP shotover node in the rack as leader based on topic + partition id
@@ -2808,24 +2850,33 @@ impl KafkaSinkCluster {
                         .find(|x| x.broker_id == *partition.leader_id)
                         .map(|x| x.rack.clone())
                     {
-                        let shotover_nodes_in_rack: Vec<_> = up_shotover_nodes
-                            .iter()
-                            .filter(|shotover_node| {
-                                leader_rack
-                                    .as_ref()
-                                    .map(|rack| rack == &shotover_node.rack)
-                                    .unwrap_or(true)
-                            })
-                            .collect();
+                        let hash = hash_partition(topic.topic_id, partition.partition_index);
 
-                        if !shotover_nodes_in_rack.is_empty() {
-                            let hash = hash_partition(topic.topic_id, partition.partition_index);
-                            let shotover_node =
-                                &shotover_nodes_in_rack[hash % shotover_nodes_in_rack.len()];
-                            partition.leader_id = shotover_node.broker_id;
-                        } else {
-                            // If there is no UP shotover node in the rack, we should mark the leader as not existing by setting it to -1.
-                            partition.leader_id = BrokerId(-1);
+                        let (shotover_nodes_in_rack, shotover_nodes_out_of_rack): (
+                            Vec<&ShotoverNode>,
+                            Vec<&ShotoverNode>,
+                        ) = up_shotover_nodes.iter().partition(|shotover_node| {
+                            leader_rack
+                                .as_ref()
+                                .map(|rack| rack == &shotover_node.rack)
+                                .unwrap_or(true)
+                        });
+
+                        let shotover_node: Option<&&ShotoverNode> = shotover_nodes_in_rack
+                            .get(hash % shotover_nodes_in_rack.len())
+                            .or_else(|| {
+                                shotover_nodes_out_of_rack
+                                    .get(hash % shotover_nodes_out_of_rack.len())
+                            });
+
+                        match shotover_node {
+                            Some(shotover_node) => {
+                                partition.leader_id = shotover_node.broker_id;
+                            }
+                            None => {
+                                // If all shotover nodes are down, we should mark the leader as not existing by setting it to -1.
+                                partition.leader_id = BrokerId(-1);
+                            }
                         }
                     } else {
                         // If the cluster detects the broker is down it will not be included in the metadata list of brokers.
@@ -2985,6 +3036,12 @@ fn hash_partition(topic_id: Uuid, partition_index: i32) -> usize {
     let mut hasher = xxhash_rust::xxh3::Xxh3::new();
     hasher.write(topic_id.as_bytes());
     hasher.write(&partition_index.to_be_bytes());
+    hasher.finish() as usize
+}
+
+fn hash_str_bytes(input: StrBytes) -> usize {
+    let mut hasher = xxhash_rust::xxh3::Xxh3::new();
+    hasher.write(input.as_bytes());
     hasher.finish() as usize
 }
 

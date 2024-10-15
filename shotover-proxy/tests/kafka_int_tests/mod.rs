@@ -408,7 +408,7 @@ async fn cluster_1_rack_multi_shotover_with_1_shotover_down(#[case] driver: Kafk
     // Send more produce and consume requests
     produce_consume_partitions3(&connection_builder, "partitions3_rf3", 1, 500).await;
 
-    let mut expected_events = multi_shotover_events(driver);
+    let mut expected_events = multi_shotover_events();
     // Other shotover nodes should detect the killed node at least once
     expected_events.push(
         EventMatcher::new()
@@ -458,7 +458,7 @@ async fn cluster_1_rack_multi_shotover_with_1_shotover_missing(#[case] driver: K
     let connection_builder = KafkaConnectionBuilder::new(driver, "127.0.0.1:9192");
     produce_consume_partitions3(&connection_builder, "partitions3_rf3", 1, 500).await;
 
-    let mut expected_events = multi_shotover_events(driver);
+    let mut expected_events = multi_shotover_events();
     // Other shotover nodes should detect the missing node at least once
     expected_events.push(
         EventMatcher::new()
@@ -509,6 +509,72 @@ async fn cluster_2_racks_multi_shotover(#[case] driver: KafkaDriver) {
         tokio::time::timeout(
             Duration::from_secs(10),
             shotover.shutdown_and_then_consume_events(&multi_shotover_events()),
+        )
+        .await
+        .expect("Shotover did not shutdown within 10s");
+    }
+}
+
+#[rstest]
+#[cfg_attr(feature = "kafka-cpp-driver-tests", case::cpp(KafkaDriver::Cpp))]
+#[case::java(KafkaDriver::Java)]
+#[tokio::test(flavor = "multi_thread")] // multi_thread is needed since java driver will block when consuming, causing shotover logs to not appear
+async fn cluster_2_racks_multi_shotover_with_1_shotover_down(#[case] driver: KafkaDriver) {
+    let _docker_compose =
+        docker_compose("tests/test-configs/kafka/cluster-2-racks/docker-compose.yaml");
+
+    // One shotover instance per rack
+    let mut shotovers = vec![];
+    for i in 1..3 {
+        shotovers.push(
+            shotover_process(&format!(
+                "tests/test-configs/kafka/cluster-2-racks/topology-rack{i}.yaml"
+            ))
+            .with_config(&format!(
+                "tests/test-configs/shotover-config/config{i}.yaml"
+            ))
+            .with_log_name(&format!("shotover{i}"))
+            .start()
+            .await,
+        );
+    }
+
+    // Wait for check_shotover_peers to start
+    tokio::time::sleep(Duration::from_secs(15)).await;
+
+    // Send some produce and consume requests
+    let connection_builder = KafkaConnectionBuilder::new(driver, "127.0.0.1:9192");
+    produce_consume_partitions1(&connection_builder, "d4f992d1-05c4-4252-b699-509102338519").await;
+
+    // Kill one shotover node
+    tokio::time::timeout(
+        Duration::from_secs(10),
+        shotovers.remove(0).shutdown_and_then_consume_events(&[]),
+    )
+    .await
+    .expect("Shotover did not shutdown within 10s");
+
+    // Wait for the other shotover node to detect the down node
+    tokio::time::sleep(Duration::from_secs(5)).await;
+
+    // Send some produce and consume requests
+    let connection_builder = KafkaConnectionBuilder::new(driver, "127.0.0.1:9192");
+    produce_consume_partitions1(&connection_builder, "c3220ff0-9390-425d-a56d-9d880a339c8c").await;
+
+    let mut expected_events = multi_shotover_events();
+    // Other shotover nodes should detect the missing node at least once
+    expected_events.push(
+        EventMatcher::new()
+            .with_level(Level::Warn)
+            .with_target("shotover::transforms::kafka::sink_cluster::shotover_node")
+            .with_message(r#"Shotover peer 127.0.0.1:9191 is down"#)
+            .with_count(Count::GreaterThanOrEqual(1)),
+    );
+
+    for shotover in shotovers {
+        tokio::time::timeout(
+            Duration::from_secs(10),
+            shotover.shutdown_and_then_consume_events(&expected_events),
         )
         .await
         .expect("Shotover did not shutdown within 10s");
@@ -794,7 +860,7 @@ async fn cluster_sasl_scram_over_mtls_multi_shotover_with_2_shotover_down(
     // Send more produce and consume requests
     produce_consume_partitions3(&connection_builder, "partitions3_rf3", 1, 500).await;
 
-    let mut expected_events = multi_shotover_events(driver);
+    let mut expected_events = multi_shotover_events();
     // The up shotover node should detect the killed nodes at least once
     expected_events.push(
         EventMatcher::new()
