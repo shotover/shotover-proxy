@@ -16,6 +16,6 @@ sources:
                 rack: "rack3"
                 broker_id: 2
             local_shotover_broker_id: 2
-            first_contact_points: ["172.16.1.8:9092"]
+            first_contact_points: ["172.16.1.4:9092"]
             connect_timeout_ms: 3000
             check_shotover_peers_delay_ms: 3000
