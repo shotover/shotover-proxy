@@ -75,22 +75,22 @@ async fn admin_setup(connection_builder: &KafkaConnectionBuilder) {
                 replication_factor: 1,
             },
             NewTopic {
-                name: "transaction_topic1_in",
+                name: "transactions1_in",
                 num_partitions: 3,
                 replication_factor: 1,
             },
             NewTopic {
-                name: "transaction_topic1_out",
+                name: "transactions1_out",
                 num_partitions: 3,
                 replication_factor: 1,
             },
             NewTopic {
-                name: "transaction_topic2_in",
+                name: "transactions2_in",
                 num_partitions: 3,
                 replication_factor: 1,
             },
             NewTopic {
-                name: "transaction_topic2_out",
+                name: "transactions2_out",
                 num_partitions: 3,
                 replication_factor: 1,
             },
@@ -762,7 +762,7 @@ async fn produce_consume_transactions_with_abort(connection_builder: &KafkaConne
             .assert_produce(
                 Record {
                     payload: &format!("Message1_{i}"),
-                    topic_name: "transaction_topic1_in",
+                    topic_name: "transactions1_in",
                     key: Some("Key".into()),
                 },
                 Some(i * 2),
@@ -772,7 +772,7 @@ async fn produce_consume_transactions_with_abort(connection_builder: &KafkaConne
             .assert_produce(
                 Record {
                     payload: &format!("Message2_{i}"),
-                    topic_name: "transaction_topic1_in",
+                    topic_name: "transactions1_in",
                     key: Some("Key".into()),
                 },
                 Some(i * 2 + 1),
@@ -785,13 +785,13 @@ async fn produce_consume_transactions_with_abort(connection_builder: &KafkaConne
         .await;
     let mut consumer_topic_in = connection_builder
         .connect_consumer(
-            ConsumerConfig::consume_from_topic("transaction_topic1_in".to_owned())
+            ConsumerConfig::consume_from_topic("transactions1_in".to_owned())
                 .with_group("some_group1"),
         )
         .await;
     let mut consumer_topic_out = connection_builder
         .connect_consumer(
-            ConsumerConfig::consume_from_topic("transaction_topic1_out".to_owned())
+            ConsumerConfig::consume_from_topic("transactions1_out".to_owned())
                 .with_isolation_level(IsolationLevel::ReadCommitted)
                 .with_group("some_group2"),
         )
@@ -802,7 +802,7 @@ async fn produce_consume_transactions_with_abort(connection_builder: &KafkaConne
             .assert_consume(ExpectedResponse {
                 message: format!("Message1_{i}"),
                 key: Some("Key".to_owned()),
-                topic_name: "transaction_topic1_in".to_owned(),
+                topic_name: "transactions1_in".to_owned(),
                 offset: Some(i * 2),
             })
             .await;
@@ -810,7 +810,7 @@ async fn produce_consume_transactions_with_abort(connection_builder: &KafkaConne
             .assert_consume(ExpectedResponse {
                 message: format!("Message2_{i}"),
                 key: Some("Key".into()),
-                topic_name: "transaction_topic1_in".to_owned(),
+                topic_name: "transactions1_in".to_owned(),
                 offset: Some(i * 2 + 1),
             })
             .await;
@@ -820,7 +820,7 @@ async fn produce_consume_transactions_with_abort(connection_builder: &KafkaConne
             .assert_produce(
                 Record {
                     payload: &format!("Message1_{i}"),
-                    topic_name: "transaction_topic1_out",
+                    topic_name: "transactions1_out",
                     key: Some("Key".into()),
                 },
                 // Not sure where the extra offset per loop comes from
@@ -832,7 +832,7 @@ async fn produce_consume_transactions_with_abort(connection_builder: &KafkaConne
             .assert_produce(
                 Record {
                     payload: &format!("Message2_{i}"),
-                    topic_name: "transaction_topic1_out",
+                    topic_name: "transactions1_out",
                     key: Some("Key".into()),
                 },
                 Some(i * 3 + 1),
@@ -857,7 +857,7 @@ async fn produce_consume_transactions_with_commit(connection_builder: &KafkaConn
             .assert_produce(
                 Record {
                     payload: &format!("Message1_{i}"),
-                    topic_name: "transaction_topic2_in",
+                    topic_name: "transactions2_in",
                     key: Some("Key".into()),
                 },
                 Some(i * 2),
@@ -867,7 +867,7 @@ async fn produce_consume_transactions_with_commit(connection_builder: &KafkaConn
             .assert_produce(
                 Record {
                     payload: &format!("Message2_{i}"),
-                    topic_name: "transaction_topic2_in",
+                    topic_name: "transactions2_in",
                     key: Some("Key".into()),
                 },
                 Some(i * 2 + 1),
@@ -880,13 +880,13 @@ async fn produce_consume_transactions_with_commit(connection_builder: &KafkaConn
             .await;
         let mut consumer_topic_in = connection_builder
             .connect_consumer(
-                ConsumerConfig::consume_from_topic("transaction_topic2_in".to_owned())
+                ConsumerConfig::consume_from_topic("transactions2_in".to_owned())
                     .with_group("some_group1"),
             )
             .await;
         let mut consumer_topic_out_committed = connection_builder
             .connect_consumer(
-                ConsumerConfig::consume_from_topic("transaction_topic2_out".to_owned())
+                ConsumerConfig::consume_from_topic("transactions2_out".to_owned())
                     .with_isolation_level(IsolationLevel::ReadCommitted)
                     .with_group("some_group2"),
             )
@@ -894,7 +894,7 @@ async fn produce_consume_transactions_with_commit(connection_builder: &KafkaConn
 
         let mut consumer_topic_out_uncommitted = connection_builder
             .connect_consumer(
-                ConsumerConfig::consume_from_topic("transaction_topic2_out".to_owned())
+                ConsumerConfig::consume_from_topic("transactions2_out".to_owned())
                     .with_isolation_level(IsolationLevel::ReadUncommitted)
                     .with_group("some_group3"),
             )
@@ -905,7 +905,7 @@ async fn produce_consume_transactions_with_commit(connection_builder: &KafkaConn
                 .assert_consume(ExpectedResponse {
                     message: format!("Message1_{i}"),
                     key: Some("Key".to_owned()),
-                    topic_name: "transaction_topic2_in".to_owned(),
+                    topic_name: "transactions2_in".to_owned(),
                     offset: Some(i * 2),
                 })
                 .await;
@@ -913,7 +913,7 @@ async fn produce_consume_transactions_with_commit(connection_builder: &KafkaConn
                 .assert_consume(ExpectedResponse {
                     message: format!("Message2_{i}"),
                     key: Some("Key".into()),
-                    topic_name: "transaction_topic2_in".to_owned(),
+                    topic_name: "transactions2_in".to_owned(),
                     offset: Some(i * 2 + 1),
                 })
                 .await;
@@ -923,7 +923,7 @@ async fn produce_consume_transactions_with_commit(connection_builder: &KafkaConn
                 .assert_produce(
                     Record {
                         payload: &format!("Message1_{i}"),
-                        topic_name: "transaction_topic2_out",
+                        topic_name: "transactions2_out",
                         key: Some("Key".into()),
                     },
                     // Not sure where the extra offset per loop comes from
@@ -935,7 +935,7 @@ async fn produce_consume_transactions_with_commit(connection_builder: &KafkaConn
                 .assert_produce(
                     Record {
                         payload: &format!("Message2_{i}"),
-                        topic_name: "transaction_topic2_out",
+                        topic_name: "transactions2_out",
                         key: Some("Key".into()),
                     },
                     Some(i * 3 + 1),
@@ -945,7 +945,7 @@ async fn produce_consume_transactions_with_commit(connection_builder: &KafkaConn
             // commit the offsets to the records we read from the in topic
             let offsets = HashMap::from([(
                 TopicPartition {
-                    topic_name: "transaction_topic2_in".to_owned(),
+                    topic_name: "transactions2_in".to_owned(),
                     // Since all produces use the same key we can assume they are all going to the same partition.
                     partition: result.partition,
                 },
@@ -964,13 +964,13 @@ async fn produce_consume_transactions_with_commit(connection_builder: &KafkaConn
                     ExpectedResponse {
                         message: format!("Message1_{i}"),
                         key: Some("Key".to_owned()),
-                        topic_name: "transaction_topic2_out".to_owned(),
+                        topic_name: "transactions2_out".to_owned(),
                         offset: Some(i * 3),
                     },
                     ExpectedResponse {
                         message: format!("Message2_{i}"),
                         key: Some("Key".to_owned()),
-                        topic_name: "transaction_topic2_out".to_owned(),
+                        topic_name: "transactions2_out".to_owned(),
                         offset: Some(i * 3 + 1),
                     },
                 ])
@@ -983,13 +983,13 @@ async fn produce_consume_transactions_with_commit(connection_builder: &KafkaConn
                     ExpectedResponse {
                         message: format!("Message1_{i}"),
                         key: Some("Key".to_owned()),
-                        topic_name: "transaction_topic2_out".to_owned(),
+                        topic_name: "transactions2_out".to_owned(),
                         offset: Some(i * 3),
                     },
                     ExpectedResponse {
                         message: format!("Message2_{i}"),
                         key: Some("Key".to_owned()),
-                        topic_name: "transaction_topic2_out".to_owned(),
+                        topic_name: "transactions2_out".to_owned(),
                         offset: Some(i * 3 + 1),
                     },
                 ])
@@ -1002,7 +1002,7 @@ async fn produce_consume_transactions_with_commit(connection_builder: &KafkaConn
             .assert_produce(
                 Record {
                     payload: "Final",
-                    topic_name: "transaction_topic2_in",
+                    topic_name: "transactions2_in",
                     key: Some("Key".into()),
                 },
                 None,
@@ -1014,7 +1014,7 @@ async fn produce_consume_transactions_with_commit(connection_builder: &KafkaConn
     // send_offsets_to_transaction should result in commits to the consumer offset of the input topic
     let mut consumer_topic_in_new = connection_builder
         .connect_consumer(
-            ConsumerConfig::consume_from_topic("transaction_topic2_in".to_owned())
+            ConsumerConfig::consume_from_topic("transactions2_in".to_owned())
                 .with_group("some_group1"),
         )
         .await;
@@ -1022,7 +1022,7 @@ async fn produce_consume_transactions_with_commit(connection_builder: &KafkaConn
         .assert_consume(ExpectedResponse {
             message: "Final".to_owned(),
             key: Some("Key".into()),
-            topic_name: "transaction_topic2_in".to_owned(),
+            topic_name: "transactions2_in".to_owned(),
             offset: None,
         })
         .await;
