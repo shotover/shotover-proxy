@@ -6,14 +6,10 @@ use crate::{
     },
     message::Message,
 };
-use kafka_protocol::{
-    indexmap::IndexMap,
-    messages::{
-        add_partitions_to_txn_request::AddPartitionsToTxnTransaction,
-        list_offsets_request::ListOffsetsTopic, produce_request::TopicProduceData,
-        AddPartitionsToTxnRequest, BrokerId, ListOffsetsRequest, ProduceRequest, TopicName,
-        TransactionalId,
-    },
+use kafka_protocol::messages::{
+    add_partitions_to_txn_request::AddPartitionsToTxnTransaction,
+    list_offsets_request::ListOffsetsTopic, produce_request::TopicProduceData,
+    AddPartitionsToTxnRequest, BrokerId, ListOffsetsRequest, ProduceRequest, TopicName,
 };
 use std::collections::HashMap;
 
@@ -32,7 +28,7 @@ pub struct ProduceRequestSplitAndRouter;
 
 impl RequestSplitAndRouter for ProduceRequestSplitAndRouter {
     type Request = ProduceRequest;
-    type SubRequests = IndexMap<TopicName, TopicProduceData>;
+    type SubRequests = HashMap<TopicName, TopicProduceData>;
 
     fn split_by_destination(
         transform: &mut KafkaSinkCluster,
@@ -52,7 +48,7 @@ impl RequestSplitAndRouter for ProduceRequestSplitAndRouter {
     }
 
     fn reassemble(request: &mut Self::Request, item: Self::SubRequests) {
-        request.topic_data = item;
+        request.topic_data = item.into_values().collect();
     }
 }
 
@@ -60,7 +56,7 @@ pub struct AddPartitionsToTxnRequestSplitAndRouter;
 
 impl RequestSplitAndRouter for AddPartitionsToTxnRequestSplitAndRouter {
     type Request = AddPartitionsToTxnRequest;
-    type SubRequests = IndexMap<TransactionalId, AddPartitionsToTxnTransaction>;
+    type SubRequests = Vec<AddPartitionsToTxnTransaction>;
 
     fn split_by_destination(
         transform: &mut KafkaSinkCluster,
