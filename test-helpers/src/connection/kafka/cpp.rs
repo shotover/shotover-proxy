@@ -2,7 +2,10 @@ use std::collections::{HashMap, HashSet};
 // Allow direct usage of the APIs when the feature is enabled
 pub use rdkafka;
 
-use super::{ConsumerConfig, ExpectedResponse, NewPartition, Record, TopicPartition};
+use super::{
+    ConsumerConfig, ExpectedResponse, NewPartition, OffsetAndMetadata, ProduceResult, Record,
+    TopicPartition,
+};
 use anyhow::Result;
 use pretty_assertions::assert_eq;
 use rdkafka::admin::AdminClient;
@@ -87,6 +90,7 @@ impl KafkaConnectionBuilderCpp {
             .set("session.timeout.ms", "6000")
             .set("auto.offset.reset", "earliest")
             .set("enable.auto.commit", "false")
+            .set("isolation.level", config.isolation_level.as_str())
             // this has a different name to the java driver 😭
             .set("fetch.wait.max.ms", config.fetch_max_wait_ms.to_string())
             .set("fetch.min.bytes", config.fetch_min_bytes.to_string())
@@ -133,7 +137,11 @@ pub struct KafkaProducerCpp {
 }
 
 impl KafkaProducerCpp {
-    pub async fn assert_produce(&self, record: Record<'_>, expected_offset: Option<i64>) {
+    pub async fn assert_produce(
+        &self,
+        record: Record<'_>,
+        expected_offset: Option<i64>,
+    ) -> ProduceResult {
         let send = match record.key {
             Some(key) => self
                 .producer
@@ -157,14 +165,37 @@ impl KafkaProducerCpp {
         if let Some(offset) = expected_offset {
             assert_eq!(delivery_status.1, offset, "Unexpected offset");
         }
+
+        ProduceResult {
+            partition: delivery_status.0,
+        }
     }
 
     pub fn begin_transaction(&self) {
         self.producer.begin_transaction().unwrap();
     }
 
-    pub fn send_offsets_to_transaction(&self, consumer: &KafkaConsumerCpp) {
-        let topic_partitions = TopicPartitionList::new();
+    pub fn abort_transaction(&self) {
+        self.producer
+            .abort_transaction(Duration::from_secs(1))
+            .unwrap();
+    }
+
+    pub fn send_offsets_to_transaction(
+        &self,
+        consumer: &KafkaConsumerCpp,
+        offsets: HashMap<TopicPartition, OffsetAndMetadata>,
+    ) {
+        let mut topic_partitions = TopicPartitionList::new();
+        for (tp, offset_and_metadata) in offsets {
+            topic_partitions
+                .add_partition_offset(
+                    &tp.topic_name,
+                    tp.partition,
+                    rdkafka::Offset::Offset(offset_and_metadata.offset),
+                )
+                .unwrap();
+        }
         let consumer_group = consumer.consumer.group_metadata().unwrap();
         self.producer
             .send_offsets_to_transaction(&topic_partitions, &consumer_group, Duration::from_secs(1))
@@ -183,8 +214,8 @@ pub struct KafkaConsumerCpp {
 }
 
 impl KafkaConsumerCpp {
-    pub async fn consume(&self) -> ExpectedResponse {
-        let message = tokio::time::timeout(Duration::from_secs(30), self.consumer.recv())
+    pub async fn consume(&self, timeout: Duration) -> ExpectedResponse {
+        let message = tokio::time::timeout(timeout, self.consumer.recv())
             .await
             .expect("Timeout while receiving from consumer")
             .unwrap();
@@ -195,6 +226,15 @@ impl KafkaConsumerCpp {
                 .map(|x| String::from_utf8(x.to_vec()).unwrap()),
             topic_name: message.topic().to_owned(),
             offset: Some(message.offset()),
+        }
+    }
+
+    pub async fn assert_no_consume_within_timeout(&self, timeout: Duration) {
+        match tokio::time::timeout(timeout, self.consumer.recv()).await {
+            Ok(records) => panic!("Expected no records to be consumed but consumed {records:?}"),
+            Err(_) => {
+                // no values were consumed, continue on.
+            }
         }
     }
 
