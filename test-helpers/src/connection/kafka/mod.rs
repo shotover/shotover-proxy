@@ -1,7 +1,7 @@
 use pretty_assertions::assert_eq;
 use std::{
     collections::{HashMap, HashSet},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 #[cfg(feature = "kafka-cpp-driver-tests")]
@@ -348,11 +348,56 @@ impl KafkaAdmin {
         }
     }
 
-    pub async fn describe_topic(&self, topic_name: &str) -> Result<TopicDescription> {
+    pub async fn create_topics_and_wait(&self, topics: &[NewTopic<'_>]) {
+        self.create_topics(topics).await;
+
+        match self {
+            #[cfg(feature = "kafka-cpp-driver-tests")]
+            KafkaAdmin::Cpp(_) => {
+                // rdkafka-rs driver doesnt support describe_topics so just wait instead :/
+                tokio::time::sleep(Duration::from_secs(5)).await;
+            }
+            KafkaAdmin::Java(_) => {
+                let instant = Instant::now();
+                let topics_to_wait_for: Vec<&str> = topics.iter().map(|x| x.name).collect();
+                loop {
+                    if self.are_topics_ready(&topics_to_wait_for).await {
+                        break;
+                    } else {
+                        tokio::time::sleep(Duration::from_millis(1)).await;
+                        if instant.elapsed() > Duration::from_secs(30) {
+                            panic!("Timedout while waiting for created topics to be available. Was waiting for topics {topics_to_wait_for:?}")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    async fn are_topics_ready(&self, topics_to_wait_for: &[&str]) -> bool {
         match self {
             #[cfg(feature = "kafka-cpp-driver-tests")]
             KafkaAdmin::Cpp(_) => unimplemented!(),
-            KafkaAdmin::Java(java) => java.describe_topic(topic_name).await,
+            KafkaAdmin::Java(java) => match java.describe_topics(topics_to_wait_for).await {
+                Ok(topics) => {
+                    for topic in topics {
+                        if topic.partitions.is_empty() {
+                            return false;
+                        }
+                    }
+                    true
+                }
+
+                Err(_) => false,
+            },
+        }
+    }
+
+    pub async fn describe_topics(&self, topic_names: &[&str]) -> Result<Vec<TopicDescription>> {
+        match self {
+            #[cfg(feature = "kafka-cpp-driver-tests")]
+            KafkaAdmin::Cpp(_) => unimplemented!(),
+            KafkaAdmin::Java(java) => java.describe_topics(topic_names).await,
         }
     }
 
@@ -494,10 +539,12 @@ pub enum AclPermissionType {
 
 #[derive(Debug)]
 pub struct TopicDescription {
-    // None of our tests actually make use of the contents of TopicDescription,
-    // instead they just check if the describe succeeded or failed,
-    // so this is intentionally left empty for now
+    pub topic_name: String,
+    pub partitions: Vec<TopicPartitionInfo>,
 }
+
+#[derive(Debug)]
+pub struct TopicPartitionInfo {}
 
 pub enum OffsetSpec {
     Earliest,

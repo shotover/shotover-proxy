@@ -14,7 +14,7 @@ use tokio_bin_process::BinProcess;
 async fn admin_setup(connection_builder: &KafkaConnectionBuilder) {
     let admin = connection_builder.connect_admin().await;
     admin
-        .create_topics(&[
+        .create_topics_and_wait(&[
             NewTopic {
                 name: "partitions1",
                 num_partitions: 1,
@@ -442,7 +442,7 @@ pub async fn produce_consume_partitions1_kafka_node_goes_down(
     {
         let admin = connection_builder.connect_admin().await;
         admin
-            .create_topics(&[NewTopic {
+            .create_topics_and_wait(&[NewTopic {
                 name: topic_name,
                 num_partitions: 1,
                 replication_factor: 3,
@@ -568,7 +568,7 @@ pub async fn produce_consume_partitions1_shotover_nodes_go_down(
     {
         let admin = connection_builder.connect_admin().await;
         admin
-            .create_topics(&[NewTopic {
+            .create_topics_and_wait(&[NewTopic {
                 name: topic_name,
                 num_partitions: 1,
                 replication_factor: 3,
@@ -1204,15 +1204,12 @@ async fn produce_consume_acks0(connection_builder: &KafkaConnectionBuilder) {
 pub async fn test_broker_idle_timeout(connection_builder: &KafkaConnectionBuilder) {
     let admin = connection_builder.connect_admin().await;
     admin
-        .create_topics(&[NewTopic {
+        .create_topics_and_wait(&[NewTopic {
             name: "partitions3",
             num_partitions: 3,
             replication_factor: 1,
         }])
         .await;
-
-    // cpp driver hits race condition here
-    tokio::time::sleep(Duration::from_secs(2)).await;
 
     let mut producer = connection_builder.connect_producer("all", 0).await;
     let mut consumer = connection_builder
@@ -1286,7 +1283,7 @@ pub async fn standard_test_suite(connection_builder: &KafkaConnectionBuilder) {
         let admin = connection_builder.connect_admin().await;
         admin.delete_topics(&["partitions1"]).await;
         admin
-            .create_topics(&[NewTopic {
+            .create_topics_and_wait(&[NewTopic {
                 name: "partitions1",
                 num_partitions: 1,
                 replication_factor: 1,
@@ -1368,7 +1365,7 @@ pub async fn cluster_test_suite(connection_builder: &KafkaConnectionBuilder) {
     standard_test_suite(connection_builder).await;
     let admin = connection_builder.connect_admin().await;
     admin
-        .create_topics(&[
+        .create_topics_and_wait(&[
             NewTopic {
                 name: "partitions1_rf3",
                 num_partitions: 1,
@@ -1381,7 +1378,6 @@ pub async fn cluster_test_suite(connection_builder: &KafkaConnectionBuilder) {
             },
         ])
         .await;
-    tokio::time::sleep(Duration::from_secs(10)).await;
     produce_consume_partitions1(connection_builder, "partitions1_rf3").await;
     produce_consume_partitions3(connection_builder, "partitions3_rf3", 1, 500).await;
 }
@@ -1428,7 +1424,7 @@ pub async fn assert_topic_creation_is_denied_due_to_acl(connection: &KafkaConnec
     // * The request succeeds because user has AclOperation::Describe.
     // * But no topic is found since the topic creation was denied.
     assert_eq!(
-        admin.describe_topic("acl_check_topic").await.unwrap_err().to_string(),
+        admin.describe_topics(&["acl_check_topic"]).await.unwrap_err().to_string(),
         "org.apache.kafka.common.errors.UnknownTopicOrPartitionException: This server does not host this topic-partition.\n"
     )
 }
