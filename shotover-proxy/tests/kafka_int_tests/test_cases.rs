@@ -1,5 +1,4 @@
 use futures::{stream::FuturesUnordered, StreamExt};
-use std::collections::VecDeque;
 use std::{collections::HashMap, time::Duration};
 use test_helpers::{
     connection::kafka::{
@@ -552,22 +551,10 @@ pub async fn produce_consume_partitions1_kafka_node_goes_down(
 }
 
 pub async fn produce_consume_partitions1_shotover_nodes_go_down(
-    driver: KafkaDriver,
-    shotover_nodes_to_kill: &mut VecDeque<BinProcess>,
+    shotover_nodes_to_kill: Vec<BinProcess>,
     connection_builder: &KafkaConnectionBuilder,
     topic_name: &str,
 ) {
-    if driver.is_cpp() {
-        // Skip this test for CPP driver.
-        // While the cpp driver has some retry capabilities,
-        // in many cases it will mark a shotover node as down for a single failed request
-        // and then immediately return the error to the caller, without waiting the full timeout period,
-        // since it has no more nodes to attempt sending to.
-        //
-        // So we skip this test on the CPP driver to avoid flaky tests.
-        return;
-    }
-
     {
         let admin = connection_builder.connect_admin().await;
         admin
@@ -608,15 +595,11 @@ pub async fn produce_consume_partitions1_shotover_nodes_go_down(
             })
             .await;
 
-        let num_nodes = shotover_nodes_to_kill.len();
         // kill shotover node(s)
-        for _ in 0..num_nodes {
+        for shotover_node in shotover_nodes_to_kill {
             tokio::time::timeout(
                 Duration::from_secs(10),
-                shotover_nodes_to_kill
-                    .pop_front()
-                    .unwrap()
-                    .shutdown_and_then_consume_events(&[]),
+                shotover_node.shutdown_and_then_consume_events(&[]),
             )
             .await
             .expect("Shotover did not shutdown within 10s");
