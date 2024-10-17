@@ -1,4 +1,5 @@
 use futures::{stream::FuturesUnordered, StreamExt};
+use std::collections::VecDeque;
 use std::{collections::HashMap, time::Duration};
 use test_helpers::{
     connection::kafka::{
@@ -9,6 +10,7 @@ use test_helpers::{
     },
     docker_compose::DockerCompose,
 };
+use tokio_bin_process::BinProcess;
 
 async fn admin_setup(connection_builder: &KafkaConnectionBuilder) {
     let admin = connection_builder.connect_admin().await;
@@ -469,6 +471,159 @@ pub async fn produce_consume_partitions1_kafka_node_goes_down(
             .await;
 
         docker_compose.kill_service("kafka1");
+
+        // create and consume records
+        for i in 0..5 {
+            producer
+                .assert_produce(
+                    Record {
+                        payload: "Message1",
+                        topic_name,
+                        key: Some("Key".into()),
+                    },
+                    Some(i * 2 + 1),
+                )
+                .await;
+            producer
+                .assert_produce(
+                    Record {
+                        payload: "Message2",
+                        topic_name,
+                        key: None,
+                    },
+                    Some(i * 2 + 2),
+                )
+                .await;
+
+            consumer
+                .assert_consume(ExpectedResponse {
+                    message: "Message1".to_owned(),
+                    key: Some("Key".to_owned()),
+                    topic_name: topic_name.to_owned(),
+                    offset: Some(i * 2 + 1),
+                })
+                .await;
+
+            consumer
+                .assert_consume(ExpectedResponse {
+                    message: "Message2".to_owned(),
+                    key: None,
+                    topic_name: topic_name.to_owned(),
+                    offset: Some(i * 2 + 2),
+                })
+                .await;
+        }
+    }
+
+    // if we create a new consumer it will start from the beginning since auto.offset.reset = earliest and enable.auto.commit false
+    // so we test that we can access all records ever created on this topic
+    let mut consumer = connection_builder
+        .connect_consumer(
+            ConsumerConfig::consume_from_topic(topic_name.to_owned())
+                .with_group("kafka_node_goes_down_test_group_new"),
+        )
+        .await;
+    consumer
+        .assert_consume(ExpectedResponse {
+            message: "initial".to_owned(),
+            key: Some("Key".to_owned()),
+            topic_name: topic_name.to_owned(),
+            offset: Some(0),
+        })
+        .await;
+    for i in 0..5 {
+        consumer
+            .assert_consume(ExpectedResponse {
+                message: "Message1".to_owned(),
+                key: Some("Key".to_owned()),
+                topic_name: topic_name.to_owned(),
+                offset: Some(i * 2 + 1),
+            })
+            .await;
+        consumer
+            .assert_consume(ExpectedResponse {
+                message: "Message2".to_owned(),
+                key: None,
+                topic_name: topic_name.to_owned(),
+                offset: Some(i * 2 + 2),
+            })
+            .await;
+    }
+}
+
+pub async fn produce_consume_partitions1_shotover_nodes_go_down(
+    driver: KafkaDriver,
+    shotover_nodes_to_kill: &mut VecDeque<BinProcess>,
+    connection_builder: &KafkaConnectionBuilder,
+    topic_name: &str,
+) {
+    if driver.is_cpp() {
+        // Skip this test for CPP driver.
+        // While the cpp driver has some retry capabilities,
+        // in many cases it will mark a shotover node as down for a single failed request
+        // and then immediately return the error to the caller, without waiting the full timeout period,
+        // since it has no more nodes to attempt sending to.
+        //
+        // So we skip this test on the CPP driver to avoid flaky tests.
+        return;
+    }
+
+    {
+        let admin = connection_builder.connect_admin().await;
+        admin
+            .create_topics(&[NewTopic {
+                name: topic_name,
+                num_partitions: 1,
+                replication_factor: 3,
+            }])
+            .await;
+    }
+
+    {
+        let producer = connection_builder.connect_producer("all", 0).await;
+        // create an initial record to force kafka to create the topic if it doesnt yet exist
+        producer
+            .assert_produce(
+                Record {
+                    payload: "initial",
+                    topic_name,
+                    key: Some("Key".into()),
+                },
+                Some(0),
+            )
+            .await;
+
+        let mut consumer = connection_builder
+            .connect_consumer(
+                ConsumerConfig::consume_from_topic(topic_name.to_owned())
+                    .with_group("kafka_node_goes_down_test_group"),
+            )
+            .await;
+        consumer
+            .assert_consume(ExpectedResponse {
+                message: "initial".to_owned(),
+                key: Some("Key".to_owned()),
+                topic_name: topic_name.to_owned(),
+                offset: Some(0),
+            })
+            .await;
+
+        let num_nodes = shotover_nodes_to_kill.len();
+        // kill shotover node(s)
+        for _ in 0..num_nodes {
+            tokio::time::timeout(
+                Duration::from_secs(10),
+                shotover_nodes_to_kill
+                    .pop_front()
+                    .unwrap()
+                    .shutdown_and_then_consume_events(&[]),
+            )
+            .await
+            .expect("Shotover did not shutdown within 10s");
+        }
+
+        // Wait for the up shotover nodes to detect the down nodes
+        tokio::time::sleep(Duration::from_secs(10)).await;
 
         // create and consume records
         for i in 0..5 {

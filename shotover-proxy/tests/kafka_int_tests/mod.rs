@@ -3,6 +3,7 @@ mod test_cases;
 use crate::shotover_process;
 use pretty_assertions::assert_eq;
 use rstest::rstest;
+use std::collections::VecDeque;
 use std::time::Duration;
 use std::time::Instant;
 use test_cases::produce_consume_partitions1;
@@ -390,23 +391,20 @@ async fn cluster_1_rack_multi_shotover_with_1_shotover_down(#[case] driver: Kafk
     // Wait for check_shotover_peers to start
     tokio::time::sleep(Duration::from_secs(15)).await;
 
-    // Send some produce and consume requests
-    let connection_builder = KafkaConnectionBuilder::new(driver, "127.0.0.1:9192");
-    produce_consume_partitions3(&connection_builder, "partitions3_rf3", 1, 500).await;
-
-    // Kill one shotover node
-    tokio::time::timeout(
-        Duration::from_secs(10),
-        shotovers.remove(0).shutdown_and_then_consume_events(&[]),
+    // produce and consume messages, kill 1 shotover node and produce and consume more messages
+    let connection_builder = KafkaConnectionBuilder::new(driver, "localhost:9192");
+    let mut shotover_nodes_to_kill = shotovers.drain(0..1).collect::<VecDeque<_>>();
+    test_cases::produce_consume_partitions1_shotover_nodes_go_down(
+        driver,
+        &mut shotover_nodes_to_kill,
+        &connection_builder,
+        "shotover_node_goes_down_test",
     )
-    .await
-    .expect("Shotover did not shutdown within 10s");
+    .await;
 
-    // Wait for the other shotover nodes to detect the down node
-    tokio::time::sleep(Duration::from_secs(5)).await;
-
-    // Send more produce and consume requests
-    produce_consume_partitions3(&connection_builder, "partitions3_rf3", 1, 500).await;
+    // create a new connection and produce and consume messages
+    let new_connection_builder = KafkaConnectionBuilder::new(driver, "localhost:9193");
+    test_cases::cluster_test_suite(&new_connection_builder).await;
 
     let mut expected_events = multi_shotover_events();
     // Other shotover nodes should detect the killed node at least once
@@ -453,25 +451,20 @@ async fn cluster_3_racks_multi_shotover_with_2_shotover_down(#[case] driver: Kaf
     // Wait for check_shotover_peers to start
     tokio::time::sleep(Duration::from_secs(15)).await;
 
-    // Send some produce and consume requests
+    // produce and consume messages, kill 2 shotover nodes and produce and consume more messages
     let connection_builder = KafkaConnectionBuilder::new(driver, "localhost:9193");
-    produce_consume_partitions3(&connection_builder, "partitions3_rf3", 1, 500).await;
+    let mut shotover_nodes_to_kill = shotovers.drain(0..2).collect::<VecDeque<_>>();
+    test_cases::produce_consume_partitions1_shotover_nodes_go_down(
+        driver,
+        &mut shotover_nodes_to_kill,
+        &connection_builder,
+        "shotover_nodes_go_down_test",
+    )
+    .await;
 
-    // Kill 2 shotover nodes
-    for _ in 0..2 {
-        tokio::time::timeout(
-            Duration::from_secs(10),
-            shotovers.remove(0).shutdown_and_then_consume_events(&[]),
-        )
-        .await
-        .expect("Shotover did not shutdown within 10s");
-    }
-
-    // Wait for the other shotover node to detect the down nodes
-    tokio::time::sleep(Duration::from_secs(10)).await;
-
-    // Send more produce and consume requests
-    produce_consume_partitions3(&connection_builder, "partitions3_rf3", 1, 500).await;
+    // create a new connection and produce and consume messages
+    let new_connection_builder = KafkaConnectionBuilder::new(driver, "localhost:9193");
+    test_cases::cluster_test_suite(&new_connection_builder).await;
 
     let mut expected_events = multi_shotover_events();
     // The UP shotover node should detect the killed nodes at least once
@@ -487,7 +480,7 @@ async fn cluster_3_racks_multi_shotover_with_2_shotover_down(#[case] driver: Kaf
 
     for shotover in shotovers {
         tokio::time::timeout(
-            Duration::from_secs(8),
+            Duration::from_secs(10),
             shotover.shutdown_and_then_consume_events(&expected_events),
         )
         .await
@@ -523,7 +516,7 @@ async fn cluster_3_racks_multi_shotover_with_1_shotover_missing(#[case] driver: 
 
     // Send some produce and consume requests
     let connection_builder = KafkaConnectionBuilder::new(driver, "localhost:9192");
-    produce_consume_partitions3(&connection_builder, "partitions3_rf3", 1, 500).await;
+    test_cases::cluster_test_suite(&connection_builder).await;
 
     let mut expected_events = multi_shotover_events();
     // Other shotover nodes should detect the missing node at least once

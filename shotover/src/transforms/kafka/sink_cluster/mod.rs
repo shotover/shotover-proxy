@@ -2635,159 +2635,140 @@ impl KafkaSinkCluster {
         // meaning the list of UP shotover nodes can be different on different shotover nodes.
         // This scenario should be rare since shotover nodes are usually either accessible to both clients and peer shotover nodes or not at all,
         // which means the DOWN shotover nodes should not be able to send the inconsistent responses back to clients.
+
+        // This should never be empty since the local shotover node always considers itself UP
         let up_shotover_nodes: Vec<_> = self
             .shotover_nodes
             .iter()
             .filter(|shotover_node| shotover_node.is_up())
             .collect();
 
-        if !up_shotover_nodes.is_empty() {
-            // Overwrite list of brokers with the list of UP shotover nodes
-            metadata.brokers = up_shotover_nodes
-                .iter()
-                .map(|shotover_node| {
-                    (
-                        shotover_node.broker_id,
-                        MetadataResponseBroker::default()
-                            .with_host(shotover_node.address.host.clone())
-                            .with_port(shotover_node.address.port)
-                            .with_rack(Some(shotover_node.rack.clone())),
-                    )
-                })
-                .collect();
+        // Overwrite list of brokers with the list of UP shotover nodes
+        metadata.brokers = up_shotover_nodes
+            .iter()
+            .map(|shotover_node| {
+                (
+                    shotover_node.broker_id,
+                    MetadataResponseBroker::default()
+                        .with_host(shotover_node.address.host.clone())
+                        .with_port(shotover_node.address.port)
+                        .with_rack(Some(shotover_node.rack.clone())),
+                )
+            })
+            .collect();
 
-            // Overwrite the list of partitions to point at UP shotover nodes within the same rack if any
-            // If there is no UP shotover node within the same rack, fall back to UP shotover nodes out of the rack
-            for (_, topic) in &mut metadata.topics {
-                for partition in &mut topic.partitions {
-                    // Try to deterministically choose a single UP shotover node in the rack as leader based on topic + partition id
-                    if let Some(leader_rack) = self
+        // Overwrite the list of partitions to point at UP shotover nodes within the same rack if any
+        // If there is no UP shotover node within the same rack, fall back to UP shotover nodes out of the rack
+        for (_, topic) in &mut metadata.topics {
+            for partition in &mut topic.partitions {
+                // Try to deterministically choose a single UP shotover node in the rack as leader based on topic + partition id
+                if let Some(leader_rack) = self
+                    .nodes
+                    .iter()
+                    .find(|x| x.broker_id == *partition.leader_id)
+                    .map(|x| x.rack.clone())
+                {
+                    let hash = hash_partition(topic.topic_id, partition.partition_index);
+                    let shotover_nodes_by_rack =
+                        partition_shotover_nodes_by_rack(&up_shotover_nodes, &leader_rack.as_ref());
+                    let shotover_node = select_shotover_node_by_hash(shotover_nodes_by_rack, hash);
+
+                    partition.leader_id = shotover_node.broker_id;
+                } else {
+                    // If the cluster detects the broker is down it will not be included in the metadata list of brokers.
+                    // In that case we wont find a broker and we should just mark the leader as not existing by setting it to -1
+                    // The brokers also set the leader to -1 if they detect it is down, so this matches their behaviour.
+                    partition.leader_id = BrokerId(-1);
+                }
+
+                // Every replica node has its entire corresponding shotover rack included.
+                // Since we can set as many replica nodes as we like, we take this all out approach.
+                // This ensures that:
+                // * metadata is deterministic and therefore the same on all UP shotover nodes (note that metadata can be different on DOWN shotover nodes)
+                // * clients evenly distribute their queries across UP shotover nodes
+                let mut shotover_replica_nodes = HashSet::new();
+                for replica_node in &partition.replica_nodes {
+                    if let Some(rack) = self
                         .nodes
                         .iter()
-                        .find(|x| x.broker_id == *partition.leader_id)
+                        .find(|x| x.broker_id == *replica_node)
                         .map(|x| x.rack.clone())
                     {
-                        let hash = hash_partition(topic.topic_id, partition.partition_index);
-                        let shotover_nodes_by_rack = partition_shotover_nodes_by_rack(
-                            &up_shotover_nodes,
-                            &leader_rack.as_ref(),
-                        );
-                        let shotover_node =
-                            select_shotover_node_by_hash(shotover_nodes_by_rack, hash);
+                        // If broker has no rack - use all UP shotover nodes.
+                        // If broker has rack - use all UP shotover nodes with the same rack if available,
+                        // and fall back to use all UP shotover nodes out of the rack otherwise.
+                        let shotover_nodes_by_rack =
+                            partition_shotover_nodes_by_rack(&up_shotover_nodes, &rack.as_ref());
 
-                        partition.leader_id = shotover_node.broker_id;
+                        let broker_ids = collect_broker_ids(shotover_nodes_by_rack);
+                        shotover_replica_nodes.extend(broker_ids);
                     } else {
                         // If the cluster detects the broker is down it will not be included in the metadata list of brokers.
-                        // In that case we wont find a broker and we should just mark the leader as not existing by setting it to -1
-                        // The brokers also set the leader to -1 if they detect it is down, so this matches their behaviour.
-                        partition.leader_id = BrokerId(-1);
-                    }
-
-                    // Every replica node has its entire corresponding shotover rack included.
-                    // Since we can set as many replica nodes as we like, we take this all out approach.
-                    // This ensures that:
-                    // * metadata is deterministic and therefore the same on all UP shotover nodes (note that metadata can be different on DOWN shotover nodes)
-                    // * clients evenly distribute their queries across UP shotover nodes
-                    let mut shotover_replica_nodes = HashSet::new();
-                    for replica_node in &partition.replica_nodes {
-                        if let Some(rack) = self
-                            .nodes
-                            .iter()
-                            .find(|x| x.broker_id == *replica_node)
-                            .map(|x| x.rack.clone())
-                        {
-                            // If broker has no rack - use all UP shotover nodes.
-                            // If broker has rack - use all UP shotover nodes with the same rack if available,
-                            // and fall back to use all UP shotover nodes out of the rack otherwise.
-                            let shotover_nodes_by_rack = partition_shotover_nodes_by_rack(
-                                &up_shotover_nodes,
-                                &rack.as_ref(),
-                            );
-
-                            let broker_ids = collect_broker_ids(shotover_nodes_by_rack);
-                            shotover_replica_nodes.extend(broker_ids);
-                        } else {
-                            // If the cluster detects the broker is down it will not be included in the metadata list of brokers.
-                            // In that case we wont find a broker and we should just skip this broker.
-                        }
-                    }
-                    partition.replica_nodes = shotover_replica_nodes.into_iter().collect();
-                    // Every isr (in-sync-replica) node has its entire corresponding shotover rack included.
-                    // Since we can set as many isr nodes as we like, we take this all out approach.
-                    // This ensures that:
-                    // * metadata is deterministic and therefore the same on all UP shotover nodes (note that metadata can be different on DOWN shotover nodes)
-                    // * clients evenly distribute their queries across UP shotover nodes
-                    let mut shotover_isr_nodes = HashSet::new();
-                    for replica_node in &partition.isr_nodes {
-                        if let Some(rack) = self
-                            .nodes
-                            .iter()
-                            .find(|x| x.broker_id == *replica_node)
-                            .map(|x| x.rack.clone())
-                        {
-                            // If broker has no rack - use all UP shotover nodes.
-                            // If broker has rack - use all UP shotover nodes with the same rack if available,
-                            // and fall back to use all UP shotover nodes out of the rack otherwise.
-                            let shotover_nodes_by_rack = partition_shotover_nodes_by_rack(
-                                &up_shotover_nodes,
-                                &rack.as_ref(),
-                            );
-                            let broker_ids = collect_broker_ids(shotover_nodes_by_rack);
-                            shotover_isr_nodes.extend(broker_ids);
-                        } else {
-                            // If the cluster detects the broker is down it will not be included in the metadata list of brokers.
-                            // In that case we wont find a broker and we should just skip this broker.
-                        }
-                    }
-                    partition.isr_nodes = shotover_isr_nodes.into_iter().collect();
-
-                    // TODO: handle this properly, for now its better to just clear it than do nothing
-                    partition.offline_replicas.clear();
-                }
-            }
-
-            if let Some(controller_node_rack) = self
-                .nodes
-                .iter()
-                .find(|node| node.broker_id == metadata.controller_id)
-                .map(|x| x.rack.clone())
-            {
-                // If broker has no rack - use the first UP shotover node.
-                // If broker has rack - use the first UP shotover node with the same rack if available,
-                // and fall back to use the first UP shotover node out of the rack otherwise.
-                // This is deterministic because the list of UP shotover nodes is sorted and partitioning does not change the order.
-                let shotover_nodes_by_rack = partition_shotover_nodes_by_rack(
-                    &up_shotover_nodes,
-                    &controller_node_rack.as_ref(),
-                );
-                let shotover_node = shotover_nodes_by_rack
-                    .nodes_in_rack
-                    .first()
-                    .or_else(|| shotover_nodes_by_rack.nodes_out_of_rack.first());
-
-                match shotover_node {
-                    Some(shotover_node) => {
-                        metadata.controller_id = shotover_node.broker_id;
-                    }
-                    None => {
-                        // The local shotover node is always UP, so this should never happen.
-                        tracing::warn!(
-                            "No UP shotover node configured to handle kafka rack {:?}",
-                            controller_node_rack
-                        );
+                        // In that case we wont find a broker and we should just skip this broker.
                     }
                 }
-            } else {
-                return Err(anyhow!(
-                    "Invalid metadata, controller points at unknown broker {:?}",
-                    metadata.controller_id
-                ));
-            }
+                partition.replica_nodes = shotover_replica_nodes.into_iter().collect();
+                // Every isr (in-sync-replica) node has its entire corresponding shotover rack included.
+                // Since we can set as many isr nodes as we like, we take this all out approach.
+                // This ensures that:
+                // * metadata is deterministic and therefore the same on all UP shotover nodes (note that metadata can be different on DOWN shotover nodes)
+                // * clients evenly distribute their queries across UP shotover nodes
+                let mut shotover_isr_nodes = HashSet::new();
+                for replica_node in &partition.isr_nodes {
+                    if let Some(rack) = self
+                        .nodes
+                        .iter()
+                        .find(|x| x.broker_id == *replica_node)
+                        .map(|x| x.rack.clone())
+                    {
+                        // If broker has no rack - use all UP shotover nodes.
+                        // If broker has rack - use all UP shotover nodes with the same rack if available,
+                        // and fall back to use all UP shotover nodes out of the rack otherwise.
+                        let shotover_nodes_by_rack =
+                            partition_shotover_nodes_by_rack(&up_shotover_nodes, &rack.as_ref());
+                        let broker_ids = collect_broker_ids(shotover_nodes_by_rack);
+                        shotover_isr_nodes.extend(broker_ids);
+                    } else {
+                        // If the cluster detects the broker is down it will not be included in the metadata list of brokers.
+                        // In that case we wont find a broker and we should just skip this broker.
+                    }
+                }
+                partition.isr_nodes = shotover_isr_nodes.into_iter().collect();
 
-            Ok(())
-        } else {
-            Err(anyhow!("No UP shotover node available"))
+                // TODO: handle this properly, for now its better to just clear it than do nothing
+                partition.offline_replicas.clear();
+            }
         }
+
+        if let Some(controller_node_rack) = self
+            .nodes
+            .iter()
+            .find(|node| node.broker_id == metadata.controller_id)
+            .map(|x| x.rack.clone())
+        {
+            // If broker has no rack - use the first UP shotover node.
+            // If broker has rack - use the first UP shotover node with the same rack if available,
+            // and fall back to use the first UP shotover node out of the rack otherwise.
+            // This is deterministic because the list of UP shotover nodes is sorted and partitioning does not change the order.
+            let shotover_nodes_by_rack = partition_shotover_nodes_by_rack(
+                &up_shotover_nodes,
+                &controller_node_rack.as_ref(),
+            );
+            let shotover_node = shotover_nodes_by_rack
+                .nodes_in_rack
+                .first()
+                .or_else(|| shotover_nodes_by_rack.nodes_out_of_rack.first())
+                .expect("There will always be at least one up shotover node");
+
+            metadata.controller_id = shotover_node.broker_id;
+        } else {
+            return Err(anyhow!(
+                "Invalid metadata, controller points at unknown broker {:?}",
+                metadata.controller_id
+            ));
+        }
+
+        Ok(())
     }
 
     async fn add_node_if_new(&mut self, new_node: KafkaNode) {
