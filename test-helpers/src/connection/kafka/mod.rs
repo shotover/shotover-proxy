@@ -221,25 +221,57 @@ impl KafkaConsumer {
     pub async fn assert_consume(&mut self, expected_response: ExpectedResponse) {
         let response = self.consume(Duration::from_secs(30)).await;
 
-        let topic = &expected_response.topic_name;
-        assert_eq!(
-            expected_response.topic_name, response.topic_name,
-            "Unexpected topic"
-        );
-        assert_eq!(
-            expected_response.message, response.message,
-            "Unexpected message for topic {topic}"
-        );
-        assert_eq!(
-            expected_response.key, response.key,
-            "Unexpected key for topic {topic}"
-        );
+        // Construct an error message that gives as much context as possible as to what went wrong.
+        let mut error = false;
 
-        if expected_response.offset.is_some() {
-            assert_eq!(
-                expected_response.offset, response.offset,
-                "Unexpected offset for topic {topic}"
-            );
+        let expected_topic = &expected_response.topic_name;
+        let actual_topic = &response.topic_name;
+        let topic_result = if expected_topic == actual_topic {
+            "️and it matched".into()
+        } else {
+            error = true;
+            format!("but the topic was {actual_topic:?}")
+        };
+
+        let expected_message = &expected_response.message;
+        let actual_message = &response.message;
+        let message_result = if expected_message == actual_message {
+            "and it matched".into()
+        } else {
+            error = true;
+            format!("but the message was {actual_message:?}")
+        };
+
+        let expected_key = &expected_response.key;
+        let actual_key = &response.key;
+        let key_result = if expected_key == actual_key {
+            "and it matched".into()
+        } else {
+            error = true;
+            format!("but the key was {actual_key:?}")
+        };
+
+        let expected_offset = &expected_response.offset;
+        let actual_offset = &response.offset.expect("Actual offset is always populated");
+        let offset_result = if let Some(expected_offset) = expected_offset {
+            if expected_offset == actual_offset {
+                format!("expected offset {expected_offset:?} and it matched")
+            } else {
+                error = true;
+                format!("expected offset {expected_offset:?} but the offset was {actual_offset:?}")
+            }
+        } else {
+            format!("No offset expected and the offset was {actual_offset:?}")
+        };
+
+        if error {
+            panic!(
+                r#"Consumed an unexpected record:
+  expected topic {expected_topic:?} {topic_result}
+  expected message {expected_message:?} {message_result}
+  expected key {expected_key:?} {key_result}
+  {offset_result}"#
+            )
         }
     }
 
