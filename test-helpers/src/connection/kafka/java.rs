@@ -2,6 +2,7 @@ use super::{
     Acl, AclOperation, AclPermissionType, AlterConfig, ConsumerConfig, ExpectedResponse,
     ListOffsetsResultInfo, NewPartition, NewTopic, OffsetAndMetadata, OffsetSpec, ProduceResult,
     Record, ResourcePatternType, ResourceSpecifier, ResourceType, TopicDescription, TopicPartition,
+    TopicPartitionInfo,
 };
 use crate::connection::java::{Jvm, Value};
 use anyhow::Result;
@@ -437,16 +438,39 @@ impl KafkaAdminJava {
         self.create_topics_fallible(topics).await.unwrap();
     }
 
-    pub async fn describe_topic(&self, topic_name: &str) -> Result<TopicDescription> {
-        let topics = self
-            .jvm
-            .new_list("java.lang.String", vec![self.jvm.new_string(topic_name)]);
+    pub async fn describe_topics(&self, topic_names: &[&str]) -> Result<Vec<TopicDescription>> {
+        let topics = self.jvm.new_list(
+            "java.lang.String",
+            topic_names
+                .iter()
+                .map(|topic| self.jvm.new_string(topic))
+                .collect(),
+        );
 
-        self.admin
+        let topic_names_to_info = self
+            .admin
             .call("describeTopics", vec![topics])
             .call_async_fallible("allTopicNames", vec![])
             .await?;
-        Ok(TopicDescription {})
+
+        Ok(topic_names_to_info
+            .call("values", vec![])
+            .call("iterator", vec![])
+            .into_iter()
+            .map(|java_topic_description| {
+                let java_topic_description =
+                    java_topic_description.cast("org.apache.kafka.clients.admin.TopicDescription");
+                TopicDescription {
+                    topic_name: java_topic_description.call("name", vec![]).into_rust(),
+                    partitions: java_topic_description
+                        .call("partitions", vec![])
+                        .call("iterator", vec![])
+                        .into_iter()
+                        .map(|_| TopicPartitionInfo {})
+                        .collect(),
+                }
+            })
+            .collect())
     }
 
     pub async fn create_topics_fallible(&self, topics: &[NewTopic<'_>]) -> Result<()> {
