@@ -14,7 +14,8 @@ use tokio::time::sleep;
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct ShotoverNodeConfig {
-    pub address: String,
+    pub address_for_clients: String,
+    pub address_for_peers: String,
     pub rack: String,
     pub broker_id: i32,
 }
@@ -22,7 +23,8 @@ pub struct ShotoverNodeConfig {
 impl ShotoverNodeConfig {
     pub(crate) fn build(self) -> anyhow::Result<ShotoverNode> {
         Ok(ShotoverNode {
-            address: KafkaAddress::from_str(&self.address)?,
+            address_for_clients: KafkaAddress::from_str(&self.address_for_clients)?,
+            address_for_peers: KafkaAddress::from_str(&self.address_for_peers)?,
             rack: StrBytes::from_string(self.rack),
             broker_id: BrokerId(self.broker_id),
             state: Arc::new(AtomicShotoverNodeState::new(ShotoverNodeState::Up)),
@@ -32,7 +34,8 @@ impl ShotoverNodeConfig {
 
 #[derive(Clone)]
 pub(crate) struct ShotoverNode {
-    pub address: KafkaAddress,
+    pub address_for_clients: KafkaAddress,
+    pub address_for_peers: KafkaAddress,
     pub rack: StrBytes,
     pub broker_id: BrokerId,
     #[allow(unused)]
@@ -99,8 +102,8 @@ async fn check_shotover_peers(
             let tcp_stream = tcp_stream(
                 connect_timeout,
                 (
-                    shotover_peer.address.host.as_str(),
-                    shotover_peer.address.port as u16,
+                    shotover_peer.address_for_peers.host.as_str(),
+                    shotover_peer.address_for_peers.port as u16,
                 ),
             )
             .await;
@@ -109,7 +112,10 @@ async fn check_shotover_peers(
                     shotover_peer.set_state(ShotoverNodeState::Up);
                 }
                 Err(_) => {
-                    tracing::warn!("Shotover peer {} is down", shotover_peer.address);
+                    tracing::warn!(
+                        "Shotover peer {} is down",
+                        shotover_peer.address_for_clients
+                    );
                     shotover_peer.set_state(ShotoverNodeState::Down);
                 }
             }

@@ -13,6 +13,7 @@ This assists us in knowing when to make the next release a breaking release and 
 ### topology.yaml
 
 * A new mandatory configuration `check_shotover_peers_delay_ms` is added for `KafkaSinkCluster`. See [transform.md](docs/src/transforms.md) for details on this configuration.
+* The `address` field for each shotover node in `KafkaSinkCluster` is replaced with `address_for_clients` and `address_for_peers`. See [transform.md](docs/src/transforms.md) for details on these fields.
 
 ## 0.4.0
 

@@ -261,10 +261,14 @@ If SCRAM authentication against the first kafka broker fails, shotover will term
     # A list of every Shotover node that will be proxying to the same kafka cluster.
     # This field should be identical for all Shotover nodes proxying to the same kafka cluster.
     shotover_nodes:
-        # Address of the Shotover node.
+        # Address of the Shotover node that is reported to the kafka clients.
         # This is usually the same address as the Shotover source that is connected to this sink.
-        # But it may be different if you want Shotover to report a different address.
-      - address: "127.0.0.1:9092"
+        # But it may be different if you want Shotover to report a different address to its clients.
+      - address_for_client: "127.0.0.1:9092"
+        # Address of the shotover node as used to check for peers that are up.
+        # This is usually the same address as the Shotover source that is connected to this sink.
+        # But it may be different if you want Shotover to connect to its peers via a different address.
+        address_for_peers: "127.0.0.1:9092"
         # The rack the Shotover node will report as and route messages to.
         # For performance reasons, the Shotover node should be physically located in this rack.
         rack: "rack0"
