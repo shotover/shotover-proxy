@@ -6,13 +6,16 @@ sources:
       chain:
         - KafkaSinkCluster:
             shotover_nodes:
-              - address: "127.0.0.1:9191"
+              - address_for_peers: "127.0.0.1:9191"
+                address_for_clients: "127.0.0.1:9191"
                 rack: "rack0"
                 broker_id: 0
-              - address: "127.0.0.1:9192"
+              - address_for_peers: "127.0.0.1:9192"
+                address_for_clients: "127.0.0.1:9192"
                 rack: "rack0"
                 broker_id: 1
-              - address: "127.0.0.1:9193"
+              - address_for_peers: "127.0.0.1:9193"
+                address_for_clients: "127.0.0.1:9193"
                 rack: "rack0"
                 broker_id: 2
             local_shotover_broker_id: 0

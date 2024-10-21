@@ -100,7 +100,8 @@ impl KafkaBench {
                 check_shotover_peers_delay_ms: Some(3000),
                 first_contact_points: vec![kafka_address],
                 shotover_nodes: vec![ShotoverNodeConfig {
-                    address: host_address.parse().unwrap(),
+                    address_for_clients: host_address.parse().unwrap(),
+                    address_for_peers: host_address.parse().unwrap(),
                     rack: "rack1".into(),
                     broker_id: 0,
                 }],

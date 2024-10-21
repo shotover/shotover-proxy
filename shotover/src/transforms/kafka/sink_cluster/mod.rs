@@ -110,7 +110,7 @@ impl TransformConfig for KafkaSinkClusterConfig {
             if !unique_broker_ids.insert(node.broker_id) {
                 return Err(anyhow::anyhow!(
                     "Duplicate broker_id found in shotover node {}",
-                    node.address
+                    node.address_for_clients
                 ));
             }
         }
@@ -2800,8 +2800,8 @@ impl KafkaSinkCluster {
                     partition_shotover_nodes_by_rack(&up_shotover_nodes, coordinator_rack);
                 let shotover_node = select_shotover_node_by_hash(shotover_nodes_by_rack, hash);
 
-                find_coordinator.host = shotover_node.address.host.clone();
-                find_coordinator.port = shotover_node.address.port;
+                find_coordinator.host = shotover_node.address_for_clients.host.clone();
+                find_coordinator.port = shotover_node.address_for_clients.port;
                 find_coordinator.node_id = shotover_node.broker_id;
             }
         } else {
@@ -2830,8 +2830,8 @@ impl KafkaSinkCluster {
                         partition_shotover_nodes_by_rack(&up_shotover_nodes, coordinator_rack);
                     let shotover_node = select_shotover_node_by_hash(shotover_nodes_by_rack, hash);
 
-                    coordinator.host = shotover_node.address.host.clone();
-                    coordinator.port = shotover_node.address.port;
+                    coordinator.host = shotover_node.address_for_clients.host.clone();
+                    coordinator.port = shotover_node.address_for_clients.port;
                     coordinator.node_id = shotover_node.broker_id;
                 }
             }
@@ -2861,8 +2861,8 @@ impl KafkaSinkCluster {
             .map(|shotover_node| {
                 MetadataResponseBroker::default()
                     .with_node_id(shotover_node.broker_id)
-                    .with_host(shotover_node.address.host.clone())
-                    .with_port(shotover_node.address.port)
+                    .with_host(shotover_node.address_for_clients.host.clone())
+                    .with_port(shotover_node.address_for_clients.port)
                     .with_rack(Some(shotover_node.rack.clone()))
             })
             .collect();
