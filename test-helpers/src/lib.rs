@@ -7,6 +7,7 @@ pub mod shotover_process;
 mod test_tracing;
 
 use anyhow::{anyhow, Result};
+use std::path::Path;
 use subprocess::{Exec, Redirection};
 
 /// Runs a command and returns the output as a string.
@@ -34,5 +35,18 @@ pub fn run_command(command: &str, args: &[&str]) -> Result<String> {
             data.exit_status,
             data.stdout_str()
         ))
+    }
+}
+
+pub async fn run_command_async(current_dir: &Path, command: &str, args: &[&str]) {
+    let output = tokio::process::Command::new(command)
+        .args(args)
+        .current_dir(current_dir)
+        .status()
+        .await
+        .unwrap();
+
+    if !output.success() {
+        panic!("command {command} {args:?} failed. See above output.")
     }
 }

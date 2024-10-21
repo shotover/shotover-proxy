@@ -8,6 +8,7 @@ use std::{
 pub mod cpp;
 pub mod java;
 pub mod node;
+pub mod python;
 
 use anyhow::Result;
 #[cfg(feature = "kafka-cpp-driver-tests")]

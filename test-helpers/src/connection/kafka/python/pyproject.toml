@@ -1,0 +1,7 @@
+[project]
+name = "kafka-smoke-test"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "kafka-python-ng>=2.2.3",
+]
