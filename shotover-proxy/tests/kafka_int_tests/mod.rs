@@ -54,6 +54,24 @@ async fn passthrough_nodejs() {
     .expect("Shotover did not shutdown within 10s");
 }
 
+#[tokio::test]
+async fn passthrough_python() {
+    let _docker_compose =
+        docker_compose("tests/test-configs/kafka/passthrough/docker-compose.yaml");
+    let shotover = shotover_process("tests/test-configs/kafka/passthrough/topology.yaml")
+        .start()
+        .await;
+
+    test_helpers::connection::kafka::python::run_python_smoke_test("127.0.0.1:9192").await;
+
+    tokio::time::timeout(
+        Duration::from_secs(10),
+        shotover.shutdown_and_then_consume_events(&[]),
+    )
+    .await
+    .expect("Shotover did not shutdown within 10s");
+}
+
 #[rstest]
 #[cfg_attr(feature = "kafka-cpp-driver-tests", case::cpp(KafkaDriver::Cpp))]
 #[case::java(KafkaDriver::Java)]
