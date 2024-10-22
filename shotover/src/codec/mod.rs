@@ -6,6 +6,8 @@ use cassandra_protocol::compression::Compression;
 use core::fmt;
 #[cfg(feature = "kafka")]
 use kafka::RequestHeader;
+#[cfg(feature = "kafka")]
+use kafka::SaslType;
 use metrics::{histogram, Histogram};
 use tokio_util::codec::{Decoder, Encoder};
 
@@ -53,9 +55,7 @@ pub enum CodecState {
     #[cfg(feature = "redis")]
     Redis,
     #[cfg(feature = "kafka")]
-    Kafka {
-        request_header: Option<RequestHeader>,
-    },
+    Kafka(KafkaCodecState),
     Dummy,
     #[cfg(feature = "opensearch")]
     OpenSearch,
@@ -73,14 +73,21 @@ impl CodecState {
     }
 
     #[cfg(feature = "kafka")]
-    pub fn as_kafka(&self) -> Option<RequestHeader> {
+    pub fn as_kafka(&self) -> KafkaCodecState {
         match self {
-            CodecState::Kafka { request_header } => *request_header,
+            CodecState::Kafka(state) => *state,
             _ => {
                 panic!("This is a {self:?}, expected CodecState::Kafka")
             }
         }
     }
+}
+
+#[cfg(feature = "kafka")]
+#[derive(Debug, Clone, PartialEq, Copy)]
+pub struct KafkaCodecState {
+    pub request_header: Option<RequestHeader>,
+    pub raw_sasl: Option<SaslType>,
 }
 
 #[derive(Debug)]

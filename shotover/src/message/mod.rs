@@ -158,6 +158,23 @@ impl Message {
         }
     }
 
+    /// This method should be called when you have just a Frame of a message.
+    /// This is expected to be used by transforms that are generating custom messages.
+    /// Providing just the Frame results in better performance when only the Frame is available.
+    pub fn from_frame_and_codec_state_at_instant(
+        frame: Frame,
+        codec_state: CodecState,
+        received_from_source_or_sink_at: Option<Instant>,
+    ) -> Self {
+        Message {
+            codec_state,
+            inner: Some(MessageInner::Modified { frame }),
+            received_from_source_or_sink_at,
+            id: rand::random(),
+            request_id: None,
+        }
+    }
+
     /// This method should be called when generating a new request travelling down a seperate chain to an original request.
     /// The generated request will share the same MessageId as the message it is diverged from.
     pub fn from_frame_diverged(frame: Frame, diverged_from: &Message) -> Self {

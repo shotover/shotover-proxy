@@ -117,7 +117,7 @@ impl ConnectionFactory {
             scram_over_mtls.original_scram_state,
             OriginalScramState::AuthSuccess
         ) {
-            // The original connection is authorized, so we are free to make authorize more session
+            // The original connection is authorized, so we are free to authorize more sessions
             self.perform_tokenauth_scram_exchange(scram_over_mtls, connection)
                 .await
                 .context("Failed to perform delegation token SCRAM exchange")
@@ -144,10 +144,19 @@ impl ConnectionFactory {
         scram_over_mtls: &AuthorizeScramOverMtls,
         connection: &mut SinkConnection,
     ) -> Result<()> {
-        let mut auth_requests = self.auth_requests.clone();
-
         // send/receive SaslHandshake
-        connection.send(vec![auth_requests.remove(0)])?;
+        let mut sasl_handshake_request = self.auth_requests.first().unwrap().clone();
+        if let Some(Frame::Kafka(KafkaFrame::Request { header, .. })) =
+            sasl_handshake_request.frame()
+        {
+            // If the request is version 0 it requires SaslAuthenticate messages to be sent as raw bytes which is impossible.
+            // So instead force it to version 1.
+            if header.request_api_version == 0 {
+                header.request_api_version = 1;
+                sasl_handshake_request.invalidate_cache();
+            }
+        }
+        connection.send(vec![sasl_handshake_request])?;
         let mut handshake_response = connection.recv().await?.pop().unwrap();
         if let Some(Frame::Kafka(KafkaFrame::Response {
             body: ResponseBody::SaslHandshake(handshake_response),
@@ -176,19 +185,35 @@ impl ConnectionFactory {
         )
         .map_err(|x| anyhow!("{x:?}"))?
         .with_first_extensions("tokenauth=true".to_owned());
-        connection.send(vec![Self::create_auth_request(scram.initial())])?;
+        connection
+            .send(vec![Self::create_auth_request(scram.initial())])
+            .context("Failed to send first SCRAM request")?;
 
         // SCRAM server-first
-        let first_scram_response = connection.recv().await?.pop().unwrap();
+        let first_scram_response = connection
+            .recv()
+            .await
+            .context("Failed to receive first scram response")?
+            .pop()
+            .unwrap();
         let first_scram_response = Self::process_auth_response(first_scram_response)
             .context("first response to delegation token SCRAM reported an error")?;
 
         // SCRAM client-final
-        let final_scram_request = scram.response(&first_scram_response)?;
-        connection.send(vec![Self::create_auth_request(final_scram_request)])?;
+        let final_scram_request = scram
+            .response(&first_scram_response)
+            .context("Failed to generate final scram request")?;
+        connection
+            .send(vec![Self::create_auth_request(final_scram_request)])
+            .context("Failed to send final SCRAM request")?;
 
         // SCRAM server-final
-        let final_scram_response = connection.recv().await?.pop().unwrap();
+        let final_scram_response = connection
+            .recv()
+            .await
+            .context("Failed to receive second scram response")?
+            .pop()
+            .unwrap();
         let final_scram_response = Self::process_auth_response(final_scram_response)
             .context("final response to delegation token SCRAM reported an error")?;
         scram

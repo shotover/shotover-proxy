@@ -2972,10 +2972,9 @@ impl KafkaSinkCluster {
 
             metadata.controller_id = shotover_node.broker_id;
         } else {
-            return Err(anyhow!(
-                "Invalid metadata, controller points at unknown broker {:?}",
-                metadata.controller_id
-            ));
+            // controller is either -1 or an unknown broker
+            // In both cases it is reasonable to set to -1 to indicate the controller is unknown.
+            metadata.controller_id = BrokerId(-1);
         }
 
         Ok(())

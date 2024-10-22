@@ -1,4 +1,5 @@
 use crate::codec::kafka::RequestHeader as CodecRequestHeader;
+use crate::codec::KafkaCodecState;
 use anyhow::{anyhow, Context, Result};
 use bytes::{BufMut, Bytes, BytesMut};
 use kafka_protocol::messages::{ApiKey, RequestHeader, ResponseHeader};
@@ -68,15 +69,12 @@ impl Display for KafkaFrame {
 }
 
 impl KafkaFrame {
-    pub fn from_bytes(
-        mut bytes: Bytes,
-        request_header: Option<CodecRequestHeader>,
-    ) -> Result<Self> {
+    pub fn from_bytes(mut bytes: Bytes, codec_state: KafkaCodecState) -> Result<Self> {
         // remove length header
         let _ = bytes.split_to(4);
 
-        match request_header {
-            Some(request_header) => KafkaFrame::parse_response(bytes, request_header),
+        match &codec_state.request_header {
+            Some(request_header) => KafkaFrame::parse_response(bytes, *request_header),
             None => KafkaFrame::parse_request(bytes),
         }
     }

@@ -1,7 +1,7 @@
 use bytes::{Bytes, BytesMut};
 use criterion::{criterion_group, BatchSize, Criterion};
 use shotover::codec::kafka::KafkaCodecBuilder;
-use shotover::codec::{CodecBuilder, CodecState, Direction};
+use shotover::codec::{CodecBuilder, CodecState, Direction, KafkaCodecState};
 use shotover::message::Message;
 use tokio_util::codec::{Decoder, Encoder};
 
@@ -77,9 +77,10 @@ fn criterion_benchmark(c: &mut Criterion) {
         {
             let mut message = Message::from_bytes(
                 Bytes::from(message.to_vec()),
-                CodecState::Kafka {
+                CodecState::Kafka(KafkaCodecState {
                     request_header: None,
-                },
+                    raw_sasl: None,
+                }),
             );
             // force the message to be parsed and clear raw message
             message.frame();
@@ -113,9 +114,10 @@ fn criterion_benchmark(c: &mut Criterion) {
         for (message, _) in KAFKA_REQUESTS {
             let mut message = Message::from_bytes(
                 Bytes::from(message.to_vec()),
-                CodecState::Kafka {
+                CodecState::Kafka(KafkaCodecState {
                     request_header: None,
-                },
+                    raw_sasl: None,
+                }),
             );
             // force the message to be parsed and clear raw message
             message.frame();
