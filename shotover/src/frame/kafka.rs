@@ -2,7 +2,9 @@ use crate::codec::kafka::RequestHeader as CodecRequestHeader;
 use crate::codec::KafkaCodecState;
 use anyhow::{anyhow, Context, Result};
 use bytes::{BufMut, Bytes, BytesMut};
-use kafka_protocol::messages::{ApiKey, RequestHeader, ResponseHeader};
+use kafka_protocol::messages::{
+    ApiKey, RequestHeader, ResponseHeader, SaslAuthenticateRequest, SaslAuthenticateResponse,
+};
 use kafka_protocol::protocol::{Decodable, Encodable};
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
@@ -70,12 +72,35 @@ impl Display for KafkaFrame {
 
 impl KafkaFrame {
     pub fn from_bytes(mut bytes: Bytes, codec_state: KafkaCodecState) -> Result<Self> {
-        // remove length header
-        let _ = bytes.split_to(4);
-
-        match &codec_state.request_header {
-            Some(request_header) => KafkaFrame::parse_response(bytes, *request_header),
-            None => KafkaFrame::parse_request(bytes),
+        if codec_state.raw_sasl.is_some() {
+            match &codec_state.request_header {
+                Some(_) => Ok(KafkaFrame::Response {
+                    version: 0,
+                    header: ResponseHeader::default(),
+                    body: ResponseBody::SaslAuthenticate(
+                        SaslAuthenticateResponse::default().with_auth_bytes(bytes),
+                        // We dont set error_code field when the response contains a scram error, which sounds problematic.
+                        // But in reality, at least for raw sasl mode, if kafka encounters an auth failure,
+                        // it just kills the connection without sending any sasl response at all.
+                        // So we never actually receive a scram response containing an error and
+                        // so there would be no case where the error_code field would need to be set.
+                    ),
+                }),
+                None => Ok(KafkaFrame::Request {
+                    header: RequestHeader::default()
+                        .with_request_api_key(ApiKey::SaslAuthenticateKey as i16),
+                    body: RequestBody::SaslAuthenticate(
+                        SaslAuthenticateRequest::default().with_auth_bytes(bytes),
+                    ),
+                }),
+            }
+        } else {
+            // remove length header
+            let _ = bytes.split_to(4);
+            match &codec_state.request_header {
+                Some(request_header) => KafkaFrame::parse_response(bytes, *request_header),
+                None => KafkaFrame::parse_request(bytes),
+            }
         }
     }
 

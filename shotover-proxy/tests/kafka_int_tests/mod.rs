@@ -9,6 +9,7 @@ use test_cases::produce_consume_partitions1;
 use test_cases::produce_consume_partitions3;
 use test_cases::{assert_topic_creation_is_denied_due_to_acl, setup_basic_user_acls};
 use test_helpers::connection::kafka::node::run_node_smoke_test_scram;
+use test_helpers::connection::kafka::python::run_python_bad_auth_sasl_scram;
 use test_helpers::connection::kafka::python::run_python_smoke_test_sasl_scram;
 use test_helpers::connection::kafka::{KafkaConnectionBuilder, KafkaDriver};
 use test_helpers::docker_compose::docker_compose;
@@ -755,21 +756,53 @@ async fn cluster_sasl_scram_over_mtls_nodejs_and_python() {
 
     let _docker_compose =
         docker_compose("tests/test-configs/kafka/cluster-sasl-scram-over-mtls/docker-compose.yaml");
-    let shotover = shotover_process(
-        "tests/test-configs/kafka/cluster-sasl-scram-over-mtls/topology-single.yaml",
-    )
-    .start()
-    .await;
 
-    run_node_smoke_test_scram("127.0.0.1:9192", "super_user", "super_password").await;
-    run_python_smoke_test_sasl_scram("127.0.0.1:9192", "super_user", "super_password").await;
+    {
+        let shotover = shotover_process(
+            "tests/test-configs/kafka/cluster-sasl-scram-over-mtls/topology-single.yaml",
+        )
+        .start()
+        .await;
 
-    tokio::time::timeout(
-        Duration::from_secs(10),
-        shotover.shutdown_and_then_consume_events(&[]),
-    )
-    .await
-    .expect("Shotover did not shutdown within 10s");
+        run_node_smoke_test_scram("127.0.0.1:9192", "super_user", "super_password").await;
+        run_python_smoke_test_sasl_scram("127.0.0.1:9192", "super_user", "super_password").await;
+
+        tokio::time::timeout(
+            Duration::from_secs(10),
+            shotover.shutdown_and_then_consume_events(&[]),
+        )
+        .await
+        .expect("Shotover did not shutdown within 10s");
+    }
+
+    {
+        let shotover = shotover_process(
+            "tests/test-configs/kafka/cluster-sasl-scram-over-mtls/topology-single.yaml",
+        )
+        .start()
+        .await;
+
+        run_python_bad_auth_sasl_scram("127.0.0.1:9192", "incorrect_user", "super_password").await;
+        run_python_bad_auth_sasl_scram("127.0.0.1:9192", "super_user", "incorrect_password").await;
+
+        tokio::time::timeout(
+            Duration::from_secs(10),
+            shotover.shutdown_and_then_consume_events(&[EventMatcher::new()
+                .with_level(Level::Error)
+                .with_target("shotover::server")
+                .with_message(r#"encountered an error when flushing the chain kafka for shutdown
+
+Caused by:
+    0: KafkaSinkCluster transform failed
+    1: Failed to receive responses (without sending requests)
+    2: Outgoing connection had pending requests, those requests/responses are lost so connection recovery cannot be attempted.
+    3: Failed to receive from ControlConnection
+    4: The other side of this connection closed the connection"#)
+                .with_count(Count::Times(2))]),
+        )
+        .await
+        .expect("Shotover did not shutdown within 10s");
+    }
 }
 
 #[rstest]

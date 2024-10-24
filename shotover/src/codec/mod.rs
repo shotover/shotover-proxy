@@ -7,7 +7,7 @@ use core::fmt;
 #[cfg(feature = "kafka")]
 use kafka::RequestHeader;
 #[cfg(feature = "kafka")]
-use kafka::SaslType;
+use kafka::SaslMessageState;
 use metrics::{histogram, Histogram};
 use tokio_util::codec::{Decoder, Encoder};
 
@@ -46,6 +46,14 @@ pub fn message_latency(direction: Direction, destination_name: String) -> Histog
     }
 }
 
+/// Database protocols are often designed such that their messages can be parsed without knowledge of any state of prior messages.
+/// When protocols remain stateless, Shotover's parser implementations can remain fairly simple.
+/// However in the real world there is often some kind of connection level state that we need to track in order to parse messages.
+///
+/// Shotover solves this issue via this enum which provides any of the connection level state required to decode and then reencode messages.
+/// 1. The Decoder includes this value in all messages it produces.
+/// 2. If any transforms call `.frame()` this value is used to parse the frame of the message.
+/// 3. The Encoder uses this value to reencode the message if it has been modified.
 #[derive(Debug, Clone, PartialEq, Copy)]
 pub enum CodecState {
     #[cfg(feature = "cassandra")]
@@ -86,8 +94,13 @@ impl CodecState {
 #[cfg(feature = "kafka")]
 #[derive(Debug, Clone, PartialEq, Copy)]
 pub struct KafkaCodecState {
+    /// When the message is:
+    /// a request - this value is None
+    /// a response - this value is Some and contains the header values of the corresponding request.
     pub request_header: Option<RequestHeader>,
-    pub raw_sasl: Option<SaslType>,
+    /// When `Some` this message is not a valid kafka protocol message and is instead a raw SASL message.
+    /// KafkaFrame will parse this as a SaslHandshake to hide the legacy raw SASL message from transform implementations.
+    pub raw_sasl: Option<SaslMessageState>,
 }
 
 #[derive(Debug)]
