@@ -245,6 +245,14 @@ impl Jvm {
         }
     }
 
+    /// Construct a java set containing the provided elements
+    pub(crate) fn new_set(&self, element_type: &str, elements: Vec<Value>) -> Value {
+        self.construct(
+            "java.util.HashSet",
+            vec![self.new_list(element_type, elements)],
+        )
+    }
+
     /// Construct a java map containing the provided key value pairs
     pub(crate) fn new_map(&self, key_values: Vec<(Value, Value)>) -> Value {
         let map = self.construct("java.util.HashMap", vec![]);
@@ -408,4 +416,15 @@ impl Iterator for JavaIterator {
             None
         }
     }
+}
+
+pub fn map_iterator(map: Value) -> impl Iterator<Item = (Value, Value)> {
+    map.cast("java.util.Map")
+        .call("entrySet", vec![])
+        .call("iterator", vec![])
+        .into_iter()
+        .map(|entry| {
+            let entry = entry.cast("java.util.Map$Entry");
+            (entry.call("getKey", vec![]), entry.call("getValue", vec![]))
+        })
 }

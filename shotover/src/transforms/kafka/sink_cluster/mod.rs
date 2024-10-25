@@ -940,6 +940,13 @@ impl KafkaSinkCluster {
                     self.split_and_route_request::<DeleteGroupsSplitAndRouter>(request)?;
                 }
                 Some(Frame::Kafka(KafkaFrame::Request {
+                    body: RequestBody::OffsetDelete(offset_delete),
+                    ..
+                })) => {
+                    let group_id = offset_delete.group_id.clone();
+                    self.route_to_group_coordinator(request, group_id);
+                }
+                Some(Frame::Kafka(KafkaFrame::Request {
                     body: RequestBody::TxnOffsetCommit(txn_offset_commit),
                     ..
                 })) => {
