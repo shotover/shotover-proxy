@@ -1,5 +1,5 @@
+use crate::codec::kafka::KafkaCodecState;
 use crate::codec::kafka::RequestHeader as CodecRequestHeader;
-use crate::codec::KafkaCodecState;
 use anyhow::{anyhow, Context, Result};
 use bytes::{BufMut, Bytes, BytesMut};
 use kafka_protocol::messages::{
@@ -72,7 +72,7 @@ impl Display for KafkaFrame {
 
 impl KafkaFrame {
     pub fn from_bytes(mut bytes: Bytes, codec_state: KafkaCodecState) -> Result<Self> {
-        if codec_state.raw_sasl.is_some() {
+        if codec_state.raw_sasl {
             match &codec_state.request_header {
                 Some(_) => Ok(KafkaFrame::Response {
                     version: 0,

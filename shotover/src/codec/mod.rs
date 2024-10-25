@@ -5,9 +5,7 @@ use crate::{frame::MessageType, message::Messages};
 use cassandra_protocol::compression::Compression;
 use core::fmt;
 #[cfg(feature = "kafka")]
-use kafka::RequestHeader;
-#[cfg(feature = "kafka")]
-use kafka::SaslMessageState;
+use kafka::KafkaCodecState;
 use metrics::{histogram, Histogram};
 use tokio_util::codec::{Decoder, Encoder};
 
@@ -89,18 +87,6 @@ impl CodecState {
             }
         }
     }
-}
-
-#[cfg(feature = "kafka")]
-#[derive(Debug, Clone, PartialEq, Copy)]
-pub struct KafkaCodecState {
-    /// When the message is:
-    /// a request - this value is None
-    /// a response - this value is Some and contains the header values of the corresponding request.
-    pub request_header: Option<RequestHeader>,
-    /// When `Some` this message is not a valid kafka protocol message and is instead a raw SASL message.
-    /// KafkaFrame will parse this as a SaslHandshake to hide the legacy raw SASL message from transform implementations.
-    pub raw_sasl: Option<SaslMessageState>,
 }
 
 #[derive(Debug)]

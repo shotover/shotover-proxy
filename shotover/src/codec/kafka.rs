@@ -1,5 +1,5 @@
 use super::{message_latency, CodecWriteError, Direction};
-use crate::codec::{CodecBuilder, CodecReadError, CodecState, KafkaCodecState};
+use crate::codec::{CodecBuilder, CodecReadError, CodecState};
 use crate::frame::kafka::KafkaFrame;
 use crate::frame::{Frame, MessageType};
 use crate::message::{Encodable, Message, MessageId, Messages};
@@ -58,7 +58,6 @@ impl CodecBuilder for KafkaCodecBuilder {
         MessageType::Kafka
     }
 }
-
 #[derive(Debug)]
 pub struct RequestInfo {
     header: RequestHeader,
@@ -179,7 +178,7 @@ impl Decoder for KafkaDecoder {
                     bytes.freeze(),
                     CodecState::Kafka(KafkaCodecState {
                         request_header: Some(meta.request_header),
-                        raw_sasl: self.expect_raw_sasl,
+                        raw_sasl: self.expect_raw_sasl.is_some(),
                     }),
                     Some(received_at),
                 );
@@ -190,7 +189,7 @@ impl Decoder for KafkaDecoder {
                     bytes.freeze(),
                     CodecState::Kafka(KafkaCodecState {
                         request_header: None,
-                        raw_sasl: self.expect_raw_sasl,
+                        raw_sasl: self.expect_raw_sasl.is_some(),
                     }),
                     Some(received_at),
                 )
@@ -273,7 +272,7 @@ impl Encoder<Messages> for KafkaEncoder {
             let id = m.id();
             let received_at = m.received_from_source_or_sink_at;
             let message_contains_raw_sasl = if let CodecState::Kafka(codec_state) = m.codec_state {
-                codec_state.raw_sasl.is_some()
+                codec_state.raw_sasl
             } else {
                 false
             };
@@ -364,4 +363,16 @@ impl Encoder<Messages> for KafkaEncoder {
             result.map_err(CodecWriteError::Encoder)
         })
     }
+}
+
+#[cfg(feature = "kafka")]
+#[derive(Debug, Clone, PartialEq, Copy)]
+pub struct KafkaCodecState {
+    /// When the message is:
+    /// a request - this value is None
+    /// a response - this value is Some and contains the header values of the corresponding request.
+    pub request_header: Option<RequestHeader>,
+    /// When `true` this message is not a valid kafka protocol message and is instead a raw SASL message.
+    /// KafkaFrame will parse this as a SaslHandshake to hide the legacy raw SASL message from transform implementations.
+    pub raw_sasl: bool,
 }

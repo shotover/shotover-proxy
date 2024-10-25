@@ -1,8 +1,8 @@
 //! parsed AST-like representations of messages
 
-use crate::codec::CodecState;
 #[cfg(feature = "kafka")]
-use crate::codec::KafkaCodecState;
+use crate::codec::kafka::KafkaCodecState;
+use crate::codec::CodecState;
 use anyhow::{anyhow, Result};
 use bytes::Bytes;
 #[cfg(feature = "cassandra")]
@@ -98,7 +98,7 @@ impl Frame {
             #[cfg(feature = "kafka")]
             Frame::Kafka(_) => CodecState::Kafka(KafkaCodecState {
                 request_header: None,
-                raw_sasl: None,
+                raw_sasl: false,
             }),
             Frame::Dummy => CodecState::Dummy,
             #[cfg(feature = "opensearch")]
