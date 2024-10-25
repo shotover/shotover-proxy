@@ -508,6 +508,16 @@ impl KafkaAdminJava {
             .await;
     }
 
+    pub async fn delete_groups(&self, to_delete: &[&str]) {
+        let to_delete: Vec<Value> = to_delete.iter().map(|x| self.jvm.new_string(x)).collect();
+        let topics = self.jvm.new_list("java.lang.String", to_delete);
+
+        self.admin
+            .call("deleteConsumerGroups", vec![topics])
+            .call_async("all", vec![])
+            .await;
+    }
+
     pub async fn create_partitions(&self, partitions: &[NewPartition<'_>]) {
         let partitions: Vec<(Value, Value)> = partitions
             .iter()

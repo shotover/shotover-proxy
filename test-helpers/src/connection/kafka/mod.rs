@@ -123,14 +123,6 @@ impl KafkaConnectionBuilder {
             .await
             .unwrap_err()
     }
-
-    pub async fn admin_cleanup(&self) {
-        match self {
-            #[cfg(feature = "kafka-cpp-driver-tests")]
-            Self::Cpp(cpp) => cpp.admin_cleanup().await,
-            Self::Java(_) => {}
-        }
-    }
 }
 
 pub enum KafkaProducer {
@@ -439,6 +431,14 @@ impl KafkaAdmin {
             #[cfg(feature = "kafka-cpp-driver-tests")]
             Self::Cpp(cpp) => cpp.delete_topics(to_delete).await,
             Self::Java(java) => java.delete_topics(to_delete).await,
+        }
+    }
+
+    pub async fn delete_groups(&self, to_delete: &[&str]) {
+        match self {
+            #[cfg(feature = "kafka-cpp-driver-tests")]
+            Self::Cpp(cpp) => cpp.delete_groups(to_delete).await,
+            Self::Java(java) => java.delete_groups(to_delete).await,
         }
     }
 
