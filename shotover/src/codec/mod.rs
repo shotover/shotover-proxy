@@ -5,7 +5,7 @@ use crate::{frame::MessageType, message::Messages};
 use cassandra_protocol::compression::Compression;
 use core::fmt;
 #[cfg(feature = "kafka")]
-use kafka::RequestHeader;
+use kafka::KafkaCodecState;
 use metrics::{histogram, Histogram};
 use tokio_util::codec::{Decoder, Encoder};
 
@@ -44,6 +44,14 @@ pub fn message_latency(direction: Direction, destination_name: String) -> Histog
     }
 }
 
+/// Database protocols are often designed such that their messages can be parsed without knowledge of any state of prior messages.
+/// When protocols remain stateless, Shotover's parser implementations can remain fairly simple.
+/// However in the real world there is often some kind of connection level state that we need to track in order to parse messages.
+///
+/// Shotover solves this issue via this enum which provides any of the connection level state required to decode and then reencode messages.
+/// 1. The Decoder includes this value in all messages it produces.
+/// 2. If any transforms call `.frame()` this value is used to parse the frame of the message.
+/// 3. The Encoder uses this value to reencode the message if it has been modified.
 #[derive(Debug, Clone, PartialEq, Copy)]
 pub enum CodecState {
     #[cfg(feature = "cassandra")]
@@ -53,9 +61,7 @@ pub enum CodecState {
     #[cfg(feature = "redis")]
     Redis,
     #[cfg(feature = "kafka")]
-    Kafka {
-        request_header: Option<RequestHeader>,
-    },
+    Kafka(KafkaCodecState),
     Dummy,
     #[cfg(feature = "opensearch")]
     OpenSearch,
@@ -73,9 +79,9 @@ impl CodecState {
     }
 
     #[cfg(feature = "kafka")]
-    pub fn as_kafka(&self) -> Option<RequestHeader> {
+    pub fn as_kafka(&self) -> KafkaCodecState {
         match self {
-            CodecState::Kafka { request_header } => *request_header,
+            CodecState::Kafka(state) => *state,
             _ => {
                 panic!("This is a {self:?}, expected CodecState::Kafka")
             }

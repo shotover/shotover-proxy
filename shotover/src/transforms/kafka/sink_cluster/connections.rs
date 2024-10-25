@@ -238,16 +238,14 @@ impl Connections {
         } else {
             KafkaNodeState::Up
         };
-        nodes
-            .iter()
-            .find(|x| match destination {
-                Destination::Id(id) => x.broker_id == id,
-                Destination::ControlConnection => {
-                    &x.kafka_address == self.control_connection_address.as_ref().unwrap()
-                }
-            })
-            .unwrap()
-            .set_state(node_state);
+        if let Some(node) = nodes.iter().find(|x| match destination {
+            Destination::Id(id) => x.broker_id == id,
+            Destination::ControlConnection => {
+                &x.kafka_address == self.control_connection_address.as_ref().unwrap()
+            }
+        }) {
+            node.set_state(node_state);
+        }
 
         if old_connection
             .map(|old| old.pending_requests_count())

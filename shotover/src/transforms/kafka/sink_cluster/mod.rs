@@ -273,8 +273,10 @@ impl AtomicBrokerId {
     }
 
     fn set(&self, value: BrokerId) {
-        self.0
-            .store(value.0.into(), std::sync::atomic::Ordering::Relaxed)
+        if value != -1 {
+            self.0
+                .store(value.0.into(), std::sync::atomic::Ordering::Relaxed)
+        }
     }
 
     fn clear(&self) {
@@ -989,7 +991,8 @@ impl KafkaSinkCluster {
                         | RequestBody::AlterConfigs(_)
                         | RequestBody::CreatePartitions(_)
                         | RequestBody::DeleteTopics(_)
-                        | RequestBody::CreateAcls(_),
+                        | RequestBody::CreateAcls(_)
+                        | RequestBody::ApiVersions(_),
                     ..
                 })) => self.route_to_random_broker(message),
 
@@ -2406,9 +2409,9 @@ impl KafkaSinkCluster {
                         ResponseError::try_from_code(topic.error_code)
                     {
                         tracing::info!(
-                                "Response to CreateTopics included error NOT_CONTROLLER and so reset controller broker, previously was {:?}",
-                                self.controller_broker.get()
-                            );
+                            "Response to CreateTopics included error NOT_CONTROLLER and so reset controller broker, previously was {:?}",
+                            self.controller_broker.get()
+                        );
                         self.controller_broker.clear();
                         break;
                     }
@@ -2972,10 +2975,9 @@ impl KafkaSinkCluster {
 
             metadata.controller_id = shotover_node.broker_id;
         } else {
-            return Err(anyhow!(
-                "Invalid metadata, controller points at unknown broker {:?}",
-                metadata.controller_id
-            ));
+            // controller is either -1 or an unknown broker
+            // In both cases it is reasonable to set to -1 to indicate the controller is unknown.
+            metadata.controller_id = BrokerId(-1);
         }
 
         Ok(())
