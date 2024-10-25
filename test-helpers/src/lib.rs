@@ -42,6 +42,7 @@ pub async fn run_command_async(current_dir: &Path, command: &str, args: &[&str])
     let output = tokio::process::Command::new(command)
         .args(args)
         .current_dir(current_dir)
+        .kill_on_drop(true)
         .status()
         .await
         .unwrap();

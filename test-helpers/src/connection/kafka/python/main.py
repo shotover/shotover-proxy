@@ -1,5 +1,7 @@
 from kafka import KafkaConsumer
+from kafka import KafkaAdminClient
 from kafka import KafkaProducer
+from kafka.admin import NewTopic
 import sys
 
 def main():
@@ -7,19 +9,28 @@ def main():
     print("Running kafka-python script with config:")
     print(config)
 
-    producer = KafkaProducer(**config)
-    producer.send('test_topic', b'some_message_bytes').get(timeout=10)
-    producer.send('test_topic', b'another_message').get(timeout=10)
+    admin = KafkaAdminClient(**config)
+    admin.create_topics([
+        NewTopic(
+            name='python_test_topic',
+            num_partitions=1,
+            replication_factor=1
+        )
+    ])
 
-    consumer = KafkaConsumer('test_topic', auto_offset_reset='earliest', **config)
+    producer = KafkaProducer(**config)
+    producer.send('python_test_topic', b'some_message_bytes').get(timeout=30)
+    producer.send('python_test_topic', b'another_message').get(timeout=30)
+
+    consumer = KafkaConsumer('python_test_topic', auto_offset_reset='earliest', **config)
 
     msg = next(consumer)
-    assert(msg.topic == "test_topic")
+    assert(msg.topic == "python_test_topic")
     assert(msg.value == b"some_message_bytes")
     assert(msg.offset == 0)
 
     msg = next(consumer)
-    assert(msg.topic == "test_topic")
+    assert(msg.topic == "python_test_topic")
     assert(msg.value == b"another_message")
     assert(msg.offset == 1)
 

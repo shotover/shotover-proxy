@@ -1,5 +1,7 @@
 //! parsed AST-like representations of messages
 
+#[cfg(feature = "kafka")]
+use crate::codec::kafka::KafkaCodecState;
 use crate::codec::CodecState;
 use anyhow::{anyhow, Result};
 use bytes::Bytes;
@@ -94,9 +96,10 @@ impl Frame {
             #[cfg(feature = "redis")]
             Frame::Redis(_) => CodecState::Redis,
             #[cfg(feature = "kafka")]
-            Frame::Kafka(_) => CodecState::Kafka {
+            Frame::Kafka(_) => CodecState::Kafka(KafkaCodecState {
                 request_header: None,
-            },
+                raw_sasl: false,
+            }),
             Frame::Dummy => CodecState::Dummy,
             #[cfg(feature = "opensearch")]
             Frame::OpenSearch(_) => CodecState::OpenSearch,
