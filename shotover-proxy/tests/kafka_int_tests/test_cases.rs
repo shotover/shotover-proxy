@@ -126,7 +126,9 @@ async fn admin_setup(connection_builder: &KafkaConnectionBuilder) {
 
 async fn admin_cleanup(connection_builder: &KafkaConnectionBuilder) {
     let admin = connection_builder.connect_admin().await;
-    admin.delete_groups(&["some_group"]).await;
+    admin
+        .delete_groups(&["some_group", "some_group1", "consumer_group_with_offsets"])
+        .await;
 }
 
 /// Attempt to make the driver batch produce requests for different topics into the same request

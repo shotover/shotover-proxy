@@ -26,12 +26,13 @@ use kafka_protocol::messages::produce_response::{
 };
 use kafka_protocol::messages::{
     AddOffsetsToTxnRequest, AddPartitionsToTxnRequest, AddPartitionsToTxnResponse, ApiKey,
-    BrokerId, EndTxnRequest, FetchRequest, FetchResponse, FindCoordinatorRequest,
-    FindCoordinatorResponse, GroupId, HeartbeatRequest, InitProducerIdRequest, JoinGroupRequest,
-    LeaveGroupRequest, ListOffsetsRequest, ListOffsetsResponse, MetadataRequest, MetadataResponse,
-    OffsetForLeaderEpochRequest, OffsetForLeaderEpochResponse, ProduceRequest, ProduceResponse,
-    RequestHeader, SaslAuthenticateRequest, SaslAuthenticateResponse, SaslHandshakeRequest,
-    SyncGroupRequest, TopicName, TransactionalId, TxnOffsetCommitRequest,
+    BrokerId, DeleteGroupsRequest, DeleteGroupsResponse, EndTxnRequest, FetchRequest,
+    FetchResponse, FindCoordinatorRequest, FindCoordinatorResponse, GroupId, HeartbeatRequest,
+    InitProducerIdRequest, JoinGroupRequest, LeaveGroupRequest, ListOffsetsRequest,
+    ListOffsetsResponse, MetadataRequest, MetadataResponse, OffsetForLeaderEpochRequest,
+    OffsetForLeaderEpochResponse, ProduceRequest, ProduceResponse, RequestHeader,
+    SaslAuthenticateRequest, SaslAuthenticateResponse, SaslHandshakeRequest, SyncGroupRequest,
+    TopicName, TransactionalId, TxnOffsetCommitRequest,
 };
 use kafka_protocol::protocol::StrBytes;
 use kafka_protocol::ResponseError;
@@ -46,8 +47,9 @@ use scram_over_mtls::{
 use serde::{Deserialize, Serialize};
 use shotover_node::{ShotoverNode, ShotoverNodeConfig};
 use split::{
-    AddPartitionsToTxnRequestSplitAndRouter, ListOffsetsRequestSplitAndRouter,
-    OffsetForLeaderEpochRequestSplitAndRouter, ProduceRequestSplitAndRouter, RequestSplitAndRouter,
+    AddPartitionsToTxnRequestSplitAndRouter, DeleteGroupsSplitAndRouter,
+    ListOffsetsRequestSplitAndRouter, OffsetForLeaderEpochRequestSplitAndRouter,
+    ProduceRequestSplitAndRouter, RequestSplitAndRouter,
 };
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::hash::Hasher;
@@ -710,6 +712,14 @@ impl KafkaSinkCluster {
                     self.store_group(&mut groups, group_id.clone());
                 }
                 Some(Frame::Kafka(KafkaFrame::Request {
+                    body: RequestBody::DeleteGroups(delete_groups),
+                    ..
+                })) => {
+                    for group_id in &delete_groups.groups_names {
+                        self.store_group(&mut groups, group_id.clone());
+                    }
+                }
+                Some(Frame::Kafka(KafkaFrame::Request {
                     body:
                         RequestBody::InitProducerId(InitProducerIdRequest {
                             transactional_id: Some(transactional_id),
@@ -924,12 +934,10 @@ impl KafkaSinkCluster {
                     self.route_to_group_coordinator(message, group_id);
                 }
                 Some(Frame::Kafka(KafkaFrame::Request {
-                    body: RequestBody::DeleteGroups(groups),
+                    body: RequestBody::DeleteGroups(_),
                     ..
                 })) => {
-                    // TODO: we need to split this up into multiple requests so it can be correctly routed to all possible nodes
-                    let group_id = groups.groups_names.first().unwrap().clone();
-                    self.route_to_group_coordinator(message, group_id);
+                    self.split_and_route_request::<DeleteGroupsSplitAndRouter>(message)?;
                 }
                 Some(Frame::Kafka(KafkaFrame::Request {
                     body: RequestBody::TxnOffsetCommit(txn_offset_commit),
@@ -1368,6 +1376,29 @@ impl KafkaSinkCluster {
                 let destination = BrokerId(-1);
                 let dest_topics = result.entry(destination).or_default();
                 dest_topics.push(topic);
+            }
+        }
+
+        result
+    }
+
+    /// This method removes all group ids from the DeleteGroups request and returns them split up by their destination.
+    /// If any topics are unroutable they will have their BrokerId set to -1
+    fn split_delete_groups_request_by_destination(
+        &mut self,
+        body: &mut DeleteGroupsRequest,
+    ) -> HashMap<BrokerId, Vec<GroupId>> {
+        let mut result: HashMap<BrokerId, Vec<GroupId>> = Default::default();
+
+        for group_id in body.groups_names.drain(..) {
+            if let Some(destination) = self.group_to_coordinator_broker.get(&group_id) {
+                let dest_groups = result.entry(*destination).or_default();
+                dest_groups.push(group_id);
+            } else {
+                tracing::warn!("no known coordinator for group {group_id:?}, routing message to a random broker so that a NOT_COORDINATOR or similar error is returned to the client");
+                let destination = BrokerId(-1);
+                let dest_groups = result.entry(destination).or_default();
+                dest_groups.push(group_id);
             }
         }
 
@@ -1914,6 +1945,10 @@ impl KafkaSinkCluster {
                 ..
             })) => Self::combine_produce_responses(base, drain)?,
             Some(Frame::Kafka(KafkaFrame::Response {
+                body: ResponseBody::DeleteGroups(base),
+                ..
+            })) => Self::combine_delete_groups_responses(base, drain)?,
+            Some(Frame::Kafka(KafkaFrame::Response {
                 body: ResponseBody::AddPartitionsToTxn(base),
                 version,
                 ..
@@ -2091,6 +2126,25 @@ impl KafkaSinkCluster {
         }
 
         base_produce.responses.extend(base_responses.into_values());
+
+        Ok(())
+    }
+
+    fn combine_delete_groups_responses(
+        base_delete_groups: &mut DeleteGroupsResponse,
+        drain: impl Iterator<Item = Message>,
+    ) -> Result<()> {
+        for mut next in drain {
+            if let Some(Frame::Kafka(KafkaFrame::Response {
+                body: ResponseBody::DeleteGroups(next_delete_groups),
+                ..
+            })) = next.frame()
+            {
+                base_delete_groups
+                    .results
+                    .extend(std::mem::take(&mut next_delete_groups.results))
+            }
+        }
 
         Ok(())
     }

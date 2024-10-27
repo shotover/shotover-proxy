@@ -423,7 +423,7 @@ impl KafkaAdminCpp {
             // The cpp driver will lock up when running certain commands after a delete_groups if the delete_groups is targeted at a group that doesnt exist.
             // So just make sure to run it against a group that does exist.
             .delete_groups(
-                &["some_group"],
+                to_delete,
                 &AdminOptions::new()
                     .operation_timeout(Some(Timeout::After(Duration::from_secs(30)))),
             )
