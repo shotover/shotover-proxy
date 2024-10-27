@@ -124,6 +124,11 @@ async fn admin_setup(connection_builder: &KafkaConnectionBuilder) {
     admin.delete_topics(&["to_delete"]).await
 }
 
+async fn admin_cleanup(connection_builder: &KafkaConnectionBuilder) {
+    let admin = connection_builder.connect_admin().await;
+    admin.delete_groups(&["some_group"]).await;
+}
+
 /// Attempt to make the driver batch produce requests for different topics into the same request
 /// This is important to test since shotover has complex logic for splitting these batch requests into individual requests.
 pub async fn produce_consume_multi_topic_batch(connection_builder: &KafkaConnectionBuilder) {
@@ -1358,7 +1363,7 @@ pub async fn standard_test_suite(connection_builder: &KafkaConnectionBuilder) {
     }
 
     produce_consume_acks0(connection_builder).await;
-    connection_builder.admin_cleanup().await;
+    admin_cleanup(connection_builder).await;
 }
 
 pub async fn cluster_test_suite(connection_builder: &KafkaConnectionBuilder) {

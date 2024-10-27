@@ -17,7 +17,6 @@ use rdkafka::client::DefaultClientContext;
 use rdkafka::config::ClientConfig;
 use rdkafka::consumer::{Consumer, StreamConsumer};
 use rdkafka::producer::{FutureProducer, FutureRecord, Producer};
-use rdkafka::types::RDKafkaErrorCode;
 use rdkafka::util::Timeout;
 use rdkafka::{Message, TopicPartitionList};
 use std::time::Duration;
@@ -104,31 +103,6 @@ impl KafkaConnectionBuilderCpp {
     pub async fn connect_admin(&self) -> KafkaAdminCpp {
         let admin = self.client.create().unwrap();
         KafkaAdminCpp { admin }
-    }
-
-    // TODO: support for these admin operations needs to be added to the java driver wrapper and then this method can be deleted
-    pub async fn admin_cleanup(&self) {
-        let admin = self.connect_admin().await.admin;
-        let results = admin
-            // The cpp driver will lock up when running certain commands after a delete_groups if the delete_groups is targeted at a group that doesnt exist.
-            // So just make sure to run it against a group that does exist.
-            .delete_groups(
-                &["some_group"],
-                &AdminOptions::new()
-                    .operation_timeout(Some(Timeout::After(Duration::from_secs(30)))),
-            )
-            .await
-            .unwrap();
-        for result in results {
-            match result {
-                Ok(result) => assert_eq!(result, "some_group"),
-                Err(err) => assert_eq!(
-                    err,
-                    // Allow this error which can occur due to race condition in the test, but do not allow any other error types
-                    ("some_group".to_owned(), RDKafkaErrorCode::NonEmptyGroup)
-                ),
-            }
-        }
     }
 }
 
@@ -432,6 +406,29 @@ impl KafkaAdminCpp {
             .await
             .unwrap();
 
+        let mut results: Vec<_> = results.into_iter().map(|x| x.unwrap()).collect();
+        for to_delete in to_delete {
+            if let Some(i) = results.iter().position(|x| x == to_delete) {
+                results.remove(i);
+            } else {
+                panic!("topic {} not in results", to_delete)
+            }
+        }
+        assert!(results.is_empty());
+    }
+
+    pub async fn delete_groups(&self, to_delete: &[&str]) {
+        let results = self
+            .admin
+            // The cpp driver will lock up when running certain commands after a delete_groups if the delete_groups is targeted at a group that doesnt exist.
+            // So just make sure to run it against a group that does exist.
+            .delete_groups(
+                &["some_group"],
+                &AdminOptions::new()
+                    .operation_timeout(Some(Timeout::After(Duration::from_secs(30)))),
+            )
+            .await
+            .unwrap();
         let mut results: Vec<_> = results.into_iter().map(|x| x.unwrap()).collect();
         for to_delete in to_delete {
             if let Some(i) = results.iter().position(|x| x == to_delete) {
