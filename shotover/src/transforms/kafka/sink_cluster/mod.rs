@@ -19,6 +19,7 @@ use kafka_protocol::messages::fetch_response::LeaderIdAndEpoch as FetchResponseL
 use kafka_protocol::messages::list_offsets_request::ListOffsetsTopic;
 use kafka_protocol::messages::metadata_request::MetadataRequestTopic;
 use kafka_protocol::messages::metadata_response::MetadataResponseBroker;
+use kafka_protocol::messages::offset_fetch_request::OffsetFetchRequestGroup;
 use kafka_protocol::messages::offset_for_leader_epoch_request::OffsetForLeaderTopic;
 use kafka_protocol::messages::produce_request::TopicProduceData;
 use kafka_protocol::messages::produce_response::{
@@ -29,10 +30,10 @@ use kafka_protocol::messages::{
     BrokerId, DeleteGroupsRequest, DeleteGroupsResponse, EndTxnRequest, FetchRequest,
     FetchResponse, FindCoordinatorRequest, FindCoordinatorResponse, GroupId, HeartbeatRequest,
     InitProducerIdRequest, JoinGroupRequest, LeaveGroupRequest, ListOffsetsRequest,
-    ListOffsetsResponse, MetadataRequest, MetadataResponse, OffsetForLeaderEpochRequest,
-    OffsetForLeaderEpochResponse, ProduceRequest, ProduceResponse, RequestHeader,
-    SaslAuthenticateRequest, SaslAuthenticateResponse, SaslHandshakeRequest, SyncGroupRequest,
-    TopicName, TransactionalId, TxnOffsetCommitRequest,
+    ListOffsetsResponse, MetadataRequest, MetadataResponse, OffsetFetchRequest,
+    OffsetFetchResponse, OffsetForLeaderEpochRequest, OffsetForLeaderEpochResponse, ProduceRequest,
+    ProduceResponse, RequestHeader, SaslAuthenticateRequest, SaslAuthenticateResponse,
+    SaslHandshakeRequest, SyncGroupRequest, TopicName, TransactionalId, TxnOffsetCommitRequest,
 };
 use kafka_protocol::protocol::StrBytes;
 use kafka_protocol::ResponseError;
@@ -48,8 +49,8 @@ use serde::{Deserialize, Serialize};
 use shotover_node::{ShotoverNode, ShotoverNodeConfig};
 use split::{
     AddPartitionsToTxnRequestSplitAndRouter, DeleteGroupsSplitAndRouter,
-    ListOffsetsRequestSplitAndRouter, OffsetForLeaderEpochRequestSplitAndRouter,
-    ProduceRequestSplitAndRouter, RequestSplitAndRouter,
+    ListOffsetsRequestSplitAndRouter, OffsetFetchSplitAndRouter,
+    OffsetForLeaderEpochRequestSplitAndRouter, ProduceRequestSplitAndRouter, RequestSplitAndRouter,
 };
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::hash::Hasher;
@@ -899,8 +900,9 @@ impl KafkaSinkCluster {
                     body: RequestBody::OffsetFetch(offset_fetch),
                     header,
                 })) => {
-                    let group_id = if header.request_api_version <= 7 {
-                        offset_fetch.group_id.clone()
+                    if header.request_api_version <= 7 {
+                        let group_id = offset_fetch.group_id.clone();
+                        self.route_to_group_coordinator(message, group_id);
                     } else {
                         // This is possibly dangerous.
                         // The client could construct a message which is valid for a specific shotover node, but not for any single kafka broker.
@@ -908,9 +910,8 @@ impl KafkaSinkCluster {
                         // and then reconstruct the response back into a single response
                         //
                         // For now just pick the first group as that is sufficient for the simple cases.
-                        offset_fetch.groups.first().unwrap().group_id.clone()
+                        self.split_and_route_request::<OffsetFetchSplitAndRouter>(message)?;
                     };
-                    self.route_to_group_coordinator(message, group_id);
                 }
                 Some(Frame::Kafka(KafkaFrame::Request {
                     body: RequestBody::OffsetCommit(offset_commit),
@@ -1399,6 +1400,32 @@ impl KafkaSinkCluster {
                 let destination = BrokerId(-1);
                 let dest_groups = result.entry(destination).or_default();
                 dest_groups.push(group_id);
+            }
+        }
+
+        result
+    }
+
+    /// This method removes all group ids from the DeleteGroups request and returns them split up by their destination.
+    /// If any topics are unroutable they will have their BrokerId set to -1
+    fn split_offset_fetch_request_by_destination(
+        &mut self,
+        body: &mut OffsetFetchRequest,
+    ) -> HashMap<BrokerId, Vec<OffsetFetchRequestGroup>> {
+        let mut result: HashMap<BrokerId, Vec<OffsetFetchRequestGroup>> = Default::default();
+
+        for group in body.groups.drain(..) {
+            if let Some(destination) = self.group_to_coordinator_broker.get(&group.group_id) {
+                let dest_groups = result.entry(*destination).or_default();
+                dest_groups.push(group);
+            } else {
+                tracing::warn!(
+                    "no known coordinator for group {:?}, routing request to a random broker so that a NOT_COORDINATOR or similar error is returned to the client",
+                    group.group_id
+                );
+                let destination = BrokerId(-1);
+                let dest_groups = result.entry(destination).or_default();
+                dest_groups.push(group);
             }
         }
 
@@ -1949,6 +1976,10 @@ impl KafkaSinkCluster {
                 ..
             })) => Self::combine_delete_groups_responses(base, drain)?,
             Some(Frame::Kafka(KafkaFrame::Response {
+                body: ResponseBody::OffsetFetch(base),
+                ..
+            })) => Self::combine_offset_fetch(base, drain)?,
+            Some(Frame::Kafka(KafkaFrame::Response {
                 body: ResponseBody::AddPartitionsToTxn(base),
                 version,
                 ..
@@ -2143,6 +2174,25 @@ impl KafkaSinkCluster {
                 base_delete_groups
                     .results
                     .extend(std::mem::take(&mut next_delete_groups.results))
+            }
+        }
+
+        Ok(())
+    }
+
+    fn combine_offset_fetch(
+        base_offset_fetch: &mut OffsetFetchResponse,
+        drain: impl Iterator<Item = Message>,
+    ) -> Result<()> {
+        for mut next in drain {
+            if let Some(Frame::Kafka(KafkaFrame::Response {
+                body: ResponseBody::OffsetFetch(next_offset_fetch),
+                ..
+            })) = next.frame()
+            {
+                base_offset_fetch
+                    .groups
+                    .extend(std::mem::take(&mut next_offset_fetch.groups))
             }
         }
 
@@ -2355,9 +2405,30 @@ impl KafkaSinkCluster {
             })) => self.handle_group_coordinator_routing_error(&request_ty, sync_group.error_code),
             Some(Frame::Kafka(KafkaFrame::Response {
                 body: ResponseBody::OffsetFetch(offset_fetch),
+                version,
                 ..
             })) => {
-                self.handle_group_coordinator_routing_error(&request_ty, offset_fetch.error_code)
+                if *version <= 7 {
+                    // group id is not provided in response, so use group id stored in request_ty
+                    self.handle_group_coordinator_routing_error(
+                        &request_ty,
+                        offset_fetch.error_code,
+                    )
+                } else {
+                    // group id is provided in response, so use group id in the response.
+                    for group in &offset_fetch.groups {
+                        let group_id = &group.group_id;
+                        if let Some(ResponseError::NotCoordinator) =
+                            ResponseError::try_from_code(group.error_code)
+                        {
+                            let broker_id = self
+                                .group_to_coordinator_broker
+                                .remove(group_id)
+                                .map(|x| x.1);
+                            tracing::info!("Response was error NOT_COORDINATOR and so cleared group id {group_id:?} coordinator mapping to broker {broker_id:?}");
+                        }
+                    }
+                }
             }
             Some(Frame::Kafka(KafkaFrame::Response {
                 body: ResponseBody::JoinGroup(join_group),
