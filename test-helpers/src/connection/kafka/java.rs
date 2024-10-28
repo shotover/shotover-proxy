@@ -665,6 +665,25 @@ impl KafkaAdminJava {
         results
     }
 
+    pub async fn list_groups(&self) -> Vec<String> {
+        let java_results = self
+            .admin
+            .call("listConsumerGroups", vec![])
+            .call_async("all", vec![])
+            .await;
+
+        let mut results = vec![];
+        for java_group in java_results.call("iterator", vec![]).into_iter() {
+            results.push(
+                java_group
+                    .cast("org.apache.kafka.clients.admin.ConsumerGroupListing")
+                    .call("groupId", vec![])
+                    .into_rust(),
+            )
+        }
+        results
+    }
+
     pub async fn create_acls(&self, acls: Vec<Acl>) {
         let resource_type = self
             .jvm

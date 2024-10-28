@@ -3,9 +3,10 @@ use std::{collections::HashMap, time::Duration};
 use test_helpers::{
     connection::kafka::{
         Acl, AclOperation, AclPermissionType, AlterConfig, ConfigEntry, ConsumerConfig,
-        ExpectedResponse, IsolationLevel, KafkaConnectionBuilder, KafkaConsumer, KafkaDriver,
-        KafkaProducer, ListOffsetsResultInfo, NewPartition, NewTopic, OffsetAndMetadata,
-        OffsetSpec, Record, ResourcePatternType, ResourceSpecifier, ResourceType, TopicPartition,
+        ExpectedResponse, IsolationLevel, KafkaAdmin, KafkaConnectionBuilder, KafkaConsumer,
+        KafkaDriver, KafkaProducer, ListOffsetsResultInfo, NewPartition, NewTopic,
+        OffsetAndMetadata, OffsetSpec, Record, ResourcePatternType, ResourceSpecifier,
+        ResourceType, TopicPartition,
     },
     docker_compose::DockerCompose,
 };
@@ -23,11 +24,6 @@ async fn admin_setup(connection_builder: &KafkaConnectionBuilder) {
             NewTopic {
                 name: "partitions1_with_offset",
                 num_partitions: 1,
-                replication_factor: 1,
-            },
-            NewTopic {
-                name: "partitions3",
-                num_partitions: 3,
                 replication_factor: 1,
             },
             NewTopic {
@@ -1367,74 +1363,102 @@ pub async fn standard_test_suite(connection_builder: &KafkaConnectionBuilder) {
             .await;
         produce_consume_partitions1(connection_builder, "partitions1").await;
 
-        let results = admin
-            .list_offsets(HashMap::from([
-                (
-                    TopicPartition {
-                        topic_name: "partitions3_case3".to_owned(),
-                        partition: 0,
-                    },
-                    OffsetSpec::Earliest,
-                ),
-                (
-                    TopicPartition {
-                        topic_name: "partitions3_case3".to_owned(),
-                        partition: 1,
-                    },
-                    OffsetSpec::Earliest,
-                ),
-                (
-                    TopicPartition {
-                        topic_name: "partitions3_case3".to_owned(),
-                        partition: 2,
-                    },
-                    OffsetSpec::Earliest,
-                ),
-                (
-                    TopicPartition {
-                        topic_name: "partitions1".to_owned(),
-                        partition: 0,
-                    },
-                    OffsetSpec::Latest,
-                ),
-            ]))
-            .await;
+        // rdkafka-rs doesnt support these methods
+        list_offsets(&admin).await;
+        list_groups(connection_builder, &admin).await;
+    }
 
-        let expected = HashMap::from([
+    produce_consume_acks0(connection_builder).await;
+    admin_cleanup(connection_builder).await;
+}
+
+async fn list_offsets(admin: &KafkaAdmin) {
+    let results = admin
+        .list_offsets(HashMap::from([
             (
                 TopicPartition {
                     topic_name: "partitions3_case3".to_owned(),
                     partition: 0,
                 },
-                ListOffsetsResultInfo { offset: 0 },
+                OffsetSpec::Earliest,
             ),
             (
                 TopicPartition {
                     topic_name: "partitions3_case3".to_owned(),
                     partition: 1,
                 },
-                ListOffsetsResultInfo { offset: 0 },
+                OffsetSpec::Earliest,
             ),
             (
                 TopicPartition {
                     topic_name: "partitions3_case3".to_owned(),
                     partition: 2,
                 },
-                ListOffsetsResultInfo { offset: 0 },
+                OffsetSpec::Earliest,
             ),
             (
                 TopicPartition {
                     topic_name: "partitions1".to_owned(),
                     partition: 0,
                 },
-                ListOffsetsResultInfo { offset: 11 },
+                OffsetSpec::Latest,
             ),
-        ]);
-        assert_eq!(results, expected);
-    }
+        ]))
+        .await;
 
-    produce_consume_acks0(connection_builder).await;
-    admin_cleanup(connection_builder).await;
+    let expected = HashMap::from([
+        (
+            TopicPartition {
+                topic_name: "partitions3_case3".to_owned(),
+                partition: 0,
+            },
+            ListOffsetsResultInfo { offset: 0 },
+        ),
+        (
+            TopicPartition {
+                topic_name: "partitions3_case3".to_owned(),
+                partition: 1,
+            },
+            ListOffsetsResultInfo { offset: 0 },
+        ),
+        (
+            TopicPartition {
+                topic_name: "partitions3_case3".to_owned(),
+                partition: 2,
+            },
+            ListOffsetsResultInfo { offset: 0 },
+        ),
+        (
+            TopicPartition {
+                topic_name: "partitions1".to_owned(),
+                partition: 0,
+            },
+            ListOffsetsResultInfo { offset: 11 },
+        ),
+    ]);
+    assert_eq!(results, expected);
+}
+
+async fn list_groups(connection_builder: &KafkaConnectionBuilder, admin: &KafkaAdmin) {
+    let mut consumer = connection_builder
+        .connect_consumer(
+            ConsumerConfig::consume_from_topics(vec!["partitions1".to_owned()])
+                .with_group("list_groups_test"),
+        )
+        .await;
+    consumer
+        .assert_consume(ExpectedResponse {
+            message: "initial".to_owned(),
+            key: Some("Key".to_owned()),
+            topic_name: "partitions1".to_owned(),
+            offset: Some(0),
+        })
+        .await;
+
+    let actual_results = admin.list_groups().await;
+    if !actual_results.contains(&"list_groups_test".to_owned()) {
+        panic!("Expected to find list_groups_test in {actual_results:?} but was misisng")
+    }
 }
 
 pub async fn cluster_test_suite(connection_builder: &KafkaConnectionBuilder) {
