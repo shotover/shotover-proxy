@@ -904,12 +904,6 @@ impl KafkaSinkCluster {
                         let group_id = offset_fetch.group_id.clone();
                         self.route_to_group_coordinator(message, group_id);
                     } else {
-                        // This is possibly dangerous.
-                        // The client could construct a message which is valid for a specific shotover node, but not for any single kafka broker.
-                        // We may need to add some logic to split the request into multiple messages going to different destinations,
-                        // and then reconstruct the response back into a single response
-                        //
-                        // For now just pick the first group as that is sufficient for the simple cases.
                         self.split_and_route_request::<OffsetFetchSplitAndRouter>(message)?;
                     };
                 }
@@ -1384,7 +1378,7 @@ impl KafkaSinkCluster {
     }
 
     /// This method removes all group ids from the DeleteGroups request and returns them split up by their destination.
-    /// If any topics are unroutable they will have their BrokerId set to -1
+    /// If any groups ids are unroutable they will have their BrokerId set to -1
     fn split_delete_groups_request_by_destination(
         &mut self,
         body: &mut DeleteGroupsRequest,
@@ -1406,8 +1400,8 @@ impl KafkaSinkCluster {
         result
     }
 
-    /// This method removes all group ids from the DeleteGroups request and returns them split up by their destination.
-    /// If any topics are unroutable they will have their BrokerId set to -1
+    /// This method removes all groups from the OffsetFetch request and returns them split up by their destination.
+    /// If any groups are unroutable they will have their BrokerId set to -1
     fn split_offset_fetch_request_by_destination(
         &mut self,
         body: &mut OffsetFetchRequest,
