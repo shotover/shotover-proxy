@@ -179,7 +179,11 @@ impl KafkaConnectionBuilderJava {
             "subscribe",
             vec![self.jvm.new_list(
                 "java.lang.String",
-                vec![self.jvm.new_string(&consumer_config.topic_name)],
+                consumer_config
+                    .topic_names
+                    .iter()
+                    .map(|topic_name| self.jvm.new_string(topic_name))
+                    .collect(),
             )],
         );
 
