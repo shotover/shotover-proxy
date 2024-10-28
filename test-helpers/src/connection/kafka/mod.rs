@@ -585,7 +585,7 @@ pub enum OffsetSpec {
 }
 
 pub struct ConsumerConfig {
-    topic_name: String,
+    topic_names: Vec<String>,
     group: String,
     fetch_min_bytes: i32,
     fetch_max_wait_ms: i32,
@@ -593,9 +593,9 @@ pub struct ConsumerConfig {
 }
 
 impl ConsumerConfig {
-    pub fn consume_from_topic(topic_name: String) -> Self {
+    pub fn consume_from_topics(topic_names: Vec<String>) -> Self {
         Self {
-            topic_name,
+            topic_names,
             group: "default_group".to_owned(),
             fetch_min_bytes: 1,
             fetch_max_wait_ms: 500,
