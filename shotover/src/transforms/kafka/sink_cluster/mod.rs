@@ -19,6 +19,7 @@ use kafka_protocol::messages::fetch_response::LeaderIdAndEpoch as FetchResponseL
 use kafka_protocol::messages::list_offsets_request::ListOffsetsTopic;
 use kafka_protocol::messages::metadata_request::MetadataRequestTopic;
 use kafka_protocol::messages::metadata_response::MetadataResponseBroker;
+use kafka_protocol::messages::offset_fetch_request::OffsetFetchRequestGroup;
 use kafka_protocol::messages::offset_for_leader_epoch_request::OffsetForLeaderTopic;
 use kafka_protocol::messages::produce_request::TopicProduceData;
 use kafka_protocol::messages::produce_response::{
@@ -29,10 +30,10 @@ use kafka_protocol::messages::{
     BrokerId, DeleteGroupsRequest, DeleteGroupsResponse, EndTxnRequest, FetchRequest,
     FetchResponse, FindCoordinatorRequest, FindCoordinatorResponse, GroupId, HeartbeatRequest,
     InitProducerIdRequest, JoinGroupRequest, LeaveGroupRequest, ListOffsetsRequest,
-    ListOffsetsResponse, MetadataRequest, MetadataResponse, OffsetForLeaderEpochRequest,
-    OffsetForLeaderEpochResponse, ProduceRequest, ProduceResponse, RequestHeader,
-    SaslAuthenticateRequest, SaslAuthenticateResponse, SaslHandshakeRequest, SyncGroupRequest,
-    TopicName, TransactionalId, TxnOffsetCommitRequest,
+    ListOffsetsResponse, MetadataRequest, MetadataResponse, OffsetFetchRequest,
+    OffsetFetchResponse, OffsetForLeaderEpochRequest, OffsetForLeaderEpochResponse, ProduceRequest,
+    ProduceResponse, RequestHeader, SaslAuthenticateRequest, SaslAuthenticateResponse,
+    SaslHandshakeRequest, SyncGroupRequest, TopicName, TransactionalId, TxnOffsetCommitRequest,
 };
 use kafka_protocol::protocol::StrBytes;
 use kafka_protocol::ResponseError;
@@ -48,8 +49,8 @@ use serde::{Deserialize, Serialize};
 use shotover_node::{ShotoverNode, ShotoverNodeConfig};
 use split::{
     AddPartitionsToTxnRequestSplitAndRouter, DeleteGroupsSplitAndRouter,
-    ListOffsetsRequestSplitAndRouter, OffsetForLeaderEpochRequestSplitAndRouter,
-    ProduceRequestSplitAndRouter, RequestSplitAndRouter,
+    ListOffsetsRequestSplitAndRouter, OffsetFetchSplitAndRouter,
+    OffsetForLeaderEpochRequestSplitAndRouter, ProduceRequestSplitAndRouter, RequestSplitAndRouter,
 };
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::hash::Hasher;
@@ -851,33 +852,33 @@ impl KafkaSinkCluster {
                 }
                 other => {
                     return Err(anyhow!(
-                        "Unexpected message returned to metadata request {other:?}"
+                        "Unexpected response returned to metadata request {other:?}"
                     ))
                 }
             }
         }
 
-        for mut message in requests {
+        for mut request in requests {
             // This routing is documented in transforms.md so make sure to update that when making changes here.
-            match message.frame() {
+            match request.frame() {
                 // split and route to partition leader
                 Some(Frame::Kafka(KafkaFrame::Request {
                     body: RequestBody::Produce(_),
                     ..
-                })) => self.split_and_route_request::<ProduceRequestSplitAndRouter>(message)?,
+                })) => self.split_and_route_request::<ProduceRequestSplitAndRouter>(request)?,
                 Some(Frame::Kafka(KafkaFrame::Request {
                     body: RequestBody::Fetch(_),
                     ..
-                })) => self.route_fetch_request(message)?,
+                })) => self.route_fetch_request(request)?,
                 Some(Frame::Kafka(KafkaFrame::Request {
                     body: RequestBody::ListOffsets(_),
                     ..
-                })) => self.split_and_route_request::<ListOffsetsRequestSplitAndRouter>(message)?,
+                })) => self.split_and_route_request::<ListOffsetsRequestSplitAndRouter>(request)?,
                 Some(Frame::Kafka(KafkaFrame::Request {
                     body: RequestBody::OffsetForLeaderEpoch(_),
                     ..
                 })) => self.split_and_route_request::<OffsetForLeaderEpochRequestSplitAndRouter>(
-                    message,
+                    request,
                 )?,
 
                 // route to group coordinator
@@ -886,58 +887,52 @@ impl KafkaSinkCluster {
                     ..
                 })) => {
                     let group_id = heartbeat.group_id.clone();
-                    self.route_to_group_coordinator(message, group_id);
+                    self.route_to_group_coordinator(request, group_id);
                 }
                 Some(Frame::Kafka(KafkaFrame::Request {
                     body: RequestBody::SyncGroup(sync_group),
                     ..
                 })) => {
                     let group_id = sync_group.group_id.clone();
-                    self.route_to_group_coordinator(message, group_id);
+                    self.route_to_group_coordinator(request, group_id);
                 }
                 Some(Frame::Kafka(KafkaFrame::Request {
                     body: RequestBody::OffsetFetch(offset_fetch),
                     header,
                 })) => {
-                    let group_id = if header.request_api_version <= 7 {
-                        offset_fetch.group_id.clone()
+                    if header.request_api_version <= 7 {
+                        let group_id = offset_fetch.group_id.clone();
+                        self.route_to_group_coordinator(request, group_id);
                     } else {
-                        // This is possibly dangerous.
-                        // The client could construct a message which is valid for a specific shotover node, but not for any single kafka broker.
-                        // We may need to add some logic to split the request into multiple messages going to different destinations,
-                        // and then reconstruct the response back into a single response
-                        //
-                        // For now just pick the first group as that is sufficient for the simple cases.
-                        offset_fetch.groups.first().unwrap().group_id.clone()
+                        self.split_and_route_request::<OffsetFetchSplitAndRouter>(request)?;
                     };
-                    self.route_to_group_coordinator(message, group_id);
                 }
                 Some(Frame::Kafka(KafkaFrame::Request {
                     body: RequestBody::OffsetCommit(offset_commit),
                     ..
                 })) => {
                     let group_id = offset_commit.group_id.clone();
-                    self.route_to_group_coordinator(message, group_id);
+                    self.route_to_group_coordinator(request, group_id);
                 }
                 Some(Frame::Kafka(KafkaFrame::Request {
                     body: RequestBody::JoinGroup(join_group),
                     ..
                 })) => {
                     let group_id = join_group.group_id.clone();
-                    self.route_to_group_coordinator(message, group_id);
+                    self.route_to_group_coordinator(request, group_id);
                 }
                 Some(Frame::Kafka(KafkaFrame::Request {
                     body: RequestBody::LeaveGroup(leave_group),
                     ..
                 })) => {
                     let group_id = leave_group.group_id.clone();
-                    self.route_to_group_coordinator(message, group_id);
+                    self.route_to_group_coordinator(request, group_id);
                 }
                 Some(Frame::Kafka(KafkaFrame::Request {
                     body: RequestBody::DeleteGroups(_),
                     ..
                 })) => {
-                    self.split_and_route_request::<DeleteGroupsSplitAndRouter>(message)?;
+                    self.split_and_route_request::<DeleteGroupsSplitAndRouter>(request)?;
                 }
                 Some(Frame::Kafka(KafkaFrame::Request {
                     body: RequestBody::TxnOffsetCommit(txn_offset_commit),
@@ -945,7 +940,7 @@ impl KafkaSinkCluster {
                 })) => {
                     let group_id = txn_offset_commit.group_id.clone();
                     // Despite being a transaction request this request is routed by group_id
-                    self.route_to_group_coordinator(message, group_id);
+                    self.route_to_group_coordinator(request, group_id);
                 }
 
                 // route to transaction coordinator
@@ -954,42 +949,42 @@ impl KafkaSinkCluster {
                     ..
                 })) => {
                     let transaction_id = end_txn.transactional_id.clone();
-                    self.route_to_transaction_coordinator(message, transaction_id);
+                    self.route_to_transaction_coordinator(request, transaction_id);
                 }
                 Some(Frame::Kafka(KafkaFrame::Request {
                     body: RequestBody::InitProducerId(init_producer_id),
                     ..
                 })) => {
                     if let Some(transaction_id) = init_producer_id.transactional_id.clone() {
-                        self.route_to_transaction_coordinator(message, transaction_id);
+                        self.route_to_transaction_coordinator(request, transaction_id);
                     } else {
-                        self.route_to_random_broker(message);
+                        self.route_to_random_broker(request);
                     }
                 }
                 Some(Frame::Kafka(KafkaFrame::Request {
                     body: RequestBody::AddPartitionsToTxn(_),
                     ..
-                })) => self.route_add_partitions_to_txn(message)?,
+                })) => self.route_add_partitions_to_txn(request)?,
                 Some(Frame::Kafka(KafkaFrame::Request {
                     body: RequestBody::AddOffsetsToTxn(add_offsets_to_txn),
                     ..
                 })) => {
                     let transaction_id = add_offsets_to_txn.transactional_id.clone();
-                    self.route_to_transaction_coordinator(message, transaction_id);
+                    self.route_to_transaction_coordinator(request, transaction_id);
                 }
 
                 Some(Frame::Kafka(KafkaFrame::Request {
                     body: RequestBody::FindCoordinator(_),
                     ..
                 })) => {
-                    self.route_find_coordinator(message);
+                    self.route_find_coordinator(request);
                 }
 
                 // route to controller broker
                 Some(Frame::Kafka(KafkaFrame::Request {
                     body: RequestBody::CreateTopics(_),
                     ..
-                })) => self.route_to_controller(message),
+                })) => self.route_to_controller(request),
 
                 // route to random broker
                 Some(Frame::Kafka(KafkaFrame::Request {
@@ -1002,7 +997,7 @@ impl KafkaSinkCluster {
                         | RequestBody::CreateAcls(_)
                         | RequestBody::ApiVersions(_),
                     ..
-                })) => self.route_to_random_broker(message),
+                })) => self.route_to_random_broker(request),
 
                 // error handling
                 Some(Frame::Kafka(KafkaFrame::Request { header, .. })) => {
@@ -1011,12 +1006,12 @@ impl KafkaSinkCluster {
                     // remove Key postfix, since its not part of the actual message name which is confusing.
                     let request_type = request_type.trim_end_matches("Key");
                     tracing::warn!("Routing for request of type {request_type:?} has not been implemented yet.");
-                    self.route_to_random_broker(message)
+                    self.route_to_random_broker(request)
                 }
                 Some(_) => unreachable!("Must be a kafka request"),
                 None => {
                     tracing::warn!("Unable to parse request, routing to a random node");
-                    self.route_to_random_broker(message)
+                    self.route_to_random_broker(request)
                 }
             }
         }
@@ -1208,7 +1203,7 @@ impl KafkaSinkCluster {
                         partition.leader_id
                     } else {
                         let partition_len = topic_meta.partitions.len();
-                        tracing::warn!("no known partition replica for {format_topic_name} at partition index {partition_index} out of {partition_len} partitions, routing message to a random broker so that a NOT_LEADER_OR_FOLLOWER or similar error is returned to the client");
+                        tracing::warn!("no known partition replica for {format_topic_name} at partition index {partition_index} out of {partition_len} partitions, routing request to a random broker so that a NOT_LEADER_OR_FOLLOWER or similar error is returned to the client");
                         BrokerId(-1)
                     };
                     tracing::debug!(
@@ -1228,7 +1223,7 @@ impl KafkaSinkCluster {
                     }
                 }
             } else {
-                tracing::warn!("no known partition replica for {format_topic_name}, routing message to a random broker so that a NOT_LEADER_OR_FOLLOWER or similar error is returned to the client");
+                tracing::warn!("no known partition replica for {format_topic_name}, routing request to a random broker so that a NOT_LEADER_OR_FOLLOWER or similar error is returned to the client");
                 let destination = BrokerId(-1);
                 let dest_topics = result.entry(destination).or_default();
                 dest_topics.push(topic);
@@ -1238,11 +1233,11 @@ impl KafkaSinkCluster {
         result
     }
 
-    fn route_fetch_request(&mut self, mut message: Message) -> Result<()> {
+    fn route_fetch_request(&mut self, mut request: Message) -> Result<()> {
         if let Some(Frame::Kafka(KafkaFrame::Request {
             body: RequestBody::Fetch(fetch),
             ..
-        })) = message.frame()
+        })) = request.frame()
         {
             let routing = self.split_fetch_request_by_destination(fetch);
 
@@ -1252,7 +1247,7 @@ impl KafkaSinkCluster {
                 let destination = random_broker_id(&self.nodes, &mut self.rng);
 
                 self.pending_requests.push_back(PendingRequest {
-                    state: PendingRequestState::routed(destination, message),
+                    state: PendingRequestState::routed(destination, request),
                     // we dont need special handling for fetch, so just use Other
                     ty: PendingRequestTy::Other,
                     combine_responses: 1,
@@ -1275,7 +1270,7 @@ impl KafkaSinkCluster {
 
                 fetch.topics = topics;
                 self.pending_requests.push_back(PendingRequest {
-                    state: PendingRequestState::routed(destination, message),
+                    state: PendingRequestState::routed(destination, request),
                     // we dont need special handling for fetch, so just use Other
                     ty: PendingRequestTy::Other,
                     combine_responses: 1,
@@ -1293,7 +1288,7 @@ impl KafkaSinkCluster {
                 // The message has been split so it may be delivered to multiple destinations.
                 // We must generate a unique message for each destination.
                 let combine_responses = routing.len();
-                message.invalidate_cache();
+                request.invalidate_cache();
                 for (i, (destination, topics)) in routing.into_iter().enumerate() {
                     let destination = if destination == -1 {
                         random_broker_id(&self.nodes, &mut self.rng)
@@ -1302,9 +1297,9 @@ impl KafkaSinkCluster {
                     };
                     let mut request = if i == 0 {
                         // First message acts as base and retains message id
-                        message.clone()
+                        request.clone()
                     } else {
-                        message.clone_with_new_id()
+                        request.clone_with_new_id()
                     };
                     if let Some(Frame::Kafka(KafkaFrame::Request {
                         body: RequestBody::Fetch(fetch),
@@ -1354,7 +1349,7 @@ impl KafkaSinkCluster {
                         partition.leader_id
                     } else {
                         let partition_len = topic_meta.partitions.len();
-                        tracing::warn!("no known partition for {topic_name:?} at partition index {partition_index} out of {partition_len} partitions, routing message to a random broker so that a NOT_LEADER_OR_FOLLOWER or similar error is returned to the client");
+                        tracing::warn!("no known partition for {topic_name:?} at partition index {partition_index} out of {partition_len} partitions, routing request to a random broker so that a NOT_LEADER_OR_FOLLOWER or similar error is returned to the client");
                         BrokerId(-1)
                     };
                     tracing::debug!(
@@ -1372,7 +1367,7 @@ impl KafkaSinkCluster {
                     }
                 }
             } else {
-                tracing::warn!("no known partition replica for {topic_name:?}, routing message to a random broker so that a NOT_LEADER_OR_FOLLOWER or similar error is returned to the client");
+                tracing::warn!("no known partition replica for {topic_name:?}, routing request to a random broker so that a NOT_LEADER_OR_FOLLOWER or similar error is returned to the client");
                 let destination = BrokerId(-1);
                 let dest_topics = result.entry(destination).or_default();
                 dest_topics.push(topic);
@@ -1383,7 +1378,7 @@ impl KafkaSinkCluster {
     }
 
     /// This method removes all group ids from the DeleteGroups request and returns them split up by their destination.
-    /// If any topics are unroutable they will have their BrokerId set to -1
+    /// If any groups ids are unroutable they will have their BrokerId set to -1
     fn split_delete_groups_request_by_destination(
         &mut self,
         body: &mut DeleteGroupsRequest,
@@ -1395,10 +1390,36 @@ impl KafkaSinkCluster {
                 let dest_groups = result.entry(*destination).or_default();
                 dest_groups.push(group_id);
             } else {
-                tracing::warn!("no known coordinator for group {group_id:?}, routing message to a random broker so that a NOT_COORDINATOR or similar error is returned to the client");
+                tracing::warn!("no known coordinator for group {group_id:?}, routing request to a random broker so that a NOT_COORDINATOR or similar error is returned to the client");
                 let destination = BrokerId(-1);
                 let dest_groups = result.entry(destination).or_default();
                 dest_groups.push(group_id);
+            }
+        }
+
+        result
+    }
+
+    /// This method removes all groups from the OffsetFetch request and returns them split up by their destination.
+    /// If any groups are unroutable they will have their BrokerId set to -1
+    fn split_offset_fetch_request_by_destination(
+        &mut self,
+        body: &mut OffsetFetchRequest,
+    ) -> HashMap<BrokerId, Vec<OffsetFetchRequestGroup>> {
+        let mut result: HashMap<BrokerId, Vec<OffsetFetchRequestGroup>> = Default::default();
+
+        for group in body.groups.drain(..) {
+            if let Some(destination) = self.group_to_coordinator_broker.get(&group.group_id) {
+                let dest_groups = result.entry(*destination).or_default();
+                dest_groups.push(group);
+            } else {
+                tracing::warn!(
+                    "no known coordinator for group {:?}, routing request to a random broker so that a NOT_COORDINATOR or similar error is returned to the client",
+                    group.group_id
+                );
+                let destination = BrokerId(-1);
+                let dest_groups = result.entry(destination).or_default();
+                dest_groups.push(group);
             }
         }
 
@@ -1448,7 +1469,7 @@ impl KafkaSinkCluster {
                     }
                 }
             } else {
-                tracing::warn!("no known partition replica for {topic_name:?}, routing message to a random broker so that a NOT_LEADER_OR_FOLLOWER or similar error is returned to the client");
+                tracing::warn!("no known partition replica for {topic_name:?}, routing request to a random broker so that a NOT_LEADER_OR_FOLLOWER or similar error is returned to the client");
                 let destination = BrokerId(-1);
                 let dest_topics = result.entry(destination).or_default();
                 dest_topics.push(topic);
@@ -1548,7 +1569,7 @@ impl KafkaSinkCluster {
                 ))),
             },
             other => Err(anyhow!(
-                "Unexpected message returned to findcoordinator request {other:?}"
+                "Unexpected response returned to findcoordinator request {other:?}"
             ))?,
         }
     }
@@ -1949,6 +1970,10 @@ impl KafkaSinkCluster {
                 ..
             })) => Self::combine_delete_groups_responses(base, drain)?,
             Some(Frame::Kafka(KafkaFrame::Response {
+                body: ResponseBody::OffsetFetch(base),
+                ..
+            })) => Self::combine_offset_fetch(base, drain)?,
+            Some(Frame::Kafka(KafkaFrame::Response {
                 body: ResponseBody::AddPartitionsToTxn(base),
                 version,
                 ..
@@ -2143,6 +2168,25 @@ impl KafkaSinkCluster {
                 base_delete_groups
                     .results
                     .extend(std::mem::take(&mut next_delete_groups.results))
+            }
+        }
+
+        Ok(())
+    }
+
+    fn combine_offset_fetch(
+        base_offset_fetch: &mut OffsetFetchResponse,
+        drain: impl Iterator<Item = Message>,
+    ) -> Result<()> {
+        for mut next in drain {
+            if let Some(Frame::Kafka(KafkaFrame::Response {
+                body: ResponseBody::OffsetFetch(next_offset_fetch),
+                ..
+            })) = next.frame()
+            {
+                base_offset_fetch
+                    .groups
+                    .extend(std::mem::take(&mut next_offset_fetch.groups))
             }
         }
 
@@ -2355,9 +2399,30 @@ impl KafkaSinkCluster {
             })) => self.handle_group_coordinator_routing_error(&request_ty, sync_group.error_code),
             Some(Frame::Kafka(KafkaFrame::Response {
                 body: ResponseBody::OffsetFetch(offset_fetch),
+                version,
                 ..
             })) => {
-                self.handle_group_coordinator_routing_error(&request_ty, offset_fetch.error_code)
+                if *version <= 7 {
+                    // group id is not provided in response, so use group id stored in request_ty
+                    self.handle_group_coordinator_routing_error(
+                        &request_ty,
+                        offset_fetch.error_code,
+                    )
+                } else {
+                    // group id is provided in response, so use group id in the response.
+                    for group in &offset_fetch.groups {
+                        let group_id = &group.group_id;
+                        if let Some(ResponseError::NotCoordinator) =
+                            ResponseError::try_from_code(group.error_code)
+                        {
+                            let broker_id = self
+                                .group_to_coordinator_broker
+                                .remove(group_id)
+                                .map(|x| x.1);
+                            tracing::info!("Response was error NOT_COORDINATOR and so cleared group id {group_id:?} coordinator mapping to broker {broker_id:?}");
+                        }
+                    }
+                }
             }
             Some(Frame::Kafka(KafkaFrame::Response {
                 body: ResponseBody::JoinGroup(join_group),
@@ -2605,7 +2670,7 @@ impl KafkaSinkCluster {
         {
             node.broker_id
         } else {
-            tracing::warn!("no known broker with id {broker_id:?} that is 'up', routing message to a random broker so that a NOT_CONTROLLER or similar error is returned to the client");
+            tracing::warn!("no known broker with id {broker_id:?} that is 'up', routing request to a random broker so that a NOT_CONTROLLER or similar error is returned to the client");
             random_broker_id(&self.nodes, &mut self.rng)
         };
 
@@ -2625,7 +2690,7 @@ impl KafkaSinkCluster {
         let destination = match destination {
             Some(destination) => *destination,
             None => {
-                tracing::info!("no known coordinator for {group_id:?}, routing message to a random broker so that a NOT_COORDINATOR or similar error is returned to the client");
+                tracing::info!("no known coordinator for {group_id:?}, routing request to a random broker so that a NOT_COORDINATOR or similar error is returned to the client");
                 random_broker_id(&self.nodes, &mut self.rng)
             }
         };
@@ -2652,7 +2717,7 @@ impl KafkaSinkCluster {
         let destination = match destination {
             Some(destination) => *destination,
             None => {
-                tracing::info!("no known coordinator for {transaction_id:?}, routing message to a random broker so that a NOT_COORDINATOR or similar error is returned to the client");
+                tracing::info!("no known coordinator for {transaction_id:?}, routing request to a random broker so that a NOT_COORDINATOR or similar error is returned to the client");
                 random_broker_id(&self.nodes, &mut self.rng)
             }
         };

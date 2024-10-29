@@ -96,7 +96,8 @@ impl KafkaConnectionBuilderCpp {
             .create()
             .unwrap();
 
-        consumer.subscribe(&[&config.topic_name]).unwrap();
+        let topic_names: Vec<&str> = config.topic_names.iter().map(|x| x.as_str()).collect();
+        consumer.subscribe(&topic_names).unwrap();
         KafkaConsumerCpp { consumer }
     }
 
