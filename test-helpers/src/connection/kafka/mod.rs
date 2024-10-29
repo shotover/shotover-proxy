@@ -456,7 +456,7 @@ impl KafkaAdmin {
     pub async fn list_groups(&self) -> Vec<String> {
         match self {
             #[cfg(feature = "kafka-cpp-driver-tests")]
-            Self::Cpp(_) => panic!("rdkafka-rs driver does not support list_offsets"),
+            Self::Cpp(_) => panic!("rdkafka-rs driver does not support list_groups"),
             Self::Java(java) => java.list_groups().await,
         }
     }

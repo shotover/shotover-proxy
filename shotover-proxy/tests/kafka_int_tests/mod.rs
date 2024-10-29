@@ -426,7 +426,7 @@ async fn cluster_1_rack_multi_shotover_with_1_shotover_down(#[case] driver: Kafk
 
     // create a new connection and produce and consume messages
     let new_connection_builder = KafkaConnectionBuilder::new(driver, "localhost:9193");
-    test_cases::cluster_test_suite(&new_connection_builder).await;
+    test_cases::cluster_test_suite_with_lost_shotover_node(&new_connection_builder).await;
 
     let mut expected_events = multi_shotover_events();
     // Other shotover nodes should detect the killed node at least once
@@ -485,7 +485,7 @@ async fn cluster_3_racks_multi_shotover_with_2_shotover_down(#[case] driver: Kaf
 
     // create a new connection and produce and consume messages
     let new_connection_builder = KafkaConnectionBuilder::new(driver, "localhost:9193");
-    test_cases::cluster_test_suite(&new_connection_builder).await;
+    test_cases::cluster_test_suite_with_lost_shotover_node(&new_connection_builder).await;
 
     let mut expected_events = multi_shotover_events();
     // The UP shotover node should detect the killed nodes at least once
@@ -537,7 +537,7 @@ async fn cluster_3_racks_multi_shotover_with_1_shotover_missing(#[case] driver: 
 
     // Send some produce and consume requests
     let connection_builder = KafkaConnectionBuilder::new(driver, "localhost:9192");
-    test_cases::cluster_test_suite(&connection_builder).await;
+    test_cases::cluster_test_suite_with_lost_shotover_node(&connection_builder).await;
 
     let mut expected_events = multi_shotover_events();
     // Other shotover nodes should detect the missing node at least once

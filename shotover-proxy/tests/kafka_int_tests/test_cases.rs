@@ -1326,7 +1326,7 @@ async fn test_produce_consume_10_times(producer: &mut KafkaProducer, consumer: &
     }
 }
 
-pub async fn standard_test_suite(connection_builder: &KafkaConnectionBuilder) {
+async fn standard_test_suite_base(connection_builder: &KafkaConnectionBuilder) {
     admin_setup(connection_builder).await;
     produce_consume_partitions1(connection_builder, "partitions1").await;
     produce_consume_partitions1(connection_builder, "unknown_topic").await;
@@ -1363,9 +1363,7 @@ pub async fn standard_test_suite(connection_builder: &KafkaConnectionBuilder) {
             .await;
         produce_consume_partitions1(connection_builder, "partitions1").await;
 
-        // rdkafka-rs doesnt support these methods
         list_offsets(&admin).await;
-        list_groups(connection_builder, &admin).await;
     }
 
     produce_consume_acks0(connection_builder).await;
@@ -1439,7 +1437,8 @@ async fn list_offsets(admin: &KafkaAdmin) {
     assert_eq!(results, expected);
 }
 
-async fn list_groups(connection_builder: &KafkaConnectionBuilder, admin: &KafkaAdmin) {
+async fn list_groups(connection_builder: &KafkaConnectionBuilder) {
+    let admin = connection_builder.connect_admin().await;
     let mut consumer = connection_builder
         .connect_consumer(
             ConsumerConfig::consume_from_topics(vec!["partitions1".to_owned()])
@@ -1461,8 +1460,7 @@ async fn list_groups(connection_builder: &KafkaConnectionBuilder, admin: &KafkaA
     }
 }
 
-pub async fn cluster_test_suite(connection_builder: &KafkaConnectionBuilder) {
-    standard_test_suite(connection_builder).await;
+async fn cluster_test_suite_base(connection_builder: &KafkaConnectionBuilder) {
     let admin = connection_builder.connect_admin().await;
     admin
         .create_topics_and_wait(&[
@@ -1480,6 +1478,32 @@ pub async fn cluster_test_suite(connection_builder: &KafkaConnectionBuilder) {
         .await;
     produce_consume_partitions1(connection_builder, "partitions1_rf3").await;
     produce_consume_partitions3(connection_builder, "partitions3_rf3", 1, 500).await;
+}
+
+pub async fn tests_requiring_all_shotover_nodes(connection_builder: &KafkaConnectionBuilder) {
+    // rdkafka-rs doesnt support these methods
+    #[allow(irrefutable_let_patterns)]
+    if let KafkaConnectionBuilder::Java(_) = connection_builder {
+        list_groups(connection_builder).await;
+    }
+}
+
+pub async fn standard_test_suite(connection_builder: &KafkaConnectionBuilder) {
+    standard_test_suite_base(connection_builder).await;
+    tests_requiring_all_shotover_nodes(connection_builder).await;
+}
+
+pub async fn cluster_test_suite(connection_builder: &KafkaConnectionBuilder) {
+    standard_test_suite_base(connection_builder).await;
+    cluster_test_suite_base(connection_builder).await;
+    tests_requiring_all_shotover_nodes(connection_builder).await;
+}
+
+pub async fn cluster_test_suite_with_lost_shotover_node(
+    connection_builder: &KafkaConnectionBuilder,
+) {
+    standard_test_suite_base(connection_builder).await;
+    cluster_test_suite_base(connection_builder).await;
 }
 
 pub async fn setup_basic_user_acls(connection: &KafkaConnectionBuilder, username: &str) {
