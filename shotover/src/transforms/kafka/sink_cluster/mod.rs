@@ -29,8 +29,8 @@ use kafka_protocol::messages::{
     AddOffsetsToTxnRequest, AddPartitionsToTxnRequest, AddPartitionsToTxnResponse, ApiKey,
     BrokerId, DeleteGroupsRequest, DeleteGroupsResponse, EndTxnRequest, FetchRequest,
     FetchResponse, FindCoordinatorRequest, FindCoordinatorResponse, GroupId, HeartbeatRequest,
-    InitProducerIdRequest, JoinGroupRequest, LeaveGroupRequest, ListOffsetsRequest,
-    ListOffsetsResponse, MetadataRequest, MetadataResponse, OffsetFetchRequest,
+    InitProducerIdRequest, JoinGroupRequest, LeaveGroupRequest, ListGroupsResponse,
+    ListOffsetsRequest, ListOffsetsResponse, MetadataRequest, MetadataResponse, OffsetFetchRequest,
     OffsetFetchResponse, OffsetForLeaderEpochRequest, OffsetForLeaderEpochResponse, ProduceRequest,
     ProduceResponse, RequestHeader, SaslAuthenticateRequest, SaslAuthenticateResponse,
     SaslHandshakeRequest, SyncGroupRequest, TopicName, TransactionalId, TxnOffsetCommitRequest,
@@ -48,7 +48,7 @@ use scram_over_mtls::{
 use serde::{Deserialize, Serialize};
 use shotover_node::{ShotoverNode, ShotoverNodeConfig};
 use split::{
-    AddPartitionsToTxnRequestSplitAndRouter, DeleteGroupsSplitAndRouter,
+    AddPartitionsToTxnRequestSplitAndRouter, DeleteGroupsSplitAndRouter, ListGroupsSplitAndRouter,
     ListOffsetsRequestSplitAndRouter, OffsetFetchSplitAndRouter,
     OffsetForLeaderEpochRequestSplitAndRouter, ProduceRequestSplitAndRouter, RequestSplitAndRouter,
 };
@@ -986,6 +986,11 @@ impl KafkaSinkCluster {
                     ..
                 })) => self.route_to_controller(request),
 
+                Some(Frame::Kafka(KafkaFrame::Request {
+                    body: RequestBody::ListGroups(_),
+                    ..
+                })) => self.split_and_route_request::<ListGroupsSplitAndRouter>(request)?,
+
                 // route to random broker
                 Some(Frame::Kafka(KafkaFrame::Request {
                     body:
@@ -1395,6 +1400,26 @@ impl KafkaSinkCluster {
                 let dest_groups = result.entry(destination).or_default();
                 dest_groups.push(group_id);
             }
+        }
+
+        result
+    }
+
+    fn split_request_by_routing_to_all_brokers(&mut self) -> HashMap<BrokerId, ()> {
+        let mut result: HashMap<BrokerId, ()> = Default::default();
+
+        for broker in self.nodes.iter().filter(|node| {
+            node.is_up()
+                && node
+                    .rack
+                    .as_ref()
+                    .map(|rack| rack == &self.rack)
+                    // If the cluster is not using racks, include all brokers in the list.
+                    // This ensure we get full coverage of the cluster.
+                    // The client driver can filter out the resulting duplicates.
+                    .unwrap_or(true)
+        }) {
+            result.insert(broker.broker_id, ());
         }
 
         result
@@ -1974,6 +1999,10 @@ impl KafkaSinkCluster {
                 ..
             })) => Self::combine_offset_fetch(base, drain)?,
             Some(Frame::Kafka(KafkaFrame::Response {
+                body: ResponseBody::ListGroups(base),
+                ..
+            })) => Self::combine_list_groups(base, drain)?,
+            Some(Frame::Kafka(KafkaFrame::Response {
                 body: ResponseBody::AddPartitionsToTxn(base),
                 version,
                 ..
@@ -2187,6 +2216,25 @@ impl KafkaSinkCluster {
                 base_offset_fetch
                     .groups
                     .extend(std::mem::take(&mut next_offset_fetch.groups))
+            }
+        }
+
+        Ok(())
+    }
+
+    fn combine_list_groups(
+        base_list_groups: &mut ListGroupsResponse,
+        drain: impl Iterator<Item = Message>,
+    ) -> Result<()> {
+        for mut next in drain {
+            if let Some(Frame::Kafka(KafkaFrame::Response {
+                body: ResponseBody::ListGroups(next_list_groups),
+                ..
+            })) = next.frame()
+            {
+                base_list_groups
+                    .groups
+                    .extend(std::mem::take(&mut next_list_groups.groups));
             }
         }
 

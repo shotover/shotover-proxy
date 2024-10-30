@@ -453,6 +453,14 @@ impl KafkaAdmin {
         }
     }
 
+    pub async fn list_groups(&self) -> Vec<String> {
+        match self {
+            #[cfg(feature = "kafka-cpp-driver-tests")]
+            Self::Cpp(_) => panic!("rdkafka-rs driver does not support list_groups"),
+            Self::Java(java) => java.list_groups().await,
+        }
+    }
+
     pub async fn create_partitions(&self, partitions: &[NewPartition<'_>]) {
         match self {
             #[cfg(feature = "kafka-cpp-driver-tests")]
