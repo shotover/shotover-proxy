@@ -377,6 +377,37 @@ async fn cluster_multi_rack_1_per_rack(#[case] driver: CassandraDriver) {
     cluster::multi_rack::test_topology_task(None, expected_nodes, 128).await;
 }
 
+#[tokio::test(flavor = "multi_thread")]
+async fn cluster_multi_rack_1_per_rack_go_smoke_test() {
+    let _compose =
+        docker_compose("tests/test-configs/cassandra/cluster-multi-rack/docker-compose.yaml");
+
+    let shotover_rack1 =
+        shotover_process("tests/test-configs/cassandra/cluster-multi-rack/topology_rack1.yaml")
+            .with_log_name("Rack1")
+            .with_config("tests/test-configs/shotover-config/config1.yaml")
+            .start()
+            .await;
+    let shotover_rack2 =
+        shotover_process("tests/test-configs/cassandra/cluster-multi-rack/topology_rack2.yaml")
+            .with_log_name("Rack2")
+            .with_config("tests/test-configs/shotover-config/config2.yaml")
+            .start()
+            .await;
+    let shotover_rack3 =
+        shotover_process("tests/test-configs/cassandra/cluster-multi-rack/topology_rack3.yaml")
+            .with_log_name("Rack3")
+            .with_config("tests/test-configs/shotover-config/config3.yaml")
+            .start()
+            .await;
+
+    test_helpers::connection::cassandra::go::run_go_smoke_test().await;
+
+    shotover_rack1.shutdown_and_then_consume_events(&[]).await;
+    shotover_rack2.shutdown_and_then_consume_events(&[]).await;
+    shotover_rack3.shutdown_and_then_consume_events(&[]).await;
+}
+
 // This is very slow, only test with one driver
 // We previously had this at 3 per rack but this was too much for the github actions runners and resulted in intermittent failures.
 #[rstest]

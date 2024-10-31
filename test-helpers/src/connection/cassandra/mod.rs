@@ -1,5 +1,6 @@
 pub mod connection;
 pub mod cql_ws;
+pub mod go;
 pub mod result_value;
 
 pub use connection::{
