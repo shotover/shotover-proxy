@@ -119,7 +119,7 @@ impl MessageRewriter {
                 RewriteTableTy::Prepare { clone_index } => {
                     let mut first = true;
                     for node in pool.nodes().iter() {
-                        if node.is_up && node.rack == self.local_shotover_node.rack {
+                        if node.is_up {
                             if first {
                                 let message_id = messages[*clone_index].id();
                                 self.prepare_requests_to_destination_nodes
