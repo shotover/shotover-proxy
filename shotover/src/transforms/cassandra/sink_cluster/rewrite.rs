@@ -344,6 +344,12 @@ impl MessageRewriter {
                                         CassandraOperation::Result(CassandraResult::Prepared(prepared)),
                                     ..
                                 })) => Some(prepared),
+                                // ignore errors here. In the case of all errors, one of them will be returned to the client later on.
+                                Some(Frame::Cassandra(CassandraFrame {
+                                    operation:
+                                        CassandraOperation::Error(_),
+                                    ..
+                                })) => None,
                                 other => {
                                     tracing::error!("Response to Prepare query was not a Prepared, was instead: {other:?}");
                                     warnings.push(format!("Shotover: Response to Prepare query was not a Prepared, was instead: {other:?}"));
@@ -361,8 +367,8 @@ impl MessageRewriter {
                                     });
 
                             tracing::error!(
-                            "Nodes did not return the same response to PREPARE statement {err_str}"
-                        );
+                                "Nodes did not return the same response to PREPARE statement {err_str}"
+                            );
                             warnings.push(format!(
                             "Shotover: Nodes did not return the same response to PREPARE statement {err_str}"
                         ));
