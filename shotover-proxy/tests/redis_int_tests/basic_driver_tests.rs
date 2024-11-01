@@ -1006,14 +1006,22 @@ async fn get_master_id(connection: &mut Connection) -> String {
 }
 
 async fn is_cluster_replicas_ready(connection: &mut Connection, master_id: &str) -> bool {
-    let res = redis::cmd("CLUSTER")
+    tracing::debug!("Checking `CLUSTER REPLICAS {master_id}`");
+    let res = match redis::cmd("CLUSTER")
         .arg("REPLICAS")
         .arg(master_id)
         .query_async(connection)
         .await
-        .unwrap();
+    {
+        Ok(t) => t,
+        Err(e) => {
+            tracing::debug!("CLUSTER REPLICAS failed with {e:?}, retrying");
+            return false;
+        }
+    };
     if let Value::Bulk(data) = res {
         if let Some(Value::Data(data)) = data.first() {
+            tracing::debug!("CLUSTER REPLICAS returned [], retrying");
             return !data.is_empty();
         }
     }
@@ -1030,17 +1038,21 @@ pub async fn test_cluster_ports_rewrite_nodes(connection: &mut Connection, new_p
     assert_cluster_ports_rewrite_nodes(res, new_port);
 
     // Get an id to use for cluster replicas test
-    let master_id = get_master_id(connection).await;
+    let mut master_id = get_master_id(connection).await;
 
-    let mut tries = 0;
+    let instant = std::time::Instant::now();
     while !is_cluster_replicas_ready(connection, &master_id).await {
-        std::thread::sleep(std::time::Duration::from_millis(10));
-        tries += 1;
-        if tries > 500 {
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+
+        if instant.elapsed() > Duration::from_secs(30) {
             // Log we ran out of retries but let the following "CLUSTER REPLICAS" command give a more specific panic message
-            tracing::error!("CLUSTER REPLICAS never became ready");
+            panic!("CLUSTER REPLICAS never became ready");
         }
+
+        // refetch master ID, sometimes redis incorrectly reports slave nodes as master nodes during startup.
+        master_id = get_master_id(connection).await;
     }
+    tracing::info!("CLUSTER REPLICAS is ready after {:?}", instant.elapsed());
 
     let res = redis::cmd("CLUSTER")
         .arg("REPLICAS")
