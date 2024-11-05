@@ -1,8 +1,8 @@
 use super::{
     Acl, AclOperation, AclPermissionType, AlterConfig, ConsumerConfig, ExpectedResponse,
-    ListOffsetsResultInfo, NewPartition, NewTopic, OffsetAndMetadata, OffsetSpec, ProduceResult,
-    Record, RecordsToDelete, ResourcePatternType, ResourceSpecifier, ResourceType,
-    TopicDescription, TopicPartition, TopicPartitionInfo,
+    ListOffsetsResultInfo, NewPartition, NewPartitionReassignment, NewTopic, OffsetAndMetadata,
+    OffsetSpec, PartitionReassignment, ProduceResult, Record, RecordsToDelete, ResourcePatternType,
+    ResourceSpecifier, ResourceType, TopicDescription, TopicPartition, TopicPartitionInfo,
 };
 use crate::connection::java::{map_iterator, Jvm, Value};
 use anyhow::Result;
@@ -797,6 +797,70 @@ impl KafkaAdminJava {
             .call_async_fallible("all", vec![])
             .await
             .map(|_| ())
+    }
+
+    pub async fn alter_partition_reassignments(
+        &self,
+        reassignments: HashMap<TopicPartition, NewPartitionReassignment>,
+    ) {
+        let reassignments_java: Vec<_> = reassignments
+            .into_iter()
+            .map(|(topic_partition, reassignment)| {
+                (
+                    topic_partition_to_java(&self.jvm, &topic_partition),
+                    self.jvm.call_static(
+                        "java.util.Optional",
+                        "of",
+                        vec![self.jvm.construct(
+                            "org.apache.kafka.clients.admin.NewPartitionReassignment",
+                            vec![self.jvm.new_list(
+                                "java.lang.Integer",
+                                reassignment
+                                    .replica_broker_ids
+                                    .into_iter()
+                                    .map(|x| self.jvm.new_int_object(x))
+                                    .collect(),
+                            )],
+                        )],
+                    ),
+                )
+            })
+            .collect();
+        let reassignments_java = self.jvm.new_map(reassignments_java);
+        self.admin
+            .call("alterPartitionReassignments", vec![reassignments_java])
+            .call_async("all", vec![])
+            .await;
+    }
+
+    pub async fn list_partition_reassignments(
+        &self,
+    ) -> HashMap<TopicPartition, PartitionReassignment> {
+        let java_results = self
+            .admin
+            .call("listPartitionReassignments", vec![])
+            .call_async("reassignments", vec![])
+            .await;
+
+        map_iterator(java_results)
+            .map(|(topic_partition, partition_reassignment)| {
+                (topic_partition_to_rust(topic_partition), {
+                    let partition_reassignment = partition_reassignment
+                        .cast("org.apache.kafka.clients.admin.PartitionReassignment");
+                    PartitionReassignment {
+                        adding_replica_broker_ids: partition_reassignment
+                            .call("addingReplicas", vec![])
+                            .into_rust(),
+                        removing_replica_broker_ids: partition_reassignment
+                            .call("removingReplicas", vec![])
+                            .into_rust(),
+                        replica_broker_ids: partition_reassignment
+                            .call("replicas", vec![])
+                            .into_rust(),
+                    }
+                })
+            })
+            .collect()
     }
 
     pub async fn create_acls(&self, acls: Vec<Acl>) {

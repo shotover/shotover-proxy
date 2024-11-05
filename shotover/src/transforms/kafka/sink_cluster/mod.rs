@@ -1072,7 +1072,9 @@ The connection to the client has been closed."
                         | RequestBody::CreatePartitions(_)
                         | RequestBody::DeleteTopics(_)
                         | RequestBody::CreateAcls(_)
-                        | RequestBody::ApiVersions(_),
+                        | RequestBody::ApiVersions(_)
+                        | RequestBody::AlterPartitionReassignments(_)
+                        | RequestBody::ListPartitionReassignments(_),
                     ..
                 })) => self.route_to_random_broker(request),
 
