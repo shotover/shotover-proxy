@@ -28,6 +28,13 @@ services:
       KAFKA_CFG_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
       KAFKA_CFG_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
       KAFKA_CFG_TRANSACTION_STATE_LOG_MIN_ISR: 2
+
+      # This cfg is set to 3000 by default, which for a typical workload reduces the overhead of creating a
+      # new consumer group by avoiding constant rebalances as each initial consumer joins.
+      # See: https://cwiki.apache.org/confluence/display/KAFKA/KIP-134%3A+Delay+initial+consumer+group+rebalance
+      #
+      # However for an integration test workload we are constantly spinning up single consumer groups, so the default value makes the tests take twice as long to run.
+      KAFKA_CFG_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
     volumes: &volumes
       - type: tmpfs
         target: /bitnami/kafka
