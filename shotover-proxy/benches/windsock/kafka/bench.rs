@@ -171,6 +171,15 @@ impl KafkaBench {
                             "KAFKA_CFG_PROCESS_ROLES".to_owned(),
                             "controller,broker".to_owned(),
                         ),
+                        // This cfg is set to 3000 by default, which for a typical workload reduces the overhead of creating a
+                        // new consumer group by avoiding constant rebalances as each initial consumer joins.
+                        // See: https://cwiki.apache.org/confluence/display/KAFKA/KIP-134%3A+Delay+initial+consumer+group+rebalance
+
+                        // However for this benchmark we already discard the initial results as a warmup stage, so better to just have the benchmark startup faster.
+                        (
+                            "KAFKA_CFG_GROUP_INITIAL_REBALANCE_DELAY_MS".to_owned(),
+                            "0".to_owned(),
+                        ),
                         (
                             "KAFKA_HEAP_OPTS".to_owned(),
                             "-Xmx4096M -Xms4096M".to_owned(),
