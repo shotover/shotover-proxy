@@ -11,7 +11,8 @@ use kafka_protocol::messages::{
     list_offsets_request::ListOffsetsTopic, offset_fetch_request::OffsetFetchRequestGroup,
     offset_for_leader_epoch_request::OffsetForLeaderTopic, produce_request::TopicProduceData,
     AddPartitionsToTxnRequest, BrokerId, DeleteGroupsRequest, GroupId, ListGroupsRequest,
-    ListOffsetsRequest, OffsetFetchRequest, OffsetForLeaderEpochRequest, ProduceRequest, TopicName,
+    ListOffsetsRequest, ListTransactionsRequest, OffsetFetchRequest, OffsetForLeaderEpochRequest,
+    ProduceRequest, TopicName,
 };
 use std::collections::HashMap;
 
@@ -191,6 +192,34 @@ impl RequestSplitAndRouter for ListGroupsSplitAndRouter {
 
     fn reassemble(_request: &mut Self::Request, _item: Self::SubRequests) {
         // No need to reassemble, each ListGroups is an exact clone of the original
+    }
+}
+
+pub struct ListTransactionsSplitAndRouter;
+
+impl RequestSplitAndRouter for ListTransactionsSplitAndRouter {
+    type Request = ListTransactionsRequest;
+    type SubRequests = ();
+
+    fn split_by_destination(
+        transform: &mut KafkaSinkCluster,
+        _request: &mut Self::Request,
+    ) -> HashMap<BrokerId, Self::SubRequests> {
+        transform.split_request_by_routing_to_all_brokers()
+    }
+
+    fn get_request_frame(request: &mut Message) -> Option<&mut Self::Request> {
+        match request.frame() {
+            Some(Frame::Kafka(KafkaFrame::Request {
+                body: RequestBody::ListTransactions(request),
+                ..
+            })) => Some(request),
+            _ => None,
+        }
+    }
+
+    fn reassemble(_request: &mut Self::Request, _item: Self::SubRequests) {
+        // No need to reassemble, each ListTransactions is an exact clone of the original
     }
 }
 

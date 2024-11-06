@@ -1456,8 +1456,19 @@ async fn list_groups(connection_builder: &KafkaConnectionBuilder) {
 
     let actual_results = admin.list_groups().await;
     if !actual_results.contains(&"list_groups_test".to_owned()) {
-        panic!("Expected to find list_groups_test in {actual_results:?} but was misisng")
+        panic!("Expected to find \"list_groups_test\" in {actual_results:?} but was missing")
     }
+}
+
+async fn list_transactions(connection_builder: &KafkaConnectionBuilder) {
+    let admin = connection_builder.connect_admin().await;
+    let _transaction_producer = connection_builder
+        .connect_producer_with_transactions("some_transaction_id".to_owned())
+        .await;
+
+    let actual_results = admin.list_transactions().await;
+    let expected_results = ["some_transaction_id".to_owned()];
+    assert_eq!(actual_results, expected_results);
 }
 
 async fn cluster_test_suite_base(connection_builder: &KafkaConnectionBuilder) {
@@ -1485,6 +1496,7 @@ pub async fn tests_requiring_all_shotover_nodes(connection_builder: &KafkaConnec
     #[allow(irrefutable_let_patterns)]
     if let KafkaConnectionBuilder::Java(_) = connection_builder {
         list_groups(connection_builder).await;
+        list_transactions(connection_builder).await;
     }
 }
 

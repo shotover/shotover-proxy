@@ -30,10 +30,11 @@ use kafka_protocol::messages::{
     BrokerId, DeleteGroupsRequest, DeleteGroupsResponse, EndTxnRequest, FetchRequest,
     FetchResponse, FindCoordinatorRequest, FindCoordinatorResponse, GroupId, HeartbeatRequest,
     InitProducerIdRequest, JoinGroupRequest, LeaveGroupRequest, ListGroupsResponse,
-    ListOffsetsRequest, ListOffsetsResponse, MetadataRequest, MetadataResponse, OffsetFetchRequest,
-    OffsetFetchResponse, OffsetForLeaderEpochRequest, OffsetForLeaderEpochResponse, ProduceRequest,
-    ProduceResponse, RequestHeader, SaslAuthenticateRequest, SaslAuthenticateResponse,
-    SaslHandshakeRequest, SyncGroupRequest, TopicName, TransactionalId, TxnOffsetCommitRequest,
+    ListOffsetsRequest, ListOffsetsResponse, ListTransactionsResponse, MetadataRequest,
+    MetadataResponse, OffsetFetchRequest, OffsetFetchResponse, OffsetForLeaderEpochRequest,
+    OffsetForLeaderEpochResponse, ProduceRequest, ProduceResponse, RequestHeader,
+    SaslAuthenticateRequest, SaslAuthenticateResponse, SaslHandshakeRequest, SyncGroupRequest,
+    TopicName, TransactionalId, TxnOffsetCommitRequest,
 };
 use kafka_protocol::protocol::StrBytes;
 use kafka_protocol::ResponseError;
@@ -49,7 +50,7 @@ use serde::{Deserialize, Serialize};
 use shotover_node::{ShotoverNode, ShotoverNodeConfig};
 use split::{
     AddPartitionsToTxnRequestSplitAndRouter, DeleteGroupsSplitAndRouter, ListGroupsSplitAndRouter,
-    ListOffsetsRequestSplitAndRouter, OffsetFetchSplitAndRouter,
+    ListOffsetsRequestSplitAndRouter, ListTransactionsSplitAndRouter, OffsetFetchSplitAndRouter,
     OffsetForLeaderEpochRequestSplitAndRouter, ProduceRequestSplitAndRouter, RequestSplitAndRouter,
 };
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -164,6 +165,7 @@ struct KafkaSinkClusterBuilder {
     first_contact_points: Vec<KafkaAddress>,
     shotover_nodes: Vec<ShotoverNode>,
     rack: StrBytes,
+    broker_id: BrokerId,
     connect_timeout: Duration,
     read_timeout: Option<Duration>,
     controller_broker: Arc<AtomicBrokerId>,
@@ -214,6 +216,7 @@ impl KafkaSinkClusterBuilder {
                 .map(|x| x.get_builder(connect_timeout, read_timeout))
                 .transpose()?,
             shotover_nodes,
+            broker_id: BrokerId(local_shotover_broker_id),
             rack,
             connect_timeout,
             read_timeout,
@@ -236,6 +239,7 @@ impl TransformBuilder for KafkaSinkClusterBuilder {
             first_contact_points: self.first_contact_points.clone(),
             shotover_nodes: self.shotover_nodes.clone(),
             rack: self.rack.clone(),
+            broker_id: self.broker_id,
             nodes: vec![],
             nodes_shared: self.nodes_shared.clone(),
             controller_broker: self.controller_broker.clone(),
@@ -300,6 +304,7 @@ pub(crate) struct KafkaSinkCluster {
     first_contact_points: Vec<KafkaAddress>,
     shotover_nodes: Vec<ShotoverNode>,
     rack: StrBytes,
+    broker_id: BrokerId,
     nodes: Vec<KafkaNode>,
     nodes_shared: Arc<RwLock<Vec<KafkaNode>>>,
     controller_broker: Arc<AtomicBrokerId>,
@@ -1025,10 +1030,15 @@ The connection to the client has been closed."
                     ..
                 })) => self.route_to_controller(request),
 
+                // route to all nodes
                 Some(Frame::Kafka(KafkaFrame::Request {
                     body: RequestBody::ListGroups(_),
                     ..
                 })) => self.split_and_route_request::<ListGroupsSplitAndRouter>(request)?,
+                Some(Frame::Kafka(KafkaFrame::Request {
+                    body: RequestBody::ListTransactions(_),
+                    ..
+                })) => self.split_and_route_request::<ListTransactionsSplitAndRouter>(request)?,
 
                 // route to random broker
                 Some(Frame::Kafka(KafkaFrame::Request {
@@ -1444,24 +1454,50 @@ The connection to the client has been closed."
         result
     }
 
+    /// Route broadcasted requests to all brokers split across all shotover nodes.
+    /// That is, each shotover node in a rack will deterministically be assigned a portion of the rack to route the request to.
+    /// If a shotover node is the only node in its rack it will route to all kafka brokers in the rack.
+    /// When combined with a client that is routing this request to all shotover nodes, the request will reach each kafka broker exactly once.
+    ///
+    /// The logic in this function relies on `self.shotover_nodes` and `self.nodes` being sorted by broker id.
     fn split_request_by_routing_to_all_brokers(&mut self) -> HashMap<BrokerId, ()> {
-        let mut result: HashMap<BrokerId, ()> = Default::default();
+        // Will always be at least 1, since the shotover this code is running in will always be included.
+        let shotovers_in_rack = self
+            .shotover_nodes
+            .iter()
+            .filter(|node| node.is_up() && node.rack == self.rack)
+            .count();
 
-        for broker in self.nodes.iter().filter(|node| {
-            node.is_up()
-                && node
-                    .rack
-                    .as_ref()
-                    .map(|rack| rack == &self.rack)
-                    // If the cluster is not using racks, include all brokers in the list.
-                    // This ensure we get full coverage of the cluster.
-                    // The client driver can filter out the resulting duplicates.
-                    .unwrap_or(true)
-        }) {
-            result.insert(broker.broker_id, ());
-        }
+        // The offset of this shotover node within the rack
+        // will be 0 <= shotover_offsets_within_rack < shotovers_in_rack
+        // The purpose is to create a deterministic way of splitting up broadcasted requests across shotover nodes.
+        let local_shotover_index_in_rack = self
+            .shotover_nodes
+            .iter()
+            .filter(|node| node.is_up() && node.rack == self.rack)
+            // start enumerating AFTER filtering down to brokers in the rack
+            .enumerate()
+            .find(|node| node.1.broker_id == self.broker_id)
+            .unwrap()
+            .0;
 
-        result
+        self.nodes
+            .iter()
+            .filter(|node| {
+                node.is_up()
+                    && node
+                        .rack
+                        .as_ref()
+                        .map(|rack| rack == &self.rack)
+                        // If the cluster is not using racks, include all brokers in the list.
+                        .unwrap_or(true)
+            })
+            // start enumerating AFTER filtering down to brokers in the rack
+            .enumerate()
+            // assign each shotover node in the rack a subset of the brokers in the rack
+            .filter(|(i, _)| i % shotovers_in_rack == local_shotover_index_in_rack)
+            .map(|(_, broker)| (broker.broker_id, ()))
+            .collect()
     }
 
     /// This method removes all groups from the OffsetFetch request and returns them split up by their destination.
@@ -2042,6 +2078,10 @@ The connection to the client has been closed."
                 ..
             })) => Self::combine_list_groups(base, drain)?,
             Some(Frame::Kafka(KafkaFrame::Response {
+                body: ResponseBody::ListTransactions(base),
+                ..
+            })) => Self::combine_list_transactions(base, drain)?,
+            Some(Frame::Kafka(KafkaFrame::Response {
                 body: ResponseBody::AddPartitionsToTxn(base),
                 version,
                 ..
@@ -2274,6 +2314,27 @@ The connection to the client has been closed."
                 base_list_groups
                     .groups
                     .extend(std::mem::take(&mut next_list_groups.groups));
+            }
+        }
+
+        Ok(())
+    }
+
+    fn combine_list_transactions(
+        base_list_transactions: &mut ListTransactionsResponse,
+        drain: impl Iterator<Item = Message>,
+    ) -> Result<()> {
+        for mut next in drain {
+            if let Some(Frame::Kafka(KafkaFrame::Response {
+                body: ResponseBody::ListTransactions(next_list_transactions),
+                ..
+            })) = next.frame()
+            {
+                base_list_transactions
+                    .transaction_states
+                    .extend(std::mem::take(
+                        &mut next_list_transactions.transaction_states,
+                    ));
             }
         }
 
@@ -3205,6 +3266,7 @@ The connection to the client has been closed."
                 .all(|node| node.broker_id != new_node.broker_id);
             if missing_from_shared {
                 nodes_shared.push(new_node);
+                nodes_shared.sort_by_key(|node| node.broker_id);
             }
         }
 
