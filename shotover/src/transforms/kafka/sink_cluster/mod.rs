@@ -1048,6 +1048,7 @@ The connection to the client has been closed."
                         | RequestBody::AlterConfigs(_)
                         | RequestBody::CreatePartitions(_)
                         | RequestBody::DeleteTopics(_)
+                        | RequestBody::DeleteRecords(_)
                         | RequestBody::CreateAcls(_)
                         | RequestBody::ApiVersions(_),
                     ..

@@ -442,6 +442,14 @@ impl KafkaAdmin {
         }
     }
 
+    pub async fn delete_records(&self, to_delete: &[RecordsToDelete]) {
+        match self {
+            #[cfg(feature = "kafka-cpp-driver-tests")]
+            Self::Cpp(_) => unimplemented!(),
+            Self::Java(java) => java.delete_records(to_delete).await,
+        }
+    }
+
     pub async fn list_offsets(
         &self,
         topic_partitions: HashMap<TopicPartition, OffsetSpec>,
@@ -656,4 +664,10 @@ impl IsolationLevel {
 
 pub struct OffsetAndMetadata {
     pub offset: i64,
+}
+pub struct RecordsToDelete {
+    pub topic_partition: TopicPartition,
+    /// Delete all records with offset less than the provided value.
+    /// If -1 is given delete all records regardless of offset.
+    pub delete_before_offset: i64,
 }

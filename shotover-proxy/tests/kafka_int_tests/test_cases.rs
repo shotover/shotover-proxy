@@ -5,8 +5,8 @@ use test_helpers::{
         Acl, AclOperation, AclPermissionType, AlterConfig, ConfigEntry, ConsumerConfig,
         ExpectedResponse, IsolationLevel, KafkaAdmin, KafkaConnectionBuilder, KafkaConsumer,
         KafkaDriver, KafkaProducer, ListOffsetsResultInfo, NewPartition, NewTopic,
-        OffsetAndMetadata, OffsetSpec, Record, ResourcePatternType, ResourceSpecifier,
-        ResourceType, TopicPartition,
+        OffsetAndMetadata, OffsetSpec, Record, RecordsToDelete, ResourcePatternType,
+        ResourceSpecifier, ResourceType, TopicPartition,
     },
     docker_compose::DockerCompose,
 };
@@ -132,9 +132,55 @@ async fn admin_setup(connection_builder: &KafkaConnectionBuilder) {
 
 async fn admin_cleanup(connection_builder: &KafkaConnectionBuilder) {
     let admin = connection_builder.connect_admin().await;
+
     admin
         .delete_groups(&["some_group", "some_group1", "consumer_group_with_offsets"])
         .await;
+    delete_records(&admin, connection_builder).await;
+}
+
+async fn delete_records(admin: &KafkaAdmin, connection_builder: &KafkaConnectionBuilder) {
+    // Only supported by java driver
+    #[allow(irrefutable_let_patterns)]
+    if let KafkaConnectionBuilder::Java(_) = connection_builder {
+        // assert partition contains a record
+        let mut consumer = connection_builder
+            .connect_consumer(
+                ConsumerConfig::consume_from_topics(vec!["partitions1_with_offset".to_owned()])
+                    .with_group("test_delete_records"),
+            )
+            .await;
+        consumer
+            .assert_consume(ExpectedResponse {
+                message: "Initial".to_owned(),
+                key: Some("Key".into()),
+                topic_name: "partitions1_with_offset".to_owned(),
+                offset: Some(0),
+            })
+            .await;
+
+        // delete all records in the partition
+        admin
+            .delete_records(&[RecordsToDelete {
+                topic_partition: TopicPartition {
+                    topic_name: "partitions1_with_offset".to_owned(),
+                    partition: 0,
+                },
+                delete_before_offset: -1,
+            }])
+            .await;
+
+        // assert partition no longer contains a record
+        let mut consumer = connection_builder
+            .connect_consumer(
+                ConsumerConfig::consume_from_topics(vec!["partitions1_with_offset".to_owned()])
+                    .with_group("test_delete_records2"),
+            )
+            .await;
+        consumer
+            .assert_no_consume_within_timeout(Duration::from_secs(2))
+            .await;
+    }
 }
 
 /// Attempt to make the driver batch produce requests for different topics into the same request

@@ -1,8 +1,8 @@
 use super::{
     Acl, AclOperation, AclPermissionType, AlterConfig, ConsumerConfig, ExpectedResponse,
     ListOffsetsResultInfo, NewPartition, NewTopic, OffsetAndMetadata, OffsetSpec, ProduceResult,
-    Record, ResourcePatternType, ResourceSpecifier, ResourceType, TopicDescription, TopicPartition,
-    TopicPartitionInfo,
+    Record, RecordsToDelete, ResourcePatternType, ResourceSpecifier, ResourceType,
+    TopicDescription, TopicPartition, TopicPartitionInfo,
 };
 use crate::connection::java::{Jvm, Value};
 use anyhow::Result;
@@ -518,6 +518,28 @@ impl KafkaAdminJava {
 
         self.admin
             .call("deleteConsumerGroups", vec![topics])
+            .call_async("all", vec![])
+            .await;
+    }
+
+    pub async fn delete_records(&self, to_delete: &[RecordsToDelete]) {
+        let to_delete: Vec<(Value, Value)> = to_delete
+            .iter()
+            .map(|x| {
+                (
+                    create_topic_partition(&self.jvm, &x.topic_partition),
+                    self.jvm.call_static(
+                        "org.apache.kafka.clients.admin.RecordsToDelete",
+                        "beforeOffset",
+                        vec![self.jvm.new_long(x.delete_before_offset)],
+                    ),
+                )
+            })
+            .collect();
+        let to_delete = self.jvm.new_map(to_delete);
+
+        self.admin
+            .call("deleteRecords", vec![to_delete])
             .call_async("all", vec![])
             .await;
     }
