@@ -268,7 +268,7 @@ impl KafkaConsumer {
         }
     }
 
-    async fn consume(&mut self, timeout: Duration) -> ExpectedResponse {
+    pub async fn consume(&mut self, timeout: Duration) -> ExpectedResponse {
         match self {
             #[cfg(feature = "kafka-cpp-driver-tests")]
             Self::Cpp(cpp) => cpp.consume(timeout).await,
