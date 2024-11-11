@@ -8,11 +8,12 @@ use crate::{
 };
 use kafka_protocol::messages::{
     add_partitions_to_txn_request::AddPartitionsToTxnTransaction,
-    list_offsets_request::ListOffsetsTopic, offset_fetch_request::OffsetFetchRequestGroup,
+    delete_records_request::DeleteRecordsTopic, list_offsets_request::ListOffsetsTopic,
+    offset_fetch_request::OffsetFetchRequestGroup,
     offset_for_leader_epoch_request::OffsetForLeaderTopic, produce_request::TopicProduceData,
-    AddPartitionsToTxnRequest, BrokerId, DeleteGroupsRequest, GroupId, ListGroupsRequest,
-    ListOffsetsRequest, ListTransactionsRequest, OffsetFetchRequest, OffsetForLeaderEpochRequest,
-    ProduceRequest, TopicName,
+    AddPartitionsToTxnRequest, BrokerId, DeleteGroupsRequest, DeleteRecordsRequest, GroupId,
+    ListGroupsRequest, ListOffsetsRequest, ListTransactionsRequest, OffsetFetchRequest,
+    OffsetForLeaderEpochRequest, ProduceRequest, TopicName,
 };
 use std::collections::HashMap;
 
@@ -128,6 +129,34 @@ impl RequestSplitAndRouter for OffsetForLeaderEpochRequestSplitAndRouter {
         match request.frame() {
             Some(Frame::Kafka(KafkaFrame::Request {
                 body: RequestBody::OffsetForLeaderEpoch(request),
+                ..
+            })) => Some(request),
+            _ => None,
+        }
+    }
+
+    fn reassemble(request: &mut Self::Request, item: Self::SubRequests) {
+        request.topics = item;
+    }
+}
+
+pub struct DeleteRecordsRequestSplitAndRouter;
+
+impl RequestSplitAndRouter for DeleteRecordsRequestSplitAndRouter {
+    type Request = DeleteRecordsRequest;
+    type SubRequests = Vec<DeleteRecordsTopic>;
+
+    fn split_by_destination(
+        transform: &mut KafkaSinkCluster,
+        request: &mut Self::Request,
+    ) -> HashMap<BrokerId, Self::SubRequests> {
+        transform.split_delete_records_request_by_destination(request)
+    }
+
+    fn get_request_frame(request: &mut Message) -> Option<&mut Self::Request> {
+        match request.frame() {
+            Some(Frame::Kafka(KafkaFrame::Request {
+                body: RequestBody::DeleteRecords(request),
                 ..
             })) => Some(request),
             _ => None,
