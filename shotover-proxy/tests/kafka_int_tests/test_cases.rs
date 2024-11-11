@@ -133,10 +133,52 @@ async fn admin_setup(connection_builder: &KafkaConnectionBuilder) {
 async fn admin_cleanup(connection_builder: &KafkaConnectionBuilder) {
     let admin = connection_builder.connect_admin().await;
 
-    admin
-        .delete_groups(&["some_group", "some_group1", "consumer_group_with_offsets"])
-        .await;
+    admin.delete_groups(&["some_group", "some_group1"]).await;
     delete_records(&admin, connection_builder).await;
+}
+
+async fn delete_offsets(connection_builder: &KafkaConnectionBuilder) {
+    let admin = connection_builder.connect_admin().await;
+
+    // Only supported by java driver
+    #[allow(irrefutable_let_patterns)]
+    if let KafkaConnectionBuilder::Java(_) = connection_builder {
+        // assert offset exists
+        let result = admin
+            .list_consumer_group_offsets("consumer_group_with_offsets".to_owned())
+            .await;
+        let expected_result: HashMap<_, HashMap<TopicPartition, OffsetAndMetadata>> =
+            HashMap::from([(
+                "consumer_group_with_offsets".to_owned(),
+                HashMap::from([(
+                    TopicPartition {
+                        topic_name: "partitions1_with_offset".to_owned(),
+                        partition: 0,
+                    },
+                    OffsetAndMetadata { offset: 2 },
+                )]),
+            )]);
+        assert_eq!(result, expected_result);
+
+        // delete offset
+        admin
+            .delete_consumer_group_offsets(
+                "consumer_group_with_offsets".to_owned(),
+                &[TopicPartition {
+                    topic_name: "partitions1_with_offset".to_owned(),
+                    partition: 0,
+                }],
+            )
+            .await;
+
+        // assert offset is deleted
+        let result = admin
+            .list_consumer_group_offsets("consumer_group_with_offsets".to_owned())
+            .await;
+        let expected_result: HashMap<_, HashMap<TopicPartition, OffsetAndMetadata>> =
+            HashMap::from([("consumer_group_with_offsets".to_owned(), HashMap::new())]);
+        assert_eq!(result, expected_result);
+    }
 }
 
 async fn delete_records(admin: &KafkaAdmin, connection_builder: &KafkaConnectionBuilder) {
@@ -894,6 +936,9 @@ pub async fn produce_consume_commit_offsets_partitions1(
             })
             .await;
     }
+
+    // test the admin API's offset list and delete operations
+    delete_offsets(connection_builder).await;
 }
 
 pub async fn produce_consume_partitions3(
