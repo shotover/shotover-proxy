@@ -1,54 +1,54 @@
 services:
-  redis-node-0:
-    image: &image bitnami/redis-cluster:6.2.12-debian-11-r26
+  valkey-node-0:
+    image: &image bitnami/valkey-cluster:7.2.5
     ports:
       - "2230:6379"
     environment: &environment
-      - 'REDIS_PASSWORD=shotover'
-      - 'REDIS_NODES=redis-node-0 redis-node-1 redis-node-2 redis-node-3 redis-node-4 redis-node-5'
+      - 'VALKEY_PASSWORD=shotover'
+      - 'VALKEY_NODES=valkey-node-0 valkey-node-1 valkey-node-2 valkey-node-3 valkey-node-4 valkey-node-5'
 
-  redis-node-1:
+  valkey-node-1:
     image: *image
     ports:
       - "2231:6379"
     environment: *environment
 
-  redis-node-2:
+  valkey-node-2:
     image: *image
     ports:
       - "2232:6379"
     environment: *environment
 
-  redis-node-3:
+  valkey-node-3:
     image: *image
     ports:
       - "2233:6379"
     environment: *environment
 
-  redis-node-4:
+  valkey-node-4:
     image: *image
     ports:
       - "2234:6379"
     environment: *environment
 
-  redis-node-5:
+  valkey-node-5:
     image: *image
     ports:
       - "2235:6379"
     environment: *environment
 
-  redis-cluster-init:
+  valkey-cluster-init:
     image: *image
     depends_on:
-      - redis-node-0
-      - redis-node-1
-      - redis-node-2
-      - redis-node-3
-      - redis-node-4
-      - redis-node-5
+      - valkey-node-0
+      - valkey-node-1
+      - valkey-node-2
+      - valkey-node-3
+      - valkey-node-4
+      - valkey-node-5
     environment:
-      - 'REDIS_PASSWORD=shotover'
+      - 'VALKEY_PASSWORD=shotover'
       - 'REDISCLI_AUTH=shotover'
-      - 'REDIS_CLUSTER_REPLICAS=1'
-      - 'REDIS_NODES=redis-node-0 redis-node-1 redis-node-2 redis-node-3 redis-node-4 redis-node-5'
-      - 'REDIS_CLUSTER_CREATOR=yes'
+      - 'VALKEY_CLUSTER_REPLICAS=1'
+      - 'VALKEY_NODES=valkey-node-0 valkey-node-1 valkey-node-2 valkey-node-3 valkey-node-4 valkey-node-5'
+      - 'VALKEY_CLUSTER_CREATOR=yes'
