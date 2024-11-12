@@ -268,7 +268,7 @@ impl KafkaConsumer {
         }
     }
 
-    async fn consume(&mut self, timeout: Duration) -> ExpectedResponse {
+    pub async fn consume(&mut self, timeout: Duration) -> ExpectedResponse {
         match self {
             #[cfg(feature = "kafka-cpp-driver-tests")]
             Self::Cpp(cpp) => cpp.consume(timeout).await,
@@ -477,6 +477,36 @@ impl KafkaAdmin {
         }
     }
 
+    pub async fn list_consumer_group_offsets(
+        &self,
+        group_id: String,
+    ) -> HashMap<String, HashMap<TopicPartition, OffsetAndMetadata>> {
+        match self {
+            #[cfg(feature = "kafka-cpp-driver-tests")]
+            Self::Cpp(_) => {
+                panic!("rdkafka-rs driver does not support list_consumer_group_offsets")
+            }
+            Self::Java(java) => java.list_consumer_group_offsets(group_id).await,
+        }
+    }
+
+    pub async fn delete_consumer_group_offsets(
+        &self,
+        group_id: String,
+        topic_partitions: &[TopicPartition],
+    ) {
+        match self {
+            #[cfg(feature = "kafka-cpp-driver-tests")]
+            Self::Cpp(_) => {
+                panic!("rdkafka-rs driver does not support delete_consumer_group_offsets")
+            }
+            Self::Java(java) => {
+                java.delete_consumer_group_offsets(group_id, topic_partitions)
+                    .await
+            }
+        }
+    }
+
     pub async fn create_partitions(&self, partitions: &[NewPartition<'_>]) {
         match self {
             #[cfg(feature = "kafka-cpp-driver-tests")]
@@ -662,6 +692,7 @@ impl IsolationLevel {
     }
 }
 
+#[derive(PartialEq, Debug)]
 pub struct OffsetAndMetadata {
     pub offset: i64,
 }
