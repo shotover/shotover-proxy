@@ -779,6 +779,26 @@ impl KafkaAdminJava {
             .await;
     }
 
+    pub async fn elect_leaders(&self, topic_partitions: &[TopicPartition]) -> Result<()> {
+        let election_type = self
+            .jvm
+            .class("org.apache.kafka.common.ElectionType")
+            .field("PREFERRED");
+        let topic_partitions_java = self.jvm.new_set(
+            "org.apache.kafka.common.TopicPartition",
+            topic_partitions
+                .iter()
+                .map(|topic_partition| topic_partition_to_java(&self.jvm, topic_partition))
+                .collect(),
+        );
+
+        self.admin
+            .call("electLeaders", vec![election_type, topic_partitions_java])
+            .call_async_fallible("all", vec![])
+            .await
+            .map(|_| ())
+    }
+
     pub async fn create_acls(&self, acls: Vec<Acl>) {
         let resource_type = self
             .jvm
