@@ -1002,17 +1002,20 @@ impl KafkaSinkCluster {
                 }
                 Some(Frame::Kafka(KafkaFrame::Request {
                     body:
+                        // It was determined that these message types are only sent between brokers by:
+                        // * This paragraph https://cwiki.apache.org/confluence/pages/viewpage.action?pageId=225153708#KIP866ZooKeepertoKRaftMigration-ControllerRPCs
+                        // * This field containing only "zkBroker" https://github.com/apache/kafka/blob/e3f953483cb480631bf041698770b47ddb82796f/clients/src/main/resources/common/message/LeaderAndIsrRequest.json#L19
                         RequestBody::LeaderAndIsr(_)
                         | RequestBody::StopReplica(_)
-                        | RequestBody::UpdateMetadata(_),
+                        | RequestBody::UpdateMetadata(_)
+                        // It was determined that this message type is only sent between brokers by:
+                        // * https://cwiki.apache.org/confluence/pages/viewpage.action?pageId=177049344#KIP730:ProducerIDgenerationinKRaftmode-PublicInterfaces
+                        | RequestBody::AllocateProducerIds(_),
                     header:
                         RequestHeader {
                             request_api_key, ..
                         },
                 })) => {
-                    // It was determined that these message types are only sent between brokers by:
-                    // * This paragraph https://cwiki.apache.org/confluence/pages/viewpage.action?pageId=225153708#KIP866ZooKeepertoKRaftMigration-ControllerRPCs
-                    // * This field containing only "zkBroker" https://github.com/apache/kafka/blob/e3f953483cb480631bf041698770b47ddb82796f/clients/src/main/resources/common/message/LeaderAndIsrRequest.json#L19
                     return Err(anyhow!(
                         r#"Client sent request of type {request_api_key}.
 This request is used only for communication between brokers and shotover does not support proxying between brokers.
