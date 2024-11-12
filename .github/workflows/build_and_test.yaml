@@ -43,6 +43,10 @@ jobs:
         # Otherwise only the last build to finish would get saved to the cache.
         # We allow different test_flags to share a cache as they should have identical build outputs
         key: ${{ matrix.runner }} - ${{ matrix.cargo_flags }}
+        cache-directories: |
+          target/debug/jassets
+          target/release/jassets
+
         # this line means that only the main branch writes to the cache
         # benefits:
         # * prevents main branch caches from being evicted in favor of a PR cache
