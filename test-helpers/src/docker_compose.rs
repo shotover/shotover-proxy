@@ -32,17 +32,19 @@ pub static IMAGE_WAITERS: [Image; 11] = [
         timeout: Duration::from_secs(120),
     },
     Image {
-        name: "library/redis:6.2.5",
-        log_regex_to_wait_for: r"Ready to accept connections",
-        timeout: Duration::from_secs(120),
-    },
-    Image {
-        name: "bitnami/redis:6.2.13-debian-11-r73",
-        log_regex_to_wait_for: r"Ready to accept connections",
-        timeout: Duration::from_secs(120),
-    },
-    Image {
         name: "bitnami/redis-cluster:6.2.12-debian-11-r26",
+        //`Cluster state changed` is created by the node services
+        //`Cluster correctly created` is created by the init service
+        log_regex_to_wait_for: r"Cluster state changed|Cluster correctly created",
+        timeout: Duration::from_secs(120),
+    },
+    Image {
+        name: "bitnami/valkey:7.2.5-debian-12-r9",
+        log_regex_to_wait_for: r"Ready to accept connections",
+        timeout: Duration::from_secs(120),
+    },
+    Image {
+        name: "bitnami/valkey-cluster:7.2.5-debian-12-r4",
         //`Cluster state changed` is created by the node services
         //`Cluster correctly created` is created by the init service
         log_regex_to_wait_for: r"Cluster state changed|Cluster correctly created",
