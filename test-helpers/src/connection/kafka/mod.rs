@@ -268,7 +268,7 @@ impl KafkaConsumer {
         }
     }
 
-    async fn consume(&mut self, timeout: Duration) -> ExpectedResponse {
+    pub async fn consume(&mut self, timeout: Duration) -> ExpectedResponse {
         match self {
             #[cfg(feature = "kafka-cpp-driver-tests")]
             Self::Cpp(cpp) => cpp.consume(timeout).await,
@@ -442,6 +442,14 @@ impl KafkaAdmin {
         }
     }
 
+    pub async fn delete_records(&self, to_delete: &[RecordsToDelete]) {
+        match self {
+            #[cfg(feature = "kafka-cpp-driver-tests")]
+            Self::Cpp(_) => unimplemented!(),
+            Self::Java(java) => java.delete_records(to_delete).await,
+        }
+    }
+
     pub async fn list_offsets(
         &self,
         topic_partitions: HashMap<TopicPartition, OffsetSpec>,
@@ -466,6 +474,46 @@ impl KafkaAdmin {
             #[cfg(feature = "kafka-cpp-driver-tests")]
             Self::Cpp(_) => panic!("rdkafka-rs driver does not support list_transactions"),
             Self::Java(java) => java.list_transactions().await,
+        }
+    }
+
+    pub async fn list_consumer_group_offsets(
+        &self,
+        group_id: String,
+    ) -> HashMap<String, HashMap<TopicPartition, OffsetAndMetadata>> {
+        match self {
+            #[cfg(feature = "kafka-cpp-driver-tests")]
+            Self::Cpp(_) => {
+                panic!("rdkafka-rs driver does not support list_consumer_group_offsets")
+            }
+            Self::Java(java) => java.list_consumer_group_offsets(group_id).await,
+        }
+    }
+
+    pub async fn delete_consumer_group_offsets(
+        &self,
+        group_id: String,
+        topic_partitions: &[TopicPartition],
+    ) {
+        match self {
+            #[cfg(feature = "kafka-cpp-driver-tests")]
+            Self::Cpp(_) => {
+                panic!("rdkafka-rs driver does not support delete_consumer_group_offsets")
+            }
+            Self::Java(java) => {
+                java.delete_consumer_group_offsets(group_id, topic_partitions)
+                    .await
+            }
+        }
+    }
+
+    pub async fn elect_leaders(&self, topic_partitions: &[TopicPartition]) -> Result<()> {
+        match self {
+            #[cfg(feature = "kafka-cpp-driver-tests")]
+            Self::Cpp(_) => {
+                panic!("rdkafka-rs driver does not support elect_leaders")
+            }
+            Self::Java(java) => java.elect_leaders(topic_partitions).await,
         }
     }
 
@@ -654,6 +702,13 @@ impl IsolationLevel {
     }
 }
 
+#[derive(PartialEq, Debug)]
 pub struct OffsetAndMetadata {
     pub offset: i64,
+}
+pub struct RecordsToDelete {
+    pub topic_partition: TopicPartition,
+    /// Delete all records with offset less than the provided value.
+    /// If -1 is given delete all records regardless of offset.
+    pub delete_before_offset: i64,
 }

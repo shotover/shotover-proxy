@@ -1,10 +1,10 @@
 use super::{
     Acl, AclOperation, AclPermissionType, AlterConfig, ConsumerConfig, ExpectedResponse,
     ListOffsetsResultInfo, NewPartition, NewTopic, OffsetAndMetadata, OffsetSpec, ProduceResult,
-    Record, ResourcePatternType, ResourceSpecifier, ResourceType, TopicDescription, TopicPartition,
-    TopicPartitionInfo,
+    Record, RecordsToDelete, ResourcePatternType, ResourceSpecifier, ResourceType,
+    TopicDescription, TopicPartition, TopicPartitionInfo,
 };
-use crate::connection::java::{Jvm, Value};
+use crate::connection::java::{map_iterator, Jvm, Value};
 use anyhow::Result;
 use pretty_assertions::assert_eq;
 use std::{
@@ -273,7 +273,7 @@ impl KafkaProducerJava {
                 .into_iter()
                 .map(|(tp, offset_and_metadata)| {
                     (
-                        create_topic_partition(&self.jvm, &tp),
+                        topic_partition_to_java(&self.jvm, &tp),
                         self.jvm.construct(
                             "org.apache.kafka.clients.consumer.OffsetAndMetadata",
                             vec![self.jvm.new_long(offset_and_metadata.offset)],
@@ -383,7 +383,7 @@ impl KafkaConsumerJava {
             .iter()
             .map(|(tp, offset)| {
                 (
-                    create_topic_partition(&self.jvm, tp),
+                    topic_partition_to_java(&self.jvm, tp),
                     self.jvm.construct(
                         "org.apache.kafka.clients.consumer.OffsetAndMetadata",
                         vec![self.jvm.new_long(*offset)],
@@ -403,7 +403,7 @@ impl KafkaConsumerJava {
         let mut offsets = HashMap::new();
 
         for tp in partitions {
-            let topic_partition = create_topic_partition(&self.jvm, &tp);
+            let topic_partition = topic_partition_to_java(&self.jvm, &tp);
 
             let timeout = self.jvm.call_static(
                 "java.time.Duration",
@@ -522,6 +522,28 @@ impl KafkaAdminJava {
             .await;
     }
 
+    pub async fn delete_records(&self, to_delete: &[RecordsToDelete]) {
+        let to_delete: Vec<(Value, Value)> = to_delete
+            .iter()
+            .map(|x| {
+                (
+                    topic_partition_to_java(&self.jvm, &x.topic_partition),
+                    self.jvm.call_static(
+                        "org.apache.kafka.clients.admin.RecordsToDelete",
+                        "beforeOffset",
+                        vec![self.jvm.new_long(x.delete_before_offset)],
+                    ),
+                )
+            })
+            .collect();
+        let to_delete = self.jvm.new_map(to_delete);
+
+        self.admin
+            .call("deleteRecords", vec![to_delete])
+            .call_async("all", vec![])
+            .await;
+    }
+
     pub async fn create_partitions(&self, partitions: &[NewPartition<'_>]) {
         let partitions: Vec<(Value, Value)> = partitions
             .iter()
@@ -631,7 +653,7 @@ impl KafkaAdminJava {
             .iter()
             .map(|(topic_partition, offset_spec)| {
                 (
-                    create_topic_partition(&self.jvm, topic_partition),
+                    topic_partition_to_java(&self.jvm, topic_partition),
                     match offset_spec {
                         OffsetSpec::Earliest => {
                             self.jvm.call_static(offset_spec_class, "earliest", vec![])
@@ -656,7 +678,7 @@ impl KafkaAdminJava {
             let result = java_results
                 .call(
                     "get",
-                    vec![create_topic_partition(&self.jvm, &topic_partition)],
+                    vec![topic_partition_to_java(&self.jvm, &topic_partition)],
                 )
                 .cast("org.apache.kafka.clients.admin.ListOffsetsResult$ListOffsetsResultInfo");
             let offset: i32 = result.call("offset", vec![]).into_rust();
@@ -701,6 +723,80 @@ impl KafkaAdminJava {
             )
         }
         results
+    }
+
+    pub async fn list_consumer_group_offsets(
+        &self,
+        group_id: String,
+    ) -> HashMap<String, HashMap<TopicPartition, OffsetAndMetadata>> {
+        let group_id = self.jvm.new_string(&group_id);
+
+        let java_results = self
+            .admin
+            .call("listConsumerGroupOffsets", vec![group_id])
+            .call_async("all", vec![])
+            .await;
+
+        // iterate through the hashmap containing hashmap, turning all the values into rust values
+        map_iterator(java_results)
+            .map(|(group_id, value)| {
+                (
+                    group_id.into_rust(),
+                    map_iterator(value)
+                        .map(|(topic_partition, offset_and_metadata)| {
+                            (
+                                topic_partition_to_rust(topic_partition),
+                                offset_and_metadata_to_rust(offset_and_metadata),
+                            )
+                        })
+                        .collect(),
+                )
+            })
+            .collect()
+    }
+
+    pub async fn delete_consumer_group_offsets(
+        &self,
+        group_id: String,
+        topic_partitions: &[TopicPartition],
+    ) {
+        let group_id = self.jvm.new_string(&group_id);
+
+        let topic_partitions_java = self.jvm.new_set(
+            "org.apache.kafka.common.TopicPartition",
+            topic_partitions
+                .iter()
+                .map(|topic_partition| topic_partition_to_java(&self.jvm, topic_partition))
+                .collect(),
+        );
+
+        self.admin
+            .call(
+                "deleteConsumerGroupOffsets",
+                vec![group_id, topic_partitions_java],
+            )
+            .call_async("all", vec![])
+            .await;
+    }
+
+    pub async fn elect_leaders(&self, topic_partitions: &[TopicPartition]) -> Result<()> {
+        let election_type = self
+            .jvm
+            .class("org.apache.kafka.common.ElectionType")
+            .field("PREFERRED");
+        let topic_partitions_java = self.jvm.new_set(
+            "org.apache.kafka.common.TopicPartition",
+            topic_partitions
+                .iter()
+                .map(|topic_partition| topic_partition_to_java(&self.jvm, topic_partition))
+                .collect(),
+        );
+
+        self.admin
+            .call("electLeaders", vec![election_type, topic_partitions_java])
+            .call_async_fallible("all", vec![])
+            .await
+            .map(|_| ())
     }
 
     pub async fn create_acls(&self, acls: Vec<Acl>) {
@@ -785,9 +881,25 @@ impl KafkaAdminJava {
     }
 }
 
-fn create_topic_partition(jvm: &Jvm, tp: &TopicPartition) -> Value {
+fn topic_partition_to_java(jvm: &Jvm, tp: &TopicPartition) -> Value {
     jvm.construct(
         "org.apache.kafka.common.TopicPartition",
         vec![jvm.new_string(&tp.topic_name), jvm.new_int(tp.partition)],
     )
+}
+
+fn topic_partition_to_rust(tp: Value) -> TopicPartition {
+    let tp = tp.cast("org.apache.kafka.common.TopicPartition");
+    TopicPartition {
+        topic_name: tp.call("topic", vec![]).into_rust(),
+        partition: tp.call("partition", vec![]).into_rust(),
+    }
+}
+
+fn offset_and_metadata_to_rust(offset_and_metadata: Value) -> OffsetAndMetadata {
+    let offset_and_metadata =
+        offset_and_metadata.cast("org.apache.kafka.clients.consumer.OffsetAndMetadata");
+    OffsetAndMetadata {
+        offset: offset_and_metadata.call("offset", vec![]).into_rust(),
+    }
 }

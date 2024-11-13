@@ -5,8 +5,8 @@ use test_helpers::{
         Acl, AclOperation, AclPermissionType, AlterConfig, ConfigEntry, ConsumerConfig,
         ExpectedResponse, IsolationLevel, KafkaAdmin, KafkaConnectionBuilder, KafkaConsumer,
         KafkaDriver, KafkaProducer, ListOffsetsResultInfo, NewPartition, NewTopic,
-        OffsetAndMetadata, OffsetSpec, Record, ResourcePatternType, ResourceSpecifier,
-        ResourceType, TopicPartition,
+        OffsetAndMetadata, OffsetSpec, Record, RecordsToDelete, ResourcePatternType,
+        ResourceSpecifier, ResourceType, TopicPartition,
     },
     docker_compose::DockerCompose,
 };
@@ -132,9 +132,181 @@ async fn admin_setup(connection_builder: &KafkaConnectionBuilder) {
 
 async fn admin_cleanup(connection_builder: &KafkaConnectionBuilder) {
     let admin = connection_builder.connect_admin().await;
-    admin
-        .delete_groups(&["some_group", "some_group1", "consumer_group_with_offsets"])
-        .await;
+
+    // Only supported by java driver
+    #[allow(irrefutable_let_patterns)]
+    if let KafkaConnectionBuilder::Java(_) = connection_builder {
+        // It is not clear how to actually invoke this API in a succesful way.
+        // At the very least this test case shows that shotover succesfully sends and receives this message type (even if the broker responds with an error)
+        match admin
+            .elect_leaders(&[TopicPartition {
+                topic_name: "partitions1_with_offset".to_owned(),
+                partition: 0,
+            }])
+            .await
+        {
+            Ok(()) => panic!("elect_leaders is expected to fail since an election is not required"),
+            Err(e) => {
+                assert_eq!(
+                    format!("{e}"),
+                    "org.apache.kafka.common.errors.ElectionNotNeededException: Leader election not needed for topic partition.\n"
+                );
+            }
+        }
+    }
+
+    admin.delete_groups(&["some_group", "some_group1"]).await;
+    delete_records_partitions1(&admin, connection_builder).await;
+    delete_records_partitions3(&admin, connection_builder).await;
+}
+
+async fn delete_offsets(connection_builder: &KafkaConnectionBuilder) {
+    let admin = connection_builder.connect_admin().await;
+
+    // Only supported by java driver
+    #[allow(irrefutable_let_patterns)]
+    if let KafkaConnectionBuilder::Java(_) = connection_builder {
+        // assert offset exists
+        let result = admin
+            .list_consumer_group_offsets("consumer_group_with_offsets".to_owned())
+            .await;
+        let expected_result: HashMap<_, HashMap<TopicPartition, OffsetAndMetadata>> =
+            HashMap::from([(
+                "consumer_group_with_offsets".to_owned(),
+                HashMap::from([(
+                    TopicPartition {
+                        topic_name: "partitions1_with_offset".to_owned(),
+                        partition: 0,
+                    },
+                    OffsetAndMetadata { offset: 2 },
+                )]),
+            )]);
+        assert_eq!(result, expected_result);
+
+        // delete offset
+        admin
+            .delete_consumer_group_offsets(
+                "consumer_group_with_offsets".to_owned(),
+                &[TopicPartition {
+                    topic_name: "partitions1_with_offset".to_owned(),
+                    partition: 0,
+                }],
+            )
+            .await;
+
+        // assert offset is deleted
+        let result = admin
+            .list_consumer_group_offsets("consumer_group_with_offsets".to_owned())
+            .await;
+        let expected_result: HashMap<_, HashMap<TopicPartition, OffsetAndMetadata>> =
+            HashMap::from([("consumer_group_with_offsets".to_owned(), HashMap::new())]);
+        assert_eq!(result, expected_result);
+    }
+}
+
+async fn delete_records_partitions1(
+    admin: &KafkaAdmin,
+    connection_builder: &KafkaConnectionBuilder,
+) {
+    // Only supported by java driver
+    #[allow(irrefutable_let_patterns)]
+    if let KafkaConnectionBuilder::Java(_) = connection_builder {
+        // assert partition contains a record
+        let mut consumer = connection_builder
+            .connect_consumer(
+                ConsumerConfig::consume_from_topics(vec!["partitions1_with_offset".to_owned()])
+                    .with_group("test_delete_records"),
+            )
+            .await;
+        consumer
+            .assert_consume(ExpectedResponse {
+                message: "Initial".to_owned(),
+                key: Some("Key".into()),
+                topic_name: "partitions1_with_offset".to_owned(),
+                offset: Some(0),
+            })
+            .await;
+
+        // delete all records in the partition
+        admin
+            .delete_records(&[RecordsToDelete {
+                topic_partition: TopicPartition {
+                    topic_name: "partitions1_with_offset".to_owned(),
+                    partition: 0,
+                },
+                delete_before_offset: -1,
+            }])
+            .await;
+
+        // assert partition no longer contains a record
+        let mut consumer = connection_builder
+            .connect_consumer(
+                ConsumerConfig::consume_from_topics(vec!["partitions1_with_offset".to_owned()])
+                    .with_group("test_delete_records2"),
+            )
+            .await;
+        consumer
+            .assert_no_consume_within_timeout(Duration::from_secs(2))
+            .await;
+    }
+}
+
+async fn delete_records_partitions3(
+    admin: &KafkaAdmin,
+    connection_builder: &KafkaConnectionBuilder,
+) {
+    // Only supported by java driver
+    #[allow(irrefutable_let_patterns)]
+    if let KafkaConnectionBuilder::Java(_) = connection_builder {
+        // assert partition contains a record
+        let mut consumer = connection_builder
+            .connect_consumer(
+                ConsumerConfig::consume_from_topics(vec!["partitions3_case1".to_owned()])
+                    .with_group("test_delete_records"),
+            )
+            .await;
+
+        // assert that a record exists, due to cross partition ordering we dont know what the record is, just that it exists.
+        consumer.consume(Duration::from_secs(30)).await;
+
+        // delete all records in the partition
+        admin
+            .delete_records(&[
+                RecordsToDelete {
+                    topic_partition: TopicPartition {
+                        topic_name: "partitions3_case1".to_owned(),
+                        partition: 0,
+                    },
+                    delete_before_offset: -1,
+                },
+                RecordsToDelete {
+                    topic_partition: TopicPartition {
+                        topic_name: "partitions3_case1".to_owned(),
+                        partition: 1,
+                    },
+                    delete_before_offset: -1,
+                },
+                RecordsToDelete {
+                    topic_partition: TopicPartition {
+                        topic_name: "partitions3_case1".to_owned(),
+                        partition: 2,
+                    },
+                    delete_before_offset: -1,
+                },
+            ])
+            .await;
+
+        // assert partition no longer contains a record
+        let mut consumer = connection_builder
+            .connect_consumer(
+                ConsumerConfig::consume_from_topics(vec!["partitions3_case1".to_owned()])
+                    .with_group("test_delete_records2"),
+            )
+            .await;
+        consumer
+            .assert_no_consume_within_timeout(Duration::from_secs(2))
+            .await;
+    }
 }
 
 /// Attempt to make the driver batch produce requests for different topics into the same request
@@ -848,6 +1020,9 @@ pub async fn produce_consume_commit_offsets_partitions1(
             })
             .await;
     }
+
+    // test the admin API's offset list and delete operations
+    delete_offsets(connection_builder).await;
 }
 
 pub async fn produce_consume_partitions3(
