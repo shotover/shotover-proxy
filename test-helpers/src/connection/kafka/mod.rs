@@ -507,6 +507,16 @@ impl KafkaAdmin {
         }
     }
 
+    pub async fn elect_leaders(&self, topic_partitions: &[TopicPartition]) -> Result<()> {
+        match self {
+            #[cfg(feature = "kafka-cpp-driver-tests")]
+            Self::Cpp(_) => {
+                panic!("rdkafka-rs driver does not support elect_leaders")
+            }
+            Self::Java(java) => java.elect_leaders(topic_partitions).await,
+        }
+    }
+
     pub async fn create_partitions(&self, partitions: &[NewPartition<'_>]) {
         match self {
             #[cfg(feature = "kafka-cpp-driver-tests")]

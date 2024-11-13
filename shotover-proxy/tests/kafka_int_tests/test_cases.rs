@@ -133,6 +133,28 @@ async fn admin_setup(connection_builder: &KafkaConnectionBuilder) {
 async fn admin_cleanup(connection_builder: &KafkaConnectionBuilder) {
     let admin = connection_builder.connect_admin().await;
 
+    // Only supported by java driver
+    #[allow(irrefutable_let_patterns)]
+    if let KafkaConnectionBuilder::Java(_) = connection_builder {
+        // It is not clear how to actually invoke this API in a succesful way.
+        // At the very least this test case shows that shotover succesfully sends and receives this message type (even if the broker responds with an error)
+        match admin
+            .elect_leaders(&[TopicPartition {
+                topic_name: "partitions1_with_offset".to_owned(),
+                partition: 0,
+            }])
+            .await
+        {
+            Ok(()) => panic!("elect_leaders is expected to fail since an election is not required"),
+            Err(e) => {
+                assert_eq!(
+                    format!("{e}"),
+                    "org.apache.kafka.common.errors.ElectionNotNeededException: Leader election not needed for topic partition.\n"
+                );
+            }
+        }
+    }
+
     admin.delete_groups(&["some_group", "some_group1"]).await;
     delete_records_partitions1(&admin, connection_builder).await;
     delete_records_partitions3(&admin, connection_builder).await;

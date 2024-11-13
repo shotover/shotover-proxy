@@ -1048,6 +1048,10 @@ The connection to the client has been closed."
                     body: RequestBody::CreateTopics(_),
                     ..
                 })) => self.route_to_controller(request),
+                Some(Frame::Kafka(KafkaFrame::Request {
+                    body: RequestBody::ElectLeaders(_),
+                    ..
+                })) => self.route_to_controller(request),
 
                 // route to all nodes
                 Some(Frame::Kafka(KafkaFrame::Request {
