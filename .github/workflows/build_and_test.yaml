@@ -43,9 +43,6 @@ jobs:
         # Otherwise only the last build to finish would get saved to the cache.
         # We allow different test_flags to share a cache as they should have identical build outputs
         key: ${{ matrix.runner }} - ${{ matrix.cargo_flags }}
-        cache-directories: |
-          target/debug/jassets
-          target/release/jassets
 
         # this line means that only the main branch writes to the cache
         # benefits:
@@ -65,6 +62,22 @@ jobs:
       uses: taiki-e/install-action@v2
       with:
         tool: nextest@0.9.70
+
+      # It is currently impossible to combine j4rs, rust-cache and nextest:
+      # * j4rs needs to store jars somewhere, by default this is in target/debug/jassets, we do have the option to move this somewhere outside of target.
+      # * rust-cache will delete all files in target/debug other than `build`, `deps` and `.fingerprint`
+      # * nextest will only archive files within the target directory
+      # There is no way of combining all of these requirements.
+      # We will need to find one of these projects that is suitable to have its requirements loosened.
+      # I suspect that rust-cache is the project that needs to change, maybe add a config field to include extra paths in the cache, similar to nextest's archive.include.
+      # This is going to be tricky and require discussion with the various upstream projects, and will take a while to land anything.
+      #
+      # So for now we need a quick workaround.
+      # This workaround is to force j4rs to be rebuilt from scratch via cargo clean.
+      # This has a cost on CI runtime and in the future we should find another solution as discussed above.
+    - name: Workaround j4rs cache issue
+      run: cargo clean -p j4rs
+
     - name: Build tests
       run: |
         cargo test --doc ${{ matrix.cargo_flags }} --all-features -- --show-output --nocapture
