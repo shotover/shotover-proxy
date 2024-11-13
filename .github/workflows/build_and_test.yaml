@@ -76,7 +76,7 @@ jobs:
       # This workaround is to force j4rs to be rebuilt from scratch via cargo clean.
       # This has a cost on CI runtime and in the future we should find another solution as discussed above.
     - name: Workaround j4rs cache issue
-      run: cargo clean -p j4rs
+      run: cargo clean -p j4rs ${{ matrix.cargo_flags }}
 
     - name: Build tests
       run: |
