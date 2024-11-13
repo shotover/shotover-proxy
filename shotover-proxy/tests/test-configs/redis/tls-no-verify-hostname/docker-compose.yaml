@@ -1,14 +1,14 @@
 services:
-  redis-one:
-    image: bitnami/redis:6.2.13-debian-11-r73
+  valkey-one:
+    image: bitnami/valkey:7.2.5
     ports:
       - "1111:6379"
     volumes:
       - ../tls/certs:/certs
     environment:
       ALLOW_EMPTY_PASSWORD: "yes"
-      REDIS_TLS_ENABLED: "yes"
-      REDIS_TLS_CERT_FILE: "/certs/localhost.crt"
-      REDIS_TLS_KEY_FILE: "/certs/localhost.key"
-      REDIS_TLS_CA_FILE: "/certs/localhost_CA.crt"
-      REDIS_TLS_AUTH_CLIENTS: "yes"
+      VALKEY_TLS_ENABLED: "yes"
+      VALKEY_TLS_CERT_FILE: "/certs/localhost.crt"
+      VALKEY_TLS_KEY_FILE: "/certs/localhost.key"
+      VALKEY_TLS_CA_FILE: "/certs/localhost_CA.crt"
+      VALKEY_TLS_AUTH_CLIENTS: "yes"
