@@ -52,14 +52,14 @@ pub static IMAGE_WAITERS: [Image; 13] = [
         name: "bitnami/valkey:7.2.5",
         log_regex_to_wait_for: r"Ready to accept connections",
         timeout: Duration::from_secs(120),
-    },    
+    },
     Image {
         name: "bitnami/valkey-cluster:7.2.5",
         //`Cluster state changed` is created by the node services
         //`Cluster correctly created` is created by the init service
         log_regex_to_wait_for: r"Cluster state changed|Cluster correctly created",
         timeout: Duration::from_secs(120),
-    },    
+    },
     Image {
         name: "bitnami/cassandra:4.0.6",
         log_regex_to_wait_for: r"Startup complete",
