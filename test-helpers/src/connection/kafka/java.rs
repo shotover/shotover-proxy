@@ -1,9 +1,9 @@
 use super::{
-    Acl, AclOperation, AclPermissionType, AlterConfig, ConsumerConfig, ExpectedResponse,
-    ListOffsetsResultInfo, NewPartition, NewPartitionReassignment, NewTopic, OffsetAndMetadata,
-    OffsetSpec, PartitionReassignment, ProduceResult, ProducerState, Record, RecordsToDelete,
-    ResourcePatternType, ResourceSpecifier, ResourceType, TopicDescription, TopicPartition,
-    TopicPartitionInfo, TransactionDescription,
+    Acl, AclOperation, AclPermissionType, AlterConfig, ConsumerConfig, ConsumerGroupDescription,
+    ExpectedResponse, ListOffsetsResultInfo, NewPartition, NewPartitionReassignment, NewTopic,
+    OffsetAndMetadata, OffsetSpec, PartitionReassignment, ProduceResult, ProducerState, Record,
+    RecordsToDelete, ResourcePatternType, ResourceSpecifier, ResourceType, TopicDescription,
+    TopicPartition, TopicPartitionInfo, TransactionDescription,
 };
 use crate::connection::java::{map_iterator, Jvm, Value};
 use anyhow::Result;
@@ -728,6 +728,33 @@ impl KafkaAdminJava {
             results.insert(topic_partition, ListOffsetsResultInfo { offset });
         }
         results
+    }
+
+    pub async fn describe_groups(
+        &self,
+        group_ids: &[&str],
+    ) -> HashMap<String, ConsumerGroupDescription> {
+        let group_ids = group_ids.iter().map(|x| self.jvm.new_string(x)).collect();
+        let group_ids = self.jvm.new_list("java.lang.String", group_ids);
+
+        let java_results = self
+            .admin
+            .call("describeConsumerGroups", vec![group_ids])
+            .call_async("all", vec![])
+            .await;
+        map_iterator(java_results)
+            .map(|(group_id, consumer_group_description)| {
+                (
+                    group_id.into_rust(),
+                    ConsumerGroupDescription {
+                        is_simple_consumer: consumer_group_description
+                            .cast("org.apache.kafka.clients.admin.ConsumerGroupDescription")
+                            .call("isSimpleConsumerGroup", vec![])
+                            .into_rust(),
+                    },
+                )
+            })
+            .collect()
     }
 
     pub async fn list_groups(&self) -> Vec<String> {
