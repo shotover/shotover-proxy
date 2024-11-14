@@ -710,6 +710,14 @@ impl KafkaSinkCluster {
                     }
                 }
                 Some(Frame::Kafka(KafkaFrame::Request {
+                    body: RequestBody::DeleteRecords(body),
+                    ..
+                })) => {
+                    for topic in &body.topics {
+                        self.store_topic_names(&mut topic_names, topic.name.clone());
+                    }
+                }
+                Some(Frame::Kafka(KafkaFrame::Request {
                     body: RequestBody::Fetch(fetch),
                     ..
                 })) => {
@@ -739,6 +747,12 @@ impl KafkaSinkCluster {
                     for group_id in &delete_groups.groups_names {
                         self.store_group(&mut groups, group_id.clone());
                     }
+                }
+                Some(Frame::Kafka(KafkaFrame::Request {
+                    body: RequestBody::OffsetDelete(offset_delete),
+                    ..
+                })) => {
+                    self.store_group(&mut groups, offset_delete.group_id.clone());
                 }
                 Some(Frame::Kafka(KafkaFrame::Request {
                     body:
