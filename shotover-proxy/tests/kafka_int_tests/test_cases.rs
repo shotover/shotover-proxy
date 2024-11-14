@@ -4,8 +4,8 @@ use test_helpers::{
     connection::kafka::{
         Acl, AclOperation, AclPermissionType, AlterConfig, ConfigEntry, ConsumerConfig,
         ExpectedResponse, IsolationLevel, KafkaAdmin, KafkaConnectionBuilder, KafkaConsumer,
-        KafkaDriver, KafkaProducer, ListOffsetsResultInfo, NewPartition, NewTopic,
-        OffsetAndMetadata, OffsetSpec, Record, RecordsToDelete, ResourcePatternType,
+        KafkaDriver, KafkaProducer, ListOffsetsResultInfo, NewPartition, NewPartitionReassignment,
+        NewTopic, OffsetAndMetadata, OffsetSpec, Record, RecordsToDelete, ResourcePatternType,
         ResourceSpecifier, ResourceType, TopicPartition,
     },
     docker_compose::DockerCompose,
@@ -1653,6 +1653,54 @@ async fn list_transactions(connection_builder: &KafkaConnectionBuilder) {
     assert_eq!(actual_results, expected_results);
 }
 
+async fn create_and_list_partition_reassignments(connection_builder: &KafkaConnectionBuilder) {
+    let admin = connection_builder.connect_admin().await;
+    admin
+        .alter_partition_reassignments(HashMap::from([(
+            TopicPartition {
+                topic_name: "partitions1".to_owned(),
+                partition: 0,
+            },
+            NewPartitionReassignment {
+                replica_broker_ids: vec![0],
+            },
+        )]))
+        .await;
+
+    let actual_results = admin.list_partition_reassignments().await;
+
+    if actual_results.is_empty() {
+        // If too much time passes between requesting the reassignment and listing the reassignment it,
+        // the reassignment might have already completed so there is nothing to list.
+        // In that case return early to skip the assertions.
+        //
+        // The assertions should still run sometimes, so its worth keeping around.
+        // And at the very least we know that the messages are sent/received succesfully.
+        return;
+    }
+
+    assert_eq!(actual_results.len(), 1);
+    let reassignment = actual_results
+        .get(&TopicPartition {
+            topic_name: "partitions1".to_owned(),
+            partition: 0,
+        })
+        .unwrap();
+    let expected_adding_replica_broker_ids: &[i32] = if reassignment.replica_broker_ids == [0] {
+        // The original broker is randomly assigned.
+        // If it happens to be broker 0, matching the new broker we requested,
+        // then adding_replica_broker_ids will be empty
+        &[]
+    } else {
+        // otherwise it contains the new broker we requested
+        &[0]
+    };
+    assert_eq!(
+        reassignment.adding_replica_broker_ids,
+        expected_adding_replica_broker_ids
+    );
+}
+
 async fn cluster_test_suite_base(connection_builder: &KafkaConnectionBuilder) {
     let admin = connection_builder.connect_admin().await;
     admin
@@ -1679,6 +1727,7 @@ pub async fn tests_requiring_all_shotover_nodes(connection_builder: &KafkaConnec
     if let KafkaConnectionBuilder::Java(_) = connection_builder {
         list_groups(connection_builder).await;
         list_transactions(connection_builder).await;
+        create_and_list_partition_reassignments(connection_builder).await;
     }
 }
 
