@@ -16,6 +16,8 @@ use kafka_node::{ConnectionFactory, KafkaAddress, KafkaNode, KafkaNodeState};
 use kafka_protocol::messages::add_partitions_to_txn_request::AddPartitionsToTxnTransaction;
 use kafka_protocol::messages::delete_records_request::DeleteRecordsTopic;
 use kafka_protocol::messages::delete_records_response::DeleteRecordsTopicResult;
+use kafka_protocol::messages::describe_producers_request::TopicRequest;
+use kafka_protocol::messages::describe_producers_response::TopicResponse;
 use kafka_protocol::messages::fetch_request::FetchTopic;
 use kafka_protocol::messages::fetch_response::LeaderIdAndEpoch as FetchResponseLeaderIdAndEpoch;
 use kafka_protocol::messages::list_offsets_request::ListOffsetsTopic;
@@ -30,13 +32,14 @@ use kafka_protocol::messages::produce_response::{
 use kafka_protocol::messages::{
     AddOffsetsToTxnRequest, AddPartitionsToTxnRequest, AddPartitionsToTxnResponse, ApiKey,
     BrokerId, DeleteGroupsRequest, DeleteGroupsResponse, DeleteRecordsRequest,
-    DeleteRecordsResponse, EndTxnRequest, FetchRequest, FetchResponse, FindCoordinatorRequest,
-    FindCoordinatorResponse, GroupId, HeartbeatRequest, InitProducerIdRequest, JoinGroupRequest,
-    LeaveGroupRequest, ListGroupsResponse, ListOffsetsRequest, ListOffsetsResponse,
-    ListTransactionsResponse, MetadataRequest, MetadataResponse, OffsetFetchRequest,
-    OffsetFetchResponse, OffsetForLeaderEpochRequest, OffsetForLeaderEpochResponse, ProduceRequest,
-    ProduceResponse, RequestHeader, SaslAuthenticateRequest, SaslAuthenticateResponse,
-    SaslHandshakeRequest, SyncGroupRequest, TopicName, TransactionalId, TxnOffsetCommitRequest,
+    DeleteRecordsResponse, DescribeProducersRequest, DescribeProducersResponse, EndTxnRequest,
+    FetchRequest, FetchResponse, FindCoordinatorRequest, FindCoordinatorResponse, GroupId,
+    HeartbeatRequest, InitProducerIdRequest, JoinGroupRequest, LeaveGroupRequest,
+    ListGroupsResponse, ListOffsetsRequest, ListOffsetsResponse, ListTransactionsResponse,
+    MetadataRequest, MetadataResponse, OffsetFetchRequest, OffsetFetchResponse,
+    OffsetForLeaderEpochRequest, OffsetForLeaderEpochResponse, ProduceRequest, ProduceResponse,
+    RequestHeader, SaslAuthenticateRequest, SaslAuthenticateResponse, SaslHandshakeRequest,
+    SyncGroupRequest, TopicName, TransactionalId, TxnOffsetCommitRequest,
 };
 use kafka_protocol::protocol::StrBytes;
 use kafka_protocol::ResponseError;
@@ -52,9 +55,10 @@ use serde::{Deserialize, Serialize};
 use shotover_node::{ShotoverNode, ShotoverNodeConfig};
 use split::{
     AddPartitionsToTxnRequestSplitAndRouter, DeleteGroupsSplitAndRouter,
-    DeleteRecordsRequestSplitAndRouter, ListGroupsSplitAndRouter, ListOffsetsRequestSplitAndRouter,
-    ListTransactionsSplitAndRouter, OffsetFetchSplitAndRouter,
-    OffsetForLeaderEpochRequestSplitAndRouter, ProduceRequestSplitAndRouter, RequestSplitAndRouter,
+    DeleteRecordsRequestSplitAndRouter, DescribeProducersRequestSplitAndRouter,
+    ListGroupsSplitAndRouter, ListOffsetsRequestSplitAndRouter, ListTransactionsSplitAndRouter,
+    OffsetFetchSplitAndRouter, OffsetForLeaderEpochRequestSplitAndRouter,
+    ProduceRequestSplitAndRouter, RequestSplitAndRouter,
 };
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::hash::Hasher;
@@ -698,6 +702,14 @@ impl KafkaSinkCluster {
                     }
                 }
                 Some(Frame::Kafka(KafkaFrame::Request {
+                    body: RequestBody::DescribeProducers(body),
+                    ..
+                })) => {
+                    for topic in &body.topics {
+                        self.store_topic_names(&mut topic_names, topic.name.clone());
+                    }
+                }
+                Some(Frame::Kafka(KafkaFrame::Request {
                     body: RequestBody::Fetch(fetch),
                     ..
                 })) => {
@@ -893,6 +905,12 @@ impl KafkaSinkCluster {
                     ..
                 })) => {
                     self.split_and_route_request::<DeleteRecordsRequestSplitAndRouter>(request)?
+                }
+                Some(Frame::Kafka(KafkaFrame::Request {
+                    body: RequestBody::DescribeProducers(_),
+                    ..
+                })) => {
+                    self.split_and_route_request::<DescribeProducersRequestSplitAndRouter>(request)?
                 }
 
                 // route to group coordinator
@@ -1402,6 +1420,57 @@ The connection to the client has been closed."
         }
 
         Ok(())
+    }
+
+    /// This method removes all topics from the DescribeProducers request and returns them split up by their destination.
+    /// If any topics are unroutable they will have their BrokerId set to -1
+    fn split_describe_producers_request_by_destination(
+        &mut self,
+        body: &mut DescribeProducersRequest,
+    ) -> HashMap<BrokerId, Vec<TopicRequest>> {
+        let mut result: HashMap<BrokerId, Vec<TopicRequest>> = Default::default();
+
+        for mut topic in body.topics.drain(..) {
+            let topic_name = &topic.name;
+            if let Some(topic_meta) = self.topic_by_name.get(topic_name) {
+                for partition_index in std::mem::take(&mut topic.partition_indexes) {
+                    let destination = if let Some(partition) =
+                        topic_meta.partitions.get(partition_index as usize)
+                    {
+                        if partition.leader_id == -1 {
+                            tracing::warn!(
+                                "leader_id is unknown for {topic_name:?} at partition index {partition_index}",
+                            );
+                        }
+                        partition.leader_id
+                    } else {
+                        let partition_len = topic_meta.partitions.len();
+                        tracing::warn!("no known partition for {topic_name:?} at partition index {partition_index} out of {partition_len} partitions, routing request to a random broker so that a NOT_LEADER_OR_FOLLOWER or similar error is returned to the client");
+                        BrokerId(-1)
+                    };
+                    tracing::debug!(
+                        "Routing DescribeProducers request portion of partition {partition_index} in {topic_name:?} to broker {}",
+                        destination.0
+                    );
+                    let dest_topics = result.entry(destination).or_default();
+                    if let Some(dest_topic) = dest_topics.iter_mut().find(|x| x.name == topic.name)
+                    {
+                        dest_topic.partition_indexes.push(partition_index);
+                    } else {
+                        let mut topic = topic.clone();
+                        topic.partition_indexes.push(partition_index);
+                        dest_topics.push(topic);
+                    }
+                }
+            } else {
+                tracing::warn!("no known partition replica for {topic_name:?}, routing request to a random broker so that a NOT_LEADER_OR_FOLLOWER or similar error is returned to the client");
+                let destination = BrokerId(-1);
+                let dest_topics = result.entry(destination).or_default();
+                dest_topics.push(topic);
+            }
+        }
+
+        result
     }
 
     /// This method removes all topics from the list offsets request and returns them split up by their destination
@@ -2155,6 +2224,10 @@ The connection to the client has been closed."
                 ..
             })) => Self::combine_offset_fetch(base, drain)?,
             Some(Frame::Kafka(KafkaFrame::Response {
+                body: ResponseBody::DescribeProducers(base),
+                ..
+            })) => Self::combine_describe_producers(base, drain)?,
+            Some(Frame::Kafka(KafkaFrame::Response {
                 body: ResponseBody::ListGroups(base),
                 ..
             })) => Self::combine_list_groups(base, drain)?,
@@ -2440,6 +2513,49 @@ The connection to the client has been closed."
                     .extend(std::mem::take(&mut next_list_groups.groups));
             }
         }
+
+        Ok(())
+    }
+
+    fn combine_describe_producers(
+        base: &mut DescribeProducersResponse,
+        drain: impl Iterator<Item = Message>,
+    ) -> Result<()> {
+        let mut base_responses: HashMap<TopicName, TopicResponse> =
+            std::mem::take(&mut base.topics)
+                .into_iter()
+                .map(|response| (response.name.clone(), response))
+                .collect();
+        for mut next in drain {
+            if let Some(Frame::Kafka(KafkaFrame::Response {
+                body: ResponseBody::DescribeProducers(next),
+                ..
+            })) = next.frame()
+            {
+                for next_response in std::mem::take(&mut next.topics) {
+                    if let Some(base_response) = base_responses.get_mut(&next_response.name) {
+                        for next_partition in &next_response.partitions {
+                            for base_partition in &base_response.partitions {
+                                if next_partition.partition_index == base_partition.partition_index
+                                {
+                                    tracing::warn!("Duplicate partition indexes in combined DescribeProducers response, if this ever occurs we should investigate the repercussions")
+                                }
+                            }
+                        }
+                        // A partition can only be contained in one response so there is no risk of duplicating partitions
+                        base_response.partitions.extend(next_response.partitions)
+                    } else {
+                        base_responses.insert(next_response.name.clone(), next_response);
+                    }
+                }
+            } else {
+                return Err(anyhow!(
+                    "Combining DescribeProducers responses but received another message type"
+                ));
+            }
+        }
+
+        base.topics.extend(base_responses.into_values());
 
         Ok(())
     }

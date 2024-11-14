@@ -8,12 +8,13 @@ use crate::{
 };
 use kafka_protocol::messages::{
     add_partitions_to_txn_request::AddPartitionsToTxnTransaction,
-    delete_records_request::DeleteRecordsTopic, list_offsets_request::ListOffsetsTopic,
-    offset_fetch_request::OffsetFetchRequestGroup,
+    delete_records_request::DeleteRecordsTopic, describe_producers_request::TopicRequest,
+    list_offsets_request::ListOffsetsTopic, offset_fetch_request::OffsetFetchRequestGroup,
     offset_for_leader_epoch_request::OffsetForLeaderTopic, produce_request::TopicProduceData,
-    AddPartitionsToTxnRequest, BrokerId, DeleteGroupsRequest, DeleteRecordsRequest, GroupId,
-    ListGroupsRequest, ListOffsetsRequest, ListTransactionsRequest, OffsetFetchRequest,
-    OffsetForLeaderEpochRequest, ProduceRequest, TopicName,
+    AddPartitionsToTxnRequest, BrokerId, DeleteGroupsRequest, DeleteRecordsRequest,
+    DescribeProducersRequest, GroupId, ListGroupsRequest, ListOffsetsRequest,
+    ListTransactionsRequest, OffsetFetchRequest, OffsetForLeaderEpochRequest, ProduceRequest,
+    TopicName,
 };
 use std::collections::HashMap;
 
@@ -157,6 +158,34 @@ impl RequestSplitAndRouter for DeleteRecordsRequestSplitAndRouter {
         match request.frame() {
             Some(Frame::Kafka(KafkaFrame::Request {
                 body: RequestBody::DeleteRecords(request),
+                ..
+            })) => Some(request),
+            _ => None,
+        }
+    }
+
+    fn reassemble(request: &mut Self::Request, item: Self::SubRequests) {
+        request.topics = item;
+    }
+}
+
+pub struct DescribeProducersRequestSplitAndRouter;
+
+impl RequestSplitAndRouter for DescribeProducersRequestSplitAndRouter {
+    type Request = DescribeProducersRequest;
+    type SubRequests = Vec<TopicRequest>;
+
+    fn split_by_destination(
+        transform: &mut KafkaSinkCluster,
+        request: &mut Self::Request,
+    ) -> HashMap<BrokerId, Self::SubRequests> {
+        transform.split_describe_producers_request_by_destination(request)
+    }
+
+    fn get_request_frame(request: &mut Message) -> Option<&mut Self::Request> {
+        match request.frame() {
+            Some(Frame::Kafka(KafkaFrame::Request {
+                body: RequestBody::DescribeProducers(request),
                 ..
             })) => Some(request),
             _ => None,

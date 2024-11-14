@@ -1144,6 +1144,49 @@ pub async fn produce_consume_multi_topic_consumer(connection_builder: &KafkaConn
     }
 }
 
+async fn describe_producers(admin: &KafkaAdmin) {
+    let producers = admin
+        .describe_producers(&[
+            TopicPartition {
+                topic_name: "partitions1".to_owned(),
+                partition: 0,
+            },
+            TopicPartition {
+                topic_name: "partitions3_case1".to_owned(),
+                partition: 0,
+            },
+        ])
+        .await;
+
+    // producer ID is random so just assert that the producer exists, regardless of its fields.
+    assert_eq!(producers.len(), 2);
+    assert_eq!(
+        producers
+            .get(&TopicPartition {
+                topic_name: "partitions1".to_owned(),
+                partition: 0,
+            })
+            .unwrap()
+            .len(),
+        // this partition has 1 registered producer
+        1
+    );
+    assert_eq!(
+        producers
+            .get(&TopicPartition {
+                topic_name: "partitions3_case1".to_owned(),
+                partition: 0,
+            })
+            .unwrap()
+            .len(),
+        // this partition has no registered producer
+        0
+    );
+
+    // I'm not sure why exactly partitions1 has a registered producer while partitions3_case1 does not.
+    // I think its up to the driver whether they send an InitProducerId request or not.
+}
+
 async fn produce_consume_transactions_with_abort(connection_builder: &KafkaConnectionBuilder) {
     let producer = connection_builder.connect_producer("1", 0).await;
     for i in 0..5 {
@@ -1545,6 +1588,8 @@ async fn standard_test_suite_base(connection_builder: &KafkaConnectionBuilder) {
             .await;
         produce_consume_partitions1(connection_builder, "partitions1").await;
 
+        // misc other tests
+        describe_producers(&admin).await;
         list_offsets(&admin).await;
     }
 
