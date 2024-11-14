@@ -517,6 +517,31 @@ impl KafkaAdmin {
         }
     }
 
+    pub async fn alter_partition_reassignments(
+        &self,
+        reassignments: HashMap<TopicPartition, NewPartitionReassignment>,
+    ) {
+        match self {
+            #[cfg(feature = "kafka-cpp-driver-tests")]
+            Self::Cpp(_) => {
+                panic!("rdkafka-rs driver does not support alter_partition_reassignments")
+            }
+            Self::Java(java) => java.alter_partition_reassignments(reassignments).await,
+        }
+    }
+
+    pub async fn list_partition_reassignments(
+        &self,
+    ) -> HashMap<TopicPartition, PartitionReassignment> {
+        match self {
+            #[cfg(feature = "kafka-cpp-driver-tests")]
+            Self::Cpp(_) => {
+                panic!("rdkafka-rs driver does not support list_partition_reassignments")
+            }
+            Self::Java(java) => java.list_partition_reassignments().await,
+        }
+    }
+
     pub async fn create_partitions(&self, partitions: &[NewPartition<'_>]) {
         match self {
             #[cfg(feature = "kafka-cpp-driver-tests")]
@@ -711,4 +736,16 @@ pub struct RecordsToDelete {
     /// Delete all records with offset less than the provided value.
     /// If -1 is given delete all records regardless of offset.
     pub delete_before_offset: i64,
+}
+
+#[derive(PartialEq, Debug)]
+pub struct PartitionReassignment {
+    pub adding_replica_broker_ids: Vec<i32>,
+    pub removing_replica_broker_ids: Vec<i32>,
+    pub replica_broker_ids: Vec<i32>,
+}
+
+#[derive(PartialEq, Debug)]
+pub struct NewPartitionReassignment {
+    pub replica_broker_ids: Vec<i32>,
 }
