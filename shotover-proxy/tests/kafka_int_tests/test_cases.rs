@@ -791,6 +791,13 @@ pub async fn produce_consume_partitions1_shotover_nodes_go_down(
                 offset: Some(0),
             })
             .await;
+        consumer.assert_commit_offsets(HashMap::from([(
+            TopicPartition {
+                topic_name: topic_name.to_owned(),
+                partition: 0,
+            },
+            1,
+        )]));
 
         // kill shotover node(s)
         for shotover_node in shotover_nodes_to_kill {
