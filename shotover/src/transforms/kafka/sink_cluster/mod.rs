@@ -710,6 +710,14 @@ impl KafkaSinkCluster {
                     }
                 }
                 Some(Frame::Kafka(KafkaFrame::Request {
+                    body: RequestBody::DeleteRecords(body),
+                    ..
+                })) => {
+                    for topic in &body.topics {
+                        self.store_topic_names(&mut topic_names, topic.name.clone());
+                    }
+                }
+                Some(Frame::Kafka(KafkaFrame::Request {
                     body: RequestBody::Fetch(fetch),
                     ..
                 })) => {
@@ -739,6 +747,12 @@ impl KafkaSinkCluster {
                     for group_id in &delete_groups.groups_names {
                         self.store_group(&mut groups, group_id.clone());
                     }
+                }
+                Some(Frame::Kafka(KafkaFrame::Request {
+                    body: RequestBody::OffsetDelete(offset_delete),
+                    ..
+                })) => {
+                    self.store_group(&mut groups, offset_delete.group_id.clone());
                 }
                 Some(Frame::Kafka(KafkaFrame::Request {
                     body:
@@ -1129,70 +1143,68 @@ The connection to the client has been closed."
         &mut self,
         mut request: Message,
     ) -> Result<()> {
-        if let Some(request_frame) = T::get_request_frame(&mut request) {
-            let routing = T::split_by_destination(self, request_frame);
+        let request_frame = T::get_request_frame(&mut request);
+        let routing = T::split_by_destination(self, request_frame);
 
-            if routing.is_empty() {
-                // Produce contains no topics, so we can just pick a random destination.
-                // The request is unchanged so we can just send as is.
-                let destination = random_broker_id(&self.nodes, &mut self.rng);
+        if routing.is_empty() {
+            // Produce contains no topics, so we can just pick a random destination.
+            // The request is unchanged so we can just send as is.
+            let destination = random_broker_id(&self.nodes, &mut self.rng);
 
-                self.pending_requests.push_back(PendingRequest {
-                    state: PendingRequestState::routed(destination, request),
-                    ty: PendingRequestTy::Other,
-                    combine_responses: 1,
-                });
-                tracing::debug!(
-                    "Routing request to random broker {} due to being empty",
-                    destination.0
-                );
-            } else if routing.len() == 1 {
-                // Only 1 destination,
-                // so we can just reconstruct the original request as is,
-                // act like this never happened 😎,
-                // we dont even need to invalidate the request's cache.
-                let (destination, topic_data) = routing.into_iter().next().unwrap();
+            self.pending_requests.push_back(PendingRequest {
+                state: PendingRequestState::routed(destination, request),
+                ty: PendingRequestTy::Other,
+                combine_responses: 1,
+            });
+            tracing::debug!(
+                "Routing request to random broker {} due to being empty",
+                destination.0
+            );
+        } else if routing.len() == 1 {
+            // Only 1 destination,
+            // so we can just reconstruct the original request as is,
+            // act like this never happened 😎,
+            // we dont even need to invalidate the request's cache.
+            let (destination, topic_data) = routing.into_iter().next().unwrap();
+            let destination = if destination == -1 {
+                random_broker_id(&self.nodes, &mut self.rng)
+            } else {
+                destination
+            };
+
+            T::reassemble(request_frame, topic_data);
+            self.pending_requests.push_back(PendingRequest {
+                state: PendingRequestState::routed(destination, request),
+                ty: PendingRequestTy::Other,
+                combine_responses: 1,
+            });
+            tracing::debug!("Routing request to single broker {:?}", destination.0);
+        } else {
+            // The request has been split so it may be delivered to multiple destinations.
+            // We must generate a unique request for each destination.
+            let combine_responses = routing.len();
+            request.invalidate_cache();
+            for (i, (destination, topic_data)) in routing.into_iter().enumerate() {
                 let destination = if destination == -1 {
                     random_broker_id(&self.nodes, &mut self.rng)
                 } else {
                     destination
                 };
-
+                let mut request = if i == 0 {
+                    // First request acts as base and retains message id
+                    request.clone()
+                } else {
+                    request.clone_with_new_id()
+                };
+                let request_frame = T::get_request_frame(&mut request);
                 T::reassemble(request_frame, topic_data);
                 self.pending_requests.push_back(PendingRequest {
                     state: PendingRequestState::routed(destination, request),
                     ty: PendingRequestTy::Other,
-                    combine_responses: 1,
+                    combine_responses,
                 });
-                tracing::debug!("Routing request to single broker {:?}", destination.0);
-            } else {
-                // The request has been split so it may be delivered to multiple destinations.
-                // We must generate a unique request for each destination.
-                let combine_responses = routing.len();
-                request.invalidate_cache();
-                for (i, (destination, topic_data)) in routing.into_iter().enumerate() {
-                    let destination = if destination == -1 {
-                        random_broker_id(&self.nodes, &mut self.rng)
-                    } else {
-                        destination
-                    };
-                    let mut request = if i == 0 {
-                        // First request acts as base and retains message id
-                        request.clone()
-                    } else {
-                        request.clone_with_new_id()
-                    };
-                    if let Some(request_frame) = T::get_request_frame(&mut request) {
-                        T::reassemble(request_frame, topic_data)
-                    }
-                    self.pending_requests.push_back(PendingRequest {
-                        state: PendingRequestState::routed(destination, request),
-                        ty: PendingRequestTy::Other,
-                        combine_responses,
-                    });
-                }
-                tracing::debug!("Routing request to multiple brokers");
             }
+            tracing::debug!("Routing request to multiple brokers");
         }
         Ok(())
     }

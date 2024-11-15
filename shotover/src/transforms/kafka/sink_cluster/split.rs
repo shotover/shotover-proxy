@@ -21,7 +21,7 @@ use std::collections::HashMap;
 pub trait RequestSplitAndRouter {
     type SubRequests;
     type Request;
-    fn get_request_frame(request: &mut Message) -> Option<&mut Self::Request>;
+    fn get_request_frame(request: &mut Message) -> &mut Self::Request;
     fn split_by_destination(
         transform: &mut KafkaSinkCluster,
         request: &mut Self::Request,
@@ -42,13 +42,13 @@ impl RequestSplitAndRouter for ProduceRequestSplitAndRouter {
         transform.split_produce_request_by_destination(request)
     }
 
-    fn get_request_frame(request: &mut Message) -> Option<&mut Self::Request> {
+    fn get_request_frame(request: &mut Message) -> &mut Self::Request {
         match request.frame() {
             Some(Frame::Kafka(KafkaFrame::Request {
                 body: RequestBody::Produce(request),
                 ..
-            })) => Some(request),
-            _ => None,
+            })) => request,
+            _ => unreachable!(),
         }
     }
 
@@ -70,13 +70,13 @@ impl RequestSplitAndRouter for AddPartitionsToTxnRequestSplitAndRouter {
         transform.split_add_partition_to_txn_request_by_destination(request)
     }
 
-    fn get_request_frame(request: &mut Message) -> Option<&mut Self::Request> {
+    fn get_request_frame(request: &mut Message) -> &mut Self::Request {
         match request.frame() {
             Some(Frame::Kafka(KafkaFrame::Request {
                 body: RequestBody::AddPartitionsToTxn(request),
                 ..
-            })) => Some(request),
-            _ => None,
+            })) => request,
+            _ => unreachable!(),
         }
     }
 
@@ -98,13 +98,13 @@ impl RequestSplitAndRouter for ListOffsetsRequestSplitAndRouter {
         transform.split_list_offsets_request_by_destination(request)
     }
 
-    fn get_request_frame(request: &mut Message) -> Option<&mut Self::Request> {
+    fn get_request_frame(request: &mut Message) -> &mut Self::Request {
         match request.frame() {
             Some(Frame::Kafka(KafkaFrame::Request {
                 body: RequestBody::ListOffsets(request),
                 ..
-            })) => Some(request),
-            _ => None,
+            })) => request,
+            _ => unreachable!(),
         }
     }
 
@@ -126,13 +126,13 @@ impl RequestSplitAndRouter for OffsetForLeaderEpochRequestSplitAndRouter {
         transform.split_offset_for_leader_epoch_request_by_destination(request)
     }
 
-    fn get_request_frame(request: &mut Message) -> Option<&mut Self::Request> {
+    fn get_request_frame(request: &mut Message) -> &mut Self::Request {
         match request.frame() {
             Some(Frame::Kafka(KafkaFrame::Request {
                 body: RequestBody::OffsetForLeaderEpoch(request),
                 ..
-            })) => Some(request),
-            _ => None,
+            })) => request,
+            _ => unreachable!(),
         }
     }
 
@@ -154,13 +154,13 @@ impl RequestSplitAndRouter for DeleteRecordsRequestSplitAndRouter {
         transform.split_delete_records_request_by_destination(request)
     }
 
-    fn get_request_frame(request: &mut Message) -> Option<&mut Self::Request> {
+    fn get_request_frame(request: &mut Message) -> &mut Self::Request {
         match request.frame() {
             Some(Frame::Kafka(KafkaFrame::Request {
                 body: RequestBody::DeleteRecords(request),
                 ..
-            })) => Some(request),
-            _ => None,
+            })) => request,
+            _ => unreachable!(),
         }
     }
 
@@ -182,13 +182,13 @@ impl RequestSplitAndRouter for DescribeProducersRequestSplitAndRouter {
         transform.split_describe_producers_request_by_destination(request)
     }
 
-    fn get_request_frame(request: &mut Message) -> Option<&mut Self::Request> {
+    fn get_request_frame(request: &mut Message) -> &mut Self::Request {
         match request.frame() {
             Some(Frame::Kafka(KafkaFrame::Request {
                 body: RequestBody::DescribeProducers(request),
                 ..
-            })) => Some(request),
-            _ => None,
+            })) => request,
+            _ => unreachable!(),
         }
     }
 
@@ -210,13 +210,13 @@ impl RequestSplitAndRouter for DeleteGroupsSplitAndRouter {
         transform.split_delete_groups_request_by_destination(request)
     }
 
-    fn get_request_frame(request: &mut Message) -> Option<&mut Self::Request> {
+    fn get_request_frame(request: &mut Message) -> &mut Self::Request {
         match request.frame() {
             Some(Frame::Kafka(KafkaFrame::Request {
                 body: RequestBody::DeleteGroups(request),
                 ..
-            })) => Some(request),
-            _ => None,
+            })) => request,
+            _ => unreachable!(),
         }
     }
 
@@ -238,13 +238,13 @@ impl RequestSplitAndRouter for ListGroupsSplitAndRouter {
         transform.split_request_by_routing_to_all_brokers()
     }
 
-    fn get_request_frame(request: &mut Message) -> Option<&mut Self::Request> {
+    fn get_request_frame(request: &mut Message) -> &mut Self::Request {
         match request.frame() {
             Some(Frame::Kafka(KafkaFrame::Request {
                 body: RequestBody::ListGroups(request),
                 ..
-            })) => Some(request),
-            _ => None,
+            })) => request,
+            _ => unreachable!(),
         }
     }
 
@@ -266,13 +266,13 @@ impl RequestSplitAndRouter for ListTransactionsSplitAndRouter {
         transform.split_request_by_routing_to_all_brokers()
     }
 
-    fn get_request_frame(request: &mut Message) -> Option<&mut Self::Request> {
+    fn get_request_frame(request: &mut Message) -> &mut Self::Request {
         match request.frame() {
             Some(Frame::Kafka(KafkaFrame::Request {
                 body: RequestBody::ListTransactions(request),
                 ..
-            })) => Some(request),
-            _ => None,
+            })) => request,
+            _ => unreachable!(),
         }
     }
 
@@ -294,13 +294,13 @@ impl RequestSplitAndRouter for OffsetFetchSplitAndRouter {
         transform.split_offset_fetch_request_by_destination(request)
     }
 
-    fn get_request_frame(request: &mut Message) -> Option<&mut Self::Request> {
+    fn get_request_frame(request: &mut Message) -> &mut Self::Request {
         match request.frame() {
             Some(Frame::Kafka(KafkaFrame::Request {
                 body: RequestBody::OffsetFetch(request),
                 ..
-            })) => Some(request),
-            _ => None,
+            })) => request,
+            _ => unreachable!(),
         }
     }
 
