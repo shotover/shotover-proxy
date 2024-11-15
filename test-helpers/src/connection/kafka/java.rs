@@ -1,8 +1,9 @@
 use super::{
     Acl, AclOperation, AclPermissionType, AlterConfig, ConsumerConfig, ExpectedResponse,
     ListOffsetsResultInfo, NewPartition, NewPartitionReassignment, NewTopic, OffsetAndMetadata,
-    OffsetSpec, PartitionReassignment, ProduceResult, Record, RecordsToDelete, ResourcePatternType,
-    ResourceSpecifier, ResourceType, TopicDescription, TopicPartition, TopicPartitionInfo,
+    OffsetSpec, PartitionReassignment, ProduceResult, ProducerState, Record, RecordsToDelete,
+    ResourcePatternType, ResourceSpecifier, ResourceType, TopicDescription, TopicPartition,
+    TopicPartitionInfo,
 };
 use crate::connection::java::{map_iterator, Jvm, Value};
 use anyhow::Result;
@@ -440,6 +441,48 @@ pub struct KafkaAdminJava {
 impl KafkaAdminJava {
     pub async fn create_topics(&self, topics: &[NewTopic<'_>]) {
         self.create_topics_fallible(topics).await.unwrap();
+    }
+
+    pub async fn describe_producers(
+        &self,
+        topic_partitions: &[TopicPartition],
+    ) -> HashMap<TopicPartition, Vec<ProducerState>> {
+        let topic_partitions_java = self.jvm.new_set(
+            "org.apache.kafka.common.TopicPartition",
+            topic_partitions
+                .iter()
+                .map(|topic_partition| topic_partition_to_java(&self.jvm, topic_partition))
+                .collect(),
+        );
+
+        let describe_results = self
+            .admin
+            .call("describeProducers", vec![topic_partitions_java])
+            .call_async_fallible("all", vec![])
+            .await
+            .unwrap();
+
+        map_iterator(describe_results)
+            .map(|(topic_partition, producer_states)| {
+                let producer_states = producer_states.cast(
+                    "org.apache.kafka.clients.admin.DescribeProducersResult$PartitionProducerState",
+                );
+                (
+                    topic_partition_to_rust(topic_partition),
+                    producer_states
+                        .call("activeProducers", vec![])
+                        .call("iterator", vec![])
+                        .into_iter()
+                        .map(|producer_state| ProducerState {
+                            producer_id: producer_state
+                                .cast("org.apache.kafka.clients.admin.ProducerState")
+                                .call("producerId", vec![])
+                                .into_rust(),
+                        })
+                        .collect(),
+                )
+            })
+            .collect()
     }
 
     pub async fn describe_topics(&self, topic_names: &[&str]) -> Result<Vec<TopicDescription>> {

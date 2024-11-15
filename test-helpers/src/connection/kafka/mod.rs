@@ -372,6 +372,18 @@ impl KafkaAdmin {
             KafkaAdmin::Java(java) => java.create_topics(topics).await,
         }
     }
+    pub async fn describe_producers(
+        &self,
+        topic_partitions: &[TopicPartition],
+    ) -> HashMap<TopicPartition, Vec<ProducerState>> {
+        match self {
+            #[cfg(feature = "kafka-cpp-driver-tests")]
+            Self::Cpp(_) => {
+                panic!("rdkafka-rs driver does not support describe_producers")
+            }
+            Self::Java(java) => java.describe_producers(topic_partitions).await,
+        }
+    }
 
     pub async fn create_topics_and_wait(&self, topics: &[NewTopic<'_>]) {
         self.create_topics(topics).await;
@@ -748,4 +760,9 @@ pub struct PartitionReassignment {
 #[derive(PartialEq, Debug)]
 pub struct NewPartitionReassignment {
     pub replica_broker_ids: Vec<i32>,
+}
+
+#[derive(PartialEq, Debug)]
+pub struct ProducerState {
+    pub producer_id: i64,
 }
