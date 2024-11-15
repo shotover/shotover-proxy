@@ -32,14 +32,15 @@ use kafka_protocol::messages::produce_response::{
 use kafka_protocol::messages::{
     AddOffsetsToTxnRequest, AddPartitionsToTxnRequest, AddPartitionsToTxnResponse, ApiKey,
     BrokerId, DeleteGroupsRequest, DeleteGroupsResponse, DeleteRecordsRequest,
-    DeleteRecordsResponse, DescribeProducersRequest, DescribeProducersResponse, EndTxnRequest,
-    FetchRequest, FetchResponse, FindCoordinatorRequest, FindCoordinatorResponse, GroupId,
-    HeartbeatRequest, InitProducerIdRequest, JoinGroupRequest, LeaveGroupRequest,
-    ListGroupsResponse, ListOffsetsRequest, ListOffsetsResponse, ListTransactionsResponse,
-    MetadataRequest, MetadataResponse, OffsetFetchRequest, OffsetFetchResponse,
-    OffsetForLeaderEpochRequest, OffsetForLeaderEpochResponse, ProduceRequest, ProduceResponse,
-    RequestHeader, SaslAuthenticateRequest, SaslAuthenticateResponse, SaslHandshakeRequest,
-    SyncGroupRequest, TopicName, TransactionalId, TxnOffsetCommitRequest,
+    DeleteRecordsResponse, DescribeProducersRequest, DescribeProducersResponse,
+    DescribeTransactionsRequest, DescribeTransactionsResponse, EndTxnRequest, FetchRequest,
+    FetchResponse, FindCoordinatorRequest, FindCoordinatorResponse, GroupId, HeartbeatRequest,
+    InitProducerIdRequest, JoinGroupRequest, LeaveGroupRequest, ListGroupsResponse,
+    ListOffsetsRequest, ListOffsetsResponse, ListTransactionsResponse, MetadataRequest,
+    MetadataResponse, OffsetFetchRequest, OffsetFetchResponse, OffsetForLeaderEpochRequest,
+    OffsetForLeaderEpochResponse, ProduceRequest, ProduceResponse, RequestHeader,
+    SaslAuthenticateRequest, SaslAuthenticateResponse, SaslHandshakeRequest, SyncGroupRequest,
+    TopicName, TransactionalId, TxnOffsetCommitRequest,
 };
 use kafka_protocol::protocol::StrBytes;
 use kafka_protocol::ResponseError;
@@ -56,9 +57,9 @@ use shotover_node::{ShotoverNode, ShotoverNodeConfig};
 use split::{
     AddPartitionsToTxnRequestSplitAndRouter, DeleteGroupsSplitAndRouter,
     DeleteRecordsRequestSplitAndRouter, DescribeProducersRequestSplitAndRouter,
-    ListGroupsSplitAndRouter, ListOffsetsRequestSplitAndRouter, ListTransactionsSplitAndRouter,
-    OffsetFetchSplitAndRouter, OffsetForLeaderEpochRequestSplitAndRouter,
-    ProduceRequestSplitAndRouter, RequestSplitAndRouter,
+    DescribeTransactionsSplitAndRouter, ListGroupsSplitAndRouter, ListOffsetsRequestSplitAndRouter,
+    ListTransactionsSplitAndRouter, OffsetFetchSplitAndRouter,
+    OffsetForLeaderEpochRequestSplitAndRouter, ProduceRequestSplitAndRouter, RequestSplitAndRouter,
 };
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::hash::Hasher;
@@ -771,6 +772,14 @@ impl KafkaSinkCluster {
                     self.store_transaction(&mut transactions, transactional_id.clone());
                 }
                 Some(Frame::Kafka(KafkaFrame::Request {
+                    body: RequestBody::DescribeTransactions(describe_transaction),
+                    ..
+                })) => {
+                    for transactional_id in &describe_transaction.transactional_ids {
+                        self.store_transaction(&mut transactions, transactional_id.clone());
+                    }
+                }
+                Some(Frame::Kafka(KafkaFrame::Request {
                     body: RequestBody::AddPartitionsToTxn(add_partitions_to_txn_request),
                     header,
                 })) => {
@@ -1090,6 +1099,10 @@ The connection to the client has been closed."
                     body: RequestBody::ListGroups(_),
                     ..
                 })) => self.split_and_route_request::<ListGroupsSplitAndRouter>(request)?,
+                Some(Frame::Kafka(KafkaFrame::Request {
+                    body: RequestBody::DescribeTransactions(_),
+                    ..
+                })) => self.split_and_route_request::<DescribeTransactionsSplitAndRouter>(request)?,
                 Some(Frame::Kafka(KafkaFrame::Request {
                     body: RequestBody::ListTransactions(_),
                     ..
@@ -1554,6 +1567,29 @@ The connection to the client has been closed."
                 let destination = BrokerId(-1);
                 let dest_groups = result.entry(destination).or_default();
                 dest_groups.push(group_id);
+            }
+        }
+
+        result
+    }
+
+    /// This method removes all transactions from the DescribeTransactions request and returns them split up by their destination.
+    /// If any transactions are unroutable they will have their BrokerId set to -1
+    fn split_describe_transactions_request_by_destination(
+        &mut self,
+        body: &mut DescribeTransactionsRequest,
+    ) -> HashMap<BrokerId, Vec<TransactionalId>> {
+        let mut result: HashMap<BrokerId, Vec<TransactionalId>> = Default::default();
+
+        for transaction in body.transactional_ids.drain(..) {
+            if let Some(destination) = self.transaction_to_coordinator_broker.get(&transaction) {
+                let dest_transactions = result.entry(*destination).or_default();
+                dest_transactions.push(transaction);
+            } else {
+                tracing::warn!("no known coordinator for transactions {transaction:?}, routing request to a random broker so that a NOT_COORDINATOR or similar error is returned to the client");
+                let destination = BrokerId(-1);
+                let dest_transactions = result.entry(destination).or_default();
+                dest_transactions.push(transaction);
             }
         }
 
@@ -2244,6 +2280,10 @@ The connection to the client has been closed."
                 ..
             })) => Self::combine_list_groups(base, drain)?,
             Some(Frame::Kafka(KafkaFrame::Response {
+                body: ResponseBody::DescribeTransactions(base),
+                ..
+            })) => Self::combine_describe_transactions(base, drain)?,
+            Some(Frame::Kafka(KafkaFrame::Response {
                 body: ResponseBody::ListTransactions(base),
                 ..
             })) => Self::combine_list_transactions(base, drain)?,
@@ -2568,6 +2608,24 @@ The connection to the client has been closed."
         }
 
         base.topics.extend(base_responses.into_values());
+
+        Ok(())
+    }
+
+    fn combine_describe_transactions(
+        base: &mut DescribeTransactionsResponse,
+        drain: impl Iterator<Item = Message>,
+    ) -> Result<()> {
+        for mut next in drain {
+            if let Some(Frame::Kafka(KafkaFrame::Response {
+                body: ResponseBody::DescribeTransactions(next),
+                ..
+            })) = next.frame()
+            {
+                base.transaction_states
+                    .extend(std::mem::take(&mut next.transaction_states));
+            }
+        }
 
         Ok(())
     }

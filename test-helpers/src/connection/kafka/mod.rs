@@ -489,6 +489,17 @@ impl KafkaAdmin {
         }
     }
 
+    pub async fn describe_transactions(
+        &self,
+        transaction_ids: &[&str],
+    ) -> HashMap<String, TransactionDescription> {
+        match self {
+            #[cfg(feature = "kafka-cpp-driver-tests")]
+            Self::Cpp(_) => panic!("rdkafka-rs driver does not support desscribe_transactions"),
+            Self::Java(java) => java.desscribe_transactions(transaction_ids).await,
+        }
+    }
+
     pub async fn list_consumer_group_offsets(
         &self,
         group_id: String,
@@ -749,6 +760,9 @@ pub struct RecordsToDelete {
     /// If -1 is given delete all records regardless of offset.
     pub delete_before_offset: i64,
 }
+
+#[derive(PartialEq, Debug)]
+pub struct TransactionDescription {}
 
 #[derive(PartialEq, Debug)]
 pub struct PartitionReassignment {
