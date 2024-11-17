@@ -3,8 +3,8 @@ use std::collections::{HashMap, HashSet};
 pub use rdkafka;
 
 use super::{
-    ConsumerConfig, ExpectedResponse, NewPartition, OffsetAndMetadata, ProduceResult, Record,
-    TopicPartition,
+    ConsumerConfig, ConsumerProtocol, ExpectedResponse, NewPartition, OffsetAndMetadata,
+    ProduceResult, Record, TopicPartition,
 };
 use anyhow::Result;
 use pretty_assertions::assert_eq;
@@ -95,6 +95,10 @@ impl KafkaConnectionBuilderCpp {
             .set("fetch.min.bytes", config.fetch_min_bytes.to_string())
             .create()
             .unwrap();
+
+        if let ConsumerProtocol::Consumer = config.protocol {
+            panic!("New consumer protocol not support by rdkafka driver");
+        }
 
         let topic_names: Vec<&str> = config.topic_names.iter().map(|x| x.as_str()).collect();
         consumer.subscribe(&topic_names).unwrap();
