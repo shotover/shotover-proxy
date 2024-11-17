@@ -3077,6 +3077,43 @@ The connection to the client has been closed."
                 self.rewrite_describe_cluster_response(describe_cluster)?;
                 response.invalidate_cache();
             }
+            Some(Frame::Kafka(KafkaFrame::Response {
+                body: ResponseBody::ApiVersions(api_versions),
+                ..
+            })) => {
+                let original_size = api_versions.api_keys.len();
+
+                // List of keys that shotover doesnt support and so should be removed from supported keys list
+                let disable_keys = [
+                    // This message type has very little documentation available but it seems that due to the way the pagination
+                    // functionality is designed, there is no straightforward way to implement this message type in shotover.
+                    // I reccomend we avoid implementing this message type for as long as possible.
+                    //
+                    // The problem is that the cursor spans across topics, but each partition in the request needs to be split up and routed to the owner of that partition.
+                    // So shotover is going to need to split the cursor across different brokers which is ill-defined.
+                    //
+                    // A possible solution could be something like:
+                    // 1. split and route request to brokers by location of partition and remove the cursor from the request.
+                    // 2. Store the result in a cache.
+                    // 3. Apply our own cursor logic upon the data in the cache.
+                    // 4. On follow up requests make use the existing cache to respond with the next section of the paginated data.
+                    //
+                    // But this will be quite difficult to implement and makes pagination incredibly inefficient which is the opposite of the intention of pagination.
+                    // So for now, lets not.
+                    ApiKey::DescribeTopicPartitionsKey as i16,
+                    // This message type is part of the new consumer group API, we should implement support for it in the future.
+                    // I've disabled it for now to keep the scope down for kafka 3.9 support.
+                    ApiKey::ConsumerGroupDescribeKey as i16,
+                ];
+                api_versions
+                    .api_keys
+                    .retain(|x| !disable_keys.contains(&x.api_key));
+
+                if original_size != api_versions.api_keys.len() {
+                    // only invalidate the cache if we actually removed anything
+                    response.invalidate_cache();
+                }
+            }
             _ => {}
         }
 
