@@ -3,7 +3,7 @@ use super::{
     ListOffsetsResultInfo, NewPartition, NewPartitionReassignment, NewTopic, OffsetAndMetadata,
     OffsetSpec, PartitionReassignment, ProduceResult, ProducerState, Record, RecordsToDelete,
     ResourcePatternType, ResourceSpecifier, ResourceType, TopicDescription, TopicPartition,
-    TopicPartitionInfo,
+    TopicPartitionInfo, TransactionDescription,
 };
 use crate::connection::java::{map_iterator, Jvm, Value};
 use anyhow::Result;
@@ -766,6 +766,28 @@ impl KafkaAdminJava {
             )
         }
         results
+    }
+
+    pub async fn desscribe_transactions(
+        &self,
+        transaction_ids: &[&str],
+    ) -> HashMap<String, TransactionDescription> {
+        let transaction_ids = transaction_ids
+            .iter()
+            .map(|x| self.jvm.new_string(x))
+            .collect();
+        let transaction_ids = self.jvm.new_list("java.lang.String", transaction_ids);
+        let java_results = self
+            .admin
+            .call("describeTransactions", vec![transaction_ids])
+            .call_async("all", vec![])
+            .await;
+
+        map_iterator(java_results)
+            .map(|(transaction_id, _transaction_description)| {
+                (transaction_id.into_rust(), TransactionDescription {})
+            })
+            .collect()
     }
 
     pub async fn list_consumer_group_offsets(
