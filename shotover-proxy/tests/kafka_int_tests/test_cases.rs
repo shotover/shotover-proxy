@@ -6,7 +6,7 @@ use test_helpers::{
         ExpectedResponse, IsolationLevel, KafkaAdmin, KafkaConnectionBuilder, KafkaConsumer,
         KafkaDriver, KafkaProducer, ListOffsetsResultInfo, NewPartition, NewPartitionReassignment,
         NewTopic, OffsetAndMetadata, OffsetSpec, Record, RecordsToDelete, ResourcePatternType,
-        ResourceSpecifier, ResourceType, TopicPartition,
+        ResourceSpecifier, ResourceType, TopicPartition, TransactionDescription,
     },
     docker_compose::DockerCompose,
 };
@@ -1687,15 +1687,29 @@ async fn list_groups(connection_builder: &KafkaConnectionBuilder) {
     }
 }
 
-async fn list_transactions(connection_builder: &KafkaConnectionBuilder) {
+async fn list_and_describe_transactions(connection_builder: &KafkaConnectionBuilder) {
     let admin = connection_builder.connect_admin().await;
-    let _transaction_producer = connection_builder
-        .connect_producer_with_transactions("some_transaction_id".to_owned())
+    let _transaction_producer1 = connection_builder
+        .connect_producer_with_transactions("some_transaction_id1".to_owned())
+        .await;
+    let _transaction_producer2 = connection_builder
+        .connect_producer_with_transactions("some_transaction_id2".to_owned())
         .await;
 
     let actual_results = admin.list_transactions().await;
-    let expected_results = ["some_transaction_id".to_owned()];
-    assert_eq!(actual_results, expected_results);
+    assert!(actual_results.contains(&"some_transaction_id1".to_owned()));
+    assert!(actual_results.contains(&"some_transaction_id2".to_owned()));
+
+    let result = admin
+        .describe_transactions(&["some_transaction_id1", "some_transaction_id2"])
+        .await;
+    assert_eq!(
+        result,
+        HashMap::from([
+            ("some_transaction_id1".to_owned(), TransactionDescription {}),
+            ("some_transaction_id2".to_owned(), TransactionDescription {}),
+        ])
+    );
 }
 
 async fn create_and_list_partition_reassignments(connection_builder: &KafkaConnectionBuilder) {
@@ -1771,7 +1785,7 @@ pub async fn tests_requiring_all_shotover_nodes(connection_builder: &KafkaConnec
     #[allow(irrefutable_let_patterns)]
     if let KafkaConnectionBuilder::Java(_) = connection_builder {
         list_groups(connection_builder).await;
-        list_transactions(connection_builder).await;
+        list_and_describe_transactions(connection_builder).await;
         create_and_list_partition_reassignments(connection_builder).await;
     }
 }
