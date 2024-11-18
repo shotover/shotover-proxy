@@ -34,9 +34,9 @@ use kafka_protocol::messages::{
     AddOffsetsToTxnRequest, AddPartitionsToTxnRequest, AddPartitionsToTxnResponse, ApiKey,
     BrokerId, DeleteGroupsRequest, DeleteGroupsResponse, DeleteRecordsRequest,
     DeleteRecordsResponse, DescribeClusterResponse, DescribeGroupsRequest, DescribeGroupsResponse,
-    DescribeProducersRequest, DescribeProducersResponse, DescribeTransactionsRequest,
-    DescribeTransactionsResponse, EndTxnRequest, FetchRequest, FetchResponse,
-    FindCoordinatorRequest, FindCoordinatorResponse, GroupId, HeartbeatRequest,
+    DescribeLogDirsResponse, DescribeProducersRequest, DescribeProducersResponse,
+    DescribeTransactionsRequest, DescribeTransactionsResponse, EndTxnRequest, FetchRequest,
+    FetchResponse, FindCoordinatorRequest, FindCoordinatorResponse, GroupId, HeartbeatRequest,
     InitProducerIdRequest, JoinGroupRequest, LeaveGroupRequest, ListGroupsResponse,
     ListOffsetsRequest, ListOffsetsResponse, ListTransactionsResponse, MetadataRequest,
     MetadataResponse, OffsetFetchRequest, OffsetFetchResponse, OffsetForLeaderEpochRequest,
@@ -59,10 +59,10 @@ use shotover_node::{ShotoverNode, ShotoverNodeConfig};
 use split::{
     AddPartitionsToTxnRequestSplitAndRouter, DeleteGroupsSplitAndRouter,
     DeleteRecordsRequestSplitAndRouter, DescribeGroupsSplitAndRouter,
-    DescribeProducersRequestSplitAndRouter, DescribeTransactionsSplitAndRouter,
-    ListGroupsSplitAndRouter, ListOffsetsRequestSplitAndRouter, ListTransactionsSplitAndRouter,
-    OffsetFetchSplitAndRouter, OffsetForLeaderEpochRequestSplitAndRouter,
-    ProduceRequestSplitAndRouter, RequestSplitAndRouter,
+    DescribeLogDirsSplitAndRouter, DescribeProducersRequestSplitAndRouter,
+    DescribeTransactionsSplitAndRouter, ListGroupsSplitAndRouter, ListOffsetsRequestSplitAndRouter,
+    ListTransactionsSplitAndRouter, OffsetFetchSplitAndRouter,
+    OffsetForLeaderEpochRequestSplitAndRouter, ProduceRequestSplitAndRouter, RequestSplitAndRouter,
 };
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::hash::Hasher;
@@ -1139,6 +1139,10 @@ The connection to the client has been closed."
                     body: RequestBody::ListTransactions(_),
                     ..
                 })) => self.split_and_route_request::<ListTransactionsSplitAndRouter>(request)?,
+                Some(Frame::Kafka(KafkaFrame::Request {
+                    body: RequestBody::DescribeLogDirs(_),
+                    ..
+                })) => self.split_and_route_request::<DescribeLogDirsSplitAndRouter>(request)?,
 
                 // route to random broker
                 Some(Frame::Kafka(KafkaFrame::Request {
@@ -2348,6 +2352,10 @@ The connection to the client has been closed."
                 ..
             })) => Self::combine_describe_groups(base, drain)?,
             Some(Frame::Kafka(KafkaFrame::Response {
+                body: ResponseBody::DescribeLogDirs(base),
+                ..
+            })) => Self::combine_describe_log_dirs(base, drain)?,
+            Some(Frame::Kafka(KafkaFrame::Response {
                 body: ResponseBody::AddPartitionsToTxn(base),
                 version,
                 ..
@@ -2705,6 +2713,27 @@ The connection to the client has been closed."
                     .extend(std::mem::take(
                         &mut next_list_transactions.transaction_states,
                     ));
+            }
+        }
+
+        Ok(())
+    }
+
+    fn combine_describe_log_dirs(
+        base: &mut DescribeLogDirsResponse,
+        drain: impl Iterator<Item = Message>,
+    ) -> Result<()> {
+        for mut next in drain {
+            if let Some(Frame::Kafka(KafkaFrame::Response {
+                body: ResponseBody::DescribeLogDirs(next),
+                ..
+            })) = next.frame()
+            {
+                for result in &mut next.results {
+                    let log_dir = result.log_dir.as_str();
+                    result.log_dir = StrBytes::from_string(format!("{}:{log_dir}", 0));
+                }
+                base.results.extend(std::mem::take(&mut next.results));
             }
         }
 
