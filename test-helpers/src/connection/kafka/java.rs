@@ -35,7 +35,7 @@ impl KafkaConnectionBuilderJava {
         // The list of dependencies can be found here: https://repo1.maven.org/maven2/org/apache/kafka/kafka-clients/3.7.0/kafka-clients-3.7.0.pom
         // These are deployed to and loaded from a path like target/debug/jassets
         let jvm = Jvm::new(&[
-            "org.apache.kafka:kafka-clients:3.7.0",
+            "org.apache.kafka:kafka-clients:3.8.1",
             "org.slf4j:slf4j-api:1.7.36",
             "org.slf4j:slf4j-simple:1.7.36",
         ]);
