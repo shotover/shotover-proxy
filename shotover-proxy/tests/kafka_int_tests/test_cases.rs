@@ -3,10 +3,11 @@ use std::{collections::HashMap, time::Duration};
 use test_helpers::{
     connection::kafka::{
         Acl, AclOperation, AclPermissionType, AlterConfig, ConfigEntry, ConsumerConfig,
-        ExpectedResponse, IsolationLevel, KafkaAdmin, KafkaConnectionBuilder, KafkaConsumer,
-        KafkaDriver, KafkaProducer, ListOffsetsResultInfo, NewPartition, NewPartitionReassignment,
-        NewTopic, OffsetAndMetadata, OffsetSpec, Record, RecordsToDelete, ResourcePatternType,
-        ResourceSpecifier, ResourceType, TopicPartition, TransactionDescription,
+        ConsumerGroupDescription, ExpectedResponse, IsolationLevel, KafkaAdmin,
+        KafkaConnectionBuilder, KafkaConsumer, KafkaDriver, KafkaProducer, ListOffsetsResultInfo,
+        NewPartition, NewPartitionReassignment, NewTopic, OffsetAndMetadata, OffsetSpec, Record,
+        RecordsToDelete, ResourcePatternType, ResourceSpecifier, ResourceType, TopicPartition,
+        TransactionDescription,
     },
     docker_compose::DockerCompose,
 };
@@ -1664,15 +1665,29 @@ async fn list_offsets(admin: &KafkaAdmin) {
     assert_eq!(results, expected);
 }
 
-async fn list_groups(connection_builder: &KafkaConnectionBuilder) {
-    let admin = connection_builder.connect_admin().await;
-    let mut consumer = connection_builder
+async fn list_and_describe_groups(connection_builder: &KafkaConnectionBuilder) {
+    // create consumers
+    let mut consumer1 = connection_builder
         .connect_consumer(
             ConsumerConfig::consume_from_topics(vec!["partitions1".to_owned()])
-                .with_group("list_groups_test"),
+                .with_group("list_groups_test1"),
         )
         .await;
-    consumer
+    consumer1
+        .assert_consume(ExpectedResponse {
+            message: "initial".to_owned(),
+            key: Some("Key".to_owned()),
+            topic_name: "partitions1".to_owned(),
+            offset: Some(0),
+        })
+        .await;
+    let mut consumer2 = connection_builder
+        .connect_consumer(
+            ConsumerConfig::consume_from_topics(vec!["partitions1".to_owned()])
+                .with_group("list_groups_test2"),
+        )
+        .await;
+    consumer2
         .assert_consume(ExpectedResponse {
             message: "initial".to_owned(),
             key: Some("Key".to_owned()),
@@ -1681,10 +1696,36 @@ async fn list_groups(connection_builder: &KafkaConnectionBuilder) {
         })
         .await;
 
+    // observe consumers
+    let admin = connection_builder.connect_admin().await;
     let actual_results = admin.list_groups().await;
-    if !actual_results.contains(&"list_groups_test".to_owned()) {
-        panic!("Expected to find \"list_groups_test\" in {actual_results:?} but was missing")
+    if !actual_results.contains(&"list_groups_test1".to_owned()) {
+        panic!("Expected to find \"list_groups_test1\" in {actual_results:?} but was missing")
     }
+    if !actual_results.contains(&"list_groups_test2".to_owned()) {
+        panic!("Expected to find \"list_groups_test2\" in {actual_results:?} but was missing")
+    }
+
+    let result = admin
+        .describe_groups(&["list_groups_test1", "list_groups_test2"])
+        .await;
+    assert_eq!(
+        result,
+        HashMap::from([
+            (
+                "list_groups_test1".to_owned(),
+                ConsumerGroupDescription {
+                    is_simple_consumer: false
+                }
+            ),
+            (
+                "list_groups_test2".to_owned(),
+                ConsumerGroupDescription {
+                    is_simple_consumer: false
+                }
+            ),
+        ])
+    )
 }
 
 async fn list_and_describe_transactions(connection_builder: &KafkaConnectionBuilder) {
@@ -1784,7 +1825,7 @@ pub async fn tests_requiring_all_shotover_nodes(connection_builder: &KafkaConnec
     // rdkafka-rs doesnt support these methods
     #[allow(irrefutable_let_patterns)]
     if let KafkaConnectionBuilder::Java(_) = connection_builder {
-        list_groups(connection_builder).await;
+        list_and_describe_groups(connection_builder).await;
         list_and_describe_transactions(connection_builder).await;
         create_and_list_partition_reassignments(connection_builder).await;
     }

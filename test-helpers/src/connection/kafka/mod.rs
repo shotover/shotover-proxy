@@ -472,6 +472,16 @@ impl KafkaAdmin {
             Self::Java(java) => java.list_offsets(topic_partitions).await,
         }
     }
+    pub async fn describe_groups(
+        &self,
+        group_ids: &[&str],
+    ) -> HashMap<String, ConsumerGroupDescription> {
+        match self {
+            #[cfg(feature = "kafka-cpp-driver-tests")]
+            Self::Cpp(_) => panic!("rdkafka-rs driver does not support describe_groups"),
+            Self::Java(java) => java.describe_groups(group_ids).await,
+        }
+    }
 
     pub async fn list_groups(&self) -> Vec<String> {
         match self {
@@ -748,6 +758,11 @@ impl IsolationLevel {
             IsolationLevel::ReadUncommitted => "read_uncommitted",
         }
     }
+}
+
+#[derive(PartialEq, Debug)]
+pub struct ConsumerGroupDescription {
+    pub is_simple_consumer: bool,
 }
 
 #[derive(PartialEq, Debug)]
