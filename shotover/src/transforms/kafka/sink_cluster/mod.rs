@@ -1102,6 +1102,17 @@ Shotover cannot handle this request as it is not appropriate for shotover to shu
 The connection to the client has been closed."
                     ));
                 }
+                Some(Frame::Kafka(KafkaFrame::Request {
+                    body: RequestBody::UnregisterBroker(_),
+                    ..
+                })) => {
+                    // This message types is a replacement for ControlledShutdown so the same reasoning applies.
+                    return Err(anyhow!(
+                        "Client sent UnregisterBroker request.
+Shotover cannot handle this request as it is not appropriate for shotover to shutdown.
+The connection to the client has been closed."
+                    ));
+                }
 
                 // route to controller broker
                 Some(Frame::Kafka(KafkaFrame::Request {
