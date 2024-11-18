@@ -1066,7 +1066,11 @@ impl KafkaSinkCluster {
                         | RequestBody::UpdateMetadata(_)
                         // It was determined that this message type is only sent between brokers by:
                         // * https://cwiki.apache.org/confluence/pages/viewpage.action?pageId=177049344#KIP730:ProducerIDgenerationinKRaftmode-PublicInterfaces
-                        | RequestBody::AllocateProducerIds(_),
+                        | RequestBody::AllocateProducerIds(_)
+                        // It was determined that this message type is only sent between brokers because:
+                        // * it is not exposed via the Admin client.
+                        // * This KIP discusses the message type and makes no mention of clients using it https://cwiki.apache.org/confluence/display/KAFKA/KIP-704:+Send+a+hint+to+the+partition+leader+to+recover+the+partition
+                        | RequestBody::AlterPartition(_),
                     header:
                         RequestHeader {
                             request_api_key, ..
