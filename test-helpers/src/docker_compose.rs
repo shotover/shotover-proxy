@@ -20,7 +20,7 @@ pub fn new_moto() -> DockerCompose {
     docker_compose("tests/transforms/docker-compose-moto.yaml")
 }
 
-pub static IMAGE_WAITERS: [Image; 11] = [
+pub static IMAGE_WAITERS: [Image; 12] = [
     Image {
         name: "motoserver/moto",
         log_regex_to_wait_for: r"Press CTRL\+C to quit",
@@ -72,6 +72,11 @@ pub static IMAGE_WAITERS: [Image; 11] = [
     },
     Image {
         name: "bitnami/kafka:3.6.1-debian-11-r24",
+        log_regex_to_wait_for: r"Kafka Server started",
+        timeout: Duration::from_secs(120),
+    },
+    Image {
+        name: "bitnami/kafka:3.9.0-debian-12-r3",
         log_regex_to_wait_for: r"Kafka Server started",
         timeout: Duration::from_secs(120),
     },

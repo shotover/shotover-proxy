@@ -1104,6 +1104,17 @@ Shotover cannot handle this request as it is not appropriate for shotover to shu
 The connection to the client has been closed."
                     ));
                 }
+                Some(Frame::Kafka(KafkaFrame::Request {
+                    body: RequestBody::UnregisterBroker(_),
+                    ..
+                })) => {
+                    // This message types is a replacement for ControlledShutdown so the same reasoning applies.
+                    return Err(anyhow!(
+                        "Client sent UnregisterBroker request.
+Shotover cannot handle this request as it is not appropriate for shotover to shutdown.
+The connection to the client has been closed."
+                    ));
+                }
 
                 // route to controller broker
                 Some(Frame::Kafka(KafkaFrame::Request {
@@ -3076,6 +3087,33 @@ The connection to the client has been closed."
                     .await;
                 self.rewrite_describe_cluster_response(describe_cluster)?;
                 response.invalidate_cache();
+            }
+            Some(Frame::Kafka(KafkaFrame::Response {
+                body: ResponseBody::ApiVersions(api_versions),
+                ..
+            })) => {
+                let original_size = api_versions.api_keys.len();
+
+                // List of keys that shotover doesnt support and so should be removed from supported keys list
+                let disable_keys = [
+                    // This message type has very little documentation available and kafka responds to it with an error code 35 UNSUPPORTED_VERSION
+                    // So its not clear at all how to implement this and its not even possible to test it.
+                    // Instead lets just ask the client to not send it at all.
+                    // We can consider supporting it when kafka itself starts to support it but we will need to be very
+                    // careful to correctly implement the pagination/cursor logic.
+                    ApiKey::DescribeTopicPartitionsKey as i16,
+                    // This message type is part of the new consumer group API, we should implement support for it in the future.
+                    // I've disabled it for now to keep the scope down for kafka 3.9 support.
+                    ApiKey::ConsumerGroupDescribeKey as i16,
+                ];
+                api_versions
+                    .api_keys
+                    .retain(|x| !disable_keys.contains(&x.api_key));
+
+                if original_size != api_versions.api_keys.len() {
+                    // only invalidate the cache if we actually removed anything
+                    response.invalidate_cache();
+                }
             }
             _ => {}
         }
