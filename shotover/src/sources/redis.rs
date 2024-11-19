@@ -1,4 +1,4 @@
-use crate::codec::{redis::RedisCodecBuilder, CodecBuilder, Direction};
+use crate::codec::{redis::ValkeyCodecBuilder, CodecBuilder, Direction};
 use crate::config::chain::TransformChainConfig;
 use crate::server::TcpCodecListener;
 use crate::sources::{Source, Transport};
@@ -13,7 +13,7 @@ use tracing::{error, info};
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
-pub struct RedisConfig {
+pub struct ValkeyConfig {
     pub name: String,
     pub listen_addr: String,
     pub connection_limit: Option<usize>,
@@ -23,13 +23,13 @@ pub struct RedisConfig {
     pub chain: TransformChainConfig,
 }
 
-impl RedisConfig {
+impl ValkeyConfig {
     pub async fn get_source(
         &self,
         trigger_shutdown_rx: watch::Receiver<bool>,
     ) -> Result<Source, Vec<String>> {
-        Ok(Source::Redis(
-            RedisSource::new(
+        Ok(Source::Valkey(
+            ValkeySource::new(
                 self.name.clone(),
                 &self.chain,
                 self.listen_addr.clone(),
@@ -45,11 +45,11 @@ impl RedisConfig {
 }
 
 #[derive(Debug)]
-pub struct RedisSource {
+pub struct ValkeySource {
     pub join_handle: JoinHandle<()>,
 }
 
-impl RedisSource {
+impl ValkeySource {
     #![allow(clippy::too_many_arguments)]
     pub async fn new(
         name: String,
@@ -60,15 +60,15 @@ impl RedisSource {
         hard_connection_limit: Option<bool>,
         tls: Option<TlsAcceptorConfig>,
         timeout: Option<u64>,
-    ) -> Result<RedisSource, Vec<String>> {
-        info!("Starting Redis source on [{}]", listen_addr);
+    ) -> Result<ValkeySource, Vec<String>> {
+        info!("Starting Valkey source on [{}]", listen_addr);
 
         let mut listener = TcpCodecListener::new(
             chain_config,
             name.clone(),
             listen_addr.clone(),
             hard_connection_limit.unwrap_or(false),
-            RedisCodecBuilder::new(Direction::Source, name),
+            ValkeyCodecBuilder::new(Direction::Source, name),
             Arc::new(Semaphore::new(connection_limit.unwrap_or(512))),
             trigger_shutdown_rx.clone(),
             tls.as_ref().map(TlsAcceptor::new).transpose()?,
@@ -93,6 +93,6 @@ impl RedisSource {
             }
         });
 
-        Ok(RedisSource { join_handle })
+        Ok(ValkeySource { join_handle })
     }
 }

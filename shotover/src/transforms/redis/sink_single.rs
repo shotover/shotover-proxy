@@ -1,13 +1,13 @@
 use crate::codec::{CodecBuilder, Direction};
 use crate::connection::SinkConnection;
-use crate::frame::{Frame, MessageType, RedisFrame};
+use crate::frame::{Frame, MessageType, ValkeyFrame};
 use crate::message::Messages;
 use crate::tls::{TlsConnector, TlsConnectorConfig};
 use crate::transforms::{
     ChainState, DownChainProtocol, Transform, TransformBuilder, TransformConfig,
     TransformContextBuilder, UpChainProtocol,
 };
-use crate::{codec::redis::RedisCodecBuilder, transforms::TransformContextConfig};
+use crate::{codec::redis::ValkeyCodecBuilder, transforms::TransformContextConfig};
 use anyhow::Result;
 use async_trait::async_trait;
 use metrics::{counter, Counter};
@@ -44,7 +44,7 @@ impl TransformConfig for RedisSinkSingleConfig {
     }
 
     fn up_chain_protocol(&self) -> UpChainProtocol {
-        UpChainProtocol::MustBeOneOf(vec![MessageType::Redis])
+        UpChainProtocol::MustBeOneOf(vec![MessageType::Valkey])
     }
 
     fn down_chain_protocol(&self) -> DownChainProtocol {
@@ -119,7 +119,7 @@ impl Transform for RedisSinkSingle {
         chain_state: &'shorter mut ChainState<'longer>,
     ) -> Result<Messages> {
         if self.connection.is_none() {
-            let codec = RedisCodecBuilder::new(Direction::Sink, "RedisSinkSingle".to_owned());
+            let codec = ValkeyCodecBuilder::new(Direction::Sink, "RedisSinkSingle".to_owned());
             self.connection = Some(
                 SinkConnection::new(
                     &self.address,
@@ -144,7 +144,7 @@ impl Transform for RedisSinkSingle {
                 .try_recv_into(&mut responses)
             {
                 for response in &mut responses {
-                    if let Some(Frame::Redis(RedisFrame::Error(_))) = response.frame() {
+                    if let Some(Frame::Valkey(ValkeyFrame::Error(_))) = response.frame() {
                         self.failed_requests.increment(1);
                     }
                 }
@@ -166,7 +166,7 @@ impl Transform for RedisSinkSingle {
                     .await?;
 
                 for response in &mut responses[responses_len_old..] {
-                    if let Some(Frame::Redis(RedisFrame::Error(_))) = response.frame() {
+                    if let Some(Frame::Valkey(ValkeyFrame::Error(_))) = response.frame() {
                         self.failed_requests.increment(1);
                     }
                     if response.request_id().is_some() {

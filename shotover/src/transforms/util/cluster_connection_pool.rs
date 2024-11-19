@@ -308,7 +308,7 @@ async fn rx_process<C: DecoderHalf, R: AsyncRead + Unpin + Send + 'static>(
 #[cfg(all(test, feature = "redis"))]
 mod test {
     use super::spawn_read_write_tasks;
-    use crate::codec::redis::RedisCodecBuilder;
+    use crate::codec::redis::ValkeyCodecBuilder;
     use crate::codec::{CodecBuilder, Direction};
     use std::mem;
     use std::time::Duration;
@@ -340,7 +340,7 @@ mod test {
 
         let stream = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
         let (rx, tx) = stream.into_split();
-        let codec = RedisCodecBuilder::new(Direction::Sink, "redis".to_owned());
+        let codec = ValkeyCodecBuilder::new(Direction::Sink, "valkey".to_owned());
         let sender = spawn_read_write_tasks(&codec, rx, tx);
 
         assert!(remote.await.unwrap());
@@ -380,7 +380,7 @@ mod test {
 
         let stream = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
         let (rx, tx) = stream.into_split();
-        let codec = RedisCodecBuilder::new(Direction::Sink, "redis".to_owned());
+        let codec = ValkeyCodecBuilder::new(Direction::Sink, "valkey".to_owned());
 
         // Drop sender immediately.
         std::mem::drop(spawn_read_write_tasks(&codec, rx, tx));

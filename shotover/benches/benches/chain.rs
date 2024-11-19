@@ -6,7 +6,7 @@ use hex_literal::hex;
 use shotover::codec::CodecState;
 use shotover::frame::cassandra::{parse_statement_single, Tracing};
 use shotover::frame::{CassandraFrame, CassandraOperation, Frame};
-use shotover::frame::{MessageType, RedisFrame};
+use shotover::frame::{MessageType, ValkeyFrame};
 use shotover::message::{Message, MessageIdMap, QueryType};
 use shotover::transforms::cassandra::peers_rewrite::CassandraPeersRewrite;
 use shotover::transforms::chain::{TransformChain, TransformChainBuilder};
@@ -33,7 +33,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     {
         let chain = TransformChainBuilder::new(vec![Box::<Loopback>::default()], "bench");
         let chain_state = ChainState::new_with_addr(
-            vec![Message::from_frame(Frame::Redis(RedisFrame::Null))],
+            vec![Message::from_frame(Frame::Valkey(ValkeyFrame::Null))],
             "127.0.0.1:6379".parse().unwrap(),
         );
 
@@ -49,7 +49,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     {
         let chain = TransformChainBuilder::new(vec![Box::<NullSink>::default()], "bench");
         let chain_state = ChainState::new_with_addr(
-            vec![Message::from_frame(Frame::Redis(RedisFrame::Null))],
+            vec![Message::from_frame(Frame::Valkey(ValkeyFrame::Null))],
             "127.0.0.1:6379".parse().unwrap(),
         );
 
@@ -69,20 +69,20 @@ fn criterion_benchmark(c: &mut Criterion) {
                     filter: Filter::DenyList(vec![QueryType::Read]),
                     filtered_requests: MessageIdMap::default(),
                 }),
-                Box::new(DebugReturner::new(Response::Redis("a".into()))),
+                Box::new(DebugReturner::new(Response::Valkey("a".into()))),
             ],
             "bench",
         );
         let chain_state = ChainState::new_with_addr(
             vec![
-                Message::from_frame(Frame::Redis(RedisFrame::Array(vec![
-                    RedisFrame::BulkString(Bytes::from_static(b"SET")),
-                    RedisFrame::BulkString(Bytes::from_static(b"foo")),
-                    RedisFrame::BulkString(Bytes::from_static(b"bar")),
+                Message::from_frame(Frame::Valkey(ValkeyFrame::Array(vec![
+                    ValkeyFrame::BulkString(Bytes::from_static(b"SET")),
+                    ValkeyFrame::BulkString(Bytes::from_static(b"foo")),
+                    ValkeyFrame::BulkString(Bytes::from_static(b"bar")),
                 ]))),
-                Message::from_frame(Frame::Redis(RedisFrame::Array(vec![
-                    RedisFrame::BulkString(Bytes::from_static(b"GET")),
-                    RedisFrame::BulkString(Bytes::from_static(b"foo")),
+                Message::from_frame(Frame::Valkey(ValkeyFrame::Array(vec![
+                    ValkeyFrame::BulkString(Bytes::from_static(b"GET")),
+                    ValkeyFrame::BulkString(Bytes::from_static(b"foo")),
                 ]))),
             ],
             "127.0.0.1:6379".parse().unwrap(),
@@ -106,10 +106,10 @@ fn criterion_benchmark(c: &mut Criterion) {
             "bench",
         );
         let chain_state = ChainState::new_with_addr(
-            vec![Message::from_frame(Frame::Redis(RedisFrame::Array(vec![
-                RedisFrame::BulkString(Bytes::from_static(b"SET")),
-                RedisFrame::BulkString(Bytes::from_static(b"foo")),
-                RedisFrame::BulkString(Bytes::from_static(b"bar")),
+            vec![Message::from_frame(Frame::Valkey(ValkeyFrame::Array(vec![
+                ValkeyFrame::BulkString(Bytes::from_static(b"SET")),
+                ValkeyFrame::BulkString(Bytes::from_static(b"foo")),
+                ValkeyFrame::BulkString(Bytes::from_static(b"bar")),
             ])))],
             "127.0.0.1:6379".parse().unwrap(),
         );
@@ -133,7 +133,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                     }
                     .get_builder(TransformContextConfig {
                         chain_name: "".into(),
-                        up_chain_protocol: MessageType::Redis,
+                        up_chain_protocol: MessageType::Valkey,
                     }),
                 )
                 .unwrap(),
@@ -283,14 +283,14 @@ fn criterion_benchmark(c: &mut Criterion) {
         );
         let chain_state = ChainState::new_with_addr(
             vec![
-                Message::from_frame(Frame::Redis(RedisFrame::Array(vec![
-                    RedisFrame::BulkString(Bytes::from_static(b"SET")),
-                    RedisFrame::BulkString(Bytes::from_static(b"foo")),
-                    RedisFrame::BulkString(Bytes::from_static(b"bar")),
+                Message::from_frame(Frame::Valkey(ValkeyFrame::Array(vec![
+                    ValkeyFrame::BulkString(Bytes::from_static(b"SET")),
+                    ValkeyFrame::BulkString(Bytes::from_static(b"foo")),
+                    ValkeyFrame::BulkString(Bytes::from_static(b"bar")),
                 ]))),
-                Message::from_frame(Frame::Redis(RedisFrame::Array(vec![
-                    RedisFrame::BulkString(Bytes::from_static(b"GET")),
-                    RedisFrame::BulkString(Bytes::from_static(b"foo")),
+                Message::from_frame(Frame::Valkey(ValkeyFrame::Array(vec![
+                    ValkeyFrame::BulkString(Bytes::from_static(b"GET")),
+                    ValkeyFrame::BulkString(Bytes::from_static(b"foo")),
                 ]))),
             ],
             "127.0.0.1:6379".parse().unwrap(),

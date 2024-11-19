@@ -3,7 +3,7 @@ use std::time::Instant;
 
 use super::{CodecWriteError, Direction};
 use crate::codec::{CodecBuilder, CodecReadError};
-use crate::frame::{Frame, MessageType, RedisFrame};
+use crate::frame::{Frame, MessageType, ValkeyFrame};
 use crate::message::{Encodable, Message, MessageId, Messages};
 use anyhow::{anyhow, Result};
 use bytes::BytesMut;
@@ -13,14 +13,14 @@ use redis_protocol::resp2::encode::extend_encode;
 use tokio_util::codec::{Decoder, Encoder};
 
 #[derive(Clone)]
-pub struct RedisCodecBuilder {
+pub struct ValkeyCodecBuilder {
     direction: Direction,
     message_latency: Histogram,
 }
 
-impl CodecBuilder for RedisCodecBuilder {
-    type Decoder = RedisDecoder;
-    type Encoder = RedisEncoder;
+impl CodecBuilder for ValkeyCodecBuilder {
+    type Decoder = ValkeyDecoder;
+    type Encoder = ValkeyEncoder;
 
     fn new(direction: Direction, destination_name: String) -> Self {
         let message_latency = super::message_latency(direction, destination_name);
@@ -30,7 +30,7 @@ impl CodecBuilder for RedisCodecBuilder {
         }
     }
 
-    fn build(&self) -> (RedisDecoder, RedisEncoder) {
+    fn build(&self) -> (ValkeyDecoder, ValkeyEncoder) {
         let (tx, rx) = match self.direction {
             Direction::Source => (None, None),
             Direction::Sink => {
@@ -39,13 +39,13 @@ impl CodecBuilder for RedisCodecBuilder {
             }
         };
         (
-            RedisDecoder::new(rx, self.direction),
-            RedisEncoder::new(tx, self.direction, self.message_latency.clone()),
+            ValkeyDecoder::new(rx, self.direction),
+            ValkeyEncoder::new(tx, self.direction, self.message_latency.clone()),
         )
     }
 
     fn protocol(&self) -> MessageType {
-        MessageType::Redis
+        MessageType::Valkey
     }
 }
 
@@ -58,27 +58,27 @@ pub enum RequestType {
     Subscribe,
     /// a unsubscribe
     Unsubscribe,
-    /// redis reset
+    /// valkey reset
     Reset,
     /// Everything else
     Other,
 }
 
-pub struct RedisEncoder {
+pub struct ValkeyEncoder {
     // Some when Sink (because it sends requests)
     request_header_tx: Option<mpsc::Sender<RequestInfo>>,
     direction: Direction,
     message_latency: Histogram,
 }
 
-pub struct RedisDecoder {
+pub struct ValkeyDecoder {
     // Some when Sink (because it receives responses)
     request_header_rx: Option<mpsc::Receiver<RequestInfo>>,
     direction: Direction,
     is_subscribed: bool,
 }
 
-impl RedisDecoder {
+impl ValkeyDecoder {
     pub fn new(
         request_header_rx: Option<mpsc::Receiver<RequestInfo>>,
         direction: Direction,
@@ -91,24 +91,24 @@ impl RedisDecoder {
     }
 }
 
-impl Decoder for RedisDecoder {
+impl Decoder for ValkeyDecoder {
     type Item = Messages;
     type Error = CodecReadError;
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
         let received_at = Instant::now();
         match decode_bytes_mut(src)
-            .map_err(|e| CodecReadError::Parser(anyhow!(e).context("Error decoding redis frame")))?
+            .map_err(|e| CodecReadError::Parser(anyhow!(e).context("Error decoding valkey frame")))?
         {
             Some((frame, _size, bytes)) => {
                 tracing::debug!(
-                    "{}: incoming redis message:\n{}",
+                    "{}: incoming valkey message:\n{}",
                     self.direction,
                     pretty_hex::pretty_hex(&bytes)
                 );
                 let mut message = Message::from_bytes_and_frame_at_instant(
                     bytes,
-                    Frame::Redis(frame),
+                    Frame::Valkey(frame),
                     Some(received_at),
                 );
 
@@ -119,7 +119,7 @@ impl Decoder for RedisDecoder {
                 // * `unsubscribe` - a response to an UNSUBSCRIBE, PUNSUBSCRIBE or SUNSUBSCRIBE request
                 // * `message` - a subscription message
                 //
-                // Additionally redis will:
+                // Additionally valkey will:
                 // * accept a few regular commands while in pubsub mode: PING, RESET and QUIT
                 // * return an error response when a nonexistent or non pubsub compatible command is used
                 //
@@ -129,13 +129,13 @@ impl Decoder for RedisDecoder {
 
                 // Determine if message is a `message` subscription message
                 //
-                // Because PING, RESET, QUIT and error responses never return a RedisFrame::Array starting with `message`,
+                // Because PING, RESET, QUIT and error responses never return a ValkeyFrame::Array starting with `message`,
                 // they have no way to collide with the `message` value of a subscription message.
                 // So while we are in subscription mode we can use that to determine if an
                 // incoming message is a subscription message.
                 let is_subscription_message = if self.is_subscribed {
-                    if let Some(Frame::Redis(RedisFrame::Array(array))) = message.frame() {
-                        if let [RedisFrame::BulkString(ty), ..] = array.as_slice() {
+                    if let Some(Frame::Valkey(ValkeyFrame::Array(array))) = message.frame() {
+                        if let [ValkeyFrame::BulkString(ty), ..] = array.as_slice() {
                             ty.as_ref() == b"message"
                         } else {
                             false
@@ -158,15 +158,15 @@ impl Decoder for RedisDecoder {
                 if !is_subscription_message {
                     if let Some(rx) = self.request_header_rx.as_ref() {
                         let request_info = rx.recv().map_err(|_| {
-                            CodecReadError::Parser(anyhow!("redis encoder half was lost"))
+                            CodecReadError::Parser(anyhow!("valkey encoder half was lost"))
                         })?;
                         message.set_request_id(request_info.id);
                         match request_info.ty {
                             RequestType::Subscribe | RequestType::Unsubscribe => {
-                                if let Some(Frame::Redis(RedisFrame::Array(array))) =
+                                if let Some(Frame::Valkey(ValkeyFrame::Array(array))) =
                                     message.frame()
                                 {
-                                    if let Some(RedisFrame::Integer(
+                                    if let Some(ValkeyFrame::Integer(
                                         number_of_subscribed_channels,
                                     )) = array.get(2)
                                     {
@@ -188,7 +188,7 @@ impl Decoder for RedisDecoder {
     }
 }
 
-impl RedisEncoder {
+impl ValkeyEncoder {
     pub fn new(
         request_header_tx: Option<mpsc::Sender<RequestInfo>>,
         direction: Direction,
@@ -202,18 +202,18 @@ impl RedisEncoder {
     }
 }
 
-impl Encoder<Messages> for RedisEncoder {
+impl Encoder<Messages> for ValkeyEncoder {
     type Error = CodecWriteError;
 
     fn encode(&mut self, item: Messages, dst: &mut BytesMut) -> Result<(), Self::Error> {
         item.into_iter().try_for_each(|mut m| {
             let start = dst.len();
-            m.ensure_message_type(MessageType::Redis)
+            m.ensure_message_type(MessageType::Valkey)
                 .map_err(CodecWriteError::Encoder)?;
             let received_at = m.received_from_source_or_sink_at;
             if let Some(tx) = self.request_header_tx.as_ref() {
-                let ty = if let Some(Frame::Redis(RedisFrame::Array(array))) = m.frame() {
-                    if let Some(RedisFrame::BulkString(bytes)) = array.first() {
+                let ty = if let Some(Frame::Valkey(ValkeyFrame::Array(array))) = m.frame() {
+                    if let Some(ValkeyFrame::BulkString(bytes)) = array.first() {
                         match bytes.to_ascii_uppercase().as_slice() {
                             b"SUBSCRIBE" | b"PSUBSCRIBE" | b"SSUBSCRIBE" => RequestType::Subscribe,
                             b"UNSUBSCRIBE" | b"PUNSUBSCRIBE" | b"SUNSUBSCRIBE" => {
@@ -237,17 +237,17 @@ impl Encoder<Messages> for RedisEncoder {
                     Ok(())
                 }
                 Encodable::Frame(frame) => {
-                    let item = frame.into_redis().unwrap();
+                    let item = frame.into_valkey().unwrap();
                     extend_encode(dst, &item)
                         .map(|_| ())
-                        .map_err(|e| anyhow!("Redis encoding error: {} - {:#?}", e, item))
+                        .map_err(|e| anyhow!("Valkey encoding error: {} - {:#?}", e, item))
                 }
             };
             if let Some(received_at) = received_at {
                 self.message_latency.record(received_at.elapsed());
             }
             tracing::debug!(
-                "{}: outgoing redis message:\n{}",
+                "{}: outgoing valkey message:\n{}",
                 self.direction,
                 pretty_hex::pretty_hex(&&dst[start..])
             );
@@ -257,9 +257,9 @@ impl Encoder<Messages> for RedisEncoder {
 }
 
 #[cfg(test)]
-mod redis_tests {
+mod valkey_tests {
 
-    use crate::codec::{redis::RedisCodecBuilder, CodecBuilder, Direction};
+    use crate::codec::{redis::ValkeyCodecBuilder, CodecBuilder, Direction};
     use bytes::BytesMut;
     use hex_literal::hex;
     use pretty_assertions::assert_eq;
@@ -289,7 +289,7 @@ mod redis_tests {
 
     fn test_frame(raw_frame: &[u8]) {
         let (mut decoder, mut encoder) =
-            RedisCodecBuilder::new(Direction::Source, "redis".to_owned()).build();
+            ValkeyCodecBuilder::new(Direction::Source, "valkey".to_owned()).build();
         let message = decoder
             .decode(&mut BytesMut::from(raw_frame))
             .unwrap()

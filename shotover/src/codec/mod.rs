@@ -59,7 +59,7 @@ pub enum CodecState {
         compression: Compression,
     },
     #[cfg(feature = "redis")]
-    Redis,
+    Valkey,
     #[cfg(feature = "kafka")]
     Kafka(KafkaCodecState),
     Dummy,

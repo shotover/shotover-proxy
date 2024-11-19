@@ -87,7 +87,7 @@ mod topology_tests {
     use crate::transforms::null::NullSinkConfig;
     use crate::transforms::TransformConfig;
     use crate::{
-        sources::{redis::RedisConfig, Source, SourceConfig},
+        sources::{redis::ValkeyConfig, Source, SourceConfig},
         transforms::{
             parallel_map::ParallelMapConfig, redis::cache::RedisConfig as RedisCacheConfig,
         },
@@ -96,8 +96,8 @@ mod topology_tests {
     use std::collections::HashMap;
     use tokio::sync::watch;
 
-    fn create_source_from_chain_redis(chain: Vec<Box<dyn TransformConfig>>) -> Vec<SourceConfig> {
-        vec![SourceConfig::Redis(RedisConfig {
+    fn create_source_from_chain_valkey(chain: Vec<Box<dyn TransformConfig>>) -> Vec<SourceConfig> {
+        vec![SourceConfig::Valkey(ValkeyConfig {
             name: "foo".to_string(),
             listen_addr: "127.0.0.1:0".to_string(),
             connection_limit: None,
@@ -123,10 +123,10 @@ mod topology_tests {
         })]
     }
 
-    async fn run_test_topology_redis(
+    async fn run_test_topology_valkey(
         chain: Vec<Box<dyn TransformConfig>>,
     ) -> anyhow::Result<Vec<Source>> {
-        let sources = create_source_from_chain_redis(chain);
+        let sources = create_source_from_chain_valkey(chain);
 
         let topology = Topology { sources };
 
@@ -155,7 +155,7 @@ foo source:
     Chain cannot be empty
 "#;
 
-        let error = run_test_topology_redis(vec![])
+        let error = run_test_topology_valkey(vec![])
             .await
             .unwrap_err()
             .to_string();
@@ -164,7 +164,7 @@ foo source:
 
     #[tokio::test]
     async fn test_validate_chain_valid_chain() {
-        run_test_topology_redis(vec![Box::new(DebugPrinterConfig), Box::new(NullSinkConfig)])
+        run_test_topology_valkey(vec![Box::new(DebugPrinterConfig), Box::new(NullSinkConfig)])
             .await
             .unwrap();
     }
@@ -183,7 +183,7 @@ foo source:
       Check https://docs.shotover.io/transforms.html#coalesce for more information.
 "#;
 
-        let error = run_test_topology_redis(vec![
+        let error = run_test_topology_valkey(vec![
             Box::new(CoalesceConfig {
                 flush_when_buffered_message_count: None,
                 flush_when_millis_since_last_flush: None,
@@ -205,7 +205,7 @@ foo source:
     Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
 "#;
 
-        let error = run_test_topology_redis(vec![
+        let error = run_test_topology_valkey(vec![
             Box::new(DebugPrinterConfig),
             Box::new(NullSinkConfig),
             Box::new(NullSinkConfig),
@@ -225,7 +225,7 @@ foo source:
     Non-terminating transform "DebugPrinter" is last in chain. Last transform must be terminating.
 "#;
 
-        let error = run_test_topology_redis(vec![
+        let error = run_test_topology_valkey(vec![
             Box::new(DebugPrinterConfig),
             Box::new(DebugPrinterConfig),
             Box::new(DebugPrinterConfig),
@@ -246,7 +246,7 @@ foo source:
     Non-terminating transform "DebugPrinter" is last in chain. Last transform must be terminating.
 "#;
 
-        let error = run_test_topology_redis(vec![
+        let error = run_test_topology_valkey(vec![
             Box::new(DebugPrinterConfig),
             Box::new(DebugPrinterConfig),
             Box::new(NullSinkConfig),
@@ -260,7 +260,7 @@ foo source:
     }
 
     #[tokio::test]
-    async fn test_validate_chain_valid_subchain_cassandra_redis_cache() {
+    async fn test_validate_chain_valid_subchain_cassandra_valkey_cache() {
         let caching_schema = HashMap::new();
 
         run_test_topology_cassandra(vec![
@@ -281,7 +281,7 @@ foo source:
     }
 
     #[tokio::test]
-    async fn test_validate_chain_invalid_subchain_cassandra_redis_cache() {
+    async fn test_validate_chain_invalid_subchain_cassandra_valkey_cache() {
         let expected = r#"Topology errors
 foo source:
   foo chain:
@@ -313,7 +313,7 @@ foo source:
 
     #[tokio::test]
     async fn test_validate_chain_valid_subchain_parallel_map() {
-        run_test_topology_redis(vec![
+        run_test_topology_valkey(vec![
             Box::new(DebugPrinterConfig),
             Box::new(DebugPrinterConfig),
             Box::new(ParallelMapConfig {
@@ -340,7 +340,7 @@ foo source:
         Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
 "#;
 
-        let error = run_test_topology_redis(vec![
+        let error = run_test_topology_valkey(vec![
             Box::new(DebugPrinterConfig),
             Box::new(DebugPrinterConfig),
             Box::new(ParallelMapConfig {
@@ -378,7 +378,7 @@ foo source:
             Box::new(NullSinkConfig),
         ]);
 
-        let error = run_test_topology_redis(vec![
+        let error = run_test_topology_valkey(vec![
             Box::new(DebugPrinterConfig),
             Box::new(DebugPrinterConfig),
             Box::new(ParallelMapConfig {
@@ -409,7 +409,7 @@ foo source:
             Box::new(DebugPrinterConfig),
         ]);
 
-        let error = run_test_topology_redis(vec![
+        let error = run_test_topology_valkey(vec![
             Box::new(DebugPrinterConfig),
             Box::new(DebugPrinterConfig),
             Box::new(ParallelMapConfig {
@@ -442,7 +442,7 @@ foo source:
             Box::new(DebugPrinterConfig),
         ]);
 
-        let error = run_test_topology_redis(vec![
+        let error = run_test_topology_valkey(vec![
             Box::new(DebugPrinterConfig),
             Box::new(DebugPrinterConfig),
             Box::new(ParallelMapConfig {
@@ -464,8 +464,8 @@ foo source:
 Source name "foo" occurred more than once. Make sure all source names are unique. The names will be used in logging and metrics.
 "#;
 
-        let mut sources = create_source_from_chain_redis(vec![Box::new(NullSinkConfig)]);
-        sources.extend(create_source_from_chain_redis(vec![Box::new(
+        let mut sources = create_source_from_chain_valkey(vec![Box::new(NullSinkConfig)]);
+        sources.extend(create_source_from_chain_valkey(vec![Box::new(
             NullSinkConfig,
         )]));
 
