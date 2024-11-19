@@ -305,7 +305,9 @@ impl RedisSinkCluster {
                                     Ok(Response {
                                         response: Err(e), ..
                                     }) => Some((None, ValkeyFrame::Error(e.to_string().into()))),
-                                    Err(e) => Some((None, ValkeyFrame::Error(e.to_string().into()))),
+                                    Err(e) => {
+                                        Some((None, ValkeyFrame::Error(e.to_string().into())))
+                                    }
                                 }
                             }
                         })

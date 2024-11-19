@@ -97,9 +97,9 @@ impl Decoder for ValkeyDecoder {
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
         let received_at = Instant::now();
-        match decode_bytes_mut(src)
-            .map_err(|e| CodecReadError::Parser(anyhow!(e).context("Error decoding valkey frame")))?
-        {
+        match decode_bytes_mut(src).map_err(|e| {
+            CodecReadError::Parser(anyhow!(e).context("Error decoding valkey frame"))
+        })? {
             Some((frame, _size, bytes)) => {
                 tracing::debug!(
                     "{}: incoming valkey message:\n{}",

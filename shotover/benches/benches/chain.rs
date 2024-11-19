@@ -106,11 +106,13 @@ fn criterion_benchmark(c: &mut Criterion) {
             "bench",
         );
         let chain_state = ChainState::new_with_addr(
-            vec![Message::from_frame(Frame::Valkey(ValkeyFrame::Array(vec![
-                ValkeyFrame::BulkString(Bytes::from_static(b"SET")),
-                ValkeyFrame::BulkString(Bytes::from_static(b"foo")),
-                ValkeyFrame::BulkString(Bytes::from_static(b"bar")),
-            ])))],
+            vec![Message::from_frame(Frame::Valkey(ValkeyFrame::Array(
+                vec![
+                    ValkeyFrame::BulkString(Bytes::from_static(b"SET")),
+                    ValkeyFrame::BulkString(Bytes::from_static(b"foo")),
+                    ValkeyFrame::BulkString(Bytes::from_static(b"bar")),
+                ],
+            )))],
             "127.0.0.1:6379".parse().unwrap(),
         );
 
