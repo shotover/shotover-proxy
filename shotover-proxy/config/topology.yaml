@@ -2,9 +2,9 @@
 ---
 # The list of sources.
 sources:
-  # The source, change from Redis to the source type of the database protocol you are receiving messages in.
+  # The source, change from Valkey to the source type of the database protocol you are receiving messages in.
   # For a list of possible sources: https://docs.shotover.io/sources
-  - Redis:
+  - Valkey:
       name: "redis"
       listen_addr: "127.0.0.1:6379"
       chain:
