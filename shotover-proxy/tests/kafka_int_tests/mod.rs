@@ -585,7 +585,12 @@ async fn cluster_2_racks_multi_shotover(#[case] driver: KafkaDriver) {
 
     let connection_builder = KafkaConnectionBuilder::new(driver, "127.0.0.1:9192");
     test_cases::cluster_test_suite(&connection_builder).await;
-    test_cases::describe_log_dirs(&connection_builder).await;
+
+    #[allow(irrefutable_let_patterns)]
+    if let KafkaDriver::Java = driver {
+        // describeLogDirs is only on java driver
+        test_cases::describe_log_dirs(&connection_builder).await;
+    }
 
     for shotover in shotovers {
         tokio::time::timeout(
