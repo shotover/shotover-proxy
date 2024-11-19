@@ -16,6 +16,6 @@ sources:
             buffer_size: 10000
             chain:
               - DebugReturner:
-                  Redis: "42"
+                  Valkey: "42"
         - DebugReturner:
-            Redis: "42"
+            Valkey: "42"

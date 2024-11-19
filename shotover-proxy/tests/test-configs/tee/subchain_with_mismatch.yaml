@@ -18,6 +18,6 @@ sources:
               - QueryTypeFilter:
                   DenyList: [Read]
               - DebugReturner:
-                  Redis: "41"
+                  Valkey: "41"
         - DebugReturner:
-            Redis: "42"
+            Valkey: "42"
