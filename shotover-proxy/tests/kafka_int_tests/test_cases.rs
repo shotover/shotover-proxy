@@ -3,11 +3,11 @@ use std::{collections::HashMap, time::Duration};
 use test_helpers::{
     connection::kafka::{
         Acl, AclOperation, AclPermissionType, AlterConfig, ConfigEntry, ConsumerConfig,
-        ConsumerGroupDescription, ExpectedResponse, IsolationLevel, KafkaAdmin,
-        KafkaConnectionBuilder, KafkaConsumer, KafkaDriver, KafkaProducer, ListOffsetsResultInfo,
-        NewPartition, NewPartitionReassignment, NewTopic, OffsetAndMetadata, OffsetSpec, Record,
-        RecordsToDelete, ResourcePatternType, ResourceSpecifier, ResourceType, TopicPartition,
-        TransactionDescription,
+        ConsumerGroupDescription, DescribeReplicaLogDirInfo, ExpectedResponse, IsolationLevel,
+        KafkaAdmin, KafkaConnectionBuilder, KafkaConsumer, KafkaDriver, KafkaProducer,
+        ListOffsetsResultInfo, NewPartition, NewPartitionReassignment, NewTopic, OffsetAndMetadata,
+        OffsetSpec, Record, RecordsToDelete, ResourcePatternType, ResourceSpecifier, ResourceType,
+        TopicPartition, TopicPartitionReplica, TransactionDescription,
     },
     docker_compose::DockerCompose,
 };
@@ -1803,6 +1803,107 @@ async fn create_and_list_partition_reassignments(connection_builder: &KafkaConne
     assert_eq!(
         reassignment.adding_replica_broker_ids,
         expected_adding_replica_broker_ids
+    );
+}
+
+// Due to `AdminClient.describeLogDirs` querying specified brokers directly, this test is specialized to a 2 shotover node, 6 kafka node cluster.
+// So we call it directly from such a test, instead of including it in the standard test suite.
+pub async fn describe_log_dirs(connection_builder: &KafkaConnectionBuilder) {
+    let admin = connection_builder.connect_admin().await;
+
+    // Create a topic that is replicated to every node in the cluster
+    admin
+        .create_topics_and_wait(&[
+            NewTopic {
+                name: "describe_logs_test",
+                num_partitions: 1,
+                replication_factor: 6,
+            },
+            NewTopic {
+                name: "describe_logs_test2",
+                num_partitions: 1,
+                replication_factor: 6,
+            },
+        ])
+        .await;
+    let producer = connection_builder.connect_producer("all", 100).await;
+    producer
+        .assert_produce(
+            Record {
+                payload: "initial",
+                topic_name: "describe_logs_test",
+                key: None,
+            },
+            Some(0),
+        )
+        .await;
+
+    // describe the topic and assert contains path
+    let result = admin
+        .describe_replica_log_dirs(&[
+            TopicPartitionReplica {
+                topic_name: "describe_logs_test".to_owned(),
+                partition: 0,
+                broker_id: 0,
+            },
+            TopicPartitionReplica {
+                topic_name: "describe_logs_test".to_owned(),
+                partition: 0,
+                broker_id: 1,
+            },
+            TopicPartitionReplica {
+                topic_name: "describe_logs_test2".to_owned(),
+                partition: 0,
+                broker_id: 0,
+            },
+        ])
+        .await;
+
+    /// Assert that the path in the DescribeLogsDir response matches the custom format used by shotover.
+    /// This format looks like: actual-kafka-broker-id3:/original/kafka/path/here
+    fn assert_valid_path(info: &DescribeReplicaLogDirInfo) {
+        let id = info
+            .path
+            .as_ref()
+            .unwrap()
+            .strip_prefix("actual-kafka-broker-id")
+            .unwrap()
+            .strip_suffix(":/bitnami/kafka/data")
+            .unwrap();
+        let id: i32 = id.parse().unwrap();
+        assert!(
+            id < 6,
+            "There are only 6 brokers so the broker id must be between 0-5 inclusive but was instead {id}"
+        );
+    }
+
+    assert_eq!(result.len(), 3);
+    assert_valid_path(
+        result
+            .get(&TopicPartitionReplica {
+                topic_name: "describe_logs_test".to_owned(),
+                partition: 0,
+                broker_id: 0,
+            })
+            .unwrap(),
+    );
+    assert_valid_path(
+        result
+            .get(&TopicPartitionReplica {
+                topic_name: "describe_logs_test".to_owned(),
+                partition: 0,
+                broker_id: 1,
+            })
+            .unwrap(),
+    );
+    assert_valid_path(
+        result
+            .get(&TopicPartitionReplica {
+                topic_name: "describe_logs_test2".to_owned(),
+                partition: 0,
+                broker_id: 0,
+            })
+            .unwrap(),
     );
 }
 
