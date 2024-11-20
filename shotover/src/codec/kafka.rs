@@ -154,7 +154,7 @@ impl Decoder for KafkaDecoder {
             } else if self.expect_raw_sasl.is_some() {
                 Meta {
                     request_header: RequestHeader {
-                        api_key: ApiKey::SaslAuthenticateKey,
+                        api_key: ApiKey::SaslAuthenticate,
                         version: 0,
                     },
                     // This code path is only used for requests, so message_id can be None.
@@ -210,7 +210,7 @@ impl Decoder for KafkaDecoder {
                 }
             } else {
                 // set expect_raw_sasl for requests
-                if meta.request_header.api_key == ApiKey::SaslHandshakeKey
+                if meta.request_header.api_key == ApiKey::SaslHandshake
                     && meta.request_header.version == 0
                 {
                     // Only parse the full frame once we manually check its a v0 sasl handshake
@@ -326,7 +326,7 @@ impl Encoder<Messages> for KafkaEncoder {
                 if let Some(tx) = self.request_header_tx.as_ref() {
                     let header = if message_contains_raw_sasl {
                         RequestHeader {
-                            api_key: ApiKey::SaslAuthenticateKey,
+                            api_key: ApiKey::SaslAuthenticate,
                             version: 0,
                         }
                     } else {
