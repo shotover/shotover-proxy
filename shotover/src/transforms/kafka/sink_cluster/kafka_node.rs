@@ -241,7 +241,7 @@ impl ConnectionFactory {
     fn create_auth_request(bytes: Vec<u8>) -> Message {
         Message::from_frame(Frame::Kafka(KafkaFrame::Request {
             header: RequestHeader::default()
-                .with_request_api_key(ApiKey::SaslAuthenticateKey as i16)
+                .with_request_api_key(ApiKey::SaslAuthenticate as i16)
                 .with_request_api_version(2),
             body: RequestBody::SaslAuthenticate(
                 SaslAuthenticateRequest::default().with_auth_bytes(bytes.into()),
