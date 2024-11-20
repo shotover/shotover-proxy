@@ -12,9 +12,10 @@ use kafka_protocol::messages::{
     list_offsets_request::ListOffsetsTopic, offset_fetch_request::OffsetFetchRequestGroup,
     offset_for_leader_epoch_request::OffsetForLeaderTopic, produce_request::TopicProduceData,
     AddPartitionsToTxnRequest, BrokerId, DeleteGroupsRequest, DeleteRecordsRequest,
-    DescribeGroupsRequest, DescribeProducersRequest, DescribeTransactionsRequest, GroupId,
-    ListGroupsRequest, ListOffsetsRequest, ListTransactionsRequest, OffsetFetchRequest,
-    OffsetForLeaderEpochRequest, ProduceRequest, TopicName, TransactionalId,
+    DescribeGroupsRequest, DescribeLogDirsRequest, DescribeProducersRequest,
+    DescribeTransactionsRequest, GroupId, ListGroupsRequest, ListOffsetsRequest,
+    ListTransactionsRequest, OffsetFetchRequest, OffsetForLeaderEpochRequest, ProduceRequest,
+    TopicName, TransactionalId,
 };
 use std::collections::HashMap;
 
@@ -278,6 +279,34 @@ impl RequestSplitAndRouter for ListTransactionsSplitAndRouter {
 
     fn reassemble(_request: &mut Self::Request, _item: Self::SubRequests) {
         // No need to reassemble, each ListTransactions is an exact clone of the original
+    }
+}
+
+pub struct DescribeLogDirsSplitAndRouter;
+
+impl RequestSplitAndRouter for DescribeLogDirsSplitAndRouter {
+    type Request = DescribeLogDirsRequest;
+    type SubRequests = ();
+
+    fn split_by_destination(
+        transform: &mut KafkaSinkCluster,
+        _request: &mut Self::Request,
+    ) -> HashMap<BrokerId, Self::SubRequests> {
+        transform.split_request_by_routing_to_all_brokers()
+    }
+
+    fn get_request_frame(request: &mut Message) -> &mut Self::Request {
+        match request.frame() {
+            Some(Frame::Kafka(KafkaFrame::Request {
+                body: RequestBody::DescribeLogDirs(request),
+                ..
+            })) => request,
+            _ => unreachable!(),
+        }
+    }
+
+    fn reassemble(_request: &mut Self::Request, _item: Self::SubRequests) {
+        // No need to reassemble, each DescribeLogDirs is an exact clone of the original
     }
 }
 

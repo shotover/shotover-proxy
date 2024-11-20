@@ -539,6 +539,18 @@ impl KafkaAdmin {
             }
         }
     }
+    pub async fn describe_replica_log_dirs(
+        &self,
+        topic_partitions: &[TopicPartitionReplica],
+    ) -> HashMap<TopicPartitionReplica, DescribeReplicaLogDirInfo> {
+        match self {
+            #[cfg(feature = "kafka-cpp-driver-tests")]
+            Self::Cpp(_) => {
+                panic!("rdkafka-rs driver does not support describe_replica_log_dirs")
+            }
+            Self::Java(java) => java.describe_replica_log_dirs(topic_partitions).await,
+        }
+    }
 
     pub async fn elect_leaders(&self, topic_partitions: &[TopicPartition]) -> Result<()> {
         match self {
@@ -628,6 +640,18 @@ pub struct NewPartition<'a> {
 pub struct TopicPartition {
     pub topic_name: String,
     pub partition: i32,
+}
+
+#[derive(Clone, Eq, PartialEq, Hash, Debug)]
+pub struct TopicPartitionReplica {
+    pub topic_name: String,
+    pub partition: i32,
+    pub broker_id: i32,
+}
+
+#[derive(Clone, Eq, PartialEq, Hash, Debug)]
+pub struct DescribeReplicaLogDirInfo {
+    pub path: Option<String>,
 }
 
 pub enum ResourceSpecifier<'a> {
