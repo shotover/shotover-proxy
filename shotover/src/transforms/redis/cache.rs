@@ -80,15 +80,15 @@ impl From<&TableCacheSchemaConfig> for TableCacheSchema {
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
-pub struct RedisConfig {
+pub struct ValkeyConfig {
     pub caching_schema: HashMap<String, TableCacheSchemaConfig>,
     pub chain: TransformChainConfig,
 }
 
-const NAME: &str = "RedisCache";
-#[typetag::serde(name = "RedisCache")]
+const NAME: &str = "ValkeyCache";
+#[typetag::serde(name = "ValkeyCache")]
 #[async_trait(?Send)]
-impl TransformConfig for RedisConfig {
+impl TransformConfig for ValkeyConfig {
     async fn get_builder(
         &self,
         _transform_context: TransformContextConfig,
@@ -182,7 +182,7 @@ impl SimpleRedisCache {
             if let CacheableState::CacheRow = is_cacheable(query) {
                 if let Some(table_name) = query.get_table_name() {
                     if let Some(table_cache_schema) = self.caching_schema.get(table_name) {
-                        match build_redis_key_from_cql3(query, table_cache_schema) {
+                        match build_valkey_key_from_cql3(query, table_cache_schema) {
                             Ok(address) => {
                                 return Some(Message::from_frame_diverged(
                                     Frame::Valkey(ValkeyFrame::Array(vec![
@@ -193,7 +193,7 @@ impl SimpleRedisCache {
                                     request,
                                 ));
                             }
-                            Err(_e) => {} // TODO match Err(()) here or just have build_redis_key_from_cql3 return Option
+                            Err(_e) => {} // TODO match Err(()) here or just have build_valkey_key_from_cql3 return Option
                         }
                     }
                 }
@@ -203,25 +203,25 @@ impl SimpleRedisCache {
         None
     }
 
-    fn unwrap_cache_response(&mut self, redis_responses: Messages) {
-        for mut redis_response in redis_responses {
+    fn unwrap_cache_response(&mut self, valkey_responses: Messages) {
+        for mut valkey_response in valkey_responses {
             let original_request = self
                 .pending_cache_requests
                 .remove(
-                    &redis_response
+                    &valkey_response
                         .request_id()
-                        .expect("This must have a request, since we dont use redis pubsub"),
+                        .expect("This must have a request, since we dont use valkey pubsub"),
                 )
-                .expect("There must be a pending request, since we store a pending request for all redis requests");
-            let cassandra_frame = match redis_response.frame() {
-                Some(Frame::Valkey(redis_frame)) => {
-                    match redis_frame {
+                .expect("There must be a pending request, since we store a pending request for all valkey requests");
+            let cassandra_frame = match valkey_response.frame() {
+                Some(Frame::Valkey(valkey_frame)) => {
+                    match valkey_frame {
                         ValkeyFrame::Error(err) => {
                             error!("Redis cache server returned error: {err:?}");
                             None
                         }
-                        ValkeyFrame::BulkString(redis_bytes) => {
-                            match CassandraFrame::from_bytes(redis_bytes.clone(), Compression::None)
+                        ValkeyFrame::BulkString(valkey_bytes) => {
+                            match CassandraFrame::from_bytes(valkey_bytes.clone(), Compression::None)
                             {
                                 Ok(mut response_frame) => {
                                     match original_request.metadata() {
@@ -266,7 +266,7 @@ impl SimpleRedisCache {
                     self.cache_hit_cassandra_responses
                         .push(Message::from_frame_diverged(
                             Frame::Cassandra(cassandra_frame),
-                            &redis_response,
+                            &valkey_response,
                         ));
                 }
                 None => self.cache_miss_cassandra_requests.push(original_request),
@@ -279,27 +279,27 @@ impl SimpleRedisCache {
         cassandra_requests: &mut Messages,
         local_addr: SocketAddr,
     ) -> Result<()> {
-        let mut redis_requests = Vec::with_capacity(cassandra_requests.len());
+        let mut valkey_requests = Vec::with_capacity(cassandra_requests.len());
 
         for mut cassandra_request in cassandra_requests.drain(..) {
             match self.build_cache_query(&mut cassandra_request) {
-                // The request is cacheable, store the cassandra request for later and send the redis request
-                Some(redis_request) => {
+                // The request is cacheable, store the cassandra request for later and send the valkey request
+                Some(valkey_request) => {
                     self.pending_cache_requests
                         .insert(cassandra_request.id(), cassandra_request);
-                    redis_requests.push(redis_request);
+                    valkey_requests.push(valkey_request);
                 }
                 // The request is not cacheable, add it directly to the cache miss list
                 None => self.cache_miss_cassandra_requests.push(cassandra_request),
             }
         }
 
-        let redis_responses = self
+        let valkey_responses = self
             .cache_chain
-            .process_request(&mut ChainState::new_with_addr(redis_requests, local_addr))
+            .process_request(&mut ChainState::new_with_addr(valkey_requests, local_addr))
             .await?;
 
-        self.unwrap_cache_response(redis_responses);
+        self.unwrap_cache_response(valkey_responses);
 
         Ok(())
     }
@@ -315,7 +315,7 @@ impl SimpleRedisCache {
         )
     }
 
-    /// clear the cache for the single row specified by the redis_key
+    /// clear the cache for the single row specified by the valkey_key
     fn delete_row(
         &mut self,
         statement: &CassandraStatement,
@@ -325,7 +325,7 @@ impl SimpleRedisCache {
             if let Some(table_cache_schema) = self.caching_schema.get(table_name) {
                 if let Ok(address) =
                     // TODO: handle errors
-                    build_redis_key_from_cql3(statement, table_cache_schema)
+                    build_valkey_key_from_cql3(statement, table_cache_schema)
                 {
                     return Some(Message::from_frame_at_instant(
                         Frame::Valkey(ValkeyFrame::Array(vec![
@@ -349,7 +349,7 @@ impl SimpleRedisCache {
             if let Some(table_cache_schema) = self.caching_schema.get(table_name) {
                 if let Ok(address) =
                     // TODO: handle errors
-                    build_redis_key_from_cql3(statement, table_cache_schema)
+                    build_valkey_key_from_cql3(statement, table_cache_schema)
                 {
                     if let Some(Frame::Cassandra(frame)) = response.frame() {
                         // TODO: two performance issues here:
@@ -441,10 +441,10 @@ fn is_cacheable(statement: &CassandraStatement) -> CacheableState {
     }
 }
 
-/// build the redis key for the query.
+/// build the valkey key for the query.
 /// key is cassandra partition key (must be completely specified) prepended to
 /// the cassandra range key (may be partially specified)
-fn build_query_redis_key_from_value_map(
+fn build_query_valkey_key_from_value_map(
     table_cache_schema: &TableCacheSchema,
     query_values: &BTreeMap<Operand, Vec<RelationElement>>,
     table_name: &str,
@@ -488,10 +488,10 @@ fn build_query_redis_key_from_value_map(
     Ok(Bytes::from(key))
 }
 
-/// build the redis key for the query.
+/// build the valkey key for the query.
 /// key is cassandra partition key (must be completely specified) prepended to
 /// the cassandra range key (may be partially specified)
-fn build_query_redis_field_from_value_map(
+fn build_query_valkey_field_from_value_map(
     table_cache_schema: &TableCacheSchema,
     mut query_values: BTreeMap<Operand, Vec<RelationElement>>,
     select: &Select,
@@ -542,7 +542,7 @@ struct HashAddress {
     field: Bytes,
 }
 
-fn build_redis_key_from_cql3(
+fn build_valkey_key_from_cql3(
     statement: &CassandraStatement,
     table_cache_schema: &TableCacheSchema,
 ) -> Result<HashAddress> {
@@ -560,12 +560,12 @@ fn build_redis_key_from_cql3(
         CassandraStatement::Select(select) => {
             populate_value_map_from_where_clause(&mut value_map, &select.where_clause);
             Ok(HashAddress {
-                key: build_query_redis_key_from_value_map(
+                key: build_query_valkey_key_from_value_map(
                     table_cache_schema,
                     &value_map,
                     &select.table_name.to_string(),
                 )?,
-                field: build_query_redis_field_from_value_map(
+                field: build_query_valkey_field_from_value_map(
                     table_cache_schema,
                     value_map,
                     select,
@@ -589,7 +589,7 @@ fn build_redis_key_from_cql3(
                 };
             }
             Ok(HashAddress {
-                key: build_query_redis_key_from_value_map(
+                key: build_query_valkey_key_from_value_map(
                     table_cache_schema,
                     &value_map,
                     &insert.table_name.to_string(),
@@ -600,7 +600,7 @@ fn build_redis_key_from_cql3(
         CassandraStatement::Update(update) => {
             populate_value_map_from_where_clause(&mut value_map, &update.where_clause);
             Ok(HashAddress {
-                key: build_query_redis_key_from_value_map(
+                key: build_query_valkey_key_from_value_map(
                     table_cache_schema,
                     &value_map,
                     &update.table_name.to_string(),
@@ -608,7 +608,7 @@ fn build_redis_key_from_cql3(
                 field: Bytes::new(),
             })
         }
-        _ => unreachable!("{statement} should not be passed to build_redis_key_from_cql3",),
+        _ => unreachable!("{statement} should not be passed to build_valkey_key_from_cql3",),
     }
 }
 
@@ -651,7 +651,7 @@ mod test {
     use crate::transforms::debug::printer::DebugPrinter;
     use crate::transforms::null::NullSink;
     use crate::transforms::redis::cache::{
-        build_redis_key_from_cql3, HashAddress, SimpleRedisCacheBuilder, TableCacheSchema,
+        build_valkey_key_from_cql3, HashAddress, SimpleRedisCacheBuilder, TableCacheSchema,
     };
     use crate::transforms::TransformBuilder;
     use bytes::Bytes;
@@ -670,7 +670,7 @@ mod test {
         let ast = parse_statement_single("SELECT * FROM foo WHERE z = 1 AND x = 123 AND y = 965");
 
         assert_eq!(
-            build_redis_key_from_cql3(&ast, &table_cache_schema).unwrap(),
+            build_valkey_key_from_cql3(&ast, &table_cache_schema).unwrap(),
             HashAddress {
                 key: Bytes::from("foo:1:123:965"),
                 field: Bytes::from("* WHERE "),
@@ -688,7 +688,7 @@ mod test {
         let ast = parse_statement_single("INSERT INTO foo (z, v) VALUES (1, 123)");
 
         assert_eq!(
-            build_redis_key_from_cql3(&ast, &table_cache_schema).unwrap(),
+            build_valkey_key_from_cql3(&ast, &table_cache_schema).unwrap(),
             HashAddress {
                 key: Bytes::from("foo:1"),
                 field: Bytes::from(""),
@@ -706,7 +706,7 @@ mod test {
         let ast = parse_statement_single("INSERT INTO foo (z, c, v) VALUES (1, 'yo' , 123)");
 
         assert_eq!(
-            build_redis_key_from_cql3(&ast, &table_cache_schema).unwrap(),
+            build_valkey_key_from_cql3(&ast, &table_cache_schema).unwrap(),
             HashAddress {
                 key: Bytes::from("foo:1:'yo'"),
                 field: Bytes::from(""),
@@ -724,7 +724,7 @@ mod test {
         let ast = parse_statement_single("UPDATE foo SET c = 'yo', v = 123 WHERE z = 1");
 
         assert_eq!(
-            build_redis_key_from_cql3(&ast, &table_cache_schema).unwrap(),
+            build_valkey_key_from_cql3(&ast, &table_cache_schema).unwrap(),
             HashAddress {
                 key: Bytes::from("foo:1"),
                 field: Bytes::from(""),
@@ -740,10 +740,10 @@ mod test {
         };
 
         let ast = parse_statement_single("SELECT * FROM foo WHERE z = 1 AND x = 123 AND y = 965");
-        let query_one = build_redis_key_from_cql3(&ast, &table_cache_schema).unwrap();
+        let query_one = build_valkey_key_from_cql3(&ast, &table_cache_schema).unwrap();
 
         let ast = parse_statement_single("SELECT * FROM foo WHERE y = 965 AND z = 1 AND x = 123");
-        let query_two = build_redis_key_from_cql3(&ast, &table_cache_schema).unwrap();
+        let query_two = build_valkey_key_from_cql3(&ast, &table_cache_schema).unwrap();
 
         // Semantically databases treat the order of AND clauses differently, Cassandra however requires clustering key predicates be in order
         // So here we will just expect the order is correct in the query. TODO: we may need to revisit this as support for other databases is added
@@ -760,7 +760,7 @@ mod test {
         let ast = parse_statement_single("SELECT * FROM foo WHERE z = 1 AND x > 123 AND x < 999");
 
         assert_eq!(
-            build_redis_key_from_cql3(&ast, &table_cache_schema).unwrap(),
+            build_valkey_key_from_cql3(&ast, &table_cache_schema).unwrap(),
             HashAddress {
                 key: Bytes::from("foo:1"),
                 field: Bytes::from("* WHERE x > 123 AND x < 999"),
@@ -778,7 +778,7 @@ mod test {
         let ast = parse_statement_single("SELECT * FROM foo WHERE z = 1 AND x >= 123 AND x <= 999");
 
         assert_eq!(
-            build_redis_key_from_cql3(&ast, &table_cache_schema).unwrap(),
+            build_valkey_key_from_cql3(&ast, &table_cache_schema).unwrap(),
             HashAddress {
                 key: Bytes::from("foo:1"),
                 field: Bytes::from("* WHERE x >= 123 AND x <= 999"),
@@ -798,7 +798,7 @@ mod test {
         );
 
         assert_eq!(
-            build_redis_key_from_cql3(&ast, &table_cache_schema).unwrap(),
+            build_valkey_key_from_cql3(&ast, &table_cache_schema).unwrap(),
             HashAddress {
                 key: Bytes::from("test_cache_keyspace_simple.test_table:1"),
                 field: Bytes::from("id, x, name WHERE ")
@@ -816,7 +816,7 @@ mod test {
         let ast = parse_statement_single("SELECT thing FROM foo WHERE z = 1 AND y = 2");
 
         assert_eq!(
-            build_redis_key_from_cql3(&ast, &table_cache_schema).unwrap(),
+            build_valkey_key_from_cql3(&ast, &table_cache_schema).unwrap(),
             HashAddress {
                 key: Bytes::from("foo:1:2"),
                 field: Bytes::from("thing WHERE ")
@@ -834,7 +834,7 @@ mod test {
         let ast = parse_statement_single("SELECT * FROM foo WHERE z = 1 AND x >= 123");
 
         assert_eq!(
-            build_redis_key_from_cql3(&ast, &table_cache_schema).unwrap(),
+            build_valkey_key_from_cql3(&ast, &table_cache_schema).unwrap(),
             HashAddress {
                 key: Bytes::from("foo:1"),
                 field: Bytes::from("* WHERE x >= 123")
@@ -844,7 +844,7 @@ mod test {
         let ast = parse_statement_single("SELECT * FROM foo WHERE z = 1 AND x <= 123");
 
         assert_eq!(
-            build_redis_key_from_cql3(&ast, &table_cache_schema).unwrap(),
+            build_valkey_key_from_cql3(&ast, &table_cache_schema).unwrap(),
             HashAddress {
                 key: Bytes::from("foo:1"),
                 field: Bytes::from("* WHERE x <= 123")

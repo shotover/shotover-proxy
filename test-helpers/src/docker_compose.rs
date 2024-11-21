@@ -20,7 +20,7 @@ pub fn new_moto() -> DockerCompose {
     docker_compose("tests/transforms/docker-compose-moto.yaml")
 }
 
-pub static IMAGE_WAITERS: [Image; 12] = [
+pub static IMAGE_WAITERS: [Image; 11] = [
     Image {
         name: "motoserver/moto",
         log_regex_to_wait_for: r"Press CTRL\+C to quit",
@@ -29,13 +29,6 @@ pub static IMAGE_WAITERS: [Image; 12] = [
     Image {
         name: "library/redis:5.0.9",
         log_regex_to_wait_for: r"Ready to accept connections",
-        timeout: Duration::from_secs(120),
-    },
-    Image {
-        name: "bitnami/redis-cluster:6.2.12-debian-11-r26",
-        //`Cluster state changed` is created by the node services
-        //`Cluster correctly created` is created by the init service
-        log_regex_to_wait_for: r"Cluster state changed|Cluster correctly created",
         timeout: Duration::from_secs(120),
     },
     Image {

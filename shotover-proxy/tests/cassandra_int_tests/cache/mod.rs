@@ -7,9 +7,9 @@ use test_helpers::connection::cassandra::{run_query, CassandraConnection, Result
 
 pub async fn test(
     cassandra_session: &CassandraConnection,
-    redis_connection: &mut redis::Connection,
+    valkey_connection: &mut redis::Connection,
 ) {
-    redis::cmd("FLUSHDB").execute(redis_connection);
+    redis::cmd("FLUSHDB").execute(valkey_connection);
 
     run_query(cassandra_session, "CREATE KEYSPACE test_cache_keyspace_simple WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };").await;
     run_query(
@@ -104,7 +104,7 @@ pub async fn test(
     )
     .await;
 
-    let result: HashSet<String> = redis_connection.keys("*").unwrap();
+    let result: HashSet<String> = valkey_connection.keys("*").unwrap();
     let expected = HashSet::from([
         "test_cache_keyspace_simple.test_table:1".to_string(),
         "test_cache_keyspace_simple.test_table:2".to_string(),
@@ -113,17 +113,17 @@ pub async fn test(
     assert_eq!(result, expected);
 
     assert::assert_sorted_set_equals(
-        redis_connection,
+        valkey_connection,
         "test_cache_keyspace_simple.test_table:1",
         &["id, x, name WHERE "],
     );
     assert::assert_sorted_set_equals(
-        redis_connection,
+        valkey_connection,
         "test_cache_keyspace_simple.test_table:2",
         &["id, x, name WHERE "],
     );
     assert::assert_sorted_set_equals(
-        redis_connection,
+        valkey_connection,
         "test_cache_keyspace_simple.test_table:3",
         &["id, x, name WHERE "],
     );

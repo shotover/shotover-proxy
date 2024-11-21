@@ -1,14 +1,14 @@
 ---
 sources:
   - Valkey:
-      name: "redis"
+      name: "valkey"
       listen_addr: "127.0.0.1:6379"
       chain:
         # This transform is only here to ensure that the transform correctly handles the case where
-        # redis returns an error due to being unauthenticated
-        - RedisClusterPortsRewrite:
+        # valkey returns an error due to being unauthenticated
+        - ValkeyClusterPortsRewrite:
             new_port: 6379
-        - RedisSinkCluster:
+        - ValkeySinkCluster:
             first_contact_points:
               [
                 "127.0.0.1:2230",

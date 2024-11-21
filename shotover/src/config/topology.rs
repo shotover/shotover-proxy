@@ -89,7 +89,7 @@ mod topology_tests {
     use crate::{
         sources::{redis::ValkeyConfig, Source, SourceConfig},
         transforms::{
-            parallel_map::ParallelMapConfig, redis::cache::RedisConfig as RedisCacheConfig,
+            parallel_map::ParallelMapConfig, redis::cache::ValkeyConfig as ValkeyCacheConfig,
         },
     };
     use pretty_assertions::assert_eq;
@@ -266,7 +266,7 @@ foo source:
         run_test_topology_cassandra(vec![
             Box::new(DebugPrinterConfig),
             Box::new(DebugPrinterConfig),
-            Box::new(RedisCacheConfig {
+            Box::new(ValkeyCacheConfig {
                 chain: TransformChainConfig(vec![
                     Box::new(DebugPrinterConfig),
                     Box::new(DebugPrinterConfig),
@@ -293,7 +293,7 @@ foo source:
         let error = run_test_topology_cassandra(vec![
             Box::new(DebugPrinterConfig),
             Box::new(DebugPrinterConfig),
-            Box::new(RedisCacheConfig {
+            Box::new(ValkeyCacheConfig {
                 chain: TransformChainConfig(vec![
                     Box::new(DebugPrinterConfig),
                     Box::new(NullSinkConfig),

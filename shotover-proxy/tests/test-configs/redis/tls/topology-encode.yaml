@@ -1,7 +1,7 @@
 ---
 sources:
   - Valkey:
-      name: "redis"
+      name: "valkey"
       listen_addr: "127.0.0.1:6379"
       tls:
         certificate_path: "tests/test-configs/redis/tls/certs/localhost.crt"
@@ -10,7 +10,7 @@ sources:
         - DebugForceEncode:
             encode_requests: true
             encode_responses: true
-        - RedisSinkSingle:
+        - ValkeySinkSingle:
             remote_address: "localhost:1111"
             connect_timeout_ms: 3000
             tls:

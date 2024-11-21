@@ -15,19 +15,19 @@ use serde::Serialize;
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
-pub struct RedisClusterPortsRewriteConfig {
+pub struct ValkeyClusterPortsRewriteConfig {
     pub new_port: u16,
 }
 
-const NAME: &str = "RedisClusterPortsRewrite";
-#[typetag::serde(name = "RedisClusterPortsRewrite")]
+const NAME: &str = "ValkeyClusterPortsRewrite";
+#[typetag::serde(name = "ValkeyClusterPortsRewrite")]
 #[async_trait(?Send)]
-impl TransformConfig for RedisClusterPortsRewriteConfig {
+impl TransformConfig for ValkeyClusterPortsRewriteConfig {
     async fn get_builder(
         &self,
         _transform_context: TransformContextConfig,
     ) -> Result<Box<dyn TransformBuilder>> {
-        Ok(Box::new(RedisClusterPortsRewrite::new(self.new_port)))
+        Ok(Box::new(ValkeyClusterPortsRewrite::new(self.new_port)))
     }
 
     fn up_chain_protocol(&self) -> UpChainProtocol {
@@ -39,7 +39,7 @@ impl TransformConfig for RedisClusterPortsRewriteConfig {
     }
 }
 
-impl TransformBuilder for RedisClusterPortsRewrite {
+impl TransformBuilder for ValkeyClusterPortsRewrite {
     fn build(&self, _transform_context: TransformContextBuilder) -> Box<dyn Transform> {
         Box::new(self.clone())
     }
@@ -50,7 +50,7 @@ impl TransformBuilder for RedisClusterPortsRewrite {
 }
 
 #[derive(Clone)]
-pub struct RedisClusterPortsRewrite {
+pub struct ValkeyClusterPortsRewrite {
     new_port: u16,
     request_type: MessageIdMap<RequestType>,
 }
@@ -61,9 +61,9 @@ enum RequestType {
     ClusterNodes,
 }
 
-impl RedisClusterPortsRewrite {
+impl ValkeyClusterPortsRewrite {
     pub fn new(new_port: u16) -> Self {
-        RedisClusterPortsRewrite {
+        ValkeyClusterPortsRewrite {
             new_port,
             request_type: MessageIdMap::default(),
         }
@@ -71,7 +71,7 @@ impl RedisClusterPortsRewrite {
 }
 
 #[async_trait]
-impl Transform for RedisClusterPortsRewrite {
+impl Transform for ValkeyClusterPortsRewrite {
     fn get_name(&self) -> &'static str {
         NAME
     }
@@ -222,7 +222,7 @@ fn rewrite_port_node(frame: &mut Frame, new_port: u16) -> Result<()> {
     Ok(())
 }
 
-/// Determines if the supplied Redis Frame is a `CLUSTER NODES` request
+/// Determines if the supplied Valkey Frame is a `CLUSTER NODES` request
 /// or `CLUSTER REPLICAS` which returns the same response as `CLUSTER NODES`
 fn is_cluster_nodes(frame: &Frame) -> bool {
     if let Frame::Valkey(ValkeyFrame::Array(array)) = frame {
@@ -238,7 +238,7 @@ fn is_cluster_nodes(frame: &Frame) -> bool {
     }
 }
 
-/// Determines if the supplied Redis Frame is a `CLUSTER SLOTS` request
+/// Determines if the supplied Valkey Frame is a `CLUSTER SLOTS` request
 fn is_cluster_slots(frame: &Frame) -> bool {
     if let Frame::Valkey(ValkeyFrame::Array(array)) = frame {
         match array.as_slice() {

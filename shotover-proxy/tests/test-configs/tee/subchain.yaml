@@ -1,7 +1,7 @@
 ---
 sources:
   - Valkey:
-      name: "redis"
+      name: "valkey"
       listen_addr: "127.0.0.1:6379"
       connection_limit: 3000000
       chain:
@@ -10,7 +10,7 @@ sources:
               SubchainOnMismatch:
                 - QueryTypeFilter:
                     DenyList: [Read]
-                - RedisSinkSingle:
+                - ValkeySinkSingle:
                     remote_address: "127.0.0.1:1111"
                     connect_timeout_ms: 3000
             buffer_size: 10000

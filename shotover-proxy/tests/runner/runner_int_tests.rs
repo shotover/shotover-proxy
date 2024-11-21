@@ -57,8 +57,8 @@ async fn test_shotover_shutdown_when_invalid_topology_non_terminating_last() {
 
 Caused by:
     Topology errors
-    redis source:
-      redis chain:
+    valkey source:
+      valkey chain:
         Non-terminating transform \"DebugPrinter\" is last in chain. Last transform must be terminating.
     ")])
     .await;
@@ -76,8 +76,8 @@ async fn test_shotover_shutdown_when_invalid_topology_terminating_not_last() {
 
 Caused by:
     Topology errors
-    redis source:
-      redis chain:
+    valkey source:
+      valkey chain:
         Terminating transform \"NullSink\" is not last in chain. Terminating transform must be last in chain.
     ")])
     .await;
@@ -95,13 +95,13 @@ async fn test_shotover_shutdown_when_topology_invalid_topology_subchains() {
 
 Caused by:
     Topology errors
-    redis1 source:
-      redis1 chain:
+    valkey1 source:
+      valkey1 chain:
         Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
         Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
         Non-terminating transform "DebugPrinter" is last in chain. Last transform must be terminating.
-    redis2 source:
-      redis2 chain:
+    valkey2 source:
+      valkey2 chain:
         ParallelMap:
           parallel_map_chain chain:
             Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
@@ -123,7 +123,7 @@ async fn test_shotover_shutdown_when_protocol_mismatch() {
 
 Caused by:
     Topology errors
-    Transform RedisSinkSingle requires upchain protocol to be one of [Valkey] but was Cassandra
+    Transform ValkeySinkSingle requires upchain protocol to be one of [Valkey] but was Cassandra
     "#,
             )])
         .await;
