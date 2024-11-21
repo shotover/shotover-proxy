@@ -32,11 +32,12 @@ use kafka_protocol::messages::produce_response::{
 };
 use kafka_protocol::messages::{
     AddOffsetsToTxnRequest, AddPartitionsToTxnRequest, AddPartitionsToTxnResponse, ApiKey,
-    BrokerId, DeleteGroupsRequest, DeleteGroupsResponse, DeleteRecordsRequest,
+    BrokerId, ConsumerGroupDescribeRequest, ConsumerGroupDescribeResponse,
+    ConsumerGroupHeartbeatRequest, DeleteGroupsRequest, DeleteGroupsResponse, DeleteRecordsRequest,
     DeleteRecordsResponse, DescribeClusterResponse, DescribeGroupsRequest, DescribeGroupsResponse,
-    DescribeProducersRequest, DescribeProducersResponse, DescribeTransactionsRequest,
-    DescribeTransactionsResponse, EndTxnRequest, FetchRequest, FetchResponse,
-    FindCoordinatorRequest, FindCoordinatorResponse, GroupId, HeartbeatRequest,
+    DescribeLogDirsResponse, DescribeProducersRequest, DescribeProducersResponse,
+    DescribeTransactionsRequest, DescribeTransactionsResponse, EndTxnRequest, FetchRequest,
+    FetchResponse, FindCoordinatorRequest, FindCoordinatorResponse, GroupId, HeartbeatRequest,
     InitProducerIdRequest, JoinGroupRequest, LeaveGroupRequest, ListGroupsResponse,
     ListOffsetsRequest, ListOffsetsResponse, ListTransactionsResponse, MetadataRequest,
     MetadataResponse, OffsetFetchRequest, OffsetFetchResponse, OffsetForLeaderEpochRequest,
@@ -57,12 +58,12 @@ use scram_over_mtls::{
 use serde::{Deserialize, Serialize};
 use shotover_node::{ShotoverNode, ShotoverNodeConfig};
 use split::{
-    AddPartitionsToTxnRequestSplitAndRouter, DeleteGroupsSplitAndRouter,
-    DeleteRecordsRequestSplitAndRouter, DescribeGroupsSplitAndRouter,
-    DescribeProducersRequestSplitAndRouter, DescribeTransactionsSplitAndRouter,
-    ListGroupsSplitAndRouter, ListOffsetsRequestSplitAndRouter, ListTransactionsSplitAndRouter,
-    OffsetFetchSplitAndRouter, OffsetForLeaderEpochRequestSplitAndRouter,
-    ProduceRequestSplitAndRouter, RequestSplitAndRouter,
+    AddPartitionsToTxnRequestSplitAndRouter, ConsumerGroupDescribeSplitAndRouter,
+    DeleteGroupsSplitAndRouter, DeleteRecordsRequestSplitAndRouter, DescribeGroupsSplitAndRouter,
+    DescribeLogDirsSplitAndRouter, DescribeProducersRequestSplitAndRouter,
+    DescribeTransactionsSplitAndRouter, ListGroupsSplitAndRouter, ListOffsetsRequestSplitAndRouter,
+    ListTransactionsSplitAndRouter, OffsetFetchSplitAndRouter,
+    OffsetForLeaderEpochRequestSplitAndRouter, ProduceRequestSplitAndRouter, RequestSplitAndRouter,
 };
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::hash::Hasher;
@@ -736,6 +737,10 @@ impl KafkaSinkCluster {
                 Some(Frame::Kafka(KafkaFrame::Request {
                     body:
                         RequestBody::Heartbeat(HeartbeatRequest { group_id, .. })
+                        | RequestBody::ConsumerGroupHeartbeat(ConsumerGroupHeartbeatRequest {
+                            group_id,
+                            ..
+                        })
                         | RequestBody::SyncGroup(SyncGroupRequest { group_id, .. })
                         | RequestBody::JoinGroup(JoinGroupRequest { group_id, .. })
                         | RequestBody::LeaveGroup(LeaveGroupRequest { group_id, .. })
@@ -743,6 +748,14 @@ impl KafkaSinkCluster {
                     ..
                 })) => {
                     self.store_group(&mut groups, group_id.clone());
+                }
+                Some(Frame::Kafka(KafkaFrame::Request {
+                    body: RequestBody::ConsumerGroupDescribe(describe),
+                    ..
+                })) => {
+                    for group_id in &describe.group_ids {
+                        self.store_group(&mut groups, group_id.clone());
+                    }
                 }
                 Some(Frame::Kafka(KafkaFrame::Request {
                     body: RequestBody::DeleteGroups(delete_groups),
@@ -956,6 +969,13 @@ impl KafkaSinkCluster {
                     self.route_to_group_coordinator(request, group_id);
                 }
                 Some(Frame::Kafka(KafkaFrame::Request {
+                    body: RequestBody::ConsumerGroupHeartbeat(heartbeat),
+                    ..
+                })) => {
+                    let group_id = heartbeat.group_id.clone();
+                    self.route_to_group_coordinator(request, group_id);
+                }
+                Some(Frame::Kafka(KafkaFrame::Request {
                     body: RequestBody::SyncGroup(sync_group),
                     ..
                 })) => {
@@ -1005,6 +1025,12 @@ impl KafkaSinkCluster {
                     ..
                 })) => {
                     self.split_and_route_request::<DescribeGroupsSplitAndRouter>(request)?;
+                }
+                Some(Frame::Kafka(KafkaFrame::Request {
+                    body: RequestBody::ConsumerGroupDescribe(_),
+                    ..
+                })) => {
+                    self.split_and_route_request::<ConsumerGroupDescribeSplitAndRouter>(request)?;
                 }
                 Some(Frame::Kafka(KafkaFrame::Request {
                     body: RequestBody::OffsetDelete(offset_delete),
@@ -1139,6 +1165,10 @@ The connection to the client has been closed."
                     body: RequestBody::ListTransactions(_),
                     ..
                 })) => self.split_and_route_request::<ListTransactionsSplitAndRouter>(request)?,
+                Some(Frame::Kafka(KafkaFrame::Request {
+                    body: RequestBody::DescribeLogDirs(_),
+                    ..
+                })) => self.split_and_route_request::<DescribeLogDirsSplitAndRouter>(request)?,
 
                 // route to random broker
                 Some(Frame::Kafka(KafkaFrame::Request {
@@ -1724,6 +1754,29 @@ The connection to the client has been closed."
         result
     }
 
+    /// This method removes all groups from the ConsumerGroupDescribe request and returns them split up by their destination.
+    /// If any groups are unroutable they will have their BrokerId set to -1
+    fn split_consumer_group_describe_request_by_destination(
+        &mut self,
+        body: &mut ConsumerGroupDescribeRequest,
+    ) -> HashMap<BrokerId, Vec<GroupId>> {
+        let mut result: HashMap<BrokerId, Vec<GroupId>> = Default::default();
+
+        for group in body.group_ids.drain(..) {
+            if let Some(destination) = self.group_to_coordinator_broker.get(&group) {
+                let dest_groups = result.entry(*destination).or_default();
+                dest_groups.push(group);
+            } else {
+                tracing::warn!("no known coordinator for group {group:?}, routing request to a random broker so that a NOT_COORDINATOR or similar error is returned to the client");
+                let destination = BrokerId(-1);
+                let dest_groups = result.entry(destination).or_default();
+                dest_groups.push(group);
+            }
+        }
+
+        result
+    }
+
     /// This method removes all topics from the list offsets request and returns them split up by their destination
     /// If any topics are unroutable they will have their BrokerId set to -1
     fn split_offset_for_leader_epoch_request_by_destination(
@@ -2225,11 +2278,19 @@ The connection to the client has been closed."
                 } else {
                     let drain = self.pending_requests.drain(..combine_responses).map(|x| {
                         if let PendingRequest {
-                            state: PendingRequestState::Received { response, .. },
+                            state:
+                                PendingRequestState::Received {
+                                    response,
+                                    destination,
+                                    ..
+                                },
                             ..
                         } = x
                         {
-                            response
+                            ResponseToBeCombined {
+                                response,
+                                destination,
+                            }
                         } else {
                             unreachable!("Guaranteed by all_combined_received")
                         }
@@ -2293,12 +2354,12 @@ The connection to the client has been closed."
         result
     }
 
-    fn combine_responses(mut drain: impl Iterator<Item = Message>) -> Result<Message> {
+    fn combine_responses(mut drain: impl Iterator<Item = ResponseToBeCombined>) -> Result<Message> {
         // Take this response as base.
         // Then iterate over all remaining combined responses and integrate them into the base.
         let mut base = drain.next().unwrap();
 
-        match base.frame() {
+        match base.response.frame() {
             Some(Frame::Kafka(KafkaFrame::Response {
                 body: ResponseBody::Fetch(base),
                 ..
@@ -2348,6 +2409,14 @@ The connection to the client has been closed."
                 ..
             })) => Self::combine_describe_groups(base, drain)?,
             Some(Frame::Kafka(KafkaFrame::Response {
+                body: ResponseBody::ConsumerGroupDescribe(base),
+                ..
+            })) => Self::combine_consumer_group_describe(base, drain)?,
+            Some(Frame::Kafka(KafkaFrame::Response {
+                body: ResponseBody::DescribeLogDirs(base_body),
+                ..
+            })) => Self::combine_describe_log_dirs(base.destination, base_body, drain)?,
+            Some(Frame::Kafka(KafkaFrame::Response {
                 body: ResponseBody::AddPartitionsToTxn(base),
                 version,
                 ..
@@ -2362,20 +2431,20 @@ The connection to the client has been closed."
             }
         }
 
-        base.invalidate_cache();
+        base.response.invalidate_cache();
 
-        Ok(base)
+        Ok(base.response)
     }
 
     fn combine_fetch_responses(
         base_fetch: &mut FetchResponse,
-        drain: impl Iterator<Item = Message>,
+        drain: impl Iterator<Item = ResponseToBeCombined>,
     ) -> Result<()> {
         for mut next in drain {
             if let Some(Frame::Kafka(KafkaFrame::Response {
                 body: ResponseBody::Fetch(next_fetch),
                 ..
-            })) = next.frame()
+            })) = next.response.frame()
             {
                 for next_response in std::mem::take(&mut next_fetch.responses) {
                     if let Some(base_response) = base_fetch.responses.iter_mut().find(|response| {
@@ -2408,13 +2477,13 @@ The connection to the client has been closed."
 
     fn combine_list_offsets_responses(
         base_list_offsets: &mut ListOffsetsResponse,
-        drain: impl Iterator<Item = Message>,
+        drain: impl Iterator<Item = ResponseToBeCombined>,
     ) -> Result<()> {
         for mut next in drain {
             if let Some(Frame::Kafka(KafkaFrame::Response {
                 body: ResponseBody::ListOffsets(next_list_offsets),
                 ..
-            })) = next.frame()
+            })) = next.response.frame()
             {
                 for next_topic in std::mem::take(&mut next_list_offsets.topics) {
                     if let Some(base_topic) = base_list_offsets
@@ -2448,13 +2517,13 @@ The connection to the client has been closed."
 
     fn combine_offset_for_leader_epoch_responses(
         base_list_offsets: &mut OffsetForLeaderEpochResponse,
-        drain: impl Iterator<Item = Message>,
+        drain: impl Iterator<Item = ResponseToBeCombined>,
     ) -> Result<()> {
         for mut next in drain {
             if let Some(Frame::Kafka(KafkaFrame::Response {
                 body: ResponseBody::OffsetForLeaderEpoch(next_body),
                 ..
-            })) = next.frame()
+            })) = next.response.frame()
             {
                 for next_topic in std::mem::take(&mut next_body.topics) {
                     if let Some(base_topic) = base_list_offsets
@@ -2487,7 +2556,7 @@ The connection to the client has been closed."
 
     fn combine_produce_responses(
         base_produce: &mut ProduceResponse,
-        drain: impl Iterator<Item = Message>,
+        drain: impl Iterator<Item = ResponseToBeCombined>,
     ) -> Result<()> {
         let mut base_responses: HashMap<TopicName, TopicProduceResponse> =
             std::mem::take(&mut base_produce.responses)
@@ -2498,7 +2567,7 @@ The connection to the client has been closed."
             if let Some(Frame::Kafka(KafkaFrame::Response {
                 body: ResponseBody::Produce(next_produce),
                 ..
-            })) = next.frame()
+            })) = next.response.frame()
             {
                 for next_response in std::mem::take(&mut next_produce.responses) {
                     if let Some(base_response) = base_responses.get_mut(&next_response.name) {
@@ -2531,7 +2600,7 @@ The connection to the client has been closed."
 
     fn combine_delete_records(
         base_body: &mut DeleteRecordsResponse,
-        drain: impl Iterator<Item = Message>,
+        drain: impl Iterator<Item = ResponseToBeCombined>,
     ) -> Result<()> {
         let mut base_topics: HashMap<TopicName, DeleteRecordsTopicResult> =
             std::mem::take(&mut base_body.topics)
@@ -2542,7 +2611,7 @@ The connection to the client has been closed."
             if let Some(Frame::Kafka(KafkaFrame::Response {
                 body: ResponseBody::DeleteRecords(next_body),
                 ..
-            })) = next.frame()
+            })) = next.response.frame()
             {
                 for next_response in std::mem::take(&mut next_body.topics) {
                     if let Some(base_response) = base_topics.get_mut(&next_response.name) {
@@ -2574,13 +2643,13 @@ The connection to the client has been closed."
 
     fn combine_delete_groups_responses(
         base_delete_groups: &mut DeleteGroupsResponse,
-        drain: impl Iterator<Item = Message>,
+        drain: impl Iterator<Item = ResponseToBeCombined>,
     ) -> Result<()> {
         for mut next in drain {
             if let Some(Frame::Kafka(KafkaFrame::Response {
                 body: ResponseBody::DeleteGroups(next_delete_groups),
                 ..
-            })) = next.frame()
+            })) = next.response.frame()
             {
                 base_delete_groups
                     .results
@@ -2593,13 +2662,13 @@ The connection to the client has been closed."
 
     fn combine_offset_fetch(
         base_offset_fetch: &mut OffsetFetchResponse,
-        drain: impl Iterator<Item = Message>,
+        drain: impl Iterator<Item = ResponseToBeCombined>,
     ) -> Result<()> {
         for mut next in drain {
             if let Some(Frame::Kafka(KafkaFrame::Response {
                 body: ResponseBody::OffsetFetch(next_offset_fetch),
                 ..
-            })) = next.frame()
+            })) = next.response.frame()
             {
                 base_offset_fetch
                     .groups
@@ -2612,13 +2681,13 @@ The connection to the client has been closed."
 
     fn combine_list_groups(
         base_list_groups: &mut ListGroupsResponse,
-        drain: impl Iterator<Item = Message>,
+        drain: impl Iterator<Item = ResponseToBeCombined>,
     ) -> Result<()> {
         for mut next in drain {
             if let Some(Frame::Kafka(KafkaFrame::Response {
                 body: ResponseBody::ListGroups(next_list_groups),
                 ..
-            })) = next.frame()
+            })) = next.response.frame()
             {
                 base_list_groups
                     .groups
@@ -2631,7 +2700,7 @@ The connection to the client has been closed."
 
     fn combine_describe_producers(
         base: &mut DescribeProducersResponse,
-        drain: impl Iterator<Item = Message>,
+        drain: impl Iterator<Item = ResponseToBeCombined>,
     ) -> Result<()> {
         let mut base_responses: HashMap<TopicName, TopicResponse> =
             std::mem::take(&mut base.topics)
@@ -2642,7 +2711,7 @@ The connection to the client has been closed."
             if let Some(Frame::Kafka(KafkaFrame::Response {
                 body: ResponseBody::DescribeProducers(next),
                 ..
-            })) = next.frame()
+            })) = next.response.frame()
             {
                 for next_response in std::mem::take(&mut next.topics) {
                     if let Some(base_response) = base_responses.get_mut(&next_response.name) {
@@ -2674,13 +2743,13 @@ The connection to the client has been closed."
 
     fn combine_describe_transactions(
         base: &mut DescribeTransactionsResponse,
-        drain: impl Iterator<Item = Message>,
+        drain: impl Iterator<Item = ResponseToBeCombined>,
     ) -> Result<()> {
         for mut next in drain {
             if let Some(Frame::Kafka(KafkaFrame::Response {
                 body: ResponseBody::DescribeTransactions(next),
                 ..
-            })) = next.frame()
+            })) = next.response.frame()
             {
                 base.transaction_states
                     .extend(std::mem::take(&mut next.transaction_states));
@@ -2692,13 +2761,13 @@ The connection to the client has been closed."
 
     fn combine_list_transactions(
         base_list_transactions: &mut ListTransactionsResponse,
-        drain: impl Iterator<Item = Message>,
+        drain: impl Iterator<Item = ResponseToBeCombined>,
     ) -> Result<()> {
         for mut next in drain {
             if let Some(Frame::Kafka(KafkaFrame::Response {
                 body: ResponseBody::ListTransactions(next_list_transactions),
                 ..
-            })) = next.frame()
+            })) = next.response.frame()
             {
                 base_list_transactions
                     .transaction_states
@@ -2711,15 +2780,87 @@ The connection to the client has been closed."
         Ok(())
     }
 
+    fn combine_describe_log_dirs(
+        base_destination: Destination,
+        base_body: &mut DescribeLogDirsResponse,
+        drain: impl Iterator<Item = ResponseToBeCombined>,
+    ) -> Result<()> {
+        Self::prepend_destination_to_log_dir(base_destination, base_body);
+
+        for mut next in drain {
+            if let Some(Frame::Kafka(KafkaFrame::Response {
+                body: ResponseBody::DescribeLogDirs(next_body),
+                ..
+            })) = next.response.frame()
+            {
+                Self::prepend_destination_to_log_dir(next.destination, next_body);
+                base_body
+                    .results
+                    .extend(std::mem::take(&mut next_body.results));
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Rewrite the log dir paths to a custom format to allow results to be disambiguated.
+    /// Usually only 1 file system path can exist on a single broker machine.
+    /// However since shotover represents many different brokers, there can be different log dirs with identical paths associated with a single shotover instance.
+    /// This would be extremely confusing to a user and the client driver could assume that paths are unique.
+    /// So we need to alter the path to include details of which broker the path resides on.
+    ///
+    /// The downsides of this are:
+    /// * This leaks details of the actual kafka cluster to the user
+    /// * The path is no longer a valid path
+    ///
+    /// The only other possible solution I see would be to have shotover error on this request type instead.
+    /// But I think its reasonable to instead take these downsides and provide most of the value of this message type to the user.
+    ///
+    /// For example:
+    /// If the path starts as: /original/log/dir/path
+    /// It will become something like: actual-kafka-broker-id3:/original/log/dir/path
+    fn prepend_destination_to_log_dir(
+        destination: Destination,
+        body: &mut DescribeLogDirsResponse,
+    ) {
+        for result in &mut body.results {
+            let log_dir = result.log_dir.as_str();
+            let altered_log_dir = match destination {
+                Destination::Id(id) => format!("actual-kafka-broker-id{id:?}:{log_dir}"),
+                Destination::ControlConnection => {
+                    unreachable!("DescribeLogDirs are not sent as control connections")
+                }
+            };
+            result.log_dir = StrBytes::from_string(altered_log_dir);
+        }
+    }
+
     fn combine_describe_groups(
         base: &mut DescribeGroupsResponse,
-        drain: impl Iterator<Item = Message>,
+        drain: impl Iterator<Item = ResponseToBeCombined>,
     ) -> Result<()> {
         for mut next in drain {
             if let Some(Frame::Kafka(KafkaFrame::Response {
                 body: ResponseBody::DescribeGroups(next),
                 ..
-            })) = next.frame()
+            })) = next.response.frame()
+            {
+                base.groups.extend(std::mem::take(&mut next.groups));
+            }
+        }
+
+        Ok(())
+    }
+
+    fn combine_consumer_group_describe(
+        base: &mut ConsumerGroupDescribeResponse,
+        drain: impl Iterator<Item = ResponseToBeCombined>,
+    ) -> Result<()> {
+        for mut next in drain {
+            if let Some(Frame::Kafka(KafkaFrame::Response {
+                body: ResponseBody::ConsumerGroupDescribe(next),
+                ..
+            })) = next.response.frame()
             {
                 base.groups.extend(std::mem::take(&mut next.groups));
             }
@@ -2730,13 +2871,13 @@ The connection to the client has been closed."
 
     fn combine_add_partitions_to_txn(
         base_add_partitions_to_txn: &mut AddPartitionsToTxnResponse,
-        drain: impl Iterator<Item = Message>,
+        drain: impl Iterator<Item = ResponseToBeCombined>,
     ) -> Result<()> {
         for mut next in drain {
             if let Some(Frame::Kafka(KafkaFrame::Response {
                 body: ResponseBody::AddPartitionsToTxn(next_add_partitions_to_txn),
                 ..
-            })) = next.frame()
+            })) = next.response.frame()
             {
                 base_add_partitions_to_txn
                     .results_by_transaction
@@ -2929,6 +3070,10 @@ The connection to the client has been closed."
                 ..
             })) => self.handle_group_coordinator_routing_error(&request_ty, heartbeat.error_code),
             Some(Frame::Kafka(KafkaFrame::Response {
+                body: ResponseBody::ConsumerGroupHeartbeat(heartbeat),
+                ..
+            })) => self.handle_group_coordinator_routing_error(&request_ty, heartbeat.error_code),
+            Some(Frame::Kafka(KafkaFrame::Response {
                 body: ResponseBody::SyncGroup(sync_group),
                 ..
             })) => self.handle_group_coordinator_routing_error(&request_ty, sync_group.error_code),
@@ -3102,9 +3247,6 @@ The connection to the client has been closed."
                     // We can consider supporting it when kafka itself starts to support it but we will need to be very
                     // careful to correctly implement the pagination/cursor logic.
                     ApiKey::DescribeTopicPartitionsKey as i16,
-                    // This message type is part of the new consumer group API, we should implement support for it in the future.
-                    // I've disabled it for now to keep the scope down for kafka 3.9 support.
-                    ApiKey::ConsumerGroupDescribeKey as i16,
                 ];
                 api_versions
                     .api_keys
@@ -3878,4 +4020,9 @@ fn collect_broker_ids(shotover_nodes_by_rack: ShotoverNodesByRack) -> Vec<Broker
     };
 
     nodes.iter().map(|node| node.broker_id).collect()
+}
+
+struct ResponseToBeCombined {
+    response: Message,
+    destination: Destination,
 }

@@ -586,6 +586,12 @@ async fn cluster_2_racks_multi_shotover(#[case] driver: KafkaDriver) {
     let connection_builder = KafkaConnectionBuilder::new(driver, "127.0.0.1:9192");
     test_cases::cluster_test_suite(&connection_builder).await;
 
+    #[allow(irrefutable_let_patterns)]
+    if let KafkaDriver::Java = driver {
+        // describeLogDirs is only on java driver
+        test_cases::describe_log_dirs(&connection_builder).await;
+    }
+
     for shotover in shotovers {
         tokio::time::timeout(
             Duration::from_secs(10),
@@ -622,6 +628,16 @@ async fn cluster_2_racks_multi_shotover_kafka_3_9(#[case] driver: KafkaDriver) {
 
     let connection_builder = KafkaConnectionBuilder::new(driver, "127.0.0.1:9192");
     test_cases::cluster_test_suite(&connection_builder).await;
+
+    #[allow(irrefutable_let_patterns)]
+    if let KafkaDriver::Java = driver {
+        // new consumer group protocol is only on java driver
+        test_cases::produce_consume_partitions_new_consumer_group_protocol(
+            &connection_builder,
+            "partitions3_new_consumer_group_protocol",
+        )
+        .await;
+    }
 
     for shotover in shotovers {
         tokio::time::timeout(
