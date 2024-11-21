@@ -104,7 +104,7 @@ impl Transform for QueryTypeFilter {
 mod test {
     use super::Filter;
     use crate::frame::Frame;
-    use crate::frame::RedisFrame;
+    use crate::frame::ValkeyFrame;
     use crate::message::MessageIdMap;
     use crate::message::{Message, QueryType};
     use crate::transforms::chain::TransformAndMetrics;
@@ -125,15 +125,15 @@ mod test {
         let messages: Vec<_> = (0..26)
             .map(|i| {
                 if i % 2 == 0 {
-                    Message::from_frame(Frame::Redis(RedisFrame::Array(vec![
-                        RedisFrame::BulkString("GET".into()),
-                        RedisFrame::BulkString("key".into()),
+                    Message::from_frame(Frame::Valkey(ValkeyFrame::Array(vec![
+                        ValkeyFrame::BulkString("GET".into()),
+                        ValkeyFrame::BulkString("key".into()),
                     ])))
                 } else {
-                    Message::from_frame(Frame::Redis(RedisFrame::Array(vec![
-                        RedisFrame::BulkString("SET".into()),
-                        RedisFrame::BulkString("key".into()),
-                        RedisFrame::BulkString("value".into()),
+                    Message::from_frame(Frame::Valkey(ValkeyFrame::Array(vec![
+                        ValkeyFrame::BulkString("SET".into()),
+                        ValkeyFrame::BulkString("key".into()),
+                        ValkeyFrame::BulkString("value".into()),
                     ])))
                 }
             })
@@ -150,17 +150,17 @@ mod test {
                 if i % 2 == 0 {
                     assert_eq!(
                         frame,
-                        &Frame::Redis(RedisFrame::Error(
+                        &Frame::Valkey(ValkeyFrame::Error(
                             "ERR Message was filtered out by shotover".into()
                         )),
                     )
                 } else {
                     assert_eq!(
                         frame,
-                        &Frame::Redis(RedisFrame::Array(vec![
-                            RedisFrame::BulkString("SET".into()),
-                            RedisFrame::BulkString("key".into()),
-                            RedisFrame::BulkString("value".into()),
+                        &Frame::Valkey(ValkeyFrame::Array(vec![
+                            ValkeyFrame::BulkString("SET".into()),
+                            ValkeyFrame::BulkString("key".into()),
+                            ValkeyFrame::BulkString("value".into()),
                         ]))
                     )
                 }
@@ -180,15 +180,15 @@ mod test {
         let messages: Vec<_> = (0..26)
             .map(|i| {
                 if i % 2 == 0 {
-                    Message::from_frame(Frame::Redis(RedisFrame::Array(vec![
-                        RedisFrame::BulkString("GET".into()),
-                        RedisFrame::BulkString("key".into()),
+                    Message::from_frame(Frame::Valkey(ValkeyFrame::Array(vec![
+                        ValkeyFrame::BulkString("GET".into()),
+                        ValkeyFrame::BulkString("key".into()),
                     ])))
                 } else {
-                    Message::from_frame(Frame::Redis(RedisFrame::Array(vec![
-                        RedisFrame::BulkString("SET".into()),
-                        RedisFrame::BulkString("key".into()),
-                        RedisFrame::BulkString("value".into()),
+                    Message::from_frame(Frame::Valkey(ValkeyFrame::Array(vec![
+                        ValkeyFrame::BulkString("SET".into()),
+                        ValkeyFrame::BulkString("key".into()),
+                        ValkeyFrame::BulkString("value".into()),
                     ])))
                 }
             })
@@ -205,17 +205,17 @@ mod test {
                 if i % 2 == 0 {
                     assert_eq!(
                         frame,
-                        &Frame::Redis(RedisFrame::Error(
+                        &Frame::Valkey(ValkeyFrame::Error(
                             "ERR Message was filtered out by shotover".into()
                         )),
                     )
                 } else {
                     assert_eq!(
                         frame,
-                        &Frame::Redis(RedisFrame::Array(vec![
-                            RedisFrame::BulkString("SET".into()),
-                            RedisFrame::BulkString("key".into()),
-                            RedisFrame::BulkString("value".into()),
+                        &Frame::Valkey(ValkeyFrame::Array(vec![
+                            ValkeyFrame::BulkString("SET".into()),
+                            ValkeyFrame::BulkString("key".into()),
+                            ValkeyFrame::BulkString("value".into()),
                         ]))
                     )
                 }

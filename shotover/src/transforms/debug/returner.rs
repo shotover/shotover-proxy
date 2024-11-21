@@ -40,7 +40,7 @@ pub enum Response {
     #[serde(skip)]
     Message(Message),
     #[cfg(feature = "redis")]
-    Redis(String),
+    Valkey(String),
     Fail,
 }
 
@@ -89,10 +89,10 @@ impl Transform for DebugReturner {
                     Ok(message)
                 }
                 #[cfg(feature = "redis")]
-                Response::Redis(string) => {
-                    use crate::frame::{Frame, RedisFrame};
+                Response::Valkey(string) => {
+                    use crate::frame::{Frame, ValkeyFrame};
                     use crate::message::Message;
-                    let mut message = Message::from_frame(Frame::Redis(RedisFrame::BulkString(
+                    let mut message = Message::from_frame(Frame::Valkey(ValkeyFrame::BulkString(
                         string.to_string().into(),
                     )));
                     message.set_request_id(request.id());

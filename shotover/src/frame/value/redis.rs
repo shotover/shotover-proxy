@@ -1,51 +1,51 @@
 use super::{GenericValue, IntSize};
-use crate::frame::RedisFrame;
+use crate::frame::ValkeyFrame;
 
-impl From<RedisFrame> for GenericValue {
-    fn from(f: RedisFrame) -> Self {
+impl From<ValkeyFrame> for GenericValue {
+    fn from(f: ValkeyFrame) -> Self {
         match f {
-            RedisFrame::SimpleString(s) => {
+            ValkeyFrame::SimpleString(s) => {
                 GenericValue::Strings(String::from_utf8_lossy(&s).to_string())
             }
-            RedisFrame::Error(e) => GenericValue::Strings(e.to_string()),
-            RedisFrame::Integer(i) => GenericValue::Integer(i, IntSize::I64),
-            RedisFrame::BulkString(b) => GenericValue::Bytes(b),
-            RedisFrame::Array(a) => {
+            ValkeyFrame::Error(e) => GenericValue::Strings(e.to_string()),
+            ValkeyFrame::Integer(i) => GenericValue::Integer(i, IntSize::I64),
+            ValkeyFrame::BulkString(b) => GenericValue::Bytes(b),
+            ValkeyFrame::Array(a) => {
                 GenericValue::List(a.iter().cloned().map(GenericValue::from).collect())
             }
-            RedisFrame::Null => GenericValue::Null,
+            ValkeyFrame::Null => GenericValue::Null,
         }
     }
 }
 
-impl From<&RedisFrame> for GenericValue {
-    fn from(f: &RedisFrame) -> Self {
+impl From<&ValkeyFrame> for GenericValue {
+    fn from(f: &ValkeyFrame) -> Self {
         match f.clone() {
-            RedisFrame::SimpleString(s) => {
+            ValkeyFrame::SimpleString(s) => {
                 GenericValue::Strings(String::from_utf8_lossy(s.as_ref()).to_string())
             }
-            RedisFrame::Error(e) => GenericValue::Strings(e.to_string()),
-            RedisFrame::Integer(i) => GenericValue::Integer(i, IntSize::I64),
-            RedisFrame::BulkString(b) => GenericValue::Bytes(b),
-            RedisFrame::Array(a) => {
+            ValkeyFrame::Error(e) => GenericValue::Strings(e.to_string()),
+            ValkeyFrame::Integer(i) => GenericValue::Integer(i, IntSize::I64),
+            ValkeyFrame::BulkString(b) => GenericValue::Bytes(b),
+            ValkeyFrame::Array(a) => {
                 GenericValue::List(a.iter().cloned().map(GenericValue::from).collect())
             }
-            RedisFrame::Null => GenericValue::Null,
+            ValkeyFrame::Null => GenericValue::Null,
         }
     }
 }
 
-impl From<GenericValue> for RedisFrame {
-    fn from(value: GenericValue) -> RedisFrame {
+impl From<GenericValue> for ValkeyFrame {
+    fn from(value: GenericValue) -> ValkeyFrame {
         match value {
-            GenericValue::Null => RedisFrame::Null,
-            GenericValue::Bytes(b) => RedisFrame::BulkString(b),
-            GenericValue::Strings(s) => RedisFrame::SimpleString(s.into()),
-            GenericValue::Integer(i, _) => RedisFrame::Integer(i),
-            GenericValue::Float(f) => RedisFrame::SimpleString(f.to_string().into()),
-            GenericValue::Boolean(b) => RedisFrame::Integer(i64::from(b)),
-            GenericValue::Inet(i) => RedisFrame::SimpleString(i.to_string().into()),
-            GenericValue::List(l) => RedisFrame::Array(l.into_iter().map(|v| v.into()).collect()),
+            GenericValue::Null => ValkeyFrame::Null,
+            GenericValue::Bytes(b) => ValkeyFrame::BulkString(b),
+            GenericValue::Strings(s) => ValkeyFrame::SimpleString(s.into()),
+            GenericValue::Integer(i, _) => ValkeyFrame::Integer(i),
+            GenericValue::Float(f) => ValkeyFrame::SimpleString(f.to_string().into()),
+            GenericValue::Boolean(b) => ValkeyFrame::Integer(i64::from(b)),
+            GenericValue::Inet(i) => ValkeyFrame::SimpleString(i.to_string().into()),
+            GenericValue::List(l) => ValkeyFrame::Array(l.into_iter().map(|v| v.into()).collect()),
             GenericValue::Ascii(_a) => todo!(),
             GenericValue::Double(_d) => todo!(),
             GenericValue::Set(_s) => todo!(),

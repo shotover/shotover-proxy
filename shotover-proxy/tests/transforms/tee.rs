@@ -84,8 +84,8 @@ async fn test_log_with_mismatch() {
             .with_target("shotover::transforms::tee")
             .with_message(
                 r#"Tee mismatch:
-result-source response: Redis BulkString(b"42")
-other response: Redis BulkString(b"41")"#,
+result-source response: Valkey BulkString(b"42")
+other response: Valkey BulkString(b"41")"#,
             )])
         .await;
 }
@@ -255,8 +255,8 @@ async fn test_switch_main_chain() {
                 .with_target("shotover::transforms::tee")
                 .with_message(
                     r#"Tee mismatch:
-result-source response: Redis BulkString(b"a")
-other response: Redis BulkString(b"b")"#,
+result-source response: Valkey BulkString(b"a")
+other response: Valkey BulkString(b"b")"#,
                 ),
             EventMatcher::new()
                 .with_level(Level::Warn)
@@ -265,8 +265,8 @@ other response: Redis BulkString(b"b")"#,
                 .with_target("shotover::transforms::tee")
                 .with_message(
                     r#"Tee mismatch:
-result-source response: Redis BulkString(b"b")
-other response: Redis BulkString(b"a")"#,
+result-source response: Valkey BulkString(b"b")
+other response: Valkey BulkString(b"a")"#,
                 ),
         ])
         .await;

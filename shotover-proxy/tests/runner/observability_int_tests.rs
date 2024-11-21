@@ -129,19 +129,19 @@ shotover_chain_latency_seconds{chain="redis",client_details="127.0.0.1",quantile
 shotover_chain_latency_seconds{chain="redis",client_details="127.0.0.1",quantile="0.99"}
 shotover_chain_latency_seconds{chain="redis",client_details="127.0.0.1",quantile="0.999"}
 shotover_chain_latency_seconds{chain="redis",client_details="127.0.0.1",quantile="1"}
-shotover_query_count{name="redis-chain",query="CLIENT",type="redis"}
-shotover_query_count{name="redis-chain",query="GET",type="redis"}
-shotover_query_count{name="redis-chain",query="SET",type="redis"}
+shotover_query_count{name="redis-chain",query="CLIENT",type="valkey"}
+shotover_query_count{name="redis-chain",query="GET",type="valkey"}
+shotover_query_count{name="redis-chain",query="SET",type="valkey"}
 "#;
     assert_metrics_has_keys(expected, expected_new).await;
 
     assert_metrics_key_value(
-        r#"shotover_query_count{name="redis-chain",query="GET",type="redis"}"#,
+        r#"shotover_query_count{name="redis-chain",query="GET",type="valkey"}"#,
         "1",
     )
     .await;
     assert_metrics_key_value(
-        r#"shotover_query_count{name="redis-chain",query="SET",type="redis"}"#,
+        r#"shotover_query_count{name="redis-chain",query="SET",type="valkey"}"#,
         "2",
     )
     .await;

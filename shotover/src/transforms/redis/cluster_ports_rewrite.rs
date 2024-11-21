@@ -1,6 +1,6 @@
 use crate::frame::Frame;
 use crate::frame::MessageType;
-use crate::frame::RedisFrame;
+use crate::frame::ValkeyFrame;
 use crate::message::{MessageIdMap, Messages};
 use crate::transforms::DownChainProtocol;
 use crate::transforms::TransformContextBuilder;
@@ -31,7 +31,7 @@ impl TransformConfig for RedisClusterPortsRewriteConfig {
     }
 
     fn up_chain_protocol(&self) -> UpChainProtocol {
-        UpChainProtocol::MustBeOneOf(vec![MessageType::Redis])
+        UpChainProtocol::MustBeOneOf(vec![MessageType::Valkey])
     }
 
     fn down_chain_protocol(&self) -> DownChainProtocol {
@@ -127,14 +127,14 @@ impl Transform for RedisClusterPortsRewrite {
 
 /// Rewrites the ports of a response to a CLUSTER SLOTS message to `new_port`
 fn rewrite_port_slot(frame: &mut Frame, new_port: u16) -> Result<()> {
-    if let Frame::Redis(RedisFrame::Array(array)) = frame {
+    if let Frame::Valkey(ValkeyFrame::Array(array)) = frame {
         for elem in array.iter_mut() {
-            if let RedisFrame::Array(slot) = elem {
+            if let ValkeyFrame::Array(slot) = elem {
                 for (index, mut frame) in slot.iter_mut().enumerate() {
                     match (index, &mut frame) {
                         (0..=1, _) => {}
-                        (_, RedisFrame::Array(target)) => match target.as_mut_slice() {
-                            [RedisFrame::BulkString(_ip), RedisFrame::Integer(port), ..] => {
+                        (_, ValkeyFrame::Array(target)) => match target.as_mut_slice() {
+                            [ValkeyFrame::BulkString(_ip), ValkeyFrame::Integer(port), ..] => {
                                 *port = new_port.into();
                             }
                             _ => bail!("expected host-port in slot map but was: {:?}", frame),
@@ -151,14 +151,14 @@ fn rewrite_port_slot(frame: &mut Frame, new_port: u16) -> Result<()> {
 /// Get a mutable reference to the CSV string inside a response to CLUSTER NODES or REPLICAS
 fn get_buffer(frame: &mut Frame) -> Option<&mut Bytes> {
     // CLUSTER NODES
-    if let Frame::Redis(RedisFrame::BulkString(buf)) = frame {
+    if let Frame::Valkey(ValkeyFrame::BulkString(buf)) = frame {
         return Some(buf);
     }
 
     // CLUSTER REPLICAS
-    if let Frame::Redis(RedisFrame::Array(array)) = frame {
+    if let Frame::Valkey(ValkeyFrame::Array(array)) = frame {
         for item in array.iter_mut() {
-            if let RedisFrame::BulkString(buf) = item {
+            if let ValkeyFrame::BulkString(buf) = item {
                 return Some(buf);
             }
         }
@@ -225,9 +225,9 @@ fn rewrite_port_node(frame: &mut Frame, new_port: u16) -> Result<()> {
 /// Determines if the supplied Redis Frame is a `CLUSTER NODES` request
 /// or `CLUSTER REPLICAS` which returns the same response as `CLUSTER NODES`
 fn is_cluster_nodes(frame: &Frame) -> bool {
-    if let Frame::Redis(RedisFrame::Array(array)) = frame {
+    if let Frame::Valkey(ValkeyFrame::Array(array)) = frame {
         match array.as_slice() {
-            [RedisFrame::BulkString(one), RedisFrame::BulkString(two), ..] => {
+            [ValkeyFrame::BulkString(one), ValkeyFrame::BulkString(two), ..] => {
                 one.eq_ignore_ascii_case(b"CLUSTER")
                     && (two.eq_ignore_ascii_case(b"NODES") || two.eq_ignore_ascii_case(b"REPLICAS"))
             }
@@ -240,9 +240,9 @@ fn is_cluster_nodes(frame: &Frame) -> bool {
 
 /// Determines if the supplied Redis Frame is a `CLUSTER SLOTS` request
 fn is_cluster_slots(frame: &Frame) -> bool {
-    if let Frame::Redis(RedisFrame::Array(array)) = frame {
+    if let Frame::Valkey(ValkeyFrame::Array(array)) = frame {
         match array.as_slice() {
-            [RedisFrame::BulkString(one), RedisFrame::BulkString(two), ..] => {
+            [ValkeyFrame::BulkString(one), ValkeyFrame::BulkString(two), ..] => {
                 one.eq_ignore_ascii_case(b"CLUSTER") && two.eq_ignore_ascii_case(b"SLOTS")
             }
             [..] => false,
@@ -255,7 +255,7 @@ fn is_cluster_slots(frame: &Frame) -> bool {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::codec::redis::RedisDecoder;
+    use crate::codec::redis::ValkeyDecoder;
     use crate::codec::Direction;
     use crate::transforms::redis::sink_cluster::parse_slots;
     use pretty_assertions::assert_eq;
@@ -271,16 +271,16 @@ mod test {
         ];
 
         for combo in combos {
-            let frame = Frame::Redis(RedisFrame::Array(vec![
-                RedisFrame::BulkString(Bytes::from_static(combo.0)),
-                RedisFrame::BulkString(Bytes::from_static(combo.1)),
+            let frame = Frame::Valkey(ValkeyFrame::Array(vec![
+                ValkeyFrame::BulkString(Bytes::from_static(combo.0)),
+                ValkeyFrame::BulkString(Bytes::from_static(combo.1)),
             ]));
             assert!(is_cluster_slots(&frame));
         }
 
-        let frame = Frame::Redis(RedisFrame::Array(vec![
-            RedisFrame::BulkString(Bytes::from_static(b"GET")),
-            RedisFrame::BulkString(Bytes::from_static(b"key1")),
+        let frame = Frame::Valkey(ValkeyFrame::Array(vec![
+            ValkeyFrame::BulkString(Bytes::from_static(b"GET")),
+            ValkeyFrame::BulkString(Bytes::from_static(b"key1")),
         ]));
 
         assert!(!is_cluster_slots(&frame));
@@ -302,16 +302,16 @@ mod test {
         ];
 
         for combo in combos {
-            let frame = Frame::Redis(RedisFrame::Array(vec![
-                RedisFrame::BulkString(Bytes::from_static(combo.0)),
-                RedisFrame::BulkString(Bytes::from_static(combo.1)),
+            let frame = Frame::Valkey(ValkeyFrame::Array(vec![
+                ValkeyFrame::BulkString(Bytes::from_static(combo.0)),
+                ValkeyFrame::BulkString(Bytes::from_static(combo.1)),
             ]));
             assert!(is_cluster_nodes(&frame));
         }
 
-        let frame = Frame::Redis(RedisFrame::Array(vec![
-            RedisFrame::BulkString(Bytes::from_static(b"GET")),
-            RedisFrame::BulkString(Bytes::from_static(b"key1")),
+        let frame = Frame::Valkey(ValkeyFrame::Array(vec![
+            ValkeyFrame::BulkString(Bytes::from_static(b"GET")),
+            ValkeyFrame::BulkString(Bytes::from_static(b"key1")),
         ]));
 
         assert!(!is_cluster_nodes(&frame));
@@ -320,7 +320,7 @@ mod test {
     #[test]
     fn test_rewrite_port_slots() {
         let slots_pcap: &[u8] = b"*3\r\n*4\r\n:10923\r\n:16383\r\n*3\r\n$12\r\n192.168.80.6\r\n:6379\r\n$40\r\n3a7c357ed75d2aa01fca1e14ef3735a2b2b8ffac\r\n*3\r\n$12\r\n192.168.80.3\r\n:6379\r\n$40\r\n77c01b0ddd8668fff05e3f6a8aaf5f3ccd454a79\r\n*4\r\n:5461\r\n:10922\r\n*3\r\n$12\r\n192.168.80.5\r\n:6379\r\n$40\r\n969c6215d064e68593d384541ceeb57e9520dbed\r\n*3\r\n$12\r\n192.168.80.2\r\n:6379\r\n$40\r\n3929f69990a75be7b2d49594c57fe620862e6fd6\r\n*4\r\n:0\r\n:5460\r\n*3\r\n$12\r\n192.168.80.7\r\n:6379\r\n$40\r\n15d52a65d1fc7a53e34bf9193415aa39136882b2\r\n*3\r\n$12\r\n192.168.80.4\r\n:6379\r\n$40\r\ncd023916a3528fae7e606a10d8289a665d6c47b0\r\n";
-        let mut codec = RedisDecoder::new(None, Direction::Sink);
+        let mut codec = ValkeyDecoder::new(None, Direction::Sink);
         let mut message = codec
             .decode(&mut slots_pcap.into())
             .unwrap()
@@ -331,7 +331,7 @@ mod test {
         rewrite_port_slot(message.frame().unwrap(), 6380).unwrap();
 
         let slots_frames = match message.frame().unwrap() {
-            Frame::Redis(RedisFrame::Array(frames)) => frames,
+            Frame::Valkey(ValkeyFrame::Array(frames)) => frames,
             frame => panic!("bad input: {frame:?}"),
         };
 
@@ -385,12 +385,12 @@ c852007a1c3b726534e6866456c1f2002fc442d9 172.31.0.6:1234@16379 myself,master - 0
 f9553ea7fc23905476efec1f949b4b3e41a44103 :1234@0 slave,noaddr c852007a1c3b726534e6866456c1f2002fc442d9 1634273478445 1634273478445 3 disconnected
 ";
 
-        let mut raw_frame = Frame::Redis(RedisFrame::BulkString(Bytes::from_static(bulk_string)));
+        let mut raw_frame = Frame::Valkey(ValkeyFrame::BulkString(Bytes::from_static(bulk_string)));
         rewrite_port_node(&mut raw_frame, 1234).unwrap();
 
         assert_eq!(
             raw_frame,
-            Frame::Redis(RedisFrame::BulkString(Bytes::from_static(expected_string)))
+            Frame::Valkey(ValkeyFrame::BulkString(Bytes::from_static(expected_string)))
         );
     }
 }
