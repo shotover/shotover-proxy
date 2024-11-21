@@ -363,6 +363,7 @@ impl Value {
     }
 
     /// Convert this java value into a native rust type
+    /// When T is Option<U>, it is None when java null, otherwise Some.
     pub(crate) fn into_rust<T>(self) -> T
     where
         T: DeserializeOwned + Any,

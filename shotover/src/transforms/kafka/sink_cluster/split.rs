@@ -11,10 +11,11 @@ use kafka_protocol::messages::{
     delete_records_request::DeleteRecordsTopic, describe_producers_request::TopicRequest,
     list_offsets_request::ListOffsetsTopic, offset_fetch_request::OffsetFetchRequestGroup,
     offset_for_leader_epoch_request::OffsetForLeaderTopic, produce_request::TopicProduceData,
-    AddPartitionsToTxnRequest, BrokerId, DeleteGroupsRequest, DeleteRecordsRequest,
-    DescribeGroupsRequest, DescribeProducersRequest, DescribeTransactionsRequest, GroupId,
-    ListGroupsRequest, ListOffsetsRequest, ListTransactionsRequest, OffsetFetchRequest,
-    OffsetForLeaderEpochRequest, ProduceRequest, TopicName, TransactionalId,
+    AddPartitionsToTxnRequest, BrokerId, ConsumerGroupDescribeRequest, DeleteGroupsRequest,
+    DeleteRecordsRequest, DescribeGroupsRequest, DescribeLogDirsRequest, DescribeProducersRequest,
+    DescribeTransactionsRequest, GroupId, ListGroupsRequest, ListOffsetsRequest,
+    ListTransactionsRequest, OffsetFetchRequest, OffsetForLeaderEpochRequest, ProduceRequest,
+    TopicName, TransactionalId,
 };
 use std::collections::HashMap;
 
@@ -281,6 +282,34 @@ impl RequestSplitAndRouter for ListTransactionsSplitAndRouter {
     }
 }
 
+pub struct DescribeLogDirsSplitAndRouter;
+
+impl RequestSplitAndRouter for DescribeLogDirsSplitAndRouter {
+    type Request = DescribeLogDirsRequest;
+    type SubRequests = ();
+
+    fn split_by_destination(
+        transform: &mut KafkaSinkCluster,
+        _request: &mut Self::Request,
+    ) -> HashMap<BrokerId, Self::SubRequests> {
+        transform.split_request_by_routing_to_all_brokers()
+    }
+
+    fn get_request_frame(request: &mut Message) -> &mut Self::Request {
+        match request.frame() {
+            Some(Frame::Kafka(KafkaFrame::Request {
+                body: RequestBody::DescribeLogDirs(request),
+                ..
+            })) => request,
+            _ => unreachable!(),
+        }
+    }
+
+    fn reassemble(_request: &mut Self::Request, _item: Self::SubRequests) {
+        // No need to reassemble, each DescribeLogDirs is an exact clone of the original
+    }
+}
+
 pub struct DescribeTransactionsSplitAndRouter;
 
 impl RequestSplitAndRouter for DescribeTransactionsSplitAndRouter {
@@ -362,5 +391,33 @@ impl RequestSplitAndRouter for DescribeGroupsSplitAndRouter {
 
     fn reassemble(request: &mut Self::Request, item: Self::SubRequests) {
         request.groups = item;
+    }
+}
+
+pub struct ConsumerGroupDescribeSplitAndRouter;
+
+impl RequestSplitAndRouter for ConsumerGroupDescribeSplitAndRouter {
+    type Request = ConsumerGroupDescribeRequest;
+    type SubRequests = Vec<GroupId>;
+
+    fn split_by_destination(
+        transform: &mut KafkaSinkCluster,
+        request: &mut Self::Request,
+    ) -> HashMap<BrokerId, Self::SubRequests> {
+        transform.split_consumer_group_describe_request_by_destination(request)
+    }
+
+    fn get_request_frame(request: &mut Message) -> &mut Self::Request {
+        match request.frame() {
+            Some(Frame::Kafka(KafkaFrame::Request {
+                body: RequestBody::ConsumerGroupDescribe(request),
+                ..
+            })) => request,
+            _ => unreachable!(),
+        }
+    }
+
+    fn reassemble(request: &mut Self::Request, item: Self::SubRequests) {
+        request.group_ids = item;
     }
 }

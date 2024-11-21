@@ -1,9 +1,10 @@
 use super::{
     Acl, AclOperation, AclPermissionType, AlterConfig, ConsumerConfig, ConsumerGroupDescription,
-    ExpectedResponse, ListOffsetsResultInfo, NewPartition, NewPartitionReassignment, NewTopic,
-    OffsetAndMetadata, OffsetSpec, PartitionReassignment, ProduceResult, ProducerState, Record,
-    RecordsToDelete, ResourcePatternType, ResourceSpecifier, ResourceType, TopicDescription,
-    TopicPartition, TopicPartitionInfo, TransactionDescription,
+    DescribeReplicaLogDirInfo, ExpectedResponse, ListOffsetsResultInfo, NewPartition,
+    NewPartitionReassignment, NewTopic, OffsetAndMetadata, OffsetSpec, PartitionReassignment,
+    ProduceResult, ProducerState, Record, RecordsToDelete, ResourcePatternType, ResourceSpecifier,
+    ResourceType, TopicDescription, TopicPartition, TopicPartitionInfo, TopicPartitionReplica,
+    TransactionDescription,
 };
 use crate::connection::java::{map_iterator, Jvm, Value};
 use anyhow::Result;
@@ -170,6 +171,14 @@ impl KafkaConnectionBuilderJava {
         config.insert(
             "value.deserializer".to_owned(),
             "org.apache.kafka.common.serialization.StringDeserializer".to_owned(),
+        );
+
+        config.insert(
+            "group.protocol".to_owned(),
+            match consumer_config.protocol {
+                super::ConsumerProtocol::Classic => "CLASSIC".to_owned(),
+                super::ConsumerProtocol::Consumer => "CONSUMER".to_owned(),
+            },
         );
 
         let consumer = self.jvm.construct(
@@ -871,6 +880,39 @@ impl KafkaAdminJava {
             .await;
     }
 
+    pub async fn describe_replica_log_dirs(
+        &self,
+        topic_partitions: &[TopicPartitionReplica],
+    ) -> HashMap<TopicPartitionReplica, DescribeReplicaLogDirInfo> {
+        let topic_partitions_java = self.jvm.new_set(
+            "org.apache.kafka.common.TopicPartitionReplica",
+            topic_partitions
+                .iter()
+                .map(|topic_partition| topic_partition_replica_to_java(&self.jvm, topic_partition))
+                .collect(),
+        );
+
+        let results = self
+            .admin
+            .call("describeReplicaLogDirs", vec![topic_partitions_java])
+            .call_async("all", vec![])
+            .await;
+
+        map_iterator(results)
+            .map(|(topic_partition, log_dir_info)| {
+                (
+                    topic_partition_replica_to_rust(topic_partition),
+                    DescribeReplicaLogDirInfo {
+                        path: log_dir_info
+                            .cast("org.apache.kafka.clients.admin.DescribeReplicaLogDirsResult$ReplicaLogDirInfo")
+                            .call("getCurrentReplicaLogDir", vec!())
+                            .into_rust()
+                    },
+                )
+            })
+            .collect()
+    }
+
     pub async fn elect_leaders(&self, topic_partitions: &[TopicPartition]) -> Result<()> {
         let election_type = self
             .jvm
@@ -1049,6 +1091,26 @@ fn topic_partition_to_rust(tp: Value) -> TopicPartition {
     TopicPartition {
         topic_name: tp.call("topic", vec![]).into_rust(),
         partition: tp.call("partition", vec![]).into_rust(),
+    }
+}
+
+fn topic_partition_replica_to_java(jvm: &Jvm, tp: &TopicPartitionReplica) -> Value {
+    jvm.construct(
+        "org.apache.kafka.common.TopicPartitionReplica",
+        vec![
+            jvm.new_string(&tp.topic_name),
+            jvm.new_int(tp.partition),
+            jvm.new_int(tp.broker_id),
+        ],
+    )
+}
+
+fn topic_partition_replica_to_rust(tp: Value) -> TopicPartitionReplica {
+    let tp = tp.cast("org.apache.kafka.common.TopicPartitionReplica");
+    TopicPartitionReplica {
+        topic_name: tp.call("topic", vec![]).into_rust(),
+        partition: tp.call("partition", vec![]).into_rust(),
+        broker_id: tp.call("brokerId", vec![]).into_rust(),
     }
 }
 

@@ -539,6 +539,18 @@ impl KafkaAdmin {
             }
         }
     }
+    pub async fn describe_replica_log_dirs(
+        &self,
+        topic_partitions: &[TopicPartitionReplica],
+    ) -> HashMap<TopicPartitionReplica, DescribeReplicaLogDirInfo> {
+        match self {
+            #[cfg(feature = "kafka-cpp-driver-tests")]
+            Self::Cpp(_) => {
+                panic!("rdkafka-rs driver does not support describe_replica_log_dirs")
+            }
+            Self::Java(java) => java.describe_replica_log_dirs(topic_partitions).await,
+        }
+    }
 
     pub async fn elect_leaders(&self, topic_partitions: &[TopicPartition]) -> Result<()> {
         match self {
@@ -630,6 +642,18 @@ pub struct TopicPartition {
     pub partition: i32,
 }
 
+#[derive(Clone, Eq, PartialEq, Hash, Debug)]
+pub struct TopicPartitionReplica {
+    pub topic_name: String,
+    pub partition: i32,
+    pub broker_id: i32,
+}
+
+#[derive(Clone, Eq, PartialEq, Hash, Debug)]
+pub struct DescribeReplicaLogDirInfo {
+    pub path: Option<String>,
+}
+
 pub enum ResourceSpecifier<'a> {
     Topic(&'a str),
 }
@@ -712,6 +736,7 @@ pub struct ConsumerConfig {
     fetch_min_bytes: i32,
     fetch_max_wait_ms: i32,
     isolation_level: IsolationLevel,
+    protocol: ConsumerProtocol,
 }
 
 impl ConsumerConfig {
@@ -722,6 +747,7 @@ impl ConsumerConfig {
             fetch_min_bytes: 1,
             fetch_max_wait_ms: 500,
             isolation_level: IsolationLevel::ReadUncommitted,
+            protocol: ConsumerProtocol::Classic,
         }
     }
 
@@ -744,6 +770,11 @@ impl ConsumerConfig {
         self.isolation_level = isolation_level;
         self
     }
+
+    pub fn with_protocol(mut self, protocol: ConsumerProtocol) -> Self {
+        self.protocol = protocol;
+        self
+    }
 }
 
 pub enum IsolationLevel {
@@ -758,6 +789,11 @@ impl IsolationLevel {
             IsolationLevel::ReadUncommitted => "read_uncommitted",
         }
     }
+}
+
+pub enum ConsumerProtocol {
+    Classic,
+    Consumer,
 }
 
 #[derive(PartialEq, Debug)]
