@@ -38,6 +38,26 @@ pub fn run_command(command: &str, args: &[&str]) -> Result<String> {
     }
 }
 
+fn command_not_found_error_message(command: &str, args: &[&str]) -> String {
+    // Maps a command to its associated dependency; however, if the name of the command and dependency is the same, we just use the command name.
+    // Currently, the only use case is mapping `npm` to its dependency `nodejs`.
+    let dependency = match command {
+        "npm" => "nodejs",
+        _ => command,
+    };
+
+    let args_part = if !args.is_empty() {
+        format!(" {}", args.join(" "))
+    } else {
+        String::new()
+    };
+
+    format!(
+        "Attempted to run the command `{}{}` but {} does not exist. Have you installed {}?",
+        command, args_part, command, dependency
+    )
+}
+
 pub async fn run_command_async(current_dir: &Path, command: &str, args: &[&str]) {
     let output = tokio::process::Command::new(command)
         .args(args)
@@ -45,9 +65,48 @@ pub async fn run_command_async(current_dir: &Path, command: &str, args: &[&str])
         .kill_on_drop(true)
         .status()
         .await
+        .map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                return std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    command_not_found_error_message(command, args),
+                );
+            }
+            e
+        })
         .unwrap();
 
     if !output.success() {
         panic!("command {command} {args:?} failed. See above output.")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use futures_util::FutureExt;
+
+    #[tokio::test]
+    async fn test_run_command_async_not_found() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let command = "shotover_non_existent_command";
+        let args = &["arg1", "arg2"];
+        let result = std::panic::AssertUnwindSafe(run_command_async(dir, command, args))
+            .catch_unwind()
+            .await;
+
+        assert!(result.is_err(), "Expected a panic but none occurred");
+
+        if let Err(panic_info) = result {
+            if let Some(error_message) = panic_info.downcast_ref::<String>() {
+                assert!(
+                    error_message.contains(&command_not_found_error_message(command, args)),
+                    "Error message did not contain the expected NotFound error: {}",
+                    error_message
+                );
+            } else {
+                panic!("Panic payload was not a string: {:?}", panic_info);
+            }
+        }
     }
 }
