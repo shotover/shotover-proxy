@@ -3,8 +3,8 @@ use crate::codec::{CodecBuilder, Direction};
 use crate::frame::{Frame, MessageType, ValkeyFrame};
 use crate::message::{Message, Messages};
 use crate::tls::TlsConnectorConfig;
-use crate::transforms::redis::ValkeyError;
 use crate::transforms::redis::TransformError;
+use crate::transforms::redis::ValkeyError;
 use crate::transforms::util::cluster_connection_pool::{Authenticator, ConnectionPool};
 use crate::transforms::util::{Request, Response};
 use crate::transforms::{
@@ -949,9 +949,9 @@ async fn get_topology_from_node(
         ValkeyFrame::Array(results) => {
             parse_slots(&results).map_err(|e| TransformError::Protocol(e.to_string()))
         }
-        ValkeyFrame::Error(message) => {
-            Err(TransformError::Upstream(ValkeyError::from_message(&message)))
-        }
+        ValkeyFrame::Error(message) => Err(TransformError::Upstream(ValkeyError::from_message(
+            &message,
+        ))),
         frame => Err(TransformError::Protocol(format!(
             "unexpected response for cluster slots: {frame:?}"
         ))),

@@ -106,7 +106,7 @@ impl TransformConfig for ValkeyConfig {
             up_chain_protocol: MessageType::Valkey,
         };
 
-        Ok(Box::new(SimpleRedisCacheBuilder {
+        Ok(Box::new(SimpleValkeyCacheBuilder {
             cache_chain: self.chain.get_builder(transform_context_config).await?,
             caching_schema,
             missed_requests,
@@ -122,15 +122,15 @@ impl TransformConfig for ValkeyConfig {
     }
 }
 
-pub struct SimpleRedisCacheBuilder {
+pub struct SimpleValkeyCacheBuilder {
     cache_chain: TransformChainBuilder,
     caching_schema: HashMap<FQName, TableCacheSchema>,
     missed_requests: Counter,
 }
 
-impl TransformBuilder for SimpleRedisCacheBuilder {
+impl TransformBuilder for SimpleValkeyCacheBuilder {
     fn build(&self, transform_context: TransformContextBuilder) -> Box<dyn Transform> {
-        Box::new(SimpleRedisCache {
+        Box::new(SimpleValkeyCache {
             cache_chain: self.cache_chain.build(transform_context.clone()),
             caching_schema: self.caching_schema.clone(),
             missed_requests: self.missed_requests.clone(),
@@ -160,7 +160,7 @@ impl TransformBuilder for SimpleRedisCacheBuilder {
     }
 }
 
-pub struct SimpleRedisCache {
+pub struct SimpleValkeyCache {
     cache_chain: TransformChain,
     caching_schema: HashMap<FQName, TableCacheSchema>,
     missed_requests: Counter,
@@ -172,7 +172,7 @@ pub struct SimpleRedisCache {
     cache_miss_cassandra_requests: Vec<Message>,
 }
 
-impl SimpleRedisCache {
+impl SimpleValkeyCache {
     fn build_cache_query(&mut self, request: &mut Message) -> Option<Message> {
         if let Some(Frame::Cassandra(CassandraFrame {
             operation: CassandraOperation::Query { query, .. },
@@ -217,12 +217,14 @@ impl SimpleRedisCache {
                 Some(Frame::Valkey(valkey_frame)) => {
                     match valkey_frame {
                         ValkeyFrame::Error(err) => {
-                            error!("Redis cache server returned error: {err:?}");
+                            error!("Valkey cache server returned error: {err:?}");
                             None
                         }
                         ValkeyFrame::BulkString(valkey_bytes) => {
-                            match CassandraFrame::from_bytes(valkey_bytes.clone(), Compression::None)
-                            {
+                            match CassandraFrame::from_bytes(
+                                valkey_bytes.clone(),
+                                Compression::None,
+                            ) {
                                 Ok(mut response_frame) => {
                                     match original_request.metadata() {
                                         Ok(Metadata::Cassandra(meta)) => {
@@ -613,7 +615,7 @@ fn build_valkey_key_from_cql3(
 }
 
 #[async_trait]
-impl Transform for SimpleRedisCache {
+impl Transform for SimpleValkeyCache {
     fn get_name(&self) -> &'static str {
         NAME
     }
@@ -651,7 +653,7 @@ mod test {
     use crate::transforms::debug::printer::DebugPrinter;
     use crate::transforms::null::NullSink;
     use crate::transforms::redis::cache::{
-        build_valkey_key_from_cql3, HashAddress, SimpleRedisCacheBuilder, TableCacheSchema,
+        build_valkey_key_from_cql3, HashAddress, SimpleValkeyCacheBuilder, TableCacheSchema,
     };
     use crate::transforms::TransformBuilder;
     use bytes::Bytes;
@@ -854,7 +856,7 @@ mod test {
 
     #[test]
     fn test_validate_invalid_chain() {
-        let transform = SimpleRedisCacheBuilder {
+        let transform = SimpleValkeyCacheBuilder {
             cache_chain: TransformChainBuilder::new(vec![], "test-chain"),
             caching_schema: HashMap::new(),
             missed_requests: counter!("cache_miss"),
@@ -863,7 +865,7 @@ mod test {
         assert_eq!(
             transform.validate(),
             vec![
-                "RedisCache:",
+                "ValkeyCache:",
                 "  test-chain chain:",
                 "    Chain cannot be empty"
             ]
@@ -881,7 +883,7 @@ mod test {
             "test-chain",
         );
 
-        let transform = SimpleRedisCacheBuilder {
+        let transform = SimpleValkeyCacheBuilder {
             cache_chain,
             caching_schema: HashMap::new(),
             missed_requests: counter!("cache_miss"),

@@ -196,7 +196,8 @@ async fn test_time_cluster(connection: &mut Connection) {
             .unwrap_err()
             .detail()
             .unwrap(),
-        "unknown command - Shotover ValkeySinkCluster does not not support this command".to_string(),
+        "unknown command - Shotover ValkeySinkCluster does not not support this command"
+            .to_string(),
     );
 }
 
@@ -209,7 +210,8 @@ async fn test_hello_cluster(connection: &mut Connection) {
             .unwrap_err()
             .detail()
             .unwrap(),
-        "unknown command - Shotover ValkeySinkCluster does not not support this command".to_string(),
+        "unknown command - Shotover ValkeySinkCluster does not not support this command"
+            .to_string(),
     );
 }
 
