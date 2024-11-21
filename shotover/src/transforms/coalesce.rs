@@ -111,7 +111,7 @@ impl Transform for Coalesce {
 
 #[cfg(all(test, feature = "redis"))]
 mod test {
-    use crate::frame::{Frame, RedisFrame};
+    use crate::frame::{Frame, ValkeyFrame};
     use crate::message::Message;
     use crate::transforms::chain::TransformAndMetrics;
     use crate::transforms::coalesce::Coalesce;
@@ -132,7 +132,7 @@ mod test {
         let mut chain = vec![TransformAndMetrics::new(Box::new(Loopback::default()))];
 
         let requests: Vec<_> = (0..25)
-            .map(|_| Message::from_frame(Frame::Redis(RedisFrame::Null)))
+            .map(|_| Message::from_frame(Frame::Valkey(ValkeyFrame::Null)))
             .collect();
 
         assert_responses_len(&mut chain, &mut coalesce, &requests, 0).await;
@@ -154,7 +154,7 @@ mod test {
         let mut chain = vec![TransformAndMetrics::new(Box::new(Loopback::default()))];
 
         let requests: Vec<_> = (0..25)
-            .map(|_| Message::from_frame(Frame::Redis(RedisFrame::Null)))
+            .map(|_| Message::from_frame(Frame::Valkey(ValkeyFrame::Null)))
             .collect();
 
         assert_responses_len(&mut chain, &mut coalesce, &requests, 0).await;
@@ -177,7 +177,7 @@ mod test {
         let mut chain = vec![TransformAndMetrics::new(Box::new(Loopback::default()))];
 
         let requests: Vec<_> = (0..25)
-            .map(|_| Message::from_frame(Frame::Redis(RedisFrame::Null)))
+            .map(|_| Message::from_frame(Frame::Valkey(ValkeyFrame::Null)))
             .collect();
 
         assert_responses_len(&mut chain, &mut coalesce, &requests, 0).await;

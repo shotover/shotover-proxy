@@ -7,7 +7,7 @@ use crate::sources::kafka::{KafkaConfig, KafkaSource};
 #[cfg(feature = "opensearch")]
 use crate::sources::opensearch::{OpenSearchConfig, OpenSearchSource};
 #[cfg(feature = "redis")]
-use crate::sources::redis::{RedisConfig, RedisSource};
+use crate::sources::redis::{ValkeyConfig, ValkeySource};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
@@ -34,7 +34,7 @@ pub enum Source {
     #[cfg(feature = "cassandra")]
     Cassandra(CassandraSource),
     #[cfg(feature = "redis")]
-    Redis(RedisSource),
+    Valkey(ValkeySource),
     #[cfg(feature = "kafka")]
     Kafka(KafkaSource),
     #[cfg(feature = "opensearch")]
@@ -47,7 +47,7 @@ impl Source {
             #[cfg(feature = "cassandra")]
             Source::Cassandra(c) => c.join_handle,
             #[cfg(feature = "redis")]
-            Source::Redis(r) => r.join_handle,
+            Source::Valkey(r) => r.join_handle,
             #[cfg(feature = "kafka")]
             Source::Kafka(r) => r.join_handle,
             #[cfg(feature = "opensearch")]
@@ -62,7 +62,7 @@ pub enum SourceConfig {
     #[cfg(feature = "cassandra")]
     Cassandra(CassandraConfig),
     #[cfg(feature = "redis")]
-    Redis(RedisConfig),
+    Valkey(ValkeyConfig),
     #[cfg(feature = "kafka")]
     Kafka(KafkaConfig),
     #[cfg(feature = "opensearch")]
@@ -78,7 +78,7 @@ impl SourceConfig {
             #[cfg(feature = "cassandra")]
             SourceConfig::Cassandra(c) => c.get_source(trigger_shutdown_rx).await,
             #[cfg(feature = "redis")]
-            SourceConfig::Redis(r) => r.get_source(trigger_shutdown_rx).await,
+            SourceConfig::Valkey(r) => r.get_source(trigger_shutdown_rx).await,
             #[cfg(feature = "kafka")]
             SourceConfig::Kafka(r) => r.get_source(trigger_shutdown_rx).await,
             #[cfg(feature = "opensearch")]
@@ -91,7 +91,7 @@ impl SourceConfig {
             #[cfg(feature = "cassandra")]
             SourceConfig::Cassandra(c) => &c.name,
             #[cfg(feature = "redis")]
-            SourceConfig::Redis(r) => &r.name,
+            SourceConfig::Valkey(r) => &r.name,
             #[cfg(feature = "kafka")]
             SourceConfig::Kafka(r) => &r.name,
             #[cfg(feature = "opensearch")]

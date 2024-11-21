@@ -10,7 +10,7 @@ use rand::{thread_rng, Rng};
 use redis::aio::Connection;
 use redis::cluster::ClusterConnection;
 use redis::{AsyncCommands, Commands, ErrorKind, RedisError, Value};
-use shotover::frame::RedisFrame;
+use shotover::frame::ValkeyFrame;
 use shotover::tcp;
 use std::collections::{HashMap, HashSet};
 use std::thread::sleep;
@@ -1304,7 +1304,7 @@ pub async fn test_trigger_transform_failure_raw() {
 
     assert_eq!(
         read_redis_message(&mut connection).await,
-        RedisFrame::Error(format!("ERR Internal shotover (or custom transform) bug: Chain failed to send and/or receive messages, the connection will now be closed.  Caused by:     0: RedisSinkSingle transform failed     1: Failed to connect to destination 127.0.0.1:1111     2: Connection refused (os error {CONNECTION_REFUSED_OS_ERROR})").into())
+        ValkeyFrame::Error(format!("ERR Internal shotover (or custom transform) bug: Chain failed to send and/or receive messages, the connection will now be closed.  Caused by:     0: RedisSinkSingle transform failed     1: Failed to connect to destination 127.0.0.1:1111     2: Connection refused (os error {CONNECTION_REFUSED_OS_ERROR})").into())
     );
 
     // If the connection was closed by shotover then we will succesfully read 0 bytes.
@@ -1317,7 +1317,7 @@ pub async fn test_trigger_transform_failure_raw() {
     assert_eq!(amount, 0);
 }
 
-async fn read_redis_message(connection: &mut TcpStream) -> RedisFrame {
+async fn read_redis_message(connection: &mut TcpStream) -> ValkeyFrame {
     let mut buffer = BytesMut::new();
     loop {
         if let Ok(Some((result, len))) =

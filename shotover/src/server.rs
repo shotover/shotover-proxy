@@ -837,7 +837,7 @@ impl PendingRequests {
     fn new(message_type: MessageType) -> Self {
         match message_type {
             #[cfg(feature = "redis")]
-            MessageType::Redis => PendingRequests::Ordered(vec![]),
+            MessageType::Valkey => PendingRequests::Ordered(vec![]),
             #[cfg(feature = "cassandra")]
             MessageType::Cassandra => PendingRequests::Unordered(Default::default()),
             #[cfg(feature = "kafka")]

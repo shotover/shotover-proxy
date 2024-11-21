@@ -536,7 +536,7 @@ impl DummyResponseInserter {
 #[cfg(all(test, feature = "redis"))]
 mod tests {
     use super::DummyResponseInserter;
-    use crate::frame::{Frame, RedisFrame};
+    use crate::frame::{Frame, ValkeyFrame};
     use crate::message::Message;
     use pretty_assertions::assert_eq;
 
@@ -544,18 +544,18 @@ mod tests {
         Message::from_frame(Frame::Dummy)
     }
 
-    fn redis_request() -> Message {
-        Message::from_frame(Frame::Redis(RedisFrame::Null))
+    fn valkey_request() -> Message {
+        Message::from_frame(Frame::Valkey(ValkeyFrame::Null))
     }
 
-    fn redis_response(request: &Message) -> Message {
-        let mut message = Message::from_frame(Frame::Redis(RedisFrame::Null));
+    fn valkey_response(request: &Message) -> Message {
+        let mut message = Message::from_frame(Frame::Valkey(ValkeyFrame::Null));
         message.set_request_id(request.id());
         message
     }
 
-    fn redis_response_unsolicited() -> Message {
-        Message::from_frame(Frame::Redis(RedisFrame::Null))
+    fn valkey_response_unsolicited() -> Message {
+        Message::from_frame(Frame::Valkey(ValkeyFrame::Null))
     }
 
     #[test]
@@ -583,35 +583,35 @@ mod tests {
             assert_eq!(inserter.pending_requests_count(), 0);
         }
 
-        // send one redis request
+        // send one valkey request
         {
-            let mut requests = vec![redis_request()];
+            let mut requests = vec![valkey_request()];
             inserter.process_requests(&mut requests);
             let mut responses = vec![];
             inserter.process_responses(&mut responses, 0);
             assert_eq!(responses, []);
 
-            // received redis response
+            // received valkey response
             assert_eq!(inserter.pending_requests_count(), 1);
-            responses.insert(0, redis_response(&requests[0]));
+            responses.insert(0, valkey_response(&requests[0]));
             inserter.process_responses(&mut responses, 0);
-            assert_eq!(responses, vec![redis_response(&requests[0])]);
+            assert_eq!(responses, vec![valkey_response(&requests[0])]);
             assert_eq!(inserter.pending_requests_count(), 0);
         }
 
-        // send one dummy request and then one redis request
+        // send one dummy request and then one valkey request
         {
-            let mut requests = vec![dummy(), redis_request()];
+            let mut requests = vec![dummy(), valkey_request()];
             inserter.process_requests(&mut requests);
             let mut responses = vec![];
             inserter.process_responses(&mut responses, 0);
             assert_eq!(responses, vec![dummy()]);
 
-            // received redis response
+            // received valkey response
             assert_eq!(inserter.pending_requests_count(), 1);
-            responses.insert(1, redis_response(&requests[1]));
+            responses.insert(1, valkey_response(&requests[1]));
             inserter.process_responses(&mut responses, 1);
-            assert_eq!(responses, vec![dummy(), redis_response(&requests[1])]);
+            assert_eq!(responses, vec![dummy(), valkey_response(&requests[1])]);
             assert_eq!(inserter.pending_requests_count(), 0);
 
             // try_recv with no responses
@@ -620,22 +620,22 @@ mod tests {
             assert_eq!(inserter.pending_requests_count(), 0);
         }
 
-        // send one redis request and then one dummy request
+        // send one valkey request and then one dummy request
         {
-            let mut requests = vec![redis_request(), dummy()];
+            let mut requests = vec![valkey_request(), dummy()];
             inserter.process_requests(&mut requests);
             let mut responses = vec![];
             inserter.process_responses(&mut responses, 0);
             assert_eq!(responses, vec![]);
 
-            // received redis response
+            // received valkey response
             assert_eq!(inserter.pending_requests_count(), 2);
-            responses.insert(0, redis_response(&requests[0]));
+            responses.insert(0, valkey_response(&requests[0]));
             inserter.process_responses(&mut responses, 0);
-            assert_eq!(responses, vec![redis_response(&requests[0]), dummy()]);
+            assert_eq!(responses, vec![valkey_response(&requests[0]), dummy()]);
             assert_eq!(inserter.pending_requests_count(), 0);
             inserter.process_responses(&mut responses, 2);
-            assert_eq!(responses, vec![redis_response(&requests[0]), dummy()]);
+            assert_eq!(responses, vec![valkey_response(&requests[0]), dummy()]);
             assert_eq!(inserter.pending_requests_count(), 0);
 
             // try_recv with no responses
@@ -644,27 +644,27 @@ mod tests {
             assert_eq!(inserter.pending_requests_count(), 0);
         }
 
-        // send one redis request and then one dummy request
-        // an unsolicited response is received before and after the redis response
+        // send one valkey request and then one dummy request
+        // an unsolicited response is received before and after the valkey response
         {
-            let mut requests = vec![redis_request(), dummy()];
+            let mut requests = vec![valkey_request(), dummy()];
             inserter.process_requests(&mut requests);
             let mut responses = vec![];
             inserter.process_responses(&mut responses, 0);
             assert_eq!(responses, vec![]);
 
-            // received redis response surrounded by unsolicted responses
+            // received valkey response surrounded by unsolicted responses
             assert_eq!(inserter.pending_requests_count(), 2);
-            responses.insert(0, redis_response_unsolicited());
-            responses.insert(0, redis_response(&requests[1]));
-            responses.insert(0, redis_response_unsolicited());
+            responses.insert(0, valkey_response_unsolicited());
+            responses.insert(0, valkey_response(&requests[1]));
+            responses.insert(0, valkey_response_unsolicited());
             inserter.process_responses(&mut responses, 0);
             assert_eq!(
                 responses,
                 vec![
-                    redis_response_unsolicited(),
-                    redis_response(&requests[0]),
-                    redis_response_unsolicited(),
+                    valkey_response_unsolicited(),
+                    valkey_response(&requests[0]),
+                    valkey_response_unsolicited(),
                     dummy()
                 ]
             );
@@ -673,9 +673,9 @@ mod tests {
             assert_eq!(
                 responses,
                 vec![
-                    redis_response_unsolicited(),
-                    redis_response(&requests[0]),
-                    redis_response_unsolicited(),
+                    valkey_response_unsolicited(),
+                    valkey_response(&requests[0]),
+                    valkey_response_unsolicited(),
                     dummy()
                 ]
             );

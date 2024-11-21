@@ -130,15 +130,17 @@ impl RedisBench {
             }
         }
 
-        common::generate_topology(SourceConfig::Redis(shotover::sources::redis::RedisConfig {
-            name: "redis".to_owned(),
-            listen_addr: host_address,
-            connection_limit: None,
-            hard_connection_limit: None,
-            tls: tls_acceptor,
-            timeout: None,
-            chain: TransformChainConfig(transforms),
-        }))
+        common::generate_topology(SourceConfig::Valkey(
+            shotover::sources::redis::ValkeyConfig {
+                name: "redis".to_owned(),
+                listen_addr: host_address,
+                connection_limit: None,
+                hard_connection_limit: None,
+                tls: tls_acceptor,
+                timeout: None,
+                chain: TransformChainConfig(transforms),
+            },
+        ))
     }
 
     async fn run_aws_shotover(

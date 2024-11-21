@@ -123,7 +123,7 @@ async fn test_shotover_shutdown_when_protocol_mismatch() {
 
 Caused by:
     Topology errors
-    Transform RedisSinkSingle requires upchain protocol to be one of [Redis] but was Cassandra
+    Transform RedisSinkSingle requires upchain protocol to be one of [Valkey] but was Cassandra
     "#,
             )])
         .await;
