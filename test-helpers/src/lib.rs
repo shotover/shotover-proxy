@@ -6,7 +6,7 @@ pub mod mock_cassandra;
 pub mod shotover_process;
 mod test_tracing;
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Error, Result};
 use std::path::Path;
 use subprocess::{Exec, Redirection};
 
@@ -67,12 +67,10 @@ pub async fn run_command_async(current_dir: &Path, command: &str, args: &[&str])
         .await
         .map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
-                return std::io::Error::new(
-                    std::io::ErrorKind::NotFound,
-                    command_not_found_error_message(command, args),
-                );
+                return Error::msg(command_not_found_error_message(command, args));
             }
-            e
+
+            Error::from(e)
         })
         .unwrap();
 
@@ -87,7 +85,7 @@ mod tests {
     use futures_util::FutureExt;
 
     #[tokio::test]
-    async fn test_run_command_async_not_found() {
+    async fn test_run_command_async_not_found_message() {
         let dir = Path::new(env!("CARGO_MANIFEST_DIR"));
         let command = "shotover_non_existent_command";
         let args = &["arg1", "arg2"];
@@ -100,8 +98,8 @@ mod tests {
         if let Err(panic_info) = result {
             if let Some(error_message) = panic_info.downcast_ref::<String>() {
                 assert!(
-                    error_message.contains(&command_not_found_error_message(command, args)),
-                    "Error message did not contain the expected NotFound error: {}",
+                    error_message.contains("Attempted to run the command `shotover_non_existent_command arg1 arg2` but shotover_non_existent_command does not exist. Have you installed shotover_non_existent_command?"),
+                    "Error message did not contain the expected NotFound error got: {}",
                     error_message
                 );
             } else {
