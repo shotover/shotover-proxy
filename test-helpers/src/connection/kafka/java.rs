@@ -173,6 +173,14 @@ impl KafkaConnectionBuilderJava {
             "org.apache.kafka.common.serialization.StringDeserializer".to_owned(),
         );
 
+        config.insert(
+            "group.protocol".to_owned(),
+            match consumer_config.protocol {
+                super::ConsumerProtocol::Classic => "CLASSIC".to_owned(),
+                super::ConsumerProtocol::Consumer => "CONSUMER".to_owned(),
+            },
+        );
+
         let consumer = self.jvm.construct(
             "org.apache.kafka.clients.consumer.KafkaConsumer",
             vec![properties(&self.jvm, &config)],

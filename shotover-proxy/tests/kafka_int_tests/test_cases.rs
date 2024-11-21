@@ -3,11 +3,12 @@ use std::{collections::HashMap, time::Duration};
 use test_helpers::{
     connection::kafka::{
         Acl, AclOperation, AclPermissionType, AlterConfig, ConfigEntry, ConsumerConfig,
-        ConsumerGroupDescription, DescribeReplicaLogDirInfo, ExpectedResponse, IsolationLevel,
-        KafkaAdmin, KafkaConnectionBuilder, KafkaConsumer, KafkaDriver, KafkaProducer,
-        ListOffsetsResultInfo, NewPartition, NewPartitionReassignment, NewTopic, OffsetAndMetadata,
-        OffsetSpec, Record, RecordsToDelete, ResourcePatternType, ResourceSpecifier, ResourceType,
-        TopicPartition, TopicPartitionReplica, TransactionDescription,
+        ConsumerGroupDescription, ConsumerProtocol, DescribeReplicaLogDirInfo, ExpectedResponse,
+        IsolationLevel, KafkaAdmin, KafkaConnectionBuilder, KafkaConsumer, KafkaDriver,
+        KafkaProducer, ListOffsetsResultInfo, NewPartition, NewPartitionReassignment, NewTopic,
+        OffsetAndMetadata, OffsetSpec, Record, RecordsToDelete, ResourcePatternType,
+        ResourceSpecifier, ResourceType, TopicPartition, TopicPartitionReplica,
+        TransactionDescription,
     },
     docker_compose::DockerCompose,
 };
@@ -44,6 +45,11 @@ async fn admin_setup(connection_builder: &KafkaConnectionBuilder) {
             },
             NewTopic {
                 name: "partitions3_case4",
+                num_partitions: 3,
+                replication_factor: 1,
+            },
+            NewTopic {
+                name: "partitions3_new_consumer_group_protocol",
                 num_partitions: 3,
                 replication_factor: 1,
             },
@@ -1046,6 +1052,64 @@ pub async fn produce_consume_partitions3(
                 .with_group("some_group")
                 .with_fetch_min_bytes(fetch_min_bytes)
                 .with_fetch_max_wait_ms(fetch_wait_max_ms),
+        )
+        .await;
+
+    for _ in 0..5 {
+        producer
+            .assert_produce(
+                Record {
+                    payload: "Message1",
+                    topic_name,
+                    key: Some("Key".into()),
+                },
+                // We cant predict the offsets since that will depend on which partition the keyless record ends up in
+                None,
+            )
+            .await;
+        producer
+            .assert_produce(
+                Record {
+                    payload: "Message2",
+                    topic_name,
+                    key: None,
+                },
+                None,
+            )
+            .await;
+
+        consumer
+            .assert_consume_in_any_order(vec![
+                ExpectedResponse {
+                    message: "Message1".to_owned(),
+                    key: Some("Key".to_owned()),
+                    topic_name: topic_name.to_owned(),
+                    offset: None,
+                },
+                ExpectedResponse {
+                    message: "Message2".to_owned(),
+                    key: None,
+                    topic_name: topic_name.to_owned(),
+                    offset: None,
+                },
+            ])
+            .await;
+    }
+}
+
+/// The new consumer protocol must be specifically enabled in the broker config.
+/// We only do this for the kafka 3.9 docker-compose.yaml so this test case is
+/// manually called for that test and not included in the standard test suite.
+pub async fn produce_consume_partitions_new_consumer_group_protocol(
+    connection_builder: &KafkaConnectionBuilder,
+    topic_name: &str,
+) {
+    let producer = connection_builder.connect_producer("1", 0).await;
+    let mut consumer = connection_builder
+        .connect_consumer(
+            ConsumerConfig::consume_from_topics(vec![topic_name.to_owned()])
+                .with_group("some_group")
+                .with_protocol(ConsumerProtocol::Consumer),
         )
         .await;
 

@@ -36,6 +36,8 @@ services:
       #
       # However for an integration test workload we are constantly spinning up single consumer groups, so the default value makes the tests take twice as long to run.
       KAFKA_CFG_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
+
+      KAFKA_CFG_GROUP_COORDINATOR_REBALANCE_PROTOCOLS: "consumer, classic"
     volumes: &volumes
       - type: tmpfs
         target: /bitnami/kafka

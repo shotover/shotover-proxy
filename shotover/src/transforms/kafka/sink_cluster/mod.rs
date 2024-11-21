@@ -32,17 +32,17 @@ use kafka_protocol::messages::produce_response::{
 };
 use kafka_protocol::messages::{
     AddOffsetsToTxnRequest, AddPartitionsToTxnRequest, AddPartitionsToTxnResponse, ApiKey,
-    BrokerId, DeleteGroupsRequest, DeleteGroupsResponse, DeleteRecordsRequest,
-    DeleteRecordsResponse, DescribeClusterResponse, DescribeGroupsRequest, DescribeGroupsResponse,
-    DescribeLogDirsResponse, DescribeProducersRequest, DescribeProducersResponse,
-    DescribeTransactionsRequest, DescribeTransactionsResponse, EndTxnRequest, FetchRequest,
-    FetchResponse, FindCoordinatorRequest, FindCoordinatorResponse, GroupId, HeartbeatRequest,
-    InitProducerIdRequest, JoinGroupRequest, LeaveGroupRequest, ListGroupsResponse,
-    ListOffsetsRequest, ListOffsetsResponse, ListTransactionsResponse, MetadataRequest,
-    MetadataResponse, OffsetFetchRequest, OffsetFetchResponse, OffsetForLeaderEpochRequest,
-    OffsetForLeaderEpochResponse, ProduceRequest, ProduceResponse, RequestHeader,
-    SaslAuthenticateRequest, SaslAuthenticateResponse, SaslHandshakeRequest, SyncGroupRequest,
-    TopicName, TransactionalId, TxnOffsetCommitRequest,
+    BrokerId, ConsumerGroupHeartbeatRequest, DeleteGroupsRequest, DeleteGroupsResponse,
+    DeleteRecordsRequest, DeleteRecordsResponse, DescribeClusterResponse, DescribeGroupsRequest,
+    DescribeGroupsResponse, DescribeLogDirsResponse, DescribeProducersRequest,
+    DescribeProducersResponse, DescribeTransactionsRequest, DescribeTransactionsResponse,
+    EndTxnRequest, FetchRequest, FetchResponse, FindCoordinatorRequest, FindCoordinatorResponse,
+    GroupId, HeartbeatRequest, InitProducerIdRequest, JoinGroupRequest, LeaveGroupRequest,
+    ListGroupsResponse, ListOffsetsRequest, ListOffsetsResponse, ListTransactionsResponse,
+    MetadataRequest, MetadataResponse, OffsetFetchRequest, OffsetFetchResponse,
+    OffsetForLeaderEpochRequest, OffsetForLeaderEpochResponse, ProduceRequest, ProduceResponse,
+    RequestHeader, SaslAuthenticateRequest, SaslAuthenticateResponse, SaslHandshakeRequest,
+    SyncGroupRequest, TopicName, TransactionalId, TxnOffsetCommitRequest,
 };
 use kafka_protocol::protocol::StrBytes;
 use kafka_protocol::ResponseError;
@@ -736,6 +736,10 @@ impl KafkaSinkCluster {
                 Some(Frame::Kafka(KafkaFrame::Request {
                     body:
                         RequestBody::Heartbeat(HeartbeatRequest { group_id, .. })
+                        | RequestBody::ConsumerGroupHeartbeat(ConsumerGroupHeartbeatRequest {
+                            group_id,
+                            ..
+                        })
                         | RequestBody::SyncGroup(SyncGroupRequest { group_id, .. })
                         | RequestBody::JoinGroup(JoinGroupRequest { group_id, .. })
                         | RequestBody::LeaveGroup(LeaveGroupRequest { group_id, .. })
@@ -950,6 +954,13 @@ impl KafkaSinkCluster {
                 // route to group coordinator
                 Some(Frame::Kafka(KafkaFrame::Request {
                     body: RequestBody::Heartbeat(heartbeat),
+                    ..
+                })) => {
+                    let group_id = heartbeat.group_id.clone();
+                    self.route_to_group_coordinator(request, group_id);
+                }
+                Some(Frame::Kafka(KafkaFrame::Request {
+                    body: RequestBody::ConsumerGroupHeartbeat(heartbeat),
                     ..
                 })) => {
                     let group_id = heartbeat.group_id.clone();
@@ -2997,6 +3008,10 @@ The connection to the client has been closed."
             }
             Some(Frame::Kafka(KafkaFrame::Response {
                 body: ResponseBody::Heartbeat(heartbeat),
+                ..
+            })) => self.handle_group_coordinator_routing_error(&request_ty, heartbeat.error_code),
+            Some(Frame::Kafka(KafkaFrame::Response {
+                body: ResponseBody::ConsumerGroupHeartbeat(heartbeat),
                 ..
             })) => self.handle_group_coordinator_routing_error(&request_ty, heartbeat.error_code),
             Some(Frame::Kafka(KafkaFrame::Response {
