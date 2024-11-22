@@ -4,7 +4,7 @@ sources:
       name: "cassandra"
       listen_addr: "127.0.0.1:9042"
       chain:
-        - RedisCache:
+        - ValkeyCache:
             caching_schema:
               test_cache_keyspace_batch_insert.test_table:
                 partition_key: [id]
@@ -13,7 +13,7 @@ sources:
                 partition_key: [id]
                 range_key: []
             chain:
-              - RedisSinkSingle:
+              - ValkeySinkSingle:
                   remote_address: "127.0.0.1:6379"
                   connect_timeout_ms: 3000
         - CassandraSinkSingle:

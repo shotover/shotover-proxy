@@ -1,9 +1,9 @@
 ---
 sources:
   - Valkey:
-      name: "redis"
+      name: "valkey"
       listen_addr: "127.0.0.1:6379"
       chain:
-        - RedisSinkSingle:
+        - ValkeySinkSingle:
             remote_address: "127.0.0.1:1111"
             connect_timeout_ms: 3000

@@ -64,11 +64,11 @@ pub async fn assert_query_is_uncacheable(
 }
 
 pub fn assert_sorted_set_equals(
-    redis_connection: &mut redis::Connection,
+    valkey_connection: &mut redis::Connection,
     key: &str,
     expected_values: &[&str],
 ) {
     let expected_values: HashSet<String> = expected_values.iter().map(|x| x.to_string()).collect();
-    let values: HashSet<String> = redis_connection.hkeys(key).unwrap();
+    let values: HashSet<String> = valkey_connection.hkeys(key).unwrap();
     assert_eq!(values, expected_values)
 }

@@ -5,7 +5,7 @@ sources:
   # The source, change from Valkey to the source type of the database protocol you are receiving messages in.
   # For a list of possible sources: https://docs.shotover.io/sources
   - Valkey:
-      name: "redis"
+      name: "valkey"
       listen_addr: "127.0.0.1:6379"
       chain:
         # A DebugPrinter transform, reports an INFO log for every message that passes through this transform.
