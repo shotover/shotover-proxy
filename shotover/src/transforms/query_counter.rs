@@ -78,7 +78,7 @@ impl Transform for QueryCounter {
                 }
                 #[cfg(feature = "redis")]
                 Some(Frame::Valkey(frame)) => {
-                    if let Some(query_type) = crate::frame::redis::valkey_query_name(frame) {
+                    if let Some(query_type) = crate::frame::valkey::valkey_query_name(frame) {
                         self.increment_counter(query_type, "valkey");
                     } else {
                         self.increment_counter("unknown".to_string(), "valkey");

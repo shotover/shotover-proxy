@@ -1,6 +1,6 @@
 use crate::shotover_process;
 use pretty_assertions::assert_eq;
-use test_helpers::connection::redis_connection;
+use test_helpers::connection::valkey_connection;
 use test_helpers::docker_compose::docker_compose;
 use test_helpers::shotover_process::{Count, EventMatcher, Level};
 
@@ -10,7 +10,7 @@ async fn test_ignore_matches() {
         .start()
         .await;
 
-    let mut connection = redis_connection::new_async("127.0.0.1", 6379).await;
+    let mut connection = valkey_connection::new_async("127.0.0.1", 6379).await;
 
     let result = redis::cmd("SET")
         .arg("key")
@@ -29,7 +29,7 @@ async fn test_ignore_with_mismatch() {
         .start()
         .await;
 
-    let mut connection = redis_connection::new_async("127.0.0.1", 6379).await;
+    let mut connection = valkey_connection::new_async("127.0.0.1", 6379).await;
 
     let result = redis::cmd("SET")
         .arg("key")
@@ -48,7 +48,7 @@ async fn test_log_matches() {
         .start()
         .await;
 
-    let mut connection = redis_connection::new_async("127.0.0.1", 6379).await;
+    let mut connection = valkey_connection::new_async("127.0.0.1", 6379).await;
 
     let result = redis::cmd("SET")
         .arg("key")
@@ -67,7 +67,7 @@ async fn test_log_with_mismatch() {
         .start()
         .await;
 
-    let mut connection = redis_connection::new_async("127.0.0.1", 6379).await;
+    let mut connection = valkey_connection::new_async("127.0.0.1", 6379).await;
 
     let result = redis::cmd("SET")
         .arg("key")
@@ -96,7 +96,7 @@ async fn test_fail_matches() {
         .start()
         .await;
 
-    let mut connection = redis_connection::new_async("127.0.0.1", 6379).await;
+    let mut connection = valkey_connection::new_async("127.0.0.1", 6379).await;
 
     let result = redis::cmd("SET")
         .arg("key")
@@ -115,7 +115,7 @@ async fn test_fail_with_mismatch() {
         .start()
         .await;
 
-    let mut connection = redis_connection::new_async("127.0.0.1", 6379).await;
+    let mut connection = valkey_connection::new_async("127.0.0.1", 6379).await;
 
     let err = redis::cmd("SET")
         .arg("key")
@@ -132,13 +132,13 @@ async fn test_fail_with_mismatch() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_subchain_matches() {
-    let _compose = docker_compose("tests/test-configs/redis/passthrough/docker-compose.yaml");
+    let _compose = docker_compose("tests/test-configs/valkey/passthrough/docker-compose.yaml");
     let shotover = shotover_process("tests/test-configs/tee/subchain.yaml")
         .start()
         .await;
 
-    let mut shotover_connection = redis_connection::new_async("127.0.0.1", 6379).await;
-    let mut mismatch_chain_valkey = redis_connection::new_async("127.0.0.1", 1111).await;
+    let mut shotover_connection = valkey_connection::new_async("127.0.0.1", 6379).await;
+    let mut mismatch_chain_valkey = valkey_connection::new_async("127.0.0.1", 1111).await;
     redis::cmd("SET")
         .arg("key")
         .arg("myvalue")
@@ -167,13 +167,13 @@ async fn test_subchain_matches() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_subchain_with_mismatch() {
-    let _compose = docker_compose("tests/test-configs/redis/passthrough/docker-compose.yaml");
+    let _compose = docker_compose("tests/test-configs/valkey/passthrough/docker-compose.yaml");
     let shotover = shotover_process("tests/test-configs/tee/subchain_with_mismatch.yaml")
         .start()
         .await;
 
-    let mut shotover_connection = redis_connection::new_async("127.0.0.1", 6379).await;
-    let mut mismatch_chain_valkey = redis_connection::new_async("127.0.0.1", 1111).await;
+    let mut shotover_connection = valkey_connection::new_async("127.0.0.1", 6379).await;
+    let mut mismatch_chain_valkey = valkey_connection::new_async("127.0.0.1", 1111).await;
 
     // Set the value on the top level chain valkey
     let mut result = redis::cmd("SET")
@@ -207,7 +207,7 @@ async fn test_switch_main_chain() {
         let valkey_port = 6370 + i;
         let switch_port = 1230 + i;
 
-        let mut connection = redis_connection::new_async("127.0.0.1", valkey_port).await;
+        let mut connection = valkey_connection::new_async("127.0.0.1", valkey_port).await;
 
         let result = redis::cmd("SET")
             .arg("key")

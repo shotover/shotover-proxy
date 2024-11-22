@@ -24,7 +24,7 @@ use shotover::{
     tls::{TlsAcceptorConfig, TlsConnectorConfig},
     transforms::{
         debug::force_parse::DebugForceEncodeConfig,
-        redis::{sink_cluster::ValkeySinkClusterConfig, sink_single::ValkeySinkSingleConfig},
+        valkey::{sink_cluster::ValkeySinkClusterConfig, sink_single::ValkeySinkSingleConfig},
         TransformConfig,
     },
 };
@@ -84,7 +84,7 @@ impl ValkeyBench {
     }
 
     fn generate_topology_yaml(&self, host_address: String, valkey_address: String) -> String {
-        let certs = "tests/test-configs/redis/tls/certs";
+        let certs = "tests/test-configs/valkey/tls/certs";
         let tls_connector = match self.encryption {
             Encryption::Tls => Some(TlsConnectorConfig {
                 certificate_authority_path: format!("{certs}/localhost_CA.crt"),
@@ -131,7 +131,7 @@ impl ValkeyBench {
         }
 
         common::generate_topology(SourceConfig::Valkey(
-            shotover::sources::redis::ValkeyConfig {
+            shotover::sources::valkey::ValkeyConfig {
                 name: "valkey".to_owned(),
                 listen_addr: host_address,
                 connection_limit: None,
@@ -314,12 +314,12 @@ impl Bench for ValkeyBench {
             ValkeyTopology::Cluster3 => "172.16.1.2:6379",
         };
         let config_dir = match (self.topology, self.encryption) {
-            (ValkeyTopology::Single, Encryption::None) => "tests/test-configs/redis/passthrough",
+            (ValkeyTopology::Single, Encryption::None) => "tests/test-configs/valkey/passthrough",
             (ValkeyTopology::Cluster3, Encryption::None) => {
-                "tests/test-configs/redis/cluster-hiding"
+                "tests/test-configs/valkey/cluster-hiding"
             }
-            (ValkeyTopology::Single, Encryption::Tls) => "tests/test-configs/redis/tls",
-            (ValkeyTopology::Cluster3, Encryption::Tls) => "tests/test-configs/redis/cluster-tls",
+            (ValkeyTopology::Single, Encryption::Tls) => "tests/test-configs/valkey/tls",
+            (ValkeyTopology::Cluster3, Encryption::Tls) => "tests/test-configs/valkey/cluster-tls",
         };
         let _compose = docker_compose(&format!("{config_dir}/docker-compose.yaml"));
         let mut profiler = ProfilerRunner::new(self.name(), profiling);
@@ -360,12 +360,12 @@ impl Bench for ValkeyBench {
         let mut config = RedisConfig::from_url(address).unwrap();
         if let Encryption::Tls = self.encryption {
             let private_key =
-                load_private_key("tests/test-configs/redis/tls/certs/localhost.key").unwrap();
-            let certs = load_certs("tests/test-configs/redis/tls/certs/localhost.crt").unwrap();
+                load_private_key("tests/test-configs/valkey/tls/certs/localhost.key").unwrap();
+            let certs = load_certs("tests/test-configs/valkey/tls/certs/localhost.crt").unwrap();
             config.tls = Some(
                 ClientConfig::builder()
                     .with_root_certificates(
-                        load_ca("tests/test-configs/redis/tls/certs/localhost_CA.crt").unwrap(),
+                        load_ca("tests/test-configs/valkey/tls/certs/localhost_CA.crt").unwrap(),
                     )
                     .with_client_auth_cert(certs, private_key)
                     .unwrap()

@@ -255,9 +255,9 @@ fn is_cluster_slots(frame: &Frame) -> bool {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::codec::redis::ValkeyDecoder;
+    use crate::codec::valkey::ValkeyDecoder;
     use crate::codec::Direction;
-    use crate::transforms::redis::sink_cluster::parse_slots;
+    use crate::transforms::valkey::sink_cluster::parse_slots;
     use pretty_assertions::assert_eq;
     use tokio_util::codec::Decoder;
 

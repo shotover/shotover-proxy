@@ -2,7 +2,7 @@
 #[cfg(feature = "cassandra")]
 pub mod cassandra;
 #[cfg(feature = "redis")]
-mod redis;
+mod valkey;
 
 use bigdecimal::BigDecimal;
 use bytes::Bytes;

@@ -259,7 +259,7 @@ impl Encoder<Messages> for ValkeyEncoder {
 #[cfg(test)]
 mod valkey_tests {
 
-    use crate::codec::{redis::ValkeyCodecBuilder, CodecBuilder, Direction};
+    use crate::codec::{valkey::ValkeyCodecBuilder, CodecBuilder, Direction};
     use bytes::BytesMut;
     use hex_literal::hex;
     use pretty_assertions::assert_eq;
