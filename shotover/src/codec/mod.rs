@@ -16,7 +16,7 @@ pub mod kafka;
 #[cfg(feature = "opensearch")]
 pub mod opensearch;
 #[cfg(feature = "redis")]
-pub mod redis;
+pub mod valkey;
 
 #[derive(Eq, PartialEq, Copy, Clone)]
 pub enum Direction {

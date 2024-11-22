@@ -21,7 +21,7 @@ use test_helpers::connection::cassandra::{
     CassandraDriver, CassandraDriver::Cdrs, CassandraDriver::Java, CassandraDriver::Scylla,
     CqlWsSession, ResultValue,
 };
-use test_helpers::connection::redis_connection;
+use test_helpers::connection::valkey_connection;
 use test_helpers::docker_compose::docker_compose;
 #[cfg(feature = "alpha-transforms")]
 use test_helpers::docker_compose::new_moto;
@@ -569,7 +569,7 @@ async fn cassandra_valkey_cache(#[case] driver: CassandraDriver) {
         .start()
         .await;
 
-    let mut valkey_connection = redis_connection::new(6379);
+    let mut valkey_connection = valkey_connection::new(6379);
     let connection_creator = || CassandraConnectionBuilder::new("127.0.0.1", 9042, driver).build();
     let connection = connection_creator().await;
 

@@ -1,4 +1,4 @@
-use crate::codec::{redis::ValkeyCodecBuilder, CodecBuilder, Direction};
+use crate::codec::{valkey::ValkeyCodecBuilder, CodecBuilder, Direction};
 use crate::config::chain::TransformChainConfig;
 use crate::server::TcpCodecListener;
 use crate::sources::{Source, Transport};

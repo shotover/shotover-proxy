@@ -32,7 +32,7 @@ pub mod parallel_map;
 pub mod protect;
 pub mod query_counter;
 #[cfg(feature = "redis")]
-pub mod redis;
+pub mod valkey;
 pub mod tee;
 #[cfg(feature = "cassandra")]
 pub mod throttling;

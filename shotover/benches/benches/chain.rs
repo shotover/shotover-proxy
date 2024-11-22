@@ -17,7 +17,7 @@ use shotover::transforms::null::NullSink;
 #[cfg(feature = "alpha-transforms")]
 use shotover::transforms::protect::{KeyManagerConfig, ProtectConfig};
 use shotover::transforms::query_counter::QueryCounter;
-use shotover::transforms::redis::cluster_ports_rewrite::ValkeyClusterPortsRewrite;
+use shotover::transforms::valkey::cluster_ports_rewrite::ValkeyClusterPortsRewrite;
 use shotover::transforms::throttling::RequestThrottlingConfig;
 use shotover::transforms::{
     ChainState, TransformConfig, TransformContextBuilder, TransformContextConfig,

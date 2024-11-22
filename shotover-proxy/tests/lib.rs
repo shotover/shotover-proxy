@@ -11,7 +11,7 @@ mod kafka_int_tests;
 #[cfg(all(feature = "alpha-transforms", feature = "opensearch"))]
 mod opensearch_int_tests;
 #[cfg(feature = "redis")]
-mod redis_int_tests;
+mod valkey_int_tests;
 #[cfg(feature = "redis")]
 mod runner;
 #[cfg(feature = "redis")]
