@@ -64,6 +64,11 @@ async fn admin_setup(connection_builder: &KafkaConnectionBuilder) {
                 replication_factor: 1,
             },
             NewTopic {
+                name: "to_change_partitions",
+                num_partitions: 1,
+                replication_factor: 1,
+            },
+            NewTopic {
                 name: "multi_topic_consumer_1",
                 num_partitions: 3,
                 replication_factor: 1,
@@ -113,7 +118,7 @@ async fn admin_setup(connection_builder: &KafkaConnectionBuilder) {
 
     admin
         .create_partitions(&[NewPartition {
-            topic_name: "to_delete",
+            topic_name: "to_change_partitions",
             new_partition_count: 2,
         }])
         .await;
