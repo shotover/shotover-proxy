@@ -38,7 +38,7 @@ pub fn run_command(command: &str, args: &[&str]) -> Result<String> {
     }
 }
 
-fn command_not_found_error_message(command: &str, args: &[&str]) -> String {
+fn command_not_found_error(command: &str, args: &[&str]) -> Error {
     // Maps a command to its associated dependency; however, if the name of the command and dependency is the same, we just use the command name.
     // Currently, the only use case is mapping `npm` to its dependency `nodejs`.
     let dependency = match command {
@@ -52,9 +52,12 @@ fn command_not_found_error_message(command: &str, args: &[&str]) -> String {
         String::new()
     };
 
-    format!(
+    anyhow!(
         "Attempted to run the command `{}{}` but {} does not exist. Have you installed {}?",
-        command, args_part, command, dependency
+        command,
+        args_part,
+        command,
+        dependency
     )
 }
 
@@ -67,10 +70,10 @@ pub async fn run_command_async(current_dir: &Path, command: &str, args: &[&str])
         .await
         .map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
-                return Error::msg(command_not_found_error_message(command, args));
+                return command_not_found_error(command, args);
             }
 
-            Error::from(e)
+            anyhow!(e)
         })
         .unwrap();
 
