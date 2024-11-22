@@ -98,7 +98,7 @@ pub fn generate_cassandra_test_certs() {
     .unwrap();
 }
 
-pub fn generate_redis_test_certs() {
+pub fn generate_valkey_test_certs() {
     generate_test_certs(Path::new("tests/test-configs/redis/tls/certs"));
 }
 

@@ -17,7 +17,7 @@ use shotover::transforms::null::NullSink;
 #[cfg(feature = "alpha-transforms")]
 use shotover::transforms::protect::{KeyManagerConfig, ProtectConfig};
 use shotover::transforms::query_counter::QueryCounter;
-use shotover::transforms::redis::cluster_ports_rewrite::RedisClusterPortsRewrite;
+use shotover::transforms::redis::cluster_ports_rewrite::ValkeyClusterPortsRewrite;
 use shotover::transforms::throttling::RequestThrottlingConfig;
 use shotover::transforms::{
     ChainState, TransformConfig, TransformContextBuilder, TransformContextConfig,
@@ -88,7 +88,7 @@ fn criterion_benchmark(c: &mut Criterion) {
             "127.0.0.1:6379".parse().unwrap(),
         );
 
-        group.bench_function("redis_filter", |b| {
+        group.bench_function("valkey_filter", |b| {
             b.to_async(&rt).iter_batched(
                 || BenchInput::new_pre_used(&chain, &chain_state),
                 BenchInput::bench,
@@ -100,7 +100,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     {
         let chain = TransformChainBuilder::new(
             vec![
-                Box::new(RedisClusterPortsRewrite::new(2004)),
+                Box::new(ValkeyClusterPortsRewrite::new(2004)),
                 Box::<NullSink>::default(),
             ],
             "bench",
@@ -116,7 +116,7 @@ fn criterion_benchmark(c: &mut Criterion) {
             "127.0.0.1:6379".parse().unwrap(),
         );
 
-        group.bench_function("redis_cluster_ports_rewrite", |b| {
+        group.bench_function("valkey_cluster_ports_rewrite", |b| {
             b.to_async(&rt).iter_batched(
                 || BenchInput::new_pre_used(&chain, &chain_state),
                 BenchInput::bench,

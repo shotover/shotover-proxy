@@ -155,10 +155,10 @@ fi
         ),
     );
     shell.commands.insert(
-        "windsock-redis",
+        "windsock-valkey",
         Command::new_async(
-            "Uploads changes and runs `cargo windsock-redis $args`. Windsock results are downloaded to target/windsock_data".to_owned(),
-            async_fn!(State, windsock_redis),
+            "Uploads changes and runs `cargo windsock-valkey $args`. Windsock results are downloaded to target/windsock_data".to_owned(),
+            async_fn!(State, windsock_valkey),
         ),
     );
     shell.commands.insert(
@@ -212,8 +212,8 @@ async fn windsock_cassandra(state: &mut State, args: Vec<String>) -> Result<(), 
     windsock_inner("windsock-cassandra", state, args).await
 }
 
-async fn windsock_redis(state: &mut State, args: Vec<String>) -> Result<(), Box<dyn Error>> {
-    windsock_inner("windsock-redis", state, args).await
+async fn windsock_valkey(state: &mut State, args: Vec<String>) -> Result<(), Box<dyn Error>> {
+    windsock_inner("windsock-valkey", state, args).await
 }
 
 async fn windsock_inner(

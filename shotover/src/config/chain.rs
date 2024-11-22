@@ -62,7 +62,7 @@ impl TransformChainConfig {
 /// e.g. with typetag + yaml + the default serializer:
 /// this would fail to deserialize:
 /// ```yaml
-/// Redis:
+/// Valkey:
 ///   ...
 ///   chain:
 ///     - NullSink
@@ -70,7 +70,7 @@ impl TransformChainConfig {
 ///
 /// but this would work fine:
 /// ```yaml
-/// Redis:
+/// Valkey:
 ///   ...
 ///   chain:
 ///     - NullSink: {}

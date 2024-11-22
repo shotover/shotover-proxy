@@ -1,7 +1,7 @@
 ---
 sources:
   - Valkey:
-      name: "redis-1"
+      name: "valkey-1"
       listen_addr: "127.0.0.1:6371"
       connection_limit: 
       chain:
@@ -15,7 +15,7 @@ sources:
         - DebugReturner:
             Valkey: "a"
   - Valkey:
-      name: "redis-2"
+      name: "valkey-2"
       listen_addr: "127.0.0.1:6372"
       connection_limit: 
       chain:
@@ -31,7 +31,7 @@ sources:
         - DebugReturner:
             Valkey: "a"
   - Valkey:
-      name: "redis-3"
+      name: "valkey-3"
       listen_addr: "127.0.0.1:6373"
       connection_limit: 
       chain:

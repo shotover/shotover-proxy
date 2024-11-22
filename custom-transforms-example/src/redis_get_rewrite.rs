@@ -10,19 +10,19 @@ use shotover::transforms::{DownChainProtocol, TransformContextBuilder, UpChainPr
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
-pub struct RedisGetRewriteConfig {
+pub struct ValkeyGetRewriteConfig {
     pub result: String,
 }
 
-const NAME: &str = "RedisGetRewrite";
-#[typetag::serde(name = "RedisGetRewrite")]
+const NAME: &str = "ValkeyGetRewrite";
+#[typetag::serde(name = "ValkeyGetRewrite")]
 #[async_trait(?Send)]
-impl TransformConfig for RedisGetRewriteConfig {
+impl TransformConfig for ValkeyGetRewriteConfig {
     async fn get_builder(
         &self,
         _transform_context: TransformContextConfig,
     ) -> Result<Box<dyn TransformBuilder>> {
-        Ok(Box::new(RedisGetRewriteBuilder {
+        Ok(Box::new(ValkeyGetRewriteBuilder {
             result: self.result.clone(),
         }))
     }
@@ -36,13 +36,13 @@ impl TransformConfig for RedisGetRewriteConfig {
     }
 }
 
-pub struct RedisGetRewriteBuilder {
+pub struct ValkeyGetRewriteBuilder {
     result: String,
 }
 
-impl TransformBuilder for RedisGetRewriteBuilder {
+impl TransformBuilder for ValkeyGetRewriteBuilder {
     fn build(&self, _transform_context: TransformContextBuilder) -> Box<dyn Transform> {
-        Box::new(RedisGetRewrite {
+        Box::new(ValkeyGetRewrite {
             get_requests: MessageIdSet::default(),
             result: self.result.clone(),
         })
@@ -53,13 +53,13 @@ impl TransformBuilder for RedisGetRewriteBuilder {
     }
 }
 
-pub struct RedisGetRewrite {
+pub struct ValkeyGetRewrite {
     get_requests: MessageIdSet,
     result: String,
 }
 
 #[async_trait]
-impl Transform for RedisGetRewrite {
+impl Transform for ValkeyGetRewrite {
     fn get_name(&self) -> &'static str {
         NAME
     }

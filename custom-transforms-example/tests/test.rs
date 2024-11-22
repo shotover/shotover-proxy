@@ -8,7 +8,7 @@ use test_helpers::shotover_process::{bin_path, BinProcess, EventMatcher, Level};
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_custom_transform() {
-    // Setup shotover and the redis server it connects to
+    // Setup shotover and the valkey server it connects to
     let _compose = docker_compose("config/docker-compose.yaml");
     let shotover = shotover_proxy("config/topology.yaml").await;
     let mut connection = redis_connection::new_async("127.0.0.1", 6379).await;

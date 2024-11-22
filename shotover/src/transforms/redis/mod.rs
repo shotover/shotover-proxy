@@ -8,7 +8,7 @@ pub mod sink_single;
 pub mod timestamp_tagging;
 
 #[derive(thiserror::Error, Clone, Debug)]
-pub enum RedisError {
+pub enum ValkeyError {
     #[error("authentication is required")]
     NotAuthenticated,
 
@@ -22,13 +22,13 @@ pub enum RedisError {
     Other(String),
 }
 
-impl RedisError {
-    fn from_message(error: &str) -> RedisError {
+impl ValkeyError {
+    fn from_message(error: &str) -> ValkeyError {
         match error.split_once(' ').map(|x| x.0) {
-            Some("NOAUTH") => RedisError::NotAuthenticated,
-            Some("NOPERM") => RedisError::NotAuthorized,
-            Some("WRONGPASS") => RedisError::BadCredentials,
-            _ => RedisError::Other(error.to_string()),
+            Some("NOAUTH") => ValkeyError::NotAuthenticated,
+            Some("NOPERM") => ValkeyError::NotAuthorized,
+            Some("WRONGPASS") => ValkeyError::BadCredentials,
+            _ => ValkeyError::Other(error.to_string()),
         }
     }
 }
@@ -36,7 +36,7 @@ impl RedisError {
 #[derive(thiserror::Error, Debug)]
 pub enum TransformError {
     #[error(transparent)]
-    Upstream(#[from] RedisError),
+    Upstream(#[from] ValkeyError),
 
     #[error("protocol error: {0}")]
     Protocol(String),

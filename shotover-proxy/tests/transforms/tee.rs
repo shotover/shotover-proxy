@@ -138,11 +138,11 @@ async fn test_subchain_matches() {
         .await;
 
     let mut shotover_connection = redis_connection::new_async("127.0.0.1", 6379).await;
-    let mut mismatch_chain_redis = redis_connection::new_async("127.0.0.1", 1111).await;
+    let mut mismatch_chain_valkey = redis_connection::new_async("127.0.0.1", 1111).await;
     redis::cmd("SET")
         .arg("key")
         .arg("myvalue")
-        .query_async::<_, String>(&mut mismatch_chain_redis)
+        .query_async::<_, String>(&mut mismatch_chain_valkey)
         .await
         .unwrap();
 
@@ -157,7 +157,7 @@ async fn test_subchain_matches() {
 
     result = redis::cmd("GET")
         .arg("key")
-        .query_async::<_, String>(&mut mismatch_chain_redis)
+        .query_async::<_, String>(&mut mismatch_chain_valkey)
         .await
         .unwrap();
 
@@ -173,9 +173,9 @@ async fn test_subchain_with_mismatch() {
         .await;
 
     let mut shotover_connection = redis_connection::new_async("127.0.0.1", 6379).await;
-    let mut mismatch_chain_redis = redis_connection::new_async("127.0.0.1", 1111).await;
+    let mut mismatch_chain_valkey = redis_connection::new_async("127.0.0.1", 1111).await;
 
-    // Set the value on the top level chain redis
+    // Set the value on the top level chain valkey
     let mut result = redis::cmd("SET")
         .arg("key")
         .arg("myvalue")
@@ -185,10 +185,10 @@ async fn test_subchain_with_mismatch() {
 
     assert_eq!(result, "42");
 
-    // When the mismatch occurs, the value should be sent to the mismatch chain's redis
+    // When the mismatch occurs, the value should be sent to the mismatch chain's valkey
     result = redis::cmd("GET")
         .arg("key")
-        .query_async::<_, String>(&mut mismatch_chain_redis)
+        .query_async::<_, String>(&mut mismatch_chain_valkey)
         .await
         .unwrap();
 
@@ -204,10 +204,10 @@ async fn test_switch_main_chain() {
 
     for i in 1..=3 {
         println!("{i}");
-        let redis_port = 6370 + i;
+        let valkey_port = 6370 + i;
         let switch_port = 1230 + i;
 
-        let mut connection = redis_connection::new_async("127.0.0.1", redis_port).await;
+        let mut connection = redis_connection::new_async("127.0.0.1", valkey_port).await;
 
         let result = redis::cmd("SET")
             .arg("key")

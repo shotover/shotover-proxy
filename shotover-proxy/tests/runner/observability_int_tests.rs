@@ -23,51 +23,51 @@ async fn test_metrics() {
 # TYPE shotover_transform_failures_count counter
 # TYPE shotover_transform_latency_seconds summary
 # TYPE shotover_transform_total_count counter
-connections_opened{source="redis"}
-shotover_available_connections_count{source="redis"}
-shotover_chain_failures_count{chain="redis"}
-shotover_chain_messages_per_batch_count_count{chain="redis"}
-shotover_chain_messages_per_batch_count_sum{chain="redis"}
-shotover_chain_messages_per_batch_count{chain="redis",quantile="0"}
-shotover_chain_messages_per_batch_count{chain="redis",quantile="0.1"}
-shotover_chain_messages_per_batch_count{chain="redis",quantile="0.5"}
-shotover_chain_messages_per_batch_count{chain="redis",quantile="0.9"}
-shotover_chain_messages_per_batch_count{chain="redis",quantile="0.95"}
-shotover_chain_messages_per_batch_count{chain="redis",quantile="0.99"}
-shotover_chain_messages_per_batch_count{chain="redis",quantile="0.999"}
-shotover_chain_messages_per_batch_count{chain="redis",quantile="1"}
-shotover_chain_requests_batch_size_count{chain="redis"}
-shotover_chain_requests_batch_size_sum{chain="redis"}
-shotover_chain_requests_batch_size{chain="redis",quantile="0"}
-shotover_chain_requests_batch_size{chain="redis",quantile="0.1"}
-shotover_chain_requests_batch_size{chain="redis",quantile="0.5"}
-shotover_chain_requests_batch_size{chain="redis",quantile="0.9"}
-shotover_chain_requests_batch_size{chain="redis",quantile="0.95"}
-shotover_chain_requests_batch_size{chain="redis",quantile="0.99"}
-shotover_chain_requests_batch_size{chain="redis",quantile="0.999"}
-shotover_chain_requests_batch_size{chain="redis",quantile="1"}
-shotover_chain_responses_batch_size_count{chain="redis"}
-shotover_chain_responses_batch_size_sum{chain="redis"}
-shotover_chain_responses_batch_size{chain="redis",quantile="0"}
-shotover_chain_responses_batch_size{chain="redis",quantile="0.1"}
-shotover_chain_responses_batch_size{chain="redis",quantile="0.5"}
-shotover_chain_responses_batch_size{chain="redis",quantile="0.9"}
-shotover_chain_responses_batch_size{chain="redis",quantile="0.95"}
-shotover_chain_responses_batch_size{chain="redis",quantile="0.99"}
-shotover_chain_responses_batch_size{chain="redis",quantile="0.999"}
-shotover_chain_responses_batch_size{chain="redis",quantile="1"}
-shotover_chain_total_count{chain="redis"}
-shotover_query_count{name="redis-chain"}
-shotover_sink_to_source_latency_seconds_count{source="redis"}
-shotover_sink_to_source_latency_seconds_sum{source="redis"}
-shotover_sink_to_source_latency_seconds{source="redis",quantile="0"}
-shotover_sink_to_source_latency_seconds{source="redis",quantile="0.1"}
-shotover_sink_to_source_latency_seconds{source="redis",quantile="0.5"}
-shotover_sink_to_source_latency_seconds{source="redis",quantile="0.9"}
-shotover_sink_to_source_latency_seconds{source="redis",quantile="0.95"}
-shotover_sink_to_source_latency_seconds{source="redis",quantile="0.99"}
-shotover_sink_to_source_latency_seconds{source="redis",quantile="0.999"}
-shotover_sink_to_source_latency_seconds{source="redis",quantile="1"}
+connections_opened{source="valkey"}
+shotover_available_connections_count{source="valkey"}
+shotover_chain_failures_count{chain="valkey"}
+shotover_chain_messages_per_batch_count_count{chain="valkey"}
+shotover_chain_messages_per_batch_count_sum{chain="valkey"}
+shotover_chain_messages_per_batch_count{chain="valkey",quantile="0"}
+shotover_chain_messages_per_batch_count{chain="valkey",quantile="0.1"}
+shotover_chain_messages_per_batch_count{chain="valkey",quantile="0.5"}
+shotover_chain_messages_per_batch_count{chain="valkey",quantile="0.9"}
+shotover_chain_messages_per_batch_count{chain="valkey",quantile="0.95"}
+shotover_chain_messages_per_batch_count{chain="valkey",quantile="0.99"}
+shotover_chain_messages_per_batch_count{chain="valkey",quantile="0.999"}
+shotover_chain_messages_per_batch_count{chain="valkey",quantile="1"}
+shotover_chain_requests_batch_size_count{chain="valkey"}
+shotover_chain_requests_batch_size_sum{chain="valkey"}
+shotover_chain_requests_batch_size{chain="valkey",quantile="0"}
+shotover_chain_requests_batch_size{chain="valkey",quantile="0.1"}
+shotover_chain_requests_batch_size{chain="valkey",quantile="0.5"}
+shotover_chain_requests_batch_size{chain="valkey",quantile="0.9"}
+shotover_chain_requests_batch_size{chain="valkey",quantile="0.95"}
+shotover_chain_requests_batch_size{chain="valkey",quantile="0.99"}
+shotover_chain_requests_batch_size{chain="valkey",quantile="0.999"}
+shotover_chain_requests_batch_size{chain="valkey",quantile="1"}
+shotover_chain_responses_batch_size_count{chain="valkey"}
+shotover_chain_responses_batch_size_sum{chain="valkey"}
+shotover_chain_responses_batch_size{chain="valkey",quantile="0"}
+shotover_chain_responses_batch_size{chain="valkey",quantile="0.1"}
+shotover_chain_responses_batch_size{chain="valkey",quantile="0.5"}
+shotover_chain_responses_batch_size{chain="valkey",quantile="0.9"}
+shotover_chain_responses_batch_size{chain="valkey",quantile="0.95"}
+shotover_chain_responses_batch_size{chain="valkey",quantile="0.99"}
+shotover_chain_responses_batch_size{chain="valkey",quantile="0.999"}
+shotover_chain_responses_batch_size{chain="valkey",quantile="1"}
+shotover_chain_total_count{chain="valkey"}
+shotover_query_count{name="valkey-chain"}
+shotover_sink_to_source_latency_seconds_count{source="valkey"}
+shotover_sink_to_source_latency_seconds_sum{source="valkey"}
+shotover_sink_to_source_latency_seconds{source="valkey",quantile="0"}
+shotover_sink_to_source_latency_seconds{source="valkey",quantile="0.1"}
+shotover_sink_to_source_latency_seconds{source="valkey",quantile="0.5"}
+shotover_sink_to_source_latency_seconds{source="valkey",quantile="0.9"}
+shotover_sink_to_source_latency_seconds{source="valkey",quantile="0.95"}
+shotover_sink_to_source_latency_seconds{source="valkey",quantile="0.99"}
+shotover_sink_to_source_latency_seconds{source="valkey",quantile="0.999"}
+shotover_sink_to_source_latency_seconds{source="valkey",quantile="1"}
 shotover_transform_failures_count{transform="NullSink"}
 shotover_transform_failures_count{transform="QueryCounter"}
 shotover_transform_latency_seconds_count{transform="NullSink"}
@@ -119,29 +119,29 @@ shotover_transform_total_count{transform="QueryCounter"}
 
     let expected_new = r#"
 # TYPE shotover_chain_latency_seconds summary
-shotover_chain_latency_seconds_count{chain="redis",client_details="127.0.0.1"}
-shotover_chain_latency_seconds_sum{chain="redis",client_details="127.0.0.1"}
-shotover_chain_latency_seconds{chain="redis",client_details="127.0.0.1",quantile="0"}
-shotover_chain_latency_seconds{chain="redis",client_details="127.0.0.1",quantile="0.1"}
-shotover_chain_latency_seconds{chain="redis",client_details="127.0.0.1",quantile="0.5"}
-shotover_chain_latency_seconds{chain="redis",client_details="127.0.0.1",quantile="0.9"}
-shotover_chain_latency_seconds{chain="redis",client_details="127.0.0.1",quantile="0.95"}
-shotover_chain_latency_seconds{chain="redis",client_details="127.0.0.1",quantile="0.99"}
-shotover_chain_latency_seconds{chain="redis",client_details="127.0.0.1",quantile="0.999"}
-shotover_chain_latency_seconds{chain="redis",client_details="127.0.0.1",quantile="1"}
-shotover_query_count{name="redis-chain",query="CLIENT",type="valkey"}
-shotover_query_count{name="redis-chain",query="GET",type="valkey"}
-shotover_query_count{name="redis-chain",query="SET",type="valkey"}
+shotover_chain_latency_seconds_count{chain="valkey",client_details="127.0.0.1"}
+shotover_chain_latency_seconds_sum{chain="valkey",client_details="127.0.0.1"}
+shotover_chain_latency_seconds{chain="valkey",client_details="127.0.0.1",quantile="0"}
+shotover_chain_latency_seconds{chain="valkey",client_details="127.0.0.1",quantile="0.1"}
+shotover_chain_latency_seconds{chain="valkey",client_details="127.0.0.1",quantile="0.5"}
+shotover_chain_latency_seconds{chain="valkey",client_details="127.0.0.1",quantile="0.9"}
+shotover_chain_latency_seconds{chain="valkey",client_details="127.0.0.1",quantile="0.95"}
+shotover_chain_latency_seconds{chain="valkey",client_details="127.0.0.1",quantile="0.99"}
+shotover_chain_latency_seconds{chain="valkey",client_details="127.0.0.1",quantile="0.999"}
+shotover_chain_latency_seconds{chain="valkey",client_details="127.0.0.1",quantile="1"}
+shotover_query_count{name="valkey-chain",query="CLIENT",type="valkey"}
+shotover_query_count{name="valkey-chain",query="GET",type="valkey"}
+shotover_query_count{name="valkey-chain",query="SET",type="valkey"}
 "#;
     assert_metrics_has_keys(expected, expected_new).await;
 
     assert_metrics_key_value(
-        r#"shotover_query_count{name="redis-chain",query="GET",type="valkey"}"#,
+        r#"shotover_query_count{name="valkey-chain",query="GET",type="valkey"}"#,
         "1",
     )
     .await;
     assert_metrics_key_value(
-        r#"shotover_query_count{name="redis-chain",query="SET",type="valkey"}"#,
+        r#"shotover_query_count{name="valkey-chain",query="SET",type="valkey"}"#,
         "2",
     )
     .await;
