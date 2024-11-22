@@ -3,8 +3,8 @@ use crate::codec::{CodecBuilder, Direction};
 use crate::frame::{Frame, MessageType, ValkeyFrame};
 use crate::message::{Message, Messages};
 use crate::tls::TlsConnectorConfig;
-use crate::transforms::redis::RedisError;
 use crate::transforms::redis::TransformError;
+use crate::transforms::redis::ValkeyError;
 use crate::transforms::util::cluster_connection_pool::{Authenticator, ConnectionPool};
 use crate::transforms::util::{Request, Response};
 use crate::transforms::{
@@ -39,7 +39,7 @@ type ChannelMap = HashMap<String, Vec<UnboundedSender<Request>>>;
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
-pub struct RedisSinkClusterConfig {
+pub struct ValkeySinkClusterConfig {
     pub first_contact_points: Vec<String>,
     pub direct_destination: Option<String>,
     pub tls: Option<TlsConnectorConfig>,
@@ -47,21 +47,21 @@ pub struct RedisSinkClusterConfig {
     pub connect_timeout_ms: u64,
 }
 
-const NAME: &str = "RedisSinkCluster";
-#[typetag::serde(name = "RedisSinkCluster")]
+const NAME: &str = "ValkeySinkCluster";
+#[typetag::serde(name = "ValkeySinkCluster")]
 #[async_trait(?Send)]
-impl TransformConfig for RedisSinkClusterConfig {
+impl TransformConfig for ValkeySinkClusterConfig {
     async fn get_builder(
         &self,
         transform_context: TransformContextConfig,
     ) -> Result<Box<dyn TransformBuilder>> {
         let connection_pool = ConnectionPool::new_with_auth(
             Duration::from_millis(self.connect_timeout_ms),
-            ValkeyCodecBuilder::new(Direction::Sink, "RedisSinkCluster".to_owned()),
-            RedisAuthenticator {},
+            ValkeyCodecBuilder::new(Direction::Sink, "ValkeySinkCluster".to_owned()),
+            ValkeyAuthenticator {},
             self.tls.clone(),
         )?;
-        Ok(Box::new(RedisSinkClusterBuilder::new(
+        Ok(Box::new(ValkeySinkClusterBuilder::new(
             self.first_contact_points.clone(),
             self.direct_destination.clone(),
             self.connection_count.unwrap_or(1),
@@ -80,29 +80,29 @@ impl TransformConfig for RedisSinkClusterConfig {
     }
 }
 
-pub struct RedisSinkClusterBuilder {
+pub struct ValkeySinkClusterBuilder {
     first_contact_points: Vec<String>,
     direct_destination: Option<String>,
     connection_count: usize,
-    connection_pool: ConnectionPool<ValkeyCodecBuilder, RedisAuthenticator, UsernamePasswordToken>,
+    connection_pool: ConnectionPool<ValkeyCodecBuilder, ValkeyAuthenticator, UsernamePasswordToken>,
     shared_topology: Arc<RwLock<Topology>>,
     failed_requests: Counter,
 }
 
-impl RedisSinkClusterBuilder {
+impl ValkeySinkClusterBuilder {
     fn new(
         first_contact_points: Vec<String>,
         direct_destination: Option<String>,
         connection_count: usize,
         connection_pool: ConnectionPool<
             ValkeyCodecBuilder,
-            RedisAuthenticator,
+            ValkeyAuthenticator,
             UsernamePasswordToken,
         >,
         chain_name: String,
         shared_topology: Arc<RwLock<Topology>>,
     ) -> Self {
-        RedisSinkClusterBuilder {
+        ValkeySinkClusterBuilder {
             first_contact_points,
             direct_destination,
             connection_count,
@@ -113,9 +113,9 @@ impl RedisSinkClusterBuilder {
     }
 }
 
-impl TransformBuilder for RedisSinkClusterBuilder {
+impl TransformBuilder for ValkeySinkClusterBuilder {
     fn build(&self, _transform_context: TransformContextBuilder) -> Box<dyn Transform> {
-        Box::new(RedisSinkCluster::new(
+        Box::new(ValkeySinkCluster::new(
             self.first_contact_points.clone(),
             self.direct_destination.clone(),
             self.connection_count,
@@ -149,7 +149,7 @@ impl Topology {
     }
 }
 
-pub struct RedisSinkCluster {
+pub struct ValkeySinkCluster {
     has_run_init: bool,
     topology: Topology,
     shared_topology: Arc<RwLock<Topology>>,
@@ -157,7 +157,7 @@ pub struct RedisSinkCluster {
     load_scores: HashMap<(String, usize), usize>,
     rng: SmallRng,
     connection_count: usize,
-    connection_pool: ConnectionPool<ValkeyCodecBuilder, RedisAuthenticator, UsernamePasswordToken>,
+    connection_pool: ConnectionPool<ValkeyCodecBuilder, ValkeyAuthenticator, UsernamePasswordToken>,
     reason_for_no_nodes: Option<&'static str>,
     rebuild_connections: bool,
     first_contact_points: Vec<String>,
@@ -166,7 +166,7 @@ pub struct RedisSinkCluster {
     failed_requests: Counter,
 }
 
-impl RedisSinkCluster {
+impl ValkeySinkCluster {
     fn new(
         first_contact_points: Vec<String>,
         direct_destination: Option<String>,
@@ -174,12 +174,12 @@ impl RedisSinkCluster {
         shared_topology: Arc<RwLock<Topology>>,
         connection_pool: ConnectionPool<
             ValkeyCodecBuilder,
-            RedisAuthenticator,
+            ValkeyAuthenticator,
             UsernamePasswordToken,
         >,
         failed_requests: Counter,
     ) -> Self {
-        RedisSinkCluster {
+        ValkeySinkCluster {
             has_run_init: false,
             first_contact_points,
             direct_destination,
@@ -245,7 +245,7 @@ impl RedisSinkCluster {
         } else {
             self.send_error_response(
                 self.reason_for_no_nodes
-                    .unwrap_or("ERR Shotover RedisSinkCluster does not know of a node containing the required slot")
+                    .unwrap_or("ERR Shotover ValkeySinkCluster does not know of a node containing the required slot")
             )
         }
     }
@@ -260,7 +260,7 @@ impl RedisSinkCluster {
             // Return an error as we cant send anything if there are no channels.
             0 => self.send_error_response(
                 self.reason_for_no_nodes
-                    .unwrap_or("ERR Shotover RedisSinkCluster does not know of any nodes"),
+                    .unwrap_or("ERR Shotover ValkeySinkCluster does not know of any nodes"),
             ),
             // Send to the single channel and return its response.
             1 => Ok(Box::pin(
@@ -399,7 +399,7 @@ impl RedisSinkCluster {
                 self.rebuild_connections = false;
                 Ok(())
             }
-            Err(err @ TransformError::Upstream(RedisError::NotAuthenticated)) => {
+            Err(err @ TransformError::Upstream(ValkeyError::NotAuthenticated)) => {
                 // Assume retry is pointless if authentication is required.
                 self.reason_for_no_nodes = Some("NOAUTH Authentication required (cached)");
                 self.rebuild_connections = false;
@@ -562,7 +562,7 @@ impl RedisSinkCluster {
             RoutingInfo::Auth => self.on_auth(message).await,
             RoutingInfo::Unsupported => {
                 short_circuit(ValkeyFrame::Error(
-                    Str::from_inner(Bytes::from_static(b"ERR unknown command - Shotover RedisSinkCluster does not not support this command")).unwrap(),
+                    Str::from_inner(Bytes::from_static(b"ERR unknown command - Shotover ValkeySinkCluster does not not support this command")).unwrap(),
                 ))
             }
             RoutingInfo::ShortCircuitNil => short_circuit(ValkeyFrame::Null),
@@ -622,10 +622,10 @@ impl RedisSinkCluster {
 
         match self.build_connections(Some(token)).await {
             Ok(()) => short_circuit(ValkeyFrame::SimpleString("OK".into())),
-            Err(TransformError::Upstream(RedisError::BadCredentials)) => {
+            Err(TransformError::Upstream(ValkeyError::BadCredentials)) => {
                 self.send_error_response("WRONGPASS invalid username-password")
             }
-            Err(TransformError::Upstream(RedisError::NotAuthorized)) => {
+            Err(TransformError::Upstream(ValkeyError::NotAuthorized)) => {
                 self.send_error_response("NOPERM upstream user lacks required permission")
             }
             Err(TransformError::Upstream(e)) => self.send_error_response(e.to_string().as_str()),
@@ -643,7 +643,7 @@ impl RedisSinkCluster {
     fn short_circuit_with_error(&self) -> Result<ResponseFuture> {
         warn!("Could not route request - short circuiting");
         short_circuit(ValkeyFrame::Error(
-            "ERR Shotover RedisSinkCluster does not not support this command used in this way"
+            "ERR Shotover ValkeySinkCluster does not not support this command used in this way"
                 .into(),
         ))
     }
@@ -949,9 +949,9 @@ async fn get_topology_from_node(
         ValkeyFrame::Array(results) => {
             parse_slots(&results).map_err(|e| TransformError::Protocol(e.to_string()))
         }
-        ValkeyFrame::Error(message) => {
-            Err(TransformError::Upstream(RedisError::from_message(&message)))
-        }
+        ValkeyFrame::Error(message) => Err(TransformError::Upstream(ValkeyError::from_message(
+            &message,
+        ))),
         frame => Err(TransformError::Protocol(format!(
             "unexpected response for cluster slots: {frame:?}"
         ))),
@@ -1014,7 +1014,7 @@ fn short_circuit(frame: ValkeyFrame) -> Result<ResponseFuture> {
 }
 
 #[async_trait]
-impl Transform for RedisSinkCluster {
+impl Transform for ValkeySinkCluster {
     fn get_name(&self) -> &'static str {
         NAME
     }
@@ -1036,7 +1036,7 @@ impl Transform for RedisSinkCluster {
                 //    + It is important we do not share the results of the successful build_connections as that would leak authenticated shotover<->valkey connections to other client<->shotover connections.
                 if let Err(err) = self.build_connections(self.token.clone()).await {
                     match err {
-                        TransformError::Upstream(RedisError::NotAuthenticated) => {
+                        TransformError::Upstream(ValkeyError::NotAuthenticated) => {
                             // Build_connections sent an internal `CLUSTER SLOTS` command to valkey and valkey refused to respond because it is enforcing authentication.
                             // When the client sends an AUTH message we will rerun build_connections.
                         }
@@ -1154,10 +1154,10 @@ pub struct UsernamePasswordToken {
 }
 
 #[derive(Clone)]
-struct RedisAuthenticator {}
+struct ValkeyAuthenticator {}
 
 #[async_trait]
-impl Authenticator<UsernamePasswordToken> for RedisAuthenticator {
+impl Authenticator<UsernamePasswordToken> for ValkeyAuthenticator {
     type Error = TransformError;
 
     async fn authenticate(
@@ -1187,7 +1187,7 @@ impl Authenticator<UsernamePasswordToken> for RedisAuthenticator {
             ValkeyFrame::SimpleString(s) => Err(TransformError::Protocol(format!(
                 "expected OK but got: {s:?}"
             ))),
-            ValkeyFrame::Error(e) => Err(TransformError::Upstream(RedisError::from_message(&e))),
+            ValkeyFrame::Error(e) => Err(TransformError::Upstream(ValkeyError::from_message(&e))),
             f => Err(TransformError::Protocol(format!(
                 "unexpected response type: {f:?}"
             ))),
@@ -1204,7 +1204,7 @@ mod test {
 
     #[test]
     fn test_parse_slots() {
-        // Wireshark capture from a Redis cluster with 3 masters and 3 replicas.
+        // Wireshark capture from a Valkey cluster with 3 masters and 3 replicas.
         let slots_pcap: &[u8] = b"*3\r\n*4\r\n:10923\r\n:16383\r\n*3\r\n$12\r\n192.168.80.6\r\n:6379\r\n$40\r\n3a7c357ed75d2aa01fca1e14ef3735a2b2b8ffac\r\n*3\r\n$12\r\n192.168.80.3\r\n:6379\r\n$40\r\n77c01b0ddd8668fff05e3f6a8aaf5f3ccd454a79\r\n*4\r\n:5461\r\n:10922\r\n*3\r\n$12\r\n192.168.80.5\r\n:6379\r\n$40\r\n969c6215d064e68593d384541ceeb57e9520dbed\r\n*3\r\n$12\r\n192.168.80.2\r\n:6379\r\n$40\r\n3929f69990a75be7b2d49594c57fe620862e6fd6\r\n*4\r\n:0\r\n:5460\r\n*3\r\n$12\r\n192.168.80.7\r\n:6379\r\n$40\r\n15d52a65d1fc7a53e34bf9193415aa39136882b2\r\n*3\r\n$12\r\n192.168.80.4\r\n:6379\r\n$40\r\ncd023916a3528fae7e606a10d8289a665d6c47b0\r\n";
 
         let mut codec = ValkeyDecoder::new(None, Direction::Sink);

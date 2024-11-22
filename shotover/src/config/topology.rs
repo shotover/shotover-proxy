@@ -89,7 +89,7 @@ mod topology_tests {
     use crate::{
         sources::{redis::ValkeyConfig, Source, SourceConfig},
         transforms::{
-            parallel_map::ParallelMapConfig, redis::cache::RedisConfig as RedisCacheConfig,
+            parallel_map::ParallelMapConfig, redis::cache::ValkeyConfig as ValkeyCacheConfig,
         },
     };
     use pretty_assertions::assert_eq;
@@ -266,7 +266,7 @@ foo source:
         run_test_topology_cassandra(vec![
             Box::new(DebugPrinterConfig),
             Box::new(DebugPrinterConfig),
-            Box::new(RedisCacheConfig {
+            Box::new(ValkeyCacheConfig {
                 chain: TransformChainConfig(vec![
                     Box::new(DebugPrinterConfig),
                     Box::new(DebugPrinterConfig),
@@ -285,7 +285,7 @@ foo source:
         let expected = r#"Topology errors
 foo source:
   foo chain:
-    RedisCache:
+    ValkeyCache:
       cache_chain chain:
         Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
 "#;
@@ -293,7 +293,7 @@ foo source:
         let error = run_test_topology_cassandra(vec![
             Box::new(DebugPrinterConfig),
             Box::new(DebugPrinterConfig),
-            Box::new(RedisCacheConfig {
+            Box::new(ValkeyCacheConfig {
                 chain: TransformChainConfig(vec![
                     Box::new(DebugPrinterConfig),
                     Box::new(NullSinkConfig),
@@ -494,13 +494,13 @@ Source name "foo" occurred more than once. Make sure all source names are unique
             .to_string();
 
         let expected = r#"Topology errors
-redis1 source:
-  redis1 chain:
+valkey1 source:
+  valkey1 chain:
     Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
     Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
     Non-terminating transform "DebugPrinter" is last in chain. Last transform must be terminating.
-redis2 source:
-  redis2 chain:
+valkey2 source:
+  valkey2 chain:
     ParallelMap:
       parallel_map_chain chain:
         Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.

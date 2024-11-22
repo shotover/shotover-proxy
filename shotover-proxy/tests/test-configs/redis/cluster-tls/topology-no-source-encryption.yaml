@@ -1,10 +1,10 @@
 ---
 sources:
   - Valkey:
-      name: "redis"
+      name: "valkey"
       listen_addr: "127.0.0.1:6379"
       chain:
-        - RedisSinkCluster:
+        - ValkeySinkCluster:
             first_contact_points:
               - "172.16.1.2:6379"
               - "172.16.1.3:6379"

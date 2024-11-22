@@ -40,7 +40,7 @@ jobs:
         cargo windsock local-run --bench-length-seconds 5 --operations-per-second 100 --profilers flamegraph db=cassandra,compression=none,connection_count=1,driver=scylla,operation=read_i64,protocol=v4,shotover=standard,topology=single
         cargo windsock local-run --bench-length-seconds 5 --operations-per-second 100 --profilers samply db=cassandra,compression=none,connection_count=1,driver=scylla,operation=read_i64,protocol=v4,shotover=standard,topology=single
         cargo windsock local-run --bench-length-seconds 5 --operations-per-second 100 --profilers sys_monitor db=kafka,shotover=standard,size=12B,topology=single
-        cargo windsock local-run --bench-length-seconds 5 --operations-per-second 100 --profilers shotover_metrics db=redis,encryption=none,operation=get,shotover=standard,topology=single
+        cargo windsock local-run --bench-length-seconds 5 --operations-per-second 100 --profilers shotover_metrics db=valkey,encryption=none,operation=get,shotover=standard,topology=single
     - name: Ensure that tests did not create or modify any files that arent .gitignore'd
       run: |
         if [ -n "$(git status --porcelain)" ]; then

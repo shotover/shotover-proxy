@@ -19,23 +19,23 @@ use tokio::sync::Notify;
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
-pub struct RedisSinkSingleConfig {
+pub struct ValkeySinkSingleConfig {
     #[serde(rename = "remote_address")]
     pub address: String,
     pub tls: Option<TlsConnectorConfig>,
     pub connect_timeout_ms: u64,
 }
 
-const NAME: &str = "RedisSinkSingle";
-#[typetag::serde(name = "RedisSinkSingle")]
+const NAME: &str = "ValkeySinkSingle";
+#[typetag::serde(name = "ValkeySinkSingle")]
 #[async_trait(?Send)]
-impl TransformConfig for RedisSinkSingleConfig {
+impl TransformConfig for ValkeySinkSingleConfig {
     async fn get_builder(
         &self,
         transform_context: TransformContextConfig,
     ) -> Result<Box<dyn TransformBuilder>> {
         let tls = self.tls.as_ref().map(TlsConnector::new).transpose()?;
-        Ok(Box::new(RedisSinkSingleBuilder::new(
+        Ok(Box::new(ValkeySinkSingleBuilder::new(
             self.address.clone(),
             tls,
             transform_context.chain_name,
@@ -52,24 +52,24 @@ impl TransformConfig for RedisSinkSingleConfig {
     }
 }
 
-pub struct RedisSinkSingleBuilder {
+pub struct ValkeySinkSingleBuilder {
     address: String,
     tls: Option<TlsConnector>,
     failed_requests: Counter,
     connect_timeout: Duration,
 }
 
-impl RedisSinkSingleBuilder {
+impl ValkeySinkSingleBuilder {
     pub fn new(
         address: String,
         tls: Option<TlsConnector>,
         chain_name: String,
         connect_timeout_ms: u64,
     ) -> Self {
-        let failed_requests = counter!("shotover_failed_requests_count", "chain" => chain_name, "transform" => "RedisSinkSingle");
+        let failed_requests = counter!("shotover_failed_requests_count", "chain" => chain_name, "transform" => "ValkeySinkSingle");
         let connect_timeout = Duration::from_millis(connect_timeout_ms);
 
-        RedisSinkSingleBuilder {
+        ValkeySinkSingleBuilder {
             address,
             tls,
             failed_requests,
@@ -78,9 +78,9 @@ impl RedisSinkSingleBuilder {
     }
 }
 
-impl TransformBuilder for RedisSinkSingleBuilder {
+impl TransformBuilder for ValkeySinkSingleBuilder {
     fn build(&self, transform_context: TransformContextBuilder) -> Box<dyn Transform> {
-        Box::new(RedisSinkSingle {
+        Box::new(ValkeySinkSingle {
             address: self.address.clone(),
             tls: self.tls.clone(),
             connection: None,
@@ -99,7 +99,7 @@ impl TransformBuilder for RedisSinkSingleBuilder {
     }
 }
 
-pub struct RedisSinkSingle {
+pub struct ValkeySinkSingle {
     address: String,
     tls: Option<TlsConnector>,
     connection: Option<SinkConnection>,
@@ -109,7 +109,7 @@ pub struct RedisSinkSingle {
 }
 
 #[async_trait]
-impl Transform for RedisSinkSingle {
+impl Transform for ValkeySinkSingle {
     fn get_name(&self) -> &'static str {
         NAME
     }
@@ -119,7 +119,7 @@ impl Transform for RedisSinkSingle {
         chain_state: &'shorter mut ChainState<'longer>,
     ) -> Result<Messages> {
         if self.connection.is_none() {
-            let codec = ValkeyCodecBuilder::new(Direction::Sink, "RedisSinkSingle".to_owned());
+            let codec = ValkeyCodecBuilder::new(Direction::Sink, "ValkeySinkSingle".to_owned());
             self.connection = Some(
                 SinkConnection::new(
                     &self.address,

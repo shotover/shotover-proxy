@@ -75,7 +75,7 @@ async fn passthrough_redis_down() {
 
 Caused by:
     0: Chain failed to send and/or receive messages, the connection will now be closed.
-    1: RedisSinkSingle transform failed
+    1: ValkeySinkSingle transform failed
     2: Failed to connect to destination 127.0.0.1:1111
     3: Connection refused (os error {CONNECTION_REFUSED_OS_ERROR})"#
                 ))
@@ -88,10 +88,10 @@ Caused by:
                 .with_level(Level::Error)
                 .with_target("shotover::server")
                 .with_message(&format!(
-                    r#"encountered an error when flushing the chain redis for shutdown
+                    r#"encountered an error when flushing the chain valkey for shutdown
 
 Caused by:
-    0: RedisSinkSingle transform failed
+    0: ValkeySinkSingle transform failed
     1: Failed to connect to destination 127.0.0.1:1111
     2: Connection refused (os error {CONNECTION_REFUSED_OS_ERROR})"#
                 ))
@@ -103,7 +103,7 @@ Caused by:
 
 #[tokio::test(flavor = "multi_thread")]
 async fn tls_cluster_sink() {
-    test_helpers::cert::generate_redis_test_certs();
+    test_helpers::cert::generate_valkey_test_certs();
 
     let _compose = docker_compose("tests/test-configs/redis/cluster-tls/docker-compose.yaml");
     let shotover =
@@ -122,7 +122,7 @@ async fn tls_cluster_sink() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn tls_source_and_tls_single_sink() {
-    test_helpers::cert::generate_redis_test_certs();
+    test_helpers::cert::generate_valkey_test_certs();
 
     {
         let _compose = docker_compose("tests/test-configs/redis/tls/docker-compose.yaml");
@@ -337,10 +337,10 @@ pub async fn assert_failed_requests_metric_is_incremented_on_error_response() {
         .await
         .unwrap_err();
 
-    // Redis client driver initialization sends 2 CLIENT SETINFO commands which trigger 2 errors
-    // because those commands are not available in the currently used redis version.
+    // Valkey client driver initialization sends 2 CLIENT SETINFO commands which trigger 2 errors
+    // because those commands are not available in the currently used valkey version.
     assert_metrics_key_value(
-        r#"shotover_failed_requests_count{chain="redis",transform="RedisSinkSingle"}"#,
+        r#"shotover_failed_requests_count{chain="valkey",transform="ValkeySinkSingle"}"#,
         "3",
     )
     .await;

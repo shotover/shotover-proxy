@@ -1,9 +1,9 @@
 ---
 sources:
   - Valkey:
-      name: "redis"
+      name: "valkey"
       listen_addr: "127.0.0.1:6379"
       chain:
         - QueryCounter:
-            name: redis-chain
+            name: valkey-chain
         - NullSink

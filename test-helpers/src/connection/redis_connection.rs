@@ -13,7 +13,7 @@ pub fn new(port: u16) -> redis::Connection {
     let connection = Client::open((address, port))
         .unwrap()
         .get_connection()
-        .with_context(|| format!("Failed to create redis connection to port {port}"))
+        .with_context(|| format!("Failed to create valkey connection to port {port}"))
         .unwrap();
     connection
         .set_read_timeout(Some(Duration::from_secs(10)))
@@ -25,7 +25,7 @@ pub async fn new_async(address: &str, port: u16) -> redis::aio::Connection {
     let stream = Box::pin(
         tokio::net::TcpStream::connect((address, port))
             .await
-            .with_context(|| format!("Failed to create async redis connection to port {port}"))
+            .with_context(|| format!("Failed to create async valkey connection to port {port}"))
             .unwrap(),
     );
     new_async_inner(Box::pin(stream) as Pin<Box<dyn AsyncStream + Send + Sync>>).await

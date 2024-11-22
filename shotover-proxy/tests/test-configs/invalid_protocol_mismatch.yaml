@@ -6,6 +6,6 @@ sources:
       chain:
         - QueryCounter:
             name: cassandra
-        - RedisSinkSingle:
+        - ValkeySinkSingle:
             remote_address: "127.0.0.1:1111"
             connect_timeout_ms: 3000

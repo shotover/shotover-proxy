@@ -196,7 +196,8 @@ async fn test_time_cluster(connection: &mut Connection) {
             .unwrap_err()
             .detail()
             .unwrap(),
-        "unknown command - Shotover RedisSinkCluster does not not support this command".to_string(),
+        "unknown command - Shotover ValkeySinkCluster does not not support this command"
+            .to_string(),
     );
 }
 
@@ -209,13 +210,14 @@ async fn test_hello_cluster(connection: &mut Connection) {
             .unwrap_err()
             .detail()
             .unwrap(),
-        "unknown command - Shotover RedisSinkCluster does not not support this command".to_string(),
+        "unknown command - Shotover ValkeySinkCluster does not not support this command"
+            .to_string(),
     );
 }
 
 async fn test_client_name_cluster(connection: &mut Connection) {
     assert_ok(redis::cmd("CLIENT").arg("SETNAME").arg("FOO"), connection).await;
-    // RedisSinkCluster does not support SETNAME/GETNAME so GETNAME always returns nil
+    // ValkeySinkCluster does not support SETNAME/GETNAME so GETNAME always returns nil
     assert_nil(redis::cmd("CLIENT").arg("GETNAME"), connection).await;
 }
 
@@ -772,7 +774,7 @@ pub async fn test_auth(connection: &mut Connection) {
         Some("NOAUTH")
     );
 
-    // Ensure RedisClusterPortsRewrite correctly handles NOAUTH errors
+    // Ensure ValkeyClusterPortsRewrite correctly handles NOAUTH errors
     assert_eq!(
         redis::cmd("CLUSTER")
             .arg("SLOTS")
@@ -1049,7 +1051,7 @@ pub async fn test_cluster_ports_rewrite_nodes(connection: &mut Connection, new_p
             panic!("CLUSTER REPLICAS never became ready");
         }
 
-        // refetch master ID, sometimes redis incorrectly reports slave nodes as master nodes during startup.
+        // refetch master ID, sometimes valkey incorrectly reports slave nodes as master nodes during startup.
         master_id = get_master_id(connection).await;
     }
     tracing::info!("CLUSTER REPLICAS is ready after {:?}", instant.elapsed());
@@ -1087,11 +1089,11 @@ fn assert_cluster_ports_rewrite_nodes(res: Value, new_port: u16) {
             if let Value::Data(item) = &data[0] {
                 item.to_vec()
             } else {
-                panic!("Invalid response from Redis")
+                panic!("Invalid response from Valkey")
             }
         }
         Value::Data(data) => data.to_vec(),
-        _ => panic!("Invalid response from Redis"),
+        _ => panic!("Invalid response from Valkey"),
     };
 
     let read_cursor = std::io::Cursor::new(data);
@@ -1285,7 +1287,7 @@ pub async fn test_trigger_transform_failure_driver(client: &RedisClient) {
     assert_eq!(
         // fred sends a `CLIENT` command on startup to which shotover will reply with an error
         client.wait_for_connect().await.unwrap_err().details(),
-        format!("ERR Internal shotover (or custom transform) bug: Chain failed to send and/or receive messages, the connection will now be closed.  Caused by:     0: RedisSinkSingle transform failed     1: Failed to connect to destination 127.0.0.1:1111     2: Connection refused (os error {CONNECTION_REFUSED_OS_ERROR})")
+        format!("ERR Internal shotover (or custom transform) bug: Chain failed to send and/or receive messages, the connection will now be closed.  Caused by:     0: ValkeySinkSingle transform failed     1: Failed to connect to destination 127.0.0.1:1111     2: Connection refused (os error {CONNECTION_REFUSED_OS_ERROR})")
     );
 }
 
@@ -1294,7 +1296,7 @@ pub async fn test_trigger_transform_failure_driver(client: &RedisClient) {
 /// CAREFUL: This lacks any kind of check that shotover is ready,
 /// so make sure shotover_manager.redis_connection is run on 6379 before calling this.
 pub async fn test_trigger_transform_failure_raw() {
-    // Send invalid redis command
+    // Send invalid valkey command
     // To correctly handle this shotover should close the connection
     let mut connection = tcp::tcp_stream(Duration::from_secs(3), "127.0.0.1:6379")
         .await
@@ -1304,7 +1306,7 @@ pub async fn test_trigger_transform_failure_raw() {
 
     assert_eq!(
         read_redis_message(&mut connection).await,
-        ValkeyFrame::Error(format!("ERR Internal shotover (or custom transform) bug: Chain failed to send and/or receive messages, the connection will now be closed.  Caused by:     0: RedisSinkSingle transform failed     1: Failed to connect to destination 127.0.0.1:1111     2: Connection refused (os error {CONNECTION_REFUSED_OS_ERROR})").into())
+        ValkeyFrame::Error(format!("ERR Internal shotover (or custom transform) bug: Chain failed to send and/or receive messages, the connection will now be closed.  Caused by:     0: ValkeySinkSingle transform failed     1: Failed to connect to destination 127.0.0.1:1111     2: Connection refused (os error {CONNECTION_REFUSED_OS_ERROR})").into())
     );
 
     // If the connection was closed by shotover then we will succesfully read 0 bytes.
@@ -1337,7 +1339,7 @@ async fn read_redis_message(connection: &mut TcpStream) -> ValkeyFrame {
 /// CAREFUL: This lacks any kind of check that shotover is ready,
 /// so make sure shotover_manager.redis_connection is run on 6379 before calling this.
 pub async fn test_invalid_frame() {
-    // Send invalid redis command
+    // Send invalid valkey command
     // To correctly handle this shotover should close the connection
     let mut connection = tcp::tcp_stream(Duration::from_secs(3), "127.0.0.1:6379")
         .await
@@ -1417,7 +1419,7 @@ async fn test_pubsub_automatic_unsubscription(
     let mut pubsub_conn = sub_connection.into_pubsub();
     pubsub_conn.subscribe(SUBSCRIPTION_KEY).await.unwrap();
     // Dropping the connection is whats significant here.
-    // Redis detects the closed connection and closes the appropriate subscriptions
+    // Valkey detects the closed connection and closes the appropriate subscriptions
     drop(pubsub_conn);
 
     let mut subscription_count = 1;
@@ -1639,7 +1641,7 @@ impl Flusher {
             connections: vec![
                 // shotover - shotover might have internal handling for flush that we want to run
                 redis_connection::new_async("127.0.0.1", 6379).await,
-                // redis cluster instances - shotover may or may not run flush on all cluster instances
+                // valkey cluster instances - shotover may or may not run flush on all cluster instances
                 redis_connection::new_async("172.16.1.2", 6379).await,
                 redis_connection::new_async("172.16.1.3", 6379).await,
                 redis_connection::new_async("172.16.1.4", 6379).await,
@@ -1655,7 +1657,7 @@ impl Flusher {
             connections: vec![
                 // shotover - shotover might have internal handling for flush that we want to run
                 redis_connection::new_async("127.0.0.1", 6379).await,
-                // redis cluster instances - shotover may or may not run flush on all cluster instances
+                // valkey cluster instances - shotover may or may not run flush on all cluster instances
                 redis_connection::new_async_tls("172.16.1.2", 6379).await,
                 redis_connection::new_async_tls("172.16.1.3", 6379).await,
                 redis_connection::new_async_tls("172.16.1.4", 6379).await,

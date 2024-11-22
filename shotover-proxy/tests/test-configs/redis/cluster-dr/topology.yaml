@@ -2,7 +2,7 @@
 ---
 sources:
   - Valkey:
-      name: "redis"
+      name: "valkey"
       listen_addr: "127.0.0.1:6379"
       connection_limit: 3000000
       chain:
@@ -18,11 +18,11 @@ sources:
                 flush_when_millis_since_last_flush: 1000000000
             - QueryCounter:
                 name: "DR chain"
-            - RedisSinkCluster:
+            - ValkeySinkCluster:
                 first_contact_points: [ "127.0.0.1:2120", "127.0.0.1:2121", "127.0.0.1:2122", "127.0.0.1:2123", "127.0.0.1:2124", "127.0.0.1:2125" ]
                 connect_timeout_ms: 3000
         - QueryCounter:
             name: "Main chain"
-        - RedisSinkCluster:
+        - ValkeySinkCluster:
             first_contact_points: [ "127.0.0.1:2220", "127.0.0.1:2221", "127.0.0.1:2222", "127.0.0.1:2223", "127.0.0.1:2224", "127.0.0.1:2225" ]
             connect_timeout_ms: 3000

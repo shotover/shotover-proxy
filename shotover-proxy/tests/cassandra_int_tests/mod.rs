@@ -562,14 +562,14 @@ async fn source_tls_and_cluster_tls(#[case] driver: CassandraDriver) {
 
 #[apply(all_cassandra_drivers)]
 #[tokio::test(flavor = "multi_thread")]
-async fn cassandra_redis_cache(#[case] driver: CassandraDriver) {
+async fn cassandra_valkey_cache(#[case] driver: CassandraDriver) {
     let _compose = docker_compose("tests/test-configs/cassandra/redis-cache/docker-compose.yaml");
 
     let shotover = shotover_process("tests/test-configs/cassandra/redis-cache/topology.yaml")
         .start()
         .await;
 
-    let mut redis_connection = redis_connection::new(6379);
+    let mut valkey_connection = redis_connection::new(6379);
     let connection_creator = || CassandraConnectionBuilder::new("127.0.0.1", 9042, driver).build();
     let connection = connection_creator().await;
 
@@ -580,7 +580,7 @@ async fn cassandra_redis_cache(#[case] driver: CassandraDriver) {
     // collections::test // TODO: for some reason this test case fails here
     prepared_statements_simple::test(&connection, connection_creator, 1).await;
     batch_statements::test(&connection).await;
-    cache::test(&connection, &mut redis_connection).await;
+    cache::test(&connection, &mut valkey_connection).await;
 
     shotover.shutdown_and_then_consume_events(&[]).await;
 }
