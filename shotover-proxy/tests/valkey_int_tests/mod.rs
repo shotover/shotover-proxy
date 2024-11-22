@@ -106,10 +106,11 @@ async fn tls_cluster_sink() {
     test_helpers::cert::generate_valkey_test_certs();
 
     let _compose = docker_compose("tests/test-configs/valkey/cluster-tls/docker-compose.yaml");
-    let shotover =
-        shotover_process("tests/test-configs/valkey/cluster-tls/topology-no-source-encryption.yaml")
-            .start()
-            .await;
+    let shotover = shotover_process(
+        "tests/test-configs/valkey/cluster-tls/topology-no-source-encryption.yaml",
+    )
+    .start()
+    .await;
 
     let mut connection = valkey_connection::new_async("127.0.0.1", 6379).await;
     let mut flusher = Flusher::new_cluster_tls().await;
@@ -177,9 +178,10 @@ async fn tls_source_and_tls_single_sink() {
 async fn cluster_ports_rewrite() {
     let _compose =
         docker_compose("tests/test-configs/valkey/cluster-ports-rewrite/docker-compose.yaml");
-    let shotover = shotover_process("tests/test-configs/valkey/cluster-ports-rewrite/topology.yaml")
-        .start()
-        .await;
+    let shotover =
+        shotover_process("tests/test-configs/valkey/cluster-ports-rewrite/topology.yaml")
+            .start()
+            .await;
 
     let mut connection = valkey_connection::new_async("127.0.0.1", 6380).await;
     let mut flusher =

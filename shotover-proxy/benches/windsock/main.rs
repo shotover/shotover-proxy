@@ -15,9 +15,9 @@ mod common;
 #[cfg(all(feature = "kafka-cpp-driver-tests", feature = "kafka"))]
 mod kafka;
 mod profilers;
+mod shotover;
 #[cfg(feature = "redis")]
 mod valkey;
-mod shotover;
 
 use cloud::CloudResources;
 use cloud::CloudResourcesRequired;
