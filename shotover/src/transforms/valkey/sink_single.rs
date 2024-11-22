@@ -7,7 +7,7 @@ use crate::transforms::{
     ChainState, DownChainProtocol, Transform, TransformBuilder, TransformConfig,
     TransformContextBuilder, UpChainProtocol,
 };
-use crate::{codec::redis::ValkeyCodecBuilder, transforms::TransformContextConfig};
+use crate::{codec::valkey::ValkeyCodecBuilder, transforms::TransformContextConfig};
 use anyhow::Result;
 use async_trait::async_trait;
 use metrics::{counter, Counter};

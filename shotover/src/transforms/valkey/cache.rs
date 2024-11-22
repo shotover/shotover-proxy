@@ -652,7 +652,7 @@ mod test {
     use crate::transforms::chain::TransformChainBuilder;
     use crate::transforms::debug::printer::DebugPrinter;
     use crate::transforms::null::NullSink;
-    use crate::transforms::redis::cache::{
+    use crate::transforms::valkey::cache::{
         build_valkey_key_from_cql3, HashAddress, SimpleValkeyCacheBuilder, TableCacheSchema,
     };
     use crate::transforms::TransformBuilder;

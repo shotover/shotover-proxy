@@ -15,9 +15,9 @@ mod common;
 #[cfg(all(feature = "kafka-cpp-driver-tests", feature = "kafka"))]
 mod kafka;
 mod profilers;
-#[cfg(feature = "redis")]
-mod redis;
 mod shotover;
+#[cfg(feature = "redis")]
+mod valkey;
 
 use cloud::CloudResources;
 use cloud::CloudResourcesRequired;
@@ -55,7 +55,7 @@ fn main() {
     #[cfg(all(feature = "kafka-cpp-driver-tests", feature = "kafka"))]
     benches.extend(kafka::benches());
     #[cfg(feature = "redis")]
-    benches.extend(redis::benches());
+    benches.extend(valkey::benches());
 
     Windsock::new(benches, cloud::AwsCloud::new_boxed(), &["release"]).run();
 }

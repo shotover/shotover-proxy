@@ -24,7 +24,7 @@ pub mod kafka;
 #[cfg(feature = "opensearch")]
 pub mod opensearch;
 #[cfg(feature = "redis")]
-pub mod redis;
+pub mod valkey;
 pub mod value;
 
 #[derive(PartialEq, Debug, Clone, Copy)]
