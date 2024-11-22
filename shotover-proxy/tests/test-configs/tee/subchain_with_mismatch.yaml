@@ -1,6 +1,6 @@
 ---
 sources:
-  - Redis:
+  - Valkey:
       name: "redis"
       listen_addr: "127.0.0.1:6379"
       connection_limit: 3000000
@@ -18,6 +18,6 @@ sources:
               - QueryTypeFilter:
                   DenyList: [Read]
               - DebugReturner:
-                  Redis: "41"
+                  Valkey: "41"
         - DebugReturner:
-            Redis: "42"
+            Valkey: "42"

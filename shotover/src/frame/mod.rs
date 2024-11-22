@@ -14,7 +14,7 @@ use kafka::KafkaFrame;
 #[cfg(feature = "opensearch")]
 pub use opensearch::OpenSearchFrame;
 #[cfg(feature = "redis")]
-pub use redis_protocol::resp2::types::BytesFrame as RedisFrame;
+pub use redis_protocol::resp2::types::BytesFrame as ValkeyFrame;
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
 #[cfg(feature = "cassandra")]
@@ -30,7 +30,7 @@ pub mod value;
 #[derive(PartialEq, Debug, Clone, Copy)]
 pub enum MessageType {
     #[cfg(feature = "redis")]
-    Redis,
+    Valkey,
     #[cfg(feature = "cassandra")]
     Cassandra,
     #[cfg(feature = "kafka")]
@@ -46,7 +46,7 @@ impl MessageType {
             #[cfg(feature = "cassandra")]
             MessageType::Cassandra => false,
             #[cfg(feature = "redis")]
-            MessageType::Redis => true,
+            MessageType::Valkey => true,
             #[cfg(feature = "kafka")]
             MessageType::Kafka => true,
             #[cfg(feature = "opensearch")]
@@ -60,7 +60,7 @@ impl MessageType {
             #[cfg(feature = "cassandra")]
             MessageType::Cassandra => "cql",
             #[cfg(feature = "redis")]
-            MessageType::Redis => "redis",
+            MessageType::Valkey => "redis",
             #[cfg(feature = "kafka")]
             MessageType::Kafka => "kafka",
             #[cfg(feature = "opensearch")]
@@ -76,7 +76,7 @@ impl From<&CodecState> for MessageType {
             #[cfg(feature = "cassandra")]
             CodecState::Cassandra { .. } => Self::Cassandra,
             #[cfg(feature = "redis")]
-            CodecState::Redis => Self::Redis,
+            CodecState::Valkey => Self::Valkey,
             #[cfg(feature = "kafka")]
             CodecState::Kafka { .. } => Self::Kafka,
             #[cfg(feature = "opensearch")]
@@ -94,7 +94,7 @@ impl Frame {
                 compression: Compression::None,
             },
             #[cfg(feature = "redis")]
-            Frame::Redis(_) => CodecState::Redis,
+            Frame::Valkey(_) => CodecState::Valkey,
             #[cfg(feature = "kafka")]
             Frame::Kafka(_) => CodecState::Kafka(KafkaCodecState {
                 request_header: None,
@@ -112,7 +112,7 @@ pub enum Frame {
     #[cfg(feature = "cassandra")]
     Cassandra(CassandraFrame),
     #[cfg(feature = "redis")]
-    Redis(RedisFrame),
+    Valkey(ValkeyFrame),
     #[cfg(feature = "kafka")]
     Kafka(KafkaFrame),
     /// Represents a message that must exist due to shotovers requirement that every request has a corresponding response.
@@ -134,8 +134,8 @@ impl Frame {
                 CassandraFrame::from_bytes(bytes, codec_state.as_cassandra()).map(Frame::Cassandra)
             }
             #[cfg(feature = "redis")]
-            MessageType::Redis => redis_protocol::resp2::decode::decode_bytes(&bytes)
-                .map(|x| Frame::Redis(x.unwrap().0))
+            MessageType::Valkey => redis_protocol::resp2::decode::decode_bytes(&bytes)
+                .map(|x| Frame::Valkey(x.unwrap().0))
                 .map_err(|e| anyhow!("{e:?}")),
             #[cfg(feature = "kafka")]
             MessageType::Kafka => {
@@ -150,7 +150,7 @@ impl Frame {
     pub fn name(&self) -> &'static str {
         match self {
             #[cfg(feature = "redis")]
-            Frame::Redis(_) => "Redis",
+            Frame::Valkey(_) => "Valkey",
             #[cfg(feature = "cassandra")]
             Frame::Cassandra(_) => "Cassandra",
             #[cfg(feature = "kafka")]
@@ -166,7 +166,7 @@ impl Frame {
             #[cfg(feature = "cassandra")]
             Frame::Cassandra(_) => MessageType::Cassandra,
             #[cfg(feature = "redis")]
-            Frame::Redis(_) => MessageType::Redis,
+            Frame::Valkey(_) => MessageType::Valkey,
             #[cfg(feature = "kafka")]
             Frame::Kafka(_) => MessageType::Kafka,
             Frame::Dummy => MessageType::Dummy,
@@ -176,11 +176,11 @@ impl Frame {
     }
 
     #[cfg(feature = "redis")]
-    pub fn redis(&mut self) -> Result<&mut RedisFrame> {
+    pub fn valkey(&mut self) -> Result<&mut ValkeyFrame> {
         match self {
-            Frame::Redis(frame) => Ok(frame),
+            Frame::Valkey(frame) => Ok(frame),
             frame => Err(anyhow!(
-                "Expected redis frame but received {} frame",
+                "Expected valkey frame but received {} frame",
                 frame.name()
             )),
         }
@@ -198,11 +198,11 @@ impl Frame {
     }
 
     #[cfg(feature = "redis")]
-    pub fn into_redis(self) -> Result<RedisFrame> {
+    pub fn into_valkey(self) -> Result<ValkeyFrame> {
         match self {
-            Frame::Redis(frame) => Ok(frame),
+            Frame::Valkey(frame) => Ok(frame),
             frame => Err(anyhow!(
-                "Expected redis frame but received {} frame",
+                "Expected valkey frame but received {} frame",
                 frame.name()
             )),
         }
@@ -239,7 +239,7 @@ impl Display for Frame {
             #[cfg(feature = "cassandra")]
             Frame::Cassandra(frame) => write!(f, "Cassandra {}", frame),
             #[cfg(feature = "redis")]
-            Frame::Redis(frame) => write!(f, "Redis {:?}", frame),
+            Frame::Valkey(frame) => write!(f, "Valkey {:?}", frame),
             #[cfg(feature = "kafka")]
             Frame::Kafka(frame) => write!(f, "Kafka {}", frame),
             Frame::Dummy => write!(f, "Shotover internal dummy message"),

@@ -1,6 +1,6 @@
 ---
 sources:
-  - Redis:
+  - Valkey:
       name: "redis-1"
       listen_addr: "127.0.0.1:6371"
       connection_limit: 
@@ -11,10 +11,10 @@ sources:
             switch_port: 1231
             chain:
               - DebugReturner:
-                  Redis: "b"
+                  Valkey: "b"
         - DebugReturner:
-            Redis: "a"
-  - Redis:
+            Valkey: "a"
+  - Valkey:
       name: "redis-2"
       listen_addr: "127.0.0.1:6372"
       connection_limit: 
@@ -27,10 +27,10 @@ sources:
             switch_port: 1232
             chain:
               - DebugReturner:
-                  Redis: "b"
+                  Valkey: "b"
         - DebugReturner:
-            Redis: "a"
-  - Redis:
+            Valkey: "a"
+  - Valkey:
       name: "redis-3"
       listen_addr: "127.0.0.1:6373"
       connection_limit: 
@@ -41,6 +41,6 @@ sources:
             switch_port: 1233
             chain:
               - DebugReturner:
-                  Redis: "b"
+                  Valkey: "b"
         - DebugReturner:
-            Redis: "a"
+            Valkey: "a"

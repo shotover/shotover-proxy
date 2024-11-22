@@ -1,7 +1,7 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use shotover::frame::{Frame, MessageType, RedisFrame};
+use shotover::frame::{Frame, MessageType, ValkeyFrame};
 use shotover::message::{MessageIdSet, Messages};
 use shotover::transforms::{
     ChainState, Transform, TransformBuilder, TransformConfig, TransformContextConfig,
@@ -28,7 +28,7 @@ impl TransformConfig for RedisGetRewriteConfig {
     }
 
     fn up_chain_protocol(&self) -> UpChainProtocol {
-        UpChainProtocol::MustBeOneOf(vec![MessageType::Redis])
+        UpChainProtocol::MustBeOneOf(vec![MessageType::Valkey])
     }
 
     fn down_chain_protocol(&self) -> DownChainProtocol {
@@ -95,8 +95,8 @@ impl Transform for RedisGetRewrite {
 }
 
 fn is_get(frame: &Frame) -> bool {
-    if let Frame::Redis(RedisFrame::Array(array)) = frame {
-        if let Some(RedisFrame::BulkString(first)) = array.first() {
+    if let Frame::Valkey(ValkeyFrame::Array(array)) = frame {
+        if let Some(ValkeyFrame::BulkString(first)) = array.first() {
             first.eq_ignore_ascii_case(b"GET")
         } else {
             false
@@ -108,5 +108,5 @@ fn is_get(frame: &Frame) -> bool {
 
 fn rewrite_get(frame: &mut Frame, result: &str) {
     tracing::info!("Replaced {frame:?} with BulkString(\"{result}\")");
-    *frame = Frame::Redis(RedisFrame::BulkString(result.to_owned().into()));
+    *frame = Frame::Valkey(ValkeyFrame::BulkString(result.to_owned().into()));
 }

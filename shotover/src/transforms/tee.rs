@@ -609,7 +609,7 @@ mod tests {
 
         let transform_context_config = TransformContextConfig {
             chain_name: "".into(),
-            up_chain_protocol: MessageType::Redis,
+            up_chain_protocol: MessageType::Valkey,
         };
         let transform = config.get_builder(transform_context_config).await.unwrap();
         let result = transform.validate();
@@ -628,7 +628,7 @@ mod tests {
 
         let transform_context_config = TransformContextConfig {
             chain_name: "".into(),
-            up_chain_protocol: MessageType::Redis,
+            up_chain_protocol: MessageType::Valkey,
         };
         let transform = config.get_builder(transform_context_config).await.unwrap();
         let result = transform.validate().join("\n");
@@ -649,7 +649,7 @@ mod tests {
         };
         let transform_context_config = TransformContextConfig {
             chain_name: "".into(),
-            up_chain_protocol: MessageType::Redis,
+            up_chain_protocol: MessageType::Valkey,
         };
         let transform = config.get_builder(transform_context_config).await.unwrap();
         let result = transform.validate();
@@ -667,7 +667,7 @@ mod tests {
         };
         let transform_context_config = TransformContextConfig {
             chain_name: "".into(),
-            up_chain_protocol: MessageType::Redis,
+            up_chain_protocol: MessageType::Valkey,
         };
         let transform = config.get_builder(transform_context_config).await.unwrap();
         let result = transform.validate();
@@ -688,7 +688,7 @@ mod tests {
 
         let transform_context_config = TransformContextConfig {
             chain_name: "".into(),
-            up_chain_protocol: MessageType::Redis,
+            up_chain_protocol: MessageType::Valkey,
         };
         let transform = config.get_builder(transform_context_config).await.unwrap();
         let result = transform.validate().join("\n");
@@ -712,7 +712,7 @@ mod tests {
 
         let transform_context_config = TransformContextConfig {
             chain_name: "".into(),
-            up_chain_protocol: MessageType::Redis,
+            up_chain_protocol: MessageType::Valkey,
         };
         let transform = config.get_builder(transform_context_config).await.unwrap();
         let result = transform.validate();

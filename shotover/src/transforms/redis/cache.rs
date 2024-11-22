@@ -1,5 +1,5 @@
 use crate::config::chain::TransformChainConfig;
-use crate::frame::{CassandraFrame, CassandraOperation, Frame, MessageType, RedisFrame};
+use crate::frame::{CassandraFrame, CassandraOperation, Frame, MessageType, ValkeyFrame};
 use crate::message::{Message, MessageIdMap, Messages, Metadata};
 use crate::transforms::chain::{TransformChain, TransformChainBuilder};
 use crate::transforms::{
@@ -20,7 +20,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::net::SocketAddr;
 use tracing::{error, warn};
 
-/// Data is stored in Redis as a Hash (hset/hget) and constructed from the cassandra SELECT statement
+/// Data is stored in Valkey as a Hash (hset/hget) and constructed from the cassandra SELECT statement
 /// * The name of the hash is constructed from: the FROM component and partition + range keys as per the TableCacheSchema configuration
 /// * The name of the field in the hash is constructed from: the SELECT component and the WHERE component excluding the partition + range keys used in the hash name
 /// * The contents of field in the hash is: the raw bytes of a cassandra response from a SELECT
@@ -35,7 +35,7 @@ use tracing::{error, warn};
 ///         range_key: []
 /// then this cassandra query:
 ///     `SELECT a, b, c as g FROM keyspace1.table2 WHERE e='foo' a[2]=3`
-/// will result in this redis command:
+/// will result in this valkey command:
 ///     `hset "keyspace1.table2:'foo'" "a b c WHERE a[2]=3" $SELECT_RESPONSE_BYTES`
 
 // TODO: ensure quoted identifiers wont cause collisions in the above described format
@@ -103,7 +103,7 @@ impl TransformConfig for RedisConfig {
 
         let transform_context_config = TransformContextConfig {
             chain_name: "cache_chain".into(),
-            up_chain_protocol: MessageType::Redis,
+            up_chain_protocol: MessageType::Valkey,
         };
 
         Ok(Box::new(SimpleRedisCacheBuilder {
@@ -185,10 +185,10 @@ impl SimpleRedisCache {
                         match build_redis_key_from_cql3(query, table_cache_schema) {
                             Ok(address) => {
                                 return Some(Message::from_frame_diverged(
-                                    Frame::Redis(RedisFrame::Array(vec![
-                                        RedisFrame::BulkString("HGET".into()),
-                                        RedisFrame::BulkString(address.key),
-                                        RedisFrame::BulkString(address.field),
+                                    Frame::Valkey(ValkeyFrame::Array(vec![
+                                        ValkeyFrame::BulkString("HGET".into()),
+                                        ValkeyFrame::BulkString(address.key),
+                                        ValkeyFrame::BulkString(address.field),
                                     ])),
                                     request,
                                 ));
@@ -214,13 +214,13 @@ impl SimpleRedisCache {
                 )
                 .expect("There must be a pending request, since we store a pending request for all redis requests");
             let cassandra_frame = match redis_response.frame() {
-                Some(Frame::Redis(redis_frame)) => {
+                Some(Frame::Valkey(redis_frame)) => {
                     match redis_frame {
-                        RedisFrame::Error(err) => {
+                        ValkeyFrame::Error(err) => {
                             error!("Redis cache server returned error: {err:?}");
                             None
                         }
-                        RedisFrame::BulkString(redis_bytes) => {
+                        ValkeyFrame::BulkString(redis_bytes) => {
                             match CassandraFrame::from_bytes(redis_bytes.clone(), Compression::None)
                             {
                                 Ok(mut response_frame) => {
@@ -252,7 +252,7 @@ impl SimpleRedisCache {
                                 }
                             }
                         }
-                        RedisFrame::Null => {
+                        ValkeyFrame::Null => {
                             self.missed_requests.increment(1);
                             None
                         }
@@ -308,7 +308,7 @@ impl SimpleRedisCache {
     /// TODO make this drop only the specified keys not the entire cache
     fn drop_table(&self, _statement: &CassandraStatement, response: &Message) -> Message {
         Message::from_frame_at_instant(
-            Frame::Redis(RedisFrame::Array(vec![RedisFrame::BulkString(
+            Frame::Valkey(ValkeyFrame::Array(vec![ValkeyFrame::BulkString(
                 "FLUSHDB".into(),
             )])),
             response.received_from_source_or_sink_at,
@@ -328,9 +328,9 @@ impl SimpleRedisCache {
                     build_redis_key_from_cql3(statement, table_cache_schema)
                 {
                     return Some(Message::from_frame_at_instant(
-                        Frame::Redis(RedisFrame::Array(vec![
-                            RedisFrame::BulkString("DEL".into()),
-                            RedisFrame::BulkString(address.key),
+                        Frame::Valkey(ValkeyFrame::Array(vec![
+                            ValkeyFrame::BulkString("DEL".into()),
+                            ValkeyFrame::BulkString(address.key),
                         ])),
                         response.received_from_source_or_sink_at,
                     ));
@@ -358,11 +358,11 @@ impl SimpleRedisCache {
                         let encoded = frame.clone().encode(Compression::None);
 
                         return Ok(Some(Message::from_frame_at_instant(
-                            Frame::Redis(RedisFrame::Array(vec![
-                                RedisFrame::BulkString("HSET".into()),
-                                RedisFrame::BulkString(address.key),
-                                RedisFrame::BulkString(address.field),
-                                RedisFrame::BulkString(encoded.into()),
+                            Frame::Valkey(ValkeyFrame::Array(vec![
+                                ValkeyFrame::BulkString("HSET".into()),
+                                ValkeyFrame::BulkString(address.key),
+                                ValkeyFrame::BulkString(address.field),
+                                ValkeyFrame::BulkString(encoded.into()),
                             ])),
                             response.received_from_source_or_sink_at,
                         )));

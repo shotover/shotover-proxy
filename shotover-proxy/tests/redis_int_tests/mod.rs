@@ -23,7 +23,7 @@ fn invalid_frame_event() -> EventMatcher {
         .with_level(Level::Warn)
         .with_target("shotover::server")
         .with_message(
-            r#"failed to decode message: Error decoding redis frame
+            r#"failed to decode message: Error decoding valkey frame
 
 Caused by:
     Decode Error: frame_type: Invalid frame type."#,

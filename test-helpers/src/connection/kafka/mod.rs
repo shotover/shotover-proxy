@@ -736,6 +736,7 @@ pub struct ConsumerConfig {
     fetch_min_bytes: i32,
     fetch_max_wait_ms: i32,
     isolation_level: IsolationLevel,
+    protocol: ConsumerProtocol,
 }
 
 impl ConsumerConfig {
@@ -746,6 +747,7 @@ impl ConsumerConfig {
             fetch_min_bytes: 1,
             fetch_max_wait_ms: 500,
             isolation_level: IsolationLevel::ReadUncommitted,
+            protocol: ConsumerProtocol::Classic,
         }
     }
 
@@ -768,6 +770,11 @@ impl ConsumerConfig {
         self.isolation_level = isolation_level;
         self
     }
+
+    pub fn with_protocol(mut self, protocol: ConsumerProtocol) -> Self {
+        self.protocol = protocol;
+        self
+    }
 }
 
 pub enum IsolationLevel {
@@ -782,6 +789,11 @@ impl IsolationLevel {
             IsolationLevel::ReadUncommitted => "read_uncommitted",
         }
     }
+}
+
+pub enum ConsumerProtocol {
+    Classic,
+    Consumer,
 }
 
 #[derive(PartialEq, Debug)]
