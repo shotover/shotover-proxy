@@ -31,12 +31,12 @@ pub mod parallel_map;
 #[cfg(all(feature = "alpha-transforms", feature = "cassandra"))]
 pub mod protect;
 pub mod query_counter;
-#[cfg(feature = "redis")]
-pub mod redis;
 pub mod tee;
 #[cfg(feature = "cassandra")]
 pub mod throttling;
 pub mod util;
+#[cfg(feature = "redis")]
+pub mod valkey;
 
 /// Provides extra context that may be needed when creating a Transform
 #[derive(Clone, Debug)]

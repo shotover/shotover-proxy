@@ -14,7 +14,7 @@ async fn test_early_shutdown_cassandra_source() {
 async fn test_shotover_responds_sigterm() {
     // Ensure it isnt reliant on timing
     for _ in 0..1000 {
-        let shotover_process = shotover_process("tests/test-configs/null-redis/topology.yaml")
+        let shotover_process = shotover_process("tests/test-configs/null-valkey/topology.yaml")
             .start()
             .await;
         shotover_process.send_sigterm();
@@ -31,7 +31,7 @@ async fn test_shotover_responds_sigterm() {
 
 #[tokio::test]
 async fn test_shotover_responds_sigint() {
-    let shotover_process = shotover_process("tests/test-configs/null-redis/topology.yaml")
+    let shotover_process = shotover_process("tests/test-configs/null-valkey/topology.yaml")
         .start()
         .await;
     shotover_process.send_sigint();

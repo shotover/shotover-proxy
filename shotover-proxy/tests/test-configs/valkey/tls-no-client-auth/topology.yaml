@@ -4,12 +4,12 @@ sources:
       name: "valkey"
       listen_addr: "127.0.0.1:6379"
       tls:
-        certificate_path: "tests/test-configs/redis/tls/certs/localhost.crt"
-        private_key_path: "tests/test-configs/redis/tls/certs/localhost.key"
+        certificate_path: "tests/test-configs/valkey/tls/certs/localhost.crt"
+        private_key_path: "tests/test-configs/valkey/tls/certs/localhost.key"
       chain:
         - ValkeySinkSingle:
             remote_address: "localhost:1111"
             connect_timeout_ms: 3000
             tls:
-              certificate_authority_path: "tests/test-configs/redis/tls/certs/localhost_CA.crt"
+              certificate_authority_path: "tests/test-configs/valkey/tls/certs/localhost_CA.crt"
               verify_hostname: true

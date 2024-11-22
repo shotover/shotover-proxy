@@ -32,9 +32,9 @@ pub async fn new_async(address: &str, port: u16) -> redis::aio::Connection {
 }
 
 pub async fn new_async_tls(address: &str, port: u16) -> redis::aio::Connection {
-    let certificate_authority_path = "tests/test-configs/redis/tls/certs/localhost_CA.crt";
-    let certificate_path = "tests/test-configs/redis/tls/certs/localhost.crt";
-    let private_key_path = "tests/test-configs/redis/tls/certs/localhost.key";
+    let certificate_authority_path = "tests/test-configs/valkey/tls/certs/localhost_CA.crt";
+    let certificate_path = "tests/test-configs/valkey/tls/certs/localhost.crt";
+    let private_key_path = "tests/test-configs/valkey/tls/certs/localhost.key";
 
     let mut builder = SslConnector::builder(SslMethod::tls()).unwrap();
     builder.set_ca_file(certificate_authority_path).unwrap();
