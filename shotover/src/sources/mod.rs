@@ -7,7 +7,7 @@ use crate::sources::kafka::{KafkaConfig, KafkaSource};
 #[cfg(feature = "opensearch")]
 use crate::sources::opensearch::{OpenSearchConfig, OpenSearchSource};
 #[cfg(feature = "redis")]
-use crate::sources::redis::{ValkeyConfig, ValkeySource};
+use crate::sources::valkey::{ValkeyConfig, ValkeySource};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
@@ -20,7 +20,7 @@ pub mod kafka;
 #[cfg(feature = "opensearch")]
 pub mod opensearch;
 #[cfg(feature = "redis")]
-pub mod redis;
+pub mod valkey;
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy)]
 #[serde(deny_unknown_fields)]

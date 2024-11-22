@@ -4,7 +4,7 @@ use crate::codec::CodecState;
 #[cfg(feature = "cassandra")]
 use crate::frame::{cassandra, cassandra::CassandraMetadata};
 #[cfg(feature = "redis")]
-use crate::frame::{redis::valkey_query_type, ValkeyFrame};
+use crate::frame::{valkey::valkey_query_type, ValkeyFrame};
 use crate::frame::{Frame, MessageType};
 use anyhow::{anyhow, Context, Result};
 use bytes::Bytes;

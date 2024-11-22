@@ -19,6 +19,6 @@ windsock-cassandra = "test --release --bench windsock --no-default-features --fe
 
 # Compile benches in docker to ensure compiled libc version is compatible with the EC2 instances libc
 windsock-cloud-docker = "run --package windsock-cloud-docker -- redis,cassandra,kafka"
-windsock-cloud-docker-redis = "run --package windsock-cloud-docker -- redis"
+windsock-cloud-docker-valkey = "run --package windsock-cloud-docker -- redis"
 windsock-cloud-docker-kafka = "run --package windsock-cloud-docker -- kafka"
 windsock-cloud-docker-cassandra = "run --package windsock-cloud-docker -- cassandra"

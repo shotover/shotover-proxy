@@ -1,12 +1,12 @@
-use crate::codec::redis::ValkeyCodecBuilder;
+use crate::codec::valkey::ValkeyCodecBuilder;
 use crate::codec::{CodecBuilder, Direction};
 use crate::frame::{Frame, MessageType, ValkeyFrame};
 use crate::message::{Message, Messages};
 use crate::tls::TlsConnectorConfig;
-use crate::transforms::redis::TransformError;
-use crate::transforms::redis::ValkeyError;
 use crate::transforms::util::cluster_connection_pool::{Authenticator, ConnectionPool};
 use crate::transforms::util::{Request, Response};
+use crate::transforms::valkey::TransformError;
+use crate::transforms::valkey::ValkeyError;
 use crate::transforms::{
     ChainState, DownChainProtocol, ResponseFuture, Transform, TransformBuilder, TransformConfig,
     TransformContextBuilder, TransformContextConfig, UpChainProtocol,
@@ -1197,7 +1197,7 @@ impl Authenticator<UsernamePasswordToken> for ValkeyAuthenticator {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::codec::redis::ValkeyDecoder;
+    use crate::codec::valkey::ValkeyDecoder;
     use crate::codec::Direction;
     use pretty_assertions::assert_eq;
     use tokio_util::codec::Decoder;

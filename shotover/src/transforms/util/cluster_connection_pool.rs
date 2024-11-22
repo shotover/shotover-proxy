@@ -308,7 +308,7 @@ async fn rx_process<C: DecoderHalf, R: AsyncRead + Unpin + Send + 'static>(
 #[cfg(all(test, feature = "redis"))]
 mod test {
     use super::spawn_read_write_tasks;
-    use crate::codec::redis::ValkeyCodecBuilder;
+    use crate::codec::valkey::ValkeyCodecBuilder;
     use crate::codec::{CodecBuilder, Direction};
     use std::mem;
     use std::time::Duration;

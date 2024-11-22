@@ -1,11 +1,11 @@
 use crate::shotover_process;
-use test_helpers::connection::redis_connection;
+use test_helpers::connection::valkey_connection;
 use test_helpers::docker_compose::docker_compose;
 use test_helpers::metrics::{assert_metrics_has_keys, assert_metrics_key_value};
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_metrics() {
-    let shotover = shotover_process("tests/test-configs/null-redis/topology.yaml")
+    let shotover = shotover_process("tests/test-configs/null-valkey/topology.yaml")
         .start()
         .await;
 
@@ -95,7 +95,7 @@ shotover_transform_total_count{transform="QueryCounter"}
 "#;
     assert_metrics_has_keys("", expected).await;
 
-    let mut connection = redis_connection::new_async("127.0.0.1", 6379).await;
+    let mut connection = valkey_connection::new_async("127.0.0.1", 6379).await;
 
     redis::cmd("SET")
         .arg("the_key")
@@ -151,12 +151,12 @@ shotover_query_count{name="valkey-chain",query="SET",type="valkey"}
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_shotover_with_metrics_disabled() {
-    let _compose = docker_compose("tests/test-configs/redis/passthrough/docker-compose.yaml");
-    let shotover = shotover_process("tests/test-configs/redis/passthrough/topology.yaml")
+    let _compose = docker_compose("tests/test-configs/valkey/passthrough/docker-compose.yaml");
+    let shotover = shotover_process("tests/test-configs/valkey/passthrough/topology.yaml")
         .with_config("tests/test-configs/shotover-config/config_metrics_disabled.yaml")
         .start()
         .await;
-    let mut connection = redis_connection::new_async("127.0.0.1", 6379).await;
+    let mut connection = valkey_connection::new_async("127.0.0.1", 6379).await;
 
     // Verify Shotover can still process messages with metrics disabled
     redis::cmd("SET")

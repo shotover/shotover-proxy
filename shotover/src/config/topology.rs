@@ -87,9 +87,9 @@ mod topology_tests {
     use crate::transforms::null::NullSinkConfig;
     use crate::transforms::TransformConfig;
     use crate::{
-        sources::{redis::ValkeyConfig, Source, SourceConfig},
+        sources::{valkey::ValkeyConfig, Source, SourceConfig},
         transforms::{
-            parallel_map::ParallelMapConfig, redis::cache::ValkeyConfig as ValkeyCacheConfig,
+            parallel_map::ParallelMapConfig, valkey::cache::ValkeyConfig as ValkeyCacheConfig,
         },
     };
     use pretty_assertions::assert_eq;

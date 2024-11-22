@@ -11,11 +11,11 @@ mod kafka_int_tests;
 #[cfg(all(feature = "alpha-transforms", feature = "opensearch"))]
 mod opensearch_int_tests;
 #[cfg(feature = "redis")]
-mod redis_int_tests;
-#[cfg(feature = "redis")]
 mod runner;
 #[cfg(feature = "redis")]
 mod transforms;
+#[cfg(feature = "redis")]
+mod valkey_int_tests;
 
 pub fn shotover_process(topology_path: &str) -> ShotoverProcessBuilder {
     ShotoverProcessBuilder::new_with_topology(topology_path)
