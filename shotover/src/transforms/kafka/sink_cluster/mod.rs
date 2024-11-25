@@ -73,6 +73,7 @@ use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
+mod api_versions;
 mod connections;
 mod kafka_node;
 mod scram_over_mtls;
@@ -3223,25 +3224,22 @@ The connection to the client has been closed."
                 body: ResponseBody::ApiVersions(api_versions),
                 ..
             })) => {
-                let original_size = api_versions.api_keys.len();
+                api_versions.api_keys.retain_mut(|api_key| {
+                    match api_versions::versions_supported_by_key(api_key.api_key) {
+                        Some(version) => {
+                            if api_key.max_version > version.max {
+                                api_key.max_version = version.max;
+                            }
+                            if api_key.min_version < version.min {
+                                api_key.min_version = version.min;
+                            }
+                            true
+                        }
+                        None => false,
+                    }
+                });
 
-                // List of keys that shotover doesnt support and so should be removed from supported keys list
-                let disable_keys = [
-                    // This message type has very little documentation available and kafka responds to it with an error code 35 UNSUPPORTED_VERSION
-                    // So its not clear at all how to implement this and its not even possible to test it.
-                    // Instead lets just ask the client to not send it at all.
-                    // We can consider supporting it when kafka itself starts to support it but we will need to be very
-                    // careful to correctly implement the pagination/cursor logic.
-                    ApiKey::DescribeTopicPartitionsKey as i16,
-                ];
-                api_versions
-                    .api_keys
-                    .retain(|x| !disable_keys.contains(&x.api_key));
-
-                if original_size != api_versions.api_keys.len() {
-                    // only invalidate the cache if we actually removed anything
-                    response.invalidate_cache();
-                }
+                response.invalidate_cache();
             }
             _ => {}
         }
