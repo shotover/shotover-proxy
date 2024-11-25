@@ -9,6 +9,10 @@ use futures::Future;
 use pretty_assertions::assert_eq;
 use rstest::rstest;
 use rstest_reuse::{self, *};
+use scylla::transport::errors::{
+    ConnectionError, ConnectionPoolError, ConnectionSetupRequestError,
+    ConnectionSetupRequestErrorKind, DbError, NewSessionError,
+};
 use scylla::SessionBuilder;
 use std::net::SocketAddr;
 #[cfg(feature = "cassandra-cpp-driver-tests")]
@@ -141,10 +145,16 @@ async fn passthrough_cassandra_down() {
         .await
         .unwrap_err();
     match err {
-        scylla::transport::errors::NewSessionError::IoError(err) => {
+        NewSessionError::ConnectionPoolError(ConnectionPoolError::Broken {
+            last_connection_error:
+                ConnectionError::ConnectionSetupRequestError(ConnectionSetupRequestError {
+                    error: ConnectionSetupRequestErrorKind::DbError(DbError::ServerError, err),
+                    ..
+                }),
+        }) => {
             assert_eq!(
                 format!("{err}"),
-                format!("No connections in the pool; last connection failed with: Database returned an error: Internal server error. This indicates a server-side bug, Error message: Internal shotover (or custom transform) bug: Chain failed to send and/or receive messages, the connection will now be closed.
+                format!("Internal shotover (or custom transform) bug: Chain failed to send and/or receive messages, the connection will now be closed.
 
 Caused by:
     0: CassandraSinkSingle transform failed
