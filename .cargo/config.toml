@@ -9,16 +9,16 @@ linker = "aarch64-linux-gnu-gcc"
 
 [alias]
 # Can run every benchmark
-windsock = "test --release --bench windsock --features kafka,alpha-transforms,kafka-cpp-driver-tests,cassandra,redis --"
-windsock-debug = "test --bench windsock --features kafka,alpha-transforms,kafka-cpp-driver-tests,cassandra,redis --"
+windsock = "test --release --bench windsock --features kafka,alpha-transforms,kafka-cpp-driver-tests,cassandra,valkey --"
+windsock-debug = "test --bench windsock --features kafka,alpha-transforms,kafka-cpp-driver-tests,cassandra,valkey --"
 
 # Can only run benchmarks specific to the protocol but compiles a lot faster
-windsock-valkey = "test --release --bench windsock --no-default-features --features redis,alpha-transforms --"
+windsock-valkey = "test --release --bench windsock --no-default-features --features valkey,alpha-transforms --"
 windsock-kafka = "test --release --bench windsock --no-default-features --features kafka,alpha-transforms,kafka-cpp-driver-tests --"
 windsock-cassandra = "test --release --bench windsock --no-default-features --features cassandra,alpha-transforms --"
 
 # Compile benches in docker to ensure compiled libc version is compatible with the EC2 instances libc
-windsock-cloud-docker = "run --package windsock-cloud-docker -- redis,cassandra,kafka"
-windsock-cloud-docker-valkey = "run --package windsock-cloud-docker -- redis"
+windsock-cloud-docker = "run --package windsock-cloud-docker -- valkey,cassandra,kafka"
+windsock-cloud-docker-valkey = "run --package windsock-cloud-docker -- valkey"
 windsock-cloud-docker-kafka = "run --package windsock-cloud-docker -- kafka"
 windsock-cloud-docker-cassandra = "run --package windsock-cloud-docker -- cassandra"

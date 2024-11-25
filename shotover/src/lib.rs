@@ -44,7 +44,7 @@ If we absolutely need unsafe code, it should be isolated within a separate small
 #![cfg_attr(
     any(
         not(feature = "cassandra"),
-        not(feature = "redis"),
+        not(feature = "valkey"),
         not(feature = "kafka"),
         not(feature = "opensearch"),
     ),
@@ -52,7 +52,7 @@ If we absolutely need unsafe code, it should be isolated within a separate small
 )]
 #[cfg(all(
     not(feature = "cassandra"),
-    not(feature = "redis"),
+    not(feature = "valkey"),
     not(feature = "kafka"),
     not(feature = "opensearch"),
 ))]

@@ -836,7 +836,7 @@ enum PendingRequests {
 impl PendingRequests {
     fn new(message_type: MessageType) -> Self {
         match message_type {
-            #[cfg(feature = "redis")]
+            #[cfg(feature = "valkey")]
             MessageType::Valkey => PendingRequests::Ordered(vec![]),
             #[cfg(feature = "cassandra")]
             MessageType::Cassandra => PendingRequests::Unordered(Default::default()),

@@ -34,7 +34,7 @@ kafka = [
     "dep:base64",
     "dep:sasl",
 ]
-redis = [
+valkey = [
     "dep:redis-protocol",
     "dep:csv",
     "dep:crc16",
@@ -44,7 +44,7 @@ opensearch = [
     "dep:http",
     "dep:httparse",
 ]
-default = ["cassandra", "redis", "kafka", "opensearch"]
+default = ["cassandra", "valkey", "kafka", "opensearch"]
 
 [dependencies]
 atomic_enum = "0.3.0"
@@ -141,4 +141,4 @@ pretty_assertions.workspace = true
 [[bench]]
 name = "benches"
 harness = false
-required-features = ["cassandra", "redis", "kafka"]
+required-features = ["cassandra", "valkey", "kafka"]
