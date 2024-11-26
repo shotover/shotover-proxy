@@ -1129,6 +1129,18 @@ The connection to the client has been closed."
                     ));
                 }
                 Some(Frame::Kafka(KafkaFrame::Request {
+                    body: RequestBody::AlterReplicaLogDirs(_),
+                    ..
+                })) => {
+                    return Err(anyhow!(
+                        "Client sent AlterReplicaLogDirs request.
+Shotover has not implemented support for this message type.
+It could theoretically be supported by performing the inverse of DescribeLogDirs.
+i.e. Define a custom path format like `actual-kafka-broker-id3:/original/log/dir/path` and then parse the broker id and send the original path to that broker.
+But it is expected that if you are using shotover as a proxy you do not care about the internal state of the kafka cluster enough to use AlterReplicaLogDirs."
+                    ));
+                }
+                Some(Frame::Kafka(KafkaFrame::Request {
                     body: RequestBody::UnregisterBroker(_),
                     ..
                 })) => {
