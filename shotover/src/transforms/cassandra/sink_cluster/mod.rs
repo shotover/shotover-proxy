@@ -486,6 +486,15 @@ impl CassandraSinkCluster {
 
                         // close the connection
                         node.outbound = None;
+
+                        // TODO:
+                        // Sending the use statement to these connections to keep them alive instead is possible but tricky.
+                        // 1. The destinations need to be calculated here, at sending time, to ensure no new connections have been created in the meantime.
+                        // 2. We need a way to filter out these extra responses from reaching the client.
+                        // 3. But we cant use the TableRewrite abstraction since that occurs too early. See 1.
+                        //
+                        // I think the best way forward to achieve this would be to first perform the refactors listed in
+                        // https://github.com/shotover/shotover-proxy/issues/1844
                     }
                 }
             } else if is_prepare_message(&mut message) {
