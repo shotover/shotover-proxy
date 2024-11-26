@@ -45,10 +45,10 @@ To use nextest:
 1. Install nextest: `cargo install cargo-nextest --locked`
 2. Then run the tests: `cargo nextest run`
 
-The tests rely on configuration in `tests/test-configs/`, so if for example, you wanted to manually setup the services for the redis-passthrough test, you could run these commands in the `shotover-proxy` directory:
+The tests rely on configuration in `tests/test-configs/`, so if for example, you wanted to manually setup the services for the valkey-passthrough test, you could run these commands in the `shotover-proxy` directory:
 
-* `docker-compose -f shotover-proxy/tests/test-configs/redis-passthrough/docker-compose.yaml up`
-* `cargo run -- --topology-file tests/test-configs/redis-passthrough/topology.yaml`
+* `docker-compose -f shotover-proxy/tests/test-configs/valkey-passthrough/docker-compose.yaml up`
+* `cargo run -- --topology-file tests/test-configs/valkey-passthrough/topology.yaml`
 
 ## Submitting a PR
 

@@ -31,7 +31,7 @@ A clear and concise description of what you expected to happen.
 ## Systems and Version:
  - OS
  - Shotover Version
- - Version of 3rd party software e.g. Cassandra, Redis
+ - Version of 3rd party software e.g. Cassandra, Valkey
 
 ## Additional context
 Add any other context about the problem here.

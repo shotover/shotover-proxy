@@ -25,14 +25,14 @@ The topology file is the primary method for defining how Shotover behaves.
 Consider this example `topology.yaml`:
 
 ```yaml
-# This example listens on two different localhost ports and routes messages to a single redis instance on localhost.
+# This example listens on two different localhost ports and routes messages to a single valkey instance on localhost.
 # Requests received on port 1000 will have metrics recorded on the types of messages sent, while port 1001 will not have those metrics.
 ---
 # The list of sources
 sources:
   # First we define the source that will listen for connections from the client and then communicate to the client once a connection is opened.
-  - Redis:
-      name: "redis"
+  - Valkey:
+      name: "valkey"
       listen_addr: "127.0.0.1:1000"
       # Next we define the transform chain that will process messages received by this source
       chain:
@@ -41,16 +41,16 @@ sources:
             name: "Main chain"
         # The final transform is a sink, it receives requests from the previous transform and sends them to an actual DB instance.
         # When it receives a response back it routes the response back through every transform in the chain and finally back to the client.
-        - RedisSinkSingle:
+        - ValkeySinkSingle:
             remote_address: "127.0.0.1:6379"
             connect_timeout_ms: 3000
 
   # A second source definition, this time we lack the QueryCounter transform.
-  - Redis:
-      name: "redis"
+  - Valkey:
+      name: "valkey"
       listen_addr: "127.0.0.1:1001"
       chain:
-        - RedisSinkSingle:
+        - ValkeySinkSingle:
             remote_address: "127.0.0.1:6379"
             connect_timeout_ms: 3000
 ```
