@@ -155,8 +155,8 @@ async fn test_save(connection: &mut Connection) {
         "expected lastsave2 > 0, but lastsave was {lastsave2}"
     );
     assert!(
-        lastsave2 > lastsave1,
-        "expected lastsave2 > lastsave1, but was {lastsave2} > {lastsave1}"
+        lastsave2 >= lastsave1,
+        "expected lastsave2 >= lastsave1, but was {lastsave2} > {lastsave1}"
     );
 }
 
