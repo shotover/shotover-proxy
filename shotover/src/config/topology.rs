@@ -77,7 +77,7 @@ impl Topology {
     }
 }
 
-#[cfg(all(test, feature = "redis", feature = "cassandra"))]
+#[cfg(all(test, feature = "valkey", feature = "cassandra"))]
 mod topology_tests {
     use crate::config::chain::TransformChainConfig;
     use crate::config::topology::Topology;

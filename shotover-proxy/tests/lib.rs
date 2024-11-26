@@ -10,11 +10,11 @@ mod cassandra_int_tests;
 mod kafka_int_tests;
 #[cfg(all(feature = "alpha-transforms", feature = "opensearch"))]
 mod opensearch_int_tests;
-#[cfg(feature = "redis")]
+#[cfg(feature = "valkey")]
 mod runner;
-#[cfg(feature = "redis")]
+#[cfg(feature = "valkey")]
 mod transforms;
-#[cfg(feature = "redis")]
+#[cfg(feature = "valkey")]
 mod valkey_int_tests;
 
 pub fn shotover_process(topology_path: &str) -> ShotoverProcessBuilder {
@@ -24,9 +24,9 @@ pub fn shotover_process(topology_path: &str) -> ShotoverProcessBuilder {
 }
 
 #[cfg(target_os = "macos")]
-#[cfg(any(feature = "cassandra", feature = "redis"))]
+#[cfg(any(feature = "cassandra", feature = "valkey"))]
 const CONNECTION_REFUSED_OS_ERROR: i32 = 61;
 
 #[cfg(not(target_os = "macos"))]
-#[cfg(any(feature = "cassandra", feature = "redis"))]
+#[cfg(any(feature = "cassandra", feature = "valkey"))]
 const CONNECTION_REFUSED_OS_ERROR: i32 = 111;

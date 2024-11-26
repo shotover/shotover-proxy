@@ -2,7 +2,7 @@
 #![cfg_attr(
     any(
         not(feature = "cassandra"),
-        not(feature = "redis"),
+        not(feature = "valkey"),
         not(all(feature = "kafka-cpp-driver-tests", feature = "kafka"))
     ),
     allow(dead_code, unused_imports, unused_variables, unused_mut)
@@ -16,7 +16,7 @@ mod common;
 mod kafka;
 mod profilers;
 mod shotover;
-#[cfg(feature = "redis")]
+#[cfg(feature = "valkey")]
 mod valkey;
 
 use cloud::CloudResources;
@@ -54,7 +54,7 @@ fn main() {
     benches.extend(cassandra::benches());
     #[cfg(all(feature = "kafka-cpp-driver-tests", feature = "kafka"))]
     benches.extend(kafka::benches());
-    #[cfg(feature = "redis")]
+    #[cfg(feature = "valkey")]
     benches.extend(valkey::benches());
 
     Windsock::new(benches, cloud::AwsCloud::new_boxed(), &["release"]).run();

@@ -15,7 +15,7 @@ pub mod cassandra;
 pub mod kafka;
 #[cfg(feature = "opensearch")]
 pub mod opensearch;
-#[cfg(feature = "redis")]
+#[cfg(feature = "valkey")]
 pub mod valkey;
 
 #[derive(Eq, PartialEq, Copy, Clone)]
@@ -58,7 +58,7 @@ pub enum CodecState {
     Cassandra {
         compression: Compression,
     },
-    #[cfg(feature = "redis")]
+    #[cfg(feature = "valkey")]
     Valkey,
     #[cfg(feature = "kafka")]
     Kafka(KafkaCodecState),

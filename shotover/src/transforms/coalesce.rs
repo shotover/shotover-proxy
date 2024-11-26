@@ -109,7 +109,7 @@ impl Transform for Coalesce {
     }
 }
 
-#[cfg(all(test, feature = "redis"))]
+#[cfg(all(test, feature = "valkey"))]
 mod test {
     use crate::frame::{Frame, ValkeyFrame};
     use crate::message::Message;

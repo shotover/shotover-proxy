@@ -73,6 +73,7 @@ use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
+mod api_versions;
 mod connections;
 mod kafka_node;
 mod scram_over_mtls;
@@ -887,8 +888,11 @@ impl KafkaSinkCluster {
         if !topic_names.is_empty()
             || !topic_ids.is_empty()
             || self.controller_broker.get().is_none()
+            || self.nodes.is_empty()
         {
-            let mut metadata = self.get_metadata_of_topics(topic_names, topic_ids).await?;
+            let mut metadata = self
+                .get_metadata_of_topics_with_retry(topic_names, topic_ids)
+                .await?;
             match metadata.frame() {
                 Some(Frame::Kafka(KafkaFrame::Response {
                     body: ResponseBody::Metadata(metadata),
@@ -1990,10 +1994,43 @@ The connection to the client has been closed."
         }
     }
 
-    async fn get_metadata_of_topics(
+    /// Retry if we get an empty brokers list
+    /// We dont actually retry on failure since thats not a known failure mode for this request.
+    async fn get_metadata_of_topics_with_retry(
         &mut self,
         topic_names: Vec<TopicName>,
         topic_ids: Vec<Uuid>,
+    ) -> Result<Message> {
+        for _ in 0..3 {
+            let mut response = self
+                .get_metadata_of_topics(&topic_names, &topic_ids)
+                .await?;
+
+            match response.frame() {
+                Some(Frame::Kafka(KafkaFrame::Response {
+                    body: ResponseBody::Metadata(metadata),
+                    ..
+                })) => {
+                    if metadata.brokers.is_empty() {
+                        tracing::info!("Metadata response from broker contained an empty list of brokers, this likely indicates the cluster is still starting up, will retry metadata request after a delay.");
+                        tokio::time::sleep(Duration::from_millis(200)).await;
+                        continue;
+                    } else {
+                        // cluster is ready, return the response
+                        return Ok(response);
+                    }
+                }
+                response => return Err(anyhow!("Expected metadata response but was {response:?}")),
+            }
+        }
+
+        Err(anyhow!("Broker returned empty list of brokers"))
+    }
+
+    async fn get_metadata_of_topics(
+        &mut self,
+        topic_names: &[TopicName],
+        topic_ids: &[Uuid],
     ) -> Result<Message> {
         let api_version = if topic_ids.is_empty() { 4 } else { 12 };
         let request = Message::from_frame(Frame::Kafka(KafkaFrame::Request {
@@ -2004,12 +2041,12 @@ The connection to the client has been closed."
             body: RequestBody::Metadata(
                 MetadataRequest::default().with_topics(Some(
                     topic_names
-                        .into_iter()
-                        .map(|name| MetadataRequestTopic::default().with_name(Some(name)))
-                        .chain(topic_ids.into_iter().map(|id| {
+                        .iter()
+                        .map(|name| MetadataRequestTopic::default().with_name(Some(name.clone())))
+                        .chain(topic_ids.iter().map(|id| {
                             MetadataRequestTopic::default()
                                 .with_name(None)
-                                .with_topic_id(id)
+                                .with_topic_id(*id)
                         }))
                         .collect(),
                 )),
@@ -3235,25 +3272,22 @@ The connection to the client has been closed."
                 body: ResponseBody::ApiVersions(api_versions),
                 ..
             })) => {
-                let original_size = api_versions.api_keys.len();
+                api_versions.api_keys.retain_mut(|api_key| {
+                    match api_versions::versions_supported_by_key(api_key.api_key) {
+                        Some(version) => {
+                            if api_key.max_version > version.max {
+                                api_key.max_version = version.max;
+                            }
+                            if api_key.min_version < version.min {
+                                api_key.min_version = version.min;
+                            }
+                            true
+                        }
+                        None => false,
+                    }
+                });
 
-                // List of keys that shotover doesnt support and so should be removed from supported keys list
-                let disable_keys = [
-                    // This message type has very little documentation available and kafka responds to it with an error code 35 UNSUPPORTED_VERSION
-                    // So its not clear at all how to implement this and its not even possible to test it.
-                    // Instead lets just ask the client to not send it at all.
-                    // We can consider supporting it when kafka itself starts to support it but we will need to be very
-                    // careful to correctly implement the pagination/cursor logic.
-                    ApiKey::DescribeTopicPartitionsKey as i16,
-                ];
-                api_versions
-                    .api_keys
-                    .retain(|x| !disable_keys.contains(&x.api_key));
-
-                if original_size != api_versions.api_keys.len() {
-                    // only invalidate the cache if we actually removed anything
-                    response.invalidate_cache();
-                }
+                response.invalidate_cache();
             }
             _ => {}
         }
