@@ -35,7 +35,7 @@ pub mod tee;
 #[cfg(feature = "cassandra")]
 pub mod throttling;
 pub mod util;
-#[cfg(feature = "redis")]
+#[cfg(feature = "valkey")]
 pub mod valkey;
 
 /// Provides extra context that may be needed when creating a Transform

@@ -533,7 +533,7 @@ impl DummyResponseInserter {
     }
 }
 
-#[cfg(all(test, feature = "redis"))]
+#[cfg(all(test, feature = "valkey"))]
 mod tests {
     use super::DummyResponseInserter;
     use crate::frame::{Frame, ValkeyFrame};

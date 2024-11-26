@@ -1,8 +1,8 @@
 use shotover::runner::Shotover;
 
-#[cfg(feature = "redis")]
+#[cfg(feature = "valkey")]
 mod valkey_get_rewrite;
-#[cfg(feature = "redis")]
+#[cfg(feature = "valkey")]
 shotover::import_transform!(valkey_get_rewrite::ValkeyGetRewriteConfig);
 
 fn main() {

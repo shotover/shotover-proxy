@@ -23,9 +23,9 @@ redis.workspace = true
 pretty_assertions.workspace = true
 
 [features]
-redis = ["shotover/redis"]
-default = ["redis"]
+valkey = ["shotover/valkey"]
+default = ["valkey"]
 
 [[test]]
 name = "test"
-required-features = ["redis"]
+required-features = ["valkey"]

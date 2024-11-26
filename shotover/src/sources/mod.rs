@@ -6,7 +6,7 @@ use crate::sources::cassandra::{CassandraConfig, CassandraSource};
 use crate::sources::kafka::{KafkaConfig, KafkaSource};
 #[cfg(feature = "opensearch")]
 use crate::sources::opensearch::{OpenSearchConfig, OpenSearchSource};
-#[cfg(feature = "redis")]
+#[cfg(feature = "valkey")]
 use crate::sources::valkey::{ValkeyConfig, ValkeySource};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
@@ -19,7 +19,7 @@ pub mod cassandra;
 pub mod kafka;
 #[cfg(feature = "opensearch")]
 pub mod opensearch;
-#[cfg(feature = "redis")]
+#[cfg(feature = "valkey")]
 pub mod valkey;
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy)]
@@ -33,7 +33,7 @@ pub enum Transport {
 pub enum Source {
     #[cfg(feature = "cassandra")]
     Cassandra(CassandraSource),
-    #[cfg(feature = "redis")]
+    #[cfg(feature = "valkey")]
     Valkey(ValkeySource),
     #[cfg(feature = "kafka")]
     Kafka(KafkaSource),
@@ -46,7 +46,7 @@ impl Source {
         match self {
             #[cfg(feature = "cassandra")]
             Source::Cassandra(c) => c.join_handle,
-            #[cfg(feature = "redis")]
+            #[cfg(feature = "valkey")]
             Source::Valkey(r) => r.join_handle,
             #[cfg(feature = "kafka")]
             Source::Kafka(r) => r.join_handle,
@@ -61,7 +61,7 @@ impl Source {
 pub enum SourceConfig {
     #[cfg(feature = "cassandra")]
     Cassandra(CassandraConfig),
-    #[cfg(feature = "redis")]
+    #[cfg(feature = "valkey")]
     Valkey(ValkeyConfig),
     #[cfg(feature = "kafka")]
     Kafka(KafkaConfig),
@@ -77,7 +77,7 @@ impl SourceConfig {
         match self {
             #[cfg(feature = "cassandra")]
             SourceConfig::Cassandra(c) => c.get_source(trigger_shutdown_rx).await,
-            #[cfg(feature = "redis")]
+            #[cfg(feature = "valkey")]
             SourceConfig::Valkey(r) => r.get_source(trigger_shutdown_rx).await,
             #[cfg(feature = "kafka")]
             SourceConfig::Kafka(r) => r.get_source(trigger_shutdown_rx).await,
@@ -90,7 +90,7 @@ impl SourceConfig {
         match self {
             #[cfg(feature = "cassandra")]
             SourceConfig::Cassandra(c) => &c.name,
-            #[cfg(feature = "redis")]
+            #[cfg(feature = "valkey")]
             SourceConfig::Valkey(r) => &r.name,
             #[cfg(feature = "kafka")]
             SourceConfig::Kafka(r) => &r.name,

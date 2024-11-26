@@ -591,7 +591,7 @@ struct AppState {
     result_source: Arc<AtomicResultSource>,
 }
 
-#[cfg(all(test, feature = "redis"))]
+#[cfg(all(test, feature = "valkey"))]
 mod tests {
     use super::*;
     use crate::{frame::MessageType, transforms::null::NullSinkConfig};
