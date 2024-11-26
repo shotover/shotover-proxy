@@ -19,7 +19,7 @@ To build Shotover from source please refer to [the contributing documentation](h
 
 Shotover is a high performance, configurable and extensible L7 data-layer proxy for controlling, managing and modifying the flow of database requests in transit. It can be used to solve many different operational and interoperability challenges by transparently intercepting and transforming queries. It is transparent in the sense that it can be plugged into your architecture without requiring application change.
 
-Shotover currently supports the following databases:
+Shotover currently supports the following technologies:
 
 * Cassandra (CQL4 + CQL5)
 * Valkey/Redis (RESP2)
@@ -36,7 +36,7 @@ Concrete examples where Shotover has been applied include:
 More broadly, Shotover is designed to be used for a very wide ranging class of problems where it is useful to transparently intercept a database call and redirect/rewrite it. This allows you to change the behaviour of running applications at the infrastructure level without change to the application code itself.
 Some examples where we envisage Shotover could be deployed include:
 
-* Enabling use of AWS private link or GCP private service connect for database's that do not support distinct load balancer nodes.
+* Enabling use of AWS PrivateLink or GCP Private Service Connect for databases that do not support distinct load balancer nodes.
 * Moving very large or very hot tenants/customers/keys (that can cause unbalanced partition problems in some systems) to a separate data store by intercepting and redirecting queries for those particular keys
 * Dual writing and/or query translation to allow the underlying storage technology to be changed (for example, from DynamoDB to Apache Cassandra)
 * As an alternative to Change Data Capture technology to send writes to a message stream such as Apache Kafka in addition to the primary database
@@ -47,7 +47,7 @@ Shotover does not provide transforms for all of these yet, but with a custom tra
 ## Custom Transforms
 
 Shotover comes with some predefined Transforms for common operations.
-However shotover also allows for user defined [Custom Transforms](https://github.com/shotover/shotover-custom-transforms-template) to be written in rust.
+However Shotover also allows for user defined [Custom Transforms](https://github.com/shotover/shotover-custom-transforms-template) to be written in rust.
 Custom Transforms are given access to the AST of all messages passing through, allowing for any kind of transformation to be performed.
 
 ## Deploying Shotover
