@@ -13,7 +13,7 @@ use cassandra_protocol::compression::Compression;
 use kafka::KafkaFrame;
 #[cfg(feature = "opensearch")]
 pub use opensearch::OpenSearchFrame;
-#[cfg(feature = "redis")]
+#[cfg(feature = "valkey")]
 pub use redis_protocol::resp2::types::BytesFrame as ValkeyFrame;
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
@@ -23,13 +23,13 @@ pub mod cassandra;
 pub mod kafka;
 #[cfg(feature = "opensearch")]
 pub mod opensearch;
-#[cfg(feature = "redis")]
+#[cfg(feature = "valkey")]
 pub mod valkey;
 pub mod value;
 
 #[derive(PartialEq, Debug, Clone, Copy)]
 pub enum MessageType {
-    #[cfg(feature = "redis")]
+    #[cfg(feature = "valkey")]
     Valkey,
     #[cfg(feature = "cassandra")]
     Cassandra,
@@ -45,7 +45,7 @@ impl MessageType {
         match self {
             #[cfg(feature = "cassandra")]
             MessageType::Cassandra => false,
-            #[cfg(feature = "redis")]
+            #[cfg(feature = "valkey")]
             MessageType::Valkey => true,
             #[cfg(feature = "kafka")]
             MessageType::Kafka => true,
@@ -59,7 +59,7 @@ impl MessageType {
         match self {
             #[cfg(feature = "cassandra")]
             MessageType::Cassandra => "cql",
-            #[cfg(feature = "redis")]
+            #[cfg(feature = "valkey")]
             MessageType::Valkey => "redis",
             #[cfg(feature = "kafka")]
             MessageType::Kafka => "kafka",
@@ -75,7 +75,7 @@ impl From<&CodecState> for MessageType {
         match value {
             #[cfg(feature = "cassandra")]
             CodecState::Cassandra { .. } => Self::Cassandra,
-            #[cfg(feature = "redis")]
+            #[cfg(feature = "valkey")]
             CodecState::Valkey => Self::Valkey,
             #[cfg(feature = "kafka")]
             CodecState::Kafka { .. } => Self::Kafka,
@@ -93,7 +93,7 @@ impl Frame {
             Frame::Cassandra(_) => CodecState::Cassandra {
                 compression: Compression::None,
             },
-            #[cfg(feature = "redis")]
+            #[cfg(feature = "valkey")]
             Frame::Valkey(_) => CodecState::Valkey,
             #[cfg(feature = "kafka")]
             Frame::Kafka(_) => CodecState::Kafka(KafkaCodecState {
@@ -111,7 +111,7 @@ impl Frame {
 pub enum Frame {
     #[cfg(feature = "cassandra")]
     Cassandra(CassandraFrame),
-    #[cfg(feature = "redis")]
+    #[cfg(feature = "valkey")]
     Valkey(ValkeyFrame),
     #[cfg(feature = "kafka")]
     Kafka(KafkaFrame),
@@ -133,7 +133,7 @@ impl Frame {
             MessageType::Cassandra => {
                 CassandraFrame::from_bytes(bytes, codec_state.as_cassandra()).map(Frame::Cassandra)
             }
-            #[cfg(feature = "redis")]
+            #[cfg(feature = "valkey")]
             MessageType::Valkey => redis_protocol::resp2::decode::decode_bytes(&bytes)
                 .map(|x| Frame::Valkey(x.unwrap().0))
                 .map_err(|e| anyhow!("{e:?}")),
@@ -149,7 +149,7 @@ impl Frame {
 
     pub fn name(&self) -> &'static str {
         match self {
-            #[cfg(feature = "redis")]
+            #[cfg(feature = "valkey")]
             Frame::Valkey(_) => "Valkey",
             #[cfg(feature = "cassandra")]
             Frame::Cassandra(_) => "Cassandra",
@@ -165,7 +165,7 @@ impl Frame {
         match self {
             #[cfg(feature = "cassandra")]
             Frame::Cassandra(_) => MessageType::Cassandra,
-            #[cfg(feature = "redis")]
+            #[cfg(feature = "valkey")]
             Frame::Valkey(_) => MessageType::Valkey,
             #[cfg(feature = "kafka")]
             Frame::Kafka(_) => MessageType::Kafka,
@@ -175,7 +175,7 @@ impl Frame {
         }
     }
 
-    #[cfg(feature = "redis")]
+    #[cfg(feature = "valkey")]
     pub fn valkey(&mut self) -> Result<&mut ValkeyFrame> {
         match self {
             Frame::Valkey(frame) => Ok(frame),
@@ -197,7 +197,7 @@ impl Frame {
         }
     }
 
-    #[cfg(feature = "redis")]
+    #[cfg(feature = "valkey")]
     pub fn into_valkey(self) -> Result<ValkeyFrame> {
         match self {
             Frame::Valkey(frame) => Ok(frame),
@@ -238,7 +238,7 @@ impl Display for Frame {
         match self {
             #[cfg(feature = "cassandra")]
             Frame::Cassandra(frame) => write!(f, "Cassandra {}", frame),
-            #[cfg(feature = "redis")]
+            #[cfg(feature = "valkey")]
             Frame::Valkey(frame) => write!(f, "Valkey {:?}", frame),
             #[cfg(feature = "kafka")]
             Frame::Kafka(frame) => write!(f, "Kafka {}", frame),

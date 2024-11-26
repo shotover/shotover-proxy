@@ -76,7 +76,7 @@ impl Transform for QueryCounter {
                         self.increment_counter(statement.short_name().to_string(), "cassandra");
                     }
                 }
-                #[cfg(feature = "redis")]
+                #[cfg(feature = "valkey")]
                 Some(Frame::Valkey(frame)) => {
                     if let Some(query_type) = crate::frame::valkey::valkey_query_name(frame) {
                         self.increment_counter(query_type, "valkey");

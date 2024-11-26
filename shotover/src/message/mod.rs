@@ -3,7 +3,7 @@
 use crate::codec::CodecState;
 #[cfg(feature = "cassandra")]
 use crate::frame::{cassandra, cassandra::CassandraMetadata};
-#[cfg(feature = "redis")]
+#[cfg(feature = "valkey")]
 use crate::frame::{valkey::valkey_query_type, ValkeyFrame};
 use crate::frame::{Frame, MessageType};
 use anyhow::{anyhow, Context, Result};
@@ -22,7 +22,7 @@ pub type MessageIdSet = HashSet<MessageId, FnvBuildHasher>;
 pub enum Metadata {
     #[cfg(feature = "cassandra")]
     Cassandra(CassandraMetadata),
-    #[cfg(feature = "redis")]
+    #[cfg(feature = "valkey")]
     Valkey,
     #[cfg(feature = "kafka")]
     Kafka,
@@ -37,7 +37,7 @@ impl Metadata {
     pub fn to_error_response(&self, error: String) -> Result<Message> {
         #[allow(unreachable_code)]
         Ok(Message::from_frame(match self {
-            #[cfg(feature = "redis")]
+            #[cfg(feature = "valkey")]
             Metadata::Valkey => {
                 // Valkey errors can not contain newlines at the protocol level
                 let message = format!("ERR {error}")
@@ -331,7 +331,7 @@ impl Message {
                 message_type,
                 ..
             } => match message_type {
-                #[cfg(feature = "redis")]
+                #[cfg(feature = "valkey")]
                 MessageType::Valkey => nonzero!(1u32),
                 #[cfg(feature = "cassandra")]
                 MessageType::Cassandra => cassandra::raw_frame::cell_count(bytes)?,
@@ -344,7 +344,7 @@ impl Message {
             MessageInner::Modified { frame } | MessageInner::Parsed { frame, .. } => match frame {
                 #[cfg(feature = "cassandra")]
                 Frame::Cassandra(frame) => frame.cell_count()?,
-                #[cfg(feature = "redis")]
+                #[cfg(feature = "valkey")]
                 Frame::Valkey(_) => nonzero!(1u32),
                 #[cfg(feature = "kafka")]
                 Frame::Kafka(_) => todo!(),
@@ -375,7 +375,7 @@ impl Message {
         match self.frame() {
             #[cfg(feature = "cassandra")]
             Some(Frame::Cassandra(cassandra)) => cassandra.get_query_type(),
-            #[cfg(feature = "redis")]
+            #[cfg(feature = "valkey")]
             Some(Frame::Valkey(valkey)) => valkey_query_type(valkey), // free-standing function as we cant define methods on ValkeyFrame
             #[cfg(feature = "kafka")]
             Some(Frame::Kafka(_)) => todo!(),
@@ -424,7 +424,7 @@ impl Message {
                 MessageType::Cassandra => {
                     Ok(Metadata::Cassandra(cassandra::raw_frame::metadata(bytes)?))
                 }
-                #[cfg(feature = "redis")]
+                #[cfg(feature = "valkey")]
                 MessageType::Valkey => Ok(Metadata::Valkey),
                 #[cfg(feature = "kafka")]
                 MessageType::Kafka => Ok(Metadata::Kafka),
@@ -437,7 +437,7 @@ impl Message {
                 Frame::Cassandra(frame) => Ok(Metadata::Cassandra(frame.metadata())),
                 #[cfg(feature = "kafka")]
                 Frame::Kafka(_) => Ok(Metadata::Kafka),
-                #[cfg(feature = "redis")]
+                #[cfg(feature = "valkey")]
                 Frame::Valkey(_) => Ok(Metadata::Valkey),
                 Frame::Dummy => Err(anyhow!("dummy has no metadata")),
                 #[cfg(feature = "opensearch")]
@@ -459,7 +459,7 @@ impl Message {
     /// Returns true iff it is known that the server will not send a response to this request, instead we need to generate a dummy response
     pub(crate) fn response_is_dummy(&mut self) -> bool {
         match self.message_type() {
-            #[cfg(feature = "redis")]
+            #[cfg(feature = "valkey")]
             MessageType::Valkey => false,
             #[cfg(feature = "cassandra")]
             MessageType::Cassandra => false,
@@ -494,7 +494,7 @@ impl Message {
             match metadata {
                 #[cfg(feature = "cassandra")]
                 Metadata::Cassandra(metadata) => Frame::Cassandra(metadata.backpressure_response()),
-                #[cfg(feature = "redis")]
+                #[cfg(feature = "valkey")]
                 Metadata::Valkey => unimplemented!(),
                 #[cfg(feature = "kafka")]
                 Metadata::Kafka => unimplemented!(),
@@ -532,7 +532,7 @@ impl Message {
                 match frame {
                     #[cfg(feature = "cassandra")]
                     Frame::Cassandra(cassandra) => Some(cassandra.stream_id),
-                    #[cfg(feature = "redis")]
+                    #[cfg(feature = "valkey")]
                     Frame::Valkey(_) => None,
                     #[cfg(feature = "kafka")]
                     Frame::Kafka(_) => None,

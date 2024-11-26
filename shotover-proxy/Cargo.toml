@@ -55,11 +55,11 @@ pretty_assertions.workspace = true
 alpha-transforms = ["shotover/alpha-transforms"]
 cassandra = ["shotover/cassandra"]
 kafka = ["shotover/kafka"]
-redis = ["shotover/redis"]
+valkey = ["shotover/valkey"]
 opensearch = ["shotover/opensearch"]
 cassandra-cpp-driver-tests = ["test-helpers/cassandra-cpp-driver-tests"]
 kafka-cpp-driver-tests = ["test-helpers/kafka-cpp-driver-tests"]
-default = ["cassandra", "kafka", "redis", "opensearch"]
+default = ["cassandra", "kafka", "valkey", "opensearch"]
 
 [[bench]]
 name = "windsock"

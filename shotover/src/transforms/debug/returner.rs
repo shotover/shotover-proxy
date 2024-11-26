@@ -39,7 +39,7 @@ impl TransformConfig for DebugReturnerConfig {
 pub enum Response {
     #[serde(skip)]
     Message(Message),
-    #[cfg(feature = "redis")]
+    #[cfg(feature = "valkey")]
     Valkey(String),
     Fail,
 }
@@ -88,7 +88,7 @@ impl Transform for DebugReturner {
                     message.set_request_id(request.id());
                     Ok(message)
                 }
-                #[cfg(feature = "redis")]
+                #[cfg(feature = "valkey")]
                 Response::Valkey(string) => {
                     use crate::frame::{Frame, ValkeyFrame};
                     use crate::message::Message;
