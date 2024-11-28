@@ -3993,7 +3993,7 @@ fn random_broker_id(nodes: &[KafkaNode], rng: &mut SmallRng) -> BrokerId {
 
 struct FormatTopicName<'a>(&'a TopicName, &'a Uuid);
 
-impl<'a> std::fmt::Display for FormatTopicName<'a> {
+impl std::fmt::Display for FormatTopicName<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.0.is_empty() {
             write!(f, "topic with id {}", self.1)

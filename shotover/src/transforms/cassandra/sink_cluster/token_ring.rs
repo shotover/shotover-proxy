@@ -57,7 +57,7 @@ impl TokenRing {
         nodes: &'a [CassandraNode],
         token_from_key: Murmur3Token,
         keyspace: &'a KeyspaceMetadata,
-    ) -> impl Iterator<Item = Uuid> + '_ {
+    ) -> impl Iterator<Item = Uuid> + 'a {
         let mut racks_used = vec![];
         self.ring_range(token_from_key)
             .filter(move |host_id| {

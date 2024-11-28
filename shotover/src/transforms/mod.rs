@@ -166,7 +166,7 @@ pub struct ChainState<'a> {
 /// [`Wrapper`] will not (cannot) bring the current list of transforms that it needs to traverse with it
 /// This is purely to make it convenient to clone all the data within Wrapper rather than it's transform
 /// state.
-impl<'a> Clone for ChainState<'a> {
+impl Clone for ChainState<'_> {
     fn clone(&self) -> Self {
         ChainState {
             requests: self.requests.clone(),
