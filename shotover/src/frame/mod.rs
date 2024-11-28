@@ -60,7 +60,7 @@ impl MessageType {
             #[cfg(feature = "cassandra")]
             MessageType::Cassandra => "cql",
             #[cfg(feature = "valkey")]
-            MessageType::Valkey => "redis",
+            MessageType::Valkey => "valkey",
             #[cfg(feature = "kafka")]
             MessageType::Kafka => "kafka",
             #[cfg(feature = "opensearch")]

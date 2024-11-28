@@ -50,7 +50,7 @@ async fn passthrough_standard() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn passthrough_redis_down() {
+async fn passthrough_valkey_down() {
     let shotover = shotover_process("tests/test-configs/valkey/passthrough/topology.yaml")
         .start()
         .await;
