@@ -563,9 +563,9 @@ async fn source_tls_and_cluster_tls(#[case] driver: CassandraDriver) {
 #[apply(all_cassandra_drivers)]
 #[tokio::test(flavor = "multi_thread")]
 async fn cassandra_valkey_cache(#[case] driver: CassandraDriver) {
-    let _compose = docker_compose("tests/test-configs/cassandra/redis-cache/docker-compose.yaml");
+    let _compose = docker_compose("tests/test-configs/cassandra/valkey-cache/docker-compose.yaml");
 
-    let shotover = shotover_process("tests/test-configs/cassandra/redis-cache/topology.yaml")
+    let shotover = shotover_process("tests/test-configs/cassandra/valkey-cache/topology.yaml")
         .start()
         .await;
 
