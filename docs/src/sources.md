@@ -2,8 +2,8 @@
 
 | Source                              | Implementation Status |
 |-------------------------------------|-----------------------|
-|[Cassandra](#cassandra)              |Alpha                  |
-|[Redis](#redis)                      |Beta                   |
+|[Cassandra](#cassandra)              |Beta                   |
+|[Valkey](#valkey)                    |Beta                   |
 
 ## Cassandra
 
@@ -51,10 +51,10 @@ Cassandra:
     ...
 ```
 
-## Redis
+## Valkey
 
 ```yaml
-Redis:
+Valkey:
   # The address to listen from
   listen_addr: "127.0.0.1:6379"
 
@@ -72,9 +72,9 @@ Redis:
   # Removing this field will disable TLS.
   #tls:
   #  # Path to the certificate file, typically named with a .crt extension.
-  #  certificate_path: "tls/redis.crt"
+  #  certificate_path: "tls/valkey.crt"
   #  # Path to the private key file, typically named with a .key extension.
-  #  private_key_path: "tls/redis.key"
+  #  private_key_path: "tls/valkey.key"
   #  # Path to the certificate authority file typically named ca.crt.
   #  # When this field is provided client authentication will be enabled.
   #  #certificate_authority_path: "tls/ca.crt"

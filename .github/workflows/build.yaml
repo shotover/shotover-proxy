@@ -52,4 +52,4 @@ jobs:
         # some things to explicitly point out:
         # * clippy also reports rustc warnings and errors
         # * clippy --all-targets is not run so we only build the shotover_proxy executable without the tests/benches
-        run: cargo hack --feature-powerset --at-least-one-of redis,cassandra,kafka,opensearch clippy --locked ${{ matrix.cargo_flags }} --package shotover-proxy -- -D warnings
+        run: cargo hack --feature-powerset --at-least-one-of valkey,cassandra,kafka,opensearch clippy --locked ${{ matrix.cargo_flags }} --package shotover-proxy -- -D warnings

@@ -47,7 +47,7 @@ jobs:
       # some things to explicitly point out:
       # * clippy also reports rustc warnings and errors
       # * clippy --all-targets causes clippy to run against tests and examples which it doesnt do by default.
-      run: cargo hack --feature-powerset --at-least-one-of redis,cassandra,kafka,opensearch clippy --all-targets --locked -- -D warnings
+      run: cargo hack --feature-powerset --at-least-one-of valkey,cassandra,kafka,opensearch clippy --all-targets --locked -- -D warnings
     - name: Report disk usage
       run: |
         df -h

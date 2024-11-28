@@ -19,14 +19,14 @@ git clone https://github.com/shotover/shotover-custom-transforms-template
 
 The template comes with:
 
-* two example transforms: the `redis-get-rewrite` and `kafka-fetch-rewrite` crates
+* two example transforms: the `valkey-get-rewrite` and `kafka-fetch-rewrite` crates
   * By convention, each transform is its own rust crate
 * the final shotover binary: the `shotover-bin` crate
   * this also contains integration tests in `shotover-bin/tests`, make sure to utiilize them!
 
 Use an example transform that matches the protocol you are working with as a base. e.g.
 
-* redis-get-rewrite - for redis
+* valkey-get-rewrite - for valkey
 * kafka-fetch-rewrite - for kafka
 
 ## Running the project
