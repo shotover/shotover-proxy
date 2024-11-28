@@ -36,11 +36,11 @@ sources:
             connect_timeout_ms: 3000
 ```
 
-For a simple redis request/response, the logs will look like:
+For a simple valkey request/response, the logs will look like:
 
 ```plain
-shotover   06:37:14.712042Z  INFO connection{id=2 source="redis"}: shotover::transforms::debug::printer: Request: Redis Array([BulkString(b"GET"), BulkString(b"bar")])
-shotover   06:37:14.712212Z  INFO connection{id=2 source="redis"}: shotover::transforms::debug::printer: Response: Redis BulkString(b"foo")
+shotover   06:37:14.712042Z  INFO connection{id=2 source="valkey"}: shotover::transforms::debug::printer: Request: Valkey Array([BulkString(b"GET"), BulkString(b"bar")])
+shotover   06:37:14.712212Z  INFO connection{id=2 source="valkey"}: shotover::transforms::debug::printer: Response: Valkey BulkString(b"foo")
 ```
 
 ## Run the test

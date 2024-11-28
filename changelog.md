@@ -3,6 +3,20 @@
 Any breaking changes to the `topology.yaml` or `shotover` rust API should be documented here.
 This assists us in knowing when to make the next release a breaking release and assists users with making upgrades to new breaking releases.
 
+## 0.6.0
+
+Redis has been renamed to Valkey.
+This affects the rust API, the topology.yaml and all documentation.
+
+### shotover rust API
+
+* All modules and types containing redis have been renamed to refer to valkey instead.
+
+### topology.yaml
+
+* transforms renamed: `RedisSinkCluster` -> `ValkeySinkCluster`, `RedisSinkSingle` -> `ValkeySinkSingle`
+* sources renamed: `Redis` -> `Valkey`
+
 ## 0.5.0
 
 ### shotover rust API
