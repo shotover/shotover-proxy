@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+    <link rel="stylesheet" href="/assets/style.css">
+    <title>{% block title %} {{ title }} {% endblock %}</title>
+    {% block head %}{% endblock %}
+</head>
+
+<body>
+
+    <div id="app">
+        <div class="Layout" data-v-f44a984a=""><span tabindex="-1" data-v-151f2593=""></span><a href="#VPContent"
+                class="VPSkipLink visually-hidden" data-v-151f2593=""> Skip to content
+            </a>
+            <header class="VPNav no-sidebar" data-v-f44a984a="" data-v-a50780ff="">
+                <div class="VPNavBar" data-v-a50780ff="" data-v-6f1d18b5="">
+                    <div class="container" data-v-6f1d18b5="">
+                        <div class="VPNavBarTitle" data-v-6f1d18b5="" data-v-d5925166=""><a class="title" href="/"
+                                data-v-d5925166=""><img class="VPImage logo" src="/assets/logo.png" alt=""
+                                    data-v-b7ac6bd3="">Shotover</a></div>
+                        <div class="content" data-v-6f1d18b5="">
+                            <nav aria-labelledby="main-nav-aria-label" class="VPNavBarMenu menu" data-v-6f1d18b5=""
+                                data-v-f83db6ba=""><span id="main-nav-aria-label" class="visually-hidden"
+                                    data-v-f83db6ba="">Main Navigation</span><a class="VPLink link VPNavBarMenuLink"
+                                    data-v-3c355974="" data-v-47a2263e="" data-v-f83db6ba=""
+                                    href="/docs/index.html">Docs</a><a class="VPLink link VPNavBarMenuLink"
+                                    href="https://github.com/shotover/shotover-proxy" target="_blank" rel="noreferrer"
+                                    data-v-f83db6ba="" data-v-47a2263e="" data-v-3c355974="">Github</a></nav>
+                        </div>
+                    </div>
+                </div>
+            </header>
+            <div class="VPContent is-home" id="VPContent" data-v-f44a984a="" data-v-d981fe29="">
+                <div class="VPHome" data-v-d981fe29="" data-v-1db23833="">
+                    <div style="position:relative;" data-v-1db23833="">
+                        <div>
+                            <div class="landing w-100 f-left">
+                                {% block content %}<p>Placeholder content</p>{% endblock %}
+                            </div>
+                            <div class="footer f-left w-100 pb-5 mt-7 p-130">
+                                <div class="copyright-section w-85 f-left">
+                                    <!--If we ever want to put things in the footer they can go here-->
+                                </div>
+                                <nav class="footer-nav w-15 f-left"></nav>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+
+</html>

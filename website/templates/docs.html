@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+
+{% block title %}
+Shotover Documentation Index
+{% endblock %}
+
+{% block content %}
+<div class="w-100 f-left mb-18">
+    <div class="w-55 f-left mt-5 pl-130">
+        <p>Documentation for current and historical versions of shotover is hosted below:</p>
+
+        <ul>
+            <li><a href="latest/index.html">latest</a></li>
+            {% for version in versions %}
+            <li><a href="{{ version }}/index.html">{{ version }}</a></li>
+            {% endfor %}
+        </ul>
+    </div>
+</div>
+
+
+{% endblock %}

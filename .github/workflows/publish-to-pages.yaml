@@ -1,8 +1,13 @@
 name: publish to github pages
 
 on:
+  # Trigger when there is a new commit on main branch
   push:
     branches: [ main ]
+  # also trigger when a new release tag is added to the repo
+  push:
+    tags:
+      - "v*"
 
 # Cancel already running jobs
 concurrency:
