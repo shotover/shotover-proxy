@@ -1292,9 +1292,6 @@ pub async fn test_trigger_transform_failure_driver(client: &RedisClient) {
 }
 
 /// A raw variant of this test case is provided so that we can make a strong assertion about the way shotover handles this case.
-///
-/// CAREFUL: This lacks any kind of check that shotover is ready,
-/// so make sure shotover_manager.redis_connection is run on 6379 before calling this.
 pub async fn test_trigger_transform_failure_raw() {
     // Send invalid valkey command
     // To correctly handle this shotover should close the connection
@@ -1305,7 +1302,7 @@ pub async fn test_trigger_transform_failure_raw() {
     connection.write_all(b"*1\r\n$4\r\nping\r\n").await.unwrap();
 
     assert_eq!(
-        read_redis_message(&mut connection).await,
+        read_valkey_message(&mut connection).await,
         ValkeyFrame::Error(format!("ERR Internal shotover (or custom transform) bug: Chain failed to send and/or receive messages, the connection will now be closed.  Caused by:     0: ValkeySinkSingle transform failed     1: Failed to connect to destination 127.0.0.1:1111     2: Connection refused (os error {CONNECTION_REFUSED_OS_ERROR})").into())
     );
 
@@ -1319,7 +1316,7 @@ pub async fn test_trigger_transform_failure_raw() {
     assert_eq!(amount, 0);
 }
 
-async fn read_redis_message(connection: &mut TcpStream) -> ValkeyFrame {
+async fn read_valkey_message(connection: &mut TcpStream) -> ValkeyFrame {
     let mut buffer = BytesMut::new();
     loop {
         if let Ok(Some((result, len))) =
@@ -1336,8 +1333,6 @@ async fn read_redis_message(connection: &mut TcpStream) -> ValkeyFrame {
     }
 }
 
-/// CAREFUL: This lacks any kind of check that shotover is ready,
-/// so make sure shotover_manager.redis_connection is run on 6379 before calling this.
 pub async fn test_invalid_frame() {
     // Send invalid valkey command
     // To correctly handle this shotover should close the connection
@@ -1346,7 +1341,7 @@ pub async fn test_invalid_frame() {
         .unwrap();
 
     connection
-        .write_all(b"invalid_redis_frame\r\n")
+        .write_all(b"invalid_valkey_frame\r\n")
         .await
         .unwrap();
 
