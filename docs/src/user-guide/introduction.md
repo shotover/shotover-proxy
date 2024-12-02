@@ -22,7 +22,7 @@ Shotover aims to make these challenges simpler by providing a point where data l
 Longer term, Shotover can also leverage the same capability to make operational tasks easier to solve a number of other challenges that come with working multiple databases. Some of these include:
 
 * Data encryption at the field level, with a common key management scheme between databases.
-* Routing the same data to databases that provide different query capabilities or performance characteristics (e.g. indexing data in Redis in Elasticsearch, easy caching of DynamoDB data in Redis).
+* Routing the same data to databases that provide different query capabilities or performance characteristics (e.g. indexing data in Valkey in Elasticsearch, easy caching of DynamoDB data in Valkey).
 * Routing/replicating data across regions for databases that don't support it natively or the functionality is gated behind proprietary "open-core" implementations.
 * A common audit and AuthZ/AuthN point for SOX/PCI/HIPAA compliance.
 
@@ -38,18 +38,11 @@ Shotover prioritises the following principals in the order listed:
 
 Shotover provides a set of predefined transforms that can modify, route and control queries from any number of sources to a similar number of sinks. As the user you can construct chains of these transforms to achieve the behaviour required. Each chain can then be attached to a "source" that speaks the native protocol of you chosen database. The transform chain will process each request with access to a unified/simplified representation of a generic query, the original raw query and optionally (for SQL like protocols) a parsed AST representing the query.
 
-<!--
-You can also implement your own transforms natively with Rust. For concrete examples of what you can achieve with shotover-proxy, see the following examples:
-
-* [Multi-region, active-active redis](../tests/test-configs/redis-multi)
-* [Cassandra query caching in redis, with a query audit trail sent to kafka](../tests/test-configs/cass-redis-kafka)
-* [Field level, "In Application" encryption for Apache Cassandra with AWS Key Management Service](../tests/test-configs/cassandra-encryption)
--->
-
 Shotover proxy currently supports the following protocols as sources:
 
-* Cassandra (CQLv4)
-* Redis (RESP2)
+* Cassandra (CQL4 + CQL5)
+* Valkey/Redis (RESP2)
+* Kafka (Kafka Wire Protocol)
 
 ## Shotover performance
 

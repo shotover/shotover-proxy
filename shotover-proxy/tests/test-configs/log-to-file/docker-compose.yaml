@@ -1,5 +1,8 @@
 services:
-  redis-one:
-    image: library/redis:5.0.9
+  valkey-one:
+    image: bitnami/valkey:7.2.5-debian-12-r9
     ports:
       - "1111:6379"
+    environment:
+      ALLOW_EMPTY_PASSWORD: "yes"
+      VALKEY_TLS_ENABLED: "no"

@@ -20,20 +20,14 @@ async fn log_to_file() {
         "*4\r\n$6\r\nCLIENT\r\n$7\r\nSETINFO\r\n$8\r\nLIB-NAME\r\n$8\r\nredis-rs\r\n",
     );
     let response = std::fs::read("message-log/1/responses/message1.bin").unwrap();
-    assert_eq_string(
-        &response,
-        "-ERR Unknown subcommand or wrong number of arguments for 'SETINFO'. Try CLIENT HELP\r\n",
-    );
+    assert_eq_string(&response, "+OK\r\n");
     let request = std::fs::read("message-log/1/requests/message2.bin").unwrap();
     assert_eq_string(
         &request,
         "*4\r\n$6\r\nCLIENT\r\n$7\r\nSETINFO\r\n$7\r\nLIB-VER\r\n$6\r\n0.24.0\r\n",
     );
     let response = std::fs::read("message-log/1/responses/message2.bin").unwrap();
-    assert_eq_string(
-        &response,
-        "-ERR Unknown subcommand or wrong number of arguments for 'SETINFO'. Try CLIENT HELP\r\n",
-    );
+    assert_eq_string(&response, "+OK\r\n");
 
     // SET sent by command
     assert_ok(redis::cmd("SET").arg("foo").arg(42), &mut connection).await;

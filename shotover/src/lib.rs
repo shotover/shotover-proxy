@@ -57,7 +57,7 @@ If we absolutely need unsafe code, it should be isolated within a separate small
     not(feature = "opensearch"),
 ))]
 compile_error!(
-    "At least one protocol feature must be enabled, e.g. `cassandra`, `redis`, `kafka` or `opensearch`"
+    "At least one protocol feature must be enabled, e.g. `cassandra`, `valkey`, `kafka` or `opensearch`"
 );
 
 pub mod codec;
