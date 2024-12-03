@@ -52,7 +52,7 @@ axum = { version = "0.7", default-features = false, features = ["tokio", "tracin
 pretty-hex = "0.4.0"
 tokio-stream = "0.1.2"
 derivative = "2.1.1"
-cached = { version = "0.53", features = ["async"], optional = true }
+cached = { version = "0.54", features = ["async"], optional = true }
 governor = { version = "0.7", default-features = false, features = ["std", "jitter", "quanta"] }
 nonzero_ext = "0.3.0"
 version-compare = { version = "0.2", optional = true }
@@ -79,7 +79,7 @@ typetag.workspace = true
 tokio-tungstenite = "0.24.0"
 
 # Error handling
-thiserror = "1.0"
+thiserror = "2.0"
 anyhow.workspace = true
 backtrace = "0.3.66"
 backtrace-ext = "0.2"
