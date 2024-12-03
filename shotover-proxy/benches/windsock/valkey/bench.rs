@@ -357,7 +357,7 @@ impl Bench for ValkeyBench {
         // only one string field so we just directly store the value in resources
         let address = resources;
 
-        let mut config = RedisConfig::from_url(address).unwrap();
+        let mut config = Config::from_url(address).unwrap();
         if let Encryption::Tls = self.encryption {
             let private_key =
                 load_private_key("tests/test-configs/valkey/tls/certs/localhost.key").unwrap();
@@ -372,7 +372,7 @@ impl Bench for ValkeyBench {
                     .into(),
             );
         }
-        let client = Arc::new(RedisClient::new(config, None, None, None));
+        let client = Arc::new(Client::new(config, None, None, None));
 
         // connect to the server, returning a handle to the task that drives the connection
         let shutdown_handle = client.connect();
@@ -444,7 +444,7 @@ fn load_ca(path: &str) -> Result<RootCertStore> {
 
 #[derive(Clone)]
 struct BenchTaskValkey {
-    client: Arc<RedisClient>,
+    client: Arc<Client>,
     operation: ValkeyOperation,
 }
 

@@ -1,8 +1,8 @@
 use crate::{shotover_process, CONNECTION_REFUSED_OS_ERROR};
 use basic_driver_tests::*;
-use fred::clients::RedisClient;
+use fred::clients::Client;
 use fred::interfaces::ClientLike;
-use fred::types::RedisConfig;
+use fred::prelude::Config;
 use pretty_assertions::assert_eq;
 use redis::aio::Connection;
 use redis::Commands;
@@ -54,7 +54,7 @@ async fn passthrough_valkey_down() {
     let shotover = shotover_process("tests/test-configs/valkey/passthrough/topology.yaml")
         .start()
         .await;
-    let client = RedisClient::new(RedisConfig::default(), None, None, None);
+    let client = Client::new(Config::default(), None, None, None);
 
     {
         let _shutdown_handle = client.connect();

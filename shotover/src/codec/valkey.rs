@@ -238,7 +238,7 @@ impl Encoder<Messages> for ValkeyEncoder {
                 }
                 Encodable::Frame(frame) => {
                     let item = frame.into_valkey().unwrap();
-                    extend_encode(dst, &item)
+                    extend_encode(dst, &item, false)
                         .map(|_| ())
                         .map_err(|e| anyhow!("Valkey encoding error: {} - {:#?}", e, item))
                 }

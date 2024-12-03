@@ -1,7 +1,7 @@
 use crate::valkey_int_tests::assert::*;
 use crate::CONNECTION_REFUSED_OS_ERROR;
 use bytes::BytesMut;
-use fred::clients::RedisClient;
+use fred::clients::Client;
 use fred::interfaces::ClientLike;
 use futures::{Future, StreamExt};
 use pretty_assertions::assert_eq;
@@ -1283,7 +1283,7 @@ pub async fn test_dr_auth() {
 /// at least one driver handles this as we expect.
 /// Fred is used here as redis-rs sends an unconfigurable `CLIENT SETINFO` command and ignores the result on connection init.
 /// This results in the error message being completely dropped with redis-rs.
-pub async fn test_trigger_transform_failure_driver(client: &RedisClient) {
+pub async fn test_trigger_transform_failure_driver(client: &Client) {
     assert_eq!(
         // fred sends a `CLIENT` command on startup to which shotover will reply with an error
         client.wait_for_connect().await.unwrap_err().details(),
