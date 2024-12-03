@@ -27,7 +27,7 @@ fn main() {
     }
 
     let root = current_dir.join("website").join("root");
-    std::fs::remove_dir_all(&root).unwrap();
+    std::fs::remove_dir_all(&root).ok();
     std::fs::create_dir_all(&root).unwrap();
 
     if let Err(err) = docs::generate_all_docs(current_dir) {
