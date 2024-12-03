@@ -1,0 +1,41 @@
+name: publish to github pages
+
+on:
+  push:
+    branches: [ main ]
+
+# Cancel already running jobs
+concurrency:
+  group: publish_to_pages_${{ github.head_ref }}
+  cancel-in-progress: true
+
+# Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - name: Publish website to Github Pages
+            runner: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.setup_pages.outputs.base_url }}
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    steps:
+    - uses: actions/checkout@v4
+    - name: Build website
+      run: cargo run -p website
+    - name: Setup Pages
+      uses: actions/configure-pages@v4
+    - name: Upload pages
+      uses: actions/upload-pages-artifact@v3
+      with:
+        path: 'website/root'
+    - name: Deploy pages
+      uses: actions/deploy-pages@v4
