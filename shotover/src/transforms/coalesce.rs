@@ -66,7 +66,7 @@ impl TransformBuilder for Coalesce {
                 "  * flush_when_millis_since_last_flush".into(),
                 "".into(),
                 "  But none of them were provided.".into(),
-                "  Check https://docs.shotover.io/transforms.html#coalesce for more information."
+                "  Check https://shotover.io/docs/latest/transforms.html#coalesce for more information."
                     .into(),
             ]
         } else {

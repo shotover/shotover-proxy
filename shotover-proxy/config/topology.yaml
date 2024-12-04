@@ -1,19 +1,19 @@
-# For an overview of topology configuration: https://docs.shotover.io/user-guide/configuration/#topologyyaml
+# For an overview of topology configuration: https://shotover.io/docs/latest/user-guide/configuration/#topologyyaml
 ---
 # The list of sources.
 sources:
   # The source, change from Valkey to the source type of the database protocol you are receiving messages in.
-  # For a list of possible sources: https://docs.shotover.io/sources
+  # For a list of possible sources: https://shotover.io/docs/latest/sources
   - Valkey:
       name: "valkey"
       listen_addr: "127.0.0.1:6379"
       chain:
         # A DebugPrinter transform, reports an INFO log for every message that passes through this transform.
         # You should delete this transform and add as many other transforms in this chain as you need.
-        # For a list of possible transforms: https://docs.shotover.io/transforms/#transforms_1
+        # For a list of possible transforms: https://shotover.io/docs/latest/transforms/#transforms-1
         - DebugPrinter
 
         # A NullSink transform, drops all messages it receives.
         # You will want to replace this with a sink transform to send the message to a database.
-        # For a list of possible transforms: https://docs.shotover.io/transforms/#transforms_1
+        # For a list of possible transforms: https://shotover.io/docs/latest/transforms/#transforms-1
         - NullSink
