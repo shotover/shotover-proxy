@@ -180,7 +180,7 @@ foo source:
       * flush_when_millis_since_last_flush
     
       But none of them were provided.
-      Check https://docs.shotover.io/transforms.html#coalesce for more information.
+      Check https://shotover.io/docs/latest/transforms.html#coalesce for more information.
 "#;
 
         let error = run_test_topology_valkey(vec![
