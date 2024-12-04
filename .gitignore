@@ -11,6 +11,7 @@
 /docs/book
 /docs/mdbook_bin
 /website/root
+/website/shotover_repo_for_docs
 /shotover-proxy/build/packages
 /some_local_file
 /test-helpers/src/connection/kafka/node/node_modules

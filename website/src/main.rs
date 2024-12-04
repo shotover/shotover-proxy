@@ -1,11 +1,13 @@
 use anyhow::{anyhow, Result};
 use clap::Parser;
 use cli::Args;
+use rinja::Template;
 use std::{path::Path, process::Command};
 use subprocess::{Exec, Redirection};
 
 mod cli;
 mod docs;
+mod version_tags;
 
 fn main() {
     // Set standard path to root of repo so this always runs in the same directory, regardless of where the user ran it from.
@@ -29,6 +31,23 @@ fn main() {
     let root = current_dir.join("website").join("root");
     std::fs::remove_dir_all(&root).ok();
     std::fs::create_dir_all(&root).unwrap();
+
+    // copy assets
+    let dest_assets = root.join("assets");
+    std::fs::create_dir_all(&dest_assets).unwrap();
+    for file in std::fs::read_dir("website/assets").unwrap() {
+        let file = file.unwrap();
+        std::fs::copy(file.path(), dest_assets.join(file.file_name())).unwrap();
+    }
+    // browsers expect to find the file here.
+    std::fs::rename(
+        "website/root/assets/favicon.ico",
+        "website/root/favicon.ico",
+    )
+    .unwrap();
+
+    // generate landing page
+    std::fs::write(root.join("index.html"), Landing {}.render().unwrap()).unwrap();
 
     if let Err(err) = docs::generate_all_docs(current_dir) {
         println!("{err}");
@@ -74,3 +93,7 @@ pub fn run_command(dir: impl AsRef<Path>, command: &str, args: &[&str]) -> Resul
         ))
     }
 }
+
+#[derive(Template)]
+#[template(path = "landing.html")]
+struct Landing {}
