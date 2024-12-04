@@ -88,7 +88,7 @@ impl KafkaFrame {
                 }),
                 None => Ok(KafkaFrame::Request {
                     header: RequestHeader::default()
-                        .with_request_api_key(ApiKey::SaslAuthenticateKey as i16),
+                        .with_request_api_key(ApiKey::SaslAuthenticate as i16),
                     body: RequestBody::SaslAuthenticate(
                         SaslAuthenticateRequest::default().with_auth_bytes(bytes),
                     ),
