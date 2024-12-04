@@ -1,11 +1,10 @@
 name: publish to github pages
 
 on:
-  # Trigger when there is a new commit on main branch
   push:
+    # Trigger when there is a new commit on main branch
     branches: [ main ]
-  # also trigger when a new release tag is added to the repo
-  push:
+    # also trigger when a new release tag is added to the repo
     tags:
       - "v*"
 
