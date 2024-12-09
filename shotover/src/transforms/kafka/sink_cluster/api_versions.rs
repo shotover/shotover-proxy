@@ -8,55 +8,123 @@ use kafka_protocol::{messages::ApiKey, protocol::VersionRange};
 //   + Make sure any new fields do not break any of the requirements listed above
 pub(crate) fn versions_supported_by_key(api_key: i16) -> Option<VersionRange> {
     match ApiKey::try_from(api_key) {
-        Ok(ApiKey::ProduceKey) => Some(VersionRange { min: 0, max: 11 }),
-        Ok(ApiKey::FetchKey) => Some(VersionRange { min: 0, max: 16 }),
-        Ok(ApiKey::ListOffsetsKey) => Some(VersionRange { min: 0, max: 8 }),
-        Ok(ApiKey::MetadataKey) => Some(VersionRange { min: 0, max: 12 }),
-        Ok(ApiKey::OffsetCommitKey) => Some(VersionRange { min: 0, max: 9 }),
-        Ok(ApiKey::OffsetFetchKey) => Some(VersionRange { min: 0, max: 9 }),
-        Ok(ApiKey::FindCoordinatorKey) => Some(VersionRange { min: 0, max: 5 }),
-        Ok(ApiKey::JoinGroupKey) => Some(VersionRange { min: 0, max: 9 }),
-        Ok(ApiKey::HeartbeatKey) => Some(VersionRange { min: 0, max: 4 }),
-        Ok(ApiKey::LeaveGroupKey) => Some(VersionRange { min: 0, max: 5 }),
-        Ok(ApiKey::SyncGroupKey) => Some(VersionRange { min: 0, max: 5 }),
-        Ok(ApiKey::DescribeGroupsKey) => Some(VersionRange { min: 0, max: 5 }),
-        Ok(ApiKey::ListGroupsKey) => Some(VersionRange { min: 0, max: 5 }),
-        Ok(ApiKey::SaslHandshakeKey) => Some(VersionRange { min: 0, max: 1 }),
-        Ok(ApiKey::ApiVersionsKey) => Some(VersionRange { min: 0, max: 3 }),
-        Ok(ApiKey::CreateTopicsKey) => Some(VersionRange { min: 0, max: 7 }),
-        Ok(ApiKey::DeleteTopicsKey) => Some(VersionRange { min: 0, max: 6 }),
-        Ok(ApiKey::DeleteRecordsKey) => Some(VersionRange { min: 0, max: 2 }),
-        Ok(ApiKey::InitProducerIdKey) => Some(VersionRange { min: 0, max: 5 }),
-        Ok(ApiKey::OffsetForLeaderEpochKey) => Some(VersionRange { min: 0, max: 4 }),
-        Ok(ApiKey::AddPartitionsToTxnKey) => Some(VersionRange { min: 0, max: 5 }),
-        Ok(ApiKey::AddOffsetsToTxnKey) => Some(VersionRange { min: 0, max: 4 }),
-        Ok(ApiKey::EndTxnKey) => Some(VersionRange { min: 0, max: 4 }),
-        Ok(ApiKey::TxnOffsetCommitKey) => Some(VersionRange { min: 0, max: 4 }),
-        Ok(ApiKey::CreateAclsKey) => Some(VersionRange { min: 0, max: 3 }),
-        Ok(ApiKey::DescribeConfigsKey) => Some(VersionRange { min: 0, max: 4 }),
-        Ok(ApiKey::AlterConfigsKey) => Some(VersionRange { min: 0, max: 2 }),
-        Ok(ApiKey::DescribeLogDirsKey) => Some(VersionRange { min: 0, max: 4 }),
-        Ok(ApiKey::SaslAuthenticateKey) => Some(VersionRange { min: 0, max: 2 }),
-        Ok(ApiKey::CreatePartitionsKey) => Some(VersionRange { min: 0, max: 3 }),
-        Ok(ApiKey::DeleteGroupsKey) => Some(VersionRange { min: 0, max: 2 }),
-        Ok(ApiKey::ElectLeadersKey) => Some(VersionRange { min: 0, max: 2 }),
-        Ok(ApiKey::AlterPartitionReassignmentsKey) => Some(VersionRange { min: 0, max: 0 }),
-        Ok(ApiKey::ListPartitionReassignmentsKey) => Some(VersionRange { min: 0, max: 0 }),
-        Ok(ApiKey::OffsetDeleteKey) => Some(VersionRange { min: 0, max: 0 }),
-        Ok(ApiKey::AlterPartitionKey) => Some(VersionRange { min: 0, max: 3 }),
-        Ok(ApiKey::DescribeClusterKey) => Some(VersionRange { min: 0, max: 1 }),
-        Ok(ApiKey::DescribeProducersKey) => Some(VersionRange { min: 0, max: 0 }),
-        Ok(ApiKey::DescribeTransactionsKey) => Some(VersionRange { min: 0, max: 0 }),
-        Ok(ApiKey::ListTransactionsKey) => Some(VersionRange { min: 0, max: 1 }),
-        Ok(ApiKey::ConsumerGroupHeartbeatKey) => Some(VersionRange { min: 0, max: 0 }),
-        Ok(ApiKey::ConsumerGroupDescribeKey) => Some(VersionRange { min: 0, max: 0 }),
+        Ok(ApiKey::Produce) => Some(VersionRange { min: 0, max: 11 }),
+        Ok(ApiKey::Fetch) => Some(VersionRange { min: 0, max: 16 }),
+        Ok(ApiKey::ListOffsets) => Some(VersionRange { min: 0, max: 8 }),
+        Ok(ApiKey::Metadata) => Some(VersionRange { min: 0, max: 12 }),
+        Ok(ApiKey::OffsetCommit) => Some(VersionRange { min: 0, max: 9 }),
+        Ok(ApiKey::OffsetFetch) => Some(VersionRange { min: 0, max: 9 }),
+        Ok(ApiKey::FindCoordinator) => Some(VersionRange { min: 0, max: 5 }),
+        Ok(ApiKey::JoinGroup) => Some(VersionRange { min: 0, max: 9 }),
+        Ok(ApiKey::Heartbeat) => Some(VersionRange { min: 0, max: 4 }),
+        Ok(ApiKey::LeaveGroup) => Some(VersionRange { min: 0, max: 5 }),
+        Ok(ApiKey::SyncGroup) => Some(VersionRange { min: 0, max: 5 }),
+        Ok(ApiKey::DescribeGroups) => Some(VersionRange { min: 0, max: 5 }),
+        Ok(ApiKey::ListGroups) => Some(VersionRange { min: 0, max: 5 }),
+        Ok(ApiKey::SaslHandshake) => Some(VersionRange { min: 0, max: 1 }),
+        Ok(ApiKey::ApiVersions) => Some(VersionRange { min: 0, max: 3 }),
+        Ok(ApiKey::CreateTopics) => Some(VersionRange { min: 0, max: 7 }),
+        Ok(ApiKey::DeleteTopics) => Some(VersionRange { min: 0, max: 6 }),
+        Ok(ApiKey::DeleteRecords) => Some(VersionRange { min: 0, max: 2 }),
+        Ok(ApiKey::InitProducerId) => Some(VersionRange { min: 0, max: 5 }),
+        Ok(ApiKey::OffsetForLeaderEpoch) => Some(VersionRange { min: 0, max: 4 }),
+        Ok(ApiKey::AddPartitionsToTxn) => Some(VersionRange { min: 0, max: 5 }),
+        Ok(ApiKey::AddOffsetsToTxn) => Some(VersionRange { min: 0, max: 4 }),
+        Ok(ApiKey::EndTxn) => Some(VersionRange { min: 0, max: 4 }),
+        Ok(ApiKey::TxnOffsetCommit) => Some(VersionRange { min: 0, max: 4 }),
+        Ok(ApiKey::CreateAcls) => Some(VersionRange { min: 0, max: 3 }),
+        Ok(ApiKey::DescribeConfigs) => Some(VersionRange { min: 0, max: 4 }),
+        Ok(ApiKey::AlterConfigs) => Some(VersionRange { min: 0, max: 2 }),
+        Ok(ApiKey::DescribeLogDirs) => Some(VersionRange { min: 0, max: 4 }),
+        Ok(ApiKey::SaslAuthenticate) => Some(VersionRange { min: 0, max: 2 }),
+        Ok(ApiKey::CreatePartitions) => Some(VersionRange { min: 0, max: 3 }),
+        Ok(ApiKey::DeleteGroups) => Some(VersionRange { min: 0, max: 2 }),
+        Ok(ApiKey::ElectLeaders) => Some(VersionRange { min: 0, max: 2 }),
+        Ok(ApiKey::AlterPartitionReassignments) => Some(VersionRange { min: 0, max: 0 }),
+        Ok(ApiKey::ListPartitionReassignments) => Some(VersionRange { min: 0, max: 0 }),
+        Ok(ApiKey::OffsetDelete) => Some(VersionRange { min: 0, max: 0 }),
+        Ok(ApiKey::AlterPartition) => Some(VersionRange { min: 0, max: 3 }),
+        Ok(ApiKey::DescribeCluster) => Some(VersionRange { min: 0, max: 1 }),
+        Ok(ApiKey::DescribeProducers) => Some(VersionRange { min: 0, max: 0 }),
+        Ok(ApiKey::DescribeTransactions) => Some(VersionRange { min: 0, max: 0 }),
+        Ok(ApiKey::ListTransactions) => Some(VersionRange { min: 0, max: 1 }),
+        Ok(ApiKey::ConsumerGroupHeartbeat) => Some(VersionRange { min: 0, max: 0 }),
+        Ok(ApiKey::ConsumerGroupDescribe) => Some(VersionRange { min: 0, max: 0 }),
         // This message type has very little documentation available and kafka responds to it with an error code 35 UNSUPPORTED_VERSION
         // So its not clear at all how to implement this and its not even possible to test it.
         // Instead lets just ask the client to not send it at all.
         // We can consider supporting it when kafka itself starts to support it but we will need to be very
         // careful to correctly implement the pagination/cursor logic.
-        Ok(ApiKey::DescribeTopicPartitionsKey) => None,
+        Ok(ApiKey::DescribeTopicPartitions) => None,
         Ok(_) => None,
         Err(_) => None,
     }
+}
+
+// This test gives visibility into the api versions that shotover doesnt support yet.
+// If this test is failing after a `cargo update`, you can just alter EXPECTED_ERROR_MESSAGE to include the new versions.
+// The actual upgrade can be done later.
+#[test]
+fn check_api_version_backlog() {
+    use std::fmt::Write;
+    const EXPECTED_ERROR_MESSAGE: &str = r#"
+LeaderAndIsr kafka-protocol=0..7 shotover=NotSupported
+StopReplica kafka-protocol=0..4 shotover=NotSupported
+UpdateMetadata kafka-protocol=0..8 shotover=NotSupported
+ControlledShutdown kafka-protocol=0..3 shotover=NotSupported
+WriteTxnMarkers kafka-protocol=0..1 shotover=NotSupported
+DescribeAcls kafka-protocol=0..3 shotover=NotSupported
+DeleteAcls kafka-protocol=0..3 shotover=NotSupported
+AlterReplicaLogDirs kafka-protocol=0..2 shotover=NotSupported
+CreateDelegationToken kafka-protocol=0..3 shotover=NotSupported
+RenewDelegationToken kafka-protocol=0..2 shotover=NotSupported
+ExpireDelegationToken kafka-protocol=0..2 shotover=NotSupported
+DescribeDelegationToken kafka-protocol=0..3 shotover=NotSupported
+IncrementalAlterConfigs kafka-protocol=0..1 shotover=NotSupported
+DescribeClientQuotas kafka-protocol=0..1 shotover=NotSupported
+AlterClientQuotas kafka-protocol=0..1 shotover=NotSupported
+DescribeUserScramCredentials kafka-protocol=0..0 shotover=NotSupported
+AlterUserScramCredentials kafka-protocol=0..0 shotover=NotSupported
+Vote kafka-protocol=0..0 shotover=NotSupported
+BeginQuorumEpoch kafka-protocol=0..0 shotover=NotSupported
+EndQuorumEpoch kafka-protocol=0..0 shotover=NotSupported
+DescribeQuorum kafka-protocol=0..1 shotover=NotSupported
+UpdateFeatures kafka-protocol=0..1 shotover=NotSupported
+Envelope kafka-protocol=0..0 shotover=NotSupported
+FetchSnapshot kafka-protocol=0..0 shotover=NotSupported
+BrokerRegistration kafka-protocol=0..3 shotover=NotSupported
+BrokerHeartbeat kafka-protocol=0..1 shotover=NotSupported
+UnregisterBroker kafka-protocol=0..0 shotover=NotSupported
+AllocateProducerIds kafka-protocol=0..0 shotover=NotSupported
+ControllerRegistration kafka-protocol=0..0 shotover=NotSupported
+GetTelemetrySubscriptions kafka-protocol=0..0 shotover=NotSupported
+PushTelemetry kafka-protocol=0..0 shotover=NotSupported
+AssignReplicasToDirs kafka-protocol=0..0 shotover=NotSupported
+ListClientMetricsResources kafka-protocol=0..0 shotover=NotSupported
+DescribeTopicPartitions kafka-protocol=0..0 shotover=NotSupported
+"#;
+
+    let mut error_message = String::new();
+    for api_key in ApiKey::iter() {
+        let shotover_version = versions_supported_by_key(api_key as i16);
+
+        let kafka_protocol_version = api_key.valid_versions();
+        if shotover_version != Some(kafka_protocol_version) {
+            let shotover_version = match shotover_version {
+                Some(version) => format!("{version}"),
+                None => "NotSupported".to_owned(),
+            };
+            writeln!(
+                error_message,
+                "{api_key:?} kafka-protocol={kafka_protocol_version} shotover={shotover_version}"
+            )
+            .unwrap();
+        }
+    }
+
+    pretty_assertions::assert_eq!(
+        EXPECTED_ERROR_MESSAGE.trim(),
+        error_message.trim(),
+        "The list of message types not supported by shotover differs from the expected list defined in EXPECTED_ERROR_MESSAGE",
+    );
 }

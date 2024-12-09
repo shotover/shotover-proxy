@@ -1951,7 +1951,7 @@ The connection to the client has been closed."
     ) -> Result<KafkaNode, FindCoordinatorError> {
         let request = Message::from_frame(Frame::Kafka(KafkaFrame::Request {
             header: RequestHeader::default()
-                .with_request_api_key(ApiKey::FindCoordinatorKey as i16)
+                .with_request_api_key(ApiKey::FindCoordinator as i16)
                 .with_request_api_version(2)
                 .with_correlation_id(0),
             body: RequestBody::FindCoordinator(
@@ -2035,7 +2035,7 @@ The connection to the client has been closed."
         let api_version = if topic_ids.is_empty() { 4 } else { 12 };
         let request = Message::from_frame(Frame::Kafka(KafkaFrame::Request {
             header: RequestHeader::default()
-                .with_request_api_key(ApiKey::MetadataKey as i16)
+                .with_request_api_key(ApiKey::Metadata as i16)
                 .with_request_api_version(api_version)
                 .with_correlation_id(0),
             body: RequestBody::Metadata(

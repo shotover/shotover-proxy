@@ -67,7 +67,7 @@ async fn find_new_brokers(nodes: &mut Vec<Node>, rng: &mut SmallRng) -> Result<(
 
     let request = Message::from_frame(Frame::Kafka(KafkaFrame::Request {
         header: RequestHeader::default()
-            .with_request_api_key(ApiKey::MetadataKey as i16)
+            .with_request_api_key(ApiKey::Metadata as i16)
             .with_request_api_version(4)
             .with_correlation_id(0),
         body: RequestBody::Metadata(MetadataRequest::default()),
@@ -127,7 +127,7 @@ async fn create_delegation_token_for_user(
     connection.send(vec![Message::from_frame(Frame::Kafka(
         KafkaFrame::Request {
             header: RequestHeader::default()
-                .with_request_api_key(ApiKey::CreateDelegationTokenKey as i16)
+                .with_request_api_key(ApiKey::CreateDelegationToken as i16)
                 .with_request_api_version(3),
             body: RequestBody::CreateDelegationToken(
                 CreateDelegationTokenRequest::default()
@@ -241,7 +241,7 @@ async fn is_delegation_token_ready(
     connection.send(vec![Message::from_frame(Frame::Kafka(
         KafkaFrame::Request {
             header: RequestHeader::default()
-                .with_request_api_key(ApiKey::DescribeDelegationTokenKey as i16)
+                .with_request_api_key(ApiKey::DescribeDelegationToken as i16)
                 .with_request_api_version(3),
             body: RequestBody::DescribeDelegationToken(
                 DescribeDelegationTokenRequest::default().with_owners(Some(vec![
