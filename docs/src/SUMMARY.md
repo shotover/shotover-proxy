@@ -18,3 +18,4 @@
     - [Shotover sidecars](./examples/cassandra-cluster-shotover-sidecar.md)
 - [Contributing](./dev-docs/contributing.md)
   - [Debugging](./dev-docs/debugging.md)
+  - [Internal End-to-End Overview](./dev-docs/end-to-end-overview.md)
