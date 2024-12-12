@@ -357,12 +357,12 @@ impl ValkeySinkCluster {
                 self.connection_pool
                     .new_unpooled_connection(address, token)
                     .map_err(move |err| {
-                        trace!("error fetching slot map from {}: {:?}", address, err);
+                        trace!("error fetching slot map from {address}: {err:?}");
                         TransformError::from(err)
                     })
                     .and_then(get_topology_from_node)
                     .map_ok(move |slots| {
-                        trace!("fetched slot map from {}: {:?}", address, slots);
+                        trace!("fetched slot map from {address}: {slots:?}");
                         slots
                     }),
             );
@@ -429,7 +429,7 @@ impl ValkeySinkCluster {
                 }
                 Err(e) => {
                     // Intentional debug! Some errors should be silently passed through.
-                    debug!("failed to connect to {}: {:?}", node, e);
+                    debug!("failed to connect to {node}: {e:?}");
                     errors.push(e.into());
                 }
             }
@@ -1070,7 +1070,6 @@ impl Transform for ValkeySinkCluster {
         while let Some(s) = responses.next().await {
             let original = requests.pop().unwrap();
 
-            trace!("Got resp {:?}", s);
             let Response { response } = s.or_else(|e| -> Result<Response> {
                 Ok(Response {
                     response: Ok(Message::from_frame(Frame::Valkey(ValkeyFrame::Error(

@@ -385,8 +385,8 @@ async fn reader_task<C: CodecBuilder + 'static, R: AsyncRead + Unpin + Send + 's
                             force_run_chain.notify_one();
                         }
                         Err(CodecReadError::RespondAndThenCloseConnection(messages)) => {
-                            if let Err(err) = out_tx.send(messages) {
-                                error!("Failed to send RespondAndThenCloseConnection message: {:?}", err);
+                            if out_tx.send(messages).is_err() {
+                                error!("Failed to send RespondAndThenCloseConnection message");
                             }
                             return Err(ConnectionError::ShotoverClosed);
                         }

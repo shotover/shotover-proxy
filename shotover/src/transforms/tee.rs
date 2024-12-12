@@ -574,8 +574,7 @@ async fn put_result_source(
         "regular-chain" => ResultSource::RegularChain,
         _ => {
             return Err(HttpServerError(anyhow!(
-                r"Invalid value for result source: {:?}, should be 'tee-chain' or 'regular-chain'",
-                new_result_source
+                r"Invalid value for result source: {new_result_source:?}, should be 'tee-chain' or 'regular-chain'"
             )));
         }
     };

@@ -115,7 +115,7 @@ impl Transform for DebugLogToFile {
 }
 
 async fn log_message(message: &Message, path: &Path) -> Result<()> {
-    info!("Logged message to {:?}", path);
+    info!("Logged message to {path:?}");
     match message.clone().into_encodable() {
         Encodable::Bytes(bytes) => {
             tokio::fs::write(path, bytes)

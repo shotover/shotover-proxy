@@ -841,9 +841,8 @@ impl KafkaSinkCluster {
             {
                 Ok(node) => {
                     tracing::debug!(
-                        "Storing group_to_coordinator_broker metadata, group {:?} -> broker {}",
-                        group.0,
-                        node.broker_id.0
+                        "Storing group_to_coordinator_broker metadata, group {group:?} -> broker {:?}",
+                        node.broker_id
                     );
                     self.group_to_coordinator_broker
                         .insert(group, node.broker_id);
@@ -866,9 +865,8 @@ impl KafkaSinkCluster {
             {
                 Ok(node) => {
                     tracing::debug!(
-                        "Storing transaction_to_coordinator_broker metadata, transaction {:?} -> broker {}",
-                        transaction.0,
-                        node.broker_id.0
+                        "Storing transaction_to_coordinator_broker metadata, transaction {transaction:?} -> broker {:?}",
+                        node.broker_id
                     );
                     self.transaction_to_coordinator_broker
                         .insert(transaction, node.broker_id);
@@ -1267,7 +1265,7 @@ The connection to the client has been closed."
                 ty: PendingRequestTy::Other,
                 combine_responses: 1,
             });
-            tracing::debug!("Routing request to single broker {:?}", destination.0);
+            tracing::debug!("Routing request to single broker {:?}", destination);
         } else {
             // The request has been split so it may be delivered to multiple destinations.
             // We must generate a unique request for each destination.
@@ -3018,8 +3016,7 @@ The connection to the client has been closed."
                                 // The broker doesnt know who the new leader is, clear the entire topic.
                                 self.topic_by_name.remove(topic_name);
                                 tracing::info!(
-                                    "Produce response included error NOT_LEADER_OR_FOLLOWER and so cleared topic {:?}",
-                                    topic_name,
+                                    "Produce response included error NOT_LEADER_OR_FOLLOWER and so cleared topic {topic_name:?}"
                                 );
                                 break;
                             }
@@ -3430,9 +3427,7 @@ The connection to the client has been closed."
         };
 
         tracing::debug!(
-            "Routing request relating to group id {:?} to broker {}",
-            group_id.0,
-            destination.0
+            "Routing request relating to group id {group_id:?} to broker {destination:?}",
         );
 
         self.pending_requests.push_back(PendingRequest {
@@ -3458,9 +3453,7 @@ The connection to the client has been closed."
         };
 
         tracing::debug!(
-            "Routing request relating to transaction id {:?} to broker {}",
-            transaction_id.0,
-            destination.0
+            "Routing request relating to transaction id {transaction_id:?} to broker {destination:?}"
         );
 
         self.pending_requests.push_back(PendingRequest {
