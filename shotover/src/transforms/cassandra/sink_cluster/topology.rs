@@ -2,6 +2,7 @@ use super::node::{CassandraNode, ConnectionFactory};
 use super::node_pool::KeyspaceMetadata;
 use super::KeyspaceChanTx;
 use crate::connection::SinkConnection;
+use crate::frame::cassandra::operation_name;
 use crate::frame::{
     cassandra::{parse_statement_single, Tracing},
     value::GenericValue,
@@ -93,7 +94,7 @@ async fn topology_task_process(
     register_for_topology_and_status_events(&mut connection, version).await?;
 
     tracing::info!(
-        "Topology task control connection finalized against node at: {:?}",
+        "Topology task control connection finalized against node at: {}",
         connection_info.address
     );
 
@@ -208,7 +209,7 @@ async fn register_for_topology_and_status_events(
     if let Some(Frame::Cassandra(CassandraFrame { operation, .. })) = response.frame() {
         match operation {
             CassandraOperation::Ready(_) => Ok(()),
-            operation => Err(anyhow!("Expected Cassandra to respond to a Register with a Ready. Instead it responded with {:?}", operation))
+            operation => Err(anyhow!("Expected Cassandra to respond to a Register with a Ready. Instead it responded with {}", operation_name(operation)))
         }
     } else {
         Err(anyhow!("Failed to parse cassandra message"))
@@ -231,7 +232,10 @@ async fn fetch_current_nodes(
 }
 
 mod system_keyspaces {
-    use crate::transforms::cassandra::sink_cluster::node_pool::ReplicationStrategy;
+    use crate::{
+        frame::cassandra::operation_name,
+        transforms::cassandra::sink_cluster::node_pool::ReplicationStrategy,
+    };
 
     use super::*;
     use std::str::FromStr;
@@ -272,8 +276,8 @@ mod system_keyspaces {
                     .map(|row| build_keyspace(row, data_center))
                     .collect(),
                 operation => Err(anyhow!(
-                    "keyspace query returned unexpected cassandra operation: {:?}",
-                    operation
+                    "keyspace query returned unexpected cassandra operation: {}",
+                    operation_name(operation)
                 )),
             }
         } else {
@@ -463,15 +467,12 @@ mod system_local {
                     })
                     .collect(),
                 operation => Err(anyhow!(
-                    "system.peers returned unexpected cassandra operation: {:?}",
-                    operation
+                    "system.peers returned unexpected cassandra operation: {}",
+                    operation_name(operation)
                 )),
             }
         } else {
-            Err(anyhow!(
-                "Failed to parse system.local response {:?}",
-                response
-            ))
+            Err(anyhow!("Failed to parse system.local response"))
         }
     }
 }
@@ -604,14 +605,13 @@ mod system_peers {
                     })
                     .collect(),
                 operation => Err(anyhow!(
-                    "system.peers or system.peers_v2 returned unexpected cassandra operation: {:?}",
-                    operation
+                    "system.peers or system.peers_v2 returned unexpected cassandra operation: {}",
+                    operation_name(operation)
                 )),
             }
         } else {
             Err(anyhow!(
-                "Failed to parse system.peers or system.peers_v2 response {:?}",
-                response
+                "Failed to parse system.peers or system.peers_v2 response",
             ))
         }
     }

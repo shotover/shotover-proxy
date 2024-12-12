@@ -221,7 +221,7 @@ impl ValkeySinkCluster {
         let command = match message.frame() {
             Some(Frame::Valkey(ValkeyFrame::Array(ref command))) => command,
             None => bail!("Failed to parse valkey frame"),
-            message => bail!("syntax error: bad command: {message:?}"),
+            _ => bail!("Invalid redis command, must be an array but was not"),
         };
 
         let routing_info = RoutingInfo::for_command_frame(command)?;
@@ -357,12 +357,12 @@ impl ValkeySinkCluster {
                 self.connection_pool
                     .new_unpooled_connection(address, token)
                     .map_err(move |err| {
-                        trace!("error fetching slot map from {}: {:?}", address, err);
+                        trace!("error fetching slot map from {address}: {err:?}");
                         TransformError::from(err)
                     })
                     .and_then(get_topology_from_node)
                     .map_ok(move |slots| {
-                        trace!("fetched slot map from {}: {:?}", address, slots);
+                        trace!("fetched slot map from {address}: {slots:?}");
                         slots
                     }),
             );
@@ -429,7 +429,7 @@ impl ValkeySinkCluster {
                 }
                 Err(e) => {
                     // Intentional debug! Some errors should be silently passed through.
-                    debug!("failed to connect to {}: {:?}", node, e);
+                    debug!("failed to connect to {node}: {e:?}");
                     errors.push(e.into());
                 }
             }
@@ -599,7 +599,7 @@ impl ValkeySinkCluster {
         let command = match message.frame() {
             Some(Frame::Valkey(ValkeyFrame::Array(ref command))) => command,
             None => bail!("Failed to parse valkey frame"),
-            message => bail!("syntax error: bad command: {message:?}"),
+            _ => bail!("syntax error: bad command"),
         };
 
         let mut args = command.iter().skip(1).rev().map(|f| match f {
@@ -952,9 +952,9 @@ async fn get_topology_from_node(
         ValkeyFrame::Error(message) => Err(TransformError::Upstream(ValkeyError::from_message(
             &message,
         ))),
-        frame => Err(TransformError::Protocol(format!(
-            "unexpected response for cluster slots: {frame:?}"
-        ))),
+        _ => Err(TransformError::Protocol(
+            "unexpected response for cluster slots to be an array but was not".to_owned(),
+        )),
     }
 }
 
@@ -993,7 +993,7 @@ async fn receive_frame_response(receiver: oneshot::Receiver<Response>) -> Result
     match response?.frame() {
         Some(Frame::Valkey(frame)) => Ok(frame.take()),
         None => Err(anyhow!("Failed to parse valkey frame")),
-        response => Err(anyhow!("Unexpected valkey response: {response:?}")),
+        _ => Err(anyhow!("Expected valkey response but was not valkey.")),
     }
 }
 
@@ -1070,7 +1070,6 @@ impl Transform for ValkeySinkCluster {
         while let Some(s) = responses.next().await {
             let original = requests.pop().unwrap();
 
-            trace!("Got resp {:?}", s);
             let Response { response } = s.or_else(|e| -> Result<Response> {
                 Ok(Response {
                     response: Ok(Message::from_frame(Frame::Valkey(ValkeyFrame::Error(
@@ -1184,13 +1183,13 @@ impl Authenticator<UsernamePasswordToken> for ValkeyAuthenticator {
                 trace!("authenticated upstream as user: {:?}", token.username);
                 Ok(())
             }
-            ValkeyFrame::SimpleString(s) => Err(TransformError::Protocol(format!(
-                "expected OK but got: {s:?}"
-            ))),
+            ValkeyFrame::SimpleString(_) => Err(TransformError::Protocol(
+                "expected auth response to be \"OK\" but was a different SimpleString".to_owned(),
+            )),
             ValkeyFrame::Error(e) => Err(TransformError::Upstream(ValkeyError::from_message(&e))),
-            f => Err(TransformError::Protocol(format!(
-                "unexpected response type: {f:?}"
-            ))),
+            _ => Err(TransformError::Protocol(
+                "Expected auth response to be a SimpleString but was something else".to_owned(),
+            )),
         }
     }
 }

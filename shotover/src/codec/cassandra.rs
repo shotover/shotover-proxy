@@ -642,8 +642,7 @@ impl Decoder for CassandraDecoder {
                 Err(CodecReadError::Parser(anyhow!(msg)))
             }
             err => Err(CodecReadError::Parser(anyhow!(
-                "Failed to parse frame {:?}",
-                err
+                "Failed to parse frame {err:?}"
             ))),
         }
     }

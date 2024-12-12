@@ -237,14 +237,14 @@ impl Display for Frame {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         match self {
             #[cfg(feature = "cassandra")]
-            Frame::Cassandra(frame) => write!(f, "Cassandra {}", frame),
+            Frame::Cassandra(frame) => write!(f, "Cassandra {frame}"),
             #[cfg(feature = "valkey")]
-            Frame::Valkey(frame) => write!(f, "Valkey {:?}", frame),
+            Frame::Valkey(frame) => write!(f, "Valkey {frame:?}"),
             #[cfg(feature = "kafka")]
-            Frame::Kafka(frame) => write!(f, "Kafka {}", frame),
+            Frame::Kafka(frame) => write!(f, "Kafka {frame}"),
             Frame::Dummy => write!(f, "Shotover internal dummy message"),
             #[cfg(feature = "opensearch")]
-            Frame::OpenSearch(frame) => write!(f, "OpenSearch: {:?}", frame),
+            Frame::OpenSearch(frame) => write!(f, "OpenSearch: {frame:?}"),
         }
     }
 }
