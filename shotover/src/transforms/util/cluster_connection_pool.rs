@@ -90,10 +90,7 @@ impl<C: CodecBuilder + 'static, A: Authenticator<T>, T: Token> ConnectionPool<C,
         token: &Option<T>,
         connection_count: usize,
     ) -> Result<Vec<Connection>, ConnectionError<A::Error>> {
-        debug!(
-            "getting {} pool connections to {} with token: {:?}",
-            connection_count, address, token
-        );
+        debug!("getting {connection_count} pool connections to {address} with token: {token:?}",);
 
         let mut lanes = self.lanes.lock().await;
         let lane = lanes.entry(token.clone()).or_default();
@@ -205,7 +202,7 @@ pub fn spawn_read_write_tasks<
     tokio::spawn(async move {
         tokio::select! {
             result = tx_process(dummy_request_tx, stream_tx, out_rx, return_tx, encoder) => if let Err(e) = result {
-                trace!("connection write-closed with error: {:?}", e);
+                trace!("connection write-closed with error: {e:?}");
             } else {
                 trace!("connection write-closed gracefully");
             },
@@ -218,7 +215,7 @@ pub fn spawn_read_write_tasks<
     tokio::spawn(
         async move {
             if let Err(e) = rx_process(dummy_request_rx, stream_rx, return_rx, decoder).await {
-                trace!("connection read-closed with error: {:?}", e);
+                trace!("connection read-closed with error: {e:?}");
             } else {
                 trace!("connection read-closed gracefully");
             }

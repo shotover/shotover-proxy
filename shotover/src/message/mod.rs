@@ -553,7 +553,7 @@ impl Message {
             message_type,
         }) = &self.inner
         {
-            format!("Unparseable {:?} message {:?}", message_type, bytes)
+            format!("Unparseable {message_type:?} message {bytes:?}")
         } else {
             unreachable!("self.frame() failed so MessageInner must still be RawBytes")
         }

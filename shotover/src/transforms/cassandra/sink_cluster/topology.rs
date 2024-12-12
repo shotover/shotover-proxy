@@ -93,7 +93,7 @@ async fn topology_task_process(
     register_for_topology_and_status_events(&mut connection, version).await?;
 
     tracing::info!(
-        "Topology task control connection finalized against node at: {:?}",
+        "Topology task control connection finalized against node at: {}",
         connection_info.address
     );
 
@@ -208,7 +208,7 @@ async fn register_for_topology_and_status_events(
     if let Some(Frame::Cassandra(CassandraFrame { operation, .. })) = response.frame() {
         match operation {
             CassandraOperation::Ready(_) => Ok(()),
-            operation => Err(anyhow!("Expected Cassandra to respond to a Register with a Ready. Instead it responded with {:?}", operation))
+            operation => Err(anyhow!("Expected Cassandra to respond to a Register with a Ready. Instead it responded with {}", operation_name(operation)))
         }
     } else {
         Err(anyhow!("Failed to parse cassandra message"))
@@ -272,8 +272,8 @@ mod system_keyspaces {
                     .map(|row| build_keyspace(row, data_center))
                     .collect(),
                 operation => Err(anyhow!(
-                    "keyspace query returned unexpected cassandra operation: {:?}",
-                    operation
+                    "keyspace query returned unexpected cassandra operation: {}",
+                    operation_name(operation)
                 )),
             }
         } else {
@@ -463,15 +463,12 @@ mod system_local {
                     })
                     .collect(),
                 operation => Err(anyhow!(
-                    "system.peers returned unexpected cassandra operation: {:?}",
-                    operation
+                    "system.peers returned unexpected cassandra operation: {}",
+                    operation_name(operation)
                 )),
             }
         } else {
-            Err(anyhow!(
-                "Failed to parse system.local response {:?}",
-                response
-            ))
+            Err(anyhow!("Failed to parse system.local response"))
         }
     }
 }
@@ -604,16 +601,36 @@ mod system_peers {
                     })
                     .collect(),
                 operation => Err(anyhow!(
-                    "system.peers or system.peers_v2 returned unexpected cassandra operation: {:?}",
-                    operation
+                    "system.peers or system.peers_v2 returned unexpected cassandra operation: {}",
+                    operation_name(operation)
                 )),
             }
         } else {
             Err(anyhow!(
-                "Failed to parse system.peers or system.peers_v2 response {:?}",
-                response
+                "Failed to parse system.peers or system.peers_v2 response",
             ))
         }
+    }
+}
+
+fn operation_name(operation: &CassandraOperation) -> &'static str {
+    match operation {
+        CassandraOperation::Query { .. } => "Query",
+        CassandraOperation::Result(_) => "Result",
+        CassandraOperation::Error(_) => "Error",
+        CassandraOperation::Prepare(_) => "Prepare",
+        CassandraOperation::Execute(_) => "Execute",
+        CassandraOperation::Register(_) => "Register",
+        CassandraOperation::Event(_) => "Event",
+        CassandraOperation::Batch(_) => "Batch",
+        CassandraOperation::Startup(_) => "Startup",
+        CassandraOperation::Ready(_) => "Ready",
+        CassandraOperation::Authenticate(_) => "Authenticate",
+        CassandraOperation::Options(_) => "Options",
+        CassandraOperation::Supported(_) => "Supported",
+        CassandraOperation::AuthChallenge(_) => "AuthChallenge",
+        CassandraOperation::AuthResponse(_) => "AuthResponse",
+        CassandraOperation::AuthSuccess(_) => "AuthSuccess",
     }
 }
 

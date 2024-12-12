@@ -544,10 +544,7 @@ impl MessageRewriter {
             }
             Ok(())
         } else {
-            Err(anyhow!(
-                "Failed to parse system.local response {:?}",
-                peers_response
-            ))
+            Err(anyhow!("Failed to parse system.local response"))
         }
     }
 
@@ -670,10 +667,7 @@ impl MessageRewriter {
             }
             Ok(())
         } else {
-            Err(anyhow!(
-                "Failed to parse system.local response {:?}",
-                local_response
-            ))
+            Err(anyhow!("Failed to parse system.local response"))
         }
     }
 }
@@ -836,8 +830,7 @@ fn parse_system_nodes(mut response: Message) -> Result<Vec<NodeInfo>, MessagePar
         }
     } else {
         Err(MessageParseError::ParseFailure(anyhow!(
-            "Failed to parse system.local response {:?}",
-            response
+            "Failed to parse system.local response"
         )))
     }
 }

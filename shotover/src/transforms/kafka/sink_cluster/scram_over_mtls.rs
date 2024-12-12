@@ -125,7 +125,7 @@ async fn task(
                     &username,
                     delegation_token_lifetime
                 ).await
-                .with_context(|| format!("Failed to recreate delegation token for {:?}", username))?;
+                .with_context(|| format!("Failed to recreate delegation token for {username:?}"))?;
                 username_to_token.insert(username.clone(), token);
                 recreate_queue.push(username.clone());
 
