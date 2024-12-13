@@ -51,7 +51,7 @@ pub async fn decrypt(
 ) -> Result<GenericValue> {
     let bytes = match value {
         GenericValue::Bytes(bytes) => bytes,
-        _ => bail!("expected varchar to decrypt but was {:?}", value),
+        _ => bail!("expected varchar to decrypt but was not varchar"),
     };
     let protected: Protected = bincode::deserialize(bytes)?;
 

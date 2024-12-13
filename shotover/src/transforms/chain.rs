@@ -96,7 +96,7 @@ impl BufferedChain {
                         chain_state.flush,
                         one_tx,
                     ))
-                    .map_err(|e| anyhow!("Couldn't send message to wrapped chain {:?}", e))
+                    .map_err(|e| anyhow!("Couldn't send message to wrapped chain {e}"))
                     .await?
             }
             Some(timeout) => {
@@ -110,7 +110,7 @@ impl BufferedChain {
                         ),
                         Duration::from_micros(timeout),
                     )
-                    .map_err(|e| anyhow!("Couldn't send message to wrapped chain {:?}", e))
+                    .map_err(|e| anyhow!("Couldn't send message to wrapped chain {e}"))
                     .await?
             }
         }
@@ -137,7 +137,7 @@ impl BufferedChain {
                             chain_state.requests,
                             chain_state.local_addr,
                         ))
-                        .map_err(|e| anyhow!("Couldn't send message to wrapped chain {:?}", e))
+                        .map_err(|e| anyhow!("Couldn't send message to wrapped chain {e}"))
                         .await?
                 }
                 Some(timeout) => {
@@ -149,7 +149,7 @@ impl BufferedChain {
                             ),
                             Duration::from_micros(timeout),
                         )
-                        .map_err(|e| anyhow!("Couldn't send message to wrapped chain {:?}", e))
+                        .map_err(|e| anyhow!("Couldn't send message to wrapped chain {e}"))
                         .await?
                 }
             }
