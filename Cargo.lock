@@ -2384,7 +2384,7 @@ dependencies = [
  "httpdate",
  "itoa",
  "pin-project-lite",
- "socket2 0.5.8",
+ "socket2 0.4.10",
  "tokio",
  "tower-service",
  "tracing",
@@ -2853,7 +2853,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc2f4eb4bc735547cfed7c0a4922cbd04a4655978c09b54f1f7b228750664c34"
 dependencies = [
  "cfg-if",
- "windows-targets 0.52.6",
+ "windows-targets 0.48.5",
 ]
 
 [[package]]
@@ -4448,9 +4448,9 @@ dependencies = [
 
 [[package]]
 name = "scylla"
-version = "0.14.0"
+version = "0.15.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8139623d3fb0c8205b15e84fa587f3aa0ba61f876c19a9157b688f7c1763a7c5"
+checksum = "f0408e59e11f589071d1cefc3928270aa8fe4d03f654cb118e0c24d16013ea82"
 dependencies = [
  "arc-swap",
  "async-trait",
@@ -4472,7 +4472,7 @@ dependencies = [
  "smallvec",
  "snap",
  "socket2 0.5.8",
- "thiserror 1.0.69",
+ "thiserror 2.0.6",
  "tokio",
  "tokio-openssl",
  "tracing",
@@ -4481,9 +4481,9 @@ dependencies = [
 
 [[package]]
 name = "scylla-cql"
-version = "0.3.0"
+version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "de7020bcd1f6fdbeaed356cd426bf294b2071bd7120d48d2e8e319295e2acdcd"
+checksum = "a0cefd8b924bb8f67525937a811038d5662f9febc30c74c778a8205f63c4b365"
 dependencies = [
  "async-trait",
  "byteorder",
@@ -4491,16 +4491,18 @@ dependencies = [
  "lz4_flex",
  "scylla-macros",
  "snap",
- "thiserror 1.0.69",
+ "stable_deref_trait",
+ "thiserror 2.0.6",
  "tokio",
  "uuid",
+ "yoke",
 ]
 
 [[package]]
 name = "scylla-macros"
-version = "0.6.0"
+version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3859b6938663fc5062e3b26f3611649c9bd26fb252e85f6fdfa581e0d2ce74b6"
+checksum = "e878bfb8a235207864ac3fb0b51d7954c77fd38486e0e4fb4e037935ff7eb46c"
 dependencies = [
  "darling",
  "proc-macro2",
