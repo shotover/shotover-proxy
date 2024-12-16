@@ -343,7 +343,7 @@ async fn spawn_websocket_read_write_tasks<
                             Ok(WsMessage::Binary(ws_message_data)) => {
                                 // Entire message is reallocated and copied here due to 
                                 // incompatibility between tokio codecs and tungstenite.
-                                let message = decoder.decode(&mut BytesMut::from(ws_message_data.as_slice()));
+                                let message = decoder.decode(&mut BytesMut::from(ws_message_data.as_ref()));
                                 match message {
                                     Ok(Some(message)) => {
                                         if in_tx.send(message).await.is_err() {
