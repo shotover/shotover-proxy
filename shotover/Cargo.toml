@@ -48,7 +48,7 @@ default = ["cassandra", "valkey", "kafka", "opensearch"]
 
 [dependencies]
 atomic_enum = "0.3.0"
-axum = { version = "0.7", default-features = false, features = ["tokio", "tracing", "http1"] }
+axum = { version = "0.8", default-features = false, features = ["tokio", "tracing", "http1"] }
 pretty-hex = "0.4.0"
 tokio-stream = "0.1.2"
 derivative = "2.1.1"
@@ -76,7 +76,7 @@ csv = { workspace = true, optional = true }
 hex = { workspace = true, optional = true }
 async-trait.workspace = true
 typetag.workspace = true
-tokio-tungstenite = "0.24.0"
+tokio-tungstenite = "0.26.0"
 
 # Error handling
 thiserror = "2.0"
