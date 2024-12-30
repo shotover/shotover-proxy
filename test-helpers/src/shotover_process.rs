@@ -1,10 +1,11 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::time::Duration;
 
 pub use tokio_bin_process::bin_path;
 pub use tokio_bin_process::event::{Event, Level};
 pub use tokio_bin_process::event_matcher::{Count, EventMatcher, Events};
 pub use tokio_bin_process::BinProcess;
+pub use tokio_bin_process::BinProcessBuilder;
 
 pub struct ShotoverProcessBuilder {
     topology_path: String,
@@ -40,8 +41,8 @@ impl ShotoverProcessBuilder {
 
     /// Hint that there is a precompiled shotover binary available.
     /// This binary will be used unless a profile is specified.
-    pub fn with_bin(mut self, bin_path: &Path) -> Self {
-        self.bin_path = Some(bin_path.to_owned());
+    pub fn with_bin(mut self, bin_path: PathBuf) -> Self {
+        self.bin_path = Some(bin_path);
         self
     }
 
@@ -71,8 +72,8 @@ impl ShotoverProcessBuilder {
         self
     }
 
-    pub async fn start(&self) -> BinProcess {
-        let mut shotover = self.start_inner().await;
+    pub async fn start(self) -> BinProcess {
+        let (mut shotover, event_matchers) = self.start_inner().await;
 
         tokio::time::timeout(
             Duration::from_secs(30),
@@ -80,7 +81,7 @@ impl ShotoverProcessBuilder {
                 &EventMatcher::new()
                     .with_level(Level::Info)
                     .with_message("Shotover is now accepting inbound connections"),
-                &self.event_matchers,
+                &event_matchers,
             ),
         )
         .await
@@ -90,37 +91,62 @@ impl ShotoverProcessBuilder {
     }
 
     pub async fn assert_fails_to_start(
-        &self,
+        self,
         expected_errors_and_warnings: &[EventMatcher],
     ) -> Events {
         self.start_inner()
             .await
+            .0
             .consume_remaining_events_expect_failure(expected_errors_and_warnings)
             .await
     }
 
-    async fn start_inner(&self) -> BinProcess {
-        let mut args = vec!["-t", &self.topology_path, "--log-format", "json"];
-        if let Some(cores) = &self.cores {
-            args.extend(["--core-threads", cores]);
+    async fn start_inner(self) -> (BinProcess, Vec<EventMatcher>) {
+        let mut args = vec![
+            "-t".to_owned(),
+            self.topology_path,
+            "--log-format".to_owned(),
+            "json".to_owned(),
+        ];
+        if let Some(cores) = self.cores {
+            args.extend(["--core-threads".to_owned(), cores]);
         }
         let config_path = self
             .config_path
             .clone()
             .unwrap_or_else(|| "config/config.yaml".to_owned());
-        args.extend(["-c", &config_path]);
+        args.extend(["-c".to_owned(), config_path]);
 
-        let log_name = self.log_name.as_deref().unwrap_or("shotover");
+        let log_name = self.log_name.unwrap_or_else(|| "shotover".to_owned());
 
-        match (&self.profile, &self.bin_path) {
+        let builder = match (self.profile, self.bin_path) {
             (Some(profile), _) => {
-                BinProcess::start_binary_name("shotover-proxy", log_name, &args, Some(profile))
-                    .await
+                BinProcessBuilder::from_cargo_name("shotover-proxy".to_owned(), Some(profile))
             }
-            (None, Some(bin_path)) => BinProcess::start_binary(bin_path, log_name, &args).await,
-            (None, None) => {
-                BinProcess::start_binary_name("shotover-proxy", log_name, &args, None).await
-            }
-        }
+            (None, Some(bin_path)) => BinProcessBuilder::from_path(bin_path),
+            (None, None) => BinProcessBuilder::from_cargo_name("shotover-proxy".to_owned(), None),
+        };
+        let process = builder
+            .with_log_name(Some(log_name))
+            .with_args(args)
+            // Overwrite any existing AWS credential env vars belonging to the user with dummy values to be sure that
+            // shotover wont run with their real AWS account
+            //
+            // This also enables tests to run against moto mock AWS service as shotover's AWS client will give up
+            // if it cant find a key even though moto will accept any key.
+            .with_env_vars(vec![
+                (
+                    "AWS_ACCESS_KEY_ID".to_owned(),
+                    "dummy-access-key".to_owned(),
+                ),
+                (
+                    "AWS_SECRET_ACCESS_KEY".to_owned(),
+                    "dummy-access-key-secret".to_owned(),
+                ),
+            ])
+            .start()
+            .await;
+
+        (process, self.event_matchers)
     }
 }
