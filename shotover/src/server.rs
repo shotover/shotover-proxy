@@ -26,8 +26,8 @@ use tokio_tungstenite::tungstenite::{
     protocol::Message as WsMessage,
 };
 use tokio_util::codec::{Decoder, Encoder, FramedRead, FramedWrite};
-use tracing::Instrument;
 use tracing::{debug, error, warn};
+use tracing::{trace, Instrument};
 
 pub struct TcpCodecListener<C: CodecBuilder> {
     chain_builder: TransformChainBuilder,
@@ -358,13 +358,13 @@ async fn spawn_websocket_read_write_tasks<
                                     Err(CodecReadError::RespondAndThenCloseConnection(messages)) => {
                                         if let Err(err) = out_tx.send(messages) {
                                             // TODO we need to send a close message to the client
-                                            error!("Failed to send RespondAndThenCloseConnection message: {:?}", err);
+                                            error!("Failed to send RespondAndThenCloseConnection message: {err}");
                                         }
                                         return;
                                     }
                                     Err(CodecReadError::Parser(err)) => {
                                         // TODO we need to send a close message to the client, protocol error
-                                        warn!("failed to decode message: {:?}", err);
+                                        warn!("failed to decode message: {err:?}");
                                         return;
                                     }
                                     Err(CodecReadError::Io(_err)) => {
@@ -480,12 +480,12 @@ pub fn spawn_read_write_tasks<
                                 }
                                 Err(CodecReadError::RespondAndThenCloseConnection(messages)) => {
                                     if let Err(err) = out_tx.send(messages) {
-                                        error!("Failed to send RespondAndThenCloseConnection message: {:?}", err);
+                                        error!("Failed to send RespondAndThenCloseConnection message: {err}");
                                     }
                                     return;
                                 }
                                 Err(CodecReadError::Parser(err)) => {
-                                    warn!("failed to decode message: {:?}", err);
+                                    warn!("failed to decode message: {err:?}");
                                     return;
                                 }
                                 Err(CodecReadError::Io(err)) => {
@@ -494,7 +494,7 @@ pub fn spawn_read_write_tasks<
                                     // We shouldnt report that as a warning because its common for clients to do
                                     // that for performance reasons.
                                     if !matches!(err.kind(), ErrorKind::UnexpectedEof) {
-                                        warn!("failed to receive message on tcp stream: {:?}", err);
+                                        warn!("failed to receive message on tcp stream: {err:?}");
                                     }
                                     return;
                                 }
@@ -699,7 +699,7 @@ impl<C: CodecBuilder + 'static> Handler<C> {
                     while let Ok(x) = in_rx.try_recv() {
                         requests.extend(x);
                     }
-                    debug!("A transform in the chain requested that a chain run occur, requests {:?}", requests);
+                    debug!("running transform chain because a transform in the chain requested that a chain run occur");
                     if let Some(close_reason) = self.send_receive_chain(local_addr, &out_tx, requests).await? {
                         return Ok(close_reason)
                     }
@@ -710,7 +710,7 @@ impl<C: CodecBuilder + 'static> Handler<C> {
                             while let Ok(x) = in_rx.try_recv() {
                                 requests.extend(x);
                             }
-                            debug!("Received requests from client {:?}", requests);
+                            debug!("running transform chain because requests received from client");
                             if let Some(close_reason) = self.send_receive_chain(local_addr, &out_tx, requests).await? {
                                 return Ok(close_reason)
                             }
@@ -731,6 +731,7 @@ impl<C: CodecBuilder + 'static> Handler<C> {
         out_tx: &mpsc::UnboundedSender<Messages>,
         requests: Messages,
     ) -> Result<Option<CloseReason>> {
+        trace!("running transform chain with requests: {requests:?}");
         let mut wrapper = ChainState::new_with_addr(requests, local_addr);
 
         self.pending_requests.process_requests(&wrapper.requests);
@@ -748,7 +749,8 @@ impl<C: CodecBuilder + 'static> Handler<C> {
 
         // send the result of the process up stream
         if !responses.is_empty() {
-            debug!("sending response to client: {:?}", responses);
+            debug!("sending {} responses to client", responses.len());
+            trace!("sending response to client: {responses:?}");
             if out_tx.send(responses).is_err() {
                 // the client has disconnected so we should terminate this connection
                 return Ok(Some(CloseReason::ClientClosed));

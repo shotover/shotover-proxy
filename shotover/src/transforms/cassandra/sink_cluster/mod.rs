@@ -559,7 +559,7 @@ impl CassandraSinkCluster {
                     }
                     Err(GetReplicaErr::NoPreparedMetadata) => {
                         let id = execute.id.clone();
-                        tracing::info!("forcing re-prepare on {:?}", id);
+                        tracing::info!("forcing re-prepare on {id:?}");
                         // this shotover node doesn't have the metadata.
                         // send an unprepared error in response to force
                         // the client to reprepare the query
@@ -632,7 +632,7 @@ impl CassandraSinkCluster {
             self.set_control_connection(connection, address);
         }
         tracing::info!(
-            "Control connection finalized against node at: {:?}",
+            "Control connection finalized against node at: {}",
             self.control_connection_address.unwrap()
         );
 

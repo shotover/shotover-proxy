@@ -1,6 +1,7 @@
 use super::node::ConnectionFactory;
 use super::node_pool::NodePool;
 use super::ShotoverNode;
+use crate::frame::cassandra::operation_name;
 use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame};
 use crate::message::{Message, MessageIdMap, Messages};
 use crate::{
@@ -350,9 +351,16 @@ impl MessageRewriter {
                                         CassandraOperation::Error(_),
                                     ..
                                 })) => None,
-                                other => {
-                                    tracing::error!("Response to Prepare query was not a Prepared, was instead: {other:?}");
-                                    warnings.push(format!("Shotover: Response to Prepare query was not a Prepared, was instead: {other:?}"));
+                                Some(Frame::Cassandra(CassandraFrame { operation, .. })) => {
+                                    let operation_name = operation_name(operation);
+                                    tracing::error!("Response to Prepare query was not a Prepared, was instead: {operation_name}");
+                                    warnings.push(format!("Shotover: Response to Prepare query was not a Prepared, was instead: {operation_name}"));
+                                    None
+                                }
+                                Some(_) => unreachable!("Response to prepare was not cassandra message"),
+                                None => {
+                                    tracing::error!("Response to Prepare query was not parseable");
+                                    warnings.push("Shotover: Response to Prepare query was not parseable".to_owned());
                                     None
                                 }
                             })
@@ -366,12 +374,15 @@ impl MessageRewriter {
                                         output
                                     });
 
-                            tracing::error!(
-                                "Nodes did not return the same response to PREPARE statement {err_str}"
+                            tracing::warn!(
+                                "Nodes did not return the same response to PREPARE statement"
+                            );
+                            tracing::trace!(
+                                "Nodes did not return the same response to PREPARE statement:{err_str}"
                             );
                             warnings.push(format!(
-                            "Shotover: Nodes did not return the same response to PREPARE statement {err_str}"
-                        ));
+                                "Shotover: Nodes did not return the same response to PREPARE statement {err_str}"
+                            ));
                         }
                     }
 
@@ -544,10 +555,7 @@ impl MessageRewriter {
             }
             Ok(())
         } else {
-            Err(anyhow!(
-                "Failed to parse system.local response {:?}",
-                peers_response
-            ))
+            Err(anyhow!("Failed to parse system.local response"))
         }
     }
 
@@ -670,10 +678,7 @@ impl MessageRewriter {
             }
             Ok(())
         } else {
-            Err(anyhow!(
-                "Failed to parse system.local response {:?}",
-                local_response
-            ))
+            Err(anyhow!("Failed to parse system.local response"))
         }
     }
 }
@@ -831,13 +836,13 @@ fn parse_system_nodes(mut response: Message) -> Result<Vec<NodeInfo>, MessagePar
                 "system.local returned error: {error:?}",
             ))),
             operation => Err(MessageParseError::ParseFailure(anyhow!(
-                "system.local returned unexpected cassandra operation: {operation:?}",
+                "system.local returned unexpected cassandra operation: {:?}",
+                operation_name(operation)
             ))),
         }
     } else {
         Err(MessageParseError::ParseFailure(anyhow!(
-            "Failed to parse system.local response {:?}",
-            response
+            "Failed to parse system.local response"
         )))
     }
 }
