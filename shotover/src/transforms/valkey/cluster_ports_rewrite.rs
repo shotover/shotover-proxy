@@ -137,9 +137,9 @@ fn rewrite_port_slot(frame: &mut Frame, new_port: u16) -> Result<()> {
                             [ValkeyFrame::BulkString(_ip), ValkeyFrame::Integer(port), ..] => {
                                 *port = new_port.into();
                             }
-                            _ => bail!("expected host-port in slot map but was: {:?}", frame),
+                            _ => bail!("expected slot to start with bulkstring followed by integer, but was something else"),
                         },
-                        _ => bail!("unexpected value in slot map: {:?}", frame),
+                        _ => bail!("non array value in slot map"),
                     }
                 }
             };

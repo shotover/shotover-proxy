@@ -98,9 +98,11 @@ async fn find_new_brokers(nodes: &mut Vec<Node>, rng: &mut SmallRng) -> Result<(
             nodes.extend(new_nodes);
             Ok(())
         }
-        other => Err(anyhow!(
-            "Unexpected message returned to metadata request {other:?}"
-        )),
+        Some(Frame::Kafka(_)) => Err(anyhow!(
+            "Unexpected response returned to findcoordinator request"
+        ))?,
+        None => Err(anyhow!("Response to FindCoordinator could not be parsed"))?,
+        _ => unreachable!("response to FindCoordinator was not a kafka response"),
     }
 }
 
@@ -152,9 +154,13 @@ async fn create_delegation_token_for_user(
                 Ok(response)
             }
         }
-        response => Err(anyhow!(
-            "Unexpected response to CreateDelegationToken {response:?}"
-        )),
+        Some(Frame::Kafka(_)) => Err(anyhow!(
+            "Unexpected response returned to CreateDelegationToken request"
+        ))?,
+        None => Err(anyhow!(
+            "Response to CreateDelegationToken could not be parsed"
+        ))?,
+        _ => unreachable!("response to CreateDelegationToken was not a kafka response"),
     }
 }
 
@@ -253,28 +259,32 @@ async fn is_delegation_token_ready(
         },
     ))])?;
     let mut response = connection.recv().await?.pop().unwrap();
-    if let Some(Frame::Kafka(KafkaFrame::Response {
-        body: ResponseBody::DescribeDelegationToken(response),
-        ..
-    })) = response.frame()
-    {
-        if let Some(err) = ResponseError::try_from_code(response.error_code) {
-            return Err(anyhow!(
-                "Kafka's response to DescribeDelegationToken was an error: {err}"
-            ));
+    match response.frame() {
+        Some(Frame::Kafka(KafkaFrame::Response {
+            body: ResponseBody::DescribeDelegationToken(response),
+            ..
+        })) => {
+            if let Some(err) = ResponseError::try_from_code(response.error_code) {
+                return Err(anyhow!(
+                    "Kafka's response to DescribeDelegationToken was an error: {err}"
+                ));
+            }
+            if response
+                .tokens
+                .iter()
+                .any(|x| x.hmac == create_response.hmac && x.token_id == create_response.token_id)
+            {
+                Ok(true)
+            } else {
+                Ok(false)
+            }
         }
-        if response
-            .tokens
-            .iter()
-            .any(|x| x.hmac == create_response.hmac && x.token_id == create_response.token_id)
-        {
-            Ok(true)
-        } else {
-            Ok(false)
-        }
-    } else {
-        Err(anyhow!(
-            "Unexpected response to CreateDelegationToken {response:?}"
-        ))
+        Some(Frame::Kafka(_)) => Err(anyhow!(
+            "Unexpected response returned to DescribeDelegationToken request"
+        ))?,
+        None => Err(anyhow!(
+            "Response to DescribeDelegationToken could not be parsed"
+        ))?,
+        _ => unreachable!("response to DescribeDelegationToken was not a kafka response"),
     }
 }

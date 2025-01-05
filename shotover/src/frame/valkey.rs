@@ -27,10 +27,7 @@ pub fn valkey_query_name(frame: &ValkeyFrame) -> Option<String> {
                     return Some(query_type);
                 }
                 Err(err) => {
-                    tracing::error!(
-                        "Failed to convert valkey bulkstring to string, err: {:?}",
-                        err
-                    )
+                    tracing::error!("Failed to convert valkey bulkstring to string, err: {err:?}")
                 }
             }
         }

@@ -44,7 +44,7 @@ impl Display for KafkaFrame {
                         header.unknown_tagged_fields
                     )?;
                 }
-                write!(f, " {:?}", body)?;
+                write!(f, " {body:?}")?;
             }
             KafkaFrame::Response {
                 version,
@@ -63,7 +63,7 @@ impl Display for KafkaFrame {
                         header.unknown_tagged_fields
                     )?;
                 }
-                write!(f, " {body:?}",)?;
+                write!(f, " {body:?}")?;
             }
         }
         Ok(())
