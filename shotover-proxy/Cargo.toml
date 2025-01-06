@@ -8,7 +8,7 @@ license = "Apache-2.0"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-shotover = { path = "../shotover", default-features = false}
+shotover = { path = "../shotover", default-features = false }
 
 [dev-dependencies]
 prometheus-parse = "0.2.4"
@@ -17,7 +17,7 @@ scylla.workspace = true
 anyhow.workspace = true
 tokio.workspace = true
 tracing.workspace = true
-rstest = "0.22.0"
+rstest = "0.24.0"
 rstest_reuse = "0.7.0"
 test-helpers = { path = "../test-helpers" }
 redis.workspace = true
@@ -44,7 +44,9 @@ rustls-pki-types = "1.1.0"
 aws-throwaway.workspace = true
 windsock = "0.2.0"
 regex = "1.7.0"
-opensearch = { version = "2.1.0", default-features = false, features = ["rustls-tls"] }
+opensearch = { version = "2.1.0", default-features = false, features = [
+    "rustls-tls",
+] }
 serde_json = "1.0.103"
 time = { version = "0.3.25" }
 shell-quote.workspace = true
