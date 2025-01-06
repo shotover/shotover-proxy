@@ -2,6 +2,7 @@ use super::{Compression, Consistency, PreparedQuery, ProtocolVersion, Tls};
 use crate::connection::cassandra::ResultValue;
 use cdrs_tokio::frame::message_error::{ErrorBody, ErrorType};
 use scylla::batch::Batch;
+use scylla::frame::response::result::Row;
 use scylla::frame::types::Consistency as ScyllaConsistency;
 use scylla::frame::value::{CqlDate, CqlDecimal, CqlTime, CqlTimestamp};
 use scylla::serialize::value::SerializeValue;
@@ -79,7 +80,7 @@ impl ScyllaConnection {
             .execute_unpaged(statement, values)
             .await
             .unwrap();
-        let tracing_id = response.tracing_id.unwrap();
+        let tracing_id = response.tracing_id().unwrap();
 
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
         self.session
@@ -145,18 +146,26 @@ impl ScyllaConnection {
         response: Result<QueryResult, QueryError>,
     ) -> Result<Vec<Vec<ResultValue>>, ErrorBody> {
         match response {
-            Ok(value) => Ok(match value.rows {
-                Some(rows) => rows
-                    .into_iter()
-                    .map(|x| {
-                        x.columns
-                            .into_iter()
-                            .map(ResultValue::new_from_scylla)
-                            .collect()
-                    })
-                    .collect(),
-                None => vec![],
-            }),
+            Ok(value) => {
+                if value.is_rows() {
+                    Ok(value
+                        .into_rows_result()
+                        .unwrap()
+                        .rows::<Row>()
+                        .unwrap()
+                        .map(|x| {
+                            x.unwrap()
+                                .columns
+                                .into_iter()
+                                .map(ResultValue::new_from_scylla)
+                                .collect()
+                        })
+                        .collect())
+                } else {
+                    value.result_not_rows().unwrap();
+                    Ok(vec![])
+                }
+            }
             Err(QueryError::DbError(code, message)) => Err(ErrorBody {
                 ty: match code {
                     DbError::Overloaded => ErrorType::Overloaded,

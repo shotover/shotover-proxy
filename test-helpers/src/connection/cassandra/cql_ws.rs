@@ -159,13 +159,13 @@ impl CqlWsSession {
 
     fn encode(envelope: Envelope) -> Message {
         let data = envelope.encode_with(Compression::None).unwrap();
-        Message::Binary(data)
+        Message::Binary(data.into())
     }
 
     fn decode(ws_message: Message) -> Envelope {
         match ws_message {
             Message::Binary(data) => {
-                Envelope::from_buffer(data.as_slice(), Compression::None)
+                Envelope::from_buffer(data.as_ref(), Compression::None)
                     .unwrap()
                     .envelope
             }

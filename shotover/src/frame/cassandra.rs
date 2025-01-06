@@ -459,6 +459,26 @@ impl CassandraFrame {
         }
     }
 }
+pub(crate) fn operation_name(operation: &CassandraOperation) -> &'static str {
+    match operation {
+        CassandraOperation::Query { .. } => "Query",
+        CassandraOperation::Result(_) => "Result",
+        CassandraOperation::Error(_) => "Error",
+        CassandraOperation::Prepare(_) => "Prepare",
+        CassandraOperation::Execute(_) => "Execute",
+        CassandraOperation::Register(_) => "Register",
+        CassandraOperation::Event(_) => "Event",
+        CassandraOperation::Batch(_) => "Batch",
+        CassandraOperation::Startup(_) => "Startup",
+        CassandraOperation::Ready(_) => "Ready",
+        CassandraOperation::Authenticate(_) => "Authenticate",
+        CassandraOperation::Options(_) => "Options",
+        CassandraOperation::Supported(_) => "Supported",
+        CassandraOperation::AuthChallenge(_) => "AuthChallenge",
+        CassandraOperation::AuthResponse(_) => "AuthResponse",
+        CassandraOperation::AuthSuccess(_) => "AuthSuccess",
+    }
+}
 
 #[derive(PartialEq, Debug, Clone)]
 pub enum CassandraOperation {

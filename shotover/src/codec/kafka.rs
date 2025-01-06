@@ -297,7 +297,9 @@ impl Encoder<Messages> for KafkaEncoder {
                             }) => {
                                 dst.extend_from_slice(&body.auth_bytes);
                             }
-                            _ => unreachable!("not expected {frame:?}"),
+                            _ => unreachable!(
+                                "Expected kafka sasl authenticate request or response but was not"
+                            ),
                         }
                         Ok(())
                     } else {
