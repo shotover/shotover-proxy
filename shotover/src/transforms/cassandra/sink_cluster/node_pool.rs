@@ -310,9 +310,9 @@ pub async fn get_accessible_node<'a>(
     ))
 }
 
-pub async fn get_accessible_owned_connection<'a>(
+pub async fn get_accessible_owned_connection(
     connection_factory: &ConnectionFactory,
-    nodes: Vec<&'a mut CassandraNode>,
+    nodes: Vec<&'_ mut CassandraNode>,
 ) -> Result<(CassandraConnection, SocketAddr)> {
     get_accessible_node(connection_factory, nodes)
         .await
