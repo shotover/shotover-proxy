@@ -1,5 +1,5 @@
 use docker_compose_runner::*;
-use std::{env, time::Duration};
+use std::time::Duration;
 
 pub use docker_compose_runner::DockerCompose;
 
@@ -12,11 +12,6 @@ pub fn docker_compose(file_path: &str) -> DockerCompose {
 
 /// Creates a new DockerCompose running an instance of moto the AWS mocking server
 pub fn new_moto() -> DockerCompose {
-    // Overwrite any existing AWS credential env vars belonging to the user with dummy values to be sure that
-    // we wont hit their real AWS account in the case of a bug in shotover or the test
-    env::set_var("AWS_ACCESS_KEY_ID", "dummy-access-key");
-    env::set_var("AWS_SECRET_ACCESS_KEY", "dummy-access-key-secret");
-
     docker_compose("tests/transforms/docker-compose-moto.yaml")
 }
 

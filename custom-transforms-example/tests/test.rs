@@ -4,7 +4,9 @@ use redis::Cmd;
 use std::time::Duration;
 use test_helpers::connection::valkey_connection;
 use test_helpers::docker_compose::docker_compose;
-use test_helpers::shotover_process::{bin_path, BinProcess, EventMatcher, Level};
+use test_helpers::shotover_process::{
+    bin_path, BinProcess, BinProcessBuilder, EventMatcher, Level,
+};
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_custom_transform() {
@@ -37,12 +39,16 @@ async fn test_custom_transform() {
 }
 
 async fn shotover_proxy(topology_path: &str) -> BinProcess {
-    let mut shotover = BinProcess::start_binary(
-        bin_path!("custom-transforms-example"),
-        "shotover",
-        &["-t", topology_path, "--log-format", "json"],
-    )
-    .await;
+    let mut shotover = BinProcessBuilder::from_path(bin_path!("custom-transforms-example"))
+        .with_log_name(Some("shotover".to_owned()))
+        .with_args(vec![
+            "-t".to_owned(),
+            topology_path.to_owned(),
+            "--log-format".to_owned(),
+            "json".to_owned(),
+        ])
+        .start()
+        .await;
 
     tokio::time::timeout(
         Duration::from_secs(30),
