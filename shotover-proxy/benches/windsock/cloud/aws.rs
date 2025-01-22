@@ -438,7 +438,7 @@ pub async fn upload_shotover(instance: &Ec2Instance) {
 
     instance
         .ssh()
-        .push_file(local_shotover_path, Path::new("shotover-bin"))
+        .push_file(&local_shotover_path, Path::new("shotover-bin"))
         .await;
     instance
         .ssh()

@@ -861,20 +861,6 @@ dependencies = [
 
 [[package]]
 name = "cargo_metadata"
-version = "0.18.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2d886547e41f740c616ae73108f6eb70afe6d940c7bc697cb30f13daec073037"
-dependencies = [
- "camino",
- "cargo-platform",
- "semver",
- "serde",
- "serde_json",
- "thiserror 1.0.69",
-]
-
-[[package]]
-name = "cargo_metadata"
 version = "0.19.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8769706aad5d996120af43197bf46ef6ad0fda35216b4505f926a365a232d924"
@@ -1689,7 +1675,7 @@ name = "ec2-cargo"
 version = "0.1.0"
 dependencies = [
  "aws-throwaway",
- "cargo_metadata 0.19.1",
+ "cargo_metadata",
  "clap",
  "shell-quote",
  "shellfish",
@@ -5283,14 +5269,14 @@ dependencies = [
 
 [[package]]
 name = "tokio-bin-process"
-version = "0.6.0"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0581e13b120b43f94b33fac60d6d7b37327e1dddad1b422b72b8dfbda0a453cd"
+checksum = "10d848fd97fa3976101be388f3d1f3952d9b3f84a6e741b3c07c55e029d8be05"
 dependencies = [
  "anyhow",
- "cargo_metadata 0.18.1",
+ "cargo_metadata",
  "chrono",
- "itertools 0.13.0",
+ "itertools 0.14.0",
  "nix 0.29.0",
  "nu-ansi-term 0.50.1",
  "regex-lite",
