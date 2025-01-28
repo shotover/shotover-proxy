@@ -28,6 +28,15 @@ fn main() {
         return;
     }
 
+    if !Command::new("cargo")
+        .args(["install", "mdbook-mermaid", "--version", "0.14.0"])
+        .status()
+        .unwrap()
+        .success()
+    {
+        return;
+    }
+
     let root = current_dir.join("website").join("root");
     std::fs::remove_dir_all(&root).ok();
     std::fs::create_dir_all(&root).unwrap();

@@ -6,6 +6,7 @@ src = "src"
 title = "Shotover"
 
 [output.html]
+additional-js = ["mermaid.min.js", "mermaid-init.js"]
 
 [output.linkcheck]
 # Should we check links on the internet? Enabling this option adds a
@@ -13,3 +14,8 @@ title = "Shotover"
 follow-web-links = false
 
 warning-policy = "error"
+
+[preprocessor]
+
+[preprocessor.mermaid]
+command = "mdbook-mermaid"
