@@ -590,6 +590,13 @@ async fn cluster_2_racks_multi_shotover(#[case] driver: KafkaDriver) {
     if let KafkaDriver::Java = driver {
         // describeLogDirs is only on java driver
         test_cases::describe_log_dirs(&connection_builder).await;
+                
+        // new consumer group protocol is only on java driver
+        test_cases::produce_consume_partitions_new_consumer_group_protocol(
+            &connection_builder,
+            "partitions3_new_consumer_group_protocol",
+        )
+        .await;
     }
 
     for shotover in shotovers {
