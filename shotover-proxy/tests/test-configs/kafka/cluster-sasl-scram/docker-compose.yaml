@@ -10,7 +10,7 @@ networks:
 
 services:
   kafka0:
-    image: &image 'bitnami/kafka:3.8.1-debian-12-r1'
+    image: &image 'bitnami/kafka:3.9.0-debian-12-r6'
     networks:
       cluster_subnet:
         ipv4_address: 172.16.1.2
