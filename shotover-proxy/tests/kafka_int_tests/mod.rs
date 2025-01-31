@@ -606,9 +606,10 @@ async fn cluster_2_racks_multi_shotover(#[case] driver: KafkaDriver) {
 #[cfg_attr(feature = "kafka-cpp-driver-tests", case::cpp(KafkaDriver::Cpp))]
 #[case::java(KafkaDriver::Java)]
 #[tokio::test(flavor = "multi_thread")] // multi_thread is needed since java driver will block when consuming, causing shotover logs to not appear
-async fn cluster_2_racks_multi_shotover_kafka_3_9(#[case] driver: KafkaDriver) {
-    let _docker_compose =
-        docker_compose("tests/test-configs/kafka/cluster-2-racks/docker-compose-kafka-3.9.yaml");
+async fn cluster_2_racks_multi_shotover_rebalance_protocol(#[case] driver: KafkaDriver) {
+    let _docker_compose = docker_compose(
+        "tests/test-configs/kafka/cluster-2-racks/docker-compose-rebalance-protocol.yaml",
+    );
 
     // One shotover instance per rack
     let mut shotovers = vec![];
