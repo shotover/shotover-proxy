@@ -27,7 +27,7 @@ tokio = { version = "1.25.0", features = ["full"] }
 tokio-util = { version = "0.7.7", features = ["codec"] }
 tokio-openssl = "0.6.2"
 itertools = "0.14.0"
-openssl = { version = "0.10.36", features = ["vendored"] }
+openssl = { version = "0.10.70", features = ["vendored"] }
 anyhow = "1.0.76"
 serde = { version = "1.0.111", features = ["derive"] }
 serde_yaml = "0.9.17"
