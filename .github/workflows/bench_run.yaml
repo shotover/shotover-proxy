@@ -32,7 +32,7 @@ jobs:
       #  with:
       #    tool: cargo-codspeed
       - name: install cargo-codspeed
-        run: cargo install cargo-codspeed --locked --version 2.7.2
+        run: cargo install cargo-codspeed --locked --version 2.8.0
       - name: Build the benchmark target(s)
         run: cargo codspeed build --features alpha-transforms
       - name: Run the benchmarks
