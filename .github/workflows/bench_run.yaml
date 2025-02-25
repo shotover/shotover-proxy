@@ -30,7 +30,7 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: taiki-e/install-action@v2
         with:
-          tool: cargo-codspeed
+          tool: cargo-codspeed@2.7.2
       - name: Build the benchmark target(s)
         run: cargo codspeed build --features alpha-transforms
       - name: Run the benchmarks
