@@ -28,8 +28,9 @@ jobs:
           # downsides:
           # * PRs that update rust version or changes deps will be slow to iterate on due to changes not being cached.
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - name: install cargo-codspeed
-        run: cargo install cargo-codspeed --locked --version 2.8.0
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-codspeed@2.7.2
       - name: Build the benchmark target(s)
         run: cargo codspeed build --features alpha-transforms
       - name: Run the benchmarks
