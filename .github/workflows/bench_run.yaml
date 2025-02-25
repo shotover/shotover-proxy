@@ -34,6 +34,6 @@ jobs:
       - name: Build the benchmark target(s)
         run: cargo codspeed build --features alpha-transforms
       - name: Run the benchmarks
-        uses: CodSpeedHQ/action@v2
+        uses: CodSpeedHQ/action@v3
         with:
           run: cargo codspeed run
