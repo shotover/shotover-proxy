@@ -1,5 +1,0 @@
-[build]
-base = "docs"
-publish = "book/html"
-command = "./mdbook.sh test && ./mdbook.sh build"
-ignore = "/bin/false"
