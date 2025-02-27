@@ -1,4 +1,4 @@
-use crate::codec::{kafka::KafkaCodecBuilder, CodecBuilder, Direction};
+use crate::codec::{CodecBuilder, Direction, kafka::KafkaCodecBuilder};
 use crate::connection::SinkConnection;
 use crate::frame::kafka::{KafkaFrame, RequestBody, ResponseBody};
 use crate::frame::{Frame, MessageType};

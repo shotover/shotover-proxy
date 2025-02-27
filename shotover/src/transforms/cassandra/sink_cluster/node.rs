@@ -5,7 +5,7 @@ use crate::connection::SinkConnection;
 use crate::frame::Frame;
 use crate::message::Message;
 use crate::tls::{TlsConnector, ToHostname};
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use cassandra_protocol::frame::Version;
 use cassandra_protocol::token::Murmur3Token;
 use derivative::Derivative;

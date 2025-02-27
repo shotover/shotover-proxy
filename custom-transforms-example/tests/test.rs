@@ -1,11 +1,11 @@
 use pretty_assertions::assert_eq;
-use redis::aio::Connection;
 use redis::Cmd;
+use redis::aio::Connection;
 use std::time::Duration;
 use test_helpers::connection::valkey_connection;
 use test_helpers::docker_compose::docker_compose;
 use test_helpers::shotover_process::{
-    bin_path, BinProcess, BinProcessBuilder, EventMatcher, Level,
+    BinProcess, BinProcessBuilder, EventMatcher, Level, bin_path,
 };
 
 #[tokio::test(flavor = "multi_thread")]

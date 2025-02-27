@@ -1,31 +1,31 @@
 use anyhow::{Context, Result};
 use cassandra_protocol::compression::Compression;
-use cassandra_protocol::frame::message_query::BodyReqQuery;
-use cassandra_protocol::frame::message_response::ResponseBody;
-use cassandra_protocol::frame::message_result::{BodyResResultRows, ResResultBody};
 use cassandra_protocol::frame::Envelope;
 use cassandra_protocol::frame::Flags;
 use cassandra_protocol::frame::Opcode;
 use cassandra_protocol::frame::Version;
+use cassandra_protocol::frame::message_query::BodyReqQuery;
+use cassandra_protocol::frame::message_response::ResponseBody;
+use cassandra_protocol::frame::message_result::{BodyResResultRows, ResResultBody};
 use cassandra_protocol::query::query_params::QueryParams;
-use cassandra_protocol::types::cassandra_type::{wrapper_fn, CassandraType};
+use cassandra_protocol::types::cassandra_type::{CassandraType, wrapper_fn};
 use futures_util::{SinkExt, StreamExt};
-use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::client::WebPkiServerVerifier;
+use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::{CertificateError, DigitallySignedStruct, RootCertStore, SignatureScheme};
 use rustls_pki_types::{CertificateDer, ServerName, UnixTime};
 use std::fs::File;
 use std::io::BufReader;
 use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncWrite};
-use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
+use tokio_tungstenite::Connector;
+use tokio_tungstenite::WebSocketStream;
+use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::tungstenite::error::Error;
 use tokio_tungstenite::tungstenite::error::ProtocolError;
 use tokio_tungstenite::tungstenite::handshake::client::generate_key;
 use tokio_tungstenite::tungstenite::handshake::server::Request;
-use tokio_tungstenite::tungstenite::Message;
-use tokio_tungstenite::Connector;
-use tokio_tungstenite::WebSocketStream;
 
 pub struct CqlWsSession {
     in_rx: UnboundedReceiver<Message>,

@@ -1,9 +1,9 @@
 use crate::transforms::protect::key_management::KeyMaterial;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
+use aws_sdk_kms::Client as KmsClient;
 use aws_sdk_kms::operation::decrypt::builders::DecryptFluentBuilder;
 use aws_sdk_kms::operation::generate_data_key::builders::GenerateDataKeyFluentBuilder;
 use aws_sdk_kms::primitives::Blob;
-use aws_sdk_kms::Client as KmsClient;
 use bytes::Bytes;
 use chacha20poly1305::Key;
 use derivative::Derivative;

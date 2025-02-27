@@ -6,7 +6,7 @@ use super::{
     ResourceType, TopicDescription, TopicPartition, TopicPartitionInfo, TopicPartitionReplica,
     TransactionDescription,
 };
-use crate::connection::java::{map_iterator, Jvm, Value};
+use crate::connection::java::{Jvm, Value, map_iterator};
 use anyhow::Result;
 use pretty_assertions::assert_eq;
 use std::{
@@ -187,14 +187,16 @@ impl KafkaConnectionBuilderJava {
         );
         consumer.call(
             "subscribe",
-            vec![self.jvm.new_list(
-                "java.lang.String",
-                consumer_config
-                    .topic_names
-                    .iter()
-                    .map(|topic_name| self.jvm.new_string(topic_name))
-                    .collect(),
-            )],
+            vec![
+                self.jvm.new_list(
+                    "java.lang.String",
+                    consumer_config
+                        .topic_names
+                        .iter()
+                        .map(|topic_name| self.jvm.new_string(topic_name))
+                        .collect(),
+                ),
+            ],
         );
 
         let jvm = self.jvm.clone();
@@ -680,9 +682,10 @@ impl KafkaAdminJava {
                     ),
                     self.jvm.construct(
                         "org.apache.kafka.clients.admin.Config",
-                        vec![self
-                            .jvm
-                            .new_list("org.apache.kafka.clients.admin.ConfigEntry", entries)],
+                        vec![
+                            self.jvm
+                                .new_list("org.apache.kafka.clients.admin.ConfigEntry", entries),
+                        ],
                     ),
                 )
             })

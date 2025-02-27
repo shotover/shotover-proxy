@@ -244,27 +244,23 @@ sudo docker system prune -af"#,
         let regex = Regex::new(image_waiter.log_regex_to_wait_for).unwrap();
         loop {
             match tokio::time::timeout(Duration::from_secs(120), receiver.recv()).await {
-                Ok(Some(line)) => {
-                    match line {
-                        Ok(line) => {
-                            writeln!(logs, "{line}").unwrap();
-                            if regex.is_match(&line) {
-                                return;
-                            }
+                Ok(Some(line)) => match line {
+                    Ok(line) => {
+                        writeln!(logs, "{line}").unwrap();
+                        if regex.is_match(&line) {
+                            return;
                         }
-                        Err(err) => panic!("docker logs failed: {err:?}"),
                     }
-                }
+                    Err(err) => panic!("docker logs failed: {err:?}"),
+                },
                 Ok(None) => panic!(
                     "Docker container of image {:?} shutdown before {:?} occurred in the logs.\nDocker logs:\n{logs}",
-                    image,
-                    image_waiter.log_regex_to_wait_for
+                    image, image_waiter.log_regex_to_wait_for
                 ),
                 Err(_) => panic!(
                     "Docker container of image {:?} timed out after 2mins waiting for {:?} in the logs.\nDocker logs:\n{logs}",
-                    image,
-                    image_waiter.log_regex_to_wait_for
-                )
+                    image, image_waiter.log_regex_to_wait_for
+                ),
             }
         }
     }

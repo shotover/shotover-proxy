@@ -5,8 +5,8 @@ use pretty_assertions::assert_eq;
 use std::net::SocketAddr;
 use std::time::Duration;
 use test_helpers::connection::cassandra::{
-    assert_query_result, run_query, CassandraConnection, CassandraConnectionBuilder,
-    CassandraDriver, ResultValue,
+    CassandraConnection, CassandraConnectionBuilder, CassandraDriver, ResultValue,
+    assert_query_result, run_query,
 };
 
 use test_helpers::docker_compose::DockerCompose;

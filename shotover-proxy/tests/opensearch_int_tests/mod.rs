@@ -1,20 +1,20 @@
 use crate::shotover_process;
 use opensearch::{
+    BulkOperation, BulkParts, DeleteParts, Error, IndexParts, OpenSearch, SearchParts,
     auth::Credentials,
     cert::CertificateValidation,
     http::{
+        Method, StatusCode, Url,
         headers::{HeaderName, HeaderValue},
         response::Response,
         transport::{SingleNodeConnectionPool, TransportBuilder},
-        Method, StatusCode, Url,
     },
     indices::{IndicesCreateParts, IndicesDeleteParts, IndicesExistsParts},
     nodes::NodesInfoParts,
     params::Refresh,
-    BulkOperation, BulkParts, DeleteParts, Error, IndexParts, OpenSearch, SearchParts,
 };
 use pretty_assertions::assert_eq;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use test_helpers::docker_compose::docker_compose;
 
 async fn assert_ok_and_get_json(response: Result<Response, Error>) -> Value {

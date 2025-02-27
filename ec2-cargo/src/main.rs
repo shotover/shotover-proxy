@@ -3,7 +3,7 @@ use aws_throwaway::{
 };
 use cargo_metadata::{Metadata, MetadataCommand};
 use clap::Parser;
-use shellfish::{async_fn, handler::DefaultAsyncHandler, rustyline::DefaultEditor, Command, Shell};
+use shellfish::{Command, Shell, async_fn, handler::DefaultAsyncHandler, rustyline::DefaultEditor};
 use std::error::Error;
 use std::fs::Permissions;
 use std::os::unix::prelude::PermissionsExt;

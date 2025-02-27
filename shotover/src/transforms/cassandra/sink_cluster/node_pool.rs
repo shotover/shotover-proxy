@@ -1,16 +1,16 @@
+use super::KeyspaceChanRx;
 use super::connection::CassandraConnection;
 use super::node::{CassandraNode, ConnectionFactory};
 use super::routing_key::calculate_routing_key;
 use super::token_ring::TokenRing;
-use super::KeyspaceChanRx;
-use anyhow::{anyhow, Context, Error, Result};
+use anyhow::{Context, Error, Result, anyhow};
 use cassandra_protocol::frame::message_execute::BodyReqExecuteOwned;
 use cassandra_protocol::types::CBytesShort;
-use metrics::{counter, Counter};
+use metrics::{Counter, counter};
 use rand::prelude::*;
 use std::sync::Arc;
 use std::{collections::HashMap, net::SocketAddr};
-use tokio::sync::{watch, RwLock};
+use tokio::sync::{RwLock, watch};
 
 #[derive(Debug, Clone)]
 pub struct PreparedMetadata {
@@ -233,7 +233,9 @@ impl NodePool {
             // or
             // The clients token aware routing is broken.
             #[cfg(debug_assertions)]
-            tracing::warn!("No suitable nodes to route to found within rack. This error only occurs in debug builds as it should never occur in an ideal integration test situation.");
+            tracing::warn!(
+                "No suitable nodes to route to found within rack. This error only occurs in debug builds as it should never occur in an ideal integration test situation."
+            );
             self.out_of_rack_requests.increment(1);
         }
         tracing::debug!(
@@ -290,7 +292,9 @@ pub async fn get_accessible_node<'a>(
             Ok(_) => {
                 if !errors.is_empty() {
                     let node_errors = bullet_list_of_node_failures(errors.iter());
-                    tracing::warn!("A successful connection to a node was made but attempts to connect to these nodes failed first:{node_errors}");
+                    tracing::warn!(
+                        "A successful connection to a node was made but attempts to connect to these nodes failed first:{node_errors}"
+                    );
                 }
                 return Ok(node);
             }

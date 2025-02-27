@@ -1,12 +1,12 @@
 //! Message and supporting types - used to hold a message/query/result going between the client and database
 
 use crate::codec::CodecState;
+use crate::frame::{Frame, MessageType};
+#[cfg(feature = "valkey")]
+use crate::frame::{ValkeyFrame, valkey::valkey_query_type};
 #[cfg(feature = "cassandra")]
 use crate::frame::{cassandra, cassandra::CassandraMetadata};
-#[cfg(feature = "valkey")]
-use crate::frame::{valkey::valkey_query_type, ValkeyFrame};
-use crate::frame::{Frame, MessageType};
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use bytes::Bytes;
 use derivative::Derivative;
 use fnv::FnvBuildHasher;

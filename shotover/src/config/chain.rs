@@ -2,7 +2,7 @@ use crate::transforms::chain::TransformChainBuilder;
 use crate::transforms::{
     DownChainProtocol, TransformBuilder, TransformConfig, TransformContextConfig, UpChainProtocol,
 };
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use serde::de::{DeserializeSeed, Deserializer, MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Serialize};
 use std::fmt::{self, Debug};
@@ -27,7 +27,9 @@ impl TransformChainConfig {
             match tc.up_chain_protocol() {
                 UpChainProtocol::MustBeOneOf(protocols) => {
                     if !protocols.contains(&upchain_protocol) {
-                        return Err(anyhow!("Transform {name} requires upchain protocol to be one of {protocols:?} but was {upchain_protocol:?}"));
+                        return Err(anyhow!(
+                            "Transform {name} requires upchain protocol to be one of {protocols:?} but was {upchain_protocol:?}"
+                        ));
                     }
                 }
                 UpChainProtocol::Any => {

@@ -1,9 +1,9 @@
 //! Use to establish a TLS connection to a DB in a sink transform
 
 use crate::tcp;
-use anyhow::{anyhow, bail, Context, Error, Result};
-use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
+use anyhow::{Context, Error, Result, anyhow, bail};
 use rustls::client::WebPkiServerVerifier;
+use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::server::WebPkiClientVerifier;
 use rustls::{
     CertificateError, ClientConfig, DigitallySignedStruct, RootCertStore, SignatureScheme,
@@ -199,10 +199,14 @@ impl TlsConnector {
                 .with_no_client_auth(),
 
             (Some(_), None, _) => {
-                bail!("private_key_path was specified but certificate_path was not: Either enable both or none")
+                bail!(
+                    "private_key_path was specified but certificate_path was not: Either enable both or none"
+                )
             }
             (None, Some(_), _) => {
-                bail!("certificate_path was specified but private_key_path was not: Either enable both or none")
+                bail!(
+                    "certificate_path was specified but private_key_path was not: Either enable both or none"
+                )
             }
         };
 

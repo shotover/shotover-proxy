@@ -78,7 +78,9 @@ impl CassandraConnection {
             if response.request_id().is_some() {
                 let stream_id = response.stream_id().unwrap();
                 if !self.pending_request_stream_ids.remove(&stream_id) {
-                    tracing::warn!("received response to stream id {stream_id} but that stream id was never sent or was already received");
+                    tracing::warn!(
+                        "received response to stream id {stream_id} but that stream id was never sent or was already received"
+                    );
                 }
             }
         }

@@ -1,5 +1,5 @@
 use bytes::{Bytes, BytesMut};
-use criterion::{criterion_group, BatchSize, Criterion};
+use criterion::{BatchSize, Criterion, criterion_group};
 use shotover::codec::kafka::KafkaCodecBuilder;
 use shotover::codec::kafka::KafkaCodecState;
 use shotover::codec::{CodecBuilder, CodecState, Direction};

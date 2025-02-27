@@ -1,15 +1,15 @@
 use bytes::BytesMut;
+use cassandra_protocol::frame::Version;
 use cassandra_protocol::frame::message_result::{
     ColSpec, ColType, ColTypeOption, ColTypeOptionValue, RowsMetadata, RowsMetadataFlags, TableSpec,
 };
-use cassandra_protocol::frame::Version;
-use criterion::{criterion_group, BatchSize, Criterion};
+use criterion::{BatchSize, Criterion, criterion_group};
 use shotover::codec::cassandra::CassandraCodecBuilder;
 use shotover::codec::{CodecBuilder, Direction};
 use shotover::frame::{
-    cassandra::{parse_statement_single, Tracing},
-    value::{GenericValue, IntSize},
     CassandraFrame, CassandraOperation, CassandraResult, Frame,
+    cassandra::{Tracing, parse_statement_single},
+    value::{GenericValue, IntSize},
 };
 use shotover::message::Message;
 use tokio_util::codec::{Decoder, Encoder};

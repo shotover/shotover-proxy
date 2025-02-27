@@ -1,11 +1,11 @@
-use cassandra_protocol::frame::message_startup::BodyReqStartup;
 use cassandra_protocol::frame::Version;
-use shotover::frame::{cassandra::Tracing, CassandraFrame, CassandraOperation, Frame};
+use cassandra_protocol::frame::message_startup::BodyReqStartup;
+use shotover::frame::{CassandraFrame, CassandraOperation, Frame, cassandra::Tracing};
 use shotover::message::Message;
 use shotover::tls::{TlsConnector, TlsConnectorConfig};
 use shotover::transforms::cassandra::sink_cluster::{
     node::{CassandraNode, ConnectionFactory},
-    topology::{create_topology_task, TaskConnectionInfo},
+    topology::{TaskConnectionInfo, create_topology_task},
 };
 use std::collections::HashMap;
 use std::time::Duration;

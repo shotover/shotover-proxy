@@ -1,7 +1,7 @@
 use anyhow::Context;
 use openssl::ssl::{SslConnector, SslFiletype, SslMethod};
-use redis::aio::AsyncStream;
 use redis::Client;
+use redis::aio::AsyncStream;
 use std::pin::Pin;
 use std::time::Duration;
 use tokio::net::TcpStream;

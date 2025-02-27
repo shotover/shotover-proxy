@@ -1,5 +1,5 @@
 use self::connection::CassandraConnection;
-use self::node_pool::{get_accessible_owned_connection, NodePoolBuilder, PreparedMetadata};
+use self::node_pool::{NodePoolBuilder, PreparedMetadata, get_accessible_owned_connection};
 use self::rewrite::{BatchMode, MessageRewriter};
 use crate::frame::cassandra::{CassandraMetadata, Tracing};
 use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame, MessageType};
@@ -9,7 +9,7 @@ use crate::transforms::{
     ChainState, DownChainProtocol, Transform, TransformBuilder, TransformConfig,
     TransformContextBuilder, TransformContextConfig, UpChainProtocol,
 };
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use async_trait::async_trait;
 use cassandra_protocol::events::ServerEvent;
 use cassandra_protocol::frame::message_error::{ErrorBody, ErrorType, UnpreparedError};
@@ -18,7 +18,7 @@ use cassandra_protocol::frame::{Opcode, Version};
 use cassandra_protocol::types::CBytesShort;
 use cql3_parser::cassandra_statement::CassandraStatement;
 use cql3_parser::common::IdentifierRef;
-use metrics::{counter, Counter};
+use metrics::{Counter, counter};
 use node::{CassandraNode, ConnectionFactory};
 use node_pool::{GetReplicaErr, KeyspaceMetadata, NodePool};
 use rand::prelude::*;
@@ -27,7 +27,7 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::time::Duration;
 use tokio::sync::{mpsc, watch};
-use topology::{create_topology_task, TaskConnectionInfo};
+use topology::{TaskConnectionInfo, create_topology_task};
 use uuid::Uuid;
 
 mod connection;

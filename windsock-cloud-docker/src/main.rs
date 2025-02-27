@@ -3,8 +3,8 @@
 
 mod container;
 
-use container::{cleanup, Container};
-use tokio::signal::unix::{signal, SignalKind};
+use container::{Container, cleanup};
+use tokio::signal::unix::{SignalKind, signal};
 
 #[tokio::main]
 async fn main() {

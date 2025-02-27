@@ -1,7 +1,7 @@
 use futures::Future;
 use pretty_assertions::assert_eq;
 use test_helpers::connection::cassandra::{
-    assert_query_result, assert_rows, run_query, CassandraConnection, Consistency, ResultValue,
+    CassandraConnection, Consistency, ResultValue, assert_query_result, assert_rows, run_query,
 };
 
 async fn delete(session: &CassandraConnection, replication_factor: u32) {
@@ -143,7 +143,9 @@ async fn setup(session: &CassandraConnection, replication_factor: u32) {
     run_query(session, &format!("CREATE KEYSPACE test_prepare_statements_empty{replication_factor} WITH REPLICATION = {{ 'class' : 'NetworkTopologyStrategy', 'datacenter1' : {replication_factor} }};")).await;
     run_query(
         session,
-        &format!("CREATE TABLE test_prepare_statements{replication_factor}.table_1 (id int PRIMARY KEY);"),
+        &format!(
+            "CREATE TABLE test_prepare_statements{replication_factor}.table_1 (id int PRIMARY KEY);"
+        ),
     )
     .await;
 }

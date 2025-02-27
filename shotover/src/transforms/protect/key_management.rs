@@ -1,11 +1,11 @@
 use crate::transforms::protect::aws_kms::AWSKeyManagement;
 use crate::transforms::protect::local_kek::LocalKeyManagement;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use aws_config::SdkConfig;
-use aws_config::{meta::region::RegionProviderChain, BehaviorVersion};
-use aws_sdk_kms::config::Region;
+use aws_config::{BehaviorVersion, meta::region::RegionProviderChain};
 use aws_sdk_kms::Client as KmsClient;
-use base64::{engine::general_purpose, Engine as _};
+use aws_sdk_kms::config::Region;
+use base64::{Engine as _, engine::general_purpose};
 use bytes::Bytes;
 use cached::proc_macro::cached;
 use chacha20poly1305::Key;

@@ -6,7 +6,7 @@ use crate::transforms::{
     ChainState, DownChainProtocol, Transform, TransformBuilder, TransformConfig,
     TransformContextBuilder, TransformContextConfig, UpChainProtocol,
 };
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use async_trait::async_trait;
 use bytes::Bytes;
 use cassandra_protocol::compression::Compression;
@@ -14,7 +14,7 @@ use cql3_parser::cassandra_statement::CassandraStatement;
 use cql3_parser::common::{FQName, Identifier, Operand, RelationElement, RelationOperator};
 use cql3_parser::select::Select;
 use itertools::Itertools;
-use metrics::{counter, Counter};
+use metrics::{Counter, counter};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 use std::net::SocketAddr;
@@ -234,7 +234,9 @@ impl SimpleValkeyCache {
                                             } else {
                                                 // TODO: we should have some logic to convert to the
                                                 // expected version instead of just failing here
-                                                error!("Failed to use cache as mismatch between request version and cached response version");
+                                                error!(
+                                                    "Failed to use cache as mismatch between request version and cached response version"
+                                                );
                                                 None
                                             }
                                         }
@@ -649,13 +651,13 @@ impl Transform for SimpleValkeyCache {
 #[cfg(test)]
 mod test {
     use crate::frame::cassandra::parse_statement_single;
+    use crate::transforms::TransformBuilder;
     use crate::transforms::chain::TransformChainBuilder;
     use crate::transforms::debug::printer::DebugPrinter;
     use crate::transforms::null::NullSink;
     use crate::transforms::valkey::cache::{
-        build_valkey_key_from_cql3, HashAddress, SimpleValkeyCacheBuilder, TableCacheSchema,
+        HashAddress, SimpleValkeyCacheBuilder, TableCacheSchema, build_valkey_key_from_cql3,
     };
-    use crate::transforms::TransformBuilder;
     use bytes::Bytes;
     use cql3_parser::common::Identifier;
     use metrics::counter;

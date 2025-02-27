@@ -7,7 +7,7 @@ use crate::transforms::TransformContextBuilder;
 use crate::transforms::TransformContextConfig;
 use crate::transforms::UpChainProtocol;
 use crate::transforms::{ChainState, Transform, TransformBuilder, TransformConfig};
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use async_trait::async_trait;
 use bytes::{BufMut, Bytes, BytesMut};
 use serde::Deserialize;
@@ -137,7 +137,9 @@ fn rewrite_port_slot(frame: &mut Frame, new_port: u16) -> Result<()> {
                             [ValkeyFrame::BulkString(_ip), ValkeyFrame::Integer(port), ..] => {
                                 *port = new_port.into();
                             }
-                            _ => bail!("expected slot to start with bulkstring followed by integer, but was something else"),
+                            _ => bail!(
+                                "expected slot to start with bulkstring followed by integer, but was something else"
+                            ),
                         },
                         _ => bail!("non array value in slot map"),
                     }
@@ -227,7 +229,11 @@ fn rewrite_port_node(frame: &mut Frame, new_port: u16) -> Result<()> {
 fn is_cluster_nodes(frame: &Frame) -> bool {
     if let Frame::Valkey(ValkeyFrame::Array(array)) = frame {
         match array.as_slice() {
-            [ValkeyFrame::BulkString(one), ValkeyFrame::BulkString(two), ..] => {
+            [
+                ValkeyFrame::BulkString(one),
+                ValkeyFrame::BulkString(two),
+                ..,
+            ] => {
                 one.eq_ignore_ascii_case(b"CLUSTER")
                     && (two.eq_ignore_ascii_case(b"NODES") || two.eq_ignore_ascii_case(b"REPLICAS"))
             }
@@ -242,9 +248,11 @@ fn is_cluster_nodes(frame: &Frame) -> bool {
 fn is_cluster_slots(frame: &Frame) -> bool {
     if let Frame::Valkey(ValkeyFrame::Array(array)) = frame {
         match array.as_slice() {
-            [ValkeyFrame::BulkString(one), ValkeyFrame::BulkString(two), ..] => {
-                one.eq_ignore_ascii_case(b"CLUSTER") && two.eq_ignore_ascii_case(b"SLOTS")
-            }
+            [
+                ValkeyFrame::BulkString(one),
+                ValkeyFrame::BulkString(two),
+                ..,
+            ] => one.eq_ignore_ascii_case(b"CLUSTER") && two.eq_ignore_ascii_case(b"SLOTS"),
             [..] => false,
         }
     } else {
@@ -255,8 +263,8 @@ fn is_cluster_slots(frame: &Frame) -> bool {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::codec::valkey::ValkeyDecoder;
     use crate::codec::Direction;
+    use crate::codec::valkey::ValkeyDecoder;
     use crate::transforms::valkey::sink_cluster::parse_slots;
     use pretty_assertions::assert_eq;
     use tokio_util::codec::Decoder;

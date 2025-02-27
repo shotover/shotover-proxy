@@ -1,7 +1,7 @@
 mod bench;
 
-use crate::common::*;
 use crate::ShotoverBench;
+use crate::common::*;
 use bench::*;
 
 pub fn benches() -> Vec<ShotoverBench> {

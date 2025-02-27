@@ -7,8 +7,8 @@ use crate::transforms::{
 };
 use crate::{
     frame::{
-        value::{GenericValue, IntSize},
         CassandraOperation, CassandraResult, Frame,
+        value::{GenericValue, IntSize},
     },
     transforms::TransformContextConfig,
 };
@@ -161,14 +161,14 @@ fn rewrite_port(message: &mut Message, column_names: &[Identifier], new_port: u1
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::frame::cassandra::{parse_statement_single, Tracing};
     use crate::frame::CassandraFrame;
+    use crate::frame::cassandra::{Tracing, parse_statement_single};
     use crate::transforms::cassandra::peers_rewrite::CassandraResult::Rows;
     use cassandra_protocol::consistency::Consistency;
+    use cassandra_protocol::frame::Version;
     use cassandra_protocol::frame::message_result::{
         ColSpec, ColType, ColTypeOption, RowsMetadata, RowsMetadataFlags, TableSpec,
     };
-    use cassandra_protocol::frame::Version;
     use cassandra_protocol::query::QueryParams;
     use pretty_assertions::assert_eq;
 

@@ -1,12 +1,12 @@
-use crate::valkey_int_tests::assert::*;
 use crate::CONNECTION_REFUSED_OS_ERROR;
+use crate::valkey_int_tests::assert::*;
 use bytes::BytesMut;
 use fred::clients::Client;
 use fred::interfaces::ClientLike;
 use futures::{Future, StreamExt};
 use pretty_assertions::assert_eq;
 use rand::distributions::Alphanumeric;
-use rand::{thread_rng, Rng};
+use rand::{Rng, thread_rng};
 use redis::aio::Connection;
 use redis::cluster::ClusterConnection;
 use redis::{AsyncCommands, Commands, ErrorKind, RedisError, Value};
@@ -1287,7 +1287,9 @@ pub async fn test_trigger_transform_failure_driver(client: &Client) {
     assert_eq!(
         // fred sends a `CLIENT` command on startup to which shotover will reply with an error
         client.wait_for_connect().await.unwrap_err().details(),
-        format!("ERR Internal shotover (or custom transform) bug: Chain failed to send and/or receive messages, the connection will now be closed.  Caused by:     0: ValkeySinkSingle transform failed     1: Failed to connect to destination 127.0.0.1:1111     2: Connection refused (os error {CONNECTION_REFUSED_OS_ERROR})")
+        format!(
+            "ERR Internal shotover (or custom transform) bug: Chain failed to send and/or receive messages, the connection will now be closed.  Caused by:     0: ValkeySinkSingle transform failed     1: Failed to connect to destination 127.0.0.1:1111     2: Connection refused (os error {CONNECTION_REFUSED_OS_ERROR})"
+        )
     );
 }
 

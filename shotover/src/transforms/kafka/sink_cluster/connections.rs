@@ -2,7 +2,7 @@ use crate::{
     connection::{ConnectionError, SinkConnection},
     message::Message,
 };
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use fnv::FnvBuildHasher;
 use kafka_protocol::{messages::BrokerId, protocol::StrBytes};
 use metrics::Counter;
@@ -10,9 +10,9 @@ use rand::{rngs::SmallRng, seq::IteratorRandom};
 use std::{collections::HashMap, time::Instant};
 
 use super::{
-    kafka_node::{ConnectionFactory, KafkaAddress, KafkaNode, KafkaNodeState},
-    scram_over_mtls::{connection::ScramOverMtlsConnection, AuthorizeScramOverMtls},
     SASL_SCRAM_MECHANISMS,
+    kafka_node::{ConnectionFactory, KafkaAddress, KafkaNode, KafkaNodeState},
+    scram_over_mtls::{AuthorizeScramOverMtls, connection::ScramOverMtlsConnection},
 };
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]

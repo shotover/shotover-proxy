@@ -1,6 +1,6 @@
 use pretty_assertions::assert_eq;
-use redis::aio::Connection;
 use redis::Cmd;
+use redis::aio::Connection;
 
 pub async fn assert_nil(cmd: &mut Cmd, connection: &mut Connection) {
     assert_eq!(

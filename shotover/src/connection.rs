@@ -7,17 +7,17 @@ use crate::tcp;
 use crate::tls::{TlsConnector, ToHostname};
 use futures::{SinkExt, StreamExt};
 use std::io::ErrorKind;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
-use tokio::io::{split, AsyncRead, AsyncWrite};
+use tokio::io::{AsyncRead, AsyncWrite, split};
 use tokio::net::ToSocketAddrs;
 use tokio::sync::mpsc::error::TryRecvError;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
-use tokio::sync::{mpsc, Notify};
+use tokio::sync::{Notify, mpsc};
 use tokio_util::codec::{FramedRead, FramedWrite};
-use tracing::error;
 use tracing::Instrument;
+use tracing::error;
 
 pub struct SinkConnection {
     in_rx: mpsc::Receiver<Vec<Message>>,
