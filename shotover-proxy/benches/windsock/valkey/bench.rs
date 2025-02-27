@@ -7,7 +7,7 @@ use crate::{
     profilers::{self, CloudProfilerRunner, ProfilerRunner},
     shotover::shotover_process_custom_topology,
 };
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use async_trait::async_trait;
 use aws_throwaway::Ec2Instance;
 use fred::{
@@ -23,9 +23,9 @@ use shotover::{
     sources::SourceConfig,
     tls::{TlsAcceptorConfig, TlsConnectorConfig},
     transforms::{
+        TransformConfig,
         debug::force_parse::DebugForceEncodeConfig,
         valkey::{sink_cluster::ValkeySinkClusterConfig, sink_single::ValkeySinkSingleConfig},
-        TransformConfig,
     },
 };
 use std::{

@@ -2,7 +2,7 @@ use crate::cassandra_int_tests::cluster::run_topology_task;
 use pretty_assertions::assert_eq;
 use std::net::SocketAddr;
 use test_helpers::{
-    connection::cassandra::{assert_query_result, CassandraConnection, ResultValue},
+    connection::cassandra::{CassandraConnection, ResultValue, assert_query_result},
     metrics::get_metrics_value,
 };
 

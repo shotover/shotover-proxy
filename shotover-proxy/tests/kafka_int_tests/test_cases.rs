@@ -1,4 +1,4 @@
-use futures::{stream::FuturesUnordered, StreamExt};
+use futures::{StreamExt, stream::FuturesUnordered};
 use std::{collections::HashMap, time::Duration};
 use test_helpers::{
     connection::kafka::{
@@ -2061,7 +2061,11 @@ pub async fn assert_topic_creation_is_denied_due_to_acl(connection: &KafkaConnec
     // * The request succeeds because user has AclOperation::Describe.
     // * But no topic is found since the topic creation was denied.
     assert_eq!(
-        admin.describe_topics(&["acl_check_topic"]).await.unwrap_err().to_string(),
+        admin
+            .describe_topics(&["acl_check_topic"])
+            .await
+            .unwrap_err()
+            .to_string(),
         "org.apache.kafka.common.errors.UnknownTopicOrPartitionException: This server does not host this topic-partition.\n"
     )
 }

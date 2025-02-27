@@ -1,5 +1,5 @@
 use crate::sources::{Source, SourceConfig};
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use std::fmt::Write;
@@ -82,12 +82,12 @@ mod topology_tests {
     use crate::config::chain::TransformChainConfig;
     use crate::config::topology::Topology;
     use crate::sources::cassandra::CassandraConfig;
+    use crate::transforms::TransformConfig;
     use crate::transforms::coalesce::CoalesceConfig;
     use crate::transforms::debug::printer::DebugPrinterConfig;
     use crate::transforms::null::NullSinkConfig;
-    use crate::transforms::TransformConfig;
     use crate::{
-        sources::{valkey::ValkeyConfig, Source, SourceConfig},
+        sources::{Source, SourceConfig, valkey::ValkeyConfig},
         transforms::{
             parallel_map::ParallelMapConfig, valkey::cache::ValkeyConfig as ValkeyCacheConfig,
         },

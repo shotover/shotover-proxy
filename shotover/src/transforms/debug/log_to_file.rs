@@ -6,8 +6,8 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use tracing::{error, info};
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -123,7 +123,9 @@ async fn log_message(message: &Message, path: &Path) -> Result<()> {
                 .with_context(|| format!("failed to write message to disk at {path:?}"))?;
         }
         Encodable::Frame(_) => {
-            error!("Failed to log message because it was a frame. Ensure this Transform is the first transform in the main chain to ensure it only receives unmodified messages.")
+            error!(
+                "Failed to log message because it was a frame. Ensure this Transform is the first transform in the main chain to ensure it only receives unmodified messages."
+            )
         }
     }
     Ok(())

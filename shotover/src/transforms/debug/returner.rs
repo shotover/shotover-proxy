@@ -3,7 +3,7 @@ use crate::transforms::{
     ChainState, DownChainProtocol, Transform, TransformBuilder, TransformConfig,
     TransformContextBuilder, TransformContextConfig, UpChainProtocol,
 };
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 

@@ -11,12 +11,12 @@ use async_trait::async_trait;
 use aws_throwaway::Ec2Instance;
 use cdrs_tokio::{
     cluster::{
+        NodeTcpConfigBuilder, TcpConnectionManager,
         connection_pool::ConnectionPoolConfigBuilder,
         session::{
             Session as CdrsTokioSession, SessionBuilder as CdrsTokioSessionBuilder,
             TcpSessionBuilder,
         },
-        NodeTcpConfigBuilder, TcpConnectionManager,
     },
     compression::Compression as CdrsCompression,
     frame::Version,
@@ -28,20 +28,20 @@ use cdrs_tokio::{
 use itertools::Itertools;
 use rand::prelude::*;
 use scylla::{
+    Session as ScyllaSession, SessionBuilder as ScyllaSessionBuilder,
     prepared_statement::PreparedStatement as ScyllaPrepared,
-    transport::Compression as ScyllaCompression, Session as ScyllaSession,
-    SessionBuilder as ScyllaSessionBuilder,
+    transport::Compression as ScyllaCompression,
 };
 use shotover::{
     config::chain::TransformChainConfig,
     sources::SourceConfig,
     transforms::{
+        TransformConfig,
         cassandra::{
             sink_cluster::{CassandraSinkClusterConfig, ShotoverNode},
             sink_single::CassandraSinkSingleConfig,
         },
         debug::force_parse::DebugForceEncodeConfig,
-        TransformConfig,
     },
 };
 use std::{
@@ -50,7 +50,7 @@ use std::{
     time::{Duration, Instant},
 };
 use test_helpers::{
-    docker_compose::{docker_compose, DockerCompose},
+    docker_compose::{DockerCompose, docker_compose},
     mock_cassandra::MockHandle,
     shotover_process::ShotoverProcessBuilder,
 };

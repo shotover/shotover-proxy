@@ -1,11 +1,11 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
+pub use tokio_bin_process::BinProcess;
+pub use tokio_bin_process::BinProcessBuilder;
 pub use tokio_bin_process::bin_path;
 pub use tokio_bin_process::event::{Event, Level};
 pub use tokio_bin_process::event_matcher::{Count, EventMatcher, Events};
-pub use tokio_bin_process::BinProcess;
-pub use tokio_bin_process::BinProcessBuilder;
 
 pub struct ShotoverProcessBuilder {
     topology_path: String,

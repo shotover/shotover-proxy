@@ -1,7 +1,7 @@
-use crate::frame::value::cassandra::{serialize_len, serialize_with_length_prefix};
 use crate::frame::value::GenericValue;
+use crate::frame::value::cassandra::{serialize_len, serialize_with_length_prefix};
 use crate::message::QueryType;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use bytes::Bytes;
 use cassandra_protocol::compression::Compression;
 use cassandra_protocol::consistency::Consistency;
@@ -45,7 +45,7 @@ use uuid::Uuid;
 /// Functions for operations on an unparsed Cassandra frame
 pub mod raw_frame {
     use super::{CassandraMetadata, RawCassandraFrame};
-    use anyhow::{anyhow, bail, Result};
+    use anyhow::{Result, anyhow, bail};
     use cassandra_protocol::frame::Version;
     use cassandra_protocol::{compression::Compression, frame::Opcode};
     use nonzero_ext::nonzero;
@@ -1068,7 +1068,9 @@ mod test {
     fn cql_unknown_statement() {
         assert_unknown("");
         assert_unknown("     ");
-        assert_unknown("INSERT INTO test_cache_keyspace_batch_insert.test_table (id, x, name)  (2, 12, 'bar');");
+        assert_unknown(
+            "INSERT INTO test_cache_keyspace_batch_insert.test_table (id, x, name)  (2, 12, 'bar');",
+        );
         assert_unknown(
             r#"BEGIN BATCH INSERT INTO test_cache_keyspace_batch_insert.test_table (id, x, name) VALUES (3, 13, 'baz');
             INSERT INTO test_cache_keyspace_batch_insert.test_table (id, x, name)  (2, 12, 'bar');

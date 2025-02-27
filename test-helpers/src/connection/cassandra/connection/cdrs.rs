@@ -1,5 +1,5 @@
 use super::scylla::SessionScylla;
-use super::{Compression, Consistency, PreparedQuery, ProtocolVersion, Tls, TIMEOUT};
+use super::{Compression, Consistency, PreparedQuery, ProtocolVersion, TIMEOUT, Tls};
 use crate::connection::cassandra::ResultValue;
 use cassandra_protocol::query::QueryValues;
 use cassandra_protocol::types::IntoRustByIndex;
@@ -11,7 +11,7 @@ use cdrs_tokio::{
     cluster::session::{Session, SessionBuilder, TcpSessionBuilder},
     cluster::{NodeAddress, NodeTcpConfigBuilder, TcpConnectionManager},
     consistency::Consistency as CdrsConsistency,
-    frame::{message_response::ResponseBody, message_result::ResResultBody, Envelope, Version},
+    frame::{Envelope, Version, message_response::ResponseBody, message_result::ResResultBody},
     load_balancing::TopologyAwareLoadBalancingStrategy,
     query::BatchQueryBuilder,
     query_values,

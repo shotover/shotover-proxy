@@ -1,7 +1,7 @@
 use cassandra_protocol::frame::message_result::ColType;
 use itertools::Itertools;
 use test_helpers::connection::cassandra::{
-    assert_query_result, run_query, CassandraConnection, CassandraDriver, ResultValue,
+    CassandraConnection, CassandraDriver, ResultValue, assert_query_result, run_query,
 };
 
 mod list;

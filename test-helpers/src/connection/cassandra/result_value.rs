@@ -107,17 +107,19 @@ impl ResultValue {
                 ValueType::LIST => ResultValue::List(Self::new_from_cpp_set_list_or_tuple(value)),
                 ValueType::TUPLE => ResultValue::Tuple(Self::new_from_cpp_set_list_or_tuple(value)),
                 ValueType::MAP => {
-        let mut result = vec![];
-        let mut iter = value.get_map().unwrap();
-        while let Some((k, v)) = iter.next() {
-            result.push((ResultValue::new_from_cpp(k), ResultValue::new_from_cpp(v)));
-        }
-        ResultValue::Map(result)
-                },
+                    let mut result = vec![];
+                    let mut iter = value.get_map().unwrap();
+                    while let Some((k, v)) = iter.next() {
+                        result.push((ResultValue::new_from_cpp(k), ResultValue::new_from_cpp(v)));
+                    }
+                    ResultValue::Map(result)
+                }
                 ValueType::UNKNOWN => todo!(),
                 ValueType::CUSTOM => todo!(),
                 ValueType::UDT => todo!(),
-                ValueType::TEXT => unimplemented!("text is represented by the same id as varchar at the protocol level and therefore will never be instantiated by the datastax cpp driver. https://github.com/apache/cassandra/blob/703ccdee29f7e8c39aeb976e72e516415d609cf4/doc/native_protocol_v5.spec#L1184"),
+                ValueType::TEXT => unimplemented!(
+                    "text is represented by the same id as varchar at the protocol level and therefore will never be instantiated by the datastax cpp driver. https://github.com/apache/cassandra/blob/703ccdee29f7e8c39aeb976e72e516415d609cf4/doc/native_protocol_v5.spec#L1184"
+                ),
             }
         }
     }

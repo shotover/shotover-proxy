@@ -1,6 +1,6 @@
 use rand::Rng;
 use test_helpers::connection::cassandra::{
-    assert_query_result, run_query, CassandraConnection, ResultValue,
+    CassandraConnection, ResultValue, assert_query_result, run_query,
 };
 
 async fn large_batch(connection: &CassandraConnection) {

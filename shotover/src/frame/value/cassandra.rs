@@ -2,17 +2,17 @@ use super::{Duration, GenericValue, IntSize};
 use crate::frame::cassandra::to_cassandra_type;
 use bigdecimal::BigDecimal;
 use bytes::Bytes;
-use cassandra_protocol::frame::message_result::ColType;
 use cassandra_protocol::frame::Serialize as FrameSerialize;
+use cassandra_protocol::frame::message_result::ColType;
 use cassandra_protocol::types::CInt;
 use cassandra_protocol::{
     frame::{
-        message_result::{ColSpec, ColTypeOption},
         Version,
+        message_result::{ColSpec, ColTypeOption},
     },
     types::{
-        cassandra_type::{wrapper_fn, CassandraType},
         CBytes,
+        cassandra_type::{CassandraType, wrapper_fn},
     },
 };
 use cql3_parser::common::Operand;

@@ -12,8 +12,8 @@ mod test_token_aware_router {
     use cassandra_protocol::query::QueryParams;
     use cassandra_protocol::query::QueryValues::SimpleValues;
     use cassandra_protocol::token::Murmur3Token;
-    use cassandra_protocol::types::value::Value;
     use cassandra_protocol::types::CBytesShort;
+    use cassandra_protocol::types::value::Value;
     use pretty_assertions::assert_eq;
     use rand::prelude::*;
     use std::collections::HashMap;

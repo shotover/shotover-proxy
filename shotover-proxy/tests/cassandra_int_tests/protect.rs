@@ -2,7 +2,7 @@ use chacha20poly1305::Nonce;
 use pretty_assertions::assert_eq;
 use serde::Deserialize;
 use test_helpers::connection::cassandra::{
-    assert_query_result, run_query, CassandraConnection, ResultValue,
+    CassandraConnection, ResultValue, assert_query_result, run_query,
 };
 
 #[derive(Deserialize)]

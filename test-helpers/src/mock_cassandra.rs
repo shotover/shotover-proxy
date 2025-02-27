@@ -2,7 +2,7 @@ use bytes::{Bytes, BytesMut};
 use cassandra_protocol::frame::{CheckEnvelopeSizeError, Opcode};
 use std::io::{ErrorKind, Read, Write};
 use std::net::{TcpListener, TcpStream};
-use std::sync::{mpsc, Arc, RwLock};
+use std::sync::{Arc, RwLock, mpsc};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
@@ -127,82 +127,90 @@ impl Worker {
                                 let query =
                                     std::str::from_utf8(&message[13..13 + query_len]).unwrap();
                                 match query {
-                                "select host_id, rpc_address, data_center, rack, tokens from system.peers" => {
-                                    connection.send_message(&[
-                                        0x84, 0x00, stream_id1, stream_id2, 0x08, 0x00, 0x00, 0x00,
-                                        0x4a, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x01, 0x00,
-                                        0x00, 0x00, 0x04, 0x00, 0x06, 0x73, 0x79, 0x73, 0x74, 0x65,
-                                        0x6d, 0x00, 0x05, 0x70, 0x65, 0x65, 0x72, 0x73, 0x00, 0x04,
-                                        0x70, 0x65, 0x65, 0x72, 0x00, 0x10, 0x00, 0x0b, 0x64, 0x61,
-                                        0x74, 0x61, 0x5f, 0x63, 0x65, 0x6e, 0x74, 0x65, 0x72, 0x00,
-                                        0x0d, 0x00, 0x04, 0x72, 0x61, 0x63, 0x6b, 0x00, 0x0d, 0x00,
-                                        0x06, 0x74, 0x6f, 0x6b, 0x65, 0x6e, 0x73, 0x00, 0x22, 0x00,
-                                        0x0d, 0x00, 0x00, 0x00, 0x00,
-                                    ])
+                                    "select host_id, rpc_address, data_center, rack, tokens from system.peers" => {
+                                        connection.send_message(&[
+                                            0x84, 0x00, stream_id1, stream_id2, 0x08, 0x00, 0x00,
+                                            0x00, 0x4a, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00,
+                                            0x01, 0x00, 0x00, 0x00, 0x04, 0x00, 0x06, 0x73, 0x79,
+                                            0x73, 0x74, 0x65, 0x6d, 0x00, 0x05, 0x70, 0x65, 0x65,
+                                            0x72, 0x73, 0x00, 0x04, 0x70, 0x65, 0x65, 0x72, 0x00,
+                                            0x10, 0x00, 0x0b, 0x64, 0x61, 0x74, 0x61, 0x5f, 0x63,
+                                            0x65, 0x6e, 0x74, 0x65, 0x72, 0x00, 0x0d, 0x00, 0x04,
+                                            0x72, 0x61, 0x63, 0x6b, 0x00, 0x0d, 0x00, 0x06, 0x74,
+                                            0x6f, 0x6b, 0x65, 0x6e, 0x73, 0x00, 0x22, 0x00, 0x0d,
+                                            0x00, 0x00, 0x00, 0x00,
+                                        ])
+                                    }
+                                    "select host_id, rpc_address, data_center, rack, tokens from system.local" => {
+                                        connection.send_message(&[
+                                            0x84, 0x00, stream_id1, stream_id2, 0x08, 0x00, 0x00,
+                                            0x00, 0x4a, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00,
+                                            0x01, 0x00, 0x00, 0x00, 0x04, 0x00, 0x06, 0x73, 0x79,
+                                            0x73, 0x74, 0x65, 0x6d, 0x00, 0x05, 0x70, 0x65, 0x65,
+                                            0x72, 0x73, 0x00, 0x04, 0x70, 0x65, 0x65, 0x72, 0x00,
+                                            0x10, 0x00, 0x0b, 0x64, 0x61, 0x74, 0x61, 0x5f, 0x63,
+                                            0x65, 0x6e, 0x74, 0x65, 0x72, 0x00, 0x0d, 0x00, 0x04,
+                                            0x72, 0x61, 0x63, 0x6b, 0x00, 0x0d, 0x00, 0x06, 0x74,
+                                            0x6f, 0x6b, 0x65, 0x6e, 0x73, 0x00, 0x22, 0x00, 0x0d,
+                                            0x00, 0x00, 0x00, 0x00,
+                                        ])
+                                    }
+                                    "select keyspace_name, replication from system_schema.keyspaces" =>
+                                    {
+                                        connection.send_message(&[
+                                            0x84, 0x00, stream_id1, stream_id2, 0x08, 0x00, 0x00,
+                                            0x00, 0x04, 0x00, 0x00, 0x00, 0x01,
+                                        ]);
+                                    }
+                                    "select keyspace_name, type_name, field_names, replication from system_schema.keyspaces" =>
+                                    {
+                                        connection.send_message(&[
+                                            0x84, 0x00, stream_id1, stream_id2, 0x08, 0x00, 0x00,
+                                            0x00, 0x04, 0x00, 0x00, 0x00, 0x01,
+                                        ]);
+                                    }
+                                    "select keyspace_name, type_name, field_names, field_types from system_schema.types" =>
+                                    {
+                                        connection.send_message(&[
+                                            0x84, 0x00, stream_id1, stream_id2, 0x08, 0x00, 0x00,
+                                            0x00, 0x04, 0x00, 0x00, 0x00, 0x01,
+                                        ]);
+                                    }
+                                    "select keyspace_name, table_name, column_name, kind, position, type from system_schema.columns" =>
+                                    {
+                                        connection.send_message(&[
+                                            0x84, 0x00, stream_id1, stream_id2, 0x08, 0x00, 0x00,
+                                            0x00, 0x04, 0x00, 0x00, 0x00, 0x01,
+                                        ]);
+                                    }
+                                    "select keyspace_name, table_name, partitioner from system_schema.scylla_tables" =>
+                                    {
+                                        connection.send_message(&[
+                                            0x84, 0x00, stream_id1, stream_id2, 0x08, 0x00, 0x00,
+                                            0x00, 0x04, 0x00, 0x00, 0x00, 0x01,
+                                        ]);
+                                    }
+                                    "SELECT keyspace_name, table_name FROM system_schema.tables" => {
+                                        connection.send_message(&[
+                                            0x84, 0x00, stream_id1, stream_id2, 0x08, 0x00, 0x00,
+                                            0x00, 0x04, 0x00, 0x00, 0x00, 0x01,
+                                        ]);
+                                    }
+                                    "SELECT keyspace_name, view_name, base_table_name FROM system_schema.views" =>
+                                    {
+                                        connection.send_message(&[
+                                            0x84, 0x00, stream_id1, stream_id2, 0x08, 0x00, 0x00,
+                                            0x00, 0x04, 0x00, 0x00, 0x00, 0x01,
+                                        ]);
+                                    }
+                                    "SELECT cluster_name, release_version FROM system.local" => {
+                                        connection.send_message(&[
+                                            0x84, 0x0, stream_id1, stream_id2, 0x08, 0x00, 0x00,
+                                            0x00, 0x04, 0x00, 0x00, 0x00, 0x01,
+                                        ]);
+                                    }
+                                    query => todo!("Unhandled query {query:?}"),
                                 }
-                                "select host_id, rpc_address, data_center, rack, tokens from system.local" => {
-                                    connection.send_message(&[
-                                        0x84, 0x00, stream_id1, stream_id2, 0x08, 0x00, 0x00, 0x00,
-                                        0x4a, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x01, 0x00,
-                                        0x00, 0x00, 0x04, 0x00, 0x06, 0x73, 0x79, 0x73, 0x74, 0x65,
-                                        0x6d, 0x00, 0x05, 0x70, 0x65, 0x65, 0x72, 0x73, 0x00, 0x04,
-                                        0x70, 0x65, 0x65, 0x72, 0x00, 0x10, 0x00, 0x0b, 0x64, 0x61,
-                                        0x74, 0x61, 0x5f, 0x63, 0x65, 0x6e, 0x74, 0x65, 0x72, 0x00,
-                                        0x0d, 0x00, 0x04, 0x72, 0x61, 0x63, 0x6b, 0x00, 0x0d, 0x00,
-                                        0x06, 0x74, 0x6f, 0x6b, 0x65, 0x6e, 0x73, 0x00, 0x22, 0x00,
-                                        0x0d, 0x00, 0x00, 0x00, 0x00,
-                                    ])
-                                }
-                                "select keyspace_name, replication from system_schema.keyspaces" => {
-                                    connection.send_message(&[
-                                        0x84, 0x00, stream_id1, stream_id2, 0x08, 0x00, 0x00, 0x00, 0x04,
-                                        0x00, 0x00, 0x00, 0x01
-                                    ]);
-                                }
-                                "select keyspace_name, type_name, field_names, replication from system_schema.keyspaces" => {
-                                    connection.send_message(&[
-                                        0x84, 0x00, stream_id1, stream_id2, 0x08, 0x00, 0x00, 0x00, 0x04,
-                                        0x00, 0x00, 0x00, 0x01
-                                    ]);
-                                }
-                                "select keyspace_name, type_name, field_names, field_types from system_schema.types" => {
-                                    connection.send_message(&[
-                                        0x84, 0x00, stream_id1, stream_id2, 0x08, 0x00, 0x00, 0x00, 0x04,
-                                        0x00, 0x00, 0x00, 0x01
-                                    ]);
-                                }
-                                "select keyspace_name, table_name, column_name, kind, position, type from system_schema.columns" => {
-                                    connection.send_message(&[
-                                        0x84, 0x00, stream_id1, stream_id2, 0x08, 0x00, 0x00, 0x00, 0x04,
-                                        0x00, 0x00, 0x00, 0x01
-                                    ]);
-                                }
-                                "select keyspace_name, table_name, partitioner from system_schema.scylla_tables" => {
-                                    connection.send_message(&[
-                                        0x84, 0x00, stream_id1, stream_id2, 0x08, 0x00, 0x00, 0x00, 0x04,
-                                        0x00, 0x00, 0x00, 0x01
-                                    ]);
-                                }
-                                "SELECT keyspace_name, table_name FROM system_schema.tables" => {
-                                    connection.send_message(&[
-                                        0x84, 0x00, stream_id1, stream_id2, 0x08, 0x00, 0x00, 0x00, 0x04,
-                                        0x00, 0x00, 0x00, 0x01
-                                    ]);
-                                }
-                                "SELECT keyspace_name, view_name, base_table_name FROM system_schema.views" => {
-                                    connection.send_message(&[
-                                        0x84, 0x00, stream_id1, stream_id2, 0x08, 0x00, 0x00, 0x00, 0x04,
-                                        0x00, 0x00, 0x00, 0x01
-                                    ]);
-                                }
-                                "SELECT cluster_name, release_version FROM system.local" => {
-                                    connection.send_message(&[
-                                        0x84, 0x0, stream_id1, stream_id2, 0x08, 0x00, 0x00, 0x00, 0x04,
-                                        0x00, 0x00, 0x00, 0x01
-                                    ]);
-                                }
-                                query => todo!("Unhandled query {query:?}"),
-                            }
                             }
 
                             op => todo!("Unhandled opcode {op} in message: {message:?}"),

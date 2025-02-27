@@ -671,7 +671,8 @@ async fn cluster_sasl_scram_single_shotover(#[case] driver: KafkaDriver) {
         match driver {
             #[cfg(feature = "kafka-cpp-driver-tests")]
             KafkaDriver::Cpp => panic!("CPP driver does not support SCRAM"),
-            KafkaDriver::Java => "org.apache.kafka.common.errors.UnsupportedSaslMechanismException: Client SASL mechanism 'SCRAM-SHA-256' not enabled in the server, enabled mechanisms are [PLAIN]\n"
+            KafkaDriver::Java =>
+                "org.apache.kafka.common.errors.UnsupportedSaslMechanismException: Client SASL mechanism 'SCRAM-SHA-256' not enabled in the server, enabled mechanisms are [PLAIN]\n",
         }
     );
 
@@ -1025,7 +1026,8 @@ async fn cluster_sasl_plain_multi_shotover(#[case] driver: KafkaDriver) {
         match driver {
             #[cfg(feature = "kafka-cpp-driver-tests")]
             KafkaDriver::Cpp => "Admin operation error: OperationTimedOut (Local: Timed out)",
-            KafkaDriver::Java => "org.apache.kafka.common.errors.SaslAuthenticationException: Authentication failed: Invalid username or password\n"
+            KafkaDriver::Java =>
+                "org.apache.kafka.common.errors.SaslAuthenticationException: Authentication failed: Invalid username or password\n",
         }
     );
 

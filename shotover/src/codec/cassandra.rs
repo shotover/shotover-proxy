@@ -3,22 +3,22 @@ use crate::codec::CodecState;
 use crate::frame::cassandra::{CassandraOperation, Tracing};
 use crate::frame::{CassandraFrame, Frame, MessageType};
 use crate::message::{Encodable, Message, MessageId, Messages, Metadata};
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use atomic_enum::atomic_enum;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use cassandra_protocol::compression::Compression;
 use cassandra_protocol::crc::{crc24, crc32};
 use cassandra_protocol::frame::message_error::{ErrorBody, ErrorType};
 use cassandra_protocol::frame::message_startup::BodyReqStartup;
-use cassandra_protocol::frame::{Flags, Opcode, Version, PAYLOAD_SIZE_LIMIT};
+use cassandra_protocol::frame::{Flags, Opcode, PAYLOAD_SIZE_LIMIT, Version};
 use cql3_parser::cassandra_statement::CassandraStatement;
 use cql3_parser::common::Identifier;
 use lz4_flex::{block::get_maximum_output_size, compress_into, decompress};
-use metrics::{counter, Counter, Histogram};
+use metrics::{Counter, Histogram, counter};
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
-use std::sync::Arc;
 use std::time::Instant;
 use tokio_util::codec::{Decoder, Encoder};
 use tracing::info;
@@ -1048,20 +1048,20 @@ impl CassandraEncoder {
 mod cassandra_protocol_tests {
     use crate::codec::cassandra::CassandraCodecBuilder;
     use crate::codec::{CodecBuilder, Direction};
-    use crate::frame::cassandra::{
-        parse_statement_single, CassandraFrame, CassandraOperation, CassandraResult, Tracing,
-    };
     use crate::frame::Frame;
+    use crate::frame::cassandra::{
+        CassandraFrame, CassandraOperation, CassandraResult, Tracing, parse_statement_single,
+    };
     use crate::message::Message;
     use bytes::BytesMut;
     use cassandra_protocol::events::SimpleServerEvent;
+    use cassandra_protocol::frame::Version;
     use cassandra_protocol::frame::message_register::BodyReqRegister;
     use cassandra_protocol::frame::message_result::{
         ColSpec, ColType, ColTypeOption, ColTypeOptionValue, RowsMetadata, RowsMetadataFlags,
         TableSpec,
     };
     use cassandra_protocol::frame::message_startup::BodyReqStartup;
-    use cassandra_protocol::frame::Version;
     use hex_literal::hex;
     use pretty_assertions::assert_eq;
     use std::collections::HashMap;

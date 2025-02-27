@@ -1,10 +1,10 @@
 use bytes::Bytes;
 use cassandra_protocol::compression::Compression;
 use cassandra_protocol::{consistency::Consistency, frame::Version, query::QueryParams};
-use criterion::{criterion_group, BatchSize, Criterion};
+use criterion::{BatchSize, Criterion, criterion_group};
 use hex_literal::hex;
 use shotover::codec::CodecState;
-use shotover::frame::cassandra::{parse_statement_single, Tracing};
+use shotover::frame::cassandra::{Tracing, parse_statement_single};
 use shotover::frame::{CassandraFrame, CassandraOperation, Frame};
 use shotover::frame::{MessageType, ValkeyFrame};
 use shotover::message::{Message, MessageIdMap, QueryType};
@@ -251,7 +251,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         );
 
         let chain_state = cassandra_parsed_query(
-            "INSERT INTO test_protect_keyspace.unprotected_table (pk, cluster, col1, col2, col3) VALUES ('pk1', 'cluster', 'I am gonna get encrypted!!', 42, true);"
+            "INSERT INTO test_protect_keyspace.unprotected_table (pk, cluster, col1, col2, col3) VALUES ('pk1', 'cluster', 'I am gonna get encrypted!!', 42, true);",
         );
 
         group.bench_function("cassandra_protect_unprotected", |b| {
@@ -263,7 +263,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         });
 
         let chain_state = cassandra_parsed_query(
-            "INSERT INTO test_protect_keyspace.protected_table (pk, cluster, col1, col2, col3) VALUES ('pk1', 'cluster', 'I am gonna get encrypted!!', 42, true);"
+            "INSERT INTO test_protect_keyspace.protected_table (pk, cluster, col1, col2, col3) VALUES ('pk1', 'cluster', 'I am gonna get encrypted!!', 42, true);",
         );
 
         group.bench_function("cassandra_protect_protected", |b| {

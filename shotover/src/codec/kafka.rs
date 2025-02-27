@@ -1,9 +1,9 @@
-use super::{message_latency, CodecWriteError, Direction};
+use super::{CodecWriteError, Direction, message_latency};
 use crate::codec::{CodecBuilder, CodecReadError, CodecState};
 use crate::frame::kafka::KafkaFrame;
 use crate::frame::{Frame, MessageType};
 use crate::message::{Encodable, Message, MessageId, Messages};
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use bytes::BytesMut;
 use kafka_protocol::messages::{ApiKey, RequestKind, ResponseKind};
 use kafka_protocol::protocol::StrBytes;
@@ -110,11 +110,7 @@ impl KafkaDecoder {
 fn get_length_of_full_message(src: &BytesMut) -> Option<usize> {
     if src.len() >= 4 {
         let size = u32::from_be_bytes(src[0..4].try_into().unwrap()) as usize + 4;
-        if size <= src.len() {
-            Some(size)
-        } else {
-            None
-        }
+        if size <= src.len() { Some(size) } else { None }
     } else {
         None
     }

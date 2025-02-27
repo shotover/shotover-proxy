@@ -3,7 +3,7 @@ use crate::{
     message::Message,
     transforms::kafka::sink_cluster::connections::ConnectionState,
 };
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use std::time::{Duration, Instant};
 
 use super::AuthorizeScramOverMtls;
@@ -37,7 +37,9 @@ impl ScramOverMtlsConnection {
 
     fn into_old_connection(self) -> Result<Option<SinkConnection>> {
         if self.old_connection.is_some() {
-            return Err(anyhow!("The connection to be replaced had an old_connection. For this to occur a response needs to have been pending for longer than the timeout period which indicates other problems."));
+            return Err(anyhow!(
+                "The connection to be replaced had an old_connection. For this to occur a response needs to have been pending for longer than the timeout period which indicates other problems."
+            ));
         }
         if self.connection.pending_requests_count() == 0 {
             Ok(None)

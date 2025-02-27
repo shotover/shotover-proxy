@@ -10,7 +10,7 @@ use crate::transforms::{
 use crate::{codec::valkey::ValkeyCodecBuilder, transforms::TransformContextConfig};
 use anyhow::Result;
 use async_trait::async_trait;
-use metrics::{counter, Counter};
+use metrics::{Counter, counter};
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 use std::sync::Arc;

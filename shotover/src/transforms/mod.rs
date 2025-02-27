@@ -3,7 +3,7 @@
 use self::chain::TransformAndMetrics;
 use crate::frame::MessageType;
 use crate::message::{Message, MessageIdMap, Messages};
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use async_trait::async_trait;
 use futures::Future;
 use std::fmt::Debug;
@@ -206,7 +206,9 @@ impl<'shorter, 'longer: 'shorter> ChainState<'longer> {
             ..
         } = match self.transforms.next() {
             Some(transform) => transform,
-            None => panic!("The transform chain does not end with a terminating transform. If you want to throw the messages away use a NullSink transform, otherwise use a terminating sink transform to send the messages somewhere.")
+            None => panic!(
+                "The transform chain does not end with a terminating transform. If you want to throw the messages away use a NullSink transform, otherwise use a terminating sink transform to send the messages somewhere."
+            ),
         };
 
         let transform_name = transform.get_name();

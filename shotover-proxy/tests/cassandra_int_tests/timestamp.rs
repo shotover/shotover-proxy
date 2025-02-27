@@ -1,6 +1,6 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 use test_helpers::connection::cassandra::{
-    assert_query_result, run_query, CassandraConnection, ResultValue,
+    CassandraConnection, ResultValue, assert_query_result, run_query,
 };
 
 async fn flag(connection: &CassandraConnection) {

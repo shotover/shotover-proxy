@@ -6,7 +6,7 @@ pub mod mock_cassandra;
 pub mod shotover_process;
 mod test_tracing;
 
-use anyhow::{anyhow, Error, Result};
+use anyhow::{Error, Result, anyhow};
 use std::path::Path;
 use subprocess::{Exec, Redirection};
 

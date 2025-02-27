@@ -1,19 +1,19 @@
-use crate::{shotover_process, CONNECTION_REFUSED_OS_ERROR};
+use crate::{CONNECTION_REFUSED_OS_ERROR, shotover_process};
 use cassandra_protocol::frame::message_error::{ErrorBody, ErrorType};
 use cassandra_protocol::types::cassandra_type::CassandraType;
 use cdrs_tokio::frame::events::{
     SchemaChange, SchemaChangeOptions, SchemaChangeTarget, SchemaChangeType, ServerEvent,
 };
-use futures::future::join_all;
 use futures::Future;
+use futures::future::join_all;
 use pretty_assertions::assert_eq;
 use rstest::rstest;
 use rstest_reuse::{self, *};
+use scylla::SessionBuilder;
 use scylla::transport::errors::{
     ConnectionError, ConnectionPoolError, ConnectionSetupRequestError,
     ConnectionSetupRequestErrorKind, DbError, NewSessionError,
 };
-use scylla::SessionBuilder;
 use std::net::SocketAddr;
 #[cfg(feature = "cassandra-cpp-driver-tests")]
 use test_helpers::connection::cassandra::CassandraDriver::Cpp;
@@ -21,16 +21,16 @@ use test_helpers::connection::cassandra::Compression;
 #[cfg(feature = "alpha-transforms")]
 use test_helpers::connection::cassandra::ProtocolVersion;
 use test_helpers::connection::cassandra::{
-    assert_query_result, run_query, CassandraConnection, CassandraConnectionBuilder,
-    CassandraDriver, CassandraDriver::Cdrs, CassandraDriver::Java, CassandraDriver::Scylla,
-    CqlWsSession, ResultValue,
+    CassandraConnection, CassandraConnectionBuilder, CassandraDriver, CassandraDriver::Cdrs,
+    CassandraDriver::Java, CassandraDriver::Scylla, CqlWsSession, ResultValue, assert_query_result,
+    run_query,
 };
 use test_helpers::connection::valkey_connection;
 use test_helpers::docker_compose::docker_compose;
 #[cfg(feature = "alpha-transforms")]
 use test_helpers::docker_compose::new_moto;
 use test_helpers::shotover_process::{Count, EventMatcher, Level};
-use tokio::time::{timeout, Duration};
+use tokio::time::{Duration, timeout};
 
 mod batch_statements;
 mod cache;

@@ -11,7 +11,7 @@ use crate::transforms::{
     ChainState, DownChainProtocol, ResponseFuture, Transform, TransformBuilder, TransformConfig,
     TransformContextBuilder, TransformContextConfig, UpChainProtocol,
 };
-use anyhow::{anyhow, bail, ensure, Context, Result};
+use anyhow::{Context, Result, anyhow, bail, ensure};
 use async_trait::async_trait;
 use bytes::Bytes;
 use derivative::Derivative;
@@ -19,18 +19,18 @@ use futures::stream::FuturesOrdered;
 use futures::stream::FuturesUnordered;
 use futures::{StreamExt, TryFutureExt};
 use itertools::Itertools;
-use metrics::{counter, Counter};
+use metrics::{Counter, counter};
+use rand::SeedableRng;
 use rand::rngs::SmallRng;
 use rand::seq::IteratorRandom;
-use rand::SeedableRng;
 use redis_protocol::bytes_utils::string::Str;
 use redis_protocol::resp2::types::Resp2Frame;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
 use tokio::sync::mpsc::UnboundedSender;
-use tokio::sync::{oneshot, RwLock};
-use tokio::time::{timeout, Duration};
+use tokio::sync::{RwLock, oneshot};
+use tokio::time::{Duration, timeout};
 use tracing::{debug, trace, warn};
 
 const SLOT_SIZE: usize = 16384;
@@ -209,7 +209,9 @@ impl ValkeySinkCluster {
                     );
                 }
                 None => {
-                    bail!("Cannot call direct_connection when direct_destination is configured as None")
+                    bail!(
+                        "Cannot call direct_connection when direct_destination is configured as None"
+                    )
                 }
             }
         }
@@ -1196,8 +1198,8 @@ impl Authenticator<UsernamePasswordToken> for ValkeyAuthenticator {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::codec::valkey::ValkeyDecoder;
     use crate::codec::Direction;
+    use crate::codec::valkey::ValkeyDecoder;
     use pretty_assertions::assert_eq;
     use tokio_util::codec::Decoder;
 

@@ -1,17 +1,17 @@
-use crate::codec::{cassandra::CassandraCodecBuilder, CodecBuilder, Direction};
+use crate::codec::{CodecBuilder, Direction, cassandra::CassandraCodecBuilder};
 use crate::connection::SinkConnection;
-use crate::frame::cassandra::CassandraMetadata;
 use crate::frame::MessageType;
+use crate::frame::cassandra::CassandraMetadata;
 use crate::message::{Messages, Metadata};
 use crate::tls::{TlsConnector, TlsConnectorConfig};
 use crate::transforms::{
     ChainState, DownChainProtocol, Transform, TransformBuilder, TransformConfig,
     TransformContextBuilder, TransformContextConfig, UpChainProtocol,
 };
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use async_trait::async_trait;
 use cassandra_protocol::frame::{Opcode, Version};
-use metrics::{counter, Counter};
+use metrics::{Counter, counter};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::Duration;
