@@ -10,6 +10,7 @@ use redis::aio::Connection;
 use std::path::Path;
 use std::thread::sleep;
 use std::time::Duration;
+use syslog::{Facility, Formatter3164};
 use test_helpers::connection::valkey_connection;
 use test_helpers::docker_compose::docker_compose;
 use test_helpers::metrics::assert_metrics_key_value;
@@ -348,4 +349,38 @@ pub async fn assert_failed_requests_metric_is_incremented_on_error_response() {
     .await;
 
     shotover.shutdown_and_then_consume_events(&[]).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn syslog_ng_write_to_unix_socket() {
+    let formatter = Formatter3164 {
+        facility: Facility::LOG_USER,
+        hostname: None,
+        process: "myprogram".into(),
+        pid: 42
+    };
+    
+    match syslog::unix(formatter) {
+        Err(e) => println!("Syslog could not be instantiated: {:?}", e),
+        Ok(mut writer) => {
+            writer.debug("hello tan345").expect("Should fail to write");
+        }
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn syslog_ng_write_to_tcp_socket() {
+    let _compose = docker_compose("tests/test-configs/valkey/syslog-ng/docker-compose.yaml");
+    let formatter = Formatter3164 {
+        facility: Facility::LOG_USER,
+        hostname: None,
+        process: "myprogram".into(),
+        pid: 0
+    };
+    match syslog::tcp(formatter, "127.0.0.1:601") {
+        Err(e) => println!("Syslog could not be instantiated: {:?}", e),
+        Ok(mut writer) => {
+            writer.err("hello").expect("Should fail to write");
+        }
+    }
 }
