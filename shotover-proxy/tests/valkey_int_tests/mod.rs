@@ -3,10 +3,12 @@ use basic_driver_tests::*;
 use fred::clients::Client;
 use fred::interfaces::ClientLike;
 use fred::prelude::Config;
+use ldap3::{LdapConnAsync, Scope, SearchEntry};
 use pretty_assertions::assert_eq;
 use redis::Commands;
 use redis::aio::Connection;
 
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::thread::sleep;
 use std::time::Duration;
@@ -28,6 +30,64 @@ fn invalid_frame_event() -> EventMatcher {
 Caused by:
     Decode Error: frame_type: Invalid frame type."#,
         )
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn ldap_experiment() {
+    let _compose = docker_compose("tests/test-configs/valkey/ldap/docker-compose.yaml");
+
+    let (conn, mut ldap) = LdapConnAsync::new("ldap://localhost:1389").await.unwrap();
+    tokio::spawn(async move {
+        conn.drive().await.unwrap();
+    });
+
+    ldap.simple_bind("cn=admin,dc=example,dc=org", "adminpassword")
+        .await
+        .expect("Failed to bind")
+        .success()
+        .expect("Bind returned error result");
+
+    ldap.add(
+        "uid=lucas,ou=users,dc=example,dc=org",
+        vec![
+            ("objectClass", HashSet::from(["inetOrgPerson"])),
+            //("objectClass", HashSet::from(["valkeyUser"])),
+            ("uid", HashSet::from(["lucas"])),
+            ("cn", HashSet::from(["Lucas Kent"])),
+            ("sn", HashSet::from(["Kent"])),
+            ("userPassword", HashSet::from(["HashedPassword"])),
+        ],
+    )
+    .await
+    .expect("Failed to add")
+    .success()
+    .expect("Add returned error result");
+
+    let (rs, _res) = ldap
+        .search::<_, [&str; 0]>(
+            "ou=users,dc=example,dc=org",
+            Scope::Subtree,
+            "(&(objectClass=inetOrgPerson)(uid=lucas))",
+            [],
+        )
+        .await
+        .expect("Failed to search")
+        .success()
+        .expect("Search returned error result");
+    for entry in rs {
+        let entry = SearchEntry::construct(entry);
+        assert_eq!(entry.dn, "uid=lucas,ou=users,dc=example,dc=org");
+        assert_eq!(
+            entry.attrs,
+            HashMap::from([
+                ("objectClass".to_owned(), vec!("inetOrgPerson".to_owned())),
+                ("uid".to_owned(), vec!("lucas".to_owned())),
+                ("cn".to_owned(), vec!("Lucas Kent".to_owned())),
+                ("sn".to_owned(), vec!("Kent".to_owned())),
+                ("userPassword".to_owned(), vec!("HashedPassword".to_owned())),
+            ])
+        );
+    }
 }
 
 #[tokio::test(flavor = "multi_thread")]
