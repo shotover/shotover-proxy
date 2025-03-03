@@ -1,7 +1,6 @@
 services:
   openldap:
     image: bitnami/openldap:2.6.9-debian-12-r9
-    #image: registry.gitlab.com/bitspur/rock8s/docker-openldap
     ports:
       - '1389:1389'
       - '1636:1636'
@@ -10,7 +9,6 @@ services:
       - LDAP_ADMIN_PASSWORD=adminpassword
       - LDAP_USERS=user01,user02
       - LDAP_PASSWORDS=password1,password2
-      - LDAP_CUSTOM_SCHEMA_DIR=/schemas
-    # this schema stuff is a nightmare...
-    #volumes:
-    #  - ./valkey_user.ldif:/schemas/valkey_user.ldif
+      - LDAP_CONFIG_ADMIN_ENABLED=yes
+      - LDAP_CONFIG_ADMIN_USERNAME=admin
+      - LDAP_CONFIG_ADMIN_PASSWORD=configpassword

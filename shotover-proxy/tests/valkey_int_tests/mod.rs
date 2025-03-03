@@ -3,7 +3,7 @@ use basic_driver_tests::*;
 use fred::clients::Client;
 use fred::interfaces::ClientLike;
 use fred::prelude::Config;
-use ldap3::{LdapConnAsync, Scope, SearchEntry};
+use ldap3::{Ldap, LdapConnAsync, Scope, SearchEntry};
 use pretty_assertions::assert_eq;
 use redis::Commands;
 use redis::aio::Connection;
@@ -32,6 +32,55 @@ Caused by:
         )
 }
 
+/// In order for an LDAP entry to set an attribute, the entry must specify a schema that specified that attribute
+/// Since we require a field for the valkey ACL string, which is certainly not in any standard LDAP schemas, we create our own schema here.
+async fn setup_valkey_user_schema(ldap: &mut Ldap) {
+    // schemas are stored in cn=config and we need a seperate admin account to access that
+    ldap.simple_bind("cn=admin,cn=config", "configpassword")
+        .await
+        .expect("Failed to bind")
+        .success()
+        .expect("Bind returned error result");
+
+    ldap.add(
+        "cn=valkeyuser,cn=schema,cn=config",
+        vec![
+            ("objectClass", HashSet::from(["olcSchemaConfig"])),
+            ("cn", HashSet::from(["valkeyuser"])),
+            (
+                "olcAttributeTypes",
+                // This defines the valkeyAclString attribute of the valkeyUser schema.
+                // All schemas and attributes have a unique ID (OID) consisting of as many numbers as you want seperated by `.`.
+                // In this case we take 1.1.1.1.2 as the ID.
+                // Apparently this is stealing but we're not about to contact IANA to assign us an ID for an integration test.
+                //
+                // We set valkeyAclString to have a data type of string which in LDAP is called "1.3.6.1.4.1.1466.115.121.1.15".
+                // Thankyou LDAP, very nice.
+                // https://ldap.com/attribute-syntaxes/
+                HashSet::from([r#"( 1.1.1.1.2
+NAME 'valkeyAclString'
+DESC 'the valkey ACL string to be assigned to this user when logged into a valkey instance'
+SYNTAX 1.3.6.1.4.1.1466.115.121.1.15 )"#]),
+            ),
+            // This defines the valkeyUser schema
+            // It has one mandatory field: valkeyAclString
+            // and inherits from the super schema inetOrgPerson
+            (
+                "olcObjectClasses",
+                HashSet::from([r#"( 1.1.1.1.1
+NAME 'valkeyUser'
+DESC 'User that has access to valkey instances'
+SUP inetOrgPerson
+MUST ( valkeyAclString ) )"#]),
+            ),
+        ],
+    )
+    .await
+    .expect("Failed to add schema")
+    .success()
+    .expect("Add schema returned error result");
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn ldap_experiment() {
     let _compose = docker_compose("tests/test-configs/valkey/ldap/docker-compose.yaml");
@@ -41,20 +90,28 @@ async fn ldap_experiment() {
         conn.drive().await.unwrap();
     });
 
+    setup_valkey_user_schema(&mut ldap).await;
+
+    // We need to bind as admin to perform the `add`.
+    // Search does not need to bind at all.
     ldap.simple_bind("cn=admin,dc=example,dc=org", "adminpassword")
         .await
         .expect("Failed to bind")
         .success()
         .expect("Bind returned error result");
 
+    // Insert Lucas Kent as an inetOrgPerson and a valkeyUser
     ldap.add(
         "uid=lucas,ou=users,dc=example,dc=org",
         vec![
-            ("objectClass", HashSet::from(["inetOrgPerson"])),
-            //("objectClass", HashSet::from(["valkeyUser"])),
+            (
+                "objectClass",
+                HashSet::from(["inetOrgPerson", "valkeyUser"]),
+            ),
             ("uid", HashSet::from(["lucas"])),
             ("cn", HashSet::from(["Lucas Kent"])),
             ("sn", HashSet::from(["Kent"])),
+            ("valkeyAclString", HashSet::from(["on allkeys +set"])),
             ("userPassword", HashSet::from(["HashedPassword"])),
         ],
     )
@@ -63,6 +120,7 @@ async fn ldap_experiment() {
     .success()
     .expect("Add returned error result");
 
+    // Query for lucas and assert that we get back all the attributes we set.
     let (rs, _res) = ldap
         .search::<_, [&str; 0]>(
             "ou=users,dc=example,dc=org",
@@ -75,15 +133,26 @@ async fn ldap_experiment() {
         .success()
         .expect("Search returned error result");
     for entry in rs {
-        let entry = SearchEntry::construct(entry);
+        let mut entry = SearchEntry::construct(entry);
         assert_eq!(entry.dn, "uid=lucas,ou=users,dc=example,dc=org");
+
+        // This value is non-deterministic, so sort it before we assert on the exact value.
+        entry.attrs.get_mut("objectClass").unwrap().sort();
+
         assert_eq!(
             entry.attrs,
             HashMap::from([
-                ("objectClass".to_owned(), vec!("inetOrgPerson".to_owned())),
+                (
+                    "objectClass".to_owned(),
+                    vec!("inetOrgPerson".to_owned(), "valkeyUser".to_owned())
+                ),
                 ("uid".to_owned(), vec!("lucas".to_owned())),
                 ("cn".to_owned(), vec!("Lucas Kent".to_owned())),
                 ("sn".to_owned(), vec!("Kent".to_owned())),
+                (
+                    "valkeyAclString".to_owned(),
+                    vec!("on allkeys +set".to_owned())
+                ),
                 ("userPassword".to_owned(), vec!("HashedPassword".to_owned())),
             ])
         );
