@@ -69,8 +69,8 @@ pub static IMAGE_WAITERS: [Image; 11] = [
         timeout: Duration::from_secs(120),
     },
     Image {
-        name: "balabit/syslog-ng:4.8.0",
-        log_regex_to_wait_for: r"gfgd",
+        name: "balabit/syslog-ng:latest",
+        log_regex_to_wait_for: r"$^",
         timeout: Duration::from_secs(120),
     }
 ];

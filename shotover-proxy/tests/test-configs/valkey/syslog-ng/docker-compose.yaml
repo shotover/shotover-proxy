@@ -1,11 +1,11 @@
 services:
   syslog-ng:
-    image: balabit/syslog-ng:4.8.0
+    image: balabit/syslog-ng:latest
     container_name: syslog-ng
     privileged: true
-    volumes:
-      - ./syslog-ng.conf:/etc/syslog-ng/syslog-ng.conf
+#    volumes:
+#      - ./syslog-ng.conf:/etc/syslog-ng/syslog-ng.conf
     ports:
-      - 514:5514/udp
-      - 601:6601/tcp
+      - 514:514/udp
+      - 601:601/tcp
       - 6514:6514/tcp
