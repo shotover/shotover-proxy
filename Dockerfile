@@ -4,7 +4,7 @@ WORKDIR /shotover-proxy
 
 COPY ./ ./
 
-RUN cargo build -p shotover-proxy --release
+RUN rustup toolchain install && cargo build -p shotover-proxy --release
 
 FROM debian:bookworm-slim
 
