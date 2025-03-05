@@ -7,16 +7,16 @@ use pretty_assertions::assert_eq;
 use redis::Commands;
 use redis::aio::Connection;
 
+use serde_json::json;
 use std::path::Path;
 use std::thread::sleep;
 use std::time::Duration;
-use serde_json::json;
 use syslog::Formatter3164;
-use tokio::fs;
 use test_helpers::connection::valkey_connection;
 use test_helpers::docker_compose::docker_compose;
 use test_helpers::metrics::assert_metrics_key_value;
 use test_helpers::shotover_process::{Count, EventMatcher, Level};
+use tokio::fs;
 
 pub mod assert;
 pub mod basic_driver_tests;
@@ -359,10 +359,11 @@ async fn syslog_ng_write_to_tcp_socket() {
     fs::remove_file(log_file_directory).await.ok();
     let message = "Hello, world!";
 
-    let _compose = docker_compose("tests/test-configs/valkey/syslog-ng/raw-text/docker-compose.yaml");
+    let _compose =
+        docker_compose("tests/test-configs/valkey/syslog-ng/raw-text/docker-compose.yaml");
     sleep(Duration::from_secs(5));
     let formatter = Formatter3164::default();
-    match syslog::tcp(formatter, "127.0.0.1:601" ) {
+    match syslog::tcp(formatter, "127.0.0.1:601") {
         Err(e) => println!("Syslog could not be instantiated: {:?}", e),
         Ok(mut writer) => {
             writer.info(message).expect("Should fail to write");
@@ -371,7 +372,8 @@ async fn syslog_ng_write_to_tcp_socket() {
     sleep(Duration::from_secs(5));
     // Verify the sent text
     let log_content = fs::read_to_string(log_file_directory)
-        .await.expect("Failed to read syslog-ng config");
+        .await
+        .expect("Failed to read syslog-ng config");
     assert!(log_content.contains(message));
 }
 
@@ -402,16 +404,22 @@ async fn syslog_ng_write_to_tcp_socket_with_json() {
     match syslog::tcp(formatter, "127.0.0.1:601") {
         Err(e) => println!("Syslog could not be instantiated: {:?}", e),
         Ok(mut writer) => {
-            writer.info(message_1.to_string()).expect("Should fail to write");
-            writer.info(message_2.to_string()).expect("Should fail to write");
+            writer
+                .info(message_1.to_string())
+                .expect("Should fail to write");
+            writer
+                .info(message_2.to_string())
+                .expect("Should fail to write");
         }
     }
     sleep(Duration::from_secs(5));
     // Verify the sent text
     let log_content = fs::read_to_string(log_file_directory)
-        .await.expect("Failed to read syslog-ng config");
+        .await
+        .expect("Failed to read syslog-ng config");
     let json_content = fs::read_to_string(json_file_directory)
-        .await.expect("Failed to read syslog-ng config");
+        .await
+        .expect("Failed to read syslog-ng config");
 
     assert!(log_content.contains("emergency"));
     assert_eq!(log_content.contains("debug"), false);

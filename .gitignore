@@ -5,6 +5,8 @@
 /shotover-proxy/tests/test-configs/valkey/tls/certs
 /shotover-proxy/tests/test-configs/cassandra/tls/certs
 /shotover-proxy/tests/test-configs/kafka/tls/certs
+/shotover-proxy/tests/test-configs/valkey/syslog-ng/json/log
+/shotover-proxy/tests/test-configs/valkey/syslog-ng/raw-text/log
 .workspace.code-workspace
 **/.DS_Store
 /.project
