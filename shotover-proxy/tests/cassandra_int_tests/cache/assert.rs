@@ -1,7 +1,7 @@
 use pretty_assertions::assert_eq;
 use redis::Commands;
 use std::collections::HashSet;
-use test_helpers::connection::cassandra::{assert_query_result, CassandraConnection, ResultValue};
+use test_helpers::connection::cassandra::{CassandraConnection, ResultValue, assert_query_result};
 use test_helpers::metrics::get_metrics_value;
 
 /// gets the current miss count from the cache instrumentation.
@@ -37,8 +37,7 @@ async fn assert_unchanged(
     assert_query_result(session, query, expected_rows).await;
     let after = get_cache_miss_value().await;
     assert_eq!(
-        before,
-        after,
+        before, after,
         "expected cache_miss count to be unchanged but was changed. before: {before} after: {after} query: {query}",
     );
 }

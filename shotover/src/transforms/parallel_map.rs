@@ -5,10 +5,10 @@ use crate::transforms::chain::{TransformChain, TransformChainBuilder};
 use crate::transforms::{ChainState, Transform, TransformBuilder, TransformConfig};
 use anyhow::Result;
 use async_trait::async_trait;
-use futures::stream::{FuturesOrdered, FuturesUnordered};
-use futures::task::{Context, Poll};
 use futures::Stream;
 use futures::StreamExt;
+use futures::stream::{FuturesOrdered, FuturesUnordered};
+use futures::task::{Context, Poll};
 use serde::{Deserialize, Serialize};
 use std::future::Future;
 use std::pin::Pin;
@@ -187,11 +187,11 @@ impl TransformBuilder for ParallelMapBuilder {
 
 #[cfg(test)]
 mod parallel_map_tests {
+    use crate::transforms::TransformBuilder;
     use crate::transforms::chain::TransformChainBuilder;
     use crate::transforms::debug::printer::DebugPrinter;
     use crate::transforms::null::NullSink;
     use crate::transforms::parallel_map::ParallelMapBuilder;
-    use crate::transforms::TransformBuilder;
     use pretty_assertions::assert_eq;
 
     #[tokio::test]

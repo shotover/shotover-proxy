@@ -2,17 +2,17 @@ use super::{CodecBuilder, CodecReadError, CodecWriteError, Direction};
 use crate::message::{Encodable, Message, Messages};
 use crate::{
     frame::{
-        opensearch::{HttpHead, RequestParts, ResponseParts},
         Frame, MessageType, OpenSearchFrame,
+        opensearch::{HttpHead, RequestParts, ResponseParts},
     },
     message::MessageId,
 };
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use bytes::{Buf, BytesMut};
-use http::{header, HeaderName, HeaderValue, Method, Request, Response};
+use http::{HeaderName, HeaderValue, Method, Request, Response, header};
 use metrics::Histogram;
 use std::{
-    sync::{mpsc, Arc, Mutex},
+    sync::{Arc, Mutex, mpsc},
     time::Instant,
 };
 use tokio_util::codec::{Decoder, Encoder};
@@ -103,7 +103,7 @@ impl OpenSearchDecoder {
                 return Err(anyhow!(
                     "HTTP version: {} unsupported. Requires HTTP/1",
                     version
-                ))
+                ));
             }
         }
 
@@ -158,7 +158,7 @@ impl OpenSearchDecoder {
                 return Err(anyhow!(
                     "HTTP version: {} unsupported. Requires HTTP/1",
                     version
-                ))
+                ));
             }
         }
 
@@ -378,10 +378,10 @@ impl Encoder<Messages> for OpenSearchEncoder {
 #[cfg(test)]
 mod opensearch_tests {
     use crate::{
-        codec::{opensearch::OpenSearchCodecBuilder, CodecBuilder, Direction},
+        codec::{CodecBuilder, Direction, opensearch::OpenSearchCodecBuilder},
         frame::{
-            opensearch::{HttpHead, RequestParts},
             Frame, OpenSearchFrame,
+            opensearch::{HttpHead, RequestParts},
         },
         message::Message,
     };

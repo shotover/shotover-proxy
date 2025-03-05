@@ -7,7 +7,7 @@ use time::OffsetDateTime;
 use tokio::{
     io::{AsyncBufReadExt, BufReader},
     process::Command,
-    sync::mpsc::{unbounded_channel, UnboundedReceiver},
+    sync::mpsc::{UnboundedReceiver, unbounded_channel},
 };
 use windsock::{Goal, Metric, ReportArchive};
 

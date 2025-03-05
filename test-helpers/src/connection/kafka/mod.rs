@@ -293,11 +293,17 @@ impl KafkaConsumer {
         let full_expected_responses = expected_responses.clone();
 
         for expected_response in expected_responses {
-            match responses.iter().enumerate().find(|(_, x)| **x == expected_response) {
+            match responses
+                .iter()
+                .enumerate()
+                .find(|(_, x)| **x == expected_response)
+            {
                 Some((i, _)) => {
                     responses.remove(i);
                 }
-                None => panic!("An expected response was not found in the actual responses\nExpected responses:{full_expected_responses:#?}\nActual responses:{full_responses:#?}"),
+                None => panic!(
+                    "An expected response was not found in the actual responses\nExpected responses:{full_expected_responses:#?}\nActual responses:{full_responses:#?}"
+                ),
             }
         }
     }
@@ -403,7 +409,9 @@ impl KafkaAdmin {
                     } else {
                         tokio::time::sleep(Duration::from_millis(1)).await;
                         if instant.elapsed() > Duration::from_secs(30) {
-                            panic!("Timedout while waiting for created topics to be available. Was waiting for topics {topics_to_wait_for:?}")
+                            panic!(
+                                "Timedout while waiting for created topics to be available. Was waiting for topics {topics_to_wait_for:?}"
+                            )
                         }
                     }
                 }

@@ -1,6 +1,6 @@
 use pretty_assertions::assert_eq;
 use test_helpers::connection::cassandra::{
-    assert_query_result, run_query, CassandraConnection, CassandraDriver, Consistency, ResultValue,
+    CassandraConnection, CassandraDriver, Consistency, ResultValue, assert_query_result, run_query,
 };
 
 fn values() -> Vec<ResultValue> {

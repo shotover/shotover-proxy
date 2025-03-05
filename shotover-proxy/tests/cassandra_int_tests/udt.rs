@@ -1,4 +1,4 @@
-use test_helpers::connection::cassandra::{run_query, CassandraConnection};
+use test_helpers::connection::cassandra::{CassandraConnection, run_query};
 
 async fn test_create_udt(session: &CassandraConnection) {
     run_query(

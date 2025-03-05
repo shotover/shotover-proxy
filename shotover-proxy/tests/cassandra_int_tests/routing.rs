@@ -3,14 +3,13 @@ use test_helpers::connection::cassandra::{CassandraConnectionBuilder, CassandraD
 
 mod single_key {
     use super::assert_eq;
-    use test_helpers::connection::cassandra::{run_query, CassandraConnection, ResultValue};
+    use test_helpers::connection::cassandra::{CassandraConnection, ResultValue, run_query};
 
     pub async fn setup_schema(connection: &CassandraConnection) {
         let create_ks: &'static str = "CREATE KEYSPACE IF NOT EXISTS test_routing_ks WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };";
         run_query(connection, create_ks).await;
 
-        let create_table_cql =
-        "CREATE TABLE IF NOT EXISTS test_routing_ks.my_test_table_single (key int PRIMARY KEY, name text);";
+        let create_table_cql = "CREATE TABLE IF NOT EXISTS test_routing_ks.my_test_table_single (key int PRIMARY KEY, name text);";
         run_query(connection, create_table_cql).await;
     }
 
@@ -74,28 +73,25 @@ mod single_key {
 mod compound_key {
 
     use super::assert_eq;
-    use test_helpers::connection::cassandra::{run_query, CassandraConnection, ResultValue};
+    use test_helpers::connection::cassandra::{CassandraConnection, ResultValue, run_query};
 
     pub async fn setup_schema(connection: &CassandraConnection) {
         let create_ks: &'static str = "CREATE KEYSPACE IF NOT EXISTS test_routing_ks WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };";
         run_query(connection, create_ks).await;
 
-        let create_table_cql =
-        "CREATE TABLE IF NOT EXISTS test_routing_ks.my_test_table_compound (key int, name text, age int, blah text, PRIMARY KEY (key, age)) WITH CLUSTERING ORDER BY (age DESC);";
+        let create_table_cql = "CREATE TABLE IF NOT EXISTS test_routing_ks.my_test_table_compound (key int, name text, age int, blah text, PRIMARY KEY (key, age)) WITH CLUSTERING ORDER BY (age DESC);";
         run_query(connection, create_table_cql).await;
     }
 
     pub async fn test(shotover: &CassandraConnection, cassandra: &CassandraConnection) {
-        let insert_cql =
-            "INSERT INTO test_routing_ks.my_test_table_compound (key, name, age, blah) VALUES (?, ?, ?, 'blah')";
+        let insert_cql = "INSERT INTO test_routing_ks.my_test_table_compound (key, name, age, blah) VALUES (?, ?, ?, 'blah')";
         let prepared_insert = shotover.prepare(insert_cql).await;
 
         let select_cql =
             "SELECT blah FROM test_routing_ks.my_test_table_compound WHERE key = ? AND age = ?;";
         let prepared_select = shotover.prepare(select_cql).await;
 
-        let update_cql =
-            "UPDATE test_routing_ks.my_test_table_compound SET blah = 'notblah' WHERE key = ? AND age = ?";
+        let update_cql = "UPDATE test_routing_ks.my_test_table_compound SET blah = 'notblah' WHERE key = ? AND age = ?";
         let prepared_update = cassandra.prepare(update_cql).await;
 
         let delete_cql =
@@ -179,9 +175,9 @@ mod compound_key {
 mod composite_key {
 
     use super::assert_eq;
-    use rand::{distributions::Alphanumeric, Rng};
+    use rand::{Rng, distributions::Alphanumeric};
     use test_helpers::connection::cassandra::{
-        run_query, CassandraConnection, Consistency, ResultValue,
+        CassandraConnection, Consistency, ResultValue, run_query,
     };
 
     pub async fn test(shotover: &CassandraConnection, cassandra: &CassandraConnection) {
@@ -193,31 +189,26 @@ mod composite_key {
         let create_ks: &'static str = "CREATE KEYSPACE IF NOT EXISTS test_routing_ks WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };";
         run_query(connection, create_ks).await;
 
-        let create_table_cql =
-        "CREATE TABLE IF NOT EXISTS test_routing_ks.my_test_table_composite (key int, name text, age int, blah text, PRIMARY KEY((key, name), age));";
+        let create_table_cql = "CREATE TABLE IF NOT EXISTS test_routing_ks.my_test_table_composite (key int, name text, age int, blah text, PRIMARY KEY((key, name), age));";
         run_query(connection, create_table_cql).await;
 
         let create_keyspace = "CREATE KEYSPACE stresscql2small WITH replication = {'class': 'NetworkTopologyStrategy', 'datacenter1': 3};";
-        let create_table =
-        "CREATE TABLE stresscql2small.typestest (name text, choice boolean, address inet, PRIMARY KEY((name,choice), address)) WITH compaction = { 'class':'LeveledCompactionStrategy' } AND comment='A table of many types to test wide rows'";
+        let create_table = "CREATE TABLE stresscql2small.typestest (name text, choice boolean, address inet, PRIMARY KEY((name,choice), address)) WITH compaction = { 'class':'LeveledCompactionStrategy' } AND comment='A table of many types to test wide rows'";
         run_query(connection, create_keyspace).await;
         run_query(connection, create_table).await;
     }
 
     async fn simple_test(shotover: &CassandraConnection, cassandra: &CassandraConnection) {
-        let insert_cql =
-            "INSERT INTO test_routing_ks.my_test_table_composite (key, name, age, blah) VALUES (?, ?, ?, 'blah')";
+        let insert_cql = "INSERT INTO test_routing_ks.my_test_table_composite (key, name, age, blah) VALUES (?, ?, ?, 'blah')";
         let prepared_insert = shotover.prepare(insert_cql).await;
 
         let select_cql = "SELECT blah FROM test_routing_ks.my_test_table_composite WHERE key = ? AND name = ? AND age = ?;";
         let prepared_select = shotover.prepare(select_cql).await;
 
-        let update_cql =
-            "UPDATE test_routing_ks.my_test_table_composite SET blah = 'notblah' WHERE key = ? AND name = ? AND age = ?";
+        let update_cql = "UPDATE test_routing_ks.my_test_table_composite SET blah = 'notblah' WHERE key = ? AND name = ? AND age = ?";
         let prepared_update = cassandra.prepare(update_cql).await;
 
-        let delete_cql =
-            "DELETE FROM test_routing_ks.my_test_table_composite WHERE key = ? AND name = ? AND age = ?;";
+        let delete_cql = "DELETE FROM test_routing_ks.my_test_table_composite WHERE key = ? AND name = ? AND age = ?;";
         let prepared_delete = cassandra.prepare(delete_cql).await;
 
         for key in 0..10 {
@@ -328,9 +319,9 @@ mod composite_key {
             let address = "'127.0.0.1'";
 
             let insert = format!(
-            "INSERT INTO stresscql2small.typestest (name, choice, address) VALUES ('{}', {}, {});",
-            name, choice, address
-        );
+                "INSERT INTO stresscql2small.typestest (name, choice, address) VALUES ('{}', {}, {});",
+                name, choice, address
+            );
             run_query(connection, &insert).await;
         }
 

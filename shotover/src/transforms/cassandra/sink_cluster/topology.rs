@@ -1,24 +1,24 @@
+use super::KeyspaceChanTx;
 use super::node::{CassandraNode, ConnectionFactory};
 use super::node_pool::KeyspaceMetadata;
-use super::KeyspaceChanTx;
 use crate::connection::SinkConnection;
 use crate::frame::cassandra::operation_name;
 use crate::frame::{
-    cassandra::{parse_statement_single, Tracing},
-    value::GenericValue,
     CassandraFrame, CassandraOperation, CassandraResult, Frame,
+    cassandra::{Tracing, parse_statement_single},
+    value::GenericValue,
 };
 use crate::message::Message;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use cassandra_protocol::events::{ServerEvent, SimpleServerEvent};
+use cassandra_protocol::frame::Version;
 use cassandra_protocol::frame::events::{StatusChangeType, TopologyChangeType};
 use cassandra_protocol::frame::message_register::BodyReqRegister;
-use cassandra_protocol::frame::Version;
 use cassandra_protocol::token::Murmur3Token;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tokio::sync::{mpsc, watch, Notify};
+use tokio::sync::{Notify, mpsc, watch};
 
 #[derive(Debug)]
 pub struct TaskConnectionInfo {
@@ -209,7 +209,10 @@ async fn register_for_topology_and_status_events(
     if let Some(Frame::Cassandra(CassandraFrame { operation, .. })) = response.frame() {
         match operation {
             CassandraOperation::Ready(_) => Ok(()),
-            operation => Err(anyhow!("Expected Cassandra to respond to a Register with a Ready. Instead it responded with {}", operation_name(operation)))
+            operation => Err(anyhow!(
+                "Expected Cassandra to respond to a Register with a Ready. Instead it responded with {}",
+                operation_name(operation)
+            )),
         }
     } else {
         Err(anyhow!("Failed to parse cassandra message"))
@@ -330,7 +333,7 @@ mod system_keyspaces {
                         Some(_other) => {
                             return Err(anyhow!(
                                 "NetworkTopologyStrategy replication factor should be a varchar"
-                            ))
+                            ));
                         }
                         None => 0,
                     };

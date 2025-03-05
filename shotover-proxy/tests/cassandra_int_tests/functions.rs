@@ -1,5 +1,5 @@
 use test_helpers::connection::cassandra::{
-    assert_query_result, run_query, CassandraConnection, ResultValue,
+    CassandraConnection, ResultValue, assert_query_result, run_query,
 };
 
 async fn drop_function(session: &CassandraConnection) {

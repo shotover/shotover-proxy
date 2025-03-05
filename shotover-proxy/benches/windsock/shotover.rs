@@ -1,6 +1,6 @@
 use crate::profilers::ProfilerRunner;
 use test_helpers::shotover_process::ShotoverProcessBuilder;
-use tokio_bin_process::{bin_path, BinProcess};
+use tokio_bin_process::{BinProcess, bin_path};
 use uuid::Uuid;
 
 pub async fn shotover_process_custom_topology(

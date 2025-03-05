@@ -8,11 +8,12 @@ use crate::transforms::{
     UpChainProtocol,
 };
 use crate::transforms::{TransformConfig, TransformContextConfig};
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use async_trait::async_trait;
 use connections::{Connections, Destination};
 use dashmap::DashMap;
 use kafka_node::{ConnectionFactory, KafkaAddress, KafkaNode, KafkaNodeState};
+use kafka_protocol::ResponseError;
 use kafka_protocol::messages::add_partitions_to_txn_request::AddPartitionsToTxnTransaction;
 use kafka_protocol::messages::delete_records_request::DeleteRecordsTopic;
 use kafka_protocol::messages::delete_records_response::DeleteRecordsTopicResult;
@@ -46,11 +47,10 @@ use kafka_protocol::messages::{
     TopicName, TransactionalId, TxnOffsetCommitRequest,
 };
 use kafka_protocol::protocol::StrBytes;
-use kafka_protocol::ResponseError;
-use metrics::{counter, Counter};
+use metrics::{Counter, counter};
+use rand::SeedableRng;
 use rand::rngs::SmallRng;
 use rand::seq::{IteratorRandom, SliceRandom};
-use rand::SeedableRng;
 use scram_over_mtls::{
     AuthorizeScramOverMtls, AuthorizeScramOverMtlsBuilder, AuthorizeScramOverMtlsConfig,
     OriginalScramState,
@@ -67,8 +67,8 @@ use split::{
 };
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::hash::Hasher;
-use std::sync::atomic::AtomicI64;
 use std::sync::Arc;
+use std::sync::atomic::AtomicI64;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
 use uuid::Uuid;
@@ -646,7 +646,9 @@ impl KafkaSinkCluster {
                                 scram_over_mtls.original_scram_state,
                                 OriginalScramState::AuthSuccess
                             ) {
-                                return Err(anyhow!("Client attempted to send requests before a successful auth was completed or after an unsuccessful auth"));
+                                return Err(anyhow!(
+                                    "Client attempted to send requests before a successful auth was completed or after an unsuccessful auth"
+                                ));
                             }
                         }
 
@@ -916,7 +918,7 @@ impl KafkaSinkCluster {
                 other => {
                     return Err(anyhow!(
                         "Unexpected response returned to metadata request {other:?}"
-                    ))
+                    ));
                 }
             }
         }
@@ -1314,12 +1316,16 @@ The connection to the client has been closed."
                         topic_meta.partitions.get(partition_index)
                     {
                         if partition.leader_id == -1 {
-                            tracing::warn!("leader_id is unknown for topic {name:?} at partition index {partition_index}");
+                            tracing::warn!(
+                                "leader_id is unknown for topic {name:?} at partition index {partition_index}"
+                            );
                         }
                         partition.leader_id
                     } else {
                         let partition_len = topic_meta.partitions.len();
-                        tracing::warn!("no known partition replica for {name:?} at partition index {partition_index} out of {partition_len} partitions, routing request to a random broker so that a NOT_LEADER_OR_FOLLOWER or similar error is returned to the client");
+                        tracing::warn!(
+                            "no known partition replica for {name:?} at partition index {partition_index} out of {partition_len} partitions, routing request to a random broker so that a NOT_LEADER_OR_FOLLOWER or similar error is returned to the client"
+                        );
                         BrokerId(-1)
                     };
                     tracing::debug!(
@@ -1398,7 +1404,9 @@ The connection to the client has been closed."
                         partition.leader_id
                     } else {
                         let partition_len = topic_meta.partitions.len();
-                        tracing::warn!("no known partition replica for {format_topic_name} at partition index {partition_index} out of {partition_len} partitions, routing request to a random broker so that a NOT_LEADER_OR_FOLLOWER or similar error is returned to the client");
+                        tracing::warn!(
+                            "no known partition replica for {format_topic_name} at partition index {partition_index} out of {partition_len} partitions, routing request to a random broker so that a NOT_LEADER_OR_FOLLOWER or similar error is returned to the client"
+                        );
                         BrokerId(-1)
                     };
                     tracing::debug!(
@@ -1418,7 +1426,9 @@ The connection to the client has been closed."
                     }
                 }
             } else {
-                tracing::warn!("no known partition replica for {format_topic_name}, routing request to a random broker so that a NOT_LEADER_OR_FOLLOWER or similar error is returned to the client");
+                tracing::warn!(
+                    "no known partition replica for {format_topic_name}, routing request to a random broker so that a NOT_LEADER_OR_FOLLOWER or similar error is returned to the client"
+                );
                 let destination = BrokerId(-1);
                 let dest_topics = result.entry(destination).or_default();
                 dest_topics.push(topic);
@@ -1546,7 +1556,9 @@ The connection to the client has been closed."
                         partition.leader_id
                     } else {
                         let partition_len = topic_meta.partitions.len();
-                        tracing::warn!("no known partition for {topic_name:?} at partition index {partition_index} out of {partition_len} partitions, routing request to a random broker so that a NOT_LEADER_OR_FOLLOWER or similar error is returned to the client");
+                        tracing::warn!(
+                            "no known partition for {topic_name:?} at partition index {partition_index} out of {partition_len} partitions, routing request to a random broker so that a NOT_LEADER_OR_FOLLOWER or similar error is returned to the client"
+                        );
                         BrokerId(-1)
                     };
                     tracing::debug!(
@@ -1564,7 +1576,9 @@ The connection to the client has been closed."
                     }
                 }
             } else {
-                tracing::warn!("no known partition replica for {topic_name:?}, routing request to a random broker so that a NOT_LEADER_OR_FOLLOWER or similar error is returned to the client");
+                tracing::warn!(
+                    "no known partition replica for {topic_name:?}, routing request to a random broker so that a NOT_LEADER_OR_FOLLOWER or similar error is returned to the client"
+                );
                 let destination = BrokerId(-1);
                 let dest_topics = result.entry(destination).or_default();
                 dest_topics.push(topic);
@@ -1598,7 +1612,9 @@ The connection to the client has been closed."
                         partition.leader_id
                     } else {
                         let partition_len = topic_meta.partitions.len();
-                        tracing::warn!("no known partition for {topic_name:?} at partition index {partition_index} out of {partition_len} partitions, routing request to a random broker so that a NOT_LEADER_OR_FOLLOWER or similar error is returned to the client");
+                        tracing::warn!(
+                            "no known partition for {topic_name:?} at partition index {partition_index} out of {partition_len} partitions, routing request to a random broker so that a NOT_LEADER_OR_FOLLOWER or similar error is returned to the client"
+                        );
                         BrokerId(-1)
                     };
                     tracing::debug!(
@@ -1616,7 +1632,9 @@ The connection to the client has been closed."
                     }
                 }
             } else {
-                tracing::warn!("no known partition replica for {topic_name:?}, routing request to a random broker so that a NOT_LEADER_OR_FOLLOWER or similar error is returned to the client");
+                tracing::warn!(
+                    "no known partition replica for {topic_name:?}, routing request to a random broker so that a NOT_LEADER_OR_FOLLOWER or similar error is returned to the client"
+                );
                 let destination = BrokerId(-1);
                 let dest_topics = result.entry(destination).or_default();
                 dest_topics.push(topic);
@@ -1639,7 +1657,9 @@ The connection to the client has been closed."
                 let dest_groups = result.entry(*destination).or_default();
                 dest_groups.push(group_id);
             } else {
-                tracing::warn!("no known coordinator for group {group_id:?}, routing request to a random broker so that a NOT_COORDINATOR or similar error is returned to the client");
+                tracing::warn!(
+                    "no known coordinator for group {group_id:?}, routing request to a random broker so that a NOT_COORDINATOR or similar error is returned to the client"
+                );
                 let destination = BrokerId(-1);
                 let dest_groups = result.entry(destination).or_default();
                 dest_groups.push(group_id);
@@ -1662,7 +1682,9 @@ The connection to the client has been closed."
                 let dest_transactions = result.entry(*destination).or_default();
                 dest_transactions.push(transaction);
             } else {
-                tracing::warn!("no known coordinator for transactions {transaction:?}, routing request to a random broker so that a NOT_COORDINATOR or similar error is returned to the client");
+                tracing::warn!(
+                    "no known coordinator for transactions {transaction:?}, routing request to a random broker so that a NOT_COORDINATOR or similar error is returned to the client"
+                );
                 let destination = BrokerId(-1);
                 let dest_transactions = result.entry(destination).or_default();
                 dest_transactions.push(transaction);
@@ -1757,7 +1779,9 @@ The connection to the client has been closed."
                 let dest_groups = result.entry(*destination).or_default();
                 dest_groups.push(group);
             } else {
-                tracing::warn!("no known coordinator for group {group:?}, routing request to a random broker so that a NOT_COORDINATOR or similar error is returned to the client");
+                tracing::warn!(
+                    "no known coordinator for group {group:?}, routing request to a random broker so that a NOT_COORDINATOR or similar error is returned to the client"
+                );
                 let destination = BrokerId(-1);
                 let dest_groups = result.entry(destination).or_default();
                 dest_groups.push(group);
@@ -1780,7 +1804,9 @@ The connection to the client has been closed."
                 let dest_groups = result.entry(*destination).or_default();
                 dest_groups.push(group);
             } else {
-                tracing::warn!("no known coordinator for group {group:?}, routing request to a random broker so that a NOT_COORDINATOR or similar error is returned to the client");
+                tracing::warn!(
+                    "no known coordinator for group {group:?}, routing request to a random broker so that a NOT_COORDINATOR or similar error is returned to the client"
+                );
                 let destination = BrokerId(-1);
                 let dest_groups = result.entry(destination).or_default();
                 dest_groups.push(group);
@@ -1814,7 +1840,9 @@ The connection to the client has been closed."
                         partition.leader_id
                     } else {
                         let partition_len = topic_meta.partitions.len();
-                        tracing::warn!("no known partition for {topic_name:?} at partition index {partition_index} out of {partition_len} partitions, routing request to a random broker so that a NOT_LEADER_OR_FOLLOWER or similar error is returned to the client");
+                        tracing::warn!(
+                            "no known partition for {topic_name:?} at partition index {partition_index} out of {partition_len} partitions, routing request to a random broker so that a NOT_LEADER_OR_FOLLOWER or similar error is returned to the client"
+                        );
                         BrokerId(-1)
                     };
                     tracing::debug!(
@@ -1833,7 +1861,9 @@ The connection to the client has been closed."
                     }
                 }
             } else {
-                tracing::warn!("no known partition replica for {topic_name:?}, routing request to a random broker so that a NOT_LEADER_OR_FOLLOWER or similar error is returned to the client");
+                tracing::warn!(
+                    "no known partition replica for {topic_name:?}, routing request to a random broker so that a NOT_LEADER_OR_FOLLOWER or similar error is returned to the client"
+                );
                 let destination = BrokerId(-1);
                 let dest_topics = result.entry(destination).or_default();
                 dest_topics.push(topic);
@@ -1867,7 +1897,9 @@ The connection to the client has been closed."
                         partition.leader_id
                     } else {
                         let partition_len = topic_meta.partitions.len();
-                        tracing::warn!("no known partition for {topic_name:?} at partition index {partition_index} out of {partition_len} partitions, routing request to a random broker so that a NOT_LEADER_OR_FOLLOWER or similar error is returned to the client");
+                        tracing::warn!(
+                            "no known partition for {topic_name:?} at partition index {partition_index} out of {partition_len} partitions, routing request to a random broker so that a NOT_LEADER_OR_FOLLOWER or similar error is returned to the client"
+                        );
                         BrokerId(-1)
                     };
                     tracing::debug!(
@@ -1885,7 +1917,9 @@ The connection to the client has been closed."
                     }
                 }
             } else {
-                tracing::warn!("no known partition replica for {topic_name:?}, routing request to a random broker so that a NOT_LEADER_OR_FOLLOWER or similar error is returned to the client");
+                tracing::warn!(
+                    "no known partition replica for {topic_name:?}, routing request to a random broker so that a NOT_LEADER_OR_FOLLOWER or similar error is returned to the client"
+                );
                 let destination = BrokerId(-1);
                 let dest_topics = result.entry(destination).or_default();
                 dest_topics.push(topic);
@@ -1914,7 +1948,9 @@ The connection to the client has been closed."
                 );
                 *destination
             } else {
-                tracing::warn!("no known transaction for {transaction_id:?}, routing request to a random broker so that a NOT_COORDINATOR or similar error is returned to the client");
+                tracing::warn!(
+                    "no known transaction for {transaction_id:?}, routing request to a random broker so that a NOT_COORDINATOR or similar error is returned to the client"
+                );
                 BrokerId(-1)
             };
             let dest_transactions = result.entry(destination).or_default();
@@ -2010,7 +2046,9 @@ The connection to the client has been closed."
                     ..
                 })) => {
                     if metadata.brokers.is_empty() {
-                        tracing::info!("Metadata response from broker contained an empty list of brokers, this likely indicates the cluster is still starting up, will retry metadata request after a delay.");
+                        tracing::info!(
+                            "Metadata response from broker contained an empty list of brokers, this likely indicates the cluster is still starting up, will retry metadata request after a delay."
+                        );
                         tokio::time::sleep(Duration::from_millis(200)).await;
                         continue;
                     } else {
@@ -2460,7 +2498,7 @@ The connection to the client has been closed."
             _ => {
                 return Err(anyhow!(
                     "Combining of this message type is currently unsupported"
-                ))
+                ));
             }
         }
 
@@ -2488,7 +2526,9 @@ The connection to the client has been closed."
                             for base_partition in &base_response.partitions {
                                 if next_partition.partition_index == base_partition.partition_index
                                 {
-                                    tracing::warn!("Duplicate partition indexes in combined fetch response, if this ever occurs we should investigate the repercussions")
+                                    tracing::warn!(
+                                        "Duplicate partition indexes in combined fetch response, if this ever occurs we should investigate the repercussions"
+                                    )
                                 }
                             }
                         }
@@ -2528,7 +2568,9 @@ The connection to the client has been closed."
                             for base_partition in &base_topic.partitions {
                                 if next_partition.partition_index == base_partition.partition_index
                                 {
-                                    tracing::warn!("Duplicate partition indexes in combined fetch response, if this ever occurs we should investigate the repercussions")
+                                    tracing::warn!(
+                                        "Duplicate partition indexes in combined fetch response, if this ever occurs we should investigate the repercussions"
+                                    )
                                 }
                             }
                         }
@@ -2567,7 +2609,9 @@ The connection to the client has been closed."
                         for next_partition in &next_topic.partitions {
                             for base_partition in &base_topic.partitions {
                                 if next_partition.partition == base_partition.partition {
-                                    tracing::warn!("Duplicate partition indexes in combined OffsetForLeaderEpoch response, if this ever occurs we should investigate the repercussions")
+                                    tracing::warn!(
+                                        "Duplicate partition indexes in combined OffsetForLeaderEpoch response, if this ever occurs we should investigate the repercussions"
+                                    )
                                 }
                             }
                         }
@@ -2607,7 +2651,9 @@ The connection to the client has been closed."
                         for next_partition in &next_response.partition_responses {
                             for base_partition in &base_response.partition_responses {
                                 if next_partition.index == base_partition.index {
-                                    tracing::warn!("Duplicate partition indexes in combined produce response, if this ever occurs we should investigate the repercussions")
+                                    tracing::warn!(
+                                        "Duplicate partition indexes in combined produce response, if this ever occurs we should investigate the repercussions"
+                                    )
                                 }
                             }
                         }
@@ -2652,7 +2698,9 @@ The connection to the client has been closed."
                             for base_partition in &base_response.partitions {
                                 if next_partition.partition_index == base_partition.partition_index
                                 {
-                                    tracing::warn!("Duplicate partition indexes in combined DeleteRecords response, if this ever occurs we should investigate the repercussions")
+                                    tracing::warn!(
+                                        "Duplicate partition indexes in combined DeleteRecords response, if this ever occurs we should investigate the repercussions"
+                                    )
                                 }
                             }
                         }
@@ -2752,7 +2800,9 @@ The connection to the client has been closed."
                             for base_partition in &base_response.partitions {
                                 if next_partition.partition_index == base_partition.partition_index
                                 {
-                                    tracing::warn!("Duplicate partition indexes in combined DescribeProducers response, if this ever occurs we should investigate the repercussions")
+                                    tracing::warn!(
+                                        "Duplicate partition indexes in combined DescribeProducers response, if this ever occurs we should investigate the repercussions"
+                                    )
                                 }
                             }
                         }
@@ -3049,10 +3099,10 @@ The connection to the client has been closed."
                             self.topic_by_name.remove(&fetch_response.topic);
                             self.topic_by_id.remove(&fetch_response.topic_id);
                             tracing::info!(
-                                    "Fetch response included error NOT_LEADER_OR_FOLLOWER and so cleared metadata for topic {:?} {:?}",
-                                    fetch_response.topic,
-                                    fetch_response.topic_id
-                                );
+                                "Fetch response included error NOT_LEADER_OR_FOLLOWER and so cleared metadata for topic {:?} {:?}",
+                                fetch_response.topic,
+                                fetch_response.topic_id
+                            );
                             break;
                         }
                     }
@@ -3131,7 +3181,9 @@ The connection to the client has been closed."
                                 .group_to_coordinator_broker
                                 .remove(group_id)
                                 .map(|x| x.1);
-                            tracing::info!("Response was error NOT_COORDINATOR and so cleared group id {group_id:?} coordinator mapping to broker {broker_id:?}");
+                            tracing::info!(
+                                "Response was error NOT_COORDINATOR and so cleared group id {group_id:?} coordinator mapping to broker {broker_id:?}"
+                            );
                         }
                     }
                 }
@@ -3400,7 +3452,9 @@ The connection to the client has been closed."
         {
             node.broker_id
         } else {
-            tracing::warn!("no known broker with id {broker_id:?} that is 'up', routing request to a random broker so that a NOT_CONTROLLER or similar error is returned to the client");
+            tracing::warn!(
+                "no known broker with id {broker_id:?} that is 'up', routing request to a random broker so that a NOT_CONTROLLER or similar error is returned to the client"
+            );
             random_broker_id(&self.nodes, &mut self.rng)
         };
 
@@ -3421,7 +3475,9 @@ The connection to the client has been closed."
         let destination = match destination {
             Some(destination) => *destination,
             None => {
-                tracing::info!("no known coordinator for {group_id:?}, routing request to a random broker so that a NOT_COORDINATOR or similar error is returned to the client");
+                tracing::info!(
+                    "no known coordinator for {group_id:?}, routing request to a random broker so that a NOT_COORDINATOR or similar error is returned to the client"
+                );
                 random_broker_id(&self.nodes, &mut self.rng)
             }
         };
@@ -3447,7 +3503,9 @@ The connection to the client has been closed."
         let destination = match destination {
             Some(destination) => *destination,
             None => {
-                tracing::info!("no known coordinator for {transaction_id:?}, routing request to a random broker so that a NOT_COORDINATOR or similar error is returned to the client");
+                tracing::info!(
+                    "no known coordinator for {transaction_id:?}, routing request to a random broker so that a NOT_COORDINATOR or similar error is returned to the client"
+                );
                 random_broker_id(&self.nodes, &mut self.rng)
             }
         };

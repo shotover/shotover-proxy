@@ -1,13 +1,13 @@
 use super::TransformContextBuilder;
 use crate::message::Messages;
 use crate::transforms::{ChainState, Transform, TransformBuilder};
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use futures::TryFutureExt;
-use metrics::{counter, histogram, Counter, Histogram};
+use metrics::{Counter, Histogram, counter, histogram};
 use std::net::SocketAddr;
 use tokio::sync::{mpsc, oneshot};
 use tokio::time::{Duration, Instant};
-use tracing::{debug, error, info, trace, Instrument};
+use tracing::{Instrument, debug, error, info, trace};
 
 type InnerChain = Vec<TransformAndMetrics>;
 

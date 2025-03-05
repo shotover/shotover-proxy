@@ -2,7 +2,7 @@ use super::TransformContextBuilder;
 use super::{DownChainProtocol, UpChainProtocol};
 use crate::frame::MessageType;
 use crate::frame::{
-    value::GenericValue, CassandraFrame, CassandraOperation, CassandraResult, Frame,
+    CassandraFrame, CassandraOperation, CassandraResult, Frame, value::GenericValue,
 };
 use crate::message::{Message, MessageIdMap, Messages};
 use crate::transforms::protect::key_management::KeyManager;

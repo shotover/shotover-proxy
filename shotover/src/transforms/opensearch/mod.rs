@@ -3,13 +3,13 @@ use crate::frame::MessageType;
 use crate::tcp;
 use crate::transforms::{ChainState, Messages, Transform, TransformBuilder, TransformConfig};
 use crate::{
-    codec::{opensearch::OpenSearchCodecBuilder, CodecBuilder, Direction},
+    codec::{CodecBuilder, Direction, opensearch::OpenSearchCodecBuilder},
     transforms::util::{
-        cluster_connection_pool::{spawn_read_write_tasks, Connection},
         Request,
+        cluster_connection_pool::{Connection, spawn_read_write_tasks},
     },
 };
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;

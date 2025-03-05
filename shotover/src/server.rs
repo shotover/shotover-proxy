@@ -6,18 +6,18 @@ use crate::sources::Transport;
 use crate::tls::{AcceptError, TlsAcceptor};
 use crate::transforms::chain::{TransformChain, TransformChainBuilder};
 use crate::transforms::{ChainState, TransformContextBuilder, TransformContextConfig};
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use bytes::BytesMut;
 use futures::future::join_all;
 use futures::{SinkExt, StreamExt};
-use metrics::{counter, gauge, Counter, Gauge};
+use metrics::{Counter, Gauge, counter, gauge};
 use std::io::ErrorKind;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
-use tokio::sync::{mpsc, watch, Notify, OwnedSemaphorePermit, Semaphore};
+use tokio::sync::{Notify, OwnedSemaphorePermit, Semaphore, mpsc, watch};
 use tokio::task::JoinHandle;
 use tokio::time;
 use tokio::time::Duration;
@@ -26,8 +26,8 @@ use tokio_tungstenite::tungstenite::{
     protocol::Message as WsMessage,
 };
 use tokio_util::codec::{Decoder, Encoder, FramedRead, FramedWrite};
+use tracing::{Instrument, trace};
 use tracing::{debug, error, warn};
-use tracing::{trace, Instrument};
 
 pub struct TcpCodecListener<C: CodecBuilder> {
     chain_builder: TransformChainBuilder,
@@ -665,7 +665,9 @@ impl<C: CodecBuilder + 'static> Handler<C> {
             match tokio::time::timeout(timeout, in_rx.recv()).await {
                 Ok(messages) => messages,
                 Err(_) => {
-                    debug!("Dropping connection to {client_details} due to being idle for more than {timeout:?}");
+                    debug!(
+                        "Dropping connection to {client_details} due to being idle for more than {timeout:?}"
+                    );
                     None
                 }
             }
@@ -872,7 +874,9 @@ impl PendingRequests {
                     .filter(|x| x.request_id().is_some())
                     .count();
                 if responses_received > pending_requests.len() {
-                    tracing::error!("received more responses than requests, this violates the transform invariants");
+                    tracing::error!(
+                        "received more responses than requests, this violates the transform invariants"
+                    );
                     std::mem::drop(pending_requests.drain(..))
                 } else {
                     std::mem::drop(pending_requests.drain(..responses_received))

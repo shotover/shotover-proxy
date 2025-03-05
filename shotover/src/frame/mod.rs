@@ -1,9 +1,9 @@
 //! parsed AST-like representations of messages
 
+use crate::codec::CodecState;
 #[cfg(feature = "kafka")]
 use crate::codec::kafka::KafkaCodecState;
-use crate::codec::CodecState;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use bytes::Bytes;
 #[cfg(feature = "cassandra")]
 pub use cassandra::{CassandraFrame, CassandraOperation, CassandraResult};

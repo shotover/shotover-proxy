@@ -1,19 +1,19 @@
+use super::ShotoverNode;
 use super::node::ConnectionFactory;
 use super::node_pool::NodePool;
-use super::ShotoverNode;
 use crate::frame::cassandra::operation_name;
 use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame};
 use crate::message::{Message, MessageIdMap, Messages};
 use crate::{
     frame::{
-        cassandra::{parse_statement_single, Tracing},
+        cassandra::{Tracing, parse_statement_single},
         value::{GenericValue, IntSize},
     },
     message::MessageId,
 };
-use anyhow::{anyhow, Result};
-use cassandra_protocol::frame::message_result::BodyResResultPrepared;
+use anyhow::{Result, anyhow};
 use cassandra_protocol::frame::Version;
+use cassandra_protocol::frame::message_result::BodyResResultPrepared;
 use cql3_parser::cassandra_statement::CassandraStatement;
 use cql3_parser::common::{
     FQNameRef, Identifier, IdentifierRef, Operand, RelationElement, RelationOperator,
@@ -190,9 +190,9 @@ impl MessageRewriter {
                         } else {
                             select.where_clause.clear();
                             vec![format!(
-                            "WHERE clause on the query was ignored. Shotover does not support WHERE clauses on queries against {}",
-                            select.table_name
-                        )]
+                                "WHERE clause on the query was ignored. Shotover does not support WHERE clauses on queries against {}",
+                                select.table_name
+                            )]
                         };
 
                         return Some(TableToRewrite {
@@ -783,7 +783,7 @@ fn parse_system_nodes(mut response: Message) -> Result<Vec<NodeInfo>, MessagePar
                         other => {
                             return Err(MessageParseError::ParseFailure(anyhow!(
                                 "Expected release_version to be a Varchar but was {other:?}"
-                            )))
+                            )));
                         }
                     };
 
@@ -792,7 +792,7 @@ fn parse_system_nodes(mut response: Message) -> Result<Vec<NodeInfo>, MessagePar
                         other => {
                             return Err(MessageParseError::ParseFailure(anyhow!(
                                 "Expected tokens to be a list but was {other:?}"
-                            )))
+                            )));
                         }
                     };
 
@@ -801,7 +801,7 @@ fn parse_system_nodes(mut response: Message) -> Result<Vec<NodeInfo>, MessagePar
                         other => {
                             return Err(MessageParseError::ParseFailure(anyhow!(
                                 "Expected schema_version to be a Uuid but was {other:?}"
-                            )))
+                            )));
                         }
                     };
 
@@ -810,7 +810,7 @@ fn parse_system_nodes(mut response: Message) -> Result<Vec<NodeInfo>, MessagePar
                         other => {
                             return Err(MessageParseError::ParseFailure(anyhow!(
                                 "Expected data_center to be a Varchar but was {other:?}"
-                            )))
+                            )));
                         }
                     };
 
@@ -819,7 +819,7 @@ fn parse_system_nodes(mut response: Message) -> Result<Vec<NodeInfo>, MessagePar
                         other => {
                             return Err(MessageParseError::ParseFailure(anyhow!(
                                 "Expected rack to be a Varchar but was {other:?}"
-                            )))
+                            )));
                         }
                     };
 

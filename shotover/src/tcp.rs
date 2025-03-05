@@ -1,6 +1,6 @@
 //! Use to establish a TCP connection to a DB in a sink transform
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use std::time::Duration;
 use tokio::{
     net::{TcpStream, ToSocketAddrs},

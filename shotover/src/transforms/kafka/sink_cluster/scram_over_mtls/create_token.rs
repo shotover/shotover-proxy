@@ -1,15 +1,15 @@
 use std::time::Duration;
 
-use anyhow::{anyhow, Context, Result};
-use base64::{engine::general_purpose, Engine};
+use anyhow::{Context, Result, anyhow};
+use base64::{Engine, engine::general_purpose};
 use kafka_protocol::{
+    ResponseError,
     messages::{
-        describe_delegation_token_request::DescribeDelegationTokenOwner, ApiKey,
-        CreateDelegationTokenRequest, CreateDelegationTokenResponse,
+        ApiKey, CreateDelegationTokenRequest, CreateDelegationTokenResponse,
         DescribeDelegationTokenRequest, MetadataRequest, RequestHeader,
+        describe_delegation_token_request::DescribeDelegationTokenOwner,
     },
     protocol::StrBytes,
-    ResponseError,
 };
 use rand::{rngs::SmallRng, seq::IteratorRandom};
 
@@ -18,8 +18,8 @@ use crate::transforms::kafka::sink_cluster::scram_over_mtls::{DelegationToken, N
 use crate::{
     connection::SinkConnection,
     frame::{
-        kafka::{KafkaFrame, RequestBody, ResponseBody},
         Frame,
+        kafka::{KafkaFrame, RequestBody, ResponseBody},
     },
     message::Message,
 };
@@ -212,7 +212,9 @@ async fn wait_until_delegation_token_ready_on_all_brokers(
             {
                 Ok(connection) => Some(connection),
                 Err(err) => {
-                    tracing::error!("Token Task: Failed to create connection for {address:?} during token wait {err}");
+                    tracing::error!(
+                        "Token Task: Failed to create connection for {address:?} during token wait {err}"
+                    );
                     None
                 }
             };

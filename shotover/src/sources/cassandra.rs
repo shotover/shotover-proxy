@@ -1,5 +1,5 @@
 use crate::codec::Direction;
-use crate::codec::{cassandra::CassandraCodecBuilder, CodecBuilder};
+use crate::codec::{CodecBuilder, cassandra::CassandraCodecBuilder};
 use crate::config::chain::TransformChainConfig;
 use crate::server::TcpCodecListener;
 use crate::sources::{Source, Transport};
@@ -8,7 +8,7 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::{watch, Semaphore};
+use tokio::sync::{Semaphore, watch};
 use tokio::task::JoinHandle;
 use tracing::{error, info};
 

@@ -6,7 +6,7 @@ use cassandra_protocol::compression::Compression;
 use core::fmt;
 #[cfg(feature = "kafka")]
 use kafka::KafkaCodecState;
-use metrics::{histogram, Histogram};
+use metrics::{Histogram, histogram};
 use tokio_util::codec::{Decoder, Encoder};
 
 #[cfg(feature = "cassandra")]

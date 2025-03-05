@@ -1,11 +1,11 @@
-use crate::{shotover_process, CONNECTION_REFUSED_OS_ERROR};
+use crate::{CONNECTION_REFUSED_OS_ERROR, shotover_process};
 use basic_driver_tests::*;
 use fred::clients::Client;
 use fred::interfaces::ClientLike;
 use fred::prelude::Config;
 use pretty_assertions::assert_eq;
-use redis::aio::Connection;
 use redis::Commands;
+use redis::aio::Connection;
 
 use std::path::Path;
 use std::thread::sleep;

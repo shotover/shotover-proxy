@@ -5,10 +5,10 @@ use crate::transforms::{ChainState, Transform, TransformBuilder, TransformConfig
 use anyhow::Result;
 use async_trait::async_trait;
 use governor::{
+    Quota, RateLimiter,
     clock::DefaultClock,
     middleware::NoOpMiddleware,
     state::{InMemoryState, NotKeyed},
-    Quota, RateLimiter,
 };
 use nonzero_ext::nonzero;
 use serde::{Deserialize, Serialize};
@@ -94,7 +94,9 @@ impl Transform for RequestThrottling {
                     Ok(Err(_)) => true,
                     // occurs when the batch can never go through, meaning the rate limiter's quota's burst size is too low for the given number of cells to be ever allowed through
                     Err(_) => {
-                        tracing::warn!("A message was received that could never have been successfully delivered since it contains more sub messages than can ever be allowed through via the `RequestThrottling` transforms `max_requests_per_second` configuration.");
+                        tracing::warn!(
+                            "A message was received that could never have been successfully delivered since it contains more sub messages than can ever be allowed through via the `RequestThrottling` transforms `max_requests_per_second` configuration."
+                        );
                         true
                     }
                 };

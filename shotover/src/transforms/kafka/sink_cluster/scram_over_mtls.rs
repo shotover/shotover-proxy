@@ -6,9 +6,9 @@ use crate::{
 use anyhow::{Context, Result};
 use futures::stream::FuturesUnordered;
 use kafka_protocol::protocol::StrBytes;
-use metrics::{histogram, Histogram};
-use rand::rngs::SmallRng;
+use metrics::{Histogram, histogram};
 use rand::SeedableRng;
+use rand::rngs::SmallRng;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,

@@ -1,6 +1,6 @@
 use crate::transforms::protect::crypto::{gen_key, gen_nonce};
 use crate::transforms::protect::key_management::KeyMaterial;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use bytes::Bytes;
 use chacha20poly1305::aead::Aead;
 use chacha20poly1305::{ChaCha20Poly1305, Key, KeyInit, Nonce};

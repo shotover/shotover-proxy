@@ -12,9 +12,9 @@ use scylla::{ExecutionProfile, QueryResult};
 use std::net::IpAddr;
 use std::time::Duration;
 
-pub use scylla::prepared_statement::PreparedStatement as PreparedStatementScylla;
 pub use scylla::Session as SessionScylla;
 pub use scylla::SessionBuilder as SessionBuilderScylla;
+pub use scylla::prepared_statement::PreparedStatement as PreparedStatementScylla;
 
 pub struct ScyllaConnection {
     session: SessionScylla,

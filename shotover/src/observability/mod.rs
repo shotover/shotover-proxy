@@ -1,7 +1,7 @@
 use crate::http::HttpServerError;
 use crate::runner::ReloadHandle;
-use anyhow::{anyhow, Context, Result};
-use axum::{extract::State, response::Html, Router};
+use anyhow::{Context, Result, anyhow};
+use axum::{Router, extract::State, response::Html};
 use metrics_exporter_prometheus::PrometheusHandle;
 use std::str;
 use std::{net::SocketAddr, sync::Arc};

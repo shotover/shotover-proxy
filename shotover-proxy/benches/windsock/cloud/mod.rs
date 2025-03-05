@@ -10,7 +10,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use aws::AwsInstances;
 use futures::StreamExt;
-use futures::{stream::FuturesUnordered, Future};
+use futures::{Future, stream::FuturesUnordered};
 use serde::{Deserialize, Serialize};
 use std::pin::Pin;
 use std::{path::Path, sync::Arc};
@@ -108,17 +108,23 @@ impl Cloud for AwsCloud {
     ) {
         for instance in &resources.docker {
             if Arc::strong_count(instance) != 1 {
-                panic!("A reference to a docker instance has been held past the end of the benchmark. Ensure the benchmark destroys all instance references before ending.")
+                panic!(
+                    "A reference to a docker instance has been held past the end of the benchmark. Ensure the benchmark destroys all instance references before ending."
+                )
             }
         }
         for instance in &resources.shotover {
             if Arc::strong_count(instance) != 1 {
-                panic!("A reference to a shotover instance has been held past the end of the benchmark. Ensure the benchmark destroys all instance references before ending.")
+                panic!(
+                    "A reference to a shotover instance has been held past the end of the benchmark. Ensure the benchmark destroys all instance references before ending."
+                )
             }
         }
         if let Some(instance) = &resources.bencher {
             if Arc::strong_count(instance) != 1 {
-                panic!("A reference to a bencher instance has been held past the end of the benchmark. Ensure the benchmark destroys all instance references before ending.")
+                panic!(
+                    "A reference to a bencher instance has been held past the end of the benchmark. Ensure the benchmark destroys all instance references before ending."
+                )
             }
         }
 
@@ -166,8 +172,7 @@ impl Cloud for AwsCloud {
         if resources.required != required_resources {
             panic!(
                 "Stored resources do not meet the requirements of this bench run. Maybe try rerunning --store-cloud-resources-file\nloaded:\n{:?}\nrequired:\n{:?}",
-                resources.required,
-                required_resources
+                resources.required, required_resources
             );
         }
 

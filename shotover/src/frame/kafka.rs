@@ -1,6 +1,6 @@
 use crate::codec::kafka::KafkaCodecState;
 use crate::codec::kafka::RequestHeader as CodecRequestHeader;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use bytes::{BufMut, Bytes, BytesMut};
 use kafka_protocol::messages::{
     ApiKey, RequestHeader, ResponseHeader, SaslAuthenticateRequest, SaslAuthenticateResponse,
