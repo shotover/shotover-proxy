@@ -19,3 +19,5 @@
 - [Contributing](./dev-docs/contributing.md)
   - [Debugging](./dev-docs/debugging.md)
   - [Internal End-to-End Overview](./dev-docs/end-to-end-overview.md)
+  - [Setting up Linux](./dev-docs/setting-up-linux.md)
+  - [Setting up macOS](./dev-docs/setting-up-macos.md)
