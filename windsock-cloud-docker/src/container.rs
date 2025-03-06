@@ -21,7 +21,7 @@ impl Container {
                 "-d",
                 "--name",
                 "windsock-cloud",
-                "ubuntu:24.04",
+                "ubuntu:22.04",
                 "sleep",
                 "infinity",
             ])
