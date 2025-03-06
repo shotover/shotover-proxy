@@ -9,6 +9,7 @@ use redis::aio::Connection;
 
 use serde_json::json;
 use std::path::Path;
+use std::process::{Command, Stdio};
 use std::thread::sleep;
 use std::time::Duration;
 use syslog::Formatter3164;
@@ -371,9 +372,17 @@ async fn syslog_ng_write_to_tcp_socket() {
     }
     sleep(Duration::from_secs(5));
     // Verify the sent text
+    let output = Command::new("ls")
+        .arg("tests/test-configs/valkey/syslog-ng/json/log")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .expect("Failed to run ls");
+    println!("stderr: {}", String::from_utf8_lossy(&output.stdout));
+    println!("stdout: {}", String::from_utf8_lossy(&output.stderr));
     let log_content = fs::read_to_string(log_file_directory)
         .await
-        .expect("Failed to read syslog-ng config");
+        .expect("Failed to read syslog");
     assert!(log_content.contains(message));
 }
 
@@ -414,12 +423,20 @@ async fn syslog_ng_write_to_tcp_socket_with_json() {
     }
     sleep(Duration::from_secs(5));
     // Verify the sent text
+    let output = Command::new("ls")
+        .arg("tests/test-configs/valkey/syslog-ng/json/log")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .expect("Failed to run ls");
+    println!("stderr: {}", String::from_utf8_lossy(&output.stdout));
+    println!("stdout: {}", String::from_utf8_lossy(&output.stderr));
     let log_content = fs::read_to_string(log_file_directory)
         .await
-        .expect("Failed to read syslog-ng config");
+        .expect("Failed to read syslog");
     let json_content = fs::read_to_string(json_file_directory)
         .await
-        .expect("Failed to read syslog-ng config");
+        .expect("Failed to read syslog.json");
 
     assert!(log_content.contains("emergency"));
     assert_eq!(log_content.contains("debug"), false);
