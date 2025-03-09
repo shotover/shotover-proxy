@@ -1,8 +1,0 @@
-{"type":"syslog_1","content":{"message":"something useful","level":"info"},"TRANSPORT":"rfc3164+tcp","SOURCE":"s_network","PROGRAM":"syslog-ng-test","PRIORITY":"info","PID":"97442","MSGFORMAT":"rfc3164","MESSAGE":"{\"content\":{\"level\":\"info\",\"message\":\"something useful\"},\"type\":\"syslog_1\"}","LEGACY_MSGHDR":"syslog-ng-test[97442]: ","HOST_FROM":"172.18.0.1","HOST":"172.18.0.1","FACILITY":"user","DATE":"Mar  5 02:56:03"}
-
-{"type":"syslog_2","content":{"message":"something useful","level":"debug"},"TRANSPORT":"rfc3164+tcp","SOURCE":"s_network","PROGRAM":"syslog-ng-test","PRIORITY":"info","PID":"97607","MSGFORMAT":"rfc3164","MESSAGE":"{\"content\":{\"level\":\"debug\",\"message\":\"something useful\"},\"type\":\"syslog_2\"}","LEGACY_MSGHDR":"syslog-ng-test[97607]: ","HOST_FROM":"172.18.0.1","HOST":"172.18.0.1","FACILITY":"user","DATE":"Mar  5 02:56:38"}
-
-{"type":"syslog_3","content":{"message":"something useful","level":"emergency"},"TRANSPORT":"rfc3164+tcp","SOURCE":"s_network","PROGRAM":"syslog-ng-test","PRIORITY":"info","PID":"97729","MSGFORMAT":"rfc3164","MESSAGE":"{\"content\":{\"level\":\"emergency\",\"message\":\"something useful\"},\"type\":\"syslog_3\"}","LEGACY_MSGHDR":"syslog-ng-test[97729]: ","HOST_FROM":"172.18.0.1","HOST":"172.18.0.1","FACILITY":"user","DATE":"Mar  5 02:57:00"}
-
-{"type":"syslog_4","content":{"message":"something useful","level":"emergency"},"TRANSPORT":"rfc3164+tcp","SOURCE":"s_network","PROGRAM":"syslog-ng-test","PRIORITY":"info","PID":"98091","MSGFORMAT":"rfc3164","MESSAGE":"{\"content\":{\"level\":\"emergency\",\"message\":\"something useful\"},\"type\":\"syslog_4\"}","LEGACY_MSGHDR":"syslog-ng-test[98091]: ","HOST_FROM":"172.18.0.1","HOST":"172.18.0.1","FACILITY":"user","DATE":"Mar  5 02:58:39"}
-

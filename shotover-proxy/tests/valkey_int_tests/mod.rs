@@ -372,18 +372,13 @@ async fn syslog_ng_write_to_tcp_socket() {
     }
     sleep(Duration::from_secs(5));
     // Verify the sent text
-    let output = Command::new("ls")
-        .arg("tests/test-configs/valkey/syslog-ng/json/log")
+    let syslog_content = Command::new("docker")
+        .args(["exec", "syslog-ng", "cat", "/var/log/syslog"])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
         .expect("Failed to run ls");
-    println!("stderr: {}", String::from_utf8_lossy(&output.stdout));
-    println!("stdout: {}", String::from_utf8_lossy(&output.stderr));
-    let log_content = fs::read_to_string(log_file_directory)
-        .await
-        .expect("Failed to read syslog");
-    assert!(log_content.contains(message));
+    assert!(String::from_utf8_lossy(&syslog_content.stdout).contains(message));
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -423,23 +418,24 @@ async fn syslog_ng_write_to_tcp_socket_with_json() {
     }
     sleep(Duration::from_secs(5));
     // Verify the sent text
-    let output = Command::new("ls")
-        .arg("tests/test-configs/valkey/syslog-ng/json/log")
+    let syslog_content = Command::new("docker")
+        .args(["exec", "syslog-ng", "cat", "/var/log/syslog"])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
         .expect("Failed to run ls");
-    println!("stderr: {}", String::from_utf8_lossy(&output.stdout));
-    println!("stdout: {}", String::from_utf8_lossy(&output.stderr));
-    let log_content = fs::read_to_string(log_file_directory)
-        .await
-        .expect("Failed to read syslog");
-    let json_content = fs::read_to_string(json_file_directory)
-        .await
-        .expect("Failed to read syslog.json");
+    let syslog_content = String::from_utf8_lossy(&syslog_content.stdout);
 
-    assert!(log_content.contains("emergency"));
-    assert_eq!(log_content.contains("debug"), false);
+    let json_content = Command::new("docker")
+        .args(["exec", "syslog-ng", "cat", "/var/log/syslog.json"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .expect("Failed to run ls");
+    let json_content = String::from_utf8_lossy(&json_content.stdout);
+
+    assert!(syslog_content.contains("emergency"));
+    assert_eq!(syslog_content.contains("debug"), false);
     assert!(json_content.contains("emergency"));
     assert_eq!(json_content.contains("debug"), true);
 }

@@ -1,4 +1,0 @@
-Mar  4 07:52:06 5e296b8ddeff syslog-ng[1]: syslog-ng starting up; version='4.8.0'
-Mar  4 07:52:11 5e296b8ddeff syslog-ng[1]: Syslog connection accepted; fd='19', client='AF_INET(172.18.0.1:56435)', local='AF_INET(0.0.0.0:601)'
-Mar  4 07:52:11 172.18.0.1 lib-07d906ec7256d08f[98731]: Hello, world!
-Mar  4 07:52:11 5e296b8ddeff syslog-ng[1]: Syslog connection closed; fd='19', client='AF_INET(172.18.0.1:56435)', local='AF_INET(0.0.0.0:601)'
