@@ -7,13 +7,17 @@ use pretty_assertions::assert_eq;
 use redis::Commands;
 use redis::aio::Connection;
 
+use serde_json::json;
 use std::path::Path;
+use std::process::{Command, Stdio};
 use std::thread::sleep;
 use std::time::Duration;
+use syslog::Formatter3164;
 use test_helpers::connection::valkey_connection;
 use test_helpers::docker_compose::docker_compose;
 use test_helpers::metrics::assert_metrics_key_value;
 use test_helpers::shotover_process::{Count, EventMatcher, Level};
+use tokio::fs;
 
 pub mod assert;
 pub mod basic_driver_tests;
@@ -348,4 +352,90 @@ pub async fn assert_failed_requests_metric_is_incremented_on_error_response() {
     .await;
 
     shotover.shutdown_and_then_consume_events(&[]).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn syslog_ng_write_to_tcp_socket() {
+    let log_file_directory = "tests/test-configs/valkey/syslog-ng/raw-text/log/syslog";
+    fs::remove_file(log_file_directory).await.ok();
+    let message = "Hello, world!";
+
+    let _compose =
+        docker_compose("tests/test-configs/valkey/syslog-ng/raw-text/docker-compose.yaml");
+    sleep(Duration::from_secs(5));
+    let formatter = Formatter3164::default();
+    match syslog::tcp(formatter, "127.0.0.1:601") {
+        Err(e) => println!("Syslog could not be instantiated: {:?}", e),
+        Ok(mut writer) => {
+            writer.info(message).expect("Should fail to write");
+        }
+    }
+    sleep(Duration::from_secs(5));
+    // Verify the sent text
+    let syslog_content = Command::new("docker")
+        .args(["exec", "syslog-ng", "cat", "/var/log/syslog"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .expect("Failed to run ls");
+    assert!(String::from_utf8_lossy(&syslog_content.stdout).contains(message));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn syslog_ng_write_to_tcp_socket_with_json() {
+    let json_file_directory = "tests/test-configs/valkey/syslog-ng/json/log/syslog.json";
+    fs::remove_file(json_file_directory).await.ok();
+    let log_file_directory = "tests/test-configs/valkey/syslog-ng/json/log/syslog";
+    fs::remove_file(log_file_directory).await.ok();
+    let message_1 = json!({
+        "type": "syslog_1",
+        "content": {
+            "level": "emergency",
+            "message": "Something went wrong",
+        }
+    });
+    let message_2 = json!({
+        "type": "syslog_2",
+        "content": {
+            "level": "debug",
+            "message": "code flowing into this path",
+        }
+    });
+
+    let _compose = docker_compose("tests/test-configs/valkey/syslog-ng/json/docker-compose.yaml");
+    sleep(Duration::from_secs(5));
+    let formatter = Formatter3164::default();
+    match syslog::tcp(formatter, "127.0.0.1:601") {
+        Err(e) => println!("Syslog could not be instantiated: {:?}", e),
+        Ok(mut writer) => {
+            writer
+                .info(message_1.to_string())
+                .expect("Should fail to write");
+            writer
+                .info(message_2.to_string())
+                .expect("Should fail to write");
+        }
+    }
+    sleep(Duration::from_secs(5));
+    // Verify the sent text
+    let syslog_content = Command::new("docker")
+        .args(["exec", "syslog-ng", "cat", "/var/log/syslog"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .expect("Failed to run ls");
+    let syslog_content = String::from_utf8_lossy(&syslog_content.stdout);
+
+    let json_content = Command::new("docker")
+        .args(["exec", "syslog-ng", "cat", "/var/log/syslog.json"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .expect("Failed to run ls");
+    let json_content = String::from_utf8_lossy(&json_content.stdout);
+
+    assert!(syslog_content.contains("emergency"));
+    assert_eq!(syslog_content.contains("debug"), false);
+    assert!(json_content.contains("emergency"));
+    assert_eq!(json_content.contains("debug"), true);
 }
