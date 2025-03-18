@@ -37,7 +37,7 @@ jobs:
   publish-binary:
     name: "Publish Binary to GitHub"
     needs: prepublish-check
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
       - name: Install ubuntu packages
@@ -55,7 +55,7 @@ jobs:
   publish-crates-io:
     name: "Publish to crates.io"
     needs: prepublish-check
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
       - name: Install ubuntu packages

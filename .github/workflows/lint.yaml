@@ -18,48 +18,48 @@ env:
 jobs:
   job:
     name: Formatting and lints
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-24.04
     steps:
-    - uses: actions/checkout@v4
-    - uses: Swatinem/rust-cache@v2
-      with:
-        # this line means that only the main branch writes to the cache
-        # benefits:
-        # * prevents main branch caches from being evicted in favor of a PR cache
-        # * saves about 1min per workflow by skipping the actual cache write
-        # downsides:
-        # * PRs that update rust version or changes deps will be slow to iterate on due to changes not being cached.
-        save-if: ${{ github.ref == 'refs/heads/main' }}
-    - name: cache custom ubuntu packages
-      uses: actions/cache@v4
-      with:
-        path: shotover-proxy/build/packages
-        key: ubuntu-20.04-packages
-    - name: Install ubuntu packages
-      run: shotover-proxy/build/install_ubuntu_packages.sh
-    - name: Install cargo-hack
-      uses: taiki-e/install-action@v2
-      with:
-        tool: cargo-hack@0.6.16
-    - name: Ensure `cargo fmt --all` was run
-      run: cargo fmt --all -- --check
-    - name: Ensure that all crates compile and have no warnings under every possible combination of features
-      # some things to explicitly point out:
-      # * clippy also reports rustc warnings and errors
-      # * clippy --all-targets causes clippy to run against tests and examples which it doesnt do by default.
-      run: cargo hack --feature-powerset --at-least-one-of valkey,cassandra,kafka,opensearch clippy --all-targets --locked -- -D warnings
-    - name: Report disk usage
-      run: |
-        df -h
-
-        echo -e "\ntarget dir usage:"
-        du -h $PWD/target
-
-        echo -e "\n.cargo dir usage:"
-        du -h ~/.cargo
-    - name: Ensure that tests did not create or modify any files that arent .gitignore'd
-      run: |
-        if [ -n "$(git status --porcelain)" ]; then
-          git status
-          exit 1
-        fi
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+        with:
+          # this line means that only the main branch writes to the cache
+          # benefits:
+          # * prevents main branch caches from being evicted in favor of a PR cache
+          # * saves about 1min per workflow by skipping the actual cache write
+          # downsides:
+          # * PRs that update rust version or changes deps will be slow to iterate on due to changes not being cached.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: cache custom ubuntu packages
+        uses: actions/cache@v4
+        with:
+          path: shotover-proxy/build/packages
+          key: ubuntu-24.04-packages
+      - name: Install ubuntu packages
+        run: shotover-proxy/build/install_ubuntu_packages.sh
+      - name: Install cargo-hack
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-hack@0.6.16
+      - name: Ensure `cargo fmt --all` was run
+        run: cargo fmt --all -- --check
+      - name: Ensure that all crates compile and have no warnings under every possible combination of features
+        # some things to explicitly point out:
+        # * clippy also reports rustc warnings and errors
+        # * clippy --all-targets causes clippy to run against tests and examples which it doesnt do by default.
+        run: cargo hack --feature-powerset --at-least-one-of valkey,cassandra,kafka,opensearch clippy --all-targets --locked -- -D warnings
+      - name: Report disk usage
+        run: |
+          df -h
+          
+          echo -e "\ntarget dir usage:"
+          du -h $PWD/target
+          
+          echo -e "\n.cargo dir usage:"
+          du -h ~/.cargo
+      - name: Ensure that tests did not create or modify any files that arent .gitignore'd
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            git status
+            exit 1
+          fi
