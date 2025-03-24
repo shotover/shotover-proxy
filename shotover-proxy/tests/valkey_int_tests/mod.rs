@@ -119,7 +119,6 @@ async fn tls_cluster_sink() {
         address: "127.0.0.1".into(),
         port: 6379,
         tls: false,
-        driver: ValkeyDriver::Sync,
     }
     .new_sync();
     let mut flusher = Flusher::new_cluster_tls().await;
@@ -141,13 +140,21 @@ async fn tls_source_and_tls_single_sink() {
             .await;
 
         // let connection = || valkey_connection::new_async_tls("127.0.0.1", 6379);
-        let connection_creator =
-            ValkeyConnectionCreator::new("127.0.0.1", 6379, true, ValkeyDriver::Sync);
+        let connection_creator = ValkeyConnectionCreator {
+            address: "127.0.0.1".into(),
+            port: 6379,
+            tls: true,
+        };
+
         let mut flusher = Flusher::new_single_connection(
             // valkey_connection::new_async_tls("127.0.0.1", 6379).await,
-            ValkeyConnectionCreator::new("127.0.0.1", 6379, true, ValkeyDriver::Sync)
-                .build()
-                .await,
+            ValkeyConnectionCreator {
+                address: "127.0.0.1".into(),
+                port: 6379,
+                tls: true,
+            }
+            .build(ValkeyDriver::Sync)
+            .await,
         )
         .await;
 
@@ -166,8 +173,12 @@ async fn tls_source_and_tls_single_sink() {
                 .await;
 
         // let mut connection = valkey_connection::new_async_tls("127.0.0.1", 6379).await;
-        let mut connection =
-            ValkeyConnectionCreator::new("127.0.0.1", 6379, true, ValkeyDriver::Sync).new_sync();
+        let mut connection = ValkeyConnectionCreator {
+            address: "127.0.0.1".into(),
+            port: 6379,
+            tls: true,
+        }
+        .new_sync();
         test_cluster_basics(&mut connection).await;
         shotover.shutdown_and_then_consume_events(&[]).await;
     }
@@ -185,8 +196,12 @@ async fn tls_source_and_tls_single_sink() {
                 .await;
 
         // let mut connection = valkey_connection::new_async_tls("127.0.0.1", 6379).await;
-        let mut connection =
-            ValkeyConnectionCreator::new("127.0.0.1", 6379, true, ValkeyDriver::Sync).new_sync();
+        let mut connection = ValkeyConnectionCreator {
+            address: "127.0.0.1".into(),
+            port: 6379,
+            tls: true,
+        }
+        .new_sync();
         test_cluster_basics(&mut connection).await;
         shotover.shutdown_and_then_consume_events(&[]).await;
     }
@@ -236,8 +251,12 @@ async fn cluster_hiding() {
         .await;
 
     // let mut connection = valkey_connection::new_async("127.0.0.1", 6379).await;
-    let mut connection =
-        ValkeyConnectionCreator::new("127.0.0.1", 6379, false, ValkeyDriver::Sync).new_sync();
+    let mut connection = ValkeyConnectionCreator {
+        address: "127.0.0.1".into(),
+        port: 6379,
+        tls: true,
+    }
+    .new_sync();
     let connection = &mut connection;
     let mut flusher = Flusher::new_cluster().await;
 
@@ -260,7 +279,6 @@ async fn cluster_handling() {
         address: "127.0.0.1".into(),
         port: 6379,
         tls: false,
-        driver: ValkeyDriver::Sync,
     }
     .new_sync();
     let connection = &mut connection;

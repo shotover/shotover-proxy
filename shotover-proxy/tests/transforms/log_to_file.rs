@@ -2,6 +2,7 @@ use crate::shotover_process;
 use crate::valkey_int_tests::assert::assert_ok;
 use pretty_assertions::assert_eq;
 use test_helpers::connection::valkey_connection;
+use test_helpers::connection::valkey_connection::{ValkeyConnectionCreator, ValkeyDriver};
 use test_helpers::docker_compose::docker_compose;
 
 #[cfg(feature = "alpha-transforms")]
@@ -13,7 +14,12 @@ async fn log_to_file() {
         .await;
 
     // CLIENT SETINFO requests sent by driver during connection handshake
-    let mut connection = valkey_connection::new_async("127.0.0.1", 6379).await;
+    // let mut connection = valkey_connection::new_async("127.0.0.1", 6379).await;
+    let mut connection = ValkeyConnectionCreator {
+        address: "127.0.0.1".into(),
+        port: 6379,
+        tls: false
+    }.new_sync();
     let request = std::fs::read("message-log/1/requests/message1.bin").unwrap();
     assert_eq_string(
         &request,

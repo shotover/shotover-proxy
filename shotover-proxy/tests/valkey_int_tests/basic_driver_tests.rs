@@ -1122,12 +1122,20 @@ pub async fn test_cluster_replication(
 pub async fn test_dr_auth() {
     // setup 3 different connections in different states
     // let mut connection_shotover_noauth = valkey_connection::new_async("127.0.0.1", 6379).await;
-    let mut connection_shotover_noauth =
-        ValkeyConnectionCreator::new("127.0.0.1", 6379, false, ValkeyDriver::Sync).new_sync();
+    let mut connection_shotover_noauth = ValkeyConnectionCreator {
+        address: "127.0.0.1".into(),
+        port: 6379,
+        tls: true,
+    }
+    .new_sync();
 
     // let mut connection_shotover_auth = valkey_connection::new_async("127.0.0.1", 6379).await;
-    let mut connection_shotover_auth =
-        ValkeyConnectionCreator::new("127.0.0.1", 6379, false, ValkeyDriver::Sync).new_sync();
+    let mut connection_shotover_auth = ValkeyConnectionCreator {
+        address: "127.0.0.1".into(),
+        port: 6379,
+        tls: true,
+    }
+    .new_sync();
     assert_ok(
         redis::cmd("AUTH").arg("default").arg("shotover"),
         &mut connection_shotover_auth,
@@ -1135,8 +1143,12 @@ pub async fn test_dr_auth() {
     .await;
 
     // let mut connection_dr_auth = valkey_connection::new_async("127.0.0.1", 2120).await;
-    let mut connection_dr_auth =
-        ValkeyConnectionCreator::new("127.0.0.1", 2120, false, ValkeyDriver::Sync).new_sync();
+    let mut connection_dr_auth = ValkeyConnectionCreator {
+        address: "127.0.0.1".into(),
+        port: 6379,
+        tls: true,
+    }
+    .new_sync();
     assert_ok(
         redis::cmd("AUTH").arg("default").arg("shotover"),
         &mut connection_dr_auth,
@@ -1537,29 +1549,57 @@ impl Flusher {
         Flusher {
             connections: vec![
                 // shotover - shotover might have internal handling for flush that we want to run
-                ValkeyConnectionCreator::new("127.0.0.1", 6379, false, ValkeyDriver::Sync)
-                    .build()
-                    .await,
+                ValkeyConnectionCreator {
+                    address: "127.0.0.1".into(),
+                    port: 6379,
+                    tls: false,
+                }
+                .build(ValkeyDriver::Sync)
+                .await,
                 // valkey_connection::new_async("127.0.0.1", 6379).await,
                 // valkey cluster instances - shotover may or may not run flush on all cluster instances
-                ValkeyConnectionCreator::new("172.16.1.2", 6379, false, ValkeyDriver::Sync)
-                    .build()
-                    .await,
-                ValkeyConnectionCreator::new("172.16.1.3", 6379, false, ValkeyDriver::Sync)
-                    .build()
-                    .await,
-                ValkeyConnectionCreator::new("172.16.1.4", 6379, false, ValkeyDriver::Sync)
-                    .build()
-                    .await,
-                ValkeyConnectionCreator::new("172.16.1.5", 6379, false, ValkeyDriver::Sync)
-                    .build()
-                    .await,
-                ValkeyConnectionCreator::new("172.16.1.6", 6379, false, ValkeyDriver::Sync)
-                    .build()
-                    .await,
-                ValkeyConnectionCreator::new("172.16.1.7", 6379, false, ValkeyDriver::Sync)
-                    .build()
-                    .await,
+                ValkeyConnectionCreator {
+                    address: "172.16.1.2".into(),
+                    port: 6379,
+                    tls: false,
+                }
+                .build(ValkeyDriver::Sync)
+                .await,
+                ValkeyConnectionCreator {
+                    address: "172.16.1.3".into(),
+                    port: 6379,
+                    tls: false,
+                }
+                .build(ValkeyDriver::Sync)
+                .await,
+                ValkeyConnectionCreator {
+                    address: "172.16.1.4".into(),
+                    port: 6379,
+                    tls: false,
+                }
+                .build(ValkeyDriver::Sync)
+                .await,
+                ValkeyConnectionCreator {
+                    address: "172.16.1.5".into(),
+                    port: 6379,
+                    tls: false,
+                }
+                .build(ValkeyDriver::Sync)
+                .await,
+                ValkeyConnectionCreator {
+                    address: "172.16.1.6".into(),
+                    port: 6379,
+                    tls: false,
+                }
+                .build(ValkeyDriver::Sync)
+                .await,
+                ValkeyConnectionCreator {
+                    address: "172.16.1.7".into(),
+                    port: 6379,
+                    tls: false,
+                }
+                .build(ValkeyDriver::Sync)
+                .await,
                 // valkey_connection::new_async("172.16.1.2", 6379).await,
                 // valkey_connection::new_async("172.16.1.3", 6379).await,
                 // valkey_connection::new_async("172.16.1.4", 6379).await,
@@ -1575,28 +1615,56 @@ impl Flusher {
             connections: vec![
                 // shotover - shotover might have internal handling for flush that we want to run
                 // valkey_connection::new_async("127.0.0.1", 6379).await,
-                ValkeyConnectionCreator::new("127.0.0.1", 6379, true, ValkeyDriver::Sync)
-                    .build()
-                    .await,
+                ValkeyConnectionCreator {
+                    address: "127.0.0.1".into(),
+                    port: 6379,
+                    tls: true,
+                }
+                .build(ValkeyDriver::Sync)
+                .await,
                 // valkey cluster instances - shotover may or may not run flush on all cluster instances
-                ValkeyConnectionCreator::new("172.16.1.2", 6379, true, ValkeyDriver::Sync)
-                    .build()
-                    .await,
-                ValkeyConnectionCreator::new("172.16.1.3", 6379, true, ValkeyDriver::Sync)
-                    .build()
-                    .await,
-                ValkeyConnectionCreator::new("172.16.1.4", 6379, true, ValkeyDriver::Sync)
-                    .build()
-                    .await,
-                ValkeyConnectionCreator::new("172.16.1.5", 6379, true, ValkeyDriver::Sync)
-                    .build()
-                    .await,
-                ValkeyConnectionCreator::new("172.16.1.6", 6379, true, ValkeyDriver::Sync)
-                    .build()
-                    .await,
-                ValkeyConnectionCreator::new("172.16.1.7", 6379, true, ValkeyDriver::Sync)
-                    .build()
-                    .await,
+                ValkeyConnectionCreator {
+                    address: "172.16.1.2".into(),
+                    port: 6379,
+                    tls: true,
+                }
+                .build(ValkeyDriver::Sync)
+                .await,
+                ValkeyConnectionCreator {
+                    address: "172.16.1.3".into(),
+                    port: 6379,
+                    tls: true,
+                }
+                .build(ValkeyDriver::Sync)
+                .await,
+                ValkeyConnectionCreator {
+                    address: "172.16.1.4".into(),
+                    port: 6379,
+                    tls: true,
+                }
+                .build(ValkeyDriver::Sync)
+                .await,
+                ValkeyConnectionCreator {
+                    address: "172.16.1.5".into(),
+                    port: 6379,
+                    tls: true,
+                }
+                .build(ValkeyDriver::Sync)
+                .await,
+                ValkeyConnectionCreator {
+                    address: "172.16.1.6".into(),
+                    port: 6379,
+                    tls: true,
+                }
+                .build(ValkeyDriver::Sync)
+                .await,
+                ValkeyConnectionCreator {
+                    address: "172.16.1.7".into(),
+                    port: 6379,
+                    tls: true,
+                }
+                .build(ValkeyDriver::Sync)
+                .await,
                 // valkey_connection::new_async_tls("172.16.1.2", 6379).await,
                 // valkey_connection::new_async_tls("172.16.1.3", 6379).await,
                 // valkey_connection::new_async_tls("172.16.1.4", 6379).await,

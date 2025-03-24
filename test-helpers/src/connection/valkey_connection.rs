@@ -154,21 +154,21 @@ pub struct ValkeyConnectionCreator {
     pub address: String,
     pub port: u16,
     pub tls: bool,
-    pub driver: ValkeyDriver,
+    // pub driver: ValkeyDriver,
 }
 
 impl ValkeyConnectionCreator {
-    pub fn new(address: &str, port: u16, tls: bool, driver: ValkeyDriver) -> Self {
-        Self {
-            address: address.into(),
-            port,
-            tls,
-            driver,
-        }
-    }
-
-    pub async fn build(&self) -> ValkeyConnection {
-        match self.driver {
+    // pub fn new(address: &str, port: u16, tls: bool, driver: ValkeyDriver) -> Self {
+    //     Self {
+    //         address: address.into(),
+    //         port,
+    //         tls,
+    //         driver,
+    //     }
+    // }
+    //
+    pub async fn build(&self, driver: ValkeyDriver) -> ValkeyConnection {
+        match driver {
             ValkeyDriver::Sync => ValkeyConnection::Sync(self.new_sync()),
             ValkeyDriver::Async => ValkeyConnection::Async(self.new_async().await),
         }
