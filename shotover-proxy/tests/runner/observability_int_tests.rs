@@ -1,5 +1,4 @@
 use crate::shotover_process;
-use test_helpers::connection::valkey_connection;
 use test_helpers::connection::valkey_connection::ValkeyConnectionCreator;
 use test_helpers::docker_compose::docker_compose;
 use test_helpers::metrics::{assert_metrics_has_keys, assert_metrics_key_value};

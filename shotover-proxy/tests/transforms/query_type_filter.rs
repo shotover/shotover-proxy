@@ -1,9 +1,8 @@
 use crate::shotover_process;
 use pretty_assertions::assert_eq;
-use test_helpers::connection::valkey_connection;
 use test_helpers::connection::valkey_connection::ValkeyConnectionCreator;
 
-async fn test_pipeline(connection: &mut redis::aio::Connection) {
+async fn test_pipeline(connection: &mut redis::aio::MultiplexedConnection) {
     // using individual queries tests QueryTypeFilter with a MessageWrapper containing a single message at a time.
     for _ in 0..100 {
         // Because this is a write it should be filtered out and replaced with an error

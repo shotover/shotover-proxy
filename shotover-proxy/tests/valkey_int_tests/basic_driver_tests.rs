@@ -3,11 +3,10 @@ use crate::valkey_int_tests::assert::*;
 use bytes::BytesMut;
 use fred::clients::Client;
 use fred::interfaces::ClientLike;
-use futures::{Future, StreamExt};
 use pretty_assertions::assert_eq;
 use rand::distributions::Alphanumeric;
 use rand::{Rng, thread_rng};
-use redis::aio::{Connection, MultiplexedConnection};
+use redis::aio::MultiplexedConnection;
 use redis::cluster::ClusterConnection;
 use redis::{AsyncCommands, Commands, ErrorKind, RedisError, Value};
 use shotover::frame::ValkeyFrame;
@@ -19,9 +18,7 @@ use test_helpers::connection::valkey_connection;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
-use test_helpers::connection::valkey_connection::{
-    ValkeyConnection, ValkeyConnectionCreator, ValkeyDriver,
-};
+use test_helpers::connection::valkey_connection::ValkeyConnectionCreator;
 use tokio::time::timeout;
 use tracing::trace;
 

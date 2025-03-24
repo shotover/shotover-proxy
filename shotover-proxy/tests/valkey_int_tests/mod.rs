@@ -11,9 +11,7 @@ use std::path::Path;
 use std::thread::sleep;
 use std::time::Duration;
 use test_helpers::connection::valkey_connection;
-use test_helpers::connection::valkey_connection::{
-    ValkeyConnection, ValkeyConnectionCreator, ValkeyDriver,
-};
+use test_helpers::connection::valkey_connection::ValkeyConnectionCreator;
 use test_helpers::docker_compose::docker_compose;
 use test_helpers::metrics::assert_metrics_key_value;
 use test_helpers::shotover_process::{Count, EventMatcher, Level};
@@ -351,7 +349,13 @@ async fn cluster_dr() {
         let shotover = shotover_process("tests/test-configs/valkey/cluster-dr/topology.yaml")
             .start()
             .await;
-        let mut connection = valkey_connection::new_async("127.0.0.1", 6379).await;
+        let mut connection = ValkeyConnectionCreator {
+            address: "127.0.0.1".into(),
+            port: 6379,
+            tls: false,
+        }
+        .new_async()
+        .await;
         redis::cmd("AUTH")
             .arg("default")
             .arg("shotover")
@@ -423,7 +427,9 @@ pub async fn assert_failed_requests_metric_is_incremented_on_error_response() {
         address: "127.0.0.1".into(),
         port: 6379,
         tls: false,
-    }.new_async().await;
+    }
+    .new_async()
+    .await;
 
     redis::cmd("INVALID_COMMAND")
         .arg("foo")
