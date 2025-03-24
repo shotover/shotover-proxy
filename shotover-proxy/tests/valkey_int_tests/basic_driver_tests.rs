@@ -1717,7 +1717,7 @@ impl Flusher {
                 ValkeyConnectionCreator {
                     address: "127.0.0.1".into(),
                     port: 6379,
-                    tls: true,
+                    tls: false,
                 }
                 .new_async()
                 .await,
