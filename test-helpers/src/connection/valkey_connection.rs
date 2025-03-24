@@ -1,10 +1,7 @@
 use anyhow::Context;
 use openssl::ssl::{Ssl, SslConnector, SslFiletype, SslMethod};
 use redis::aio::{AsyncStream, MultiplexedConnection};
-use redis::{
-    Client, ClientTlsConfig, Cmd, Commands, ConnectionLike, Pipeline, RedisFuture, RedisResult,
-    TlsCertificates, ToRedisArgs, Value,
-};
+use redis::{Client, ClientTlsConfig, TlsCertificates};
 use std::fs::File;
 use std::io::{BufReader, Read};
 use std::pin::Pin;
@@ -61,7 +58,7 @@ async fn new_async_connection(address: &str, port: u16) -> MultiplexedConnection
 
 #[deprecated]
 pub async fn new_async_tls(address: &str, port: u16) -> redis::aio::Connection {
-    let ssl = create_ssl(address, port);
+    let ssl = create_ssl(address);
 
     let tcp_stream = TcpStream::connect((address, port)).await.unwrap();
     let mut tls_stream = SslStream::new(ssl, tcp_stream).unwrap();
@@ -69,7 +66,7 @@ pub async fn new_async_tls(address: &str, port: u16) -> redis::aio::Connection {
     new_async_inner(Box::pin(tls_stream) as Pin<Box<dyn AsyncStream + Send + Sync>>).await
 }
 
-fn create_ssl(address: &str, port: u16) -> Ssl {
+fn create_ssl(address: &str) -> Ssl {
     let certificate_authority_path = "tests/test-configs/valkey/tls/certs/localhost_CA.crt";
     let certificate_path = "tests/test-configs/valkey/tls/certs/localhost.crt";
     let private_key_path = "tests/test-configs/valkey/tls/certs/localhost.key";
@@ -201,135 +198,3 @@ pub enum ValkeyConnection {
     Sync(redis::Connection),
     Async(redis::aio::MultiplexedConnection),
 }
-
-impl redis::ConnectionLike for ValkeyConnection {
-    fn req_packed_command(&mut self, cmd: &[u8]) -> RedisResult<Value> {
-        if let ValkeyConnection::Sync(conn) = self {
-            conn.req_packed_command(cmd)
-        } else {
-            unreachable!()
-        }
-    }
-
-    fn req_packed_commands(
-        &mut self,
-        cmd: &[u8],
-        offset: usize,
-        count: usize,
-    ) -> RedisResult<Vec<Value>> {
-        if let ValkeyConnection::Sync(conn) = self {
-            conn.req_packed_commands(cmd, offset, count)
-        } else {
-            unreachable!()
-        }
-    }
-
-    fn get_db(&self) -> i64 {
-        if let ValkeyConnection::Sync(conn) = self {
-            conn.get_db()
-        } else {
-            unreachable!()
-        }
-    }
-
-    fn check_connection(&mut self) -> bool {
-        if let ValkeyConnection::Sync(conn) = self {
-            conn.check_connection()
-        } else {
-            unreachable!()
-        }
-    }
-
-    fn is_open(&self) -> bool {
-        if let ValkeyConnection::Sync(conn) = self {
-            conn.is_open()
-        } else {
-            unreachable!()
-        }
-    }
-}
-
-impl redis::aio::ConnectionLike for ValkeyConnection {
-    fn req_packed_command<'a>(&'a mut self, cmd: &'a Cmd) -> RedisFuture<'a, Value> {
-        if let ValkeyConnection::Async(conn) = self {
-            conn.req_packed_command(cmd)
-        } else {
-            unreachable!()
-        }
-    }
-
-    fn req_packed_commands<'a>(
-        &'a mut self,
-        cmd: &'a Pipeline,
-        offset: usize,
-        count: usize,
-    ) -> RedisFuture<'a, Vec<Value>> {
-        if let ValkeyConnection::Async(conn) = self {
-            conn.req_packed_commands(cmd, offset, count)
-        } else {
-            unreachable!()
-        }
-    }
-
-    fn get_db(&self) -> i64 {
-        if let ValkeyConnection::Async(conn) = self {
-            conn.get_db()
-        } else {
-            unreachable!()
-        }
-    }
-}
-
-// impl ValkeyConnection {
-//     pub async fn into_pubsub(self) -> ValkeyPubsub {
-//         match self {
-//             ValkeyConnection::Sync(mut conn) => ValkeyPubsub::Sync(conn.as_pubsub()),
-//             ValkeyConnection::Async(conn) => {
-//                 panic!("Does not support converting to async pubsub connection")
-//             }
-//         }
-//     }
-//
-//     pub async fn publish<K: ToRedisArgs, E: ToRedisArgs>(
-//         self,
-//         channel: K,
-//         message: E,
-//     ) -> RedisResult<()> {
-//         match self {
-//             ValkeyConnection::Sync(mut conn) => conn.publish(channel, message).unwrap()?,
-//             ValkeyConnection::Async(mut conn) => conn.publish(channel, message).unwrap()?,
-//         }
-//     }
-// }
-//
-// pub enum ValkeyPubsub<'a> {
-//     Sync(redis::PubSub<'a>),
-//     Async(redis::aio::PubSub),
-// }
-//
-// impl ValkeyPubsub {
-//     pub async fn into_connection(self) {
-//         drop(self);
-//     }
-//
-//     pub async fn subscribe<T: ToRedisArgs>(&mut self, channel: T) -> RedisResult<()> {
-//         match self {
-//             ValkeyPubsub::Sync(conn) => Ok(conn.subscribe(channel)?),
-//             ValkeyPubsub::Async(conn) => Ok(conn.subscribe(channel).await?),
-//         }
-//     }
-//
-//     pub async fn unsubscribe<T: ToRedisArgs>(&mut self, channel: T) -> RedisResult<()> {
-//         match self {
-//             ValkeyPubsub::Sync(conn) => Ok(conn.unsubscribe(channel)?),
-//             ValkeyPubsub::Async(conn) => Ok(conn.unsubscribe(channel).await?),
-//         }
-//     }
-//
-//     pub async fn psubscribe<T: ToRedisArgs>(&mut self, channel: T) -> RedisResult<()> {
-//         match self {
-//             ValkeyPubsub::Sync(conn) => Ok(conn.psubscribe(channel)?),
-//             ValkeyPubsub::Async(conn) => Ok(conn.psubscribe(channel).await?),
-//         }
-//     }
-// }
