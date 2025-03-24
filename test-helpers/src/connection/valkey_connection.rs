@@ -48,12 +48,11 @@ pub async fn new_async(address: &str, port: u16) -> redis::aio::Connection {
 }
 
 async fn new_async_connection(address: &str, port: u16) -> MultiplexedConnection {
-    let connection = Client::open((address, port))
+    Client::open((address, port))
         .unwrap()
         .get_multiplexed_async_connection()
         .await
-        .unwrap();
-    connection
+        .unwrap()
 }
 
 #[deprecated]
