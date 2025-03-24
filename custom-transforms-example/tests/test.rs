@@ -3,6 +3,7 @@ use redis::Cmd;
 use redis::aio::Connection;
 use std::time::Duration;
 use test_helpers::connection::valkey_connection;
+use test_helpers::connection::valkey_connection::ValkeyConnectionCreator;
 use test_helpers::docker_compose::docker_compose;
 use test_helpers::shotover_process::{
     BinProcess, BinProcessBuilder, EventMatcher, Level, bin_path,
@@ -13,7 +14,14 @@ async fn test_custom_transform() {
     // Setup shotover and the valkey server it connects to
     let _compose = docker_compose("config/docker-compose.yaml");
     let shotover = shotover_proxy("config/topology.yaml").await;
-    let mut connection = valkey_connection::new_async("127.0.0.1", 6379).await;
+    // let mut connection = valkey_connection::new_async("127.0.0.1", 6379).await;
+    let mut connection = ValkeyConnectionCreator {
+        address: "127.0.0.1".into(),
+        port: 6379,
+        tls: false,
+    }
+    .new_async()
+    .await;
 
     // Verify functionality of transform
     assert_ok(

@@ -150,26 +150,9 @@ pub struct ValkeyConnectionCreator {
     pub address: String,
     pub port: u16,
     pub tls: bool,
-    // pub driver: ValkeyDriver,
 }
 
 impl ValkeyConnectionCreator {
-    // pub fn new(address: &str, port: u16, tls: bool, driver: ValkeyDriver) -> Self {
-    //     Self {
-    //         address: address.into(),
-    //         port,
-    //         tls,
-    //         driver,
-    //     }
-    // }
-    //
-    pub async fn build(&self, driver: ValkeyDriver) -> ValkeyConnection {
-        match driver {
-            ValkeyDriver::Sync => ValkeyConnection::Sync(self.new_sync()),
-            ValkeyDriver::Async => ValkeyConnection::Async(self.new_async().await),
-        }
-    }
-
     pub async fn new_async(&self) -> redis::aio::MultiplexedConnection {
         if self.tls {
             new_async_tls_connection(&self.address, self.port).await
@@ -185,15 +168,4 @@ impl ValkeyConnectionCreator {
             new_sync_connection(&self.address, self.port)
         }
     }
-}
-
-#[derive(Copy, Clone, Eq, PartialEq, Debug)]
-pub enum ValkeyDriver {
-    Sync,
-    Async,
-}
-
-pub enum ValkeyConnection {
-    Sync(redis::Connection),
-    Async(redis::aio::MultiplexedConnection),
 }
