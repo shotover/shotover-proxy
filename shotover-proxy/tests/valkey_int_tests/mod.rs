@@ -10,7 +10,6 @@ use redis::aio::MultiplexedConnection;
 use std::path::Path;
 use std::thread::sleep;
 use std::time::Duration;
-use test_helpers::connection::valkey_connection;
 use test_helpers::connection::valkey_connection::ValkeyConnectionCreator;
 use test_helpers::docker_compose::docker_compose;
 use test_helpers::metrics::assert_metrics_key_value;

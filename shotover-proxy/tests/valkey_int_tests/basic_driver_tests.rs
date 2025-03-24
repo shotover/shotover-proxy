@@ -14,7 +14,6 @@ use shotover::tcp;
 use std::collections::{HashMap, HashSet};
 use std::thread::sleep;
 use std::time::Duration;
-use test_helpers::connection::valkey_connection;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 

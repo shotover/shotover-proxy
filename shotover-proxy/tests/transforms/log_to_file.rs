@@ -14,13 +14,13 @@ async fn log_to_file() {
         .await;
 
     // CLIENT SETINFO requests sent by driver during connection handshake
-    // let mut connection = valkey_connection::new_async("127.0.0.1", 6379).await;
     let mut connection = ValkeyConnectionCreator {
         address: "127.0.0.1".into(),
         port: 6379,
         tls: false,
     }
-    .new_sync();
+    .new_async()
+    .await;
     let request = std::fs::read("message-log/1/requests/message1.bin").unwrap();
     assert_eq_string(
         &request,

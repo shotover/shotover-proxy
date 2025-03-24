@@ -25,7 +25,6 @@ use test_helpers::connection::cassandra::{
     CassandraDriver::Java, CassandraDriver::Scylla, CqlWsSession, ResultValue, assert_query_result,
     run_query,
 };
-use test_helpers::connection::valkey_connection;
 use test_helpers::connection::valkey_connection::ValkeyConnectionCreator;
 use test_helpers::docker_compose::docker_compose;
 #[cfg(feature = "alpha-transforms")]
