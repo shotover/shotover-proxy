@@ -786,11 +786,8 @@ pub async fn test_auth(connection: &mut redis::Connection) {
     );
 }
 
-pub async fn test_auth_isolation<Fut>(connection_creator: impl Fn() -> Fut)
-where
-    Fut: Future<Output = redis::Connection>,
-{
-    let mut connection = connection_creator().await;
+pub async fn test_auth_isolation(connection_creator: ValkeyConnectionCreator) {
+    let mut connection = connection_creator.new_sync();
 
     // ensure we are authenticated as the default superuser to setup for the auth isolation test.
     assert_ok(redis::cmd("AUTH").arg("shotover"), &mut connection).await;
@@ -814,7 +811,7 @@ where
             .query::<()>(&mut connection)
             .unwrap();
 
-        let mut new_connection = connection_creator().await;
+        let mut new_connection = connection_creator.new_sync();
 
         assert_eq!(
             redis::cmd("GET")

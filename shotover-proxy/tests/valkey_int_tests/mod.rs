@@ -11,14 +11,15 @@ use std::path::Path;
 use std::thread::sleep;
 use std::time::Duration;
 use test_helpers::connection::valkey_connection;
-use test_helpers::connection::valkey_connection::{ValkeyConnectionCreator, ValkeyDriver};
+use test_helpers::connection::valkey_connection::{
+    ValkeyConnection, ValkeyConnectionCreator, ValkeyDriver,
+};
 use test_helpers::docker_compose::docker_compose;
 use test_helpers::metrics::assert_metrics_key_value;
 use test_helpers::shotover_process::{Count, EventMatcher, Level};
 
 pub mod assert;
 pub mod basic_driver_tests;
-mod basic_driver_tests_sync;
 
 fn invalid_frame_event() -> EventMatcher {
     EventMatcher::new()
@@ -207,41 +208,65 @@ async fn tls_source_and_tls_single_sink() {
     }
 }
 
-// #[tokio::test(flavor = "multi_thread")]
-// async fn cluster_ports_rewrite() {
-//     let _compose =
-//         docker_compose("tests/test-configs/valkey/cluster-ports-rewrite/docker-compose.yaml");
-//     let shotover =
-//         shotover_process("tests/test-configs/valkey/cluster-ports-rewrite/topology.yaml")
-//             .start()
-//             .await;
-//
-//     let mut connection = valkey_connection::new_async("127.0.0.1", 6380).await;
-//     let mut flusher =
-//         Flusher::new_single_connection(valkey_connection::new_async("127.0.0.1", 6380).await).await;
-//
-//     run_all_cluster_hiding(&mut connection, &mut flusher).await;
-//
-//     test_cluster_ports_rewrite_slots(&mut connection, 6380).await;
-//     test_cluster_ports_rewrite_nodes(&mut connection, 6380).await;
-//
-//     shotover.shutdown_and_then_consume_events(&[]).await;
-// }
+#[tokio::test(flavor = "multi_thread")]
+async fn cluster_ports_rewrite() {
+    let _compose =
+        docker_compose("tests/test-configs/valkey/cluster-ports-rewrite/docker-compose.yaml");
+    let shotover =
+        shotover_process("tests/test-configs/valkey/cluster-ports-rewrite/topology.yaml")
+            .start()
+            .await;
 
-// #[tokio::test(flavor = "multi_thread")]
-// async fn cluster_auth() {
-//     let _compose = docker_compose("tests/test-configs/valkey/cluster-auth/docker-compose.yaml");
-//     let shotover = shotover_process("tests/test-configs/valkey/cluster-auth/topology.yaml")
-//         .start()
-//         .await;
-//     let mut connection = valkey_connection::new_async("127.0.0.1", 6379).await;
-//
-//     test_auth(&mut connection).await;
-//     let connection = || valkey_connection::new_async("127.0.0.1", 6379);
-//     test_auth_isolation(&connection).await;
-//
-//     shotover.shutdown_and_then_consume_events(&[]).await;
-// }
+    // let mut connection = valkey_connection::new_async("127.0.0.1", 6380).await;
+    let mut connection = ValkeyConnectionCreator {
+        address: "127.0.0.1".into(),
+        port: 6380,
+        tls: false,
+    }
+    .new_sync();
+    let mut flusher =
+        // Flusher::new_single_connection(valkey_connection::new_async("127.0.0.1", 6380).await).await;
+        Flusher::new_single_connection(
+            ValkeyConnectionCreator {
+                address: "127.0.0.1".into(),
+                port: 6380,
+                tls: false
+            }.build(ValkeyDriver::Sync).await
+        ).await;
+
+    run_all_cluster_hiding(&mut connection, &mut flusher).await;
+
+    test_cluster_ports_rewrite_slots(&mut connection, 6380).await;
+    test_cluster_ports_rewrite_nodes(&mut connection, 6380).await;
+
+    shotover.shutdown_and_then_consume_events(&[]).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn cluster_auth() {
+    let _compose = docker_compose("tests/test-configs/valkey/cluster-auth/docker-compose.yaml");
+    let shotover = shotover_process("tests/test-configs/valkey/cluster-auth/topology.yaml")
+        .start()
+        .await;
+    // let mut connection = valkey_connection::new_async("127.0.0.1", 6379).await;
+    let mut connection = ValkeyConnectionCreator {
+        address: "127.0.0.1".into(),
+        port: 6379,
+        tls: false,
+    }
+    .new_sync();
+
+    test_auth(&mut connection).await;
+    // let connection = || valkey_connection::new_async("127.0.0.1", 6379);
+    let connection = ValkeyConnectionCreator {
+        address: "127.0.0.1".into(),
+        port: 6379,
+        tls: false,
+    };
+    test_auth_isolation(connection).await;
+
+    shotover.shutdown_and_then_consume_events(&[]).await;
+}
 
 #[tokio::test(flavor = "multi_thread")]
 async fn cluster_hiding() {
@@ -292,85 +317,91 @@ async fn cluster_handling() {
     shotover.shutdown_and_then_consume_events(&[]).await;
 }
 
-// #[tokio::test(flavor = "multi_thread")]
-// async fn cluster_dr() {
-//     let _compose = docker_compose("tests/test-configs/valkey/cluster-dr/docker-compose.yaml");
-//
-//     let nodes = vec![
-//         "redis://127.0.0.1:2120/",
-//         "redis://127.0.0.1:2121/",
-//         "redis://127.0.0.1:2122/",
-//         "redis://127.0.0.1:2123/",
-//         "redis://127.0.0.1:2124/",
-//         "redis://127.0.0.1:2125/",
-//     ];
-//     let client = redis::cluster::ClusterClientBuilder::new(nodes)
-//         .password("shotover".to_string())
-//         .build()
-//         .unwrap();
-//     let mut replication_connection = client.get_connection().unwrap();
-//
-//     // test coalesce sends messages on shotover shutdown
-//     {
-//         let shotover = shotover_process("tests/test-configs/valkey/cluster-dr/topology.yaml")
-//             .start()
-//             .await;
-//         let mut connection = valkey_connection::new_async("127.0.0.1", 6379).await;
-//         redis::cmd("AUTH")
-//             .arg("default")
-//             .arg("shotover")
-//             .query_async::<_, ()>(&mut connection)
-//             .await
-//             .unwrap();
-//
-//         redis::cmd("SET")
-//             .arg("key1")
-//             .arg(42)
-//             .query_async::<_, ()>(&mut connection)
-//             .await
-//             .unwrap();
-//         redis::cmd("SET")
-//             .arg("key2")
-//             .arg(358)
-//             .query_async::<_, ()>(&mut connection)
-//             .await
-//             .unwrap();
-//
-//         shotover.shutdown_and_then_consume_events(&[]).await;
-//     }
-//
-//     sleep(Duration::from_secs(1));
-//     assert_eq!(replication_connection.get::<&str, i32>("key1").unwrap(), 42);
-//     assert_eq!(
-//         replication_connection.get::<&str, i32>("key2").unwrap(),
-//         358
-//     );
-//
-//     let shotover = shotover_process("tests/test-configs/valkey/cluster-dr/topology.yaml")
-//         .start()
-//         .await;
-//
-//     async fn new_connection() -> Connection {
-//         let mut connection = valkey_connection::new_async("127.0.0.1", 6379).await;
-//
-//         redis::cmd("AUTH")
-//             .arg("default")
-//             .arg("shotover")
-//             .query_async::<_, ()>(&mut connection)
-//             .await
-//             .unwrap();
-//
-//         connection
-//     }
-//     let mut connection = new_connection().await;
-//     let mut flusher = Flusher::new_single_connection(new_connection().await).await;
-//
-//     test_cluster_replication(&mut connection, &mut replication_connection).await;
-//     test_dr_auth().await;
-//     run_all_cluster_hiding(&mut connection, &mut flusher).await;
-//
-//     shotover.shutdown_and_then_consume_events(&[]).await;
-// }
+#[tokio::test(flavor = "multi_thread")]
+async fn cluster_dr() {
+    let _compose = docker_compose("tests/test-configs/valkey/cluster-dr/docker-compose.yaml");
+
+    let nodes = vec![
+        "redis://127.0.0.1:2120/",
+        "redis://127.0.0.1:2121/",
+        "redis://127.0.0.1:2122/",
+        "redis://127.0.0.1:2123/",
+        "redis://127.0.0.1:2124/",
+        "redis://127.0.0.1:2125/",
+    ];
+    let client = redis::cluster::ClusterClientBuilder::new(nodes)
+        .password("shotover".to_string())
+        .build()
+        .unwrap();
+    let mut replication_connection = client.get_connection().unwrap();
+
+    // test coalesce sends messages on shotover shutdown
+    {
+        let shotover = shotover_process("tests/test-configs/valkey/cluster-dr/topology.yaml")
+            .start()
+            .await;
+        let mut connection = valkey_connection::new_async("127.0.0.1", 6379).await;
+        redis::cmd("AUTH")
+            .arg("default")
+            .arg("shotover")
+            .query_async::<_, ()>(&mut connection)
+            .await
+            .unwrap();
+
+        redis::cmd("SET")
+            .arg("key1")
+            .arg(42)
+            .query_async::<_, ()>(&mut connection)
+            .await
+            .unwrap();
+        redis::cmd("SET")
+            .arg("key2")
+            .arg(358)
+            .query_async::<_, ()>(&mut connection)
+            .await
+            .unwrap();
+
+        shotover.shutdown_and_then_consume_events(&[]).await;
+    }
+
+    sleep(Duration::from_secs(1));
+    assert_eq!(replication_connection.get::<&str, i32>("key1").unwrap(), 42);
+    assert_eq!(
+        replication_connection.get::<&str, i32>("key2").unwrap(),
+        358
+    );
+
+    let shotover = shotover_process("tests/test-configs/valkey/cluster-dr/topology.yaml")
+        .start()
+        .await;
+
+    fn new_connection() -> redis::Connection {
+        // let mut connection = valkey_connection::new_async("127.0.0.1", 6379).await;
+        let mut connection = ValkeyConnectionCreator {
+            address: "127.0.0.1".into(),
+            port: 6379,
+            tls: false,
+        }
+        .new_sync();
+
+        redis::cmd("AUTH")
+            .arg("default")
+            .arg("shotover")
+            .query::<()>(&mut connection)
+            .unwrap();
+
+        connection
+    }
+    let mut connection = new_connection();
+    let mut flusher =
+        Flusher::new_single_connection(ValkeyConnection::Sync(new_connection())).await;
+
+    test_cluster_replication(&mut connection, &mut replication_connection).await;
+    test_dr_auth().await;
+    run_all_cluster_hiding(&mut connection, &mut flusher).await;
+
+    shotover.shutdown_and_then_consume_events(&[]).await;
+}
 
 pub async fn assert_failed_requests_metric_is_incremented_on_error_response() {
     let shotover = shotover_process("tests/test-configs/valkey/passthrough/topology.yaml")
