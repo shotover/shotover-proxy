@@ -419,7 +419,11 @@ pub async fn assert_failed_requests_metric_is_incremented_on_error_response() {
     let shotover = shotover_process("tests/test-configs/valkey/passthrough/topology.yaml")
         .start()
         .await;
-    let mut connection = valkey_connection::new_async("127.0.0.1", 6379).await;
+    let mut connection = ValkeyConnectionCreator {
+        address: "127.0.0.1".into(),
+        port: 6379,
+        tls: false,
+    }.new_async().await;
 
     redis::cmd("INVALID_COMMAND")
         .arg("foo")

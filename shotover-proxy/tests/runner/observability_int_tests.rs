@@ -1,5 +1,6 @@
 use crate::shotover_process;
 use test_helpers::connection::valkey_connection;
+use test_helpers::connection::valkey_connection::ValkeyConnectionCreator;
 use test_helpers::docker_compose::docker_compose;
 use test_helpers::metrics::{assert_metrics_has_keys, assert_metrics_key_value};
 
@@ -95,7 +96,13 @@ shotover_transform_total_count{transform="QueryCounter"}
 "#;
     assert_metrics_has_keys("", expected).await;
 
-    let mut connection = valkey_connection::new_async("127.0.0.1", 6379).await;
+    let mut connection = ValkeyConnectionCreator {
+        address: "127.0.0.1".into(),
+        port: 6379,
+        tls: false,
+    }
+    .new_async()
+    .await;
 
     redis::cmd("SET")
         .arg("the_key")
@@ -156,7 +163,13 @@ async fn test_shotover_with_metrics_disabled() {
         .with_config("tests/test-configs/shotover-config/config_metrics_disabled.yaml")
         .start()
         .await;
-    let mut connection = valkey_connection::new_async("127.0.0.1", 6379).await;
+    let mut connection = ValkeyConnectionCreator {
+        address: "127.0.0.1".into(),
+        port: 6379,
+        tls: false,
+    }
+    .new_async()
+    .await;
 
     // Verify Shotover can still process messages with metrics disabled
     redis::cmd("SET")
