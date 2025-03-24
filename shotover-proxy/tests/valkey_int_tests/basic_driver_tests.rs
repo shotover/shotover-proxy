@@ -7,7 +7,7 @@ use futures::{Future, StreamExt};
 use pretty_assertions::assert_eq;
 use rand::distributions::Alphanumeric;
 use rand::{Rng, thread_rng};
-use redis::aio::Connection;
+use redis::aio::{Connection, MultiplexedConnection};
 use redis::cluster::ClusterConnection;
 use redis::{AsyncCommands, Commands, ErrorKind, RedisError, Value};
 use shotover::frame::ValkeyFrame;
@@ -19,6 +19,9 @@ use test_helpers::connection::valkey_connection;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
+use test_helpers::connection::valkey_connection::{
+    ValkeyConnection, ValkeyConnectionCreator, ValkeyDriver,
+};
 use tokio::time::timeout;
 use tracing::trace;
 
@@ -30,20 +33,17 @@ const STRESS_TEST_MULTIPLIER: usize = 1;
 #[cfg(not(debug_assertions))]
 const STRESS_TEST_MULTIPLIER: usize = 100;
 
-async fn test_args(connection: &mut Connection) {
+async fn test_args(connection: &mut redis::Connection) {
     assert_ok(redis::cmd("SET").arg("key1").arg(b"foo"), connection).await;
     assert_ok(redis::cmd("SET").arg(&["key2", "bar"]), connection).await;
 
     assert_eq!(
-        redis::cmd("MGET")
-            .arg(&["key1", "key2"])
-            .query_async(connection)
-            .await,
+        redis::cmd("MGET").arg(&["key1", "key2"]).query(connection),
         Ok(("foo".to_string(), b"bar".to_vec()))
     );
 }
 
-async fn test_getset(connection: &mut Connection) {
+async fn test_getset(connection: &mut redis::Connection) {
     for _ in 0..100 * STRESS_TEST_MULTIPLIER {
         assert_ok(redis::cmd("SET").arg("foo").arg(42), connection).await;
         assert_int(redis::cmd("GET").arg("foo"), connection, 42).await;
@@ -56,7 +56,7 @@ async fn test_getset(connection: &mut Connection) {
     let every_byte: Vec<u8> = (0..=255).collect();
     assert_ok(redis::cmd("SET").arg("bar").arg(&every_byte), connection).await;
     assert_eq!(
-        redis::cmd("GET").arg("bar").query_async(connection).await,
+        redis::cmd("GET").arg("bar").query(connection),
         Ok(every_byte)
     );
 
@@ -65,13 +65,13 @@ async fn test_getset(connection: &mut Connection) {
     assert_bytes(redis::cmd("get").arg("bar"), connection, b"foo").await;
 }
 
-async fn test_incr(connection: &mut Connection) {
+async fn test_incr(connection: &mut redis::Connection) {
     assert_ok(redis::cmd("SET").arg("foo").arg(42), connection).await;
     assert_int(redis::cmd("INCR").arg("foo"), connection, 43).await;
 }
 
-async fn test_info(connection: &mut Connection) {
-    let info: redis::InfoDict = redis::cmd("INFO").query_async(connection).await.unwrap();
+async fn test_info(connection: &mut redis::Connection) {
+    let info: redis::InfoDict = redis::cmd("INFO").query(connection).unwrap();
     assert_eq!(
         info.find(&"role"),
         Some(&Value::Status("master".to_string()))
@@ -84,67 +84,50 @@ async fn test_info(connection: &mut Connection) {
     );
 }
 
-async fn test_keys_hiding(connection: &mut Connection, flusher: &mut Flusher) {
+async fn test_keys_hiding(connection: &mut redis::Connection, flusher: &mut Flusher) {
     flusher.flush().await;
     assert_ok(redis::cmd("SET").arg("foo").arg(42), connection).await;
     assert_ok(redis::cmd("SET").arg("bar").arg(42), connection).await;
     assert_ok(redis::cmd("SET").arg("baz").arg(42), connection).await;
 
-    let keys: HashSet<String> = redis::cmd("KEYS")
-        .arg("*")
-        .query_async(connection)
-        .await
-        .unwrap();
+    let keys: HashSet<String> = redis::cmd("KEYS").arg("*").query(connection).unwrap();
     let expected = HashSet::from(["foo".to_string(), "bar".to_string(), "baz".to_string()]);
     assert_eq!(keys, expected);
 
-    assert_eq!(redis::cmd("DBSIZE").query_async(connection).await, Ok(3u64));
+    assert_eq!(redis::cmd("DBSIZE").query(connection), Ok(3u64));
 }
 
-async fn test_keys_handling(connection: &mut Connection, flusher: &mut Flusher) {
+async fn test_keys_handling(connection: &mut redis::Connection, flusher: &mut Flusher) {
     flusher.flush().await;
     assert_ok(redis::cmd("SET").arg("foo").arg(42), connection).await;
     assert_ok(redis::cmd("SET").arg("bar").arg(42), connection).await;
     assert_ok(redis::cmd("SET").arg("baz").arg(42), connection).await;
 
-    let keys: HashSet<String> = redis::cmd("KEYS")
-        .arg("*")
-        .query_async(connection)
-        .await
-        .unwrap();
+    let keys: HashSet<String> = redis::cmd("KEYS").arg("*").query(connection).unwrap();
     let expected = HashSet::from(["foo".to_string(), "bar".to_string(), "baz".to_string()]);
     assert!(
         keys.is_subset(&expected),
         "expected: {expected:?} was: {keys:?}"
     );
 
-    let size: u64 = redis::cmd("DBSIZE").query_async(connection).await.unwrap();
+    let size: u64 = redis::cmd("DBSIZE").query(connection).unwrap();
     assert!(size <= 3, "expected <= 3 but was {size}");
 }
 
-async fn test_client_name(connection: &mut Connection) {
+async fn test_client_name(connection: &mut redis::Connection) {
     assert_ok(redis::cmd("CLIENT").arg("SETNAME").arg("FOO"), connection).await;
     assert_eq!(
-        redis::cmd("CLIENT")
-            .arg("GETNAME")
-            .query_async(connection)
-            .await,
+        redis::cmd("CLIENT").arg("GETNAME").query(connection),
         Ok("FOO".to_string())
     );
 }
 
-async fn test_save(connection: &mut Connection) {
-    let lastsave1: u64 = redis::cmd("LASTSAVE")
-        .query_async(connection)
-        .await
-        .unwrap();
+async fn test_save(connection: &mut redis::Connection) {
+    let lastsave1: u64 = redis::cmd("LASTSAVE").query(connection).unwrap();
 
     assert_ok(&mut redis::cmd("SAVE"), connection).await;
 
-    let lastsave2: u64 = redis::cmd("LASTSAVE")
-        .query_async(connection)
-        .await
-        .unwrap();
+    let lastsave2: u64 = redis::cmd("LASTSAVE").query(connection).unwrap();
 
     assert!(
         lastsave1 > 0,
@@ -160,23 +143,16 @@ async fn test_save(connection: &mut Connection) {
     );
 }
 
-async fn test_ping_echo(connection: &mut Connection) {
+async fn test_ping_echo(connection: &mut redis::Connection) {
+    assert_eq!(redis::cmd("PING").query(connection), Ok("PONG".to_string()));
     assert_eq!(
-        redis::cmd("PING").query_async(connection).await,
-        Ok("PONG".to_string())
-    );
-    assert_eq!(
-        redis::cmd("ECHO")
-            .arg("reply")
-            .query_async(connection)
-            .await,
+        redis::cmd("ECHO").arg("reply").query(connection),
         Ok("reply".to_string())
     );
 }
 
-async fn test_time(connection: &mut Connection) {
-    let (time_seconds, extra_ms): (u64, u64) =
-        redis::cmd("TIME").query_async(connection).await.unwrap();
+async fn test_time(connection: &mut redis::Connection) {
+    let (time_seconds, extra_ms): (u64, u64) = redis::cmd("TIME").query(connection).unwrap();
 
     assert!(
         time_seconds > 0,
@@ -188,11 +164,10 @@ async fn test_time(connection: &mut Connection) {
     );
 }
 
-async fn test_time_cluster(connection: &mut Connection) {
+async fn test_time_cluster(connection: &mut redis::Connection) {
     assert_eq!(
         redis::cmd("TIME")
-            .query_async::<_, ()>(connection)
-            .await
+            .query::<()>(connection)
             .unwrap_err()
             .detail()
             .unwrap(),
@@ -201,12 +176,11 @@ async fn test_time_cluster(connection: &mut Connection) {
     );
 }
 
-async fn test_hello_cluster(connection: &mut Connection) {
+async fn test_hello_cluster(connection: &mut redis::Connection) {
     // The Lettuce client relies on the error message here containing the string "unknown" to detect that shotover does not support RESP3
     assert_eq!(
         redis::cmd("HELLO")
-            .query_async::<_, ()>(connection)
-            .await
+            .query::<()>(connection)
             .unwrap_err()
             .detail()
             .unwrap(),
@@ -215,13 +189,13 @@ async fn test_hello_cluster(connection: &mut Connection) {
     );
 }
 
-async fn test_client_name_cluster(connection: &mut Connection) {
+async fn test_client_name_cluster(connection: &mut redis::Connection) {
     assert_ok(redis::cmd("CLIENT").arg("SETNAME").arg("FOO"), connection).await;
     // ValkeySinkCluster does not support SETNAME/GETNAME so GETNAME always returns nil
     assert_nil(redis::cmd("CLIENT").arg("GETNAME"), connection).await;
 }
 
-async fn test_hash_ops(connection: &mut Connection, flusher: &mut Flusher) {
+async fn test_hash_ops(connection: &mut redis::Connection, flusher: &mut Flusher) {
     flusher.flush().await;
     assert_int(
         redis::cmd("HSET").arg("foo").arg("key_1").arg(1),
@@ -236,31 +210,23 @@ async fn test_hash_ops(connection: &mut Connection, flusher: &mut Flusher) {
     )
     .await;
 
-    let result: HashMap<String, i32> = redis::cmd("HGETALL")
-        .arg("foo")
-        .query_async(connection)
-        .await
-        .unwrap();
+    let result: HashMap<String, i32> = redis::cmd("HGETALL").arg("foo").query(connection).unwrap();
     let expected = HashMap::from([("key_1".to_string(), 1), ("key_2".to_string(), 2)]);
     assert_eq!(result, expected);
 }
 
-async fn test_set_ops(connection: &mut Connection, flusher: &mut Flusher) {
+async fn test_set_ops(connection: &mut redis::Connection, flusher: &mut Flusher) {
     flusher.flush().await;
     assert_int(redis::cmd("SADD").arg("foo").arg(1), connection, 1).await;
     assert_int(redis::cmd("SADD").arg("foo").arg(2), connection, 1).await;
     assert_int(redis::cmd("SADD").arg("foo").arg(3), connection, 1).await;
 
-    let result: HashSet<i32> = redis::cmd("SMEMBERS")
-        .arg("foo")
-        .query_async(connection)
-        .await
-        .unwrap();
+    let result: HashSet<i32> = redis::cmd("SMEMBERS").arg("foo").query(connection).unwrap();
     let expected = HashSet::from([1, 2, 3]);
     assert_eq!(result, expected);
 }
 
-async fn test_scan(connection: &mut Connection, flusher: &mut Flusher) {
+async fn test_scan(connection: &mut redis::Connection, flusher: &mut Flusher) {
     flusher.flush().await;
     assert_int(redis::cmd("SADD").arg("foo").arg(1), connection, 1).await;
     assert_int(redis::cmd("SADD").arg("foo").arg(2), connection, 1).await;
@@ -269,8 +235,7 @@ async fn test_scan(connection: &mut Connection, flusher: &mut Flusher) {
     let (cur, mut s): (i32, Vec<i32>) = redis::cmd("SSCAN")
         .arg("foo")
         .arg(0)
-        .query_async(connection)
-        .await
+        .query(connection)
         .unwrap();
     s.sort_unstable();
     assert_eq!(cur, 0i32);
@@ -278,27 +243,25 @@ async fn test_scan(connection: &mut Connection, flusher: &mut Flusher) {
     assert_eq!(&s, &[1, 2, 3]);
 }
 
-async fn test_optionals(connection: &mut Connection) {
+async fn test_optionals(connection: &mut redis::Connection) {
     assert_ok(redis::cmd("SET").arg("foo").arg(1), connection).await;
 
     let (a, b): (Option<i32>, Option<i32>) = redis::cmd("MGET")
         .arg("foo")
         .arg("missing")
-        .query_async(connection)
-        .await
+        .query(connection)
         .unwrap();
     assert_eq!(a, Some(1i32));
     assert_eq!(b, None);
 
     let a = redis::cmd("GET")
         .arg("missing")
-        .query_async(connection)
-        .await
+        .query(connection)
         .unwrap_or(0i32);
     assert_eq!(a, 0i32);
 }
 
-async fn test_scanning(connection: &mut Connection, flusher: &mut Flusher) {
+async fn test_scanning(connection: &mut redis::Connection, flusher: &mut Flusher) {
     flusher.flush().await;
     let mut unseen = HashSet::<usize>::new();
 
@@ -306,8 +269,7 @@ async fn test_scanning(connection: &mut Connection, flusher: &mut Flusher) {
         let _a: i64 = redis::cmd("SADD")
             .arg("foo")
             .arg(x)
-            .query_async(connection)
-            .await
+            .query(connection)
             .unwrap();
         unseen.insert(x);
     }
@@ -318,25 +280,23 @@ async fn test_scanning(connection: &mut Connection, flusher: &mut Flusher) {
         .arg("foo")
         .cursor_arg(0)
         .clone()
-        .iter_async(connection)
-        .await
+        .iter(connection)
         .unwrap();
 
-    while let Some(x) = iter.next_item().await {
+    while let Some(x) = iter.next() {
         unseen.remove(&x);
     }
 
     assert_eq!(unseen.len(), 0);
 }
 
-async fn test_filtered_scanning(connection: &mut Connection, flusher: &mut Flusher) {
+async fn test_filtered_scanning(connection: &mut redis::Connection, flusher: &mut Flusher) {
     flusher.flush().await;
     let mut unseen = HashSet::<usize>::new();
 
     for x in 0..3000 {
         connection
             .hset::<_, _, _, ()>("foo", format!("key_{}_{}", x % 100, x), x)
-            .await
             .unwrap();
         if x % 100 == 0 {
             unseen.insert(x);
@@ -345,17 +305,16 @@ async fn test_filtered_scanning(connection: &mut Connection, flusher: &mut Flush
 
     let mut iter = connection
         .hscan_match::<&str, &str, (String, usize)>("foo", "key_0_*")
-        .await
         .unwrap();
 
-    while let Some((_, x)) = iter.next_item().await {
+    while let Some((_, x)) = iter.next() {
         unseen.remove(&x);
     }
 
     assert_eq!(unseen.len(), 0);
 }
 
-async fn test_pipeline_error(connection: &mut Connection) {
+async fn test_pipeline_error(connection: &mut redis::Connection) {
     let result: ((i32, i32),) = redis::pipe()
         .cmd("SET")
         .arg("k{x}ey_1")
@@ -367,8 +326,7 @@ async fn test_pipeline_error(connection: &mut Connection) {
         .ignore()
         .cmd("MGET")
         .arg(&["k{x}ey_1", "k{x}ey_2"])
-        .query_async(connection)
-        .await
+        .query(connection)
         .unwrap();
 
     assert_eq!(result, ((42, 43),));
@@ -383,8 +341,7 @@ async fn test_pipeline_error(connection: &mut Connection) {
             .arg(43)
             .cmd("GET")
             .arg("k{x}ey_1")
-            .query_async(connection)
-            .await,
+            .query(connection),
         Err::<Value, RedisError>(RedisError::from((
             ErrorKind::ResponseError,
             "An error was signalled by the server",
@@ -394,7 +351,7 @@ async fn test_pipeline_error(connection: &mut Connection) {
     );
 }
 
-async fn test_pipeline(connection: &mut Connection) {
+async fn test_pipeline(connection: &mut redis::Connection) {
     let ((k1, k2),): ((i32, i32),) = redis::pipe()
         .cmd("SET")
         .arg("k{x}ey_1")
@@ -406,28 +363,23 @@ async fn test_pipeline(connection: &mut Connection) {
         .ignore()
         .cmd("MGET")
         .arg(&["k{x}ey_1", "k{x}ey_2"])
-        .query_async(connection)
-        .await
+        .query(connection)
         .unwrap();
 
     assert_eq!(k1, 42);
     assert_eq!(k2, 43);
 }
 
-async fn test_empty_pipeline(connection: &mut Connection) {
+async fn test_empty_pipeline(connection: &mut redis::Connection) {
     redis::pipe()
         .cmd("PING")
         .ignore()
-        .query_async::<_, ()>(connection)
-        .await
+        .query::<()>(connection)
         .unwrap();
-    redis::pipe()
-        .query_async::<_, ()>(connection)
-        .await
-        .unwrap();
+    redis::pipe().query::<()>(connection).unwrap();
 }
 
-async fn test_pipeline_transaction(connection: &mut Connection) {
+async fn test_pipeline_transaction(connection: &mut redis::Connection) {
     let ((k1, k2),): ((i32, i32),) = redis::pipe()
         .atomic()
         .cmd("SET")
@@ -440,15 +392,14 @@ async fn test_pipeline_transaction(connection: &mut Connection) {
         .ignore()
         .cmd("MGET")
         .arg(&["k{x}ey_1", "k{x}ey_2"])
-        .query_async(connection)
-        .await
+        .query(connection)
         .unwrap();
 
     assert_eq!(k1, 42);
     assert_eq!(k2, 43);
 }
 
-async fn test_pipeline_reuse_query(connection: &mut Connection) {
+async fn test_pipeline_reuse_query(connection: &mut redis::Connection) {
     let mut pl = redis::pipe();
 
     let ((k1,),): ((i32,),) = pl
@@ -458,16 +409,14 @@ async fn test_pipeline_reuse_query(connection: &mut Connection) {
         .ignore()
         .cmd("MGET")
         .arg(&["p{x}key_1"])
-        .query_async(connection)
-        .await
+        .query(connection)
         .unwrap();
 
     assert_eq!(k1, 42);
 
     redis::cmd("DEL")
         .arg("p{x}key_1")
-        .query_async::<_, ()>(connection)
-        .await
+        .query::<()>(connection)
         .unwrap();
 
     // The internal commands vector of the pipeline still contains the previous commands.
@@ -479,8 +428,7 @@ async fn test_pipeline_reuse_query(connection: &mut Connection) {
         .cmd("MGET")
         .arg(&["p{x}key_1"])
         .arg(&["p{x}key_2"])
-        .query_async(connection)
-        .await
+        .query(connection)
         .unwrap();
 
     assert_eq!(k1, 42);
@@ -488,7 +436,7 @@ async fn test_pipeline_reuse_query(connection: &mut Connection) {
     assert_eq!(k3, 43);
 }
 
-async fn test_pipeline_reuse_query_clear(connection: &mut Connection) {
+async fn test_pipeline_reuse_query_clear(connection: &mut redis::Connection) {
     let mut pl = redis::pipe();
 
     let ((k1,),): ((i32,),) = pl
@@ -498,8 +446,7 @@ async fn test_pipeline_reuse_query_clear(connection: &mut Connection) {
         .ignore()
         .cmd("MGET")
         .arg(&["p{x}key_1"])
-        .query_async(connection)
-        .await
+        .query(connection)
         .unwrap();
     pl.clear();
 
@@ -507,8 +454,7 @@ async fn test_pipeline_reuse_query_clear(connection: &mut Connection) {
 
     redis::cmd("DEL")
         .arg("p{x}key_1")
-        .query_async::<_, ()>(connection)
-        .await
+        .query::<()>(connection)
         .unwrap();
 
     let ((k1, k2),): ((bool, i32),) = pl
@@ -519,8 +465,7 @@ async fn test_pipeline_reuse_query_clear(connection: &mut Connection) {
         .cmd("MGET")
         .arg(&["p{x}key_1"])
         .arg(&["p{x}key_2"])
-        .query_async(connection)
-        .await
+        .query(connection)
         .unwrap();
     pl.clear();
 
@@ -528,26 +473,20 @@ async fn test_pipeline_reuse_query_clear(connection: &mut Connection) {
     assert_eq!(k2, 45);
 }
 
-async fn test_real_transaction(connection: &mut Connection) {
+async fn test_real_transaction(connection: &mut redis::Connection) {
     let key = "the_key";
     redis::cmd("SET")
         .arg(key)
         .arg(42)
-        .query_async::<_, ()>(connection)
-        .await
+        .query::<()>(connection)
         .unwrap();
 
     loop {
         redis::cmd("WATCH")
             .arg(key)
-            .query_async::<_, ()>(connection)
-            .await
+            .query::<()>(connection)
             .unwrap();
-        let val: isize = redis::cmd("GET")
-            .arg(key)
-            .query_async(connection)
-            .await
-            .unwrap();
+        let val: isize = redis::cmd("GET").arg(key).query(connection).unwrap();
         let response: Option<(isize,)> = redis::pipe()
             .atomic()
             .cmd("SET")
@@ -556,8 +495,7 @@ async fn test_real_transaction(connection: &mut Connection) {
             .ignore()
             .cmd("GET")
             .arg(key)
-            .query_async(connection)
-            .await
+            .query(connection)
             .unwrap();
 
         if let Some(response) = response {
@@ -567,7 +505,7 @@ async fn test_real_transaction(connection: &mut Connection) {
     }
 }
 
-async fn test_script(connection: &mut Connection) {
+async fn test_script(connection: &mut redis::Connection) {
     let script = redis::Script::new(
         r"
        return {redis.call('GET', KEYS[1]), ARGV[1]}
@@ -577,15 +515,14 @@ async fn test_script(connection: &mut Connection) {
     redis::cmd("SET")
         .arg("my_key")
         .arg("foo")
-        .query_async::<_, ()>(connection)
-        .await
+        .query::<()>(connection)
         .unwrap();
-    let response = script.key("my_key").arg(42).invoke_async(connection).await;
+    let response = script.key("my_key").arg(42).invoke(connection);
 
     assert_eq!(response, Ok(("foo".to_string(), 42)));
 }
 
-async fn test_tuple_args(connection: &mut Connection, flusher: &mut Flusher) {
+async fn test_tuple_args(connection: &mut redis::Connection, flusher: &mut Flusher) {
     flusher.flush().await;
     assert_ok(
         redis::cmd("HMSET")
@@ -599,23 +536,21 @@ async fn test_tuple_args(connection: &mut Connection, flusher: &mut Flusher) {
         redis::cmd("HGET")
             .arg("my_key")
             .arg("field_1")
-            .query_async(connection)
-            .await,
+            .query(connection),
         Ok(42)
     );
     assert_eq!(
         redis::cmd("HGET")
             .arg("my_key")
             .arg("field_2")
-            .query_async(connection)
-            .await,
+            .query(connection),
         Ok(23)
     );
 }
 
-async fn test_nice_api(connection: &mut Connection) {
-    assert_eq!(connection.set("my_key", 42).await, Ok(()));
-    assert_eq!(connection.get("my_key").await, Ok(42));
+async fn test_nice_api(connection: &mut redis::Connection) {
+    assert_eq!(connection.set("my_key", 42), Ok(()));
+    assert_eq!(connection.get("my_key"), Ok(42));
 
     let (k1, k2): (i32, i32) = redis::pipe()
         .atomic()
@@ -625,28 +560,25 @@ async fn test_nice_api(connection: &mut Connection) {
         .ignore()
         .get("key_1")
         .get("key_2")
-        .query_async(connection)
-        .await
+        .query(connection)
         .unwrap();
 
     assert_eq!(k1, 42);
     assert_eq!(k2, 43);
 }
 
-async fn test_auto_m_versions(connection: &mut Connection) {
-    assert_eq!(connection.mset(&[("key1", 1), ("key2", 2)]).await, Ok(()));
-    assert_eq!(connection.get(&["key1", "key2"]).await, Ok((1, 2)));
+async fn test_auto_m_versions(connection: &mut redis::Connection) {
+    assert_eq!(connection.mset(&[("key1", 1), ("key2", 2)]), Ok(()));
+    assert_eq!(connection.get(&["key1", "key2"]), Ok((1, 2)));
 }
 
-async fn test_nice_hash_api(connection: &mut Connection) {
+async fn test_nice_hash_api(connection: &mut redis::Connection) {
     assert_eq!(
-        connection
-            .hset_multiple("my_hash", &[("f1", 1), ("f2", 2), ("f3", 4), ("f4", 8)])
-            .await,
+        connection.hset_multiple("my_hash", &[("f1", 1), ("f2", 2), ("f3", 4), ("f4", 8)]),
         Ok(())
     );
 
-    let result: HashMap<String, isize> = connection.hgetall("my_hash").await.unwrap();
+    let result: HashMap<String, isize> = connection.hgetall("my_hash").unwrap();
     let expected = HashMap::from([
         ("f1".to_string(), 1),
         ("f2".to_string(), 2),
@@ -655,17 +587,16 @@ async fn test_nice_hash_api(connection: &mut Connection) {
     ]);
     assert_eq!(result, expected);
 
-    assert_eq!(connection.hget("my_hash", &["f2", "f4"]).await, Ok((2, 8)));
-    assert_eq!(connection.hincr("my_hash", "f1", 1).await, Ok(2));
-    assert_eq!(connection.hincr("my_hash", "f2", 1.5f32).await, Ok(3.5f32));
-    assert_eq!(connection.hexists("my_hash", "f2").await, Ok(true));
-    assert_eq!(connection.hdel("my_hash", &["f1", "f2"]).await, Ok(()));
-    assert_eq!(connection.hexists("my_hash", "f2").await, Ok(false));
+    assert_eq!(connection.hget("my_hash", &["f2", "f4"]), Ok((2, 8)));
+    assert_eq!(connection.hincr("my_hash", "f1", 1), Ok(2));
+    assert_eq!(connection.hincr("my_hash", "f2", 1.5f32), Ok(3.5f32));
+    assert_eq!(connection.hexists("my_hash", "f2"), Ok(true));
+    assert_eq!(connection.hdel("my_hash", &["f1", "f2"]), Ok(()));
+    assert_eq!(connection.hexists("my_hash", "f2"), Ok(false));
 
-    let mut iter: redis::AsyncIter<'_, (String, isize)> =
-        connection.hscan("my_hash").await.unwrap();
+    let mut iter: redis::Iter<'_, (String, isize)> = connection.hscan("my_hash").unwrap();
     let mut found = HashSet::new();
-    while let Some(item) = iter.next_item().await {
+    while let Some(item) = iter.next() {
         found.insert(item);
     }
 
@@ -675,59 +606,56 @@ async fn test_nice_hash_api(connection: &mut Connection) {
     );
 }
 
-async fn test_nice_list_api(connection: &mut Connection) {
-    assert_eq!(connection.rpush("my_list", &[1, 2, 3, 4]).await, Ok(4));
-    assert_eq!(connection.rpush("my_list", &[5, 6, 7, 8]).await, Ok(8));
-    assert_eq!(connection.llen("my_list").await, Ok(8));
+async fn test_nice_list_api(connection: &mut redis::Connection) {
+    assert_eq!(connection.rpush("my_list", &[1, 2, 3, 4]), Ok(4));
+    assert_eq!(connection.rpush("my_list", &[5, 6, 7, 8]), Ok(8));
+    assert_eq!(connection.llen("my_list"), Ok(8));
 
-    assert_eq!(connection.lpop("my_list", None).await, Ok(1));
-    assert_eq!(connection.llen("my_list").await, Ok(7));
+    assert_eq!(connection.lpop("my_list", None), Ok(1));
+    assert_eq!(connection.llen("my_list"), Ok(7));
 
-    assert_eq!(connection.lrange("my_list", 0, 2).await, Ok((2, 3, 4)));
+    assert_eq!(connection.lrange("my_list", 0, 2), Ok((2, 3, 4)));
 
-    assert_eq!(connection.lset("my_list", 0, 4).await, Ok(true));
-    assert_eq!(connection.lrange("my_list", 0, 2).await, Ok((4, 3, 4)));
+    assert_eq!(connection.lset("my_list", 0, 4), Ok(true));
+    assert_eq!(connection.lrange("my_list", 0, 2), Ok((4, 3, 4)));
 }
 
-async fn test_tuple_decoding_regression(connection: &mut Connection) {
-    assert_eq!(connection.del("my_zset").await, Ok(()));
-    assert_eq!(connection.zadd("my_zset", "one", 1).await, Ok(1));
-    assert_eq!(connection.zadd("my_zset", "two", 2).await, Ok(1));
+async fn test_tuple_decoding_regression(connection: &mut redis::Connection) {
+    assert_eq!(connection.del("my_zset"), Ok(()));
+    assert_eq!(connection.zadd("my_zset", "one", 1), Ok(1));
+    assert_eq!(connection.zadd("my_zset", "two", 2), Ok(1));
 
     let vec: Vec<(String, u32)> = connection
         .zrangebyscore_withscores("my_zset", 0, 10)
-        .await
         .unwrap();
     assert_eq!(vec.len(), 2);
 
-    assert_eq!(connection.del("my_zset").await, Ok(1));
+    assert_eq!(connection.del("my_zset"), Ok(1));
 
     let vec: Vec<(String, u32)> = connection
         .zrangebyscore_withscores("my_zset", 0, 10)
-        .await
         .unwrap();
     assert_eq!(vec.len(), 0);
 }
 
-async fn test_bit_operations(connection: &mut Connection) {
-    assert_eq!(connection.setbit("bitvec", 10, true).await, Ok(false));
-    assert_eq!(connection.getbit("bitvec", 10).await, Ok(true));
+async fn test_bit_operations(connection: &mut redis::Connection) {
+    assert_eq!(connection.setbit("bitvec", 10, true), Ok(false));
+    assert_eq!(connection.getbit("bitvec", 10), Ok(true));
 }
 
-pub async fn test_cluster_basics(connection: &mut Connection) {
+pub async fn test_cluster_basics(connection: &mut redis::Connection) {
     assert_ok(redis::cmd("SET").arg("{x}key1").arg(b"foo"), connection).await;
     assert_ok(redis::cmd("SET").arg("{x}key2").arg(b"bar"), connection).await;
 
     assert_eq!(
         redis::cmd("MGET")
             .arg(&["{x}key1", "{x}key2"])
-            .query_async(connection)
-            .await,
+            .query(connection),
         Ok(("foo".to_string(), b"bar".to_vec()))
     );
 }
 
-async fn test_cluster_eval(connection: &mut Connection) {
+async fn test_cluster_eval(connection: &mut redis::Connection) {
     let rv = redis::cmd("EVAL")
         .arg(
             r#"
@@ -739,13 +667,12 @@ async fn test_cluster_eval(connection: &mut Connection) {
         .arg(2)
         .arg("{x}a")
         .arg("{x}b")
-        .query_async(connection)
-        .await;
+        .query(connection);
 
     assert_eq!(rv, Ok(("1".to_string(), "2".to_string())));
 }
 
-async fn test_cluster_script(connection: &mut Connection) {
+async fn test_cluster_script(connection: &mut redis::Connection) {
     let script = redis::Script::new(
         r#"
         redis.call("SET", KEYS[1], "1");
@@ -754,21 +681,16 @@ async fn test_cluster_script(connection: &mut Connection) {
     "#,
     );
 
-    let rv = script
-        .key("{x}a")
-        .key("{x}b")
-        .invoke_async(&mut *connection)
-        .await;
+    let rv = script.key("{x}a").key("{x}b").invoke(&mut *connection);
     assert_eq!(rv, Ok(("1".to_string(), "2".to_string())));
 }
 
-pub async fn test_auth(connection: &mut Connection) {
+pub async fn test_auth(connection: &mut redis::Connection) {
     // Command should fail on unauthenticated connection.
     assert_eq!(
         redis::cmd("GET")
             .arg("without authenticating")
-            .query_async::<_, String>(connection)
-            .await
+            .query::<String>(connection)
             .unwrap_err()
             .code(),
         Some("NOAUTH")
@@ -778,8 +700,7 @@ pub async fn test_auth(connection: &mut Connection) {
     assert_eq!(
         redis::cmd("CLUSTER")
             .arg("SLOTS")
-            .query_async::<_, String>(connection)
-            .await
+            .query::<String>(connection)
             .unwrap_err()
             .code(),
         Some("NOAUTH")
@@ -787,8 +708,7 @@ pub async fn test_auth(connection: &mut Connection) {
     assert_eq!(
         redis::cmd("CLUSTER")
             .arg("NODES")
-            .query_async::<_, String>(connection)
-            .await
+            .query::<String>(connection)
             .unwrap_err()
             .code(),
         Some("NOAUTH")
@@ -798,8 +718,7 @@ pub async fn test_auth(connection: &mut Connection) {
     assert_eq!(
         redis::cmd("AUTH")
             .arg("with a bad password")
-            .query_async::<_, ()>(connection)
-            .await
+            .query::<()>(connection)
             .unwrap_err()
             .code(),
         Some("WRONGPASS")
@@ -826,8 +745,7 @@ pub async fn test_auth(connection: &mut Connection) {
         redis::cmd("AUTH")
             .arg("brokenuser")
             .arg("password")
-            .query_async::<_, ()>(connection)
-            .await
+            .query::<()>(connection)
             .unwrap_err()
             .code(),
         Some("NOPERM")
@@ -857,21 +775,20 @@ pub async fn test_auth(connection: &mut Connection) {
         redis::cmd("SET")
             .arg("foo")
             .arg("fail")
-            .query_async::<_, ()>(connection)
-            .await
+            .query::<()>(connection)
             .unwrap_err()
             .code(),
         Some("NOPERM")
     );
     assert_eq!(
-        redis::cmd("GET").arg("foo").query_async(connection).await,
+        redis::cmd("GET").arg("foo").query(connection),
         Ok(expected_foo)
     );
 }
 
 pub async fn test_auth_isolation<Fut>(connection_creator: impl Fn() -> Fut)
 where
-    Fut: Future<Output = Connection>,
+    Fut: Future<Output = redis::Connection>,
 {
     let mut connection = connection_creator().await;
 
@@ -894,8 +811,7 @@ where
                 &format!(">{pass}"),
                 &format!("~{key}"),
             ])
-            .query_async::<_, ()>(&mut connection)
-            .await
+            .query::<()>(&mut connection)
             .unwrap();
 
         let mut new_connection = connection_creator().await;
@@ -903,8 +819,7 @@ where
         assert_eq!(
             redis::cmd("GET")
                 .arg("without authenticating")
-                .query_async::<_, ()>(&mut new_connection)
-                .await
+                .query::<()>(&mut new_connection)
                 .unwrap_err()
                 .code(),
             Some("NOAUTH")
@@ -921,8 +836,7 @@ where
         assert_eq!(
             redis::cmd("GET")
                 .arg("foo")
-                .query_async::<_, ()>(&mut new_connection)
-                .await
+                .query::<()>(&mut new_connection)
                 .unwrap_err()
                 .code(),
             Some("NOPERM")
@@ -930,11 +844,10 @@ where
     }
 }
 
-pub async fn test_cluster_ports_rewrite_slots(connection: &mut Connection, port: u16) {
+pub async fn test_cluster_ports_rewrite_slots(connection: &mut redis::Connection, port: u16) {
     let res: Value = redis::cmd("CLUSTER")
         .arg("SLOTS")
-        .query_async(connection)
-        .await
+        .query(connection)
         .unwrap();
 
     assert_cluster_ports_rewrite_slots(res, port);
@@ -947,8 +860,7 @@ pub async fn test_cluster_ports_rewrite_slots(connection: &mut Connection, port:
         .arg("SLOTS")
         .cmd("GET")
         .arg("key1")
-        .query_async(connection)
-        .await
+        .query(connection)
         .unwrap();
 
     assert!(matches!(r1, Value::Okay));
@@ -978,11 +890,10 @@ fn assert_cluster_ports_rewrite_slots(res: Value, new_port: u16) {
     }
 }
 
-async fn get_master_id(connection: &mut Connection) -> String {
+async fn get_master_id(connection: &mut redis::Connection) -> String {
     let res: Value = redis::cmd("CLUSTER")
         .arg("NODES")
-        .query_async(connection)
-        .await
+        .query(connection)
         .unwrap();
 
     if let Value::Data(data) = &res {
@@ -1007,13 +918,12 @@ async fn get_master_id(connection: &mut Connection) -> String {
     panic!("Could not find master node in cluster");
 }
 
-async fn is_cluster_replicas_ready(connection: &mut Connection, master_id: &str) -> bool {
+async fn is_cluster_replicas_ready(connection: &mut redis::Connection, master_id: &str) -> bool {
     tracing::debug!("Checking `CLUSTER REPLICAS {master_id}`");
     let res = match redis::cmd("CLUSTER")
         .arg("REPLICAS")
         .arg(master_id)
-        .query_async(connection)
-        .await
+        .query(connection)
     {
         Ok(t) => t,
         Err(e) => {
@@ -1030,11 +940,10 @@ async fn is_cluster_replicas_ready(connection: &mut Connection, master_id: &str)
     false
 }
 
-pub async fn test_cluster_ports_rewrite_nodes(connection: &mut Connection, new_port: u16) {
+pub async fn test_cluster_ports_rewrite_nodes(connection: &mut redis::Connection, new_port: u16) {
     let res = redis::cmd("CLUSTER")
         .arg("NODES")
-        .query_async(connection)
-        .await
+        .query(connection)
         .unwrap();
 
     assert_cluster_ports_rewrite_nodes(res, new_port);
@@ -1059,8 +968,7 @@ pub async fn test_cluster_ports_rewrite_nodes(connection: &mut Connection, new_p
     let res = redis::cmd("CLUSTER")
         .arg("REPLICAS")
         .arg(&master_id)
-        .query_async(connection)
-        .await
+        .query(connection)
         .unwrap();
     assert_cluster_ports_rewrite_nodes(res, new_port);
 
@@ -1072,8 +980,7 @@ pub async fn test_cluster_ports_rewrite_nodes(connection: &mut Connection, new_p
         .arg("NODES")
         .cmd("GET")
         .arg("key1")
-        .query_async(connection)
-        .await
+        .query(connection)
         .unwrap();
 
     assert!(matches!(r1, Value::Okay));
@@ -1116,7 +1023,7 @@ fn assert_cluster_ports_rewrite_nodes(res: Value, new_port: u16) {
     assert!(assertion_run);
 }
 
-async fn test_cluster_pipe(connection: &mut Connection) {
+async fn test_cluster_pipe(connection: &mut redis::Connection) {
     //do this a few times to be sure we are not hitting a single master
     for i in 0..100 * STRESS_TEST_MULTIPLIER {
         // make sure there are no overlaps etc
@@ -1136,8 +1043,7 @@ async fn test_cluster_pipe(connection: &mut Connection) {
             .arg(&key1)
             .cmd("GET")
             .arg(&key2)
-            .query_async(connection)
-            .await
+            .query(connection)
             .unwrap();
         trace!("Iteration {}, k1 = {}, k2 = {}", i, k1, k2);
 
@@ -1152,7 +1058,7 @@ async fn test_cluster_pipe(connection: &mut Connection) {
             pipe.cmd("SET").arg(&key1).arg(i);
         }
 
-        let _: Vec<String> = pipe.query_async(connection).await.unwrap();
+        let _: Vec<String> = pipe.query(connection).unwrap();
 
         let mut pipe = redis::pipe();
 
@@ -1161,7 +1067,7 @@ async fn test_cluster_pipe(connection: &mut Connection) {
             pipe.cmd("GET").arg(&key1);
         }
 
-        let mut results: Vec<i32> = pipe.query_async(connection).await.unwrap();
+        let mut results: Vec<i32> = pipe.query(connection).unwrap();
 
         for i in 0..100 {
             let result = results.remove(0);
@@ -1171,7 +1077,7 @@ async fn test_cluster_pipe(connection: &mut Connection) {
 }
 
 pub async fn test_cluster_replication(
-    connection: &mut Connection,
+    connection: &mut redis::Connection,
     replication_connection: &mut ClusterConnection,
 ) {
     // According to the coalesce config the writes are only flushed to the replication cluster after 2000 total writes pass through shotover
@@ -1187,14 +1093,11 @@ pub async fn test_cluster_replication(
         );
 
         assert_ok(redis::cmd("SET").arg("foo").arg(42), connection).await;
-        assert_eq!(
-            redis::cmd("GET").arg("foo").query_async(connection).await,
-            Ok(42)
-        );
+        assert_eq!(redis::cmd("GET").arg("foo").query(connection), Ok(42));
 
         assert_ok(redis::cmd("SET").arg("bar").arg("blah"), connection).await;
         assert_eq!(
-            redis::cmd("GET").arg("bar").query_async(connection).await,
+            redis::cmd("GET").arg("bar").query(connection),
             Ok(b"blah".to_vec())
         );
     }
@@ -1218,16 +1121,22 @@ pub async fn test_cluster_replication(
 // This test case is picky about the ordering of connection auth so we make all the connections ourselves
 pub async fn test_dr_auth() {
     // setup 3 different connections in different states
-    let mut connection_shotover_noauth = valkey_connection::new_async("127.0.0.1", 6379).await;
+    // let mut connection_shotover_noauth = valkey_connection::new_async("127.0.0.1", 6379).await;
+    let mut connection_shotover_noauth =
+        ValkeyConnectionCreator::new("127.0.0.1", 6379, false, ValkeyDriver::Sync).new_sync();
 
-    let mut connection_shotover_auth = valkey_connection::new_async("127.0.0.1", 6379).await;
+    // let mut connection_shotover_auth = valkey_connection::new_async("127.0.0.1", 6379).await;
+    let mut connection_shotover_auth =
+        ValkeyConnectionCreator::new("127.0.0.1", 6379, false, ValkeyDriver::Sync).new_sync();
     assert_ok(
         redis::cmd("AUTH").arg("default").arg("shotover"),
         &mut connection_shotover_auth,
     )
     .await;
 
-    let mut connection_dr_auth = valkey_connection::new_async("127.0.0.1", 2120).await;
+    // let mut connection_dr_auth = valkey_connection::new_async("127.0.0.1", 2120).await;
+    let mut connection_dr_auth =
+        ValkeyConnectionCreator::new("127.0.0.1", 2120, false, ValkeyDriver::Sync).new_sync();
     assert_ok(
         redis::cmd("AUTH").arg("default").arg("shotover"),
         &mut connection_dr_auth,
@@ -1243,8 +1152,7 @@ pub async fn test_dr_auth() {
     assert_eq!(
         redis::cmd("GET")
             .arg("authed_write")
-            .query_async(&mut connection_shotover_auth)
-            .await,
+            .query(&mut connection_shotover_auth),
         Ok(42)
     );
 
@@ -1256,8 +1164,7 @@ pub async fn test_dr_auth() {
         redis::cmd("SET")
             .arg("authed_write")
             .arg(1111)
-            .query_async::<_, ()>(&mut connection_shotover_noauth)
-            .await
+            .query::<()>(&mut connection_shotover_noauth)
             .unwrap_err();
     }
 
@@ -1266,15 +1173,13 @@ pub async fn test_dr_auth() {
     assert_eq!(
         redis::cmd("GET")
             .arg("authed_write")
-            .query_async(&mut connection_shotover_auth)
-            .await,
+            .query(&mut connection_shotover_auth),
         Ok(42)
     );
     assert_eq!(
         redis::cmd("GET")
             .arg("authed_write")
-            .query_async::<_, Option<i32>>(&mut connection_dr_auth)
-            .await,
+            .query::<Option<i32>>(&mut connection_dr_auth),
         Ok(None)
     );
 }
@@ -1357,64 +1262,66 @@ pub async fn test_invalid_frame() {
     assert_eq!(amount, 0);
 }
 
-async fn test_pubsub(pub_connection: &mut Connection, sub_connection: Connection) {
-    let mut pubsub_conn = sub_connection.into_pubsub();
-    pubsub_conn.subscribe("phonewave").await.unwrap();
-    let mut pubsub_stream = pubsub_conn.on_message();
+pub fn test_pubsub(pub_connection: &mut redis::Connection, mut sub_connection: redis::Connection) {
+    let mut pubsub_conn = sub_connection.as_pubsub();
+    pubsub_conn.subscribe("phonewave").unwrap();
+
     pub_connection
-        .publish::<_, _, ()>("phonewave", "banana")
-        .await
+        .publish::<&str, &str, i32>("phonewave", "banana")
         .unwrap();
 
-    let msg_payload: String = pubsub_stream.next().await.unwrap().get_payload().unwrap();
-    assert_eq!("banana".to_string(), msg_payload);
+    let msg_payload: String = pubsub_conn.get_message().unwrap().get_payload().unwrap();
+    std::assert_eq!("banana".to_string(), msg_payload);
 }
 
-async fn test_pubsub_2subs(pub_connection: &mut Connection, sub_connection: Connection) {
-    let mut pubsub_conn = sub_connection.into_pubsub();
-    pubsub_conn.subscribe("s1").await.unwrap();
-    pubsub_conn.subscribe("s2").await.unwrap();
-    let mut pubsub_stream = pubsub_conn.on_message();
+pub fn test_pubsub_2subs(
+    pub_connection: &mut redis::Connection,
+    sub_connection: &mut redis::Connection,
+) {
+    let mut pubsub_conn = sub_connection.as_pubsub();
+    pubsub_conn.subscribe("s1").unwrap();
+    pubsub_conn.subscribe("s2").unwrap();
     pub_connection
-        .publish::<_, _, ()>("s1", "an arbitrary string")
-        .await
+        .publish::<&str, &str, i32>("s1", "an arbitrary string")
         .unwrap();
 
-    let msg_payload: String = pubsub_stream.next().await.unwrap().get_payload().unwrap();
-    assert_eq!("an arbitrary string".to_string(), msg_payload);
+    let msg_payload: String = pubsub_conn.get_message().unwrap().get_payload().unwrap();
+    std::assert_eq!("an arbitrary string".to_string(), msg_payload);
 }
 
-async fn test_pubsub_unused(sub_connection: Connection) {
-    let mut pubsub_conn = sub_connection.into_pubsub();
-    pubsub_conn.subscribe("some_key").await.unwrap();
+pub fn test_pubsub_unused(sub_connection: &mut redis::Connection) {
+    let mut pubsub_conn = sub_connection.as_pubsub();
+    pubsub_conn.subscribe("some_key").unwrap()
 }
 
-async fn test_pubsub_unsubscription(pub_connection: &mut Connection, sub_connection: Connection) {
+pub fn test_pubsub_unsubscription(
+    pub_connection: &mut redis::Connection,
+    sub_connection: &mut redis::Connection,
+) {
     const SUBSCRIPTION_KEY: &str = "phonewave-pub-sub-unsubscription";
 
-    let mut pubsub_conn = sub_connection.into_pubsub();
-    pubsub_conn.subscribe(SUBSCRIPTION_KEY).await.unwrap();
+    let mut pubsub_conn = sub_connection.as_pubsub();
+    pubsub_conn.subscribe(SUBSCRIPTION_KEY).unwrap();
 
-    pubsub_conn.unsubscribe(SUBSCRIPTION_KEY).await.unwrap();
+    pubsub_conn.unsubscribe(SUBSCRIPTION_KEY).unwrap();
 
     let subscriptions_counts: HashMap<String, u32> = redis::cmd("PUBSUB")
         .arg("NUMSUB")
         .arg(SUBSCRIPTION_KEY)
-        .query_async(pub_connection)
-        .await
+        .query(pub_connection)
         .unwrap();
-    let subscription_count = *subscriptions_counts.get(SUBSCRIPTION_KEY).unwrap();
-    assert_eq!(subscription_count, 0);
+    let subscriptions_counts = *subscriptions_counts.get(SUBSCRIPTION_KEY).unwrap();
+    std::assert_eq!(subscriptions_counts, 0);
 }
 
-async fn test_pubsub_automatic_unsubscription(
-    numsub_connection: &mut Connection,
-    sub_connection: Connection,
+pub fn test_pubsub_automatic_unsubscription(
+    numsub_connection: &mut redis::Connection,
+    sub_connection: &mut redis::Connection,
 ) {
     const SUBSCRIPTION_KEY: &str = "phonewave-automatic-unsubscription";
 
-    let mut pubsub_conn = sub_connection.into_pubsub();
-    pubsub_conn.subscribe(SUBSCRIPTION_KEY).await.unwrap();
+    let mut pubsub_conn = sub_connection.as_pubsub();
+    pubsub_conn.subscribe(SUBSCRIPTION_KEY).unwrap();
     // Dropping the connection is whats significant here.
     // Valkey detects the closed connection and closes the appropriate subscriptions
     drop(pubsub_conn);
@@ -1425,64 +1332,60 @@ async fn test_pubsub_automatic_unsubscription(
         let subscriptions_counts: HashMap<String, u32> = redis::cmd("PUBSUB")
             .arg("NUMSUB")
             .arg(SUBSCRIPTION_KEY)
-            .query_async(numsub_connection)
-            .await
+            .query(numsub_connection)
             .unwrap();
         subscription_count = *subscriptions_counts.get(SUBSCRIPTION_KEY).unwrap();
         if subscription_count == 0 {
             break;
         }
 
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        sleep(Duration::from_millis(50));
     }
-    assert_eq!(subscription_count, 0);
+    std::assert_eq!(subscription_count, 0);
 }
 
-async fn test_pubsub_conn_reuse_simple(sub_connection: Connection) {
-    let mut pubsub_conn = sub_connection.into_pubsub();
-    pubsub_conn.subscribe("phonewave").await.unwrap();
+pub fn test_pubsub_conn_reuse_simple(mut sub_connection: redis::Connection) {
+    let mut pubsub_conn = sub_connection.as_pubsub();
+    pubsub_conn.subscribe("phonewave").unwrap();
 
-    let mut conn = pubsub_conn.into_connection().await;
+    drop(pubsub_conn);
+
     redis::cmd("SET")
         .arg("foo")
         .arg("bar")
-        .query_async::<_, ()>(&mut conn)
-        .await
+        .query::<()>(&mut sub_connection)
         .unwrap();
 
     let res: String = redis::cmd("GET")
         .arg("foo")
-        .query_async(&mut conn)
-        .await
+        .query(&mut sub_connection)
         .unwrap();
-    assert_eq!(&res, "bar");
+    std::assert_eq!(&res, "bar");
 }
 
-async fn test_pubsub_conn_reuse_multisub(sub_connection: Connection) {
-    let mut pubsub_conn = sub_connection.into_pubsub();
-    pubsub_conn.subscribe("phonewave").await.unwrap();
+pub fn test_pubsub_conn_reuse_multisub(mut sub_connection: redis::Connection) {
+    let mut pubsub_conn = sub_connection.as_pubsub();
+    pubsub_conn.subscribe("phonewave").unwrap();
     // TODO: handle all subscription messages
-    //pubsub_conn.subscribe("blah").await.unwrap();
-    //pubsub_conn.subscribe("blah2").await.unwrap();
-    pubsub_conn.psubscribe("*").await.unwrap();
+    //pubsub_conn.subscribe("blah").unwrap();
+    //pubsub_conn.subscribe("blah2").unwrap();
+    pubsub_conn.psubscribe("*").unwrap();
 
-    let mut conn = pubsub_conn.into_connection().await;
+    drop(pubsub_conn);
     redis::cmd("SET")
         .arg("foo")
         .arg("bar")
-        .query_async::<_, ()>(&mut conn)
-        .await
+        .query::<()>(&mut sub_connection)
         .unwrap();
 
     let res: String = redis::cmd("GET")
         .arg("foo")
-        .query_async(&mut conn)
-        .await
+        .query(&mut sub_connection)
         .unwrap();
-    assert_eq!(&res, "bar");
+    pretty_assertions::assert_eq!(&res, "bar");
 }
 
-pub async fn run_all_cluster_hiding(connection: &mut Connection, flusher: &mut Flusher) {
+pub async fn run_all_cluster_hiding(connection: &mut redis::Connection, flusher: &mut Flusher) {
     test_cluster_pipe(connection).await;
     test_pipeline_error(connection).await; //TODO: script does not seem to be loading in the server?
     for _ in 0..1999 {
@@ -1526,7 +1429,7 @@ pub async fn run_all_cluster_hiding(connection: &mut Connection, flusher: &mut F
     test_hello_cluster(connection).await;
 }
 
-pub async fn run_all_cluster_handling(connection: &mut Connection, flusher: &mut Flusher) {
+pub async fn run_all_cluster_handling(connection: &mut redis::Connection, flusher: &mut Flusher) {
     test_cluster_pipe(connection).await;
     test_pipeline_error(connection).await; //TODO: script does not seem to be loading in the server?
     test_cluster_basics(connection).await;
@@ -1565,11 +1468,8 @@ pub async fn run_all_cluster_handling(connection: &mut Connection, flusher: &mut
     test_time(connection).await;
 }
 
-pub async fn run_all<Fut>(connection_creator: impl Fn() -> Fut, flusher: &mut Flusher)
-where
-    Fut: Future<Output = Connection>,
-{
-    let mut connection = connection_creator().await;
+pub async fn run_all(connection_creator: &ValkeyConnectionCreator, flusher: &mut Flusher) {
+    let mut connection = connection_creator.new_sync();
     let connection = &mut connection;
     test_args(connection).await;
     test_getset(connection).await;
@@ -1601,34 +1501,34 @@ where
     test_ping_echo(connection).await;
     test_time(connection).await;
 
-    let sub_connection = connection_creator().await;
-    test_pubsub(connection, sub_connection).await;
+    let sub_connection = connection_creator.new_sync();
+    test_pubsub(connection, sub_connection);
 
     // test again!
-    let sub_connection = connection_creator().await;
-    test_pubsub(connection, sub_connection).await;
+    let sub_connection = connection_creator.new_sync();
+    test_pubsub(connection, sub_connection);
 
-    let sub_connection = connection_creator().await;
-    test_pubsub_2subs(connection, sub_connection).await;
+    let mut sub_connection = connection_creator.new_sync();
+    test_pubsub_2subs(connection, &mut sub_connection);
 
-    let sub_connection = connection_creator().await;
-    test_pubsub_unused(sub_connection).await;
+    let mut sub_connection = connection_creator.new_sync();
+    test_pubsub_unused(&mut sub_connection);
 
-    let sub_connection = connection_creator().await;
-    test_pubsub_unsubscription(connection, sub_connection).await;
+    let mut sub_connection = connection_creator.new_sync();
+    test_pubsub_unsubscription(connection, &mut sub_connection);
 
-    let sub_connection = connection_creator().await;
-    test_pubsub_automatic_unsubscription(connection, sub_connection).await;
+    let mut sub_connection = connection_creator.new_sync();
+    test_pubsub_automatic_unsubscription(connection, &mut sub_connection);
 
-    let sub_connection = connection_creator().await;
-    test_pubsub_conn_reuse_simple(sub_connection).await;
+    let sub_connection = connection_creator.new_sync();
+    test_pubsub_conn_reuse_simple(sub_connection);
 
-    let sub_connection = connection_creator().await;
-    test_pubsub_conn_reuse_multisub(sub_connection).await;
+    let sub_connection = connection_creator.new_sync();
+    test_pubsub_conn_reuse_multisub(sub_connection);
 }
 
 pub struct Flusher {
-    connections: Vec<Connection>,
+    connections: Vec<ValkeyConnection>,
 }
 
 impl Flusher {
@@ -1637,14 +1537,35 @@ impl Flusher {
         Flusher {
             connections: vec![
                 // shotover - shotover might have internal handling for flush that we want to run
-                valkey_connection::new_async("127.0.0.1", 6379).await,
+                ValkeyConnectionCreator::new("127.0.0.1", 6379, false, ValkeyDriver::Sync)
+                    .build()
+                    .await,
+                // valkey_connection::new_async("127.0.0.1", 6379).await,
                 // valkey cluster instances - shotover may or may not run flush on all cluster instances
-                valkey_connection::new_async("172.16.1.2", 6379).await,
-                valkey_connection::new_async("172.16.1.3", 6379).await,
-                valkey_connection::new_async("172.16.1.4", 6379).await,
-                valkey_connection::new_async("172.16.1.5", 6379).await,
-                valkey_connection::new_async("172.16.1.6", 6379).await,
-                valkey_connection::new_async("172.16.1.7", 6379).await,
+                ValkeyConnectionCreator::new("172.16.1.2", 6379, false, ValkeyDriver::Sync)
+                    .build()
+                    .await,
+                ValkeyConnectionCreator::new("172.16.1.3", 6379, false, ValkeyDriver::Sync)
+                    .build()
+                    .await,
+                ValkeyConnectionCreator::new("172.16.1.4", 6379, false, ValkeyDriver::Sync)
+                    .build()
+                    .await,
+                ValkeyConnectionCreator::new("172.16.1.5", 6379, false, ValkeyDriver::Sync)
+                    .build()
+                    .await,
+                ValkeyConnectionCreator::new("172.16.1.6", 6379, false, ValkeyDriver::Sync)
+                    .build()
+                    .await,
+                ValkeyConnectionCreator::new("172.16.1.7", 6379, false, ValkeyDriver::Sync)
+                    .build()
+                    .await,
+                // valkey_connection::new_async("172.16.1.2", 6379).await,
+                // valkey_connection::new_async("172.16.1.3", 6379).await,
+                // valkey_connection::new_async("172.16.1.4", 6379).await,
+                // valkey_connection::new_async("172.16.1.5", 6379).await,
+                // valkey_connection::new_async("172.16.1.6", 6379).await,
+                // valkey_connection::new_async("172.16.1.7", 6379).await,
             ],
         }
     }
@@ -1653,14 +1574,35 @@ impl Flusher {
         Flusher {
             connections: vec![
                 // shotover - shotover might have internal handling for flush that we want to run
-                valkey_connection::new_async("127.0.0.1", 6379).await,
+                // valkey_connection::new_async("127.0.0.1", 6379).await,
+                ValkeyConnectionCreator::new("127.0.0.1", 6379, true, ValkeyDriver::Sync)
+                    .build()
+                    .await,
                 // valkey cluster instances - shotover may or may not run flush on all cluster instances
-                valkey_connection::new_async_tls("172.16.1.2", 6379).await,
-                valkey_connection::new_async_tls("172.16.1.3", 6379).await,
-                valkey_connection::new_async_tls("172.16.1.4", 6379).await,
-                valkey_connection::new_async_tls("172.16.1.5", 6379).await,
-                valkey_connection::new_async_tls("172.16.1.6", 6379).await,
-                valkey_connection::new_async_tls("172.16.1.7", 6379).await,
+                ValkeyConnectionCreator::new("172.16.1.2", 6379, true, ValkeyDriver::Sync)
+                    .build()
+                    .await,
+                ValkeyConnectionCreator::new("172.16.1.3", 6379, true, ValkeyDriver::Sync)
+                    .build()
+                    .await,
+                ValkeyConnectionCreator::new("172.16.1.4", 6379, true, ValkeyDriver::Sync)
+                    .build()
+                    .await,
+                ValkeyConnectionCreator::new("172.16.1.5", 6379, true, ValkeyDriver::Sync)
+                    .build()
+                    .await,
+                ValkeyConnectionCreator::new("172.16.1.6", 6379, true, ValkeyDriver::Sync)
+                    .build()
+                    .await,
+                ValkeyConnectionCreator::new("172.16.1.7", 6379, true, ValkeyDriver::Sync)
+                    .build()
+                    .await,
+                // valkey_connection::new_async_tls("172.16.1.2", 6379).await,
+                // valkey_connection::new_async_tls("172.16.1.3", 6379).await,
+                // valkey_connection::new_async_tls("172.16.1.4", 6379).await,
+                // valkey_connection::new_async_tls("172.16.1.5", 6379).await,
+                // valkey_connection::new_async_tls("172.16.1.6", 6379).await,
+                // valkey_connection::new_async_tls("172.16.1.7", 6379).await,
             ],
         }
     }
@@ -1668,7 +1610,7 @@ impl Flusher {
     /// Many integration tests can get away with just running flush on the shotover connection
     /// Its not ideal because a shotover bug could lead to hard to diagnose test failure
     /// but it also makes the test implementations simpler so...
-    pub async fn new_single_connection(connection: Connection) -> Self {
+    pub async fn new_single_connection(connection: ValkeyConnection) -> Self {
         Flusher {
             connections: vec![connection],
         }
@@ -1677,11 +1619,15 @@ impl Flusher {
     pub async fn flush(&mut self) {
         for connection in &mut self.connections {
             // This command is expected to fail when run against a read only replica.
-            // This is unfortunate but we we have no way to determine if its read only before sending the FLUSHDB
-            redis::cmd("FLUSHDB")
-                .query_async::<_, ()>(connection)
-                .await
-                .ok();
+            // This is unfortunate but we have no way to determine if its read only before sending the FLUSHDB
+            match connection {
+                ValkeyConnection::Async(conn) => {
+                    redis::cmd("FLUSHDB").query_async::<_, ()>(conn).await.ok();
+                }
+                ValkeyConnection::Sync(conn) => {
+                    redis::cmd("FLUSHDB").execute(conn);
+                }
+            }
         }
     }
 }
