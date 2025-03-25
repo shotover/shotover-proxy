@@ -1590,63 +1590,63 @@ pub async fn run_all_cluster_handling(
 }
 
 pub async fn run_all(connection_creator: &ValkeyConnectionCreator, flusher: &mut Flusher) {
-    // let mut connection = connection_creator.new_async().await;
-    // let connection = &mut connection;
-    // test_args(connection).await;
-    // test_getset(connection).await;
-    // test_incr(connection).await;
-    // test_info(connection).await;
-    // test_keys_hiding(connection, flusher).await;
-    // test_hash_ops(connection, flusher).await;
-    // test_set_ops(connection, flusher).await;
-    // test_scan(connection, flusher).await;
-    // test_optionals(connection).await;
-    // test_scanning(connection, flusher).await;
-    // test_filtered_scanning(connection, flusher).await;
-    // test_pipeline(connection).await;
-    // test_empty_pipeline(connection).await;
-    // test_pipeline_transaction(connection).await;
-    // test_pipeline_reuse_query(connection).await;
-    // test_pipeline_reuse_query_clear(connection).await;
-    // test_real_transaction(connection).await;
-    // test_script(connection).await;
-    // test_tuple_args(connection, flusher).await;
-    // test_nice_api(connection).await;
-    // test_auto_m_versions(connection).await;
-    // test_nice_hash_api(connection).await;
-    // test_nice_list_api(connection).await;
-    // test_tuple_decoding_regression(connection).await;
-    // test_bit_operations(connection).await;
-    // test_client_name(connection).await;
-    // test_save(connection).await;
-    // test_ping_echo(connection).await;
-    // test_time(connection).await;
+    let mut connection = connection_creator.new_async().await;
+    let connection = &mut connection;
+    test_args(connection).await;
+    test_getset(connection).await;
+    test_incr(connection).await;
+    test_info(connection).await;
+    test_keys_hiding(connection, flusher).await;
+    test_hash_ops(connection, flusher).await;
+    test_set_ops(connection, flusher).await;
+    test_scan(connection, flusher).await;
+    test_optionals(connection).await;
+    test_scanning(connection, flusher).await;
+    test_filtered_scanning(connection, flusher).await;
+    test_pipeline(connection).await;
+    test_empty_pipeline(connection).await;
+    test_pipeline_transaction(connection).await;
+    test_pipeline_reuse_query(connection).await;
+    test_pipeline_reuse_query_clear(connection).await;
+    test_real_transaction(connection).await;
+    test_script(connection).await;
+    test_tuple_args(connection, flusher).await;
+    test_nice_api(connection).await;
+    test_auto_m_versions(connection).await;
+    test_nice_hash_api(connection).await;
+    test_nice_list_api(connection).await;
+    test_tuple_decoding_regression(connection).await;
+    test_bit_operations(connection).await;
+    test_client_name(connection).await;
+    test_save(connection).await;
+    test_ping_echo(connection).await;
+    test_time(connection).await;
 
     let mut pub_connection = connection_creator.new_sync();
-    // let sub_connection = connection_creator.new_sync();
-    // test_pubsub(&mut pub_connection, sub_connection);
-    //
-    // // test again!
-    // let sub_connection = connection_creator.new_sync();
-    // test_pubsub(&mut pub_connection, sub_connection);
+    let sub_connection = connection_creator.new_sync();
+    test_pubsub(&mut pub_connection, sub_connection);
+
+    // test again!
+    let sub_connection = connection_creator.new_sync();
+    test_pubsub(&mut pub_connection, sub_connection);
 
     let mut sub_connection = connection_creator.new_sync();
     test_pubsub_2subs(&mut pub_connection, &mut sub_connection);
-    //
-    // let mut sub_connection = connection_creator.new_sync();
-    // test_pubsub_unused(&mut sub_connection);
 
-    // let mut sub_connection = connection_creator.new_sync();
-    // test_pubsub_unsubscription(&mut pub_connection, &mut sub_connection);
-    //
-    // let mut sub_connection = connection_creator.new_sync();
-    // test_pubsub_automatic_unsubscription(&mut pub_connection, &mut sub_connection);
-    //
-    // let sub_connection = connection_creator.new_sync();
-    // test_pubsub_conn_reuse_simple(sub_connection);
-    //
-    // let sub_connection = connection_creator.new_sync();
-    // test_pubsub_conn_reuse_multisub(sub_connection);
+    let mut sub_connection = connection_creator.new_sync();
+    test_pubsub_unused(&mut sub_connection);
+
+    let mut sub_connection = connection_creator.new_sync();
+    test_pubsub_unsubscription(&mut pub_connection, &mut sub_connection);
+
+    let mut sub_connection = connection_creator.new_sync();
+    test_pubsub_automatic_unsubscription(&mut pub_connection, &mut sub_connection);
+
+    let sub_connection = connection_creator.new_sync();
+    test_pubsub_conn_reuse_simple(sub_connection);
+
+    let sub_connection = connection_creator.new_sync();
+    test_pubsub_conn_reuse_multisub(sub_connection);
 }
 
 pub struct Flusher {
