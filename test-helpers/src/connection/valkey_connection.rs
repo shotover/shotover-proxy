@@ -109,7 +109,7 @@ fn create_tls_client(address: &str, port: u16) -> Client {
         .unwrap();
 
     Client::build_with_tls(
-        format!("rediss://{address}:{port}"),
+        format!("rediss://{address}:{port}/#insecure"),
         TlsCertificates {
             client_tls: Some(ClientTlsConfig {
                 client_cert: client_cert_vec,
