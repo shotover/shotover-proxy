@@ -8,7 +8,7 @@ use std::time::Duration;
 fn new_sync_connection(address: &str, port: u16) -> redis::Connection {
     let connection = Client::open((address, port))
         .unwrap()
-        .get_connection()
+        .get_connection_with_timeout(Duration::from_secs(5))
         .with_context(|| format!("Failed to create valkey connection to port {port}"))
         .unwrap();
     connection
@@ -26,33 +26,18 @@ async fn new_async_connection(address: &str, port: u16) -> MultiplexedConnection
 }
 
 fn create_tls_client(address: &str, port: u16) -> Client {
-    let root_cert_file =
-        File::open("tests/test-configs/valkey/tls/certs/localhost_CA.crt").unwrap();
-    let mut root_cert_vec = Vec::new();
-    BufReader::new(root_cert_file)
-        .read_to_end(&mut root_cert_vec)
-        .unwrap();
-
-    let cert_file = File::open("tests/test-configs/valkey/tls/certs/localhost.crt").unwrap();
-    let mut client_cert_vec = Vec::new();
-    BufReader::new(cert_file)
-        .read_to_end(&mut client_cert_vec)
-        .unwrap();
-
-    let key_file = File::open("tests/test-configs/valkey/tls/certs/localhost.key").unwrap();
-    let mut client_key_vec = Vec::new();
-    BufReader::new(key_file)
-        .read_to_end(&mut client_key_vec)
-        .unwrap();
+    let root_cert = std::fs::read("tests/test-configs/valkey/tls/certs/localhost_CA.crt").unwrap();
+    let client_cert = std::fs::read("tests/test-configs/valkey/tls/certs/localhost.crt").unwrap();
+    let client_key = std::fs::read("tests/test-configs/valkey/tls/certs/localhost.key").unwrap();
 
     Client::build_with_tls(
         format!("rediss://{address}:{port}/#insecure"),
         TlsCertificates {
             client_tls: Some(ClientTlsConfig {
-                client_cert: client_cert_vec,
-                client_key: client_key_vec,
+                client_cert,
+                client_key,
             }),
-            root_cert: Some(root_cert_vec),
+            root_cert: Some(root_cert),
         },
     )
     .unwrap()

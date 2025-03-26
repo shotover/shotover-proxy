@@ -203,7 +203,6 @@ async fn tls_source_and_tls_single_sink() {
                 .start()
                 .await;
 
-        // let mut connection = valkey_connection::new_async_tls("127.0.0.1", 6379).await;
         let mut connection = ValkeyConnectionCreator {
             address: "127.0.0.1".into(),
             port: 6379,
@@ -390,7 +389,6 @@ async fn cluster_dr() {
         .await;
 
     async fn new_connection() -> MultiplexedConnection {
-        // let mut connection = valkey_connection::new_async("127.0.0.1", 6379).await;
         let mut connection = ValkeyConnectionCreator {
             address: "127.0.0.1".into(),
             port: 6379,
