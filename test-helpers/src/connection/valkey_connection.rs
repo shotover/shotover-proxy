@@ -1,8 +1,7 @@
 use anyhow::Context;
 use redis::aio::MultiplexedConnection;
 use redis::{Client, ClientTlsConfig, TlsCertificates};
-use std::fs::File;
-use std::io::{BufReader, Read};
+use std::io::Read;
 use std::time::Duration;
 
 fn new_sync_connection(address: &str, port: u16) -> redis::Connection {
