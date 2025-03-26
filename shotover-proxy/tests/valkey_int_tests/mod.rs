@@ -36,14 +36,14 @@ async fn passthrough_standard() {
     let shotover = shotover_process("tests/test-configs/valkey/passthrough/topology.yaml")
         .start()
         .await;
-    let connection = ValkeyConnectionCreator {
+    let connection_creator = ValkeyConnectionCreator {
         address: "127.0.0.1".into(),
         port: 6379,
         tls: false,
     };
-    let mut flusher = Flusher::new_single_connection(connection.new_async().await).await;
+    let mut flusher = Flusher::new_single_connection(connection_creator.new_async().await).await;
 
-    run_all(&connection, &mut flusher).await;
+    run_all(&connection_creator, &mut flusher).await;
     test_invalid_frame().await;
     shotover
         .shutdown_and_then_consume_events(&[invalid_frame_event()])
