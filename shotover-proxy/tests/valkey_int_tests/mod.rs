@@ -41,16 +41,7 @@ async fn passthrough_standard() {
         port: 6379,
         tls: false,
     };
-    let mut flusher = Flusher::new_single_connection(
-        ValkeyConnectionCreator {
-            address: "127.0.0.1".into(),
-            port: 6379,
-            tls: false,
-        }
-        .new_async()
-        .await,
-    )
-    .await;
+    let mut flusher = Flusher::new_single_connection(connection.new_async().await).await;
 
     run_all(&connection, &mut flusher).await;
     test_invalid_frame().await;
@@ -155,16 +146,8 @@ async fn tls_source_and_tls_single_sink() {
             tls: true,
         };
 
-        let mut flusher = Flusher::new_single_connection(
-            ValkeyConnectionCreator {
-                address: "127.0.0.1".into(),
-                port: 6379,
-                tls: true,
-            }
-            .new_async()
-            .await,
-        )
-        .await;
+        let mut flusher =
+            Flusher::new_single_connection(connection_creator.new_async().await).await;
 
         run_all(&connection_creator, &mut flusher).await;
 
@@ -224,23 +207,13 @@ async fn cluster_ports_rewrite() {
             .start()
             .await;
 
-    let mut connection = ValkeyConnectionCreator {
+    let connection_creator = ValkeyConnectionCreator {
         address: "127.0.0.1".into(),
         port: 6380,
         tls: false,
-    }
-    .new_async()
-    .await;
-    let mut flusher = Flusher::new_single_connection(
-        ValkeyConnectionCreator {
-            address: "127.0.0.1".into(),
-            port: 6380,
-            tls: false,
-        }
-        .new_async()
-        .await,
-    )
-    .await;
+    };
+    let mut connection = connection_creator.new_async().await;
+    let mut flusher = Flusher::new_single_connection(connection_creator.new_async().await).await;
 
     run_all_cluster_hiding(&mut connection, &mut flusher).await;
 
