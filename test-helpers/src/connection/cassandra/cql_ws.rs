@@ -278,9 +278,9 @@ impl ServerCertVerifier for SkipVerifyHostName {
             now,
         ) {
             Ok(result) => Ok(result),
-            Err(rustls::Error::InvalidCertificate(CertificateError::NotValidForName)) => {
-                Ok(ServerCertVerified::assertion())
-            }
+            Err(rustls::Error::InvalidCertificate(
+                CertificateError::NotValidForName | CertificateError::NotValidForNameContext { .. },
+            )) => Ok(ServerCertVerified::assertion()),
             Err(err) => Err(err),
         }
     }
