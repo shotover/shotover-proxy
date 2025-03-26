@@ -5,12 +5,12 @@ use fred::interfaces::ClientLike;
 use fred::prelude::Config;
 use pretty_assertions::assert_eq;
 use redis::Commands;
-use redis::aio::Connection;
 
+use redis::aio::MultiplexedConnection;
 use std::path::Path;
 use std::thread::sleep;
 use std::time::Duration;
-use test_helpers::connection::valkey_connection;
+use test_helpers::connection::valkey_connection::ValkeyConnectionCreator;
 use test_helpers::docker_compose::docker_compose;
 use test_helpers::metrics::assert_metrics_key_value;
 use test_helpers::shotover_process::{Count, EventMatcher, Level};
@@ -36,11 +36,14 @@ async fn passthrough_standard() {
     let shotover = shotover_process("tests/test-configs/valkey/passthrough/topology.yaml")
         .start()
         .await;
-    let connection = || valkey_connection::new_async("127.0.0.1", 6379);
-    let mut flusher =
-        Flusher::new_single_connection(valkey_connection::new_async("127.0.0.1", 6379).await).await;
+    let connection_creator = ValkeyConnectionCreator {
+        address: "127.0.0.1".into(),
+        port: 6379,
+        tls: false,
+    };
+    let mut flusher = Flusher::new_single_connection(connection_creator.new_async().await).await;
 
-    run_all(&connection, &mut flusher).await;
+    run_all(&connection_creator, &mut flusher).await;
     test_invalid_frame().await;
     shotover
         .shutdown_and_then_consume_events(&[invalid_frame_event()])
@@ -112,7 +115,13 @@ async fn tls_cluster_sink() {
     .start()
     .await;
 
-    let mut connection = valkey_connection::new_async("127.0.0.1", 6379).await;
+    let mut connection = ValkeyConnectionCreator {
+        address: "127.0.0.1".into(),
+        port: 6379,
+        tls: false,
+    }
+    .new_async()
+    .await;
     let mut flusher = Flusher::new_cluster_tls().await;
 
     run_all_cluster_hiding(&mut connection, &mut flusher).await;
@@ -131,13 +140,16 @@ async fn tls_source_and_tls_single_sink() {
             .start()
             .await;
 
-        let connection = || valkey_connection::new_async_tls("127.0.0.1", 6379);
-        let mut flusher = Flusher::new_single_connection(
-            valkey_connection::new_async_tls("127.0.0.1", 6379).await,
-        )
-        .await;
+        let connection_creator = ValkeyConnectionCreator {
+            address: "127.0.0.1".into(),
+            port: 6379,
+            tls: true,
+        };
 
-        run_all(&connection, &mut flusher).await;
+        let mut flusher =
+            Flusher::new_single_connection(connection_creator.new_async().await).await;
+
+        run_all(&connection_creator, &mut flusher).await;
 
         shotover.shutdown_and_then_consume_events(&[]).await;
     }
@@ -151,7 +163,13 @@ async fn tls_source_and_tls_single_sink() {
                 .start()
                 .await;
 
-        let mut connection = valkey_connection::new_async_tls("127.0.0.1", 6379).await;
+        let mut connection = ValkeyConnectionCreator {
+            address: "127.0.0.1".into(),
+            port: 6379,
+            tls: true,
+        }
+        .new_async()
+        .await;
         test_cluster_basics(&mut connection).await;
         shotover.shutdown_and_then_consume_events(&[]).await;
     }
@@ -168,7 +186,13 @@ async fn tls_source_and_tls_single_sink() {
                 .start()
                 .await;
 
-        let mut connection = valkey_connection::new_async_tls("127.0.0.1", 6379).await;
+        let mut connection = ValkeyConnectionCreator {
+            address: "127.0.0.1".into(),
+            port: 6379,
+            tls: true,
+        }
+        .new_async()
+        .await;
         test_cluster_basics(&mut connection).await;
         shotover.shutdown_and_then_consume_events(&[]).await;
     }
@@ -183,9 +207,13 @@ async fn cluster_ports_rewrite() {
             .start()
             .await;
 
-    let mut connection = valkey_connection::new_async("127.0.0.1", 6380).await;
-    let mut flusher =
-        Flusher::new_single_connection(valkey_connection::new_async("127.0.0.1", 6380).await).await;
+    let connection_creator = ValkeyConnectionCreator {
+        address: "127.0.0.1".into(),
+        port: 6380,
+        tls: false,
+    };
+    let mut connection = connection_creator.new_async().await;
+    let mut flusher = Flusher::new_single_connection(connection_creator.new_async().await).await;
 
     run_all_cluster_hiding(&mut connection, &mut flusher).await;
 
@@ -201,11 +229,21 @@ async fn cluster_auth() {
     let shotover = shotover_process("tests/test-configs/valkey/cluster-auth/topology.yaml")
         .start()
         .await;
-    let mut connection = valkey_connection::new_async("127.0.0.1", 6379).await;
+    let mut connection = ValkeyConnectionCreator {
+        address: "127.0.0.1".into(),
+        port: 6379,
+        tls: false,
+    }
+    .new_async()
+    .await;
 
     test_auth(&mut connection).await;
-    let connection = || valkey_connection::new_async("127.0.0.1", 6379);
-    test_auth_isolation(&connection).await;
+    let connection = ValkeyConnectionCreator {
+        address: "127.0.0.1".into(),
+        port: 6379,
+        tls: false,
+    };
+    test_auth_isolation(connection).await;
 
     shotover.shutdown_and_then_consume_events(&[]).await;
 }
@@ -217,7 +255,13 @@ async fn cluster_hiding() {
         .start()
         .await;
 
-    let mut connection = valkey_connection::new_async("127.0.0.1", 6379).await;
+    let mut connection = ValkeyConnectionCreator {
+        address: "127.0.0.1".into(),
+        port: 6379,
+        tls: false,
+    }
+    .new_async()
+    .await;
     let connection = &mut connection;
     let mut flusher = Flusher::new_cluster().await;
 
@@ -235,7 +279,13 @@ async fn cluster_handling() {
         .start()
         .await;
 
-    let mut connection = valkey_connection::new_async("127.0.0.1", 6379).await;
+    let mut connection = ValkeyConnectionCreator {
+        address: "127.0.0.1".into(),
+        port: 6379,
+        tls: false,
+    }
+    .new_async()
+    .await;
     let connection = &mut connection;
 
     let mut flusher = Flusher::new_cluster().await;
@@ -270,7 +320,13 @@ async fn cluster_dr() {
         let shotover = shotover_process("tests/test-configs/valkey/cluster-dr/topology.yaml")
             .start()
             .await;
-        let mut connection = valkey_connection::new_async("127.0.0.1", 6379).await;
+        let mut connection = ValkeyConnectionCreator {
+            address: "127.0.0.1".into(),
+            port: 6379,
+            tls: false,
+        }
+        .new_async()
+        .await;
         redis::cmd("AUTH")
             .arg("default")
             .arg("shotover")
@@ -305,8 +361,14 @@ async fn cluster_dr() {
         .start()
         .await;
 
-    async fn new_connection() -> Connection {
-        let mut connection = valkey_connection::new_async("127.0.0.1", 6379).await;
+    async fn new_connection() -> MultiplexedConnection {
+        let mut connection = ValkeyConnectionCreator {
+            address: "127.0.0.1".into(),
+            port: 6379,
+            tls: false,
+        }
+        .new_async()
+        .await;
 
         redis::cmd("AUTH")
             .arg("default")
@@ -331,7 +393,13 @@ pub async fn assert_failed_requests_metric_is_incremented_on_error_response() {
     let shotover = shotover_process("tests/test-configs/valkey/passthrough/topology.yaml")
         .start()
         .await;
-    let mut connection = valkey_connection::new_async("127.0.0.1", 6379).await;
+    let mut connection = ValkeyConnectionCreator {
+        address: "127.0.0.1".into(),
+        port: 6379,
+        tls: false,
+    }
+    .new_async()
+    .await;
 
     redis::cmd("INVALID_COMMAND")
         .arg("foo")
