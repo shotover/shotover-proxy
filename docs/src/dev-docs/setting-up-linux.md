@@ -3,7 +3,7 @@
 ## Building shotover
 
 Shotover requires a single external dependencies to build on linux.
-`gcc` must be installed due to the `ring` crate containing some C code.
+`gcc` must be installed due to the `aws-lc-sys` and `ring` crate containing some C code.
 On Ubuntu you can install it via:
 
 ```shell
