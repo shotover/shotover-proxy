@@ -1389,7 +1389,22 @@ fn test_pubsub(pub_connection: &mut redis::Connection, mut sub_connection: redis
     assert_eq!("banana".to_string(), msg_payload);
 }
 
-fn test_pubsub_2subs(
+fn test_pubsub_2subs_no_unsub(
+    pub_connection: &mut redis::Connection,
+    sub_connection: &mut redis::Connection,
+) {
+    let mut pubsub_conn = sub_connection.as_pubsub();
+    pubsub_conn.subscribe("s1").unwrap();
+    pubsub_conn.subscribe("s2").unwrap();
+    pub_connection
+        .publish::<&str, &str, i32>("s1", "an arbitrary string")
+        .unwrap();
+
+    let msg_payload: String = pubsub_conn.get_message().unwrap().get_payload().unwrap();
+    assert_eq!("an arbitrary string".to_string(), msg_payload);
+}
+
+fn test_pubsub_2subs_manual_unsub(
     pub_connection: &mut redis::Connection,
     sub_connection: &mut redis::Connection,
 ) {
@@ -1405,6 +1420,39 @@ fn test_pubsub_2subs(
 
     pubsub_conn.unsubscribe("s1").unwrap();
     pubsub_conn.unsubscribe("s2").unwrap();
+}
+
+fn test_pubsub_2psubs_no_unsub(
+    pub_connection: &mut redis::Connection,
+    sub_connection: &mut redis::Connection,
+) {
+    let mut pubsub_conn = sub_connection.as_pubsub();
+    pubsub_conn.psubscribe("s1*").unwrap();
+    pubsub_conn.psubscribe("s2*").unwrap();
+    pub_connection
+        .publish::<&str, &str, i32>("s1foo", "an arbitrary string")
+        .unwrap();
+
+    let msg_payload: String = pubsub_conn.get_message().unwrap().get_payload().unwrap();
+    assert_eq!("an arbitrary string".to_string(), msg_payload);
+}
+
+fn test_pubsub_2psubs_manual_unsub(
+    pub_connection: &mut redis::Connection,
+    sub_connection: &mut redis::Connection,
+) {
+    let mut pubsub_conn = sub_connection.as_pubsub();
+    pubsub_conn.psubscribe("s1*").unwrap();
+    pubsub_conn.psubscribe("s2*").unwrap();
+    pub_connection
+        .publish::<&str, &str, i32>("s1foo", "an arbitrary string")
+        .unwrap();
+
+    let msg_payload: String = pubsub_conn.get_message().unwrap().get_payload().unwrap();
+    assert_eq!("an arbitrary string".to_string(), msg_payload);
+
+    pubsub_conn.unsubscribe("s1*").unwrap();
+    pubsub_conn.unsubscribe("s2*").unwrap();
 }
 
 fn test_pubsub_unused(sub_connection: &mut redis::Connection) {
@@ -1631,7 +1679,16 @@ pub async fn run_all(connection_creator: &ValkeyConnectionCreator, flusher: &mut
     test_pubsub(&mut pub_connection, sub_connection);
 
     let mut sub_connection = connection_creator.new_sync();
-    test_pubsub_2subs(&mut pub_connection, &mut sub_connection);
+    test_pubsub_2subs_manual_unsub(&mut pub_connection, &mut sub_connection);
+
+    let mut sub_connection = connection_creator.new_sync();
+    test_pubsub_2subs_no_unsub(&mut pub_connection, &mut sub_connection);
+
+    let mut sub_connection = connection_creator.new_sync();
+    test_pubsub_2psubs_manual_unsub(&mut pub_connection, &mut sub_connection);
+
+    let mut sub_connection = connection_creator.new_sync();
+    test_pubsub_2psubs_no_unsub(&mut pub_connection, &mut sub_connection);
 
     let mut sub_connection = connection_creator.new_sync();
     test_pubsub_unused(&mut sub_connection);

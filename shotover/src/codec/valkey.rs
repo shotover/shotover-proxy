@@ -10,6 +10,7 @@ use bytes::BytesMut;
 use metrics::Histogram;
 use redis_protocol::resp2::decode::decode_bytes_mut;
 use redis_protocol::resp2::encode::extend_encode;
+use redis_protocol::resp2::types::BytesFrame;
 use tokio_util::codec::{Decoder, Encoder};
 
 #[derive(Clone)]
@@ -53,12 +54,26 @@ pub struct RequestInfo {
     ty: RequestType,
     id: MessageId,
 }
+
+pub enum ExpectUnsubscribeResponses {
+    UnsubscribeAll,
+    Unsubscribe(u32),
+}
+
 pub enum RequestType {
-    /// a pubsub subscribe
-    Subscribe,
-    /// a unsubscribe
-    Unsubscribe,
-    /// valkey reset
+    /// subscribe command and the list of channels to subscribe to
+    Subscribe(Vec<Vec<u8>>),
+    /// psubscribe command and the list of channel patterns to subscribe to
+    Psubscribe(Vec<Vec<u8>>),
+    /// ssubscribe command and the list of shard patterns to subscribe to
+    Ssubscribe(Vec<Vec<u8>>),
+    /// unsubscribe command and the list of channels to unsubscribe from
+    Unsubscribe(Vec<Vec<u8>>),
+    /// punsubscribe command and the list of channel patterns to unsubscribe from
+    Punsubscribe(Vec<Vec<u8>>),
+    /// unssubscribe command and the list of shard patterns to unsubscribe from
+    Sunsubscribe(Vec<Vec<u8>>),
+    /// reset command
     Reset,
     /// Everything else
     Other,
@@ -72,10 +87,30 @@ pub struct ValkeyEncoder {
 }
 
 pub struct ValkeyDecoder {
-    // Some when Sink (because it receives responses)
-    request_header_rx: Option<mpsc::Receiver<RequestInfo>>,
     direction: Direction,
-    is_subscribed: bool,
+
+    /// Only used when Direction::Sink.
+    /// We need to receive requests from the ValkeyEncoder side, in order to make sense of the responses
+    request_header_rx: Option<mpsc::Receiver<RequestInfo>>,
+
+    /// Only used when Direction::Sink.
+    /// We need to keep track of the channels that have been subscribed to in order to determine
+    /// when the pubsub connection returns to a regular connection
+    ///
+    // In order to track whether the connection is in pubsub mode or regular mode we:
+    // 1. store any subscriptions started by *subscribe commands in the lists below
+    // 2. remove any subscriptions from the lists that are unsubscribed by *unsubscribe commands
+    //
+    // If the lists contain any values we are in pubsub mode, otherwise we are not in pubsub mode.
+    subscribed: Vec<Vec<u8>>,
+    psubscribed: Vec<Vec<u8>>,
+    ssubscribed: Vec<Vec<u8>>,
+
+    /// Only used when Direction::Sink.
+    /// subscribe and unsubscribe commands can return more than response.
+    /// We need to skip processing these responses (but still send them on) in order to
+    /// remain in sync with the requests coming in from request_header_rx.
+    pending_extra_responses: usize,
 }
 
 impl ValkeyDecoder {
@@ -86,8 +121,15 @@ impl ValkeyDecoder {
         Self {
             direction,
             request_header_rx,
-            is_subscribed: false,
+            subscribed: vec![],
+            psubscribed: vec![],
+            ssubscribed: vec![],
+            pending_extra_responses: 0,
         }
+    }
+
+    fn is_subscribed(&self) -> bool {
+        !self.subscribed.is_empty() || !self.psubscribed.is_empty() || !self.ssubscribed.is_empty()
     }
 }
 
@@ -112,12 +154,18 @@ impl Decoder for ValkeyDecoder {
                     Some(received_at),
                 );
 
-                // Notes on subscription responses
+                // Notes on pubsub protocol
                 //
-                // There are 3 types of pubsub responses and the type is determined by the first value in the array:
-                // * `subscribe` - a response to a SUBSCRIBE, PSUBSCRIBE or SSUBSCRIBE request
-                // * `unsubscribe` - a response to an UNSUBSCRIBE, PUNSUBSCRIBE or SUNSUBSCRIBE request
+                // There are 9 types of pubsub responses and the type is determined by the first value in the array:
+                // * `subscribe` - a response to a SUBSCRIBE request
+                // * `psubscribe` - a response to a PSUBSCRIBE request
+                // * `ssubscribe` - a response to a SSUBSCRIBE request
+                // * `unsubscribe` - a response to an UNSUBSCRIBE request
+                // * `punsubscribe` - a response to a PUNSUBSCRIBE request
+                // * `sunsubscribe` - a response to a SUNSUBSCRIBE request
                 // * `message` - a subscription message
+                // * `pmessage` - a pattern subscription message
+                // * `smessage` - a sharded subscription message
                 //
                 // Additionally valkey will:
                 // * accept a few regular commands while in pubsub mode: PING, RESET and QUIT
@@ -126,6 +174,9 @@ impl Decoder for ValkeyDecoder {
                 // Note: PING has a custom response when in pubsub mode.
                 //       It returns an array ['pong', $pingMessage] instead of directly returning $pingMessage.
                 //       But this doesnt cause any problems for us.
+                //
+                // The wording in the valkey docs is confusing on this, but it is gauranteed that we will get at least one response to *subscribe/*unsubscribe requests.
+                // We will however get more than one response to these requests when there is multiple channels to subscribe or unsubscribe from.
 
                 // Determine if message is a `message` subscription message
                 //
@@ -133,10 +184,12 @@ impl Decoder for ValkeyDecoder {
                 // they have no way to collide with the `message` value of a subscription message.
                 // So while we are in subscription mode we can use that to determine if an
                 // incoming message is a subscription message.
-                let is_subscription_message = if self.is_subscribed {
+                let is_subscription_message = if self.is_subscribed() {
                     if let Some(Frame::Valkey(ValkeyFrame::Array(array))) = message.frame() {
                         if let [ValkeyFrame::BulkString(ty), ..] = array.as_slice() {
                             ty.as_ref() == b"message"
+                                || ty.as_ref() == b"pmessage"
+                                || ty.as_ref() == b"smessage"
                         } else {
                             false
                         }
@@ -147,35 +200,76 @@ impl Decoder for ValkeyDecoder {
                     false
                 };
 
-                // Update is_subscribed state
-                //
-                // In order to make sense of a response we need the main task to
-                // send us the type of its corresponding request.
-                //
-                // In order to keep the incoming request MessageTypes in sync with their corresponding responses
-                // we must only process a MessageType when the message is not a subscription message.
-                // This is fine because subscription messages cannot affect the is_subscribed state.
-                if !is_subscription_message {
+                if is_subscription_message {
+                    // do nothing
+                } else if self.pending_extra_responses > 0 {
+                    self.pending_extra_responses -= 1;
+                } else {
+                    // In order to make sense of a response we need the main task to
+                    // send us the type of its corresponding request.
+                    //
+                    // In order to keep the incoming request MessageTypes in sync with their corresponding responses
+                    // we must only process a MessageType when the message is not a subscription message.
                     if let Some(rx) = self.request_header_rx.as_ref() {
                         let request_info = rx.recv().map_err(|_| {
                             CodecReadError::Parser(anyhow!("valkey encoder half was lost"))
                         })?;
                         message.set_request_id(request_info.id);
                         match request_info.ty {
-                            RequestType::Subscribe | RequestType::Unsubscribe => {
-                                if let Some(Frame::Valkey(ValkeyFrame::Array(array))) =
-                                    message.frame()
-                                {
-                                    if let Some(ValkeyFrame::Integer(
-                                        number_of_subscribed_channels,
-                                    )) = array.get(2)
-                                    {
-                                        self.is_subscribed = *number_of_subscribed_channels != 0;
-                                    }
+                            RequestType::Subscribe(channels) => {
+                                // There will be a response for each channel specified.
+                                // Consider the first response as the true response for this request (set its request_id field)
+                                // And consider the other responses as unrequested responses.
+                                // This is not ideal, but its the best we can do with valkey's silly protocol.
+                                //
+                                // A subscribe that specifies no channels results in a valkey error which is 1 reply.
+                                // Use saturating_sub to ensure that we correctly handle this case without underflow.
+                                self.pending_extra_responses += channels.len().saturating_sub(1);
+                                self.subscribed.extend(channels);
+                            }
+                            RequestType::Psubscribe(channels) => {
+                                self.pending_extra_responses += channels.len().saturating_sub(1);
+                                self.psubscribed.extend(channels);
+                            }
+                            RequestType::Ssubscribe(channels) => {
+                                self.pending_extra_responses += channels.len().saturating_sub(1);
+                                self.ssubscribed.extend(channels);
+                            }
+                            RequestType::Unsubscribe(channels) => {
+                                if channels.is_empty() {
+                                    self.pending_extra_responses +=
+                                        self.subscribed.len().saturating_sub(1);
+                                    self.subscribed.clear();
+                                } else {
+                                    self.pending_extra_responses += channels.len() - 1;
+                                    self.subscribed.retain(|x| !channels.contains(x));
+                                }
+                            }
+                            RequestType::Punsubscribe(channels) => {
+                                if channels.is_empty() {
+                                    self.pending_extra_responses +=
+                                        self.psubscribed.len().saturating_sub(1);
+                                    self.psubscribed.clear();
+                                } else {
+                                    self.pending_extra_responses += channels.len() - 1;
+                                    self.psubscribed.retain(|x| !channels.contains(x));
+                                }
+                            }
+                            RequestType::Sunsubscribe(channels) => {
+                                if channels.is_empty() {
+                                    self.pending_extra_responses +=
+                                        self.ssubscribed.len().saturating_sub(1);
+                                    self.ssubscribed.clear();
+                                } else {
+                                    self.pending_extra_responses += channels.len() - 1;
+                                    self.ssubscribed.retain(|x| !channels.contains(x));
                                 }
                             }
                             RequestType::Reset => {
-                                self.is_subscribed = false;
+                                self.subscribed.clear();
+                                self.psubscribed.clear();
+                                self.ssubscribed.clear();
+                                self.pending_extra_responses = 0;
                             }
                             RequestType::Other => {}
                         }
@@ -202,6 +296,21 @@ impl ValkeyEncoder {
     }
 }
 
+fn extract_args(array: &[BytesFrame]) -> Result<Vec<Vec<u8>>, CodecWriteError> {
+    array
+        .iter()
+        .skip(1)
+        .map(|x| match x {
+            // Convert the Bytes to a Vec<u8> since we will be holding on to this for a while
+            // and we dont want to prevent the incoming message buffer from being reused.
+            ValkeyFrame::BulkString(x) => Ok(x.to_vec()),
+            _ => Err(CodecWriteError::Encoder(anyhow!(
+                "subscribe/unsubscribe command included non bulkstring args"
+            ))),
+        })
+        .collect()
+}
+
 impl Encoder<Messages> for ValkeyEncoder {
     type Error = CodecWriteError;
 
@@ -215,10 +324,12 @@ impl Encoder<Messages> for ValkeyEncoder {
                 let ty = if let Some(Frame::Valkey(ValkeyFrame::Array(array))) = m.frame() {
                     if let Some(ValkeyFrame::BulkString(bytes)) = array.first() {
                         match bytes.to_ascii_uppercase().as_slice() {
-                            b"SUBSCRIBE" | b"PSUBSCRIBE" | b"SSUBSCRIBE" => RequestType::Subscribe,
-                            b"UNSUBSCRIBE" | b"PUNSUBSCRIBE" | b"SUNSUBSCRIBE" => {
-                                RequestType::Unsubscribe
-                            }
+                            b"SUBSCRIBE" => RequestType::Subscribe(extract_args(array)?),
+                            b"PSUBSCRIBE" => RequestType::Psubscribe(extract_args(array)?),
+                            b"SSUBSCRIBE" => RequestType::Ssubscribe(extract_args(array)?),
+                            b"UNSUBSCRIBE" => RequestType::Unsubscribe(extract_args(array)?),
+                            b"PUNSUBSCRIBE" => RequestType::Punsubscribe(extract_args(array)?),
+                            b"SUNSUBSCRIBE" => RequestType::Sunsubscribe(extract_args(array)?),
                             b"RESET" => RequestType::Reset,
                             _ => RequestType::Other,
                         }
@@ -240,7 +351,7 @@ impl Encoder<Messages> for ValkeyEncoder {
                     let item = frame.into_valkey().unwrap();
                     extend_encode(dst, &item, false)
                         .map(|_| ())
-                        .map_err(|e| anyhow!("Valkey encoding error: {} - {:#?}", e, item))
+                        .map_err(|e| anyhow!("Valkey encoding error: {e} - {item:#?}"))
                 }
             };
             if let Some(received_at) = received_at {
@@ -258,7 +369,6 @@ impl Encoder<Messages> for ValkeyEncoder {
 
 #[cfg(test)]
 mod valkey_tests {
-
     use crate::codec::{CodecBuilder, Direction, valkey::ValkeyCodecBuilder};
     use bytes::BytesMut;
     use hex_literal::hex;
