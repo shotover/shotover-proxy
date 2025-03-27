@@ -843,7 +843,7 @@ async fn request_throttling(#[case] driver: CassandraDriver) {
         let len = results.len();
         // The number of requests getting through may increase because it may take longer to run
         // on some machines.
-        assert!(50 <= len && len <= 99, "got {len}");
+        assert!((50..=90).contains(&len), "got {len}");
     }
 
     tokio::time::sleep(std::time::Duration::from_secs(1)).await; // sleep to reset the window
