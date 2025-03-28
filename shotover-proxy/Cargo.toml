@@ -17,7 +17,7 @@ scylla.workspace = true
 anyhow.workspace = true
 tokio.workspace = true
 tracing.workspace = true
-rstest = "0.24.0"
+rstest = "0.25.0"
 rstest_reuse = "0.7.0"
 test-helpers = { path = "../test-helpers" }
 redis.workspace = true
