@@ -12,7 +12,7 @@ resolver = "2"
 
 # https://deterministic.space/high-performance-rust.html
 [profile.release]
-lto = "fat"
+lto = "thin"
 codegen-units = 1
 
 # used for e.g. generating flamegraphs
