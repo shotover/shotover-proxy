@@ -31,6 +31,7 @@ jobs:
       - name: Install codspeed
         run: cargo install --git https://github.com/CodSpeedHQ/codspeed-rust --rev 250ad317de0997bf50f2780653160774c0b64d59 cargo-codspeed
       - name: Build the benchmark target(s)
+        # specify `--jobs 2` to avoid OoM on 4 core (and therefore 4 jobs) linux runners
         run: cargo codspeed build --jobs 2 --features alpha-transforms
       - name: Run the benchmarks
         uses: CodSpeedHQ/action@v2
