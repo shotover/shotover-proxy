@@ -21,7 +21,7 @@ inherits = "release"
 debug = true
 
 [workspace.dependencies]
-scylla = { version = "0.15.0", features = ["ssl"] }
+scylla = { version = "1.0.0", features = ["openssl-010"] }
 bytes = { version = "1.0.0", features = ["serde"] }
 tokio = { version = "1.25.0", features = ["full"] }
 tokio-util = { version = "0.7.7", features = ["codec"] }

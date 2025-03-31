@@ -2372,12 +2372,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bcaaec4551594c969335c98c903c1397853d4198408ea609190f420500f6be71"
 
 [[package]]
-name = "histogram"
-version = "0.6.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "12cb882ccb290b8646e554b157ab0b71e64e8d5bef775cd66b6531e52d302669"
-
-[[package]]
 name = "hkdf"
 version = "0.12.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3876,11 +3870,11 @@ dependencies = [
 
 [[package]]
 name = "rand_pcg"
-version = "0.3.1"
+version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "59cad018caf63deb318e5a4586d99a24424a364f40f1e5778c29aca23f4fc73e"
+checksum = "b48ac3f7ffaab7fac4d2376632268aa5f89abdb55f7ebf8f4d11fffccb2320f7"
 dependencies = [
- "rand_core 0.6.4",
+ "rand_core 0.9.3",
 ]
 
 [[package]]
@@ -4603,9 +4597,9 @@ dependencies = [
 
 [[package]]
 name = "scylla"
-version = "0.15.1"
+version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f0408e59e11f589071d1cefc3928270aa8fe4d03f654cb118e0c24d16013ea82"
+checksum = "d6f7075a5b5be59fd767b83567bf0c02e9c29626f47d8c4493946b2d6076eb17"
 dependencies = [
  "arc-swap",
  "async-trait",
@@ -4615,15 +4609,13 @@ dependencies = [
  "dashmap 5.5.3",
  "futures",
  "hashbrown 0.14.5",
- "histogram",
- "itertools 0.13.0",
+ "itertools 0.14.0",
  "lazy_static",
  "lz4_flex",
  "openssl",
- "rand 0.8.5",
+ "rand 0.9.0",
  "rand_pcg",
  "scylla-cql",
- "scylla-macros",
  "smallvec",
  "snap",
  "socket2 0.5.8",
@@ -4636,13 +4628,15 @@ dependencies = [
 
 [[package]]
 name = "scylla-cql"
-version = "0.4.1"
+version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a0cefd8b924bb8f67525937a811038d5662f9febc30c74c778a8205f63c4b365"
+checksum = "85f1decfbb5ff3eb8da7883937c9bca318ccfa220d50bd5a2cdb573fb29bc19b"
 dependencies = [
  "async-trait",
  "byteorder",
  "bytes",
+ "chrono",
+ "itertools 0.14.0",
  "lz4_flex",
  "scylla-macros",
  "snap",
@@ -4655,9 +4649,9 @@ dependencies = [
 
 [[package]]
 name = "scylla-macros"
-version = "0.7.1"
+version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e878bfb8a235207864ac3fb0b51d7954c77fd38486e0e4fb4e037935ff7eb46c"
+checksum = "6c72a4a475ecca0ab180b995f63e079763baaa453ec1a84f6811ebd8d8fe18e8"
 dependencies = [
  "darling",
  "proc-macro2",
