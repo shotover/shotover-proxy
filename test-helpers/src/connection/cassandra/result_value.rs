@@ -248,7 +248,7 @@ impl ResultValue {
                     Self::Tuple(tuple.into_iter().map(Self::new_from_scylla).collect())
                 }
                 CqlValue::UserDefinedType { .. } => todo!(),
-                CqlValue::Varint(var_int) => Self::VarInt(var_int.into()),
+                _ => panic!("unhandled CqlValue type"),
             },
             None => Self::Null,
         }
