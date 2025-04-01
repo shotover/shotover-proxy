@@ -240,7 +240,7 @@ impl CassandraConnection {
             SessionBuilderScylla::new()
                 .known_node(direct_node)
                 .user("cassandra", "cassandra")
-                .ssl_context(context)
+                .tls_context(context)
                 .build()
                 .await
                 .unwrap(),

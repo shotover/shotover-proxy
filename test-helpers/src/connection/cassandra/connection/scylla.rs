@@ -1,20 +1,20 @@
 use super::{Compression, Consistency, PreparedQuery, ProtocolVersion, Tls};
 use crate::connection::cassandra::ResultValue;
-use cdrs_tokio::frame::message_error::{ErrorBody, ErrorType};
-use scylla::batch::Batch;
-use scylla::frame::response::result::Row;
+use cassandra_protocol::frame::message_error::ErrorType;
+use cdrs_tokio::frame::message_error::ErrorBody;
+use scylla::client::execution_profile::ExecutionProfile;
+pub use scylla::client::session::Session as SessionScylla;
+pub use scylla::client::session_builder::SessionBuilder as SessionBuilderScylla;
+use scylla::errors::{DbError, ExecutionError, RequestAttemptError};
 use scylla::frame::types::Consistency as ScyllaConsistency;
-use scylla::frame::value::{CqlDate, CqlDecimal, CqlTime, CqlTimestamp};
+use scylla::response::query_result::QueryResult;
 use scylla::serialize::value::SerializeValue;
-use scylla::statement::query::Query;
-use scylla::transport::errors::{DbError, QueryError};
-use scylla::{ExecutionProfile, QueryResult};
+use scylla::statement::Statement;
+use scylla::statement::batch::Batch;
+pub use scylla::statement::prepared::PreparedStatement as PreparedStatementScylla;
+use scylla::value::{CqlDate, CqlDecimal, CqlTime, CqlTimestamp, Row};
 use std::net::IpAddr;
 use std::time::Duration;
-
-pub use scylla::Session as SessionScylla;
-pub use scylla::SessionBuilder as SessionBuilderScylla;
-pub use scylla::prepared_statement::PreparedStatement as PreparedStatementScylla;
 
 pub struct ScyllaConnection {
     session: SessionScylla,
@@ -41,8 +41,8 @@ impl ScyllaConnection {
             // By default the metadata refreshes every 60s and that can cause performance issues so we disable it by using an absurdly high refresh interval
             .cluster_metadata_refresh_interval(Duration::from_secs(10000000000))
             .compression(compression.map(|x| match x {
-                Compression::Snappy => scylla::transport::Compression::Snappy,
-                Compression::Lz4 => scylla::transport::Compression::Lz4,
+                Compression::Snappy => scylla::frame::Compression::Snappy,
+                Compression::Lz4 => scylla::frame::Compression::Lz4,
             }))
             .default_execution_profile_handle(
                 ExecutionProfile::builder()
@@ -56,7 +56,7 @@ impl ScyllaConnection {
         }
 
         if let Some(Tls::Scylla(ssl_context)) = tls {
-            builder = builder.ssl_context(Some(ssl_context));
+            builder = builder.tls_context(Some(ssl_context));
         }
 
         let session = builder.build().await.unwrap();
@@ -114,9 +114,9 @@ impl ScyllaConnection {
         query: &str,
         timestamp: i64,
     ) -> Result<Vec<Vec<ResultValue>>, ErrorBody> {
-        let mut query = Query::new(query);
-        query.set_timestamp(Some(timestamp));
-        Self::process_scylla_response(self.session.query_unpaged(query, ()).await)
+        let mut statement = Statement::new(query);
+        statement.set_timestamp(Some(timestamp));
+        Self::process_scylla_response(self.session.query_unpaged(statement, ()).await)
     }
 
     pub async fn prepare(&self, query: &str) -> PreparedQuery {
@@ -143,7 +143,7 @@ impl ScyllaConnection {
     }
 
     fn process_scylla_response(
-        response: Result<QueryResult, QueryError>,
+        response: Result<QueryResult, ExecutionError>,
     ) -> Result<Vec<Vec<ResultValue>>, ErrorBody> {
         match response {
             Ok(value) => {
@@ -166,15 +166,17 @@ impl ScyllaConnection {
                     Ok(vec![])
                 }
             }
-            Err(QueryError::DbError(code, message)) => Err(ErrorBody {
-                ty: match code {
-                    DbError::Overloaded => ErrorType::Overloaded,
-                    DbError::ServerError => ErrorType::Server,
-                    DbError::Invalid => ErrorType::Invalid,
-                    code => todo!("Implement handling for scylla err: {code:?}"),
-                },
-                message,
-            }),
+            Err(ExecutionError::LastAttemptError(RequestAttemptError::DbError(code, message))) => {
+                Err(ErrorBody {
+                    ty: match code {
+                        DbError::Overloaded => ErrorType::Overloaded,
+                        DbError::ServerError => ErrorType::Server,
+                        DbError::Invalid => ErrorType::Invalid,
+                        code => todo!("Implement handling for scylla err: {code:?}"),
+                    },
+                    message,
+                })
+            }
             Err(err) => panic!("Unexpected scylla error: {err:?}"),
         }
     }

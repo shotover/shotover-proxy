@@ -9,10 +9,10 @@ use futures::future::join_all;
 use pretty_assertions::assert_eq;
 use rstest::rstest;
 use rstest_reuse::{self, *};
-use scylla::SessionBuilder;
-use scylla::transport::errors::{
+use scylla::client::session_builder::SessionBuilder;
+use scylla::errors::{
     ConnectionError, ConnectionPoolError, ConnectionSetupRequestError,
-    ConnectionSetupRequestErrorKind, DbError, NewSessionError,
+    ConnectionSetupRequestErrorKind, DbError, MetadataError, NewSessionError,
 };
 use std::net::SocketAddr;
 #[cfg(feature = "cassandra-cpp-driver-tests")]
@@ -145,13 +145,15 @@ async fn passthrough_cassandra_down() {
         .await
         .unwrap_err();
     match err {
-        NewSessionError::ConnectionPoolError(ConnectionPoolError::Broken {
-            last_connection_error:
-                ConnectionError::ConnectionSetupRequestError(ConnectionSetupRequestError {
-                    error: ConnectionSetupRequestErrorKind::DbError(DbError::ServerError, err),
-                    ..
-                }),
-        }) => {
+        NewSessionError::MetadataError(MetadataError::ConnectionPoolError(
+            ConnectionPoolError::Broken {
+                last_connection_error:
+                    ConnectionError::ConnectionSetupRequestError(ConnectionSetupRequestError {
+                        error: ConnectionSetupRequestErrorKind::DbError(DbError::ServerError, err),
+                        ..
+                    }),
+            },
+        )) => {
             assert_eq!(
                 format!("{err}"),
                 format!("Internal shotover (or custom transform) bug: Chain failed to send and/or receive messages, the connection will now be closed.

@@ -27,11 +27,10 @@ use cdrs_tokio::{
 };
 use itertools::Itertools;
 use rand::prelude::*;
-use scylla::{
-    Session as ScyllaSession, SessionBuilder as ScyllaSessionBuilder,
-    prepared_statement::PreparedStatement as ScyllaPrepared,
-    transport::Compression as ScyllaCompression,
-};
+use scylla::client::Compression as ScyllaCompression;
+use scylla::client::session::Session as ScyllaSession;
+use scylla::client::session_builder::SessionBuilder as ScyllaSessionBuilder;
+use scylla::statement::prepared::PreparedStatement as ScyllaPrepared;
 use shotover::{
     config::chain::TransformChainConfig,
     sources::SourceConfig,
@@ -699,7 +698,7 @@ impl Bench for CassandraBench {
                     // We do not need to refresh metadata as there is nothing else fiddling with the topology or schema.
                     // By default the metadata refreshes every 60s and that can cause performance issues so we disable it by using an absurdly high refresh interval
                     .cluster_metadata_refresh_interval(Duration::from_secs(10000000000))
-                    .pool_size(scylla::transport::session::PoolSize::PerShard(
+                    .pool_size(scylla::client::PoolSize::PerShard(
                         self.connection_count.try_into().unwrap(),
                     ))
                     .compression(match self.compression {
