@@ -4,8 +4,8 @@ use bytes::BytesMut;
 use fred::clients::Client;
 use fred::interfaces::ClientLike;
 use pretty_assertions::assert_eq;
-use rand::distributions::Alphanumeric;
-use rand::{Rng, thread_rng};
+use rand::distr::Alphanumeric;
+use rand::{Rng, rng};
 use redis::aio::MultiplexedConnection;
 use redis::cluster::ClusterConnection;
 use redis::{AsyncCommands, Commands, ErrorKind, RedisError, Value};
@@ -808,7 +808,7 @@ pub async fn test_auth(connection: &mut MultiplexedConnection) {
     assert_ok(redis::cmd("AUTH").arg("shotover"), connection).await;
 
     // Set random value to be checked later.
-    let expected_foo: String = thread_rng()
+    let expected_foo: String = rng()
         .sample_iter(&Alphanumeric)
         .take(30)
         .map(char::from)

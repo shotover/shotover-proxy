@@ -182,7 +182,7 @@ impl TransformBuilder for CassandraSinkClusterBuilder {
             // once a single node list has been sent all new connections will immediately recognize it as a change.
             nodes_rx: self.nodes_rx.clone(),
             keyspaces_rx: self.keyspaces_rx.clone(),
-            rng: SmallRng::from_rng(rand::thread_rng()).unwrap(),
+            rng: SmallRng::from_rng(&mut rand::rng()),
             task_handshake_tx: self.task_handshake_tx.clone(),
         })
     }

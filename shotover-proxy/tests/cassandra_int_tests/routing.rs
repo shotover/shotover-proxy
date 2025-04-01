@@ -175,7 +175,7 @@ mod compound_key {
 mod composite_key {
 
     use super::assert_eq;
-    use rand::{Rng, distributions::Alphanumeric};
+    use rand::{Rng, distr::Alphanumeric};
     use test_helpers::connection::cassandra::{
         CassandraConnection, Consistency, ResultValue, run_query,
     };
@@ -310,7 +310,7 @@ mod composite_key {
 
     async fn types_test(connection: &CassandraConnection) {
         for _ in 0..1000 {
-            let name: String = rand::thread_rng()
+            let name: String = rand::rng()
                 .sample_iter(&Alphanumeric)
                 .take(48)
                 .map(char::from)

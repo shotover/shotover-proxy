@@ -8,7 +8,7 @@ async fn large_batch(connection: &CassandraConnection) {
         .execute("CREATE TABLE batch_keyspace.my_table (id INT PRIMARY KEY, data BLOB);")
         .await;
 
-    let random_bytes = rand::thread_rng().gen::<[u8; 32]>();
+    let random_bytes = rand::rng().random::<[u8; 32]>();
 
     let mut queries = Vec::new();
     for id in 0..500 {
