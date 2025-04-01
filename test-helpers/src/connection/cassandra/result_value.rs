@@ -4,7 +4,7 @@ use cassandra_cpp::{LendingIterator, Value, ValueType};
 use cassandra_protocol::types::cassandra_type::CassandraType;
 use cdrs_tokio::frame::{Serialize, Version};
 use ordered_float::OrderedFloat;
-use scylla::frame::response::result::CqlValue;
+use scylla::value::CqlValue;
 use std::net::IpAddr;
 
 #[derive(Debug, Clone, PartialOrd, Eq, Ord)]
@@ -248,6 +248,7 @@ impl ResultValue {
                     Self::Tuple(tuple.into_iter().map(Self::new_from_scylla).collect())
                 }
                 CqlValue::UserDefinedType { .. } => todo!(),
+                _ => panic!("unhandled CqlValue type"),
             },
             None => Self::Null,
         }
