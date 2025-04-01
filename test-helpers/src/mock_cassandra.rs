@@ -127,7 +127,7 @@ impl Worker {
                                 let query =
                                     std::str::from_utf8(&message[13..13 + query_len]).unwrap();
                                 match query {
-                                    "select host_id, rpc_address, data_center, rack, tokens from system.peers WHERE key='local'" => {
+                                    "select host_id, rpc_address, data_center, rack, tokens from system.peers" => {
                                         connection.send_message(&[
                                             0x84, 0x00, stream_id1, stream_id2, 0x08, 0x00, 0x00,
                                             0x00, 0x4a, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00,
@@ -141,7 +141,7 @@ impl Worker {
                                             0x00, 0x00, 0x00, 0x00,
                                         ])
                                     }
-                                    "select host_id, rpc_address, data_center, rack, tokens from system.local" => {
+                                    "select host_id, rpc_address, data_center, rack, tokens from system.local WHERE key='local'" => {
                                         connection.send_message(&[
                                             0x84, 0x00, stream_id1, stream_id2, 0x08, 0x00, 0x00,
                                             0x00, 0x4a, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00,
