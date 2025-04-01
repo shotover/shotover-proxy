@@ -209,6 +209,12 @@ impl Worker {
                                             0x00, 0x04, 0x00, 0x00, 0x00, 0x01,
                                         ]);
                                     }
+                                    "select host_id, rpc_address, data_center, rack, tokens from system.local WHERE key='local'" => {
+                                        connection.send_message(&[
+                                            0x84, 0x00, stream_id1, stream_id2, 0x08, 0x00, 0x00,
+                                            0x00, 0x04, 0x00, 0x00, 0x00, 0x01,
+                                        ]);
+                                    }
                                     query => todo!("Unhandled query {query:?}"),
                                 }
                             }
