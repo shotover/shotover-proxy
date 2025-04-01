@@ -2,9 +2,9 @@ use crate::frame::value::GenericValue;
 use crate::transforms::protect::key_management::KeyManager;
 use anyhow::{Result, anyhow, bail};
 use chacha20poly1305::aead::Aead;
-use chacha20poly1305::aead::rand_core::RngCore;
 use chacha20poly1305::{ChaCha20Poly1305, Key, KeyInit, Nonce};
 use cql3_parser::common::Operand;
+use rand::RngCore;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
@@ -72,13 +72,13 @@ pub async fn decrypt(
 
 pub fn gen_key() -> Key {
     let mut key_bytes = [0; 32];
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     rng.fill_bytes(&mut key_bytes);
     *Key::from_slice(&key_bytes)
 }
 
 pub fn gen_nonce() -> Nonce {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     let mut nonce_bytes = [0; 12];
     rng.fill_bytes(&mut nonce_bytes);
     *Nonce::from_slice(&nonce_bytes)
