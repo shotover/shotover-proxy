@@ -187,7 +187,7 @@ impl ValkeySinkCluster {
             shared_topology,
             direct_connection: None,
             load_scores: HashMap::new(),
-            rng: SmallRng::from_rng(rand::thread_rng()).unwrap(),
+            rng: SmallRng::from_rng(&mut rand::rng()),
             connection_count,
             connection_pool,
             reason_for_no_nodes: None,

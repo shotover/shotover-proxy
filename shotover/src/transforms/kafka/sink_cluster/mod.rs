@@ -50,7 +50,7 @@ use kafka_protocol::protocol::StrBytes;
 use metrics::{Counter, counter};
 use rand::SeedableRng;
 use rand::rngs::SmallRng;
-use rand::seq::{IteratorRandom, SliceRandom};
+use rand::seq::{IndexedRandom, IteratorRandom};
 use scram_over_mtls::{
     AuthorizeScramOverMtls, AuthorizeScramOverMtlsBuilder, AuthorizeScramOverMtlsConfig,
     OriginalScramState,
@@ -260,7 +260,7 @@ impl TransformBuilder for KafkaSinkClusterBuilder {
             transaction_to_coordinator_broker: self.transaction_to_coordinator_broker.clone(),
             topic_by_name: self.topic_by_name.clone(),
             topic_by_id: self.topic_by_id.clone(),
-            rng: SmallRng::from_rng(rand::thread_rng()).unwrap(),
+            rng: SmallRng::from_rng(&mut rand::rng()),
             auth_complete: false,
             connection_factory: ConnectionFactory::new(
                 self.tls.clone(),

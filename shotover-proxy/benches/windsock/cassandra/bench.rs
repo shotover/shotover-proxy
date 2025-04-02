@@ -836,8 +836,8 @@ impl BenchTask for BenchTaskCassandra {
             Operation::ReadI64 => self.session.execute(&self.query, i as i64).await,
             Operation::WriteBlob => {
                 let blob = {
-                    let mut rng = rand::thread_rng();
-                    rng.gen::<[u8; 16]>()
+                    let mut rng = rand::rng();
+                    rng.random::<[u8; 16]>()
                 };
 
                 self.session.execute_blob(&self.query, i as i64, blob).await
