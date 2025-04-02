@@ -138,7 +138,9 @@ pub async fn test(shotover_session: &CassandraConnection, direct_session: &Cassa
 
         // protected values are stored encrypted
         if let ResultValue::Blob(value) = &row[2] {
-            let _: Protected = bincode::deserialize(value).unwrap();
+            let _: Protected = bincode::serde::decode_from_slice(value, bincode::config::legacy())
+                .unwrap()
+                .0;
         } else {
             panic!("expected 3rd column to be ResultValue::Blob in {row:?}");
         }
