@@ -107,7 +107,7 @@ async fn task(
     delegation_token_lifetime: Duration,
     token_creation_time_metric: &Histogram,
 ) -> Result<()> {
-    let mut rng = SmallRng::from_rng(rand::thread_rng())?;
+    let mut rng = SmallRng::from_rng(&mut rand::rng());
     let mut username_to_token = HashMap::new();
     let mut recreate_queue =
         recreate_token_queue::RecreateTokenQueue::new(delegation_token_lifetime);

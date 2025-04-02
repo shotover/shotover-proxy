@@ -1,8 +1,8 @@
 use crate::shotover_process;
 use pretty_assertions::assert_eq;
-use test_helpers::connection::valkey_connection;
+use test_helpers::connection::valkey_connection::ValkeyConnectionCreator;
 
-async fn test_pipeline(connection: &mut redis::aio::Connection) {
+async fn test_pipeline(connection: &mut redis::aio::MultiplexedConnection) {
     // using individual queries tests QueryTypeFilter with a MessageWrapper containing a single message at a time.
     for _ in 0..100 {
         // Because this is a write it should be filtered out and replaced with an error
@@ -75,8 +75,20 @@ async fn test_query_type_filter() {
         .start()
         .await;
 
-    let mut deny_connection = valkey_connection::new_async("127.0.0.1", 6379).await;
-    let mut allow_connection = valkey_connection::new_async("127.0.0.1", 6380).await;
+    let mut deny_connection = ValkeyConnectionCreator {
+        address: "127.0.0.1".into(),
+        port: 6379,
+        tls: false,
+    }
+    .new_async()
+    .await;
+    let mut allow_connection = ValkeyConnectionCreator {
+        address: "127.0.0.1".into(),
+        port: 6380,
+        tls: false,
+    }
+    .new_async()
+    .await;
 
     test_pipeline(&mut deny_connection).await;
     test_pipeline(&mut allow_connection).await;

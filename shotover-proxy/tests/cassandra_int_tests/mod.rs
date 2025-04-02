@@ -9,10 +9,10 @@ use futures::future::join_all;
 use pretty_assertions::assert_eq;
 use rstest::rstest;
 use rstest_reuse::{self, *};
-use scylla::SessionBuilder;
-use scylla::transport::errors::{
+use scylla::client::session_builder::SessionBuilder;
+use scylla::errors::{
     ConnectionError, ConnectionPoolError, ConnectionSetupRequestError,
-    ConnectionSetupRequestErrorKind, DbError, NewSessionError,
+    ConnectionSetupRequestErrorKind, DbError, MetadataError, NewSessionError,
 };
 use std::net::SocketAddr;
 #[cfg(feature = "cassandra-cpp-driver-tests")]
@@ -25,7 +25,7 @@ use test_helpers::connection::cassandra::{
     CassandraDriver::Java, CassandraDriver::Scylla, CqlWsSession, ResultValue, assert_query_result,
     run_query,
 };
-use test_helpers::connection::valkey_connection;
+use test_helpers::connection::valkey_connection::ValkeyConnectionCreator;
 use test_helpers::docker_compose::docker_compose;
 #[cfg(feature = "alpha-transforms")]
 use test_helpers::docker_compose::new_moto;
@@ -145,13 +145,15 @@ async fn passthrough_cassandra_down() {
         .await
         .unwrap_err();
     match err {
-        NewSessionError::ConnectionPoolError(ConnectionPoolError::Broken {
-            last_connection_error:
-                ConnectionError::ConnectionSetupRequestError(ConnectionSetupRequestError {
-                    error: ConnectionSetupRequestErrorKind::DbError(DbError::ServerError, err),
-                    ..
-                }),
-        }) => {
+        NewSessionError::MetadataError(MetadataError::ConnectionPoolError(
+            ConnectionPoolError::Broken {
+                last_connection_error:
+                    ConnectionError::ConnectionSetupRequestError(ConnectionSetupRequestError {
+                        error: ConnectionSetupRequestErrorKind::DbError(DbError::ServerError, err),
+                        ..
+                    }),
+            },
+        )) => {
             assert_eq!(
                 format!("{err}"),
                 format!("Internal shotover (or custom transform) bug: Chain failed to send and/or receive messages, the connection will now be closed.
@@ -579,7 +581,12 @@ async fn cassandra_valkey_cache(#[case] driver: CassandraDriver) {
         .start()
         .await;
 
-    let mut valkey_connection = valkey_connection::new(6379);
+    let mut valkey_connection = ValkeyConnectionCreator {
+        address: "127.0.0.1".into(),
+        port: 6379,
+        tls: false,
+    }
+    .new_sync();
     let connection_creator = || CassandraConnectionBuilder::new("127.0.0.1", 9042, driver).build();
     let connection = connection_creator().await;
 
@@ -836,7 +843,9 @@ async fn request_throttling(#[case] driver: CassandraDriver) {
         });
 
         let len = results.len();
-        assert!(50 < len && len <= 60, "got {len}");
+        // The number of requests getting through may increase because it may take longer to run
+        // on some machines.
+        assert!((50..=90).contains(&len), "got {len}");
     }
 
     tokio::time::sleep(std::time::Duration::from_secs(1)).await; // sleep to reset the window

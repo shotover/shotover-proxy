@@ -95,7 +95,7 @@ async fn check_shotover_peers(
     connect_timeout: Duration,
 ) -> Result<(), anyhow::Error> {
     let mut shotover_peers_cycle = shotover_peers.iter().cycle();
-    let mut rng = StdRng::from_rng(rand::thread_rng())?;
+    let mut rng = StdRng::from_rng(&mut rand::rng());
     let check_shotover_peers_delay_ms = check_shotover_peers_delay_ms as i64;
     loop {
         if let Some(shotover_peer) = shotover_peers_cycle.next() {
@@ -120,7 +120,7 @@ async fn check_shotover_peers(
                 }
             }
             let random_delay = (check_shotover_peers_delay_ms
-                + rng.gen_range(
+                + rng.random_range(
                     -check_shotover_peers_delay_ms / 10..check_shotover_peers_delay_ms / 10,
                 )) as u64;
             sleep(Duration::from_millis(random_delay)).await;

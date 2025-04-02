@@ -23,7 +23,7 @@ mod test_token_aware_router {
 
     #[tokio::test]
     async fn test_router() {
-        let mut rng = SmallRng::from_rng(rand::thread_rng()).unwrap();
+        let mut rng = SmallRng::from_rng(&mut rand::rng());
 
         let nodes = prepare_nodes();
         let mut router = NodePoolBuilder::new("chain".to_owned()).build();
