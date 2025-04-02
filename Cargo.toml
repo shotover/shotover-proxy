@@ -21,7 +21,7 @@ inherits = "release"
 debug = true
 
 [workspace.dependencies]
-scylla = { version = "0.15.0", features = ["ssl"] }
+scylla = { version = "1.0.0", features = ["openssl-010"] }
 bytes = { version = "1.0.0", features = ["serde"] }
 tokio = { version = "1.25.0", features = ["full"] }
 tokio-util = { version = "0.7.7", features = ["codec"] }
@@ -51,7 +51,7 @@ bincode = { version = "2.0.1", features = ["serde"] }
 futures = "0.3"
 hex = "0.4.3"
 hex-literal = "1.0.0"
-rand = { version = "0.8.4", default-features = false }
+rand = { version = "0.9.0", default-features = false }
 clap = { version = "4.0.4", features = ["cargo", "derive"] }
 async-trait = "0.1.30"
 typetag = "0.2.5"
