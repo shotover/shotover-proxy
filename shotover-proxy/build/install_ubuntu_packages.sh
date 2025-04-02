@@ -12,9 +12,10 @@ set -e
 
 cd "$(dirname "$0")"
 
-# Install dependencies of the cpp-driver even if they are already on CI so that we can run this locally
 sudo apt-get update
-sudo apt-get install -y libuv1 libuv1-dev cmake g++ libssl-dev zlib1g-dev
+# Install dependencies of the cpp-driver even if they are already on CI so that we can run this locally
+# These dependencies are needed both to build the driver and to link it with the shotover tests
+sudo apt-get install -y libuv1 libuv1-dev g++ libssl-dev zlib1g-dev
 
 # set VERSION to one of the tags here: https://github.com/datastax/cpp-driver/tags
 VERSION=2.16.2
@@ -24,6 +25,9 @@ FILE_PATH="packages/${PACKAGE_NAME}.deb"
 
 # Create package if it doesnt already exist
 if [ ! -f "$FILE_PATH" ]; then
+    # cmake takes a few seconds to install so only install it on a cache miss
+    sudo apt-get install -y cmake
+
     rm -rf cpp-driver # Clean just in case the script failed halfway through last time
     git clone --depth 1 --branch $VERSION https://github.com/datastax/cpp-driver
     pushd cpp-driver
@@ -43,6 +47,9 @@ if [ ! -f "$FILE_PATH" ]; then
 
     popd
     rm -rf cpp-driver
+
+    # remove cmake again, since we only install it on a cache miss it could lead to really confusing CI build failures if we leave it installed.
+    sudo apt-get remove -y cmake
 fi
 
 sudo dpkg -i $FILE_PATH
