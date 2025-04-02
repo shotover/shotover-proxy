@@ -28,7 +28,7 @@ if [ ! -f "$FILE_PATH" ]; then
     git clone --depth 1 --branch $VERSION https://github.com/datastax/cpp-driver
     pushd cpp-driver
 
-    cmake -DCMAKE_INSTALL_PREFIX:PATH=/usr -DCMAKE_INSTALL_LIBDIR:PATH=/usr/lib -Wno-error .
+    cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCMAKE_INSTALL_PREFIX:PATH=/usr -DCMAKE_INSTALL_LIBDIR:PATH=/usr/lib -Wno-error .
     make
 
     mkdir -p $PACKAGE_NAME/DEBIAN

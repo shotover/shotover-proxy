@@ -24,7 +24,8 @@ pub async fn encrypt(
 
     let sym_key = key_management.cached_get_key(key_id, None, None).await?;
 
-    let ser = bincode::serialize(&value)?;
+    let bincode_config = bincode::config::legacy();
+    let ser = bincode::serde::encode_to_vec(&value, bincode_config)?;
     let nonce = gen_nonce();
     let cipher = ChaCha20Poly1305::new(&sym_key.plaintext);
     let ciphertext = cipher
@@ -40,7 +41,7 @@ pub async fn encrypt(
 
     Ok(Operand::Const(format!(
         "0x{}",
-        hex::encode(bincode::serialize(&protected)?)
+        hex::encode(bincode::serde::encode_to_vec(&protected, bincode_config)?)
     )))
 }
 
@@ -53,7 +54,8 @@ pub async fn decrypt(
         GenericValue::Bytes(bytes) => bytes,
         _ => bail!("expected varchar to decrypt but was not varchar"),
     };
-    let protected: Protected = bincode::deserialize(bytes)?;
+    let bincode_config = bincode::config::legacy();
+    let protected: Protected = bincode::serde::decode_from_slice(bytes, bincode_config)?.0;
 
     let sym_key = key_management
         .cached_get_key(key_id, Some(protected.enc_dek), Some(protected.kek_id))
@@ -67,7 +69,9 @@ pub async fn decrypt(
         .map_err(|_| anyhow!("couldn't decrypt value"))?;
 
     //TODO make error handing better here - failure here indicates an authenticity failure
-    bincode::deserialize(&decrypted_bytes).map_err(|_| anyhow!("couldn't decrypt value"))
+    bincode::serde::decode_from_slice(&decrypted_bytes, bincode_config)
+        .map(|value| value.0)
+        .map_err(|_| anyhow!("couldn't decrypt value"))
 }
 
 pub fn gen_key() -> Key {
