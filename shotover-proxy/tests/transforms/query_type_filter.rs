@@ -9,7 +9,7 @@ async fn test_pipeline(connection: &mut redis::aio::MultiplexedConnection) {
         let result = redis::cmd("SET")
             .arg("key")
             .arg("myvalue")
-            .query_async::<_, ()>(connection)
+            .query_async::<()>(connection)
             .await
             .unwrap_err()
             .to_string();
@@ -41,7 +41,7 @@ async fn test_pipeline(connection: &mut redis::aio::MultiplexedConnection) {
             .ignore()
             .cmd("GET")
             .arg("some_key")
-            .query_async::<_, ()>(connection)
+            .query_async::<()>(connection)
             .await
             .unwrap_err()
             .to_string();

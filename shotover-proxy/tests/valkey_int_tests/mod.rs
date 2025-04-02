@@ -330,20 +330,20 @@ async fn cluster_dr() {
         redis::cmd("AUTH")
             .arg("default")
             .arg("shotover")
-            .query_async::<_, ()>(&mut connection)
+            .query_async::<()>(&mut connection)
             .await
             .unwrap();
 
         redis::cmd("SET")
             .arg("key1")
             .arg(42)
-            .query_async::<_, ()>(&mut connection)
+            .query_async::<()>(&mut connection)
             .await
             .unwrap();
         redis::cmd("SET")
             .arg("key2")
             .arg(358)
-            .query_async::<_, ()>(&mut connection)
+            .query_async::<()>(&mut connection)
             .await
             .unwrap();
 
@@ -373,7 +373,7 @@ async fn cluster_dr() {
         redis::cmd("AUTH")
             .arg("default")
             .arg("shotover")
-            .query_async::<_, ()>(&mut connection)
+            .query_async::<()>(&mut connection)
             .await
             .unwrap();
 
@@ -403,7 +403,7 @@ pub async fn assert_failed_requests_metric_is_incremented_on_error_response() {
 
     redis::cmd("INVALID_COMMAND")
         .arg("foo")
-        .query_async::<_, ()>(&mut connection)
+        .query_async::<()>(&mut connection)
         .await
         .unwrap_err();
 
