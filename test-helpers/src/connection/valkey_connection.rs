@@ -21,31 +21,11 @@ fn new_sync_connection(address: &str, port: u16) -> redis::Connection {
 }
 
 async fn new_async_connection(address: &str, port: u16) -> MultiplexedConnection {
-    let stream = Box::pin(
-        tokio::net::TcpStream::connect((address, port))
-            .await
-            .with_context(|| format!("Failed to create async valkey connection to port {port}"))
-            .unwrap(),
-    );
-    new_async_inner(Box::pin(stream) as Pin<Box<dyn AsyncStream + Send + Sync>>).await
-}
-
-async fn new_async_inner(
-    stream: Pin<Box<dyn AsyncStream + Send + Sync>>,
-) -> redis::aio::MultiplexedConnection {
-    let mut stream_with_timeout = TimeoutStream::new(stream);
-    stream_with_timeout.set_read_timeout(Some(Duration::from_secs(10)));
-
-    let connection_info = Default::default();
-    let (conn, fut) = redis::aio::MultiplexedConnection::new(
-        &connection_info,
-        Box::pin(stream_with_timeout) as Pin<Box<dyn AsyncStream + Send + Sync>>,
-    )
-    .await
-    .unwrap();
-
-    fut.await;
-    conn
+    Client::open((address, port))
+        .unwrap()
+        .get_multiplexed_async_connection()
+        .await
+        .unwrap()
 }
 
 // fn create_tls_client(address: &str, port: u16) -> Client {
@@ -94,6 +74,24 @@ async fn new_async_tls_connection(address: &str, port: u16) -> redis::aio::Multi
     let mut tls_stream = SslStream::new(ssl, tcp_stream).unwrap();
     Pin::new(&mut tls_stream).connect().await.unwrap();
     new_async_inner(Box::pin(tls_stream) as Pin<Box<dyn AsyncStream + Send + Sync>>).await
+}
+
+async fn new_async_inner(
+    stream: Pin<Box<dyn AsyncStream + Send + Sync>>,
+) -> redis::aio::MultiplexedConnection {
+    let mut stream_with_timeout = TimeoutStream::new(stream);
+    stream_with_timeout.set_read_timeout(Some(Duration::from_secs(10)));
+
+    let connection_info = Default::default();
+    let (conn, fut) = redis::aio::MultiplexedConnection::new(
+        &connection_info,
+        Box::pin(stream_with_timeout) as Pin<Box<dyn AsyncStream + Send + Sync>>,
+    )
+    .await
+    .unwrap();
+
+    fut.await;
+    conn
 }
 
 // fn new_sync_tls_connection(address: &str, port: u16) -> redis::Connection {
