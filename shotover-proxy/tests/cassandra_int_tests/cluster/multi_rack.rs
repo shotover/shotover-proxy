@@ -23,7 +23,7 @@ async fn test_rewrite_system_peers(connection: &CassandraConnection) {
         ResultValue::Any,
         // Unfortunately token generation appears to be non-deterministic but we can at least assert that
         // there are 128 tokens per node
-        ResultValue::Set(std::iter::repeat(ResultValue::Any).take(128).collect()),
+        ResultValue::Set(std::iter::repeat_n(ResultValue::Any, 128).collect()),
     ];
 
     let all_columns = "peer, data_center, host_id, preferred_ip, rack, release_version, rpc_address, schema_version, tokens";
@@ -70,7 +70,7 @@ async fn test_rewrite_system_peers_v2(connection: &CassandraConnection) {
         ResultValue::Any,
         // Unfortunately token generation appears to be non-deterministic but we can at least assert that
         // there are 128 tokens per node
-        ResultValue::Set(std::iter::repeat(ResultValue::Any).take(128).collect()),
+        ResultValue::Set(std::iter::repeat_n(ResultValue::Any, 128).collect()),
     ];
 
     let all_columns = "peer, peer_port, data_center, host_id, native_address, native_port, preferred_ip, preferred_port, rack, release_version, schema_version, tokens";
@@ -126,7 +126,7 @@ async fn test_rewrite_system_local(connection: &CassandraConnection) {
         ResultValue::Any,
         // Unfortunately token generation appears to be non-deterministic but we can at least assert that
         // there are 128 tokens per node
-        ResultValue::Set(std::iter::repeat(ResultValue::Any).take(128).collect()),
+        ResultValue::Set(std::iter::repeat_n(ResultValue::Any, 128).collect()),
         // truncated_at is non deterministic so we cant assert on it.
         ResultValue::Any,
     ];

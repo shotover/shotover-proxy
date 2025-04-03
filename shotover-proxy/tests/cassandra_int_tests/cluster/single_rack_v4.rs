@@ -69,9 +69,9 @@ async fn test_rewrite_system_peers_dummy_peers(
         // Unfortunately token generation appears to be non-deterministic but we can at least assert that
         // there are 128 tokens per node
         if let CassandraDriver::Cdrs = driver {
-            ResultValue::List(std::iter::repeat(ResultValue::Any).take(3 * 128).collect())
+            ResultValue::List(std::iter::repeat_n(ResultValue::Any, 3 * 128).collect())
         } else {
-            ResultValue::Set(std::iter::repeat(ResultValue::Any).take(3 * 128).collect())
+            ResultValue::Set(std::iter::repeat_n(ResultValue::Any, 3 * 128).collect())
         },
     ];
     let star_results2 = [
@@ -88,9 +88,9 @@ async fn test_rewrite_system_peers_dummy_peers(
         // Unfortunately token generation appears to be non-deterministic but we can at least assert that
         // there are 128 tokens per node
         if let CassandraDriver::Cdrs = driver {
-            ResultValue::List(std::iter::repeat(ResultValue::Any).take(3 * 128).collect())
+            ResultValue::List(std::iter::repeat_n(ResultValue::Any, 3 * 128).collect())
         } else {
-            ResultValue::Set(std::iter::repeat(ResultValue::Any).take(3 * 128).collect())
+            ResultValue::Set(std::iter::repeat_n(ResultValue::Any, 3 * 128).collect())
         },
     ];
 
@@ -138,9 +138,9 @@ async fn test_rewrite_system_peers_v2_dummy_peers(
         // Unfortunately token generation appears to be non-deterministic but we can at least assert that
         // there are 128 tokens per node
         if let CassandraDriver::Cdrs = driver {
-            ResultValue::List(std::iter::repeat(ResultValue::Any).take(3 * 128).collect())
+            ResultValue::List(std::iter::repeat_n(ResultValue::Any, 3 * 128).collect())
         } else {
-            ResultValue::Set(std::iter::repeat(ResultValue::Any).take(3 * 128).collect())
+            ResultValue::Set(std::iter::repeat_n(ResultValue::Any, 3 * 128).collect())
         },
     ];
     let star_results2 = [
@@ -159,9 +159,9 @@ async fn test_rewrite_system_peers_v2_dummy_peers(
         // Unfortunately token generation appears to be non-deterministic but we can at least assert that
         // there are 128 tokens per node
         if let CassandraDriver::Cdrs = driver {
-            ResultValue::List(std::iter::repeat(ResultValue::Any).take(3 * 128).collect())
+            ResultValue::List(std::iter::repeat_n(ResultValue::Any, 3 * 128).collect())
         } else {
-            ResultValue::Set(std::iter::repeat(ResultValue::Any).take(3 * 128).collect())
+            ResultValue::Set(std::iter::repeat_n(ResultValue::Any, 3 * 128).collect())
         },
     ];
 
@@ -215,9 +215,9 @@ async fn test_rewrite_system_local(connection: &CassandraConnection, driver: Cas
         // Unfortunately token generation appears to be non-deterministic but we can at least assert that
         // there are 128 tokens per node
         if let CassandraDriver::Cdrs = driver {
-            ResultValue::List(std::iter::repeat(ResultValue::Any).take(3 * 128).collect())
+            ResultValue::List(std::iter::repeat_n(ResultValue::Any, 3 * 128).collect())
         } else {
-            ResultValue::Set(std::iter::repeat(ResultValue::Any).take(3 * 128).collect())
+            ResultValue::Set(std::iter::repeat_n(ResultValue::Any, 3 * 128).collect())
         },
         // truncated_at is non deterministic so we cant assert on it.
         ResultValue::Any,
