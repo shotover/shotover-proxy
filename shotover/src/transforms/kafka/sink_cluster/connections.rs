@@ -21,8 +21,8 @@ pub enum Destination {
     /// The control connection is a bit weird:
     /// * while !auth_complete it needs to be routed to via `PendingRequest`
     /// * However, once auth_complete is true, Destination::ControlConnection should never be routed to.
-    ///     Instead, at this point control_send_receive must be called which will immediately return a
-    ///     response in place without going through the routing logic.
+    ///   Instead, at this point control_send_receive must be called which will immediately return a
+    ///   response in place without going through the routing logic.
     ///
     /// TODO: In the future it might make sense to remove control_send_receive in favor of always routing to the control connection.
     ///       This will avoid latency spikes where a response is delayed because we have to wait for a metadata request to come back.
