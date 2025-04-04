@@ -6,6 +6,7 @@ use anyhow::Context;
 use anyhow::{Result, anyhow};
 use clap::{Parser, crate_version};
 use metrics_exporter_prometheus::PrometheusBuilder;
+use rustls::crypto::aws_lc_rs::default_provider;
 use std::env;
 use std::net::SocketAddr;
 use tokio::runtime::{self, Runtime};
@@ -77,6 +78,8 @@ impl Shotover {
         if std::env::var("RUST_LIB_BACKTRACE").is_err() {
             std::env::set_var("RUST_LIB_BACKTRACE", "0");
         }
+
+        default_provider().install_default().unwrap();
 
         let opts = ConfigOpts::parse();
         let log_format = opts.log_format;

@@ -9,7 +9,7 @@ pub async fn test(
     cassandra_session: &CassandraConnection,
     valkey_connection: &mut redis::Connection,
 ) {
-    redis::cmd("FLUSHDB").execute(valkey_connection);
+    redis::cmd("FLUSHDB").exec(valkey_connection).unwrap();
 
     run_query(cassandra_session, "CREATE KEYSPACE test_cache_keyspace_simple WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };").await;
     run_query(

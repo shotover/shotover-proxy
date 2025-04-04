@@ -73,7 +73,7 @@ async fn test_info(connection: &mut MultiplexedConnection) {
     let info: redis::InfoDict = redis::cmd("INFO").query_async(connection).await.unwrap();
     assert_eq!(
         info.find(&"role"),
-        Some(&Value::Status("master".to_string()))
+        Some(&Value::SimpleString("master".to_string()))
     );
     assert_eq!(info.get("role"), Some("master".to_string()));
     assert_eq!(info.get("loading"), Some(false));
@@ -190,7 +190,7 @@ async fn test_time(connection: &mut MultiplexedConnection) {
 async fn test_time_cluster(connection: &mut MultiplexedConnection) {
     assert_eq!(
         redis::cmd("TIME")
-            .query_async::<_, ()>(connection)
+            .query_async::<()>(connection)
             .await
             .unwrap_err()
             .detail()
@@ -204,7 +204,7 @@ async fn test_hello_cluster(connection: &mut MultiplexedConnection) {
     // The Lettuce client relies on the error message here containing the string "unknown" to detect that shotover does not support RESP3
     assert_eq!(
         redis::cmd("HELLO")
-            .query_async::<_, ()>(connection)
+            .query_async::<()>(connection)
             .await
             .unwrap_err()
             .detail()
@@ -417,13 +417,10 @@ async fn test_empty_pipeline(connection: &mut MultiplexedConnection) {
     redis::pipe()
         .cmd("PING")
         .ignore()
-        .query_async::<_, ()>(connection)
+        .query_async::<()>(connection)
         .await
         .unwrap();
-    redis::pipe()
-        .query_async::<_, ()>(connection)
-        .await
-        .unwrap();
+    redis::pipe().query_async::<()>(connection).await.unwrap();
 }
 
 async fn test_pipeline_transaction(connection: &mut MultiplexedConnection) {
@@ -465,7 +462,7 @@ async fn test_pipeline_reuse_query(connection: &mut MultiplexedConnection) {
 
     redis::cmd("DEL")
         .arg("p{x}key_1")
-        .query_async::<_, ()>(connection)
+        .query_async::<()>(connection)
         .await
         .unwrap();
 
@@ -506,7 +503,7 @@ async fn test_pipeline_reuse_query_clear(connection: &mut MultiplexedConnection)
 
     redis::cmd("DEL")
         .arg("p{x}key_1")
-        .query_async::<_, ()>(connection)
+        .query_async::<()>(connection)
         .await
         .unwrap();
 
@@ -532,14 +529,14 @@ async fn test_real_transaction(connection: &mut MultiplexedConnection) {
     redis::cmd("SET")
         .arg(key)
         .arg(42)
-        .query_async::<_, ()>(connection)
+        .query_async::<()>(connection)
         .await
         .unwrap();
 
     loop {
         redis::cmd("WATCH")
             .arg(key)
-            .query_async::<_, ()>(connection)
+            .query_async::<()>(connection)
             .await
             .unwrap();
         let val: isize = redis::cmd("GET")
@@ -576,7 +573,7 @@ async fn test_script(connection: &mut MultiplexedConnection) {
     redis::cmd("SET")
         .arg("my_key")
         .arg("foo")
-        .query_async::<_, ()>(connection)
+        .query_async::<()>(connection)
         .await
         .unwrap();
     let response = script.key("my_key").arg(42).invoke_async(connection).await;
@@ -766,7 +763,7 @@ pub async fn test_auth(connection: &mut MultiplexedConnection) {
     assert_eq!(
         redis::cmd("GET")
             .arg("without authenticating")
-            .query_async::<_, String>(connection)
+            .query_async::<String>(connection)
             .await
             .unwrap_err()
             .code(),
@@ -777,7 +774,7 @@ pub async fn test_auth(connection: &mut MultiplexedConnection) {
     assert_eq!(
         redis::cmd("CLUSTER")
             .arg("SLOTS")
-            .query_async::<_, String>(connection)
+            .query_async::<String>(connection)
             .await
             .unwrap_err()
             .code(),
@@ -786,7 +783,7 @@ pub async fn test_auth(connection: &mut MultiplexedConnection) {
     assert_eq!(
         redis::cmd("CLUSTER")
             .arg("NODES")
-            .query_async::<_, String>(connection)
+            .query_async::<String>(connection)
             .await
             .unwrap_err()
             .code(),
@@ -797,7 +794,7 @@ pub async fn test_auth(connection: &mut MultiplexedConnection) {
     assert_eq!(
         redis::cmd("AUTH")
             .arg("with a bad password")
-            .query_async::<_, ()>(connection)
+            .query_async::<()>(connection)
             .await
             .unwrap_err()
             .code(),
@@ -825,7 +822,7 @@ pub async fn test_auth(connection: &mut MultiplexedConnection) {
         redis::cmd("AUTH")
             .arg("brokenuser")
             .arg("password")
-            .query_async::<_, ()>(connection)
+            .query_async::<()>(connection)
             .await
             .unwrap_err()
             .code(),
@@ -856,7 +853,7 @@ pub async fn test_auth(connection: &mut MultiplexedConnection) {
         redis::cmd("SET")
             .arg("foo")
             .arg("fail")
-            .query_async::<_, ()>(connection)
+            .query_async::<()>(connection)
             .await
             .unwrap_err()
             .code(),
@@ -890,7 +887,7 @@ pub async fn test_auth_isolation(connection_creator: ValkeyConnectionCreator) {
                 &format!(">{pass}"),
                 &format!("~{key}"),
             ])
-            .query_async::<_, ()>(&mut connection)
+            .query_async::<()>(&mut connection)
             .await
             .unwrap();
 
@@ -899,7 +896,7 @@ pub async fn test_auth_isolation(connection_creator: ValkeyConnectionCreator) {
         assert_eq!(
             redis::cmd("GET")
                 .arg("without authenticating")
-                .query_async::<_, ()>(&mut new_connection)
+                .query_async::<()>(&mut new_connection)
                 .await
                 .unwrap_err()
                 .code(),
@@ -917,7 +914,7 @@ pub async fn test_auth_isolation(connection_creator: ValkeyConnectionCreator) {
         assert_eq!(
             redis::cmd("GET")
                 .arg("foo")
-                .query_async::<_, ()>(&mut new_connection)
+                .query_async::<()>(&mut new_connection)
                 .await
                 .unwrap_err()
                 .code(),
@@ -949,16 +946,16 @@ pub async fn test_cluster_ports_rewrite_slots(connection: &mut MultiplexedConnec
 
     assert!(matches!(r1, Value::Okay));
     assert_cluster_ports_rewrite_slots(r2, port);
-    assert_eq!(r3, Value::Data(b"42".to_vec()));
+    assert_eq!(r3, Value::BulkString(b"42".to_vec()));
 }
 
 fn assert_cluster_ports_rewrite_slots(res: Value, new_port: u16) {
     let mut assertion_run = false;
-    if let Value::Bulk(bulks) = &res {
+    if let Value::Array(bulks) = &res {
         for bulk in bulks {
-            if let Value::Bulk(b) = bulk {
+            if let Value::Array(b) = bulk {
                 for tuple in b.iter().enumerate() {
-                    if let (2..=3, Value::Bulk(val)) = tuple {
+                    if let (2..=3, Value::Array(val)) = tuple {
                         assert_eq!(val[1], Value::Int(new_port.into()));
                         assertion_run = true;
                     }
@@ -981,7 +978,7 @@ async fn get_master_id(connection: &mut MultiplexedConnection) -> String {
         .await
         .unwrap();
 
-    if let Value::Data(data) = &res {
+    if let Value::BulkString(data) = &res {
         let read_cursor = std::io::Cursor::new(data);
         let mut reader = csv::ReaderBuilder::new()
             .delimiter(b' ')
@@ -1020,8 +1017,8 @@ async fn is_cluster_replicas_ready(
             return false;
         }
     };
-    if let Value::Bulk(data) = res {
-        if let Some(Value::Data(data)) = data.first() {
+    if let Value::Array(data) = res {
+        if let Some(Value::BulkString(data)) = data.first() {
             tracing::debug!("CLUSTER REPLICAS returned [], retrying");
             return !data.is_empty();
         }
@@ -1080,21 +1077,21 @@ pub async fn test_cluster_ports_rewrite_nodes(
 
     assert!(matches!(r1, Value::Okay));
     assert_cluster_ports_rewrite_nodes(r2, new_port);
-    assert_eq!(r3, Value::Data(b"42".to_vec()));
+    assert_eq!(r3, Value::BulkString(b"42".to_vec()));
 }
 
 fn assert_cluster_ports_rewrite_nodes(res: Value, new_port: u16) {
     let mut assertion_run = false;
 
     let data = match res {
-        Value::Bulk(data) => {
-            if let Value::Data(item) = &data[0] {
+        Value::Array(data) => {
+            if let Value::BulkString(item) = &data[0] {
                 item.to_vec()
             } else {
                 panic!("Invalid response from Valkey")
             }
         }
-        Value::Data(data) => data.to_vec(),
+        Value::BulkString(data) => data.to_vec(),
         _ => panic!("Invalid response from Valkey"),
     };
 
@@ -1276,7 +1273,7 @@ pub async fn test_dr_auth() {
         redis::cmd("SET")
             .arg("authed_write")
             .arg(1111)
-            .query_async::<_, ()>(&mut connection_shotover_noauth)
+            .query_async::<()>(&mut connection_shotover_noauth)
             .await
             .unwrap_err();
     }
@@ -1293,7 +1290,7 @@ pub async fn test_dr_auth() {
     assert_eq!(
         redis::cmd("GET")
             .arg("authed_write")
-            .query_async::<_, Option<i32>>(&mut connection_dr_auth)
+            .query_async::<Option<i32>>(&mut connection_dr_auth)
             .await,
         Ok(None)
     );
@@ -1842,7 +1839,7 @@ impl Flusher {
             // This command is expected to fail when run against a read only replica.
             // This is unfortunate but we have no way to determine if its read only before sending the FLUSHDB
             redis::cmd("FLUSHDB")
-                .query_async::<_, ()>(connection)
+                .query_async::<()>(connection)
                 .await
                 .ok();
         }
