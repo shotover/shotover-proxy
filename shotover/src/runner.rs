@@ -6,7 +6,7 @@ use anyhow::Context;
 use anyhow::{Result, anyhow};
 use clap::{Parser, crate_version};
 use metrics_exporter_prometheus::PrometheusBuilder;
-use rustls::crypto::ring::default_provider;
+use rustls::crypto::aws_lc_rs::default_provider;
 use std::env;
 use std::net::SocketAddr;
 use tokio::runtime::{self, Runtime};
