@@ -21,7 +21,7 @@ async fn test_ignore_matches() {
     let result = redis::cmd("SET")
         .arg("key")
         .arg("myvalue")
-        .query_async::<_, String>(&mut connection)
+        .query_async::<String>(&mut connection)
         .await
         .unwrap();
 
@@ -46,7 +46,7 @@ async fn test_ignore_with_mismatch() {
     let result = redis::cmd("SET")
         .arg("key")
         .arg("myvalue")
-        .query_async::<_, String>(&mut connection)
+        .query_async::<String>(&mut connection)
         .await
         .unwrap();
 
@@ -71,7 +71,7 @@ async fn test_log_matches() {
     let result = redis::cmd("SET")
         .arg("key")
         .arg("myvalue")
-        .query_async::<_, String>(&mut connection)
+        .query_async::<String>(&mut connection)
         .await
         .unwrap();
 
@@ -96,7 +96,7 @@ async fn test_log_with_mismatch() {
     let result = redis::cmd("SET")
         .arg("key")
         .arg("myvalue")
-        .query_async::<_, String>(&mut connection)
+        .query_async::<String>(&mut connection)
         .await
         .unwrap();
 
@@ -131,7 +131,7 @@ async fn test_fail_matches() {
     let result = redis::cmd("SET")
         .arg("key")
         .arg("myvalue")
-        .query_async::<_, String>(&mut connection)
+        .query_async::<String>(&mut connection)
         .await
         .unwrap();
 
@@ -156,7 +156,7 @@ async fn test_fail_with_mismatch() {
     let err = redis::cmd("SET")
         .arg("key")
         .arg("myvalue")
-        .query_async::<_, String>(&mut connection)
+        .query_async::<String>(&mut connection)
         .await
         .unwrap_err()
         .to_string();
@@ -190,14 +190,14 @@ async fn test_subchain_matches() {
     redis::cmd("SET")
         .arg("key")
         .arg("myvalue")
-        .query_async::<_, String>(&mut mismatch_chain_valkey)
+        .query_async::<String>(&mut mismatch_chain_valkey)
         .await
         .unwrap();
 
     let mut result = redis::cmd("SET")
         .arg("key")
         .arg("notmyvalue")
-        .query_async::<_, String>(&mut shotover_connection)
+        .query_async::<String>(&mut shotover_connection)
         .await
         .unwrap();
 
@@ -205,7 +205,7 @@ async fn test_subchain_matches() {
 
     result = redis::cmd("GET")
         .arg("key")
-        .query_async::<_, String>(&mut mismatch_chain_valkey)
+        .query_async::<String>(&mut mismatch_chain_valkey)
         .await
         .unwrap();
 
@@ -239,7 +239,7 @@ async fn test_subchain_with_mismatch() {
     let mut result = redis::cmd("SET")
         .arg("key")
         .arg("myvalue")
-        .query_async::<_, String>(&mut shotover_connection)
+        .query_async::<String>(&mut shotover_connection)
         .await
         .unwrap();
 
@@ -248,7 +248,7 @@ async fn test_subchain_with_mismatch() {
     // When the mismatch occurs, the value should be sent to the mismatch chain's valkey
     result = redis::cmd("GET")
         .arg("key")
-        .query_async::<_, String>(&mut mismatch_chain_valkey)
+        .query_async::<String>(&mut mismatch_chain_valkey)
         .await
         .unwrap();
 
@@ -278,7 +278,7 @@ async fn test_switch_main_chain() {
         let result = redis::cmd("SET")
             .arg("key")
             .arg("myvalue")
-            .query_async::<_, String>(&mut connection)
+            .query_async::<String>(&mut connection)
             .await
             .unwrap();
 
@@ -294,7 +294,7 @@ async fn test_switch_main_chain() {
         let result = redis::cmd("SET")
             .arg("key")
             .arg("myvalue")
-            .query_async::<_, String>(&mut connection)
+            .query_async::<String>(&mut connection)
             .await
             .unwrap();
 
@@ -305,7 +305,7 @@ async fn test_switch_main_chain() {
         let result = redis::cmd("SET")
             .arg("key")
             .arg("myvalue")
-            .query_async::<_, String>(&mut connection)
+            .query_async::<String>(&mut connection)
             .await
             .unwrap();
 

@@ -4,7 +4,7 @@ use redis::aio::MultiplexedConnection;
 
 pub async fn assert_nil(cmd: &mut Cmd, connection: &mut MultiplexedConnection) {
     assert_eq!(
-        cmd.query_async::<_, Option<String>>(connection).await,
+        cmd.query_async::<Option<String>>(connection).await,
         Ok(None)
     );
 }
