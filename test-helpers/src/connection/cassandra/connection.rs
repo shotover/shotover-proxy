@@ -12,6 +12,7 @@ use scylla::{PreparedStatementScylla, ScyllaConnection, SessionBuilderScylla};
 use std::fs::read_to_string;
 use std::net::IpAddr;
 use std::time::Duration;
+use rustls::crypto::aws_lc_rs::default_provider;
 
 mod cdrs;
 #[cfg(feature = "cassandra-cpp-driver-tests")]
@@ -43,6 +44,7 @@ impl CassandraConnectionBuilder {
     }
 
     pub fn with_tls(mut self, ca_cert_path: &str) -> Self {
+        default_provider().install_default().ok();
         self.ca_cert_path = Some(ca_cert_path.into());
         self
     }
