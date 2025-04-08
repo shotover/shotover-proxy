@@ -4,6 +4,7 @@ use cassandra_protocol::types::cassandra_type::CassandraType;
 use cdrs_tokio::frame::events::{
     SchemaChange, SchemaChangeOptions, SchemaChangeTarget, SchemaChangeType, ServerEvent,
 };
+use fred::rustls::crypto::aws_lc_rs::default_provider;
 use futures::Future;
 use futures::future::join_all;
 use pretty_assertions::assert_eq;
@@ -1173,6 +1174,7 @@ async fn passthrough_tls_websockets() {
 
     let ca_cert = "tests/test-configs/cassandra/tls/certs/localhost_CA.crt";
 
+    default_provider().install_default().ok();
     let mut session = CqlWsSession::new_tls("wss://0.0.0.0:9042", ca_cert).await;
     let rows = session.query("SELECT bootstrapped FROM system.local").await;
     assert_eq!(rows, vec![vec![CassandraType::Varchar("COMPLETED".into())]]);

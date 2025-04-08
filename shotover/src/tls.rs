@@ -4,7 +4,6 @@ use crate::tcp;
 use anyhow::{Context, Error, Result, anyhow, bail};
 use rustls::client::WebPkiServerVerifier;
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
-use rustls::crypto::aws_lc_rs::default_provider;
 use rustls::server::WebPkiClientVerifier;
 use rustls::{
     CertificateError, ClientConfig, DigitallySignedStruct, RootCertStore, SignatureScheme,
