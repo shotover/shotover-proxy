@@ -21,8 +21,8 @@ mod valkey;
 
 use cloud::CloudResources;
 use cloud::CloudResourcesRequired;
-use std::path::Path;
 use fred::rustls::crypto::ring::default_provider;
+use std::path::Path;
 use tracing_subscriber::EnvFilter;
 use windsock::{Bench, Windsock};
 
