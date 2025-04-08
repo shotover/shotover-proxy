@@ -21,8 +21,8 @@ mod valkey;
 
 use cloud::CloudResources;
 use cloud::CloudResourcesRequired;
-use fred::rustls::crypto::aws_lc_rs::default_provider;
 use std::path::Path;
+use fred::rustls::crypto::ring::default_provider;
 use tracing_subscriber::EnvFilter;
 use windsock::{Bench, Windsock};
 
@@ -31,7 +31,7 @@ pub type ShotoverBench = Box<
 >;
 
 fn main() {
-    // default_provider().install_default().unwrap();
+    default_provider().install_default().ok();
 
     let (non_blocking, _guard) = tracing_appender::non_blocking(std::io::stdout());
     tracing_subscriber::fmt()
