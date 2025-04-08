@@ -1,6 +1,7 @@
 use anyhow::Context;
 use redis::aio::MultiplexedConnection;
 use redis::{Client, ClientTlsConfig, TlsCertificates};
+use rustls::crypto::ring::default_provider;
 use std::time::Duration;
 
 fn new_sync_connection(address: &str, port: u16) -> redis::Connection {
@@ -24,6 +25,7 @@ async fn new_async_connection(address: &str, port: u16) -> MultiplexedConnection
 }
 
 fn create_tls_client(address: &str, port: u16) -> Client {
+    default_provider().install_default().ok();
     let root_cert = std::fs::read("tests/test-configs/valkey/tls/certs/localhost_CA.crt").unwrap();
     let client_cert = std::fs::read("tests/test-configs/valkey/tls/certs/localhost.crt").unwrap();
     let client_key = std::fs::read("tests/test-configs/valkey/tls/certs/localhost.key").unwrap();
