@@ -7,12 +7,12 @@ use cpp::{CppConnection, PreparedStatementCpp, SslCpp};
 use java::{JavaConnection, PreparedStatementJava};
 use openssl::ssl::{SslContext, SslMethod};
 use pretty_assertions::assert_eq;
+use rustls::crypto::aws_lc_rs::default_provider;
 use scylla::{PreparedStatementScylla, ScyllaConnection, SessionBuilderScylla};
 #[cfg(feature = "cassandra-cpp-driver-tests")]
 use std::fs::read_to_string;
 use std::net::IpAddr;
 use std::time::Duration;
-use rustls::crypto::aws_lc_rs::default_provider;
 
 mod cdrs;
 #[cfg(feature = "cassandra-cpp-driver-tests")]
