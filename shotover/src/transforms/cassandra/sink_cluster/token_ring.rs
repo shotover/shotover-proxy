@@ -46,10 +46,10 @@ impl TokenRing {
     /// Walk the token ring to figure out which nodes are acting as replicas for the given query.
     /// The way we do this depends on the replication strategy used:
     /// * ReplicationStrategy::SimpleStrategy - Each cassandra node has many tokens assigned to it to form the token ring.
-    ///     Take the hashed key (token) and walk along the token ring starting at the token in the ring after the token from our key.
-    ///     Return the nodes belonging to the first replication_factor number of tokens encountered.
+    ///   Take the hashed key (token) and walk along the token ring starting at the token in the ring after the token from our key.
+    ///   Return the nodes belonging to the first replication_factor number of tokens encountered.
     /// * ReplicationStrategy::NetworkTopologyStrategy - The same as the simple strategy but also:
-    ///     When we walk the token ring we need to skip tokens belonging to nodes in a rack we have already encountered in this walk.
+    ///   When we walk the token ring we need to skip tokens belonging to nodes in a rack we have already encountered in this walk.
     ///
     /// For more info: https://docs.datastax.com/en/cassandra-oss/3.0/cassandra/architecture/archDataDistributeReplication.html
     pub fn iter_replica_nodes<'a>(
