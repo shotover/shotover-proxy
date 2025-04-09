@@ -7,6 +7,7 @@ members = [
     "ec2-cargo",
     "windsock-cloud-docker",
     "website",
+    "deps-table",
 ]
 resolver = "2"
 
