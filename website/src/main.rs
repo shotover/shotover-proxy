@@ -1,7 +1,7 @@
 use anyhow::{Result, anyhow};
+use askama::Template;
 use clap::Parser;
 use cli::Args;
-use rinja::Template;
 use std::{path::Path, process::Command};
 use subprocess::{Exec, Redirection};
 
