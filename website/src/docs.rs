@@ -1,6 +1,6 @@
 use crate::run_command;
 use anyhow::Result;
-use rinja::Template;
+use askama::Template;
 use std::{fs::create_dir_all, path::Path};
 
 pub fn generate_all_docs(current_dir: &Path) -> Result<()> {
