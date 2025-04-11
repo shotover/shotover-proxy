@@ -30,7 +30,7 @@ async fn log_to_file() {
     let request = std::fs::read("message-log/1/requests/message2.bin").unwrap();
     assert_eq_string(
         &request,
-        "*4\r\n$6\r\nCLIENT\r\n$7\r\nSETINFO\r\n$7\r\nLIB-VER\r\n$6\r\n0.29.2\r\n",
+        "*4\r\n$6\r\nCLIENT\r\n$7\r\nSETINFO\r\n$7\r\nLIB-VER\r\n$6\r\n0.29.5\r\n",
     );
     let response = std::fs::read("message-log/1/responses/message2.bin").unwrap();
     assert_eq_string(&response, "+OK\r\n");
