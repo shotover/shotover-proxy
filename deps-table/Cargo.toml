@@ -1,0 +1,11 @@
+[package]
+name = "deps-table"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "A tool for generating a table of the projects deps"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+cargo_metadata = "0.19.0"
