@@ -296,7 +296,7 @@ async fn cluster_1_rack_single_shotover(#[case] driver: KafkaDriver) {
             shotover_process("tests/test-configs/kafka/cluster-1-rack/topology-single.yaml")
                 .start()
                 .await;
-        let connection_builder = KafkaConnectionBuilder::new(driver, "127.0.0.1:9192");
+        let connection_builder = KafkaConnectionBuilder::new(driver, "1.53.97.39:9192");
 
         test_cases::produce_consume_partitions1_kafka_node_goes_down(
             driver,
