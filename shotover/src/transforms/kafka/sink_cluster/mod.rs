@@ -1214,7 +1214,7 @@ The connection to the client has been closed."
     }
 
     fn route_to_random_broker(&mut self, request: Message) {
-        let destination = random_broker_id(&self.nodes, &mut self.rng);
+        let destination = random_broker_id_within_rack(&self.nodes, &mut self.rng, &self.rack);
         tracing::debug!("Routing request to random broker {}", destination.0);
         self.pending_requests.push_back(PendingRequest {
             state: PendingRequestState::routed(request),
@@ -4039,6 +4039,23 @@ fn random_broker_id(nodes: &[KafkaNode], rng: &mut SmallRng) -> BrokerId {
     match nodes.iter().filter(|node| node.is_up()).choose(rng) {
         Some(broker) => broker.broker_id,
         None => nodes.choose(rng).unwrap().broker_id,
+    }
+}
+
+// Chooses a random broker id within the given rack from the list of nodes, prioritizes "Up" nodes
+// if no node is satisfied, fallback the random_broker_id.
+fn random_broker_id_within_rack(
+    nodes: &[KafkaNode],
+    rng: &mut SmallRng,
+    rack: &StrBytes,
+) -> BrokerId {
+    match nodes
+        .iter()
+        .filter(|node| node.rack.is_some() && node.rack.as_ref().unwrap() == rack && node.is_up())
+        .choose(rng)
+    {
+        Some(broker) => broker.broker_id,
+        None => random_broker_id(nodes, rng),
     }
 }
 
