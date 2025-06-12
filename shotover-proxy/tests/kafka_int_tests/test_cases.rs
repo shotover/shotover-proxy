@@ -2009,31 +2009,8 @@ pub async fn standard_test_suite(connection_builder: &KafkaConnectionBuilder) {
 
 pub async fn cluster_test_suite(connection_builder: &KafkaConnectionBuilder) {
     standard_test_suite_base(connection_builder).await;
-    let mut out_of_rack_request = get_metrics_value(
-        "shotover_out_of_rack_requests_count{chain=\"kafka\",transform=\"KafkaSinkCluster\"}",
-    )
-    .await;
-
     cluster_test_suite_base(connection_builder).await;
-    out_of_rack_request = get_metrics_value(
-        "shotover_out_of_rack_requests_count{chain=\"kafka\",transform=\"KafkaSinkCluster\"}",
-    )
-    .await;
-    println!(
-        "TANN3333 NUMBER OF OUT OF RACK REQUEST {}",
-        out_of_rack_request
-    );
     tests_requiring_all_shotover_nodes(connection_builder).await;
-
-    out_of_rack_request = get_metrics_value(
-        "shotover_out_of_rack_requests_count{chain=\"kafka\",transform=\"KafkaSinkCluster\"}",
-    )
-    .await;
-    println!(
-        "TANN3333 NUMBER OF OUT OF RACK REQUEST {}",
-        out_of_rack_request
-    );
-    assert_ne!(out_of_rack_request, "0");
 }
 
 pub async fn cluster_test_suite_with_lost_shotover_node(
@@ -2094,7 +2071,7 @@ pub async fn assert_topic_creation_is_denied_due_to_acl(connection: &KafkaConnec
     )
 }
 
-pub async fn test_num_out_of_rack(connection_builder: &KafkaConnectionBuilder) {
+pub async fn test_no_out_of_rack_request(connection_builder: &KafkaConnectionBuilder) {
     let topic_name = "num_out_of_rack";
     let admin = connection_builder.connect_admin().await;
     admin
@@ -2113,7 +2090,7 @@ pub async fn test_num_out_of_rack(connection_builder: &KafkaConnectionBuilder) {
     tokio::time::sleep(Duration::from_secs(2)).await;
 
     // Call 10 times to increase the possibility of routing to broker out of rack if any
-    for i in 0..10 {
+    for _ in 0..10 {
         admin.describe_topics(&[topic_name]).await.unwrap();
     }
     let out_of_rack_request_end = get_metrics_value(
