@@ -2091,7 +2091,9 @@ pub async fn test_no_out_of_rack_request(connection_builder: &KafkaConnectionBui
 
     // Call 10 times to increase the possibility of routing to broker out of rack if any
     for _ in 0..10 {
-        admin.describe_topics(&[topic_name]).await.unwrap();
+        admin
+            .describe_configs(&[ResourceSpecifier::Topic(topic_name)])
+            .await;
     }
     let out_of_rack_request_end = get_metrics_value(
         "shotover_out_of_rack_requests_count{chain=\"kafka\",transform=\"KafkaSinkCluster\"}",
