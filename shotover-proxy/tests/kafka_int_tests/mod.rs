@@ -273,7 +273,7 @@ async fn single_sasl_scram_plaintext_source_tls_sink(#[case] driver: KafkaDriver
 #[tokio::test(flavor = "multi_thread")] // multi_thread is needed since java driver will block when consuming, causing shotover logs to not appear
 async fn cluster_1_rack_single_shotover(#[case] driver: KafkaDriver) {
     let docker_compose =
-    docker_compose("tests/test-configs/kafka/cluster-1-rack/docker-compose.yaml");
+        docker_compose("tests/test-configs/kafka/cluster-1-rack/docker-compose.yaml");
 
     {
         let shotover =
