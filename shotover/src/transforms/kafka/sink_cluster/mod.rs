@@ -4047,7 +4047,7 @@ fn random_broker_id_in_any_rack(nodes: &[KafkaNode], rng: &mut SmallRng) -> Brok
 fn random_broker_id(nodes: &[KafkaNode], rng: &mut SmallRng, rack: &StrBytes) -> BrokerId {
     match nodes
         .iter()
-        .filter(|node| node.rack.is_some() && node.rack.as_ref().unwrap() == rack && node.is_up())
+        .filter(|node| node.rack.as_ref() == Some(rack) && node.is_up())
         .choose(rng)
     {
         Some(broker) => broker.broker_id,
