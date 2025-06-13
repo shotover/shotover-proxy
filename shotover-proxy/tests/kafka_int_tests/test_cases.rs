@@ -2011,6 +2011,7 @@ pub async fn cluster_test_suite(connection_builder: &KafkaConnectionBuilder) {
     standard_test_suite_base(connection_builder).await;
     cluster_test_suite_base(connection_builder).await;
     tests_requiring_all_shotover_nodes(connection_builder).await;
+    test_no_out_of_rack_request(connection_builder).await;
 }
 
 pub async fn cluster_test_suite_with_lost_shotover_node(

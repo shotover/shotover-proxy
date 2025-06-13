@@ -4043,7 +4043,7 @@ fn random_broker_id_in_any_rack(nodes: &[KafkaNode], rng: &mut SmallRng) -> Brok
 }
 
 // Chooses a random broker id within the given rack from the list of nodes, prioritizes "Up" nodes
-// if no node is satisfied, fallback the random_broker_id.
+// if no node is satisfied, fallback to the random_broker_id_in_any_rack function.
 fn random_broker_id(nodes: &[KafkaNode], rng: &mut SmallRng, rack: &StrBytes) -> BrokerId {
     match nodes
         .iter()
