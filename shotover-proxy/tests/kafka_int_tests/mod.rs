@@ -272,8 +272,8 @@ async fn single_sasl_scram_plaintext_source_tls_sink(#[case] driver: KafkaDriver
 #[case::java(KafkaDriver::Java)]
 #[tokio::test(flavor = "multi_thread")] // multi_thread is needed since java driver will block when consuming, causing shotover logs to not appear
 async fn cluster_1_rack_single_shotover(#[case] driver: KafkaDriver) {
-    // let docker_compose =
-    // docker_compose("tests/test-configs/kafka/cluster-1-rack/docker-compose.yaml");
+    let docker_compose =
+    docker_compose("tests/test-configs/kafka/cluster-1-rack/docker-compose.yaml");
 
     {
         let shotover =
@@ -298,13 +298,13 @@ async fn cluster_1_rack_single_shotover(#[case] driver: KafkaDriver) {
                 .await;
         let connection_builder = KafkaConnectionBuilder::new(driver, "127.0.0.1:9192");
 
-        // test_cases::produce_consume_partitions1_kafka_node_goes_down(
-        //     driver,
-        //     &docker_compose,
-        //     &connection_builder,
-        //     "kafka_node_goes_down_test",
-        // )
-        // .await;
+        test_cases::produce_consume_partitions1_kafka_node_goes_down(
+            driver,
+            &docker_compose,
+            &connection_builder,
+            "kafka_node_goes_down_test",
+        )
+        .await;
 
         // Shotover can reasonably hit many kinds of errors due to a kafka node down so ignore all of them.
         tokio::time::timeout(
