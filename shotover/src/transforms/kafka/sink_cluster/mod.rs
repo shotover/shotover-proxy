@@ -2190,21 +2190,23 @@ The connection to the client has been closed."
                     // Instead just directly set the node as down and return the error
 
                     // set node as down
-                    self.nodes
-                        .iter()
-                        .find(|x| match destination {
-                            Destination::Id(id) => x.broker_id == id,
-                            Destination::ControlConnection => {
-                                &x.kafka_address
-                                    == self
-                                        .connections
-                                        .control_connection_address
-                                        .as_ref()
-                                        .unwrap()
-                            }
-                        })
-                        .unwrap()
-                        .set_state(KafkaNodeState::Down);
+                    let kafka_node = self.nodes.iter().find(|x| match destination {
+                        Destination::Id(id) => x.broker_id == id,
+                        Destination::ControlConnection => {
+                            &x.kafka_address
+                                == self
+                                    .connections
+                                    .control_connection_address
+                                    .as_ref()
+                                    .unwrap()
+                        }
+                    });
+
+                    // Leave the Kafka node as it as in case it's None. It's then bubbled up
+                    // and show a less confused message when there is a misconfiguration.
+                    if let Some(node) = kafka_node {
+                        node.set_state(KafkaNodeState::Down);
+                    }
 
                     // bubble up error
                     let request_types: Vec<String> = requests
