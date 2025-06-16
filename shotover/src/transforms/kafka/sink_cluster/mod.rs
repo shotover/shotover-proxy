@@ -2190,21 +2190,24 @@ The connection to the client has been closed."
                     // Instead just directly set the node as down and return the error
 
                     // set node as down
-                    self.nodes
-                        .iter()
-                        .find(|x| match destination {
-                            Destination::Id(id) => x.broker_id == id,
-                            Destination::ControlConnection => {
-                                &x.kafka_address
-                                    == self
-                                        .connections
-                                        .control_connection_address
-                                        .as_ref()
-                                        .unwrap()
-                            }
-                        })
-                        .unwrap()
-                        .set_state(KafkaNodeState::Down);
+                    let kafka_node = self.nodes.iter().find(|x| match destination {
+                        Destination::Id(id) => x.broker_id == id,
+                        Destination::ControlConnection => {
+                            &x.kafka_address
+                                == self
+                                    .connections
+                                    .control_connection_address
+                                    .as_ref()
+                                    .unwrap()
+                        }
+                    });
+
+                    // kafka_node will be None when the cluster metadata hasnt been populated yet.
+                    // This is guaranteed to happen when the cluster is down and shotover has never connected to the cluster.
+                    // In that case we dont set anything and allow regular error handling to continue.
+                    if let Some(node) = kafka_node {
+                        node.set_state(KafkaNodeState::Down);
+                    }
 
                     // bubble up error
                     let request_types: Vec<String> = requests
