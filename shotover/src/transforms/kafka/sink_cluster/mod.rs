@@ -1214,7 +1214,7 @@ The connection to the client has been closed."
     }
 
     fn route_to_random_broker(&mut self, request: Message) {
-        let destination = random_broker_id(&self.nodes, &mut self.rng);
+        let destination = random_broker_id(&self.nodes, &mut self.rng, &self.rack);
         tracing::debug!("Routing request to random broker {}", destination.0);
         self.pending_requests.push_back(PendingRequest {
             state: PendingRequestState::routed(request),
@@ -1234,7 +1234,7 @@ The connection to the client has been closed."
         if routing.is_empty() {
             // Produce contains no topics, so we can just pick a random destination.
             // The request is unchanged so we can just send as is.
-            let destination = random_broker_id(&self.nodes, &mut self.rng);
+            let destination = random_broker_id(&self.nodes, &mut self.rng, &self.rack);
 
             self.pending_requests.push_back(PendingRequest {
                 state: PendingRequestState::routed(request),
@@ -1253,7 +1253,7 @@ The connection to the client has been closed."
             // we dont even need to invalidate the request's cache.
             let (destination, topic_data) = routing.into_iter().next().unwrap();
             let destination = if destination == -1 {
-                random_broker_id(&self.nodes, &mut self.rng)
+                random_broker_id(&self.nodes, &mut self.rng, &self.rack)
             } else {
                 destination
             };
@@ -1273,7 +1273,7 @@ The connection to the client has been closed."
             request.invalidate_cache();
             for (i, (destination, topic_data)) in routing.into_iter().enumerate() {
                 let destination = if destination == -1 {
-                    random_broker_id(&self.nodes, &mut self.rng)
+                    random_broker_id(&self.nodes, &mut self.rng, &self.rack)
                 } else {
                     destination
                 };
@@ -1449,7 +1449,7 @@ The connection to the client has been closed."
             if routing.is_empty() {
                 // Fetch contains no topics, so we can just pick a random destination.
                 // The message is unchanged so we can just send as is.
-                let destination = random_broker_id(&self.nodes, &mut self.rng);
+                let destination = random_broker_id(&self.nodes, &mut self.rng, &self.rack);
 
                 self.pending_requests.push_back(PendingRequest {
                     state: PendingRequestState::routed(request),
@@ -1469,7 +1469,7 @@ The connection to the client has been closed."
                 // we dont even need to invalidate the message's cache.
                 let (destination, topics) = routing.into_iter().next().unwrap();
                 let destination = if destination == -1 {
-                    random_broker_id(&self.nodes, &mut self.rng)
+                    random_broker_id(&self.nodes, &mut self.rng, &self.rack)
                 } else {
                     destination
                 };
@@ -1498,7 +1498,7 @@ The connection to the client has been closed."
                 request.invalidate_cache();
                 for (i, (destination, topics)) in routing.into_iter().enumerate() {
                     let destination = if destination == -1 {
-                        random_broker_id(&self.nodes, &mut self.rng)
+                        random_broker_id(&self.nodes, &mut self.rng, &self.rack)
                     } else {
                         destination
                     };
@@ -3458,7 +3458,7 @@ The connection to the client has been closed."
             tracing::warn!(
                 "no known broker with id {broker_id:?} that is 'up', routing request to a random broker so that a NOT_CONTROLLER or similar error is returned to the client"
             );
-            random_broker_id(&self.nodes, &mut self.rng)
+            random_broker_id(&self.nodes, &mut self.rng, &self.rack)
         };
 
         self.pending_requests.push_back(PendingRequest {
@@ -3481,7 +3481,7 @@ The connection to the client has been closed."
                 tracing::info!(
                     "no known coordinator for {group_id:?}, routing request to a random broker so that a NOT_COORDINATOR or similar error is returned to the client"
                 );
-                random_broker_id(&self.nodes, &mut self.rng)
+                random_broker_id(&self.nodes, &mut self.rng, &self.rack)
             }
         };
 
@@ -3509,7 +3509,7 @@ The connection to the client has been closed."
                 tracing::info!(
                     "no known coordinator for {transaction_id:?}, routing request to a random broker so that a NOT_COORDINATOR or similar error is returned to the client"
                 );
-                random_broker_id(&self.nodes, &mut self.rng)
+                random_broker_id(&self.nodes, &mut self.rng, &self.rack)
             }
         };
 
@@ -3531,7 +3531,7 @@ The connection to the client has been closed."
             ..
         })) = request.frame()
         {
-            let destination = random_broker_id(&self.nodes, &mut self.rng);
+            let destination = random_broker_id(&self.nodes, &mut self.rng, &self.rack);
             let ty = PendingRequestTy::FindCoordinator(FindCoordinator {
                 key: find_coordinator.key.clone(),
                 key_type: find_coordinator.key_type,
@@ -4038,10 +4038,23 @@ fn get_username_from_scram_request(auth_request: &[u8]) -> Option<String> {
 }
 
 // Chooses a random broker id from the list of nodes, prioritizes "Up" nodes but fallsback to "down" nodes if needed.
-fn random_broker_id(nodes: &[KafkaNode], rng: &mut SmallRng) -> BrokerId {
+fn random_broker_id_in_any_rack(nodes: &[KafkaNode], rng: &mut SmallRng) -> BrokerId {
     match nodes.iter().filter(|node| node.is_up()).choose(rng) {
         Some(broker) => broker.broker_id,
         None => nodes.choose(rng).unwrap().broker_id,
+    }
+}
+
+// Chooses a random broker id within the given rack from the list of nodes, prioritizes "Up" nodes
+// if no node is satisfied, fallback to the random_broker_id_in_any_rack function.
+fn random_broker_id(nodes: &[KafkaNode], rng: &mut SmallRng, rack: &StrBytes) -> BrokerId {
+    match nodes
+        .iter()
+        .filter(|node| node.rack.as_ref() == Some(rack) && node.is_up())
+        .choose(rng)
+    {
+        Some(broker) => broker.broker_id,
+        None => random_broker_id_in_any_rack(nodes, rng),
     }
 }
 

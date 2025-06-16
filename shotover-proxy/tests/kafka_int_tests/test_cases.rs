@@ -1,5 +1,6 @@
 use futures::{StreamExt, stream::FuturesUnordered};
 use std::{collections::HashMap, time::Duration};
+use test_helpers::metrics::get_metrics_value;
 use test_helpers::{
     connection::kafka::{
         Acl, AclOperation, AclPermissionType, AlterConfig, ConfigEntry, ConsumerConfig,
@@ -2010,6 +2011,7 @@ pub async fn cluster_test_suite(connection_builder: &KafkaConnectionBuilder) {
     standard_test_suite_base(connection_builder).await;
     cluster_test_suite_base(connection_builder).await;
     tests_requiring_all_shotover_nodes(connection_builder).await;
+    test_no_out_of_rack_request(connection_builder).await;
 }
 
 pub async fn cluster_test_suite_with_lost_shotover_node(
@@ -2068,4 +2070,33 @@ pub async fn assert_topic_creation_is_denied_due_to_acl(connection: &KafkaConnec
             .to_string(),
         "org.apache.kafka.common.errors.UnknownTopicOrPartitionException: This server does not host this topic-partition.\n"
     )
+}
+
+// we have to manually test individual message types here since any message type routing to the controller
+// may go out of rack because the controller will move between nodes during regular usage.
+pub async fn test_no_out_of_rack_request(connection_builder: &KafkaConnectionBuilder) {
+    // Re-use this topic name from admin_setup
+    let topic_name = "partitions1";
+    let admin = connection_builder.connect_admin().await;
+
+    let out_of_rack_request_start = get_metrics_value(
+        "shotover_out_of_rack_requests_count{chain=\"kafka\",transform=\"KafkaSinkCluster\"}",
+    )
+    .await;
+
+    // Call 10 times to increase the possibility of routing to broker out of rack if any
+    for _ in 0..10 {
+        admin
+            .describe_configs(&[ResourceSpecifier::Topic(topic_name)])
+            .await;
+    }
+    let out_of_rack_request_end = get_metrics_value(
+        "shotover_out_of_rack_requests_count{chain=\"kafka\",transform=\"KafkaSinkCluster\"}",
+    )
+    .await;
+    assert_eq!(
+        out_of_rack_request_end.parse::<i32>().unwrap()
+            - out_of_rack_request_start.parse::<i32>().unwrap(),
+        0
+    );
 }
