@@ -2072,6 +2072,8 @@ pub async fn assert_topic_creation_is_denied_due_to_acl(connection: &KafkaConnec
     )
 }
 
+// we have to manually test individual message types here since any message type routing to the controller
+// may go out of rack because the controller will move between nodes during regular usage.
 pub async fn test_no_out_of_rack_request(connection_builder: &KafkaConnectionBuilder) {
     // Re-use this topic name from admin_setup
     let topic_name = "partitions1";
