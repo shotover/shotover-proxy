@@ -2073,22 +2073,14 @@ pub async fn assert_topic_creation_is_denied_due_to_acl(connection: &KafkaConnec
 }
 
 pub async fn test_no_out_of_rack_request(connection_builder: &KafkaConnectionBuilder) {
-    let topic_name = "num_out_of_rack";
+    // Re-use this topic name from admin_setup
+    let topic_name = "partitions1";
     let admin = connection_builder.connect_admin().await;
-    admin
-        .create_topics_and_wait(&[NewTopic {
-            name: topic_name,
-            num_partitions: 1,
-            replication_factor: 1,
-        }])
-        .await;
+
     let out_of_rack_request_start = get_metrics_value(
         "shotover_out_of_rack_requests_count{chain=\"kafka\",transform=\"KafkaSinkCluster\"}",
     )
     .await;
-
-    // Wait for the topic creation to finish
-    tokio::time::sleep(Duration::from_secs(2)).await;
 
     // Call 10 times to increase the possibility of routing to broker out of rack if any
     for _ in 0..10 {
