@@ -2202,8 +2202,9 @@ The connection to the client has been closed."
                         }
                     });
 
-                    // Leave the Kafka node as it as in case it's None. It's then bubbled up
-                    // and show a less confused message when there is a misconfiguration.
+                    // kafka_node will be None when the cluster metadata hasnt been populated yet.
+                    // This is guaranteed to happen when the cluster is down and shotover has never connected to the cluster.
+                    // In that case we dont set anything and allow regular error handling to continue.
                     if let Some(node) = kafka_node {
                         node.set_state(KafkaNodeState::Down);
                     }
