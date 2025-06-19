@@ -361,7 +361,7 @@ enum PendingRequestState {
         /// Some message types store the request here in case they need to resend it.
         // TODO: if we ever turn the Message into a CoW type we will be able to
         // simplify this a lot by just storing the request field once in PendingRequest
-        request: Option<Message>,
+        request: Box<Option<Message>>,
     },
 }
 
@@ -2259,7 +2259,7 @@ The connection to the client has been closed."
                                         if *index == 0 {
                                             pending_request.state = PendingRequestState::Received {
                                                 response: response.take().unwrap(),
-                                                request: request.take(),
+                                                request: Box::new(request.take()),
                                             };
                                         } else {
                                             *index -= 1;

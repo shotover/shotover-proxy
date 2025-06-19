@@ -314,7 +314,7 @@ impl Message {
             MessageInner::Modified {
                 frame: Frame::Dummy,
             } => Encodable::Bytes(Bytes::new()),
-            MessageInner::Modified { frame } => Encodable::Frame(frame),
+            MessageInner::Modified { frame } => Encodable::Frame(Box::new(frame)),
         }
     }
 
@@ -616,7 +616,7 @@ pub enum Encodable {
     /// The raw bytes the protocol should send
     Bytes(Bytes),
     /// The Frame that should be processed into bytes and then sent
-    Frame(Frame),
+    Frame(Box<Frame>),
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]

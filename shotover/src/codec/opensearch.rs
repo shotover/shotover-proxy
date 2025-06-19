@@ -200,7 +200,7 @@ impl OpenSearchDecoder {
 #[derive(Debug)]
 enum State {
     ParsingResponse,
-    ReadingBody(HttpHead, usize),
+    ReadingBody(Box<HttpHead>, usize),
 }
 
 impl Decoder for OpenSearchDecoder {
@@ -228,7 +228,7 @@ impl Decoder for OpenSearchDecoder {
                         content_length,
                     }) = decode_result
                     {
-                        self.state = State::ReadingBody(http_headers, content_length);
+                        self.state = State::ReadingBody(Box::new(http_headers), content_length);
                         src.advance(body_start);
                     } else {
                         return Ok(None);
@@ -238,7 +238,7 @@ impl Decoder for OpenSearchDecoder {
                     if let Some(Method::HEAD) = *self.last_outgoing_method.lock().unwrap() {
                         return Ok(Some(vec![Message::from_frame_at_instant(
                             Frame::OpenSearch(OpenSearchFrame::new(
-                                http_headers,
+                                *http_headers,
                                 bytes::Bytes::new(),
                             )),
                             Some(received_at),
@@ -252,7 +252,7 @@ impl Decoder for OpenSearchDecoder {
 
                     let body = src.split_to(content_length).freeze();
                     let mut message = Message::from_frame_at_instant(
-                        Frame::OpenSearch(OpenSearchFrame::new(http_headers, body)),
+                        Frame::OpenSearch(OpenSearchFrame::new(*http_headers, body)),
                         Some(received_at),
                     );
                     if let Some(rx) = self.request_header_rx.as_ref() {
