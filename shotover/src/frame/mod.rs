@@ -108,6 +108,7 @@ impl Frame {
 }
 
 #[derive(PartialEq, Debug, Clone)]
+#[allow(clippy::large_enum_variant)]
 pub enum Frame {
     #[cfg(feature = "cassandra")]
     Cassandra(CassandraFrame),
