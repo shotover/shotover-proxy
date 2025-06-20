@@ -127,23 +127,23 @@ impl Frame {
         bytes: Bytes,
         message_type: MessageType,
         codec_state: CodecState,
-    ) -> Result<Self> {
+    ) -> Result<Box<Self>> {
         match message_type {
             #[cfg(feature = "cassandra")]
-            MessageType::Cassandra => {
-                CassandraFrame::from_bytes(bytes, codec_state.as_cassandra()).map(Frame::Cassandra)
-            }
+            MessageType::Cassandra => CassandraFrame::from_bytes(bytes, codec_state.as_cassandra())
+                .map(|x| Box::new(Frame::Cassandra(x))),
             #[cfg(feature = "valkey")]
             MessageType::Valkey => redis_protocol::resp2::decode::decode_bytes(&bytes)
-                .map(|x| Frame::Valkey(x.unwrap().0))
+                .map(|x| Box::new(Frame::Valkey(x.unwrap().0)))
                 .map_err(|e| anyhow!("{e:?}")),
             #[cfg(feature = "kafka")]
-            MessageType::Kafka => {
-                KafkaFrame::from_bytes(bytes, codec_state.as_kafka()).map(Frame::Kafka)
-            }
-            MessageType::Dummy => Ok(Frame::Dummy),
+            MessageType::Kafka => KafkaFrame::from_bytes(bytes, codec_state.as_kafka())
+                .map(|x| Box::new(Frame::Kafka(x))),
+            MessageType::Dummy => Ok(Box::new(Frame::Dummy)),
             #[cfg(feature = "opensearch")]
-            MessageType::OpenSearch => Ok(Frame::OpenSearch(OpenSearchFrame::from_bytes(&bytes)?)),
+            MessageType::OpenSearch => Ok(Box::new(Frame::OpenSearch(
+                OpenSearchFrame::from_bytes(&bytes)?,
+            ))),
         }
     }
 
