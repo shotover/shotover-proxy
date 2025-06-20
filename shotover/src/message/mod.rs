@@ -135,7 +135,10 @@ impl Message {
     ) -> Self {
         Message {
             codec_state: frame.as_codec_state(),
-            inner: Some(MessageInner::Parsed { bytes, frame }),
+            inner: Some(MessageInner::Parsed {
+                bytes,
+                frame: Box::new(frame),
+            }),
             received_from_source_or_sink_at,
             id: rand::random(),
             request_id: None,
@@ -151,7 +154,9 @@ impl Message {
     ) -> Self {
         Message {
             codec_state: frame.as_codec_state(),
-            inner: Some(MessageInner::Modified { frame }),
+            inner: Some(MessageInner::Modified {
+                frame: Box::new(frame),
+            }),
             received_from_source_or_sink_at,
             id: rand::random(),
             request_id: None,
@@ -163,7 +168,9 @@ impl Message {
     pub fn from_frame_diverged(frame: Frame, diverged_from: &Message) -> Self {
         Message {
             codec_state: frame.as_codec_state(),
-            inner: Some(MessageInner::Modified { frame }),
+            inner: Some(MessageInner::Modified {
+                frame: Box::new(frame),
+            }),
             received_from_source_or_sink_at: diverged_from.received_from_source_or_sink_at,
             id: diverged_from.id(),
             request_id: None,
@@ -214,7 +221,7 @@ impl Message {
 
     /// Same as [`Message::frame`] but consumes the message and returns an owned [`Frame`]
     /// It is useful when the transform generates a request and consumes the response without the involvement of the client.
-    pub fn into_frame(mut self) -> Option<Frame> {
+    pub fn into_frame(mut self) -> Option<Box<Frame>> {
         let (inner, result) = self.inner.take().unwrap().ensure_parsed(self.codec_state);
         if let Err(err) = result {
             // TODO: If we could include a stacktrace in this error it would be really helpful
@@ -311,10 +318,10 @@ impl Message {
         match self.inner.unwrap() {
             MessageInner::RawBytes { bytes, .. } => Encodable::Bytes(bytes),
             MessageInner::Parsed { bytes, .. } => Encodable::Bytes(bytes),
-            MessageInner::Modified {
-                frame: Frame::Dummy,
-            } => Encodable::Bytes(Bytes::new()),
-            MessageInner::Modified { frame } => Encodable::Frame(frame),
+            MessageInner::Modified { frame } => match *frame {
+                Frame::Dummy => Encodable::Bytes(Bytes::new()),
+                frame => Encodable::Frame(frame),
+            },
         }
     }
 
@@ -341,17 +348,19 @@ impl Message {
                 #[cfg(feature = "opensearch")]
                 MessageType::OpenSearch => todo!(),
             },
-            MessageInner::Modified { frame } | MessageInner::Parsed { frame, .. } => match frame {
-                #[cfg(feature = "cassandra")]
-                Frame::Cassandra(frame) => frame.cell_count()?,
-                #[cfg(feature = "valkey")]
-                Frame::Valkey(_) => nonzero!(1u32),
-                #[cfg(feature = "kafka")]
-                Frame::Kafka(_) => todo!(),
-                Frame::Dummy => nonzero!(1u32),
-                #[cfg(feature = "opensearch")]
-                Frame::OpenSearch(_) => todo!(),
-            },
+            MessageInner::Modified { frame } | MessageInner::Parsed { frame, .. } => {
+                match frame.as_ref() {
+                    #[cfg(feature = "cassandra")]
+                    Frame::Cassandra(frame) => frame.cell_count()?,
+                    #[cfg(feature = "valkey")]
+                    Frame::Valkey(_) => nonzero!(1u32),
+                    #[cfg(feature = "kafka")]
+                    Frame::Kafka(_) => todo!(),
+                    Frame::Dummy => nonzero!(1u32),
+                    #[cfg(feature = "opensearch")]
+                    Frame::OpenSearch(_) => todo!(),
+                }
+            }
         })
     }
 
@@ -432,17 +441,19 @@ impl Message {
                 #[cfg(feature = "opensearch")]
                 MessageType::OpenSearch => Err(anyhow!("OpenSearch has no metadata")),
             },
-            MessageInner::Parsed { frame, .. } | MessageInner::Modified { frame } => match frame {
-                #[cfg(feature = "cassandra")]
-                Frame::Cassandra(frame) => Ok(Metadata::Cassandra(frame.metadata())),
-                #[cfg(feature = "kafka")]
-                Frame::Kafka(_) => Ok(Metadata::Kafka),
-                #[cfg(feature = "valkey")]
-                Frame::Valkey(_) => Ok(Metadata::Valkey),
-                Frame::Dummy => Err(anyhow!("dummy has no metadata")),
-                #[cfg(feature = "opensearch")]
-                Frame::OpenSearch(_) => Err(anyhow!("OpenSearch has no metadata")),
-            },
+            MessageInner::Parsed { frame, .. } | MessageInner::Modified { frame } => {
+                match frame.as_ref() {
+                    #[cfg(feature = "cassandra")]
+                    Frame::Cassandra(frame) => Ok(Metadata::Cassandra(frame.metadata())),
+                    #[cfg(feature = "kafka")]
+                    Frame::Kafka(_) => Ok(Metadata::Kafka),
+                    #[cfg(feature = "valkey")]
+                    Frame::Valkey(_) => Ok(Metadata::Valkey),
+                    Frame::Dummy => Err(anyhow!("dummy has no metadata")),
+                    #[cfg(feature = "opensearch")]
+                    Frame::OpenSearch(_) => Err(anyhow!("OpenSearch has no metadata")),
+                }
+            }
         }
     }
 
@@ -452,7 +463,7 @@ impl Message {
     /// For responses, the dummy frame will be dropped when it reaches the Source.
     pub fn replace_with_dummy(&mut self) {
         self.inner = Some(MessageInner::Modified {
-            frame: Frame::Dummy,
+            frame: Box::new(Frame::Dummy),
         });
     }
 
@@ -478,12 +489,12 @@ impl Message {
     }
 
     pub fn is_dummy(&self) -> bool {
-        matches!(
-            self.inner,
-            Some(MessageInner::Modified {
-                frame: Frame::Dummy
-            })
-        )
+        if let Some(MessageInner::Modified { frame }) = &self.inner {
+            if let Frame::Dummy = frame.as_ref() {
+                return true;
+            }
+        }
+        false
     }
 
     /// Set this `Message` to a backpressure response
@@ -529,7 +540,7 @@ impl Message {
             }
             Some(MessageInner::RawBytes { .. }) => None,
             Some(MessageInner::Parsed { frame, .. } | MessageInner::Modified { frame }) => {
-                match frame {
+                match frame.as_ref() {
                     #[cfg(feature = "cassandra")]
                     Frame::Cassandra(cassandra) => Some(cassandra.stream_id),
                     #[cfg(feature = "valkey")]
@@ -571,10 +582,10 @@ enum MessageInner {
     },
     Parsed {
         bytes: Bytes,
-        frame: Frame,
+        frame: Box<Frame>,
     },
     Modified {
-        frame: Frame,
+        frame: Box<Frame>,
     },
 }
 
