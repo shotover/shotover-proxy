@@ -320,7 +320,7 @@ impl Message {
             MessageInner::Parsed { bytes, .. } => Encodable::Bytes(bytes),
             MessageInner::Modified { frame } => match frame.as_ref() {
                 Frame::Dummy => Encodable::Bytes(Bytes::new()),
-                 _ => Encodable::Frame(frame),
+                _ => Encodable::Frame(frame),
             },
         }
     }
