@@ -318,9 +318,9 @@ impl Message {
         match self.inner.unwrap() {
             MessageInner::RawBytes { bytes, .. } => Encodable::Bytes(bytes),
             MessageInner::Parsed { bytes, .. } => Encodable::Bytes(bytes),
-            MessageInner::Modified { frame } => match *frame {
+            MessageInner::Modified { frame } => match frame.as_ref() {
                 Frame::Dummy => Encodable::Bytes(Bytes::new()),
-                frame => Encodable::Frame(Box::new(frame)),
+                 _ => Encodable::Frame(frame),
             },
         }
     }
