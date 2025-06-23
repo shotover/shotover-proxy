@@ -8,7 +8,7 @@ use bytes::Bytes;
 #[cfg(feature = "cassandra")]
 pub use cassandra::{CassandraFrame, CassandraOperation, CassandraResult};
 #[cfg(feature = "cassandra")]
-use cassandra_protocol::{compression::Compression, frame};
+use cassandra_protocol::compression::Compression;
 #[cfg(feature = "kafka")]
 use kafka::KafkaFrame;
 #[cfg(feature = "opensearch")]
@@ -131,24 +131,25 @@ impl Frame {
     ) -> Result<Box<Self>> {
         match message_type {
             #[cfg(feature = "cassandra")]
-            MessageType::Cassandra => 
-                CassandraFrame::from_bytes(bytes, codec_state.as_cassandra()).map(|frame| Box::new(Frame::Cassandra(frame))),
-            
+            MessageType::Cassandra => CassandraFrame::from_bytes(bytes, codec_state.as_cassandra())
+                .map(|frame| Box::new(Frame::Cassandra(frame))),
+
             #[cfg(feature = "valkey")]
             MessageType::Valkey => redis_protocol::resp2::decode::decode_bytes(&bytes)
                 .map(|x| Box::new(Frame::Valkey(x.unwrap().0)))
                 .map_err(|e| anyhow!("{e:?}")),
-            
-            
+
             #[cfg(feature = "kafka")]
-            MessageType::Kafka => 
-                KafkaFrame::from_bytes(bytes, codec_state.as_kafka()).map(Frame::Kafka).map(Box::new),
-            
+            MessageType::Kafka => KafkaFrame::from_bytes(bytes, codec_state.as_kafka())
+                .map(Frame::Kafka)
+                .map(Box::new),
+
             MessageType::Dummy => Ok(Box::new(Frame::Dummy)),
-            
-            
+
             #[cfg(feature = "opensearch")]
-            MessageType::OpenSearch => Ok(Box::new(Frame::OpenSearch(OpenSearchFrame::from_bytes(&bytes)?))),
+            MessageType::OpenSearch => Ok(Box::new(Frame::OpenSearch(
+                OpenSearchFrame::from_bytes(&bytes)?,
+            ))),
         }
     }
 

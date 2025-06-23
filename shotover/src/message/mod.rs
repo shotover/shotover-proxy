@@ -135,7 +135,10 @@ impl Message {
     ) -> Self {
         Message {
             codec_state: frame.as_codec_state(),
-            inner: Some(MessageInner::Parsed { bytes, frame: Box:: new(frame), }),
+            inner: Some(MessageInner::Parsed {
+                bytes,
+                frame: Box::new(frame),
+            }),
             received_from_source_or_sink_at,
             id: rand::random(),
             request_id: None,
@@ -151,7 +154,9 @@ impl Message {
     ) -> Self {
         Message {
             codec_state: frame.as_codec_state(),
-            inner: Some(MessageInner::Modified { frame: Box::new(frame), }),
+            inner: Some(MessageInner::Modified {
+                frame: Box::new(frame),
+            }),
             received_from_source_or_sink_at,
             id: rand::random(),
             request_id: None,
@@ -163,7 +168,9 @@ impl Message {
     pub fn from_frame_diverged(frame: Frame, diverged_from: &Message) -> Self {
         Message {
             codec_state: frame.as_codec_state(),
-            inner: Some(MessageInner::Modified { frame: Box::new(frame), }),
+            inner: Some(MessageInner::Modified {
+                frame: Box::new(frame),
+            }),
             received_from_source_or_sink_at: diverged_from.received_from_source_or_sink_at,
             id: diverged_from.id(),
             request_id: None,
@@ -311,11 +318,11 @@ impl Message {
         match self.inner.unwrap() {
             MessageInner::RawBytes { bytes, .. } => Encodable::Bytes(bytes),
             MessageInner::Parsed { bytes, .. } => Encodable::Bytes(bytes),
-            MessageInner::Modified {frame} => match *frame{
+            MessageInner::Modified { frame } => match *frame {
                 Frame::Dummy => Encodable::Bytes(Bytes::new()),
                 ref inner_frame => Encodable::Frame(Box::new(inner_frame.clone())),
-            // MessageInner::Modified{frame } => Encodable::Frame(Box::new(inner_frame.clone())),
-            }
+                // MessageInner::Modified{frame } => Encodable::Frame(Box::new(inner_frame.clone())),
+            },
         }
     }
 
@@ -342,21 +349,22 @@ impl Message {
                 #[cfg(feature = "opensearch")]
                 MessageType::OpenSearch => todo!(),
             },
-            MessageInner::Modified { frame } | MessageInner::Parsed { frame, .. } => match frame.as_ref() {
+            MessageInner::Modified { frame } | MessageInner::Parsed { frame, .. } => {
+                match frame.as_ref() {
+                    #[cfg(feature = "cassandra")]
+                    Frame::Cassandra(frame) => frame.cell_count()?,
 
-                #[cfg(feature = "cassandra")]
-                Frame::Cassandra(frame) => frame.cell_count()?,
+                    #[cfg(feature = "valkey")]
+                    Frame::Valkey(_) => nonzero!(1u32),
 
-                #[cfg(feature = "valkey")]
-                Frame::Valkey(_) => nonzero!(1u32),
+                    #[cfg(feature = "kafka")]
+                    Frame::Kafka(_) => todo!(),
+                    Frame::Dummy => nonzero!(1u32),
 
-                #[cfg(feature = "kafka")]
-                Frame::Kafka(_) => todo!(),
-                Frame::Dummy => nonzero!(1u32),
-
-                #[cfg(feature = "opensearch")]
-                Frame::OpenSearch(_) => todo!(),
-            },
+                    #[cfg(feature = "opensearch")]
+                    Frame::OpenSearch(_) => todo!(),
+                }
+            }
         })
     }
 
@@ -438,21 +446,22 @@ impl Message {
                 MessageType::OpenSearch => Err(anyhow!("OpenSearch has no metadata")),
             },
 
-            MessageInner::Parsed { frame, .. } | MessageInner::Modified { frame } => match frame.as_ref() {
+            MessageInner::Parsed { frame, .. } | MessageInner::Modified { frame } => {
+                match frame.as_ref() {
+                    #[cfg(feature = "cassandra")]
+                    Frame::Cassandra(frame) => Ok(Metadata::Cassandra(frame.metadata())),
 
-                #[cfg(feature = "cassandra")]
-                Frame::Cassandra(frame) => Ok(Metadata::Cassandra(frame.metadata())),
-                
-                #[cfg(feature = "kafka")]
-                Frame::Kafka(_) => Ok(Metadata::Kafka),
-                
-                #[cfg(feature = "valkey")]
-                Frame::Valkey(_) => Ok(Metadata::Valkey),
-                Frame::Dummy => Err(anyhow!("dummy has no metadata")),
-                
-                #[cfg(feature = "opensearch")]
-                Frame::OpenSearch(_) => Err(anyhow!("OpenSearch has no metadata")),
-            },
+                    #[cfg(feature = "kafka")]
+                    Frame::Kafka(_) => Ok(Metadata::Kafka),
+
+                    #[cfg(feature = "valkey")]
+                    Frame::Valkey(_) => Ok(Metadata::Valkey),
+                    Frame::Dummy => Err(anyhow!("dummy has no metadata")),
+
+                    #[cfg(feature = "opensearch")]
+                    Frame::OpenSearch(_) => Err(anyhow!("OpenSearch has no metadata")),
+                }
+            }
         }
     }
 
@@ -488,8 +497,8 @@ impl Message {
     }
 
     pub fn is_dummy(&self) -> bool {
-        if let Some(MessageInner::Modified{frame}) = &self.inner{
-            if let Frame::Dummy = frame.as_ref(){
+        if let Some(MessageInner::Modified { frame }) = &self.inner {
+            if let Frame::Dummy = frame.as_ref() {
                 return true;
             }
         }
@@ -570,7 +579,6 @@ impl Message {
     }
 }
 
-
 /// There are 3 levels of processing the message can be in.
 /// RawBytes -> Parsed -> Modified
 /// Where possible transforms should avoid moving to further stages to improve performance but this is an implementation detail hidden from them
@@ -596,7 +604,7 @@ impl MessageInner {
                 bytes,
                 message_type,
             } => match Frame::from_bytes(bytes.clone(), message_type, codec_state) {
-                Ok(frame) => (MessageInner::Parsed {bytes, frame}, Ok(())),
+                Ok(frame) => (MessageInner::Parsed { bytes, frame }, Ok(())),
                 Err(err) => (
                     MessageInner::RawBytes {
                         bytes,
@@ -639,4 +647,3 @@ pub enum QueryType {
     SchemaChange,
     PubSubMessage,
 }
-
