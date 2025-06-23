@@ -75,7 +75,7 @@ async fn find_new_brokers(nodes: &mut Vec<Node>, rng: &mut SmallRng) -> Result<(
     connection.send(vec![request])?;
 
     let response = connection.recv().await?.remove(0);
-    match response.into_frame() {
+    match response.into_frame().map(|x| *x) {
         Some(Frame::Kafka(KafkaFrame::Response {
             body: ResponseBody::Metadata(metadata),
             ..
@@ -141,7 +141,7 @@ async fn create_delegation_token_for_user(
     ))])?;
 
     let response = connection.recv().await?.pop().unwrap();
-    match response.into_frame() {
+    match response.into_frame().map(|x| *x) {
         Some(Frame::Kafka(KafkaFrame::Response {
             body: ResponseBody::CreateDelegationToken(response),
             ..
