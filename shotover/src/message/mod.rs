@@ -320,7 +320,7 @@ impl Message {
             MessageInner::Parsed { bytes, .. } => Encodable::Bytes(bytes),
             MessageInner::Modified { frame } => match *frame {
                 Frame::Dummy => Encodable::Bytes(Bytes::new()),
-                frame => Encodable::Frame(Box::new(frame)),
+                frame => Encodable::Frame(frame),
             },
         }
     }
@@ -623,11 +623,12 @@ impl MessageInner {
 }
 
 #[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum Encodable {
     /// The raw bytes the protocol should send
     Bytes(Bytes),
     /// The Frame that should be processed into bytes and then sent
-    Frame(Box<Frame>),
+    Frame(Frame),
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]

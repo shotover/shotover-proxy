@@ -38,7 +38,7 @@ impl TransformConfig for DebugReturnerConfig {
 #[serde(deny_unknown_fields)]
 pub enum Response {
     #[serde(skip)]
-    Message(Box<Message>),
+    Message(Message),
     #[cfg(feature = "valkey")]
     Valkey(String),
     Fail,
@@ -86,7 +86,7 @@ impl Transform for DebugReturner {
                 Response::Message(message) => {
                     let mut message = message.clone();
                     message.set_request_id(request.id());
-                    Ok(*message)
+                    Ok(message)
                 }
                 #[cfg(feature = "valkey")]
                 Response::Valkey(string) => {

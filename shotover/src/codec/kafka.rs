@@ -280,7 +280,7 @@ impl Encoder<Messages> for KafkaEncoder {
                 }
                 Encodable::Frame(frame) => {
                     if message_contains_raw_sasl {
-                        match *frame {
+                        match frame {
                             Frame::Kafka(KafkaFrame::Request {
                                 body: RequestKind::SaslAuthenticate(body),
                                 ..

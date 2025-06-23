@@ -1023,7 +1023,7 @@ impl CassandraEncoder {
                     operation: CassandraOperation::Startup(startup),
                     version,
                     ..
-                }) = &*frame
+                }) = &frame
                 {
                     set_startup_state(&mut self.compression, &mut self.version, *version, startup);
                 };
@@ -1031,7 +1031,7 @@ impl CassandraEncoder {
                 if let Frame::Cassandra(CassandraFrame {
                     operation: CassandraOperation::Ready(_) | CassandraOperation::Authenticate(_),
                     ..
-                }) = &*frame
+                }) = &frame
                 {
                     self.handshake_complete.store(true, Ordering::Relaxed);
                 };

@@ -258,7 +258,7 @@ impl MessageRewriter {
         for message_or_id in table.collected_messages.iter_mut() {
             if let MessageOrId::Id(id) = message_or_id {
                 if let Some(i) = responses.iter().position(|x| x.request_id() == Some(*id)) {
-                    *message_or_id = MessageOrId::Message(Box::new(responses.swap_remove(i)));
+                    *message_or_id = MessageOrId::Message(responses.swap_remove(i));
                 }
             }
         }
@@ -275,7 +275,7 @@ impl MessageRewriter {
                 .collected_messages
                 .drain(..)
                 .map(|x| match x {
-                    MessageOrId::Message(m) => *m,
+                    MessageOrId::Message(m) => m,
                     MessageOrId::Id(_) => unreachable!(),
                 })
                 .collect();
@@ -738,7 +738,7 @@ pub struct TableToRewrite {
 
 #[derive(Clone, Debug)]
 pub enum MessageOrId {
-    Message(Box<Message>),
+    Message(Message),
     Id(MessageId),
 }
 
