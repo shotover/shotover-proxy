@@ -585,7 +585,7 @@ impl MessageInner {
                 bytes,
                 message_type,
             } => match Frame::from_bytes(bytes.clone(), message_type, codec_state) {
-                Ok(frame) => (MessageInner::Parsed { bytes, frame }, Ok(())),
+                Ok(frame) => (MessageInner::Parsed { bytes, frame: *frame }, Ok(())),
                 Err(err) => (
                     MessageInner::RawBytes {
                         bytes,
