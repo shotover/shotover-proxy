@@ -198,6 +198,7 @@ impl OpenSearchDecoder {
 }
 
 #[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
 enum State {
     ParsingResponse,
     ReadingBody(HttpHead, usize),

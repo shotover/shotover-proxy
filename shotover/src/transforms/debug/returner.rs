@@ -98,7 +98,7 @@ impl Transform for DebugReturner {
                     message.set_request_id(request.id());
                     Ok(message)
                 }
-                Response::Fail => Err(anyhow!("Intentional Fail")),
+                Response::Fail => Err(anyhow!("Intentional Fail!")),
             })
             .collect()
     }
