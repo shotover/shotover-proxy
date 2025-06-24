@@ -16,7 +16,7 @@ subprocess.workspace = true
 tokio-bin-process.workspace = true
 cdrs-tokio.workspace = true
 cassandra-protocol.workspace = true
-cassandra-cpp = { version = "3.0.0", default-features = false, features = [
+cassandra-cpp = { version = "3.0.2", default-features = false, features = [
     "log",
 ], optional = true }
 scylla.workspace = true
@@ -32,13 +32,17 @@ tracing-subscriber.workspace = true
 anyhow.workspace = true
 rcgen.workspace = true
 rdkafka = { version = "0.37", features = ["cmake-build"], optional = true }
-docker-compose-runner = "0.3.0"
+docker-compose-runner = "0.3.1"
 j4rs = "0.22.0"
-futures-util = "0.3.28"
-http = "1.1.0"
-rustls = { version = "0.23.18", default-features = false, features = ["aws_lc_rs"] }
-rustls-pki-types = "1.0.1"
-rustls-pemfile = "2.0.0"
-tokio-tungstenite = { version = "0.26", features = ["rustls-tls-native-roots"] }
+futures-util = "0.3.31"
+http = "1.3.1"
+rustls = { version = "0.23.28", default-features = false, features = [
+    "aws_lc_rs",
+] }
+rustls-pki-types = "1.12.0"
+rustls-pemfile = "2.2.0"
+tokio-tungstenite = { version = "0.27.0", features = [
+    "rustls-tls-native-roots",
+] }
 pretty_assertions.workspace = true
 serde.workspace = true

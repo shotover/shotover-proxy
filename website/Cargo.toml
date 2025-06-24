@@ -9,6 +9,6 @@ publish = false
 subprocess.workspace = true
 anyhow.workspace = true
 askama = { version = "0.14", default-features = false, features = ["std", "derive"] }
-semver = "1.0.23"
+semver = "1.0.26"
 devserver_lib = { version = "0.4.2", default-features = false }
 clap.workspace = true
