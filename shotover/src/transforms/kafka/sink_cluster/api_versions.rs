@@ -68,10 +68,14 @@ pub(crate) fn versions_supported_by_key(api_key: i16) -> Option<VersionRange> {
 fn check_api_version_backlog() {
     use std::fmt::Write;
     const EXPECTED_ERROR_MESSAGE: &str = r#"
+Fetch kafka-protocol=0..17 shotover=0..16
+ListOffsets kafka-protocol=0..9 shotover=0..8
 LeaderAndIsr kafka-protocol=0..7 shotover=NotSupported
 StopReplica kafka-protocol=0..4 shotover=NotSupported
 UpdateMetadata kafka-protocol=0..8 shotover=NotSupported
 ControlledShutdown kafka-protocol=0..3 shotover=NotSupported
+FindCoordinator kafka-protocol=0..6 shotover=0..5
+ApiVersions kafka-protocol=0..4 shotover=0..3
 WriteTxnMarkers kafka-protocol=0..1 shotover=NotSupported
 DescribeAcls kafka-protocol=0..3 shotover=NotSupported
 DeleteAcls kafka-protocol=0..3 shotover=NotSupported
@@ -85,14 +89,14 @@ DescribeClientQuotas kafka-protocol=0..1 shotover=NotSupported
 AlterClientQuotas kafka-protocol=0..1 shotover=NotSupported
 DescribeUserScramCredentials kafka-protocol=0..0 shotover=NotSupported
 AlterUserScramCredentials kafka-protocol=0..0 shotover=NotSupported
-Vote kafka-protocol=0..0 shotover=NotSupported
-BeginQuorumEpoch kafka-protocol=0..0 shotover=NotSupported
-EndQuorumEpoch kafka-protocol=0..0 shotover=NotSupported
-DescribeQuorum kafka-protocol=0..1 shotover=NotSupported
+Vote kafka-protocol=0..1 shotover=NotSupported
+BeginQuorumEpoch kafka-protocol=0..1 shotover=NotSupported
+EndQuorumEpoch kafka-protocol=0..1 shotover=NotSupported
+DescribeQuorum kafka-protocol=0..2 shotover=NotSupported
 UpdateFeatures kafka-protocol=0..1 shotover=NotSupported
 Envelope kafka-protocol=0..0 shotover=NotSupported
-FetchSnapshot kafka-protocol=0..0 shotover=NotSupported
-BrokerRegistration kafka-protocol=0..3 shotover=NotSupported
+FetchSnapshot kafka-protocol=0..1 shotover=NotSupported
+BrokerRegistration kafka-protocol=0..4 shotover=NotSupported
 BrokerHeartbeat kafka-protocol=0..1 shotover=NotSupported
 UnregisterBroker kafka-protocol=0..0 shotover=NotSupported
 AllocateProducerIds kafka-protocol=0..0 shotover=NotSupported
