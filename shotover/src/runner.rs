@@ -46,9 +46,9 @@ struct ConfigOpts {
     #[arg(long, value_enum, default_value = "human")]
     pub log_format: LogFormat,
 
-    //hot reloading functionality
+    ///Enable Hot reloading functionality
     #[clap(long)]
-    pub hotreload: bool, //added a new boolean flag which can be triggered using '--hotreload'
+    pub hotreload: bool,
 }
 
 #[derive(clap::ValueEnum, Clone, Copy)]
@@ -118,14 +118,6 @@ impl Shotover {
         let tracing = TracingState::new(config.main_log_level.as_str(), params.log_format)?;
         let runtime = Shotover::create_runtime(params.stack_size, params.core_threads);
 
-        if params.hotreload {
-            tracing::info!(
-                "Hot reloading is Enabled - Shotover will support hot reload operations"
-            );
-        } else {
-            tracing::debug!("Hot reloading is disbaled");
-        }
-
         Shotover::start_observability_interface(&runtime, &config, &tracing)?;
 
         Ok(Shotover {
@@ -165,9 +157,9 @@ impl Shotover {
 
         if self.hotreload_enabled {
             info!("Starting Shotover with hotreload enabled");
-            //hot reload
-            //unix sockets
-            //socket handoff
+            //TODO: implement hot reload functionality here
+            //TODO: Setup unix sockets for hot reload
+            //TODO: socket handoff between instances
         }
 
         // We need to block on this part to ensure that we immediately register these signals.

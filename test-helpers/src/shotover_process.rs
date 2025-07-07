@@ -69,9 +69,10 @@ impl ShotoverProcessBuilder {
         self
     }
 
-    pub fn with_args(mut self, args: &[&str]) -> Self {
-        self.additional_args
-            .extend(args.iter().map(|s| s.to_string()));
+    pub fn with_hotreload(mut self, enabled: bool) -> Self {
+        if enabled {
+            self.additional_args.push("--hotreload".to_string());
+        }
         self
     }
 
