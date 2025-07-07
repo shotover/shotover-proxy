@@ -45,6 +45,10 @@ struct ConfigOpts {
 
     #[arg(long, value_enum, default_value = "human")]
     pub log_format: LogFormat,
+
+    ///Enable Hot reloading functionality
+    #[clap(long)]
+    pub hotreload: bool,
 }
 
 #[derive(clap::ValueEnum, Clone, Copy)]
@@ -61,6 +65,7 @@ impl Default for ConfigOpts {
             core_threads: None,
             stack_size: 2097152,
             log_format: LogFormat::Human,
+            hotreload: false,
         }
     }
 }
@@ -70,6 +75,7 @@ pub struct Shotover {
     topology: Topology,
     config: Config,
     tracing: TracingState,
+    hotreload_enabled: bool,
 }
 
 impl Shotover {
@@ -119,6 +125,7 @@ impl Shotover {
             topology,
             config,
             tracing,
+            hotreload_enabled: params.hotreload,
         })
     }
 
@@ -147,6 +154,13 @@ impl Shotover {
     /// As such this method never returns.
     pub fn run_block(self) -> ! {
         let (trigger_shutdown_tx, trigger_shutdown_rx) = watch::channel(false);
+
+        if self.hotreload_enabled {
+            info!("Starting Shotover with hotreload enabled");
+            //TODO: implement hot reload functionality here
+            //TODO: Setup unix sockets for hot reload
+            //TODO: socket handoff between instances
+        }
 
         // We need to block on this part to ensure that we immediately register these signals.
         // Otherwise if we included signal creation in the below spawned task we would be at the mercy of whenever tokio decides to start running the task.

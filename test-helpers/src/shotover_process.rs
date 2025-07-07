@@ -15,6 +15,7 @@ pub struct ShotoverProcessBuilder {
     cores: Option<String>,
     profile: Option<String>,
     event_matchers: Vec<EventMatcher>,
+    additional_args: Vec<String>,
 }
 
 impl ShotoverProcessBuilder {
@@ -30,6 +31,7 @@ impl ShotoverProcessBuilder {
             cores: None,
             profile: None,
             event_matchers: vec![],
+            additional_args: vec![],
         }
     }
 
@@ -63,6 +65,13 @@ impl ShotoverProcessBuilder {
     pub fn with_profile(mut self, profile: Option<&str>) -> Self {
         if let Some(profile) = profile {
             self.profile = Some(profile.to_string());
+        }
+        self
+    }
+
+    pub fn with_hotreload(mut self, enabled: bool) -> Self {
+        if enabled {
+            self.additional_args.push("--hotreload".to_string());
         }
         self
     }
@@ -116,6 +125,8 @@ impl ShotoverProcessBuilder {
             .clone()
             .unwrap_or_else(|| "config/config.yaml".to_owned());
         args.extend(["-c".to_owned(), config_path]);
+
+        args.extend(self.additional_args);
 
         let log_name = self.log_name.unwrap_or_else(|| "shotover".to_owned());
 
