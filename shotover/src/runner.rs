@@ -45,6 +45,10 @@ struct ConfigOpts {
 
     #[arg(long, value_enum, default_value = "human")]
     pub log_format: LogFormat,
+
+    //hot reloading functionality
+    #[clap(long)]
+    pub hotreload: bool, //added a new boolean flag which can be triggered using '--hotreload'
 }
 
 #[derive(clap::ValueEnum, Clone, Copy)]
@@ -61,6 +65,7 @@ impl Default for ConfigOpts {
             core_threads: None,
             stack_size: 2097152,
             log_format: LogFormat::Human,
+            hotreload: false,
         }
     }
 }
@@ -70,6 +75,7 @@ pub struct Shotover {
     topology: Topology,
     config: Config,
     tracing: TracingState,
+    hotreload_enabled: bool,
 }
 
 impl Shotover {
@@ -112,6 +118,14 @@ impl Shotover {
         let tracing = TracingState::new(config.main_log_level.as_str(), params.log_format)?;
         let runtime = Shotover::create_runtime(params.stack_size, params.core_threads);
 
+        if params.hotreload {
+            tracing::info!(
+                "Hot reloading is Enabled - Shotover will support hot reload operations"
+            );
+        } else {
+            tracing::debug!("Hot reloading is disbaled");
+        }
+
         Shotover::start_observability_interface(&runtime, &config, &tracing)?;
 
         Ok(Shotover {
@@ -119,6 +133,7 @@ impl Shotover {
             topology,
             config,
             tracing,
+            hotreload_enabled: params.hotreload,
         })
     }
 
@@ -147,6 +162,13 @@ impl Shotover {
     /// As such this method never returns.
     pub fn run_block(self) -> ! {
         let (trigger_shutdown_tx, trigger_shutdown_rx) = watch::channel(false);
+
+        if self.hotreload_enabled {
+            info!("Starting Shotover with hotreload enabled");
+            //hot reload
+            //unix sockets
+            //socket handoff
+        }
 
         // We need to block on this part to ensure that we immediately register these signals.
         // Otherwise if we included signal creation in the below spawned task we would be at the mercy of whenever tokio decides to start running the task.
