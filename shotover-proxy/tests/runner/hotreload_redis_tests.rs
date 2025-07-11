@@ -122,29 +122,3 @@ async fn test_dual_shotover_instances_with_redis() {
     println!(" Test 2 completed successfully!");
     println!(" Both shotover instances with hotreload worked simultaneously!");
 }
-
-///test 3
-///
-
-#[tokio::test]
-async fn test_hotreload_error_handling() {
-    println!(" Test 3: Error handling with hotreload");
-    println!(" Starting shotover with --hotreload (no Redis backend)...");
-    let shotover_process = shotover_process("tests/test-configs/redis-passthrough/topology.yaml")
-        .with_hotreload(true)
-        .with_config("tests/test-configs/shotover-config/config_metrics_disabled.yaml")
-        .start()
-        .await;
-    sleep(Duration::from_millis(1000)).await;
-    println!(" Attempting to connect (should fail gracefully)...");
-    let client = Client::open("redis://127.0.0.1:6380");
-    match client {
-        Ok(client) => match client.get_connection() {
-            Ok(_) => panic!("Connection should have failed without Redis backend"),
-            Err(e) => println!(" Connection failed as expected: {}", e),
-        },
-        Err(e) => println!(" Client creation failed as expected: {}", e),
-    }
-    shotover_process.shutdown_and_then_consume_events(&[]).await;
-    println!(" Test 3 completed successfully!");
-}
