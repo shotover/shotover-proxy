@@ -1,6 +1,6 @@
 use crate::runner::docker_helpers::RedisContainer;
 use crate::shotover_process;
-use redis::{Client, Commands, Connection};
+use redis::{Client, Commands};
 use std::time::Duration;
 use tokio::time::sleep;
 
@@ -9,7 +9,7 @@ async fn test_hotreload_basic_redis_connection() {
     println!(" Test 1: Basic Redis connection with hotreload");
     println!(" Starting Redis container...");
 
-    let redis_container = RedisContainer::start(6378)
+    let _redis_container = RedisContainer::start(6378)
         .await
         .expect("Failed to start Redis container");
     println!(" Starting shotover with --hotreload...");
@@ -43,7 +43,7 @@ async fn test_hotreload_basic_redis_connection() {
     println!(" Cleaning up...");
     shotover_process.shutdown_and_then_consume_events(&[]).await;
 
-    println!(" Test 1 completed successfully!");
+    println!(" Test 1 completed successfully");
 }
 
 #[tokio::test]
@@ -119,6 +119,6 @@ async fn test_dual_shotover_instances_with_redis() {
     println!(" Cleaning up...");
     shotover_a.shutdown_and_then_consume_events(&[]).await;
     shotover_b.shutdown_and_then_consume_events(&[]).await;
-    println!(" Test 2 completed successfully!");
-    println!(" Both shotover instances with hotreload worked simultaneously!");
+    println!(" Test 2 completed successfully");
+    println!(" Both shotover instances ran in parallel with hotreload enabled");
 }

@@ -51,7 +51,7 @@ impl RedisContainer {
 
         for attempt in 1..=10 {
             let output = Command::new("docker")
-                .args(&["exec", &self.container_name, "redis-cli", "ping"])
+                .args(["exec", &self.container_name, "redis-cli", "ping"])
                 .output();
 
             match output {
@@ -80,10 +80,10 @@ impl RedisContainer {
         println!(" Cleaning up Redis container '{}'", self.container_name);
 
         let _ = Command::new("docker")
-            .args(&["stop", &self.container_name])
+            .args(["stop", &self.container_name])
             .output();
         let _ = Command::new("docker")
-            .args(&["rm", &self.container_name])
+            .args(["rm", &self.container_name])
             .output();
 
         println!(" Redis container '{}' cleaned up", self.container_name);
