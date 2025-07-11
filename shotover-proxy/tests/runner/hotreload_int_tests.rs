@@ -1,19 +1,15 @@
 use crate::shotover_process;
 use redis::{Client, Commands};
-use std::time::Duration;
 use test_helpers::docker_compose::docker_compose;
-use tokio::time::sleep;
 
 #[tokio::test]
 async fn test_hotreload_basic_redis_connection() {
-    let _compose = docker_compose("tests/transforms/docker-compose-moto.yaml");
-    sleep(Duration::from_millis(2000)).await;
-    let shotover_process = shotover_process("tests/test-configs/redis-passthrough/topology.yaml")
+    let _compose = docker_compose("tests/test-configs/hotreload/docker-compose.yaml");
+    let shotover_process = shotover_process("tests/test-configs/hotreload/topology.yaml")
         .with_hotreload(true)
         .with_config("tests/test-configs/shotover-config/config_metrics_disabled.yaml")
         .start()
         .await;
-    sleep(Duration::from_millis(1000)).await;
     let client = Client::open("redis://127.0.0.1:6380").expect("Failed to create Redis client");
     let mut con = client
         .get_connection()
@@ -25,16 +21,15 @@ async fn test_hotreload_basic_redis_connection() {
     let result: String = con.get("test_key").expect("Failed to GET key");
     assert_eq!(result, "test_value");
     let pong: String = redis::cmd("PING").query(&mut con).expect("Failed to PING");
-
     assert_eq!(pong, "PONG");
+
     shotover_process.shutdown_and_then_consume_events(&[]).await;
 }
 
 #[tokio::test]
 async fn test_dual_shotover_instances_with_redis() {
-    let _compose = docker_compose("tests/transforms/docker-compose-moto.yaml");
-    sleep(Duration::from_millis(2000)).await;
-    let shotover_a = shotover_process("tests/test-configs/redis-passthrough/topology.yaml")
+    let _compose = docker_compose("tests/test-configs/hotreload/docker-compose.yaml");
+    let shotover_a = shotover_process("tests/test-configs/hotreload/topology.yaml")
         .with_hotreload(true)
         .with_config("tests/test-configs/shotover-config/config_metrics_disabled.yaml")
         .start()
@@ -47,12 +42,11 @@ async fn test_dual_shotover_instances_with_redis() {
     let _: () = con_a
         .set("key_from_a", "value_from_a")
         .expect("Failed to SET on instance A");
-    let shotover_b =
-        shotover_process("tests/test-configs/redis-passthrough-alt-port/topology.yaml")
-            .with_hotreload(true)
-            .with_config("tests/test-configs/shotover-config/config_metrics_disabled.yaml")
-            .start()
-            .await;
+    let shotover_b = shotover_process("tests/test-configs/hotreload/topology-alt.yaml")
+        .with_hotreload(true)
+        .with_config("tests/test-configs/shotover-config/config_metrics_disabled.yaml")
+        .start()
+        .await;
     let client_b = Client::open("redis://127.0.0.1:6381")
         .expect("Failed to create Redis client for instance B");
     let mut con_b = client_b
