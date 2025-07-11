@@ -9,7 +9,7 @@ async fn test_hotreload_basic_redis_connection() {
     println!(" Test 1: Basic Redis connection with hotreload");
     println!(" Starting Redis container...");
 
-    let redis_container = RedisContainer::start(6379)
+    let redis_container = RedisContainer::start(6378)
         .await
         .expect("Failed to start Redis container");
     println!(" Starting shotover with --hotreload...");
@@ -21,7 +21,7 @@ async fn test_hotreload_basic_redis_connection() {
     sleep(Duration::from_millis(1000)).await;
 
     println!(" Connecting to Redis through shotover...");
-    let client = Client::open("redis://127.0.0.1:6380").expect("Failed to create Redis client");
+    let client = Client::open("redis://127.0.0.1:6381").expect("Failed to create Redis client");
     let mut con = client
         .get_connection()
         .expect("Failed to connect to Redis through shotover");
@@ -57,7 +57,7 @@ async fn test_dual_shotover_instances_with_redis() {
         .expect("Failed to start Redis container");
 
     println!(" Starting shotover instance A with --hotreload...");
-    let shotover_a = shotover_process("tests/test-configs/redis-passthrough/topology.yaml")
+    let shotover_a = shotover_process("tests/test-configs/redis-passthrough-dual/topology.yaml")
         .with_hotreload(true)
         .with_config("tests/test-configs/shotover-config/config_metrics_disabled.yaml")
         .start()

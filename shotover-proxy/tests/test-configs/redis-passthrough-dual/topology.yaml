@@ -1,11 +1,11 @@
 sources:
 - Valkey:
     name: "redis-source"
-    listen_addr: "127.0.0.1:6381" 
+    listen_addr: "127.0.0.1:6380" 
     chain:
       - QueryCounter:
           name: "redis-query-counter"
       - ValkeySinkSingle:
-          remote_address: "127.0.0.1:6378" 
+          remote_address: "127.0.0.1:6379" 
           connect_timeout_ms: 5000
 
