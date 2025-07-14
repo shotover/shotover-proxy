@@ -1,11 +1,10 @@
 sources:
 - Valkey:
-    name: "Valkey-source-alt"
+    name: "valkey-source-alt"
     listen_addr: "127.0.0.1:6381" 
     chain:
       - QueryCounter:
-          name: "Valkey-query-counter-alt"
+          name: "valkey-query-counter-alt"
       - ValkeySinkSingle:
           remote_address: "127.0.0.1:6379" 
           connect_timeout_ms: 5000
-

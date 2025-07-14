@@ -1,11 +1,10 @@
 sources:
 - Valkey:
-    name: "Valkey-source"
+    name: "valkey-source"
     listen_addr: "127.0.0.1:6380" 
     chain:
       - QueryCounter:
-          name: "Valkey-query-counter"
+          name: "valkey-query-counter"
       - ValkeySinkSingle:
           remote_address: "127.0.0.1:6379" 
           connect_timeout_ms: 5000
-
