@@ -3,14 +3,14 @@ use redis::{Client, Commands};
 use test_helpers::docker_compose::docker_compose;
 
 #[tokio::test]
-async fn test_hotreload_basic_redis_connection() {
+async fn test_hotreload_basic_valkey_connection() {
     let _compose = docker_compose("tests/test-configs/hotreload/docker-compose.yaml");
     let shotover_process = shotover_process("tests/test-configs/hotreload/topology.yaml")
         .with_hotreload(true)
         .with_config("tests/test-configs/shotover-config/config_metrics_disabled.yaml")
         .start()
         .await;
-    let client = Client::open("redis://127.0.0.1:6380").unwrap();
+    let client = Client::open("valkey://127.0.0.1:6380").unwrap();
     let mut con = client.get_connection().unwrap();
 
     let _: () = con.set("test_key", "test_value").unwrap();
@@ -23,14 +23,14 @@ async fn test_hotreload_basic_redis_connection() {
 }
 
 #[tokio::test]
-async fn test_dual_shotover_instances_with_redis() {
+async fn test_dual_shotover_instances_with_valkey() {
     let _compose = docker_compose("tests/test-configs/hotreload/docker-compose.yaml");
     let shotover_a = shotover_process("tests/test-configs/hotreload/topology.yaml")
         .with_hotreload(true)
         .with_config("tests/test-configs/shotover-config/config_metrics_disabled.yaml")
         .start()
         .await;
-    let client_a = Client::open("redis://127.0.0.1:6380").unwrap();
+    let client_a = Client::open("valkey://127.0.0.1:6380").unwrap();
     let mut con_a = client_a.get_connection().unwrap();
     let _: () = con_a.set("key_from_a", "value_from_a").unwrap();
     let shotover_b = shotover_process("tests/test-configs/hotreload/topology-alt.yaml")
@@ -38,7 +38,7 @@ async fn test_dual_shotover_instances_with_redis() {
         .with_config("tests/test-configs/shotover-config/config_metrics_disabled.yaml")
         .start()
         .await;
-    let client_b = Client::open("redis://127.0.0.1:6381").unwrap();
+    let client_b = Client::open("valkey://127.0.0.1:6381").unwrap();
     let mut con_b = client_b.get_connection().unwrap();
     let _: () = con_b.set("key_from_b", "value_from_b").unwrap();
 
