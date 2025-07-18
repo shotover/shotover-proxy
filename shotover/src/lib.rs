@@ -65,6 +65,7 @@ pub mod config;
 pub mod connection;
 mod connection_span;
 pub mod frame;
+pub mod hot_reload;
 mod http;
 pub mod message;
 mod observability;
