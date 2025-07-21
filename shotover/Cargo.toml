@@ -35,8 +35,8 @@ kafka = [
     "dep:sasl",
     "dep:serde_json",
 ]
-valkey = ["dep:redis-protocol", "dep:csv", "dep:crc16"]
-opensearch = ["dep:atoi", "dep:http", "dep:httparse"]
+valkey = ["dep:redis-protocol", "dep:csv", "dep:crc16", "dep:serde_json"]
+opensearch = ["dep:atoi", "dep:http", "dep:httparse", "dep:serde_json"]
 default = ["cassandra", "valkey", "kafka", "opensearch"]
 
 [dependencies]
