@@ -33,6 +33,7 @@ kafka = [
     "dep:xxhash-rust",
     "dep:base64",
     "dep:sasl",
+    "dep:serde_json",
 ]
 valkey = ["dep:redis-protocol", "dep:csv", "dep:crc16"]
 opensearch = ["dep:atoi", "dep:http", "dep:httparse"]
