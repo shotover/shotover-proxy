@@ -25,7 +25,6 @@ pub enum Response {
 }
 
 #[cfg(test)]
-
 mod tests {
     use super::*;
     use std::collections::HashMap;
@@ -38,7 +37,7 @@ mod tests {
 
         let deserialized: Request = serde_json::from_str(&json).unwrap();
         match deserialized {
-            Request::SendListeningSockets => println!("✅ Request serialization works!"),
+            Request::SendListeningSockets => {}
         }
     }
     #[test]

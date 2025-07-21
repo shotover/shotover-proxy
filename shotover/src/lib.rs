@@ -76,6 +76,7 @@ pub mod tcp;
 pub mod tls;
 mod tracing_panic_handler;
 pub mod transforms;
+pub mod unix_socket_server;
 
 /// Imports a custom transform into the shotover binary.
 ///

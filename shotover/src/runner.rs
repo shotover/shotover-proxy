@@ -46,9 +46,13 @@ struct ConfigOpts {
     #[arg(long, value_enum, default_value = "human")]
     pub log_format: LogFormat,
 
-    ///Enable Hot reloading functionality
+    /// Enable hot reloading functionality
     #[clap(long)]
     pub hotreload: bool,
+
+    /// Path for Unix socket used in hot reload communication
+    #[clap(long, default_value = "/tmp/shotover-hotreload.sock")]
+    pub hotreload_socket_path: String,
 }
 
 #[derive(clap::ValueEnum, Clone, Copy)]
@@ -66,6 +70,7 @@ impl Default for ConfigOpts {
             stack_size: 2097152,
             log_format: LogFormat::Human,
             hotreload: false,
+            hotreload_socket_path: "/tmp/shotover-hotreload.sock".to_string(),
         }
     }
 }
@@ -76,10 +81,11 @@ pub struct Shotover {
     config: Config,
     tracing: TracingState,
     hotreload_enabled: bool,
+    hotreload_socket_path: String,
 }
 
 impl Shotover {
-    #[expect(clippy::new_without_default)]
+    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         if std::env::var("RUST_LIB_BACKTRACE").is_err() {
             std::env::set_var("RUST_LIB_BACKTRACE", "0");
@@ -118,6 +124,15 @@ impl Shotover {
         let tracing = TracingState::new(config.main_log_level.as_str(), params.log_format)?;
         let runtime = Shotover::create_runtime(params.stack_size, params.core_threads);
 
+        // Log hot reload status
+        if params.hotreload {
+            tracing::info!(
+                "Hot reloading is ENABLED - shotover will support hot reload operations"
+            );
+        } else {
+            tracing::debug!("Hot reloading is disabled");
+        }
+
         Shotover::start_observability_interface(&runtime, &config, &tracing)?;
 
         Ok(Shotover {
@@ -126,6 +141,7 @@ impl Shotover {
             config,
             tracing,
             hotreload_enabled: params.hotreload,
+            hotreload_socket_path: params.hotreload_socket_path,
         })
     }
 
@@ -155,11 +171,25 @@ impl Shotover {
     pub fn run_block(self) -> ! {
         let (trigger_shutdown_tx, trigger_shutdown_rx) = watch::channel(false);
 
+        // Setup Unix socket server for hot reload if enabled
         if self.hotreload_enabled {
-            info!("Starting Shotover with hotreload enabled");
-            //TODO: implement hot reload functionality here
-            //TODO: Setup unix sockets for hot reload
-            //TODO: socket handoff between instances
+            info!("Starting shotover with hot reloading enabled");
+
+            let socket_path = self.hotreload_socket_path.clone();
+            self.runtime.spawn(async move {
+                let mut server = crate::unix_socket_server::UnixSocketServer::new(socket_path);
+                match server.start().await {
+                    Ok(()) => {
+                        info!("Unix socket server started for hot reload communication");
+                        if let Err(e) = server.run().await {
+                            error!("Unix socket server error: {:?}", e);
+                        }
+                    }
+                    Err(e) => {
+                        error!("Failed to start Unix socket server: {:?}", e);
+                    }
+                }
+            });
         }
 
         // We need to block on this part to ensure that we immediately register these signals.
