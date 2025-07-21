@@ -2,7 +2,6 @@
 use crate::config::Config;
 use crate::config::topology::Topology;
 use crate::observability::LogFilterHttpExporter;
-use anyhow::Context;
 use anyhow::{Result, anyhow};
 use clap::{Parser, crate_version};
 use metrics_exporter_prometheus::PrometheusBuilder;
@@ -103,15 +102,10 @@ impl Shotover {
                 // Create the simplest runtime + tracing so we can write out an `error!`, if even that fails then just panic.
                 // Put it all in its own scope so we drop it (and therefore perform tracing log flushing) before we exit
                 {
-                    let rt = Runtime::new()
-                        .context("Failed to create runtime while trying to report {err:?}")
-                        .unwrap();
+                    let rt = Runtime::new().unwrap();
                     let _guard = rt.enter();
-                    let _tracing_state = TracingState::new("error", log_format)
-                        .context("Failed to create TracingState while trying to report {err:?}")
-                        .unwrap();
-
-                    tracing::error!("{:?}", err.context("Failed to start shotover"));
+                    let _tracing_state = TracingState::new("error", log_format).unwrap();
+                    tracing::error!("{:?}", err);
                 }
                 std::process::exit(1);
             }
@@ -124,10 +118,9 @@ impl Shotover {
         let tracing = TracingState::new(config.main_log_level.as_str(), params.log_format)?;
         let runtime = Shotover::create_runtime(params.stack_size, params.core_threads);
 
-        // Log hot reload status
         if params.hotreload {
             tracing::info!(
-                "Hot reloading is ENABLED - shotover will support hot reload operations"
+                "Hot reloading is enabled - shotover will support hot reload operations"
             );
         } else {
             tracing::debug!("Hot reloading is disabled");
@@ -171,24 +164,15 @@ impl Shotover {
     pub fn run_block(self) -> ! {
         let (trigger_shutdown_tx, trigger_shutdown_rx) = watch::channel(false);
 
-        // Setup Unix socket server for hot reload if enabled
         if self.hotreload_enabled {
             info!("Starting shotover with hot reloading enabled");
 
             let socket_path = self.hotreload_socket_path.clone();
             self.runtime.spawn(async move {
                 let mut server = crate::unix_socket_server::UnixSocketServer::new(socket_path);
-                match server.start().await {
-                    Ok(()) => {
-                        info!("Unix socket server started for hot reload communication");
-                        if let Err(e) = server.run().await {
-                            error!("Unix socket server error: {:?}", e);
-                        }
-                    }
-                    Err(e) => {
-                        error!("Failed to start Unix socket server: {:?}", e);
-                    }
-                }
+                server.start().await;
+                info!("Unix socket server started for hot reload communication");
+                server.run().await;
             });
         }
 
@@ -209,7 +193,6 @@ impl Shotover {
                     info!("received SIGTERM");
                 },
             };
-
             trigger_shutdown_tx.send(true).unwrap();
         });
 
@@ -222,7 +205,7 @@ impl Shotover {
                 0
             }
             Err(err) => {
-                error!("{:?}", err.context("Failed to start shotover"));
+                error!("{:?}", err);
                 1
             }
         };
@@ -277,7 +260,6 @@ impl TracingState {
         let (non_blocking, guard) = tracing_appender::non_blocking(std::io::stdout());
 
         // Load log directives from shotover config and then from the RUST_LOG env var, with the latter taking priority.
-        // In the future we might be able to simplify the implementation if work is done on tokio-rs/tracing#1466.
         let overrides = env::var(EnvFilter::DEFAULT_ENV).ok();
         let env_filter = try_parse_log_directives(&[Some(log_level), overrides.as_deref()])?;
 
@@ -325,6 +307,7 @@ type Formatter<A, B> = Layered<Layer<Registry, A, Format<B>, NonBlocking>, Regis
 // TODO: We will be able to remove this and just directly use the handle once tracing 0.2 is released. See:
 // * https://github.com/tokio-rs/tracing/pull/1035
 // * https://github.com/linkerd/linkerd2-proxy/blob/6c484f6dcdeebda18b68c800b4494263bf98fcdc/linkerd/app/core/src/trace.rs#L19-L36
+
 #[derive(Clone)]
 pub(crate) enum ReloadHandle {
     Json(Handle<EnvFilter, Formatter<JsonFields, Json>>),
@@ -374,7 +357,6 @@ mod test {
             ])
             .unwrap()
             .to_string(),
-            // Ordered by descending specificity.
             "alongname=trace,short=warn,debug"
         );
         match try_parse_log_directives(&[Some("good=info,bad=blah,warn")]) {
