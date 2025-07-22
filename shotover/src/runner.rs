@@ -2,6 +2,7 @@
 use crate::config::Config;
 use crate::config::topology::Topology;
 use crate::observability::LogFilterHttpExporter;
+use anyhow::Context;
 use anyhow::{Result, anyhow};
 use clap::{Parser, crate_version};
 use metrics_exporter_prometheus::PrometheusBuilder;
@@ -9,7 +10,6 @@ use rustls::crypto::aws_lc_rs::default_provider;
 use std::env;
 use std::net::SocketAddr;
 use tokio::runtime::{self, Runtime};
-use tokio::signal::unix::{SignalKind, signal};
 use tokio::sync::watch;
 use tracing::{error, info};
 use tracing_appender::non_blocking::{NonBlocking, WorkerGuard};
@@ -84,7 +84,7 @@ pub struct Shotover {
 }
 
 impl Shotover {
-    #[allow(clippy::new_without_default)]
+    #[expect(clippy::new_without_default)]
     pub fn new() -> Self {
         if std::env::var("RUST_LIB_BACKTRACE").is_err() {
             std::env::set_var("RUST_LIB_BACKTRACE", "0");
@@ -102,10 +102,15 @@ impl Shotover {
                 // Create the simplest runtime + tracing so we can write out an `error!`, if even that fails then just panic.
                 // Put it all in its own scope so we drop it (and therefore perform tracing log flushing) before we exit
                 {
-                    let rt = Runtime::new().unwrap();
+                    let rt = Runtime::new()
+                        .context("Failed to create runtime while trying to report {err:?}")
+                        .unwrap();
                     let _guard = rt.enter();
-                    let _tracing_state = TracingState::new("error", log_format).unwrap();
-                    tracing::error!("{:?}", err);
+                    let _tracing_state = TracingState::new("error", log_format)
+                        .context("Failed to create TracingState while trying to report {err:?}")
+                        .unwrap();
+
+                    tracing::error!("{:?}", err.context("Failed to start shotover"));
                 }
                 std::process::exit(1);
             }
@@ -118,9 +123,10 @@ impl Shotover {
         let tracing = TracingState::new(config.main_log_level.as_str(), params.log_format)?;
         let runtime = Shotover::create_runtime(params.stack_size, params.core_threads);
 
+        // Log hot reload status
         if params.hotreload {
             tracing::info!(
-                "Hot reloading is enabled - shotover will support hot reload operations"
+                "Hot reloading is ENABLED - shotover will support hot reload operations"
             );
         } else {
             tracing::debug!("Hot reloading is disabled");
@@ -162,17 +168,26 @@ impl Shotover {
     /// Begins running shotover, permanently handing control of the appplication over to shotover.
     /// As such this method never returns.
     pub fn run_block(self) -> ! {
-        let (trigger_shutdown_tx, trigger_shutdown_rx) = watch::channel(false);
+        let (trigger_shutdown_tx, trigger_shutdown_rx) = tokio::sync::watch::channel(false);
 
+        // Setup Unix socket server for hot reload if enabled
         if self.hotreload_enabled {
             info!("Starting shotover with hot reloading enabled");
 
+            let runtime = &self.runtime;
             let socket_path = self.hotreload_socket_path.clone();
-            self.runtime.spawn(async move {
-                let mut server = crate::unix_socket_server::UnixSocketServer::new(socket_path);
-                server.start().await;
-                info!("Unix socket server started for hot reload communication");
-                server.run().await;
+            runtime.spawn(async move {
+                match crate::unix_socket_server::UnixSocketServer::new(socket_path) {
+                    Ok(mut server) => {
+                        info!("Unix socket server started for hot reload communication");
+                        if let Err(e) = server.run().await {
+                            error!("Unix socket server error: {:?}", e);
+                        }
+                    }
+                    Err(e) => {
+                        error!("Failed to start Unix socket server: {:?}", e);
+                    }
+                }
             });
         }
 
@@ -180,8 +195,8 @@ impl Shotover {
         // Otherwise if we included signal creation in the below spawned task we would be at the mercy of whenever tokio decides to start running the task.
         let (mut interrupt, mut terminate) = self.runtime.block_on(async {
             (
-                signal(SignalKind::interrupt()).unwrap(),
-                signal(SignalKind::terminate()).unwrap(),
+                tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt()).unwrap(),
+                tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).unwrap(),
             )
         });
         self.runtime.spawn(async move {
@@ -193,6 +208,7 @@ impl Shotover {
                     info!("received SIGTERM");
                 },
             };
+
             trigger_shutdown_tx.send(true).unwrap();
         });
 
@@ -205,7 +221,7 @@ impl Shotover {
                 0
             }
             Err(err) => {
-                error!("{:?}", err);
+                error!("{:?}", err.context("Failed to start shotover"));
                 1
             }
         };
@@ -260,6 +276,7 @@ impl TracingState {
         let (non_blocking, guard) = tracing_appender::non_blocking(std::io::stdout());
 
         // Load log directives from shotover config and then from the RUST_LOG env var, with the latter taking priority.
+        // In the future we might be able to simplify the implementation if work is done on tokio-rs/tracing#1466.
         let overrides = env::var(EnvFilter::DEFAULT_ENV).ok();
         let env_filter = try_parse_log_directives(&[Some(log_level), overrides.as_deref()])?;
 
@@ -307,7 +324,6 @@ type Formatter<A, B> = Layered<Layer<Registry, A, Format<B>, NonBlocking>, Regis
 // TODO: We will be able to remove this and just directly use the handle once tracing 0.2 is released. See:
 // * https://github.com/tokio-rs/tracing/pull/1035
 // * https://github.com/linkerd/linkerd2-proxy/blob/6c484f6dcdeebda18b68c800b4494263bf98fcdc/linkerd/app/core/src/trace.rs#L19-L36
-
 #[derive(Clone)]
 pub(crate) enum ReloadHandle {
     Json(Handle<EnvFilter, Formatter<JsonFields, Json>>),
@@ -357,6 +373,7 @@ mod test {
             ])
             .unwrap()
             .to_string(),
+            // Ordered by descending specificity.
             "alongname=trace,short=warn,debug"
         );
         match try_parse_log_directives(&[Some("good=info,bad=blah,warn")]) {

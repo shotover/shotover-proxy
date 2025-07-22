@@ -1,58 +1,82 @@
 use crate::hot_reload::{Request, Response};
+use anyhow::{Context, Result};
 use serde_json;
 use std::collections::HashMap;
 use std::path::Path;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{UnixListener, UnixStream};
+use tracing::{debug, error, info, warn};
 
 pub struct UnixSocketServer {
     socket_path: String,
-    listener: Option<UnixListener>,
+    listener: UnixListener,
 }
 
 impl UnixSocketServer {
-    pub fn new(socket_path: String) -> Self {
-        Self {
+    pub fn new(socket_path: String) -> Result<Self> {
+        if Path::new(&socket_path).exists() {
+            std::fs::remove_file(&socket_path).with_context(|| {
+                format!("Failed to remove existing socket file: {}", socket_path)
+            })?;
+        }
+
+        let listener = UnixListener::bind(&socket_path)
+            .with_context(|| format!("Failed to bind Unix socket to: {}", socket_path))?;
+        info!("Unix socket server listening on: {}", socket_path);
+
+        Ok(Self {
             socket_path,
-            listener: None,
-        }
+            listener,
+        })
     }
 
-    pub async fn start(&mut self) {
-        if Path::new(&self.socket_path).exists() {
-            std::fs::remove_file(&self.socket_path).unwrap();
-        }
-        let listener = UnixListener::bind(&self.socket_path).unwrap();
-        self.listener = Some(listener);
-    }
-
-    pub async fn run(&mut self) {
-        let listener = self.listener.as_ref().unwrap();
+    pub async fn run(&mut self) -> Result<()> {
         loop {
-            let (stream, _) = listener.accept().await.unwrap();
-            self.handle_connection(stream).await;
+            match self.listener.accept().await {
+                Ok((stream, _)) => {
+                    debug!("New connection received on Unix socket");
+                    if let Err(e) = self.handle_connection(stream).await {
+                        error!("Error handling connection: {:?}", e);
+                    }
+                }
+                Err(e) => {
+                    error!("Error accepting connection: {:?}", e);
+                    break;
+                }
+            }
         }
+        Ok(())
     }
 
-    async fn handle_connection(&self, stream: UnixStream) {
+    async fn handle_connection(&self, stream: UnixStream) -> Result<()> {
         let (reader, mut writer) = stream.into_split();
         let mut reader = BufReader::new(reader);
-        let mut line = String::new();
 
-        reader.read_line(&mut line).await.unwrap();
-
-        let request: Request = serde_json::from_str(line.trim()).unwrap();
+        // JSON reading logic
+        let request: Request = read_json(&mut reader).await?;
+        debug!("Received request: {:?}", request);
 
         let response = self.process_request(request).await;
 
-        let response_json = serde_json::to_string(&response).unwrap();
-        writer.write_all(response_json.as_bytes()).await.unwrap();
-        writer.write_all(b"\n").await.unwrap();
+        let response_json =
+            serde_json::to_string(&response).context("Failed to serialize response")?;
+        writer
+            .write_all(response_json.as_bytes())
+            .await
+            .context("Failed to write response")?;
+        writer
+            .write_all(b"\n")
+            .await
+            .context("Failed to write newline")?;
+        debug!("Sent response: {}", response_json);
+        Ok(())
     }
 
     async fn process_request(&self, request: Request) -> Response {
         match request {
             Request::SendListeningSockets => {
+                info!("Processing SendListeningSockets request");
+                // TODO: In next steps, we'll extract actual file descriptors
                 let mut port_to_fd = HashMap::new();
                 port_to_fd.insert(6380, crate::hot_reload::FileDescriptor(10));
                 Response::SendListeningSockets { port_to_fd }
@@ -64,7 +88,34 @@ impl UnixSocketServer {
 impl Drop for UnixSocketServer {
     fn drop(&mut self) {
         if Path::new(&self.socket_path).exists() {
-            let _ = std::fs::remove_file(&self.socket_path);
+            if let Err(e) = std::fs::remove_file(&self.socket_path) {
+                warn!("Failed to remove socket file {}: {:?}", self.socket_path, e);
+            }
+        }
+    }
+}
+
+// helper function for JSON reading
+use serde::de::DeserializeOwned;
+
+async fn read_json<T: DeserializeOwned, R: AsyncReadExt + Unpin>(reader: &mut R) -> Result<T> {
+    let mut received_bytes = Vec::new();
+    loop {
+        let mut buf = [0u8; 1024];
+        let n = reader
+            .read(&mut buf)
+            .await
+            .context("Failed to read from stream")?;
+        if n == 0 {
+            return Err(anyhow::anyhow!(
+                "Connection closed before full JSON message received"
+            ));
+        }
+        received_bytes.extend_from_slice(&buf[..n]);
+        match serde_json::from_slice(&received_bytes) {
+            Ok(request) => return Ok(request),
+            Err(e) if e.is_eof() => continue,
+            Err(e) => return Err(e).context("Failed to parse JSON"),
         }
     }
 }
@@ -78,9 +129,10 @@ mod tests {
     #[tokio::test]
     async fn test_unix_socket_server_basic() {
         let socket_path = "/tmp/test-shotover-hotreload.sock";
+        // Clean up any existing socket
         let _ = std::fs::remove_file(socket_path);
-        let mut server = UnixSocketServer::new(socket_path.to_string());
-        server.start().await;
+        let server = UnixSocketServer::new(socket_path.to_string()).unwrap();
+        // Test that socket file was created
         assert!(Path::new(socket_path).exists());
 
         drop(server);
@@ -90,30 +142,32 @@ mod tests {
     #[tokio::test]
     async fn test_request_response() {
         let socket_path = "/tmp/test-shotover-request-response.sock";
+        // Clean up any existing socket
         let _ = std::fs::remove_file(socket_path);
-        let mut server = UnixSocketServer::new(socket_path.to_string());
-        server.start().await;
-
+        let mut server = UnixSocketServer::new(socket_path.to_string()).unwrap();
+        // Start server in background
         let server_handle = tokio::spawn(async move {
             tokio::select! {
                 _ = server.run() => {},
                 _ = tokio::time::sleep(tokio::time::Duration::from_secs(2)) => {}
             }
         });
-
+        // Give server time to start
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-
+        // Connect as client
         let mut stream = UnixStream::connect(socket_path).await.unwrap();
+        // Send request
         let request = Request::SendListeningSockets;
         let request_json = serde_json::to_string(&request).unwrap();
         stream.write_all(request_json.as_bytes()).await.unwrap();
         stream.write_all(b"\n").await.unwrap();
-
+        // Read response
         let mut response_data = Vec::new();
         stream.read_to_end(&mut response_data).await.unwrap();
         let response_str = String::from_utf8(response_data).unwrap();
+        // Parse response
         let response: Response = serde_json::from_str(response_str.trim()).unwrap();
-
+        // Verify response
         match response {
             Response::SendListeningSockets { port_to_fd } => {
                 assert_eq!(port_to_fd.len(), 1);
@@ -121,7 +175,7 @@ mod tests {
             }
             _ => panic!("Wrong response type"),
         }
-
+        // Clean up
         server_handle.abort();
         let _ = std::fs::remove_file(socket_path);
     }
