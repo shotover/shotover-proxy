@@ -41,11 +41,10 @@ impl UnixSocketServer {
                 }
                 Err(e) => {
                     error!("Error accepting connection: {:?}", e);
-                    break;
+                    continue;
                 }
             }
         }
-        Ok(())
     }
 
     async fn handle_connection(&self, stream: UnixStream) -> Result<()> {
@@ -64,10 +63,6 @@ impl UnixSocketServer {
             .write_all(response_json.as_bytes())
             .await
             .context("Failed to write response")?;
-        writer
-            .write_all(b"\n")
-            .await
-            .context("Failed to write newline")?;
         debug!("Sent response: {}", response_json);
         Ok(())
     }
@@ -142,31 +137,36 @@ mod tests {
     #[tokio::test]
     async fn test_request_response() {
         let socket_path = "/tmp/test-shotover-request-response.sock";
-        // Clean up any existing socket
-        let _ = std::fs::remove_file(socket_path);
         let mut server = UnixSocketServer::new(socket_path.to_string()).unwrap();
         // Start server in background
         let server_handle = tokio::spawn(async move {
-            tokio::select! {
-                _ = server.run() => {},
-                _ = tokio::time::sleep(tokio::time::Duration::from_secs(2)) => {}
-            }
+            server.run().await.ok();
         });
-        // Give server time to start
-        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-        // Connect as client
-        let mut stream = UnixStream::connect(socket_path).await.unwrap();
+
+        let mut stream = None;
+        for _ in 0..1000 {
+            match UnixStream::connect(socket_path).await {
+                Ok(s) => {
+                    stream = Some(s);
+                    break;
+                }
+                Err(_) => {
+                    use std::time::Duration;
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                }
+            }
+        }
+        let mut stream =
+            stream.expect("Failed to Connect to Hot Reload Unix Socket Server after waiting");
         // Send request
         let request = Request::SendListeningSockets;
         let request_json = serde_json::to_string(&request).unwrap();
         stream.write_all(request_json.as_bytes()).await.unwrap();
-        stream.write_all(b"\n").await.unwrap();
         // Read response
         let mut response_data = Vec::new();
+
         stream.read_to_end(&mut response_data).await.unwrap();
-        let response_str = String::from_utf8(response_data).unwrap();
-        // Parse response
-        let response: Response = serde_json::from_str(response_str.trim()).unwrap();
+        let response: Response = serde_json::from_slice(&response_data).unwrap();
         // Verify response
         match response {
             Response::SendListeningSockets { port_to_fd } => {

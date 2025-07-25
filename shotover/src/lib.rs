@@ -66,6 +66,7 @@ pub mod connection;
 mod connection_span;
 pub mod frame;
 pub mod hot_reload;
+pub mod hot_reload_server;
 mod http;
 pub mod message;
 mod observability;
@@ -76,7 +77,6 @@ pub mod tcp;
 pub mod tls;
 mod tracing_panic_handler;
 pub mod transforms;
-pub mod unix_socket_server;
 
 /// Imports a custom transform into the shotover binary.
 ///

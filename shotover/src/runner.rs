@@ -10,6 +10,7 @@ use rustls::crypto::aws_lc_rs::default_provider;
 use std::env;
 use std::net::SocketAddr;
 use tokio::runtime::{self, Runtime};
+use tokio::signal::unix::{SignalKind, signal};
 use tokio::sync::watch;
 use tracing::{error, info};
 use tracing_appender::non_blocking::{NonBlocking, WorkerGuard};
@@ -177,7 +178,7 @@ impl Shotover {
             let runtime = &self.runtime;
             let socket_path = self.hotreload_socket_path.clone();
             runtime.spawn(async move {
-                match crate::unix_socket_server::UnixSocketServer::new(socket_path) {
+                match crate::hot_reload_server::UnixSocketServer::new(socket_path) {
                     Ok(mut server) => {
                         info!("Unix socket server started for hot reload communication");
                         if let Err(e) = server.run().await {
@@ -195,8 +196,8 @@ impl Shotover {
         // Otherwise if we included signal creation in the below spawned task we would be at the mercy of whenever tokio decides to start running the task.
         let (mut interrupt, mut terminate) = self.runtime.block_on(async {
             (
-                tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt()).unwrap(),
-                tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).unwrap(),
+                signal(SignalKind::interrupt()).unwrap(),
+                signal(SignalKind::terminate()).unwrap(),
             )
         });
         self.runtime.spawn(async move {
