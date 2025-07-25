@@ -41,7 +41,6 @@ impl UnixSocketServer {
                 }
                 Err(e) => {
                     error!("Error accepting connection: {:?}", e);
-                    continue;
                 }
             }
         }
@@ -51,7 +50,6 @@ impl UnixSocketServer {
         let (reader, mut writer) = stream.into_split();
         let mut reader = BufReader::new(reader);
 
-        // JSON reading logic
         let request: Request = read_json(&mut reader).await?;
         debug!("Received request: {:?}", request);
 
@@ -72,6 +70,7 @@ impl UnixSocketServer {
             Request::SendListeningSockets => {
                 info!("Processing SendListeningSockets request");
                 // TODO: In next steps, we'll extract actual file descriptors
+
                 let mut port_to_fd = HashMap::new();
                 port_to_fd.insert(6380, crate::hot_reload::FileDescriptor(10));
                 Response::SendListeningSockets { port_to_fd }
@@ -90,9 +89,7 @@ impl Drop for UnixSocketServer {
     }
 }
 
-// helper function for JSON reading
 use serde::de::DeserializeOwned;
-
 async fn read_json<T: DeserializeOwned, R: AsyncReadExt + Unpin>(reader: &mut R) -> Result<T> {
     let mut received_bytes = Vec::new();
     loop {
@@ -124,9 +121,11 @@ mod tests {
     #[tokio::test]
     async fn test_unix_socket_server_basic() {
         let socket_path = "/tmp/test-shotover-hotreload.sock";
+
         // Clean up any existing socket
         let _ = std::fs::remove_file(socket_path);
         let server = UnixSocketServer::new(socket_path.to_string()).unwrap();
+
         // Test that socket file was created
         assert!(Path::new(socket_path).exists());
 
@@ -138,6 +137,7 @@ mod tests {
     async fn test_request_response() {
         let socket_path = "/tmp/test-shotover-request-response.sock";
         let mut server = UnixSocketServer::new(socket_path.to_string()).unwrap();
+
         // Start server in background
         let server_handle = tokio::spawn(async move {
             server.run().await.ok();
@@ -158,15 +158,17 @@ mod tests {
         }
         let mut stream =
             stream.expect("Failed to Connect to Hot Reload Unix Socket Server after waiting");
+
         // Send request
         let request = Request::SendListeningSockets;
         let request_json = serde_json::to_string(&request).unwrap();
         stream.write_all(request_json.as_bytes()).await.unwrap();
+
         // Read response
         let mut response_data = Vec::new();
-
         stream.read_to_end(&mut response_data).await.unwrap();
         let response: Response = serde_json::from_slice(&response_data).unwrap();
+
         // Verify response
         match response {
             Response::SendListeningSockets { port_to_fd } => {
@@ -175,6 +177,7 @@ mod tests {
             }
             _ => panic!("Wrong response type"),
         }
+
         // Clean up
         server_handle.abort();
         let _ = std::fs::remove_file(socket_path);
