@@ -186,7 +186,7 @@ impl Shotover {
     pub fn run_block(self) -> ! {
         let (trigger_shutdown_tx, trigger_shutdown_rx) = tokio::sync::watch::channel(false);
 
-        let received_file_descriptors = if let Some(socket_path) = &self.hotreload_from_socket {
+        let _received_file_descriptors = if let Some(socket_path) = &self.hotreload_from_socket {
             info!("Hot reload CLIENT mode - requesting socket handoff from existing shotover");
 
             let client = crate::hot_reload_client::UnixSocketClient::new(socket_path.clone());
@@ -223,6 +223,7 @@ impl Shotover {
         } else {
             None
         };
+
         // Setup Unix socket server for hot reload if enabled
         if self.hotreload_enabled {
             info!("Starting shotover with hot reloading enabled");
