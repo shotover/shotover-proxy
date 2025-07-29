@@ -53,6 +53,10 @@ struct ConfigOpts {
     /// Path for Unix socket used in hot reload communication
     #[clap(long, default_value = "/tmp/shotover-hotreload.sock")]
     pub hotreload_socket_path: String,
+
+    ///Connect to existing shotover for hot reloading
+    #[clap(long)]
+    pub hotreload_from_socket: Option<String>,
 }
 
 #[derive(clap::ValueEnum, Clone, Copy)]
@@ -71,6 +75,7 @@ impl Default for ConfigOpts {
             log_format: LogFormat::Human,
             hotreload: false,
             hotreload_socket_path: "/tmp/shotover-hotreload.sock".to_string(),
+            hotreload_from_socket: None,
         }
     }
 }
@@ -82,6 +87,7 @@ pub struct Shotover {
     tracing: TracingState,
     hotreload_enabled: bool,
     hotreload_socket_path: String,
+    hotreload_from_socket: Option<String>,
 }
 
 impl Shotover {
@@ -119,6 +125,9 @@ impl Shotover {
     }
 
     fn new_inner(params: ConfigOpts) -> Result<Self> {
+        if params.hotreload && params.hotreload_from_socket.is_some() {
+            return Err(anyhow!("Cannot use both server mode and client mode"));
+        }
         let config = Config::from_file(params.config_file)?;
         let topology = Topology::from_file(&params.topology_file)?;
         let tracing = TracingState::new(config.main_log_level.as_str(), params.log_format)?;
@@ -128,6 +137,11 @@ impl Shotover {
         if params.hotreload {
             tracing::info!(
                 "Hot reloading is ENABLED - shotover will support hot reload operations"
+            );
+        } else if params.hotreload_from_socket.is_some() {
+            tracing::info!(
+                " Hot reload CLIENT will request sokcets from existing shotover at: {}",
+                params.hotreload_from_socket.as_ref().unwrap()
             );
         } else {
             tracing::debug!("Hot reloading is disabled");
@@ -142,6 +156,7 @@ impl Shotover {
             tracing,
             hotreload_enabled: params.hotreload,
             hotreload_socket_path: params.hotreload_socket_path,
+            hotreload_from_socket: params.hotreload_from_socket,
         })
     }
 
@@ -171,6 +186,43 @@ impl Shotover {
     pub fn run_block(self) -> ! {
         let (trigger_shutdown_tx, trigger_shutdown_rx) = tokio::sync::watch::channel(false);
 
+        let received_file_descriptors = if let Some(socket_path) = &self.hotreload_from_socket {
+            info!("Hot reload CLIENT mode - requesting socket handoff from existing shotover");
+
+            let client = crate::hot_reload_client::UnixSocketClient::new(socket_path.clone());
+            match self.runtime.block_on(async {
+                client
+                    .send_request(crate::hot_reload::Request::SendListeningSockets)
+                    .await
+            }) {
+                Ok(crate::hot_reload::Response::SendListeningSockets { port_to_fd }) => {
+                    info!(
+                        "Successfully received {} file descriptors for hot reload",
+                        port_to_fd.len()
+                    );
+                    for (port, fd) in &port_to_fd {
+                        info!("Received file descriptor {} for port {}", fd.0, port);
+                    }
+                    Some(port_to_fd)
+                }
+                Ok(crate::hot_reload::Response::Error(msg)) => {
+                    error!("Hot reload request failed: {}", msg);
+                    std::process::exit(1);
+                }
+                Err(e) => {
+                    error!(
+                        "Failed to connect to existing shotover for hot reload: {:?}",
+                        e
+                    );
+                    error!("Make sure the original shotover is running with --hotreload flag");
+                    error!("and using the same socket path: {}", socket_path);
+
+                    std::process::exit(1);
+                }
+            }
+        } else {
+            None
+        };
         // Setup Unix socket server for hot reload if enabled
         if self.hotreload_enabled {
             info!("Starting shotover with hot reloading enabled");
