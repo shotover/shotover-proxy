@@ -75,7 +75,7 @@ impl UnixSocketServer {
                 port_to_fd.insert(6380, crate::hot_reload::FileDescriptor(10));
 
                 info!(
-                    "Sending response with {} file descriptor(s)",
+                    "Sending response with {} file descriptors",
                     port_to_fd.len()
                 );
 
