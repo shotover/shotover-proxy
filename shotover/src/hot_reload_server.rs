@@ -1,9 +1,10 @@
 use crate::hot_reload::{Request, Response};
+use crate::json_parsing::read_json;
 use anyhow::{Context, Result};
 use serde_json;
 use std::collections::HashMap;
 use std::path::Path;
-use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncWriteExt, BufReader};
 use tokio::net::{UnixListener, UnixStream};
 use tracing::{debug, error, info, warn};
 
@@ -91,29 +92,6 @@ impl Drop for UnixSocketServer {
             if let Err(e) = std::fs::remove_file(&self.socket_path) {
                 warn!("Failed to remove socket file {}: {:?}", self.socket_path, e);
             }
-        }
-    }
-}
-
-use serde::de::DeserializeOwned;
-async fn read_json<T: DeserializeOwned, R: AsyncReadExt + Unpin>(reader: &mut R) -> Result<T> {
-    let mut received_bytes = Vec::new();
-    loop {
-        let mut buf = [0u8; 1024];
-        let n = reader
-            .read(&mut buf)
-            .await
-            .context("Failed to read from stream")?;
-        if n == 0 {
-            return Err(anyhow::anyhow!(
-                "Connection closed before full JSON message received"
-            ));
-        }
-        received_bytes.extend_from_slice(&buf[..n]);
-        match serde_json::from_slice(&received_bytes) {
-            Ok(request) => return Ok(request),
-            Err(e) if e.is_eof() => continue,
-            Err(e) => return Err(e).context("Failed to parse JSON"),
         }
     }
 }

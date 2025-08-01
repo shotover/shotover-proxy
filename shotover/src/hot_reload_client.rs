@@ -1,10 +1,10 @@
-//This module gives clinet-side implementation for socket handoff as part of hot reloading
+//This module gives client-side implementation for socket handoff as part of hot reloading
 //Client will connect to existing shotovers and requests for FDs
 use crate::hot_reload::{Request, Response};
+use crate::json_parsing::read_json;
 use anyhow::{Context, Result};
-use serde::de::DeserializeOwned;
 use std::time::Duration;
-use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
 use tokio::time::timeout;
 use tracing::{debug, info};
@@ -70,29 +70,6 @@ impl UnixSocketClient {
         debug!("Received response: {:?}", response);
 
         Ok(response)
-    }
-}
-
-// Reuse the same JSON parsing logic as server
-async fn read_json<T: DeserializeOwned, R: AsyncReadExt + Unpin>(reader: &mut R) -> Result<T> {
-    let mut received_bytes = Vec::new();
-    loop {
-        let mut buf = [0u8; 1024];
-        let n = reader
-            .read(&mut buf)
-            .await
-            .context("Failed to read from stream")?;
-        if n == 0 {
-            return Err(anyhow::anyhow!(
-                "Connection closed before full JSON message received"
-            ));
-        }
-        received_bytes.extend_from_slice(&buf[..n]);
-        match serde_json::from_slice(&received_bytes) {
-            Ok(response) => return Ok(response),
-            Err(e) if e.is_eof() => continue,
-            Err(e) => return Err(e).context("Failed to parse JSON"),
-        }
     }
 }
 

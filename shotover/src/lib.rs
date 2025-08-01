@@ -69,6 +69,7 @@ pub mod hot_reload;
 pub mod hot_reload_client;
 pub mod hot_reload_server;
 mod http;
+pub mod json_parsing;
 pub mod message;
 mod observability;
 pub mod runner;
