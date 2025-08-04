@@ -73,6 +73,36 @@ impl UnixSocketClient {
     }
 }
 
+/// Request listening sockets from an existing Shotover instance during hot reload
+pub async fn request_listening_sockets(socket_path: String) -> Result<()> {
+    info!(
+        "Hot reload CLIENT will request sockets from existing shotover at: {}",
+        socket_path
+    );
+
+    let client = UnixSocketClient::new(socket_path.clone());
+
+    match client
+        .send_request(crate::hot_reload::Request::SendListeningSockets)
+        .await
+    {
+        Ok(crate::hot_reload::Response::SendListeningSockets { port_to_fd }) => {
+            info!(
+                "Successfully received {} file descriptors from hot reload server",
+                port_to_fd.len()
+            );
+            for (port, fd) in &port_to_fd {
+                info!("Received file descriptor {} for port {}", fd.0, port);
+            }
+            Ok(())
+        }
+        Ok(crate::hot_reload::Response::Error(msg)) => {
+            Err(anyhow::anyhow!("Hot reload request failed: {}", msg))
+        }
+        Err(e) => Err(e).context("Failed to communicate with hot reload server"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

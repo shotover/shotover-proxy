@@ -125,9 +125,6 @@ impl Shotover {
     }
 
     fn new_inner(params: ConfigOpts) -> Result<Self> {
-        if params.hotreload && params.hotreload_from_socket.is_some() {
-            return Err(anyhow!("Cannot use both server mode and client mode"));
-        }
         let config = Config::from_file(params.config_file)?;
         let topology = Topology::from_file(&params.topology_file)?;
         let tracing = TracingState::new(config.main_log_level.as_str(), params.log_format)?;
@@ -140,7 +137,7 @@ impl Shotover {
             );
         } else if params.hotreload_from_socket.is_some() {
             tracing::info!(
-                " Hot reload CLIENT will request sokcets from existing shotover at: {}",
+                "Hot reload CLIENT will request sockets from existing shotover at: {}",
                 params.hotreload_from_socket.as_ref().unwrap()
             );
         } else {
@@ -186,65 +183,6 @@ impl Shotover {
     pub fn run_block(self) -> ! {
         let (trigger_shutdown_tx, trigger_shutdown_rx) = tokio::sync::watch::channel(false);
 
-        let _received_file_descriptors = if let Some(socket_path) = &self.hotreload_from_socket {
-            info!("Hot reload CLIENT mode - requesting socket handoff from existing shotover");
-
-            let client = crate::hot_reload_client::UnixSocketClient::new(socket_path.clone());
-            match self.runtime.block_on(async {
-                client
-                    .send_request(crate::hot_reload::Request::SendListeningSockets)
-                    .await
-            }) {
-                Ok(crate::hot_reload::Response::SendListeningSockets { port_to_fd }) => {
-                    info!(
-                        "Successfully received {} file descriptors for hot reload",
-                        port_to_fd.len()
-                    );
-                    for (port, fd) in &port_to_fd {
-                        info!("Received file descriptor {} for port {}", fd.0, port);
-                    }
-                    Some(port_to_fd)
-                }
-                Ok(crate::hot_reload::Response::Error(msg)) => {
-                    error!("Hot reload request failed: {}", msg);
-                    std::process::exit(1);
-                }
-                Err(e) => {
-                    error!(
-                        "Failed to connect to existing shotover for hot reload: {:?}",
-                        e
-                    );
-                    error!("Make sure the original shotover is running with --hotreload flag");
-                    error!("and using the same socket path: {}", socket_path);
-
-                    std::process::exit(1);
-                }
-            }
-        } else {
-            None
-        };
-
-        // Setup Unix socket server for hot reload if enabled
-        if self.hotreload_enabled {
-            info!("Starting shotover with hot reloading enabled");
-
-            let runtime = &self.runtime;
-            let socket_path = self.hotreload_socket_path.clone();
-            runtime.spawn(async move {
-                match crate::hot_reload_server::UnixSocketServer::new(socket_path) {
-                    Ok(mut server) => {
-                        info!("Unix socket server started for hot reload communication");
-                        if let Err(e) = server.run().await {
-                            error!("Unix socket server error: {:?}", e);
-                        }
-                    }
-                    Err(e) => {
-                        error!("Failed to start Unix socket server: {:?}", e);
-                    }
-                }
-            });
-        }
-
         // We need to block on this part to ensure that we immediately register these signals.
         // Otherwise if we included signal creation in the below spawned task we would be at the mercy of whenever tokio decides to start running the task.
         let (mut interrupt, mut terminate) = self.runtime.block_on(async {
@@ -266,10 +204,15 @@ impl Shotover {
             trigger_shutdown_tx.send(true).unwrap();
         });
 
-        let code = match self
-            .runtime
-            .block_on(run(self.topology, self.config, trigger_shutdown_rx))
-        {
+        let server = Server::new(
+            self.topology,
+            self.config,
+            self.hotreload_enabled,
+            self.hotreload_socket_path,
+            self.hotreload_from_socket,
+        );
+
+        let code = match self.runtime.block_on(server.run(trigger_shutdown_rx)) {
             Ok(()) => {
                 info!("Shotover was shutdown cleanly.");
                 0
@@ -295,6 +238,73 @@ impl Shotover {
             runtime_builder.worker_threads(worker_threads);
         }
         runtime_builder.build().unwrap()
+    }
+}
+
+pub struct Server {
+    topology: Topology,
+    config: Config,
+    hotreload_enabled: bool,
+    hotreload_socket_path: String,
+    hotreload_from_socket: Option<String>,
+}
+
+impl Server {
+    pub fn new(
+        topology: Topology,
+        config: Config,
+        hotreload_enabled: bool,
+        hotreload_socket_path: String,
+        hotreload_from_socket: Option<String>,
+    ) -> Self {
+        Self {
+            topology,
+            config,
+            hotreload_enabled,
+            hotreload_socket_path,
+            hotreload_from_socket,
+        }
+    }
+
+    pub async fn run(self, trigger_shutdown_rx: watch::Receiver<bool>) -> Result<()> {
+        if let Some(socket_path) = self.hotreload_from_socket {
+            info!("Hot reload CLIENT mode - requesting socket handoff from existing shotover");
+            crate::hot_reload_client::request_listening_sockets(socket_path)
+                .await
+                .context("Hot reload client failed")?;
+        }
+
+        // Setup Unix socket server for hot reload if enabled
+        if self.hotreload_enabled {
+            info!("Starting shotover with hot reloading enabled");
+
+            let socket_path = self.hotreload_socket_path.clone();
+            tokio::spawn(async move {
+                match crate::hot_reload_server::UnixSocketServer::new(socket_path) {
+                    Ok(mut server) => {
+                        info!("Unix socket server started for hot reload communication");
+                        if let Err(e) = server.run().await {
+                            error!("Unix socket server error: {:?}", e);
+                        }
+                    }
+                    Err(e) => {
+                        error!("Failed to start Unix socket server: {:?}", e);
+                    }
+                }
+            });
+        }
+
+        info!("Starting Shotover {}", crate_version!());
+        info!(configuration = ?self.config);
+        info!(topology = ?self.topology);
+
+        match self.topology.run_chains(trigger_shutdown_rx).await {
+            Ok(sources) => {
+                futures::future::join_all(sources.into_iter().map(|x| x.into_join_handle())).await;
+                Ok(())
+            }
+            Err(err) => Err(err),
+        }
     }
 }
 
@@ -390,24 +400,6 @@ impl ReloadHandle {
             ReloadHandle::Json(handle) => handle.reload(filter).map_err(|e| anyhow!(e)),
             ReloadHandle::Human(handle) => handle.reload(filter).map_err(|e| anyhow!(e)),
         }
-    }
-}
-
-async fn run(
-    topology: Topology,
-    config: Config,
-    trigger_shutdown_rx: watch::Receiver<bool>,
-) -> Result<()> {
-    info!("Starting Shotover {}", crate_version!());
-    info!(configuration = ?config);
-    info!(topology = ?topology);
-
-    match topology.run_chains(trigger_shutdown_rx).await {
-        Ok(sources) => {
-            futures::future::join_all(sources.into_iter().map(|x| x.into_join_handle())).await;
-            Ok(())
-        }
-        Err(err) => Err(err),
     }
 }
 
