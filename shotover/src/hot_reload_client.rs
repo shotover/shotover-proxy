@@ -107,7 +107,6 @@ pub async fn request_listening_sockets(socket_path: String) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::Duration;
     #[cfg(test)]
     async fn wait_for_unix_socket_connection(socket_path: &str, timeout_ms: u64) {
         use tokio::net::UnixStream;
