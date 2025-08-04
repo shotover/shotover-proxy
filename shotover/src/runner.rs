@@ -135,10 +135,10 @@ impl Shotover {
             tracing::info!(
                 "Hot reloading is ENABLED - shotover will support hot reload operations"
             );
-        } else if params.hotreload_from_socket.is_some() {
+        } else if let Some(socket_path) = &params.hotreload_from_socket {
             tracing::info!(
                 "Hot reload CLIENT will request sockets from existing shotover at: {}",
-                params.hotreload_from_socket.as_ref().unwrap()
+                socket_path
             );
         } else {
             tracing::debug!("Hot reloading is disabled");

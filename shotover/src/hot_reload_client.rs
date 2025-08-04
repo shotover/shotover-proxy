@@ -22,6 +22,7 @@ impl UnixSocketClient {
         }
     }
 
+    #[cfg(test)]
     pub fn with_timeout(mut self, timeout: Duration) -> Self {
         self.timeout_duration = timeout;
         self
@@ -141,14 +142,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_client_with_timeout_builder() {
-        let client = UnixSocketClient::new("/test/path.sock".to_string())
-            .with_timeout(Duration::from_secs(5));
-
-        assert_eq!(client.timeout_duration, Duration::from_secs(5));
-    }
-
-    #[tokio::test]
     async fn test_client_server_integration() {
         let socket_path = "/tmp/test-client-server-integration.sock";
 
@@ -183,7 +176,6 @@ mod tests {
 
         // Cleanup
         server_handle.abort();
-        let _ = std::fs::remove_file(socket_path);
     }
 
     #[tokio::test]

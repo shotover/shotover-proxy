@@ -110,6 +110,20 @@ impl ShotoverProcessBuilder {
             .await
     }
 
+    pub fn with_hotreload_from_socket(mut self, socket_path: &str) -> Self {
+        self.additional_args
+            .push("--hotreload-from-socket".to_string());
+        self.additional_args.push(socket_path.to_string());
+        self
+    }
+
+    pub fn with_hotreload_socket_path(mut self, socket_path: &str) -> Self {
+        self.additional_args
+            .push("--hotreload-socket-path".to_string());
+        self.additional_args.push(socket_path.to_string());
+        self
+    }
+
     async fn start_inner(self) -> (BinProcess, Vec<EventMatcher>) {
         let mut args = vec![
             "-t".to_owned(),
