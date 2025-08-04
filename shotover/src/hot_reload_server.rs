@@ -102,6 +102,20 @@ mod tests {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::UnixStream;
 
+    #[cfg(test)]
+    async fn wait_for_unix_socket_connection(socket_path: &str, timeout_ms: u64) {
+        for _ in 0..timeout_ms / 5 {
+            if UnixStream::connect(socket_path).await.is_ok() {
+                return;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+        panic!(
+            "Failed to connect to Unix socket at {} after waiting",
+            socket_path
+        );
+    }
+
     #[tokio::test]
     async fn test_unix_socket_server_basic() {
         let socket_path = "/tmp/test-shotover-hotreload.sock";
@@ -126,22 +140,8 @@ mod tests {
         let server_handle = tokio::spawn(async move {
             server.run().await.ok();
         });
-
-        let mut stream = None;
-        for _ in 0..1000 {
-            match UnixStream::connect(socket_path).await {
-                Ok(s) => {
-                    stream = Some(s);
-                    break;
-                }
-                Err(_) => {
-                    use std::time::Duration;
-                    tokio::time::sleep(Duration::from_millis(5)).await;
-                }
-            }
-        }
-        let mut stream =
-            stream.expect("Failed to Connect to Hot Reload Unix Socket Server after waiting");
+        wait_for_unix_socket_connection(socket_path, 2000).await;
+        let mut stream = UnixStream::connect(socket_path).await.unwrap();
 
         // Send request
         let request = Request::SendListeningSockets;
@@ -164,6 +164,5 @@ mod tests {
 
         // Clean up
         server_handle.abort();
-        let _ = std::fs::remove_file(socket_path);
     }
 }

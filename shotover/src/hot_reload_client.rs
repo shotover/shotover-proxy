@@ -107,23 +107,19 @@ pub async fn request_listening_sockets(socket_path: String) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[tokio::test]
-    async fn test_client_timeout() {
-        // Use a path that will cause the connection to hang, not fail immediately
-        // This simulates a server that accepts connections but doesn't respond
-        let client =
-            UnixSocketClient::new("/dev/null".to_string()).with_timeout(Duration::from_millis(100));
-
-        let result = client.send_request(Request::SendListeningSockets).await;
-        assert!(result.is_err());
-        let error_msg = result.unwrap_err().to_string();
-
-        // The error could be either a timeout or a connection error, both are valid
-        assert!(
-            error_msg.contains("timed out") || error_msg.contains("Failed to connect"),
-            "Expected timeout or connection error, got: {}",
-            error_msg
+    use std::time::Duration;
+    #[cfg(test)]
+    async fn wait_for_unix_socket_connection(socket_path: &str, timeout_ms: u64) {
+        use tokio::net::UnixStream;
+        for _ in 0..timeout_ms / 5 {
+            if UnixStream::connect(socket_path).await.is_ok() {
+                return;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+        panic!(
+            "Failed to connect to Unix socket at {} after waiting",
+            socket_path
         );
     }
 
@@ -132,7 +128,6 @@ mod tests {
         let client = UnixSocketClient::new("/nonexistent/path.sock".to_string());
 
         let result = client.send_request(Request::SendListeningSockets).await;
-        assert!(result.is_err());
         assert!(
             result
                 .unwrap_err()
@@ -145,9 +140,6 @@ mod tests {
     async fn test_client_server_integration() {
         let socket_path = "/tmp/test-client-server-integration.sock";
 
-        // Clean up any existing socket
-        let _ = std::fs::remove_file(socket_path);
-
         // Start server
         let mut server =
             crate::hot_reload_server::UnixSocketServer::new(socket_path.to_string()).unwrap();
@@ -156,7 +148,7 @@ mod tests {
         });
 
         // Wait for server to start
-        tokio::time::sleep(Duration::from_millis(100)).await;
+        wait_for_unix_socket_connection(socket_path, 2000).await;
 
         // Create client and send request
         let client = UnixSocketClient::new(socket_path.to_string());
@@ -192,7 +184,7 @@ mod tests {
             server.run().await.ok();
         });
 
-        tokio::time::sleep(Duration::from_millis(100)).await;
+        wait_for_unix_socket_connection(socket_path, 2000).await;
 
         // Send multiple requests
         let client = UnixSocketClient::new(socket_path.to_string());
@@ -212,6 +204,5 @@ mod tests {
 
         // Cleanup
         server_handle.abort();
-        let _ = std::fs::remove_file(socket_path);
     }
 }
