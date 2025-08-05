@@ -227,7 +227,6 @@ impl Shotover {
 
     /// Begins running shotover, permanently handing control of the appplication over to shotover.
     /// As such this method never returns.
-
     pub fn run_block(self) -> ! {
         let Shotover {
             runtime,
