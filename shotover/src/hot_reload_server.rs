@@ -1,9 +1,10 @@
 use crate::hot_reload::{Request, Response};
+use crate::json_parsing::read_json;
 use anyhow::{Context, Result};
 use serde_json;
 use std::collections::HashMap;
 use std::path::Path;
-use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncWriteExt, BufReader};
 use tokio::net::{UnixListener, UnixStream};
 use tracing::{debug, error, info, warn};
 
@@ -73,6 +74,12 @@ impl UnixSocketServer {
 
                 let mut port_to_fd = HashMap::new();
                 port_to_fd.insert(6380, crate::hot_reload::FileDescriptor(10));
+
+                info!(
+                    "Sending response with {} file descriptors",
+                    port_to_fd.len()
+                );
+
                 Response::SendListeningSockets { port_to_fd }
             }
         }
@@ -89,41 +96,30 @@ impl Drop for UnixSocketServer {
     }
 }
 
-use serde::de::DeserializeOwned;
-async fn read_json<T: DeserializeOwned, R: AsyncReadExt + Unpin>(reader: &mut R) -> Result<T> {
-    let mut received_bytes = Vec::new();
-    loop {
-        let mut buf = [0u8; 1024];
-        let n = reader
-            .read(&mut buf)
-            .await
-            .context("Failed to read from stream")?;
-        if n == 0 {
-            return Err(anyhow::anyhow!(
-                "Connection closed before full JSON message received"
-            ));
-        }
-        received_bytes.extend_from_slice(&buf[..n]);
-        match serde_json::from_slice(&received_bytes) {
-            Ok(request) => return Ok(request),
-            Err(e) if e.is_eof() => continue,
-            Err(e) => return Err(e).context("Failed to parse JSON"),
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::UnixStream;
 
+    #[cfg(test)]
+    async fn wait_for_unix_socket_connection(socket_path: &str, timeout_ms: u64) {
+        for _ in 0..timeout_ms / 5 {
+            if UnixStream::connect(socket_path).await.is_ok() {
+                return;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+        panic!(
+            "Failed to connect to Unix socket at {} after waiting",
+            socket_path
+        );
+    }
+
     #[tokio::test]
     async fn test_unix_socket_server_basic() {
         let socket_path = "/tmp/test-shotover-hotreload.sock";
 
-        // Clean up any existing socket
-        let _ = std::fs::remove_file(socket_path);
         let server = UnixSocketServer::new(socket_path.to_string()).unwrap();
 
         // Test that socket file was created
@@ -140,24 +136,10 @@ mod tests {
 
         // Start server in background
         let server_handle = tokio::spawn(async move {
-            server.run().await.ok();
+            server.run().await.unwrap();
         });
-
-        let mut stream = None;
-        for _ in 0..1000 {
-            match UnixStream::connect(socket_path).await {
-                Ok(s) => {
-                    stream = Some(s);
-                    break;
-                }
-                Err(_) => {
-                    use std::time::Duration;
-                    tokio::time::sleep(Duration::from_millis(5)).await;
-                }
-            }
-        }
-        let mut stream =
-            stream.expect("Failed to Connect to Hot Reload Unix Socket Server after waiting");
+        wait_for_unix_socket_connection(socket_path, 2000).await;
+        let mut stream = UnixStream::connect(socket_path).await.unwrap();
 
         // Send request
         let request = Request::SendListeningSockets;
@@ -180,6 +162,5 @@ mod tests {
 
         // Clean up
         server_handle.abort();
-        let _ = std::fs::remove_file(socket_path);
     }
 }
