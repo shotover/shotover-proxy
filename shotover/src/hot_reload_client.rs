@@ -75,7 +75,7 @@ impl UnixSocketClient {
 }
 
 /// Request listening sockets from an existing Shotover instance during hot reload
-pub async fn request_listening_sockets(socket_path: String) -> Result<()> {
+pub async fn perform_hot_reloading(socket_path: String) -> Result<()> {
     info!(
         "Hot reload CLIENT will request sockets from existing shotover at: {}",
         socket_path
@@ -143,7 +143,7 @@ mod tests {
         let mut server =
             crate::hot_reload_server::UnixSocketServer::new(socket_path.to_string()).unwrap();
         let server_handle = tokio::spawn(async move {
-            server.run().await.ok();
+            server.run().await.unwrap();
         });
 
         // Wait for server to start
@@ -173,14 +173,11 @@ mod tests {
     async fn test_multiple_client_requests() {
         let socket_path = "/tmp/test-multiple-clients.sock";
 
-        // Clean up any existing socket
-        let _ = std::fs::remove_file(socket_path);
-
         // Start server
         let mut server =
             crate::hot_reload_server::UnixSocketServer::new(socket_path.to_string()).unwrap();
         let server_handle = tokio::spawn(async move {
-            server.run().await.ok();
+            server.run().await.unwrap();
         });
 
         wait_for_unix_socket_connection(socket_path, 2000).await;

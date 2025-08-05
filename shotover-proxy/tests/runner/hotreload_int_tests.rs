@@ -1,8 +1,6 @@
 use crate::shotover_process;
 use redis::{Client, Commands};
-use std::time::Duration;
 use test_helpers::docker_compose::docker_compose;
-use tokio::time::sleep;
 
 #[tokio::test]
 async fn test_hotreload_basic_valkey_connection() {
@@ -37,7 +35,6 @@ async fn test_dual_shotover_instances_with_valkey() {
     let client_a = Client::open("valkey://127.0.0.1:6380").unwrap();
     let mut con_a = client_a.get_connection().unwrap();
     let _: () = con_a.set("key_from_a", "value_from_a").unwrap();
-    sleep(Duration::from_secs(5)).await;
 
     //Second shotover
     let shotover_b = shotover_process("tests/test-configs/hotreload/topology-alt.yaml")

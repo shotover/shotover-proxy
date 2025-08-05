@@ -120,8 +120,6 @@ mod tests {
     async fn test_unix_socket_server_basic() {
         let socket_path = "/tmp/test-shotover-hotreload.sock";
 
-        // Clean up any existing socket
-        let _ = std::fs::remove_file(socket_path);
         let server = UnixSocketServer::new(socket_path.to_string()).unwrap();
 
         // Test that socket file was created
@@ -138,7 +136,7 @@ mod tests {
 
         // Start server in background
         let server_handle = tokio::spawn(async move {
-            server.run().await.ok();
+            server.run().await.unwrap();
         });
         wait_for_unix_socket_connection(socket_path, 2000).await;
         let mut stream = UnixStream::connect(socket_path).await.unwrap();

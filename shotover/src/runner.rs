@@ -177,108 +177,26 @@ impl Shotover {
         }
         Ok(())
     }
-
-    /// Begins running shotover, permanently handing control of the appplication over to shotover.
-    /// As such this method never returns.
-    pub fn run_block(self) -> ! {
-        let (trigger_shutdown_tx, trigger_shutdown_rx) = tokio::sync::watch::channel(false);
-
-        // We need to block on this part to ensure that we immediately register these signals.
-        // Otherwise if we included signal creation in the below spawned task we would be at the mercy of whenever tokio decides to start running the task.
-        let (mut interrupt, mut terminate) = self.runtime.block_on(async {
-            (
-                signal(SignalKind::interrupt()).unwrap(),
-                signal(SignalKind::terminate()).unwrap(),
-            )
-        });
-        self.runtime.spawn(async move {
-            tokio::select! {
-                _ = interrupt.recv() => {
-                    info!("received SIGINT");
-                },
-                _ = terminate.recv() => {
-                    info!("received SIGTERM");
-                },
-            };
-
-            trigger_shutdown_tx.send(true).unwrap();
-        });
-
-        let server = Server::new(
-            self.topology,
-            self.config,
-            self.hotreload_enabled,
-            self.hotreload_socket_path,
-            self.hotreload_from_socket,
-        );
-
-        let code = match self.runtime.block_on(server.run(trigger_shutdown_rx)) {
-            Ok(()) => {
-                info!("Shotover was shutdown cleanly.");
-                0
-            }
-            Err(err) => {
-                error!("{:?}", err.context("Failed to start shotover"));
-                1
-            }
-        };
-        // Ensure tracing is flushed by dropping before exiting
-        std::mem::drop(self.tracing);
-        std::mem::drop(self.runtime);
-        std::process::exit(code);
-    }
-
-    fn create_runtime(stack_size: usize, worker_threads: Option<usize>) -> Runtime {
-        let mut runtime_builder = runtime::Builder::new_multi_thread();
-        runtime_builder
-            .enable_all()
-            .thread_name("shotover-worker")
-            .thread_stack_size(stack_size);
-        if let Some(worker_threads) = worker_threads {
-            runtime_builder.worker_threads(worker_threads);
-        }
-        runtime_builder.build().unwrap()
-    }
-}
-
-pub struct Server {
-    topology: Topology,
-    config: Config,
-    hotreload_enabled: bool,
-    hotreload_socket_path: String,
-    hotreload_from_socket: Option<String>,
-}
-
-impl Server {
-    pub fn new(
+    async fn run_inner(
         topology: Topology,
         config: Config,
         hotreload_enabled: bool,
         hotreload_socket_path: String,
         hotreload_from_socket: Option<String>,
-    ) -> Self {
-        Self {
-            topology,
-            config,
-            hotreload_enabled,
-            hotreload_socket_path,
-            hotreload_from_socket,
-        }
-    }
-
-    pub async fn run(self, trigger_shutdown_rx: watch::Receiver<bool>) -> Result<()> {
-        if let Some(socket_path) = self.hotreload_from_socket {
+        trigger_shutdown_rx: watch::Receiver<bool>,
+    ) -> Result<()> {
+        if let Some(socket_path) = hotreload_from_socket.clone() {
             info!("Hot reload CLIENT mode - requesting socket handoff from existing shotover");
-            crate::hot_reload_client::request_listening_sockets(socket_path)
+            crate::hot_reload_client::perform_hot_reloading(socket_path)
                 .await
                 .context("Hot reload client failed")?;
         }
 
         // Setup Unix socket server for hot reload if enabled
-        if self.hotreload_enabled {
+        if hotreload_enabled {
             info!("Starting shotover with hot reloading enabled");
 
-            let socket_path = self.hotreload_socket_path.clone();
+            let socket_path = hotreload_socket_path.clone();
             tokio::spawn(async move {
                 match crate::hot_reload_server::UnixSocketServer::new(socket_path) {
                     Ok(mut server) => {
@@ -295,16 +213,88 @@ impl Server {
         }
 
         info!("Starting Shotover {}", crate_version!());
-        info!(configuration = ?self.config);
-        info!(topology = ?self.topology);
+        info!(configuration = ?config);
+        info!(topology = ?topology);
 
-        match self.topology.run_chains(trigger_shutdown_rx).await {
+        match topology.run_chains(trigger_shutdown_rx).await {
             Ok(sources) => {
                 futures::future::join_all(sources.into_iter().map(|x| x.into_join_handle())).await;
                 Ok(())
             }
             Err(err) => Err(err),
         }
+    }
+
+    /// Begins running shotover, permanently handing control of the appplication over to shotover.
+    /// As such this method never returns.
+
+    pub fn run_block(self) -> ! {
+        let Shotover {
+            runtime,
+            topology,
+            config,
+            tracing,
+            hotreload_enabled,
+            hotreload_socket_path,
+            hotreload_from_socket,
+        } = self;
+
+        let (trigger_shutdown_tx, trigger_shutdown_rx) = tokio::sync::watch::channel(false);
+
+        // We need to block on this part to ensure that we immediately register these signals.
+        // Otherwise if we included signal creation in the below spawned task we would be at the mercy of whenever tokio decides to start running the task.
+        let (mut interrupt, mut terminate) = runtime.block_on(async {
+            (
+                signal(SignalKind::interrupt()).unwrap(),
+                signal(SignalKind::terminate()).unwrap(),
+            )
+        });
+        runtime.spawn(async move {
+            tokio::select! {
+                _ = interrupt.recv() => {
+                    info!("received SIGINT");
+                },
+                _ = terminate.recv() => {
+                    info!("received SIGTERM");
+                },
+            };
+
+            trigger_shutdown_tx.send(true).unwrap();
+        });
+
+        let code = match runtime.block_on(Shotover::run_inner(
+            topology,
+            config,
+            hotreload_enabled,
+            hotreload_socket_path,
+            hotreload_from_socket,
+            trigger_shutdown_rx,
+        )) {
+            Ok(()) => {
+                info!("Shotover was shutdown cleanly.");
+                0
+            }
+            Err(err) => {
+                error!("{:?}", err.context("Failed to start shotover"));
+                1
+            }
+        };
+        // Ensure tracing is flushed by dropping before exiting
+        std::mem::drop(tracing);
+        std::mem::drop(runtime);
+        std::process::exit(code);
+    }
+
+    fn create_runtime(stack_size: usize, worker_threads: Option<usize>) -> Runtime {
+        let mut runtime_builder = runtime::Builder::new_multi_thread();
+        runtime_builder
+            .enable_all()
+            .thread_name("shotover-worker")
+            .thread_stack_size(stack_size);
+        if let Some(worker_threads) = worker_threads {
+            runtime_builder.worker_threads(worker_threads);
+        }
+        runtime_builder.build().unwrap()
     }
 }
 
