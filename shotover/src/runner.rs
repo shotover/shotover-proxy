@@ -192,7 +192,7 @@ impl Shotover {
                 .context("Hot reload client failed")?;
         }
 
-        // Setup Unix Socket Sever for hot reload if enabled
+        // Setup Unix Socket Server for hot reload if enabled
         if hotreload_enabled {
             info!("Starting shotover with hot reloading enabled");
             crate::hot_reload::server::start_hot_reload_server(hotreload_socket_path.clone());
