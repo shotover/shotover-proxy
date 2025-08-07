@@ -192,24 +192,10 @@ impl Shotover {
                 .context("Hot reload client failed")?;
         }
 
-        // Setup Unix socket server for hot reload if enabled
+        // Setup Unix Socket Sever for hot reload if enabled
         if hotreload_enabled {
             info!("Starting shotover with hot reloading enabled");
-
-            let socket_path = hotreload_socket_path.clone();
-            tokio::spawn(async move {
-                match crate::hot_reload::server::UnixSocketServer::new(socket_path) {
-                    Ok(mut server) => {
-                        info!("Unix socket server started for hot reload communication");
-                        if let Err(e) = server.run().await {
-                            error!("Unix socket server error: {:?}", e);
-                        }
-                    }
-                    Err(e) => {
-                        error!("Failed to start Unix socket server: {:?}", e);
-                    }
-                }
-            });
+            crate::hot_reload::server::start_hot_reload_server(hotreload_socket_path.clone());
         }
 
         info!("Starting Shotover {}", crate_version!());

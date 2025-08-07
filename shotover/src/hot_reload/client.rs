@@ -107,20 +107,7 @@ pub async fn perform_hot_reloading(socket_path: String) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[cfg(test)]
-    async fn wait_for_unix_socket_connection(socket_path: &str, timeout_ms: u64) {
-        use tokio::net::UnixStream;
-        for _ in 0..timeout_ms / 5 {
-            if UnixStream::connect(socket_path).await.is_ok() {
-                return;
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
-        }
-        panic!(
-            "Failed to connect to Unix socket at {} after waiting",
-            socket_path
-        );
-    }
+    use crate::hot_reload::tests::wait_for_unix_socket_connection;
 
     #[tokio::test]
     async fn test_client_connection_error() {
