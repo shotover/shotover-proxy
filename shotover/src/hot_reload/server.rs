@@ -1,5 +1,5 @@
-use crate::hot_reload::{Request, Response};
-use crate::json_parsing::read_json;
+use crate::hot_reload::json_parsing::read_json;
+use crate::hot_reload::protocol::{Request, Response};
 use anyhow::{Context, Result};
 use serde_json;
 use std::collections::HashMap;
@@ -73,7 +73,7 @@ impl UnixSocketServer {
                 // TODO: In next steps, we'll extract actual file descriptors
 
                 let mut port_to_fd = HashMap::new();
-                port_to_fd.insert(6380, crate::hot_reload::FileDescriptor(10));
+                port_to_fd.insert(6380, crate::hot_reload::protocol::FileDescriptor(10));
 
                 info!(
                     "Sending response with {} file descriptors",
@@ -95,26 +95,27 @@ impl Drop for UnixSocketServer {
         }
     }
 }
+pub fn start_hot_reload_server(socket_path: String) {
+    tokio::spawn(async move {
+        match UnixSocketServer::new(socket_path) {
+            Ok(mut server) => {
+                info!("Unix socket server started for hot reload communication");
+                if let Err(e) = server.run().await {
+                    error!("Unix socket server error: {:?}", e);
+                }
+            }
+            Err(e) => {
+                error!("Failed to start Unix socket server: {:?}", e);
+            }
+        }
+    });
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::hot_reload::tests::wait_for_unix_socket_connection;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    use tokio::net::UnixStream;
-
-    #[cfg(test)]
-    async fn wait_for_unix_socket_connection(socket_path: &str, timeout_ms: u64) {
-        for _ in 0..timeout_ms / 5 {
-            if UnixStream::connect(socket_path).await.is_ok() {
-                return;
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
-        }
-        panic!(
-            "Failed to connect to Unix socket at {} after waiting",
-            socket_path
-        );
-    }
 
     #[tokio::test]
     async fn test_unix_socket_server_basic() {

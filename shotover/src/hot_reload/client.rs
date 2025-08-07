@@ -1,7 +1,7 @@
 //This module gives client-side implementation for socket handoff as part of hot reloading
 //Client will connect to existing shotovers and requests for FDs
-use crate::hot_reload::{Request, Response};
-use crate::json_parsing::read_json;
+use crate::hot_reload::json_parsing::read_json;
+use crate::hot_reload::protocol::{Request, Response};
 use anyhow::{Context, Result};
 use std::time::Duration;
 use tokio::io::{AsyncWriteExt, BufReader};
@@ -84,10 +84,10 @@ pub async fn perform_hot_reloading(socket_path: String) -> Result<()> {
     let client = UnixSocketClient::new(socket_path.clone());
 
     match client
-        .send_request(crate::hot_reload::Request::SendListeningSockets)
+        .send_request(crate::hot_reload::protocol::Request::SendListeningSockets)
         .await
     {
-        Ok(crate::hot_reload::Response::SendListeningSockets { port_to_fd }) => {
+        Ok(crate::hot_reload::protocol::Response::SendListeningSockets { port_to_fd }) => {
             info!(
                 "Successfully received {} file descriptors from hot reload server",
                 port_to_fd.len()
@@ -97,7 +97,7 @@ pub async fn perform_hot_reloading(socket_path: String) -> Result<()> {
             }
             Ok(())
         }
-        Ok(crate::hot_reload::Response::Error(msg)) => {
+        Ok(crate::hot_reload::protocol::Response::Error(msg)) => {
             Err(anyhow::anyhow!("Hot reload request failed: {}", msg))
         }
         Err(e) => Err(e).context("Failed to communicate with hot reload server"),
@@ -107,20 +107,7 @@ pub async fn perform_hot_reloading(socket_path: String) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[cfg(test)]
-    async fn wait_for_unix_socket_connection(socket_path: &str, timeout_ms: u64) {
-        use tokio::net::UnixStream;
-        for _ in 0..timeout_ms / 5 {
-            if UnixStream::connect(socket_path).await.is_ok() {
-                return;
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
-        }
-        panic!(
-            "Failed to connect to Unix socket at {} after waiting",
-            socket_path
-        );
-    }
+    use crate::hot_reload::tests::wait_for_unix_socket_connection;
 
     #[tokio::test]
     async fn test_client_connection_error() {
@@ -141,7 +128,7 @@ mod tests {
 
         // Start server
         let mut server =
-            crate::hot_reload_server::UnixSocketServer::new(socket_path.to_string()).unwrap();
+            crate::hot_reload::server::UnixSocketServer::new(socket_path.to_string()).unwrap();
         let server_handle = tokio::spawn(async move {
             server.run().await.unwrap();
         });
@@ -175,7 +162,7 @@ mod tests {
 
         // Start server
         let mut server =
-            crate::hot_reload_server::UnixSocketServer::new(socket_path.to_string()).unwrap();
+            crate::hot_reload::server::UnixSocketServer::new(socket_path.to_string()).unwrap();
         let server_handle = tokio::spawn(async move {
             server.run().await.unwrap();
         });
