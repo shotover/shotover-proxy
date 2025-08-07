@@ -1,7 +1,7 @@
 //This module gives client-side implementation for socket handoff as part of hot reloading
 //Client will connect to existing shotovers and requests for FDs
-use crate::hot_reload::{Request, Response};
-use crate::json_parsing::read_json;
+use crate::hot_reload::json_parsing::read_json;
+use crate::hot_reload::protocol::{Request, Response};
 use anyhow::{Context, Result};
 use std::time::Duration;
 use tokio::io::{AsyncWriteExt, BufReader};
@@ -84,10 +84,10 @@ pub async fn perform_hot_reloading(socket_path: String) -> Result<()> {
     let client = UnixSocketClient::new(socket_path.clone());
 
     match client
-        .send_request(crate::hot_reload::Request::SendListeningSockets)
+        .send_request(crate::hot_reload::protocol::Request::SendListeningSockets)
         .await
     {
-        Ok(crate::hot_reload::Response::SendListeningSockets { port_to_fd }) => {
+        Ok(crate::hot_reload::protocol::Response::SendListeningSockets { port_to_fd }) => {
             info!(
                 "Successfully received {} file descriptors from hot reload server",
                 port_to_fd.len()
@@ -97,7 +97,7 @@ pub async fn perform_hot_reloading(socket_path: String) -> Result<()> {
             }
             Ok(())
         }
-        Ok(crate::hot_reload::Response::Error(msg)) => {
+        Ok(crate::hot_reload::protocol::Response::Error(msg)) => {
             Err(anyhow::anyhow!("Hot reload request failed: {}", msg))
         }
         Err(e) => Err(e).context("Failed to communicate with hot reload server"),
@@ -141,7 +141,7 @@ mod tests {
 
         // Start server
         let mut server =
-            crate::hot_reload_server::UnixSocketServer::new(socket_path.to_string()).unwrap();
+            crate::hot_reload::server::UnixSocketServer::new(socket_path.to_string()).unwrap();
         let server_handle = tokio::spawn(async move {
             server.run().await.unwrap();
         });
@@ -175,7 +175,7 @@ mod tests {
 
         // Start server
         let mut server =
-            crate::hot_reload_server::UnixSocketServer::new(socket_path.to_string()).unwrap();
+            crate::hot_reload::server::UnixSocketServer::new(socket_path.to_string()).unwrap();
         let server_handle = tokio::spawn(async move {
             server.run().await.unwrap();
         });

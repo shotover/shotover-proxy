@@ -1,5 +1,5 @@
-use crate::hot_reload::{Request, Response};
-use crate::json_parsing::read_json;
+use crate::hot_reload::json_parsing::read_json;
+use crate::hot_reload::protocol::{Request, Response};
 use anyhow::{Context, Result};
 use serde_json;
 use std::collections::HashMap;
@@ -73,7 +73,7 @@ impl UnixSocketServer {
                 // TODO: In next steps, we'll extract actual file descriptors
 
                 let mut port_to_fd = HashMap::new();
-                port_to_fd.insert(6380, crate::hot_reload::FileDescriptor(10));
+                port_to_fd.insert(6380, crate::hot_reload::protocol::FileDescriptor(10));
 
                 info!(
                     "Sending response with {} file descriptors",
