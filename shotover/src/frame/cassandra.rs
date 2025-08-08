@@ -533,7 +533,7 @@ fn filter_batch_queries(batch: &mut BatchStatement) -> Option<&mut CassandraStat
 
 impl CassandraOperation {
     /// Return all queries contained within CassandaOperation::Query and CassandraOperation::Batch
-    pub fn queries(&mut self) -> QueryIterator {
+    pub fn queries(&mut self) -> QueryIterator<'_> {
         match self {
             CassandraOperation::Query { query, .. } => QueryIterator::Query(std::iter::once(query)),
             CassandraOperation::Batch(batch) => {

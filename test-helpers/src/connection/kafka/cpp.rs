@@ -452,7 +452,7 @@ fn resource_specifier<'a>(specifier: &'a super::ResourceSpecifier<'a>) -> Resour
     }
 }
 
-fn resource_specifier_ref(specifier: &OwnedResourceSpecifier) -> ResourceSpecifier {
+fn resource_specifier_ref(specifier: &OwnedResourceSpecifier) -> ResourceSpecifier<'_> {
     match specifier {
         OwnedResourceSpecifier::Topic(topic) => ResourceSpecifier::Topic(topic),
         OwnedResourceSpecifier::Group(group) => ResourceSpecifier::Group(group),

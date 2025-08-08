@@ -317,7 +317,7 @@ fn criterion_benchmark(c: &mut Criterion) {
 }
 
 #[cfg(feature = "alpha-transforms")]
-fn cassandra_parsed_query(query: &str) -> ChainState {
+fn cassandra_parsed_query(query: &str) -> ChainState<'_> {
     ChainState::new_with_addr(
         vec![Message::from_frame(Frame::Cassandra(CassandraFrame {
             version: Version::V4,
