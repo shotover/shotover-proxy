@@ -4097,7 +4097,7 @@ fn partition_shotover_nodes_by_rack<'a>(
 /// Panics if `nodes_in_rack` and `nodes_out_of_rack` are both empty.
 /// The local shotover node is always UP, so this should never panic.
 fn select_shotover_node_by_hash(
-    shotover_nodes_by_rack: ShotoverNodesByRack,
+    shotover_nodes_by_rack: ShotoverNodesByRack<'_>,
     hash: usize,
 ) -> &ShotoverNode {
     let nodes = if !shotover_nodes_by_rack.nodes_in_rack.is_empty() {
