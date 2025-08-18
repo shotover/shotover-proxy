@@ -29,6 +29,7 @@ impl CassandraConfig {
     pub async fn get_source(
         &self,
         trigger_shutdown_rx: watch::Receiver<bool>,
+        hot_reload_channel_manager: Option<&mut crate::hot_reload::HotReloadChannelManager>,
     ) -> Result<Source, Vec<String>> {
         Ok(Source::Cassandra(
             CassandraSource::new(
@@ -41,6 +42,7 @@ impl CassandraConfig {
                 self.tls.clone(),
                 self.timeout,
                 self.transport,
+                hot_reload_channel_manager,
             )
             .await?,
         ))
@@ -64,8 +66,16 @@ impl CassandraSource {
         tls: Option<TlsAcceptorConfig>,
         timeout: Option<u64>,
         transport: Option<Transport>,
+        hot_reload_channel_manager: Option<&mut crate::hot_reload::HotReloadChannelManager>,
     ) -> Result<Self, Vec<String>> {
         info!("Starting Cassandra source on [{}]", listen_addr);
+
+        // Create hot reload channel if manager is provided
+        let hot_reload_rx = if let Some(manager) = hot_reload_channel_manager {
+            Some(manager.create_channel_for_source(name.clone()))
+        } else {
+            None
+        };
 
         let mut listener = TcpCodecListener::new(
             chain_config,
@@ -78,6 +88,7 @@ impl CassandraSource {
             tls.as_ref().map(TlsAcceptor::new).transpose()?,
             timeout.map(Duration::from_secs),
             transport.unwrap_or(Transport::Tcp),
+            hot_reload_rx,
         )
         .await?;
 

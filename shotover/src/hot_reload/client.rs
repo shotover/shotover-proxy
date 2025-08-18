@@ -127,8 +127,12 @@ mod tests {
         let socket_path = "/tmp/test-client-server-integration.sock";
 
         // Start server
-        let mut server =
-            crate::hot_reload::server::UnixSocketServer::new(socket_path.to_string()).unwrap();
+        let mut server = crate::hot_reload::server::UnixSocketServer::new(
+            socket_path.to_string(),
+            std::collections::HashMap::new(),
+        )
+        .unwrap();
+
         let server_handle = tokio::spawn(async move {
             server.run().await.unwrap();
         });
@@ -161,8 +165,12 @@ mod tests {
         let socket_path = "/tmp/test-multiple-clients.sock";
 
         // Start server
-        let mut server =
-            crate::hot_reload::server::UnixSocketServer::new(socket_path.to_string()).unwrap();
+        let mut server = crate::hot_reload::server::UnixSocketServer::new(
+            socket_path.to_string(),
+            std::collections::HashMap::new(),
+        )
+        .unwrap();
+
         let server_handle = tokio::spawn(async move {
             server.run().await.unwrap();
         });

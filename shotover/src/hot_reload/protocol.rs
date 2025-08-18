@@ -23,3 +23,14 @@ pub enum Response {
     //ShutdownOriginalNode,
     Error(String),
 }
+/// Request sent from hot reload server to TcpCodecListener
+pub struct HotReloadListenerRequest {
+    pub return_chan: tokio::sync::oneshot::Sender<HotReloadListenerResponse>,
+}
+
+/// Response sent from TcpCodecListener back to hot reload server
+#[derive(Debug)]
+pub struct HotReloadListenerResponse {
+    pub port: u16,
+    pub listener_socket_fd: FileDescriptor,
+}

@@ -1,20 +1,25 @@
 use crate::hot_reload::json_parsing::read_json;
-use crate::hot_reload::protocol::{Request, Response};
+use crate::hot_reload::protocol::{HotReloadListenerRequest, Request, Response};
 use anyhow::{Context, Result};
 use serde_json;
 use std::collections::HashMap;
 use std::path::Path;
 use tokio::io::{AsyncWriteExt, BufReader};
 use tokio::net::{UnixListener, UnixStream};
+use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
 
 pub struct UnixSocketServer {
     socket_path: String,
     listener: UnixListener,
+    channel_senders: HashMap<String, mpsc::UnboundedSender<HotReloadListenerRequest>>,
 }
 
 impl UnixSocketServer {
-    pub fn new(socket_path: String) -> Result<Self> {
+    pub fn new(
+        socket_path: String,
+        channel_senders: HashMap<String, mpsc::UnboundedSender<HotReloadListenerRequest>>,
+    ) -> Result<Self> {
         if Path::new(&socket_path).exists() {
             std::fs::remove_file(&socket_path).with_context(|| {
                 format!("Failed to remove existing socket file: {}", socket_path)
@@ -28,6 +33,7 @@ impl UnixSocketServer {
         Ok(Self {
             socket_path,
             listener,
+            channel_senders,
         })
     }
 
@@ -70,10 +76,54 @@ impl UnixSocketServer {
         match request {
             Request::SendListeningSockets => {
                 info!("Processing SendListeningSockets request");
-                // TODO: In next steps, we'll extract actual file descriptors
 
-                let mut port_to_fd = HashMap::new();
-                port_to_fd.insert(6380, crate::hot_reload::protocol::FileDescriptor(10));
+                // Send requests to all TcpCodecListener instances and collect responses
+                let mut port_to_fd: HashMap<u32, crate::hot_reload::protocol::FileDescriptor> =
+                    HashMap::new();
+
+                let mut response_futures = Vec::new();
+
+                for (source_name, sender) in &self.channel_senders {
+                    let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+                    let hot_reload_request = HotReloadListenerRequest {
+                        return_chan: response_tx,
+                    };
+
+                    if let Err(e) = sender.send(hot_reload_request) {
+                        warn!(
+                            "Failed to send hot reload request to source {}: {:?}",
+                            source_name, e
+                        );
+                        continue;
+                    }
+
+                    response_futures.push((source_name.clone(), response_rx));
+                }
+
+                // Collect all responses with timeout
+                for (source_name, response_rx) in response_futures {
+                    match tokio::time::timeout(std::time::Duration::from_secs(5), response_rx).await
+                    {
+                        Ok(Ok(response)) => {
+                            if response.listener_socket_fd.0 != -1 {
+                                info!(
+                                    "Received FD {} for port {} from source {}",
+                                    response.listener_socket_fd.0, response.port, source_name
+                                );
+                                port_to_fd
+                                    .insert(response.port as u32, response.listener_socket_fd);
+                            } else {
+                                warn!("Source {} returned invalid FD", source_name);
+                            }
+                        }
+                        Ok(Err(_)) => {
+                            warn!("Source {} dropped response channel", source_name);
+                        }
+                        Err(_) => {
+                            warn!("Timeout waiting for response from source {}", source_name);
+                        }
+                    }
+                }
 
                 info!(
                     "Sending response with {} file descriptors",
@@ -95,9 +145,12 @@ impl Drop for UnixSocketServer {
         }
     }
 }
-pub fn start_hot_reload_server(socket_path: String) {
+pub fn start_hot_reload_server(
+    socket_path: String,
+    channel_senders: HashMap<String, mpsc::UnboundedSender<HotReloadListenerRequest>>,
+) {
     tokio::spawn(async move {
-        match UnixSocketServer::new(socket_path) {
+        match UnixSocketServer::new(socket_path, channel_senders) {
             Ok(mut server) => {
                 info!("Unix socket server started for hot reload communication");
                 if let Err(e) = server.run().await {
@@ -121,7 +174,8 @@ mod tests {
     async fn test_unix_socket_server_basic() {
         let socket_path = "/tmp/test-shotover-hotreload.sock";
 
-        let server = UnixSocketServer::new(socket_path.to_string()).unwrap();
+        let channel_senders = HashMap::new();
+        let server = UnixSocketServer::new(socket_path.to_string(), channel_senders).unwrap();
 
         // Test that socket file was created
         assert!(Path::new(socket_path).exists());
@@ -133,7 +187,8 @@ mod tests {
     #[tokio::test]
     async fn test_request_response() {
         let socket_path = "/tmp/test-shotover-request-response.sock";
-        let mut server = UnixSocketServer::new(socket_path.to_string()).unwrap();
+        let channel_senders = HashMap::new(); // Empty for test
+        let mut server = UnixSocketServer::new(socket_path.to_string(), channel_senders).unwrap();
 
         // Start server in background
         let server_handle = tokio::spawn(async move {
@@ -155,8 +210,7 @@ mod tests {
         // Verify response
         match response {
             Response::SendListeningSockets { port_to_fd } => {
-                assert_eq!(port_to_fd.len(), 1);
-                assert!(port_to_fd.contains_key(&6380));
+                assert_eq!(port_to_fd.len(), 0);
             }
             _ => panic!("Wrong response type"),
         }

@@ -1,7 +1,10 @@
+pub mod channel_manager;
 pub mod client;
 pub mod json_parsing;
 pub mod protocol;
 pub mod server;
+
+pub use channel_manager::HotReloadChannelManager;
 
 #[cfg(test)]
 pub mod tests {

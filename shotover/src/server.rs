@@ -1,6 +1,9 @@
 use crate::codec::{CodecBuilder, CodecReadError, CodecWriteError};
 use crate::config::chain::TransformChainConfig;
 use crate::frame::MessageType;
+use crate::hot_reload::protocol::{
+    FileDescriptor, HotReloadListenerRequest, HotReloadListenerResponse,
+};
 use crate::message::{Message, MessageIdMap, Messages, Metadata};
 use crate::sources::Transport;
 use crate::tls::{AcceptError, TlsAcceptor};
@@ -13,6 +16,7 @@ use futures::{SinkExt, StreamExt};
 use metrics::{Counter, Gauge, counter, gauge};
 use std::io::ErrorKind;
 use std::net::SocketAddr;
+use std::os::unix::io::AsRawFd;
 use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::{TcpListener, TcpStream};
@@ -74,6 +78,9 @@ pub struct TcpCodecListener<C: CodecBuilder> {
     connection_handles: Vec<JoinHandle<()>>,
 
     transport: Transport,
+
+    /// Receiver for hot reload requests to extract listening socket file descriptor
+    hot_reload_rx: Option<tokio::sync::mpsc::UnboundedReceiver<HotReloadListenerRequest>>,
 }
 
 impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
@@ -89,6 +96,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
         tls: Option<TlsAcceptor>,
         timeout: Option<Duration>,
         transport: Transport,
+        hot_reload_rx: Option<tokio::sync::mpsc::UnboundedReceiver<HotReloadListenerRequest>>,
     ) -> Result<Self, Vec<String>> {
         let available_connections_gauge =
             gauge!("shotover_available_connections_count", "source" => source_name.clone());
@@ -139,6 +147,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
             timeout,
             connection_handles: vec![],
             transport,
+            hot_reload_rx,
         })
     }
 
@@ -182,60 +191,136 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                 crate::connection_span::span(self.connection_count, self.source_name.as_str());
             let transport = self.transport;
             async {
-                // Accept a new socket. This will attempt to perform error handling.
-                // The `accept` method internally attempts to recover errors, so an
-                // error here is non-recoverable.
-                let stream = self.accept().await?;
+                let mut hot_reload_rx = self.hot_reload_rx.take();
 
-                debug!("got socket");
-                self.available_connections_gauge
-                    .set(self.limit_connections.available_permits() as f64);
-                self.connections_opened.increment(1);
+                let result = if let Some(ref mut rx) = hot_reload_rx {
+                    tokio::select! {
+                        // Normal connection handling
+                        stream_result = self.accept() => {
+                            let stream = stream_result?;
 
-                let client_details = stream
-                    .peer_addr()
-                    .map(|p| p.ip().to_string())
-                    .unwrap_or_else(|_| "Unknown peer".to_string());
-                tracing::debug!("New connection from {}", client_details);
+                            debug!("got socket");
+                            self.available_connections_gauge
+                                .set(self.limit_connections.available_permits() as f64);
+                            self.connections_opened.increment(1);
 
-                let force_run_chain = Arc::new(Notify::new());
-                let context = TransformContextBuilder {
-                    force_run_chain: force_run_chain.clone(),
-                    client_details: client_details.clone(),
-                };
+                            let client_details = stream
+                                .peer_addr()
+                                .map(|p| p.ip().to_string())
+                                .unwrap_or_else(|_| "Unknown peer".to_string());
+                            tracing::debug!("New connection from {}", client_details);
 
-                let handler = Handler {
-                    chain: self.chain_builder.build(context),
-                    codec: self.codec.clone(),
-                    shutdown: Shutdown::new(self.trigger_shutdown_rx.clone()),
-                    tls: self.tls.clone(),
-                    pending_requests: PendingRequests::new(self.codec.protocol()),
-                    timeout: self.timeout,
-                    _permit: permit,
-                };
+                            let force_run_chain = Arc::new(Notify::new());
+                            let context = TransformContextBuilder {
+                                force_run_chain: force_run_chain.clone(),
+                                client_details: client_details.clone(),
+                            };
 
-                // Spawn a new task to process the connections.
-                self.connection_handles.push(tokio::spawn(
-                    async move {
-                        // Process the connection. If an error is encountered, log it.
-                        if let Err(err) = handler
-                            .run(stream, transport, force_run_chain, client_details)
-                            .await
-                        {
-                            error!(
-                                "{:?}",
-                                err.context("connection was unexpectedly terminated")
-                            );
+                            let handler = Handler {
+                                chain: self.chain_builder.build(context),
+                                codec: self.codec.clone(),
+                                shutdown: Shutdown::new(self.trigger_shutdown_rx.clone()),
+                                tls: self.tls.clone(),
+                                pending_requests: PendingRequests::new(self.codec.protocol()),
+                                timeout: self.timeout,
+                                _permit: permit,
+                            };
+
+                            // Spawn a new task to process the connections.
+                            self.connection_handles.push(tokio::spawn(
+                                async move {
+                                    // Process the connection. If an error is encountered, log it.
+                                    if let Err(err) = handler
+                                        .run(stream, transport, force_run_chain, client_details)
+                                        .await
+                                    {
+                                        error!(
+                                            "{:?}",
+                                            err.context("connection was unexpectedly terminated")
+                                        );
+                                    }
+                                }
+                                .in_current_span(),
+                            ));
+                            // Only prune the list every so often
+                            // theres no point in doing it every iteration because most likely none of the handles will have completed
+                            if self.connection_count % 1000 == 0 {
+                                self.connection_handles.retain(|x| !x.is_finished());
+                            }
+
+                            // Put the receiver back
+                            self.hot_reload_rx = hot_reload_rx;
+                            Ok::<(), anyhow::Error>(())
+                        }
+
+                        // Hot reload request handling
+                        hot_reload_request = rx.recv() => {
+                            if let Some(request) = hot_reload_request {
+                                self.handle_hot_reload_request(request).await;
+                                return Ok(()); // Exit the run loop after handling hot reload
+                            }
+                            // Put the receiver back if we continue
+                            self.hot_reload_rx = hot_reload_rx;
+                            Ok::<(), anyhow::Error>(())
                         }
                     }
-                    .in_current_span(),
-                ));
-                // Only prune the list every so often
-                // theres no point in doing it every iteration because most likely none of the handles will have completed
-                if self.connection_count % 1000 == 0 {
-                    self.connection_handles.retain(|x| !x.is_finished());
-                }
-                Ok::<(), anyhow::Error>(())
+                } else {
+                    // No hot reload channel, just do normal connection handling
+                    let stream = self.accept().await?;
+
+                    debug!("got socket");
+                    self.available_connections_gauge
+                        .set(self.limit_connections.available_permits() as f64);
+                    self.connections_opened.increment(1);
+
+                    let client_details = stream
+                        .peer_addr()
+                        .map(|p| p.ip().to_string())
+                        .unwrap_or_else(|_| "Unknown peer".to_string());
+                    tracing::debug!("New connection from {}", client_details);
+
+                    let force_run_chain = Arc::new(Notify::new());
+                    let context = TransformContextBuilder {
+                        force_run_chain: force_run_chain.clone(),
+                        client_details: client_details.clone(),
+                    };
+
+                    let handler = Handler {
+                        chain: self.chain_builder.build(context),
+                        codec: self.codec.clone(),
+                        shutdown: Shutdown::new(self.trigger_shutdown_rx.clone()),
+                        tls: self.tls.clone(),
+                        pending_requests: PendingRequests::new(self.codec.protocol()),
+                        timeout: self.timeout,
+                        _permit: permit,
+                    };
+
+                    // Spawn a new task to process the connections.
+                    self.connection_handles.push(tokio::spawn(
+                        async move {
+                            // Process the connection. If an error is encountered, log it.
+                            if let Err(err) = handler
+                                .run(stream, transport, force_run_chain, client_details)
+                                .await
+                            {
+                                error!(
+                                    "{:?}",
+                                    err.context("connection was unexpectedly terminated")
+                                );
+                            }
+                        }
+                        .in_current_span(),
+                    ));
+                    // Only prune the list every so often
+                    // theres no point in doing it every iteration because most likely none of the handles will have completed
+                    if self.connection_count % 1000 == 0 {
+                        self.connection_handles.retain(|x| !x.is_finished());
+                    }
+
+                    Ok::<(), anyhow::Error>(())
+                };
+
+                result
             }
             .instrument(span)
             .await?;
@@ -275,6 +360,42 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
 
             // Double the back off
             backoff *= 2;
+        }
+    }
+    /// Handle hot reload request by extracting file descriptor and responding
+    async fn handle_hot_reload_request(&mut self, request: HotReloadListenerRequest) {
+        let response = if let Some(ref listener) = self.listener {
+            // Extract the file descriptor from the TcpListener
+            let fd = listener.as_raw_fd();
+
+            // Parse port from listen_addr
+            let port = self
+                .listen_addr
+                .split(':')
+                .last()
+                .and_then(|p| p.parse::<u16>().ok())
+                .unwrap_or(0);
+
+            tracing::info!("Hot reload: Extracting socket FD {} for port {}", fd, port);
+
+            // Stop accepting new connections by setting listener to None
+            self.listener = None;
+
+            HotReloadListenerResponse {
+                port,
+                listener_socket_fd: FileDescriptor(fd),
+            }
+        } else {
+            tracing::warn!("Hot reload request received but no listener available");
+            HotReloadListenerResponse {
+                port: 0,
+                listener_socket_fd: FileDescriptor(-1), // Invalid FD to indicate error
+            }
+        };
+
+        // Send response back through oneshot channel
+        if let Err(_) = request.return_chan.send(response) {
+            tracing::error!("Failed to send hot reload response - receiver dropped");
         }
     }
 }

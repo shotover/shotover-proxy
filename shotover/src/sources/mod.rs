@@ -1,5 +1,6 @@
 //! Sources used to listen for connections and send/recieve with the client.
 
+use crate::hot_reload::HotReloadChannelManager;
 #[cfg(feature = "cassandra")]
 use crate::sources::cassandra::{CassandraConfig, CassandraSource};
 #[cfg(feature = "kafka")]
@@ -73,16 +74,29 @@ impl SourceConfig {
     pub(crate) async fn get_source(
         &self,
         trigger_shutdown_rx: watch::Receiver<bool>,
+        hot_reload_channel_manager: Option<&mut HotReloadChannelManager>,
     ) -> Result<Source, Vec<String>> {
         match self {
             #[cfg(feature = "cassandra")]
-            SourceConfig::Cassandra(c) => c.get_source(trigger_shutdown_rx).await,
+            SourceConfig::Cassandra(c) => {
+                c.get_source(trigger_shutdown_rx, hot_reload_channel_manager)
+                    .await
+            }
             #[cfg(feature = "valkey")]
-            SourceConfig::Valkey(r) => r.get_source(trigger_shutdown_rx).await,
+            SourceConfig::Valkey(r) => {
+                r.get_source(trigger_shutdown_rx, hot_reload_channel_manager)
+                    .await
+            }
             #[cfg(feature = "kafka")]
-            SourceConfig::Kafka(r) => r.get_source(trigger_shutdown_rx).await,
+            SourceConfig::Kafka(r) => {
+                r.get_source(trigger_shutdown_rx, hot_reload_channel_manager)
+                    .await
+            }
             #[cfg(feature = "opensearch")]
-            SourceConfig::OpenSearch(r) => r.get_source(trigger_shutdown_rx).await,
+            SourceConfig::OpenSearch(r) => {
+                r.get_source(trigger_shutdown_rx, hot_reload_channel_manager)
+                    .await
+            }
         }
     }
 

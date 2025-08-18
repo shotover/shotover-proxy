@@ -24,6 +24,7 @@ impl OpenSearchConfig {
     pub async fn get_source(
         &self,
         trigger_shutdown_rx: watch::Receiver<bool>,
+        hot_reload_channel_manager: Option<&mut crate::hot_reload::HotReloadChannelManager>,
     ) -> Result<Source, Vec<String>> {
         Ok(Source::OpenSearch(
             OpenSearchSource::new(
@@ -34,6 +35,7 @@ impl OpenSearchConfig {
                 self.connection_limit,
                 self.hard_connection_limit,
                 self.timeout,
+                hot_reload_channel_manager,
             )
             .await?,
         ))
@@ -54,8 +56,14 @@ impl OpenSearchSource {
         connection_limit: Option<usize>,
         hard_connection_limit: Option<bool>,
         timeout: Option<u64>,
+        hot_reload_channel_manager: Option<&mut crate::hot_reload::HotReloadChannelManager>,
     ) -> Result<Self, Vec<String>> {
         info!("Starting OpenSearch source on [{}]", listen_addr);
+        let hot_reload_rx = if let Some(manager) = hot_reload_channel_manager {
+            Some(manager.create_channel_for_source(name.clone()))
+        } else {
+            None
+        };
 
         let mut listener = TcpCodecListener::new(
             chain_config,
@@ -68,6 +76,7 @@ impl OpenSearchSource {
             None,
             timeout.map(Duration::from_secs),
             Transport::Tcp,
+            hot_reload_rx,
         )
         .await?;
 
