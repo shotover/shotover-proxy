@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{Semaphore, watch};
 use tokio::task::JoinHandle;
-use tracing::{error, info};
+use tracing::error;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct OpenSearchConfig {
@@ -48,6 +48,7 @@ pub struct OpenSearchSource {
 }
 
 impl OpenSearchSource {
+    #![allow(clippy::too_many_arguments)]
     pub async fn new(
         name: String,
         chain_config: &TransformChainConfig,
@@ -58,12 +59,8 @@ impl OpenSearchSource {
         timeout: Option<u64>,
         hot_reload_channel_manager: Option<&mut crate::hot_reload::HotReloadChannelManager>,
     ) -> Result<Self, Vec<String>> {
-        info!("Starting OpenSearch source on [{}]", listen_addr);
-        let hot_reload_rx = if let Some(manager) = hot_reload_channel_manager {
-            Some(manager.create_channel_for_source(name.clone()))
-        } else {
-            None
-        };
+        let hot_reload_rx = hot_reload_channel_manager
+            .map(|manager| manager.create_channel_for_source(name.clone()));
 
         let mut listener = TcpCodecListener::new(
             chain_config,
