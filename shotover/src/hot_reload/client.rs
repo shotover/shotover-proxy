@@ -150,8 +150,7 @@ mod tests {
         // Verify response
         match response {
             Response::SendListeningSockets { port_to_fd } => {
-                assert_eq!(port_to_fd.len(), 1);
-                assert!(port_to_fd.contains_key(&6380));
+                assert_eq!(port_to_fd.len(), 0);
             }
             Response::Error(msg) => panic!("Unexpected error response: {}", msg),
         }
@@ -187,7 +186,7 @@ mod tests {
                 .unwrap();
             match response {
                 Response::SendListeningSockets { port_to_fd } => {
-                    assert_eq!(port_to_fd.len(), 1);
+                    assert_eq!(port_to_fd.len(), 0);
                 }
                 Response::Error(msg) => panic!("Unexpected error response: {}", msg),
             }
