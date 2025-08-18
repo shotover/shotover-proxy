@@ -70,12 +70,9 @@ impl CassandraSource {
     ) -> Result<Self, Vec<String>> {
         info!("Starting Cassandra source on [{}]", listen_addr);
 
-        // Create hot reload channel if manager is provided
-        let hot_reload_rx = if let Some(manager) = hot_reload_channel_manager {
-            Some(manager.create_channel_for_source(name.clone()))
-        } else {
-            None
-        };
+        // Create hot reload channel
+        let hot_reload_rx = hot_reload_channel_manager
+            .map(|manager| manager.create_channel_for_source(name.clone()));
 
         let mut listener = TcpCodecListener::new(
             chain_config,

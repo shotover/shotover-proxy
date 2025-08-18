@@ -3,15 +3,14 @@ use std::collections::HashMap;
 use tokio::sync::mpsc;
 
 /// Manages hot reload channels for all TcpCodecListener instances
+#[derive(Default)]
 pub struct HotReloadChannelManager {
     senders: HashMap<String, mpsc::UnboundedSender<HotReloadListenerRequest>>,
 }
 
 impl HotReloadChannelManager {
     pub fn new() -> Self {
-        Self {
-            senders: HashMap::new(),
-        }
+        Self::default()
     }
 
     /// Create a new channel for a source and return the receiver

@@ -368,13 +368,16 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
             // Extract the file descriptor from the TcpListener
             let fd = listener.as_raw_fd();
 
-            // Parse port from listen_addr
-            let port = self
-                .listen_addr
-                .split(':')
-                .last()
-                .and_then(|p| p.parse::<u16>().ok())
-                .unwrap_or(0);
+            let port = match listener.local_addr() {
+                Ok(addr) => addr.port(),
+                Err(_) => {
+                    // Fallback: split once from the right to support hostnames and [IPv6]:port formats.
+                    self.listen_addr
+                        .rsplit_once(':')
+                        .and_then(|(_, p)| p.parse::<u16>().ok())
+                        .unwrap_or(0)
+                }
+            };
 
             tracing::info!("Hot reload: Extracting socket FD {} for port {}", fd, port);
 
@@ -394,7 +397,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
         };
 
         // Send response back through oneshot channel
-        if let Err(_) = request.return_chan.send(response) {
+        if request.return_chan.send(response).is_err() {
             tracing::error!("Failed to send hot reload response - receiver dropped");
         }
     }
