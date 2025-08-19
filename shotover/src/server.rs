@@ -190,137 +190,60 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
             let span =
                 crate::connection_span::span(self.connection_count, self.source_name.as_str());
             let transport = self.transport;
+
             async {
-                let mut hot_reload_rx = self.hot_reload_rx.take();
+                tokio::select! {
+                    // Normal Connection handling
+                    stream_result = Self::accept(&mut self.listener) => {
+                        let stream = stream_result?;
 
-                let result = if let Some(ref mut rx) = hot_reload_rx {
-                    tokio::select! {
-                        // Normal connection handling
-                        stream_result = self.accept() => {
-                            let stream = stream_result?;
+                        debug!("got socket");
+                        self.available_connections_gauge.set(self.limit_connections.available_permits() as f64);
+                        self.connections_opened.increment(1);
 
-                            debug!("got socket");
-                            self.available_connections_gauge
-                                .set(self.limit_connections.available_permits() as f64);
-                            self.connections_opened.increment(1);
+                        let client_details = stream.peer_addr()
+                            .map(|addr| addr.to_string())
+                            .unwrap_or_else(|_| "Unknown Peer".to_string());
+                        tracing::debug!("New connection from {}", client_details);
 
-                            let client_details = stream
-                                .peer_addr()
-                                .map(|p| p.ip().to_string())
-                                .unwrap_or_else(|_| "Unknown peer".to_string());
-                            tracing::debug!("New connection from {}", client_details);
+                        let force_run_chain = Arc::new(Notify::new());
+                        let context = TransformContextBuilder{
+                            force_run_chain: force_run_chain.clone(),
+                            client_details:client_details.clone(),
+                        };
 
-                            let force_run_chain = Arc::new(Notify::new());
-                            let context = TransformContextBuilder {
-                                force_run_chain: force_run_chain.clone(),
-                                client_details: client_details.clone(),
-                            };
-
-                            let handler = Handler {
-                                chain: self.chain_builder.build(context),
-                                codec: self.codec.clone(),
-                                shutdown: Shutdown::new(self.trigger_shutdown_rx.clone()),
-                                tls: self.tls.clone(),
-                                pending_requests: PendingRequests::new(self.codec.protocol()),
-                                timeout: self.timeout,
-                                _permit: permit,
-                            };
-
-                            // Spawn a new task to process the connections.
-                            self.connection_handles.push(tokio::spawn(
-                                async move {
-                                    // Process the connection. If an error is encountered, log it.
-                                    if let Err(err) = handler
-                                        .run(stream, transport, force_run_chain, client_details)
-                                        .await
-                                    {
-                                        error!(
-                                            "{:?}",
-                                            err.context("connection was unexpectedly terminated")
-                                        );
-                                    }
-                                }
-                                .in_current_span(),
-                            ));
-                            // Only prune the list every so often
-                            // theres no point in doing it every iteration because most likely none of the handles will have completed
-                            if self.connection_count % 1000 == 0 {
-                                self.connection_handles.retain(|x| !x.is_finished());
-                            }
-
-                            // Put the receiver back
-                            self.hot_reload_rx = hot_reload_rx;
-                            Ok::<(), anyhow::Error>(())
-                        }
-
-                        // Hot reload request handling
-                        hot_reload_request = rx.recv() => {
-                            if let Some(request) = hot_reload_request {
-                                self.handle_hot_reload_request(request).await;
-                                return Ok(()); // Exit the run loop after handling hot reload
-                            }
-                            // Put the receiver back if we continue
-                            self.hot_reload_rx = hot_reload_rx;
-                            Ok::<(), anyhow::Error>(())
-                        }
-                    }
-                } else {
-                    // No hot reload channel, just do normal connection handling
-                    let stream = self.accept().await?;
-
-                    debug!("got socket");
-                    self.available_connections_gauge
-                        .set(self.limit_connections.available_permits() as f64);
-                    self.connections_opened.increment(1);
-
-                    let client_details = stream
-                        .peer_addr()
-                        .map(|p| p.ip().to_string())
-                        .unwrap_or_else(|_| "Unknown peer".to_string());
-                    tracing::debug!("New connection from {}", client_details);
-
-                    let force_run_chain = Arc::new(Notify::new());
-                    let context = TransformContextBuilder {
-                        force_run_chain: force_run_chain.clone(),
-                        client_details: client_details.clone(),
-                    };
-
-                    let handler = Handler {
-                        chain: self.chain_builder.build(context),
-                        codec: self.codec.clone(),
-                        shutdown: Shutdown::new(self.trigger_shutdown_rx.clone()),
-                        tls: self.tls.clone(),
-                        pending_requests: PendingRequests::new(self.codec.protocol()),
-                        timeout: self.timeout,
-                        _permit: permit,
-                    };
-
-                    // Spawn a new task to process the connections.
-                    self.connection_handles.push(tokio::spawn(
-                        async move {
+                        let handler = Handler{
+                            chain: self.chain_builder.build(context),
+                            codec: self.codec.clone(),
+                            shutdown: Shutdown::new(self.trigger_shutdown_rx.clone()),
+                            tls: self.tls.clone(),
+                            pending_requests: PendingRequests::new(self.codec.protocol()),
+                            timeout: self.timeout,
+                            _permit: permit,
+                        };
+                        // Spawn a new task to process the connections.
+                        self.connection_handles.push(tokio::spawn(async move{
                             // Process the connection. If an error is encountered, log it.
-                            if let Err(err) = handler
-                                .run(stream, transport, force_run_chain, client_details)
-                                .await
-                            {
-                                error!(
-                                    "{:?}",
-                                    err.context("connection was unexpectedly terminated")
-                                );
+                            if let Err(err) = handler.run(stream, transport, force_run_chain, client_details).await{
+                                error!("{:?}", err.context("connection was unexpectedly terminated"));
                             }
+                        }.in_current_span()));
+                        // Only prune the list every so often
+                        // theres no point in doing it every iteration because most likely none of the handles will have completed
+                        if self.connection_count % 1000 == 0{
+                            self.connection_handles.retain(|x| !x.is_finished());
                         }
-                        .in_current_span(),
-                    ));
-                    // Only prune the list every so often
-                    // theres no point in doing it every iteration because most likely none of the handles will have completed
-                    if self.connection_count % 1000 == 0 {
-                        self.connection_handles.retain(|x| !x.is_finished());
+                        Ok::<(), anyhow::Error>(())
+                    },
+                    // Hot reload request handling
+                    hot_reload_request = Self::check_hotreload(&mut self.hot_reload_rx) => {
+                        if let Some(request) = hot_reload_request{
+                            self.handle_hot_reload_request(request).await;
+                            return Ok(());
+                        }
+                        Ok::<(), anyhow::Error>(())
                     }
-
-                    Ok::<(), anyhow::Error>(())
-                };
-
-                result
+                }
             }
             .instrument(span)
             .await?;
@@ -338,14 +261,14 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
     /// After the second failure, the task waits for 2 seconds. Each subsequent
     /// failure doubles the wait time. If accepting fails on the 6th try after
     /// waiting for 64 seconds, then this function returns with an error.
-    async fn accept(&mut self) -> Result<TcpStream> {
+    async fn accept(listener: &mut Option<TcpListener>) -> Result<TcpStream> {
         let mut backoff = 1;
 
         // Try to accept a few times
         loop {
             // Perform the accept operation. If a socket is successfully
             // accepted, return it. Otherwise, save the error.
-            match self.listener.as_mut().unwrap().accept().await {
+            match listener.as_mut().unwrap().accept().await {
                 Ok((socket, _)) => return Ok(socket),
                 Err(err) => {
                     if backoff > 64 {
@@ -360,6 +283,16 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
 
             // Double the back off
             backoff *= 2;
+        }
+    }
+
+    async fn check_hotreload(
+        rx: &mut Option<UnboundedReceiver<HotReloadListenerRequest>>,
+    ) -> Option<HotReloadListenerRequest> {
+        if let Some(rx) = rx.as_mut() {
+            rx.recv().await
+        } else {
+            std::future::pending().await
         }
     }
     /// Handle hot reload request by extracting file descriptor and responding
@@ -864,7 +797,9 @@ impl<C: CodecBuilder + 'static> Handler<C> {
         let responses = match self.chain.process_request(&mut wrapper).await {
             Ok(x) => x,
             Err(err) => {
-                let err = err.context("Chain failed to send and/or receive messages, the connection will now be closed.");
+                let err = err.context(
+                    "Chain failed to/or receive messages, the connection will now be closed.",
+                );
                 // The connection is going to be closed once we return Err.
                 // So first make a best effort attempt of responding to any pending requests with an error response.
                 out_tx.send(self.pending_requests.to_errors(&err))?;
