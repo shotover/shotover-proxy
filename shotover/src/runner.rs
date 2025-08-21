@@ -196,7 +196,10 @@ impl Shotover {
         info!(configuration = ?config);
         info!(topology = ?topology);
 
-        match topology.run_chains(trigger_shutdown_rx).await {
+        match topology
+            .run_chains(trigger_shutdown_rx, hotreload_enabled)
+            .await
+        {
             Ok(sources) => {
                 // Setup Unix Socket Server for hot reload if enabled and we have channels
                 if hotreload_enabled {

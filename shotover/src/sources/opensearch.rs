@@ -26,6 +26,7 @@ impl OpenSearchConfig {
     pub async fn get_source(
         &self,
         trigger_shutdown_rx: watch::Receiver<bool>,
+        hotreload_enabled: bool,
     ) -> Result<Source, Vec<String>> {
         Ok(Source::OpenSearch(
             OpenSearchSource::new(
@@ -36,6 +37,7 @@ impl OpenSearchConfig {
                 self.connection_limit,
                 self.hard_connection_limit,
                 self.timeout,
+                hotreload_enabled,
             )
             .await?,
         ))
@@ -59,8 +61,14 @@ impl OpenSearchSource {
         connection_limit: Option<usize>,
         hard_connection_limit: Option<bool>,
         timeout: Option<u64>,
+        hotreload_enabled: bool,
     ) -> Result<Self, Vec<String>> {
         let (hot_reload_tx, hot_reload_rx) = tokio::sync::mpsc::unbounded_channel();
+
+        if !hotreload_enabled {
+            // Leak the sender so the receiver never sees the channel as closed.
+            std::mem::forget(hot_reload_tx.clone());
+        }
 
         let mut listener = TcpCodecListener::new(
             chain_config,

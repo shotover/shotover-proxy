@@ -29,6 +29,7 @@ impl ValkeyConfig {
     pub async fn get_source(
         &self,
         trigger_shutdown_rx: watch::Receiver<bool>,
+        hotreload_enabled: bool,
     ) -> Result<Source, Vec<String>> {
         Ok(Source::Valkey(
             ValkeySource::new(
@@ -40,6 +41,7 @@ impl ValkeyConfig {
                 self.hard_connection_limit,
                 self.tls.clone(),
                 self.timeout,
+                hotreload_enabled,
             )
             .await?,
         ))
@@ -64,8 +66,13 @@ impl ValkeySource {
         hard_connection_limit: Option<bool>,
         tls: Option<TlsAcceptorConfig>,
         timeout: Option<u64>,
+        hotreload_enabled: bool,
     ) -> Result<ValkeySource, Vec<String>> {
         let (hot_reload_tx, hot_reload_rx) = tokio::sync::mpsc::unbounded_channel();
+        if !hotreload_enabled {
+            // Leak the sender so the receiver never sees the channel as closed.
+            std::mem::forget(hot_reload_tx.clone());
+        }
 
         let mut listener = TcpCodecListener::new(
             chain_config,
