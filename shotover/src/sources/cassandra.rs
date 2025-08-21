@@ -31,7 +31,6 @@ impl CassandraConfig {
     pub async fn get_source(
         &self,
         trigger_shutdown_rx: watch::Receiver<bool>,
-        hotreload_enabled: bool,
     ) -> Result<Source, Vec<String>> {
         Ok(Source::Cassandra(
             CassandraSource::new(
@@ -44,7 +43,6 @@ impl CassandraConfig {
                 self.tls.clone(),
                 self.timeout,
                 self.transport,
-                hotreload_enabled,
             )
             .await?,
         ))
@@ -70,16 +68,10 @@ impl CassandraSource {
         tls: Option<TlsAcceptorConfig>,
         timeout: Option<u64>,
         transport: Option<Transport>,
-        hotreload_enabled: bool,
     ) -> Result<Self, Vec<String>> {
         info!("Starting Cassandra source on [{}]", listen_addr);
 
         let (hot_reload_tx, hot_reload_rx) = tokio::sync::mpsc::unbounded_channel();
-
-        if !hotreload_enabled {
-            // Leak the sender so the receiver never sees the channel as closed.
-            std::mem::forget(hot_reload_tx.clone());
-        }
 
         let mut listener = TcpCodecListener::new(
             chain_config,
@@ -117,5 +109,11 @@ impl CassandraSource {
             hot_reload_tx,
             name,
         })
+    }
+    pub fn into_join_handle(self, leak_hot_reload_tx: bool) -> JoinHandle<()> {
+        if leak_hot_reload_tx {
+            std::mem::forget(self.hot_reload_tx);
+        }
+        self.join_handle
     }
 }
