@@ -794,7 +794,7 @@ impl<C: CodecBuilder + 'static> Handler<C> {
             Ok(x) => x,
             Err(err) => {
                 let err = err.context(
-                    "Chain failed to/or receive messages, the connection will now be closed.",
+                    "Chain failed and to/or receive messages, the connection will now be closed.",
                 );
                 // The connection is going to be closed once we return Err.
                 // So first make a best effort attempt of responding to any pending requests with an error response.
@@ -989,7 +989,7 @@ impl PendingRequests {
                     };
 
                     match meta.to_error_response(format!(
-                        "Internal shotover (or custom transform) bug: {err:?}"
+                        " {err:?}"
                     )) {
                         Ok(mut response) => {
                             response.set_request_id(*id);
