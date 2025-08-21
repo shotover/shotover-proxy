@@ -34,7 +34,6 @@ impl Topology {
     pub async fn run_chains(
         &self,
         trigger_shutdown_rx: watch::Receiver<bool>,
-        hotreload_enabled: bool,
     ) -> Result<Vec<Source>> {
         let mut sources: Vec<Source> = Vec::new();
 
@@ -55,10 +54,7 @@ impl Topology {
         }
 
         for source in &self.sources {
-            match source
-                .get_source(trigger_shutdown_rx.clone(), hotreload_enabled)
-                .await
-            {
+            match source.get_source(trigger_shutdown_rx.clone()).await {
                 Ok(source) => sources.push(source),
                 Err(source_errors) => {
                     if !source_errors.is_empty() {
@@ -136,7 +132,7 @@ mod topology_tests {
 
         let (_sender, trigger_shutdown_rx) = watch::channel::<bool>(false);
 
-        topology.run_chains(trigger_shutdown_rx, false).await
+        topology.run_chains(trigger_shutdown_rx).await
     }
 
     async fn run_test_topology_cassandra(
@@ -148,7 +144,7 @@ mod topology_tests {
 
         let (_sender, trigger_shutdown_rx) = watch::channel::<bool>(false);
 
-        topology.run_chains(trigger_shutdown_rx, false).await
+        topology.run_chains(trigger_shutdown_rx).await
     }
 
     #[tokio::test]
@@ -476,7 +472,7 @@ Source name "foo" occurred more than once. Make sure all source names are unique
         let topology = Topology { sources };
         let (_sender, trigger_shutdown_rx) = watch::channel::<bool>(false);
         let error = topology
-            .run_chains(trigger_shutdown_rx, false)
+            .run_chains(trigger_shutdown_rx)
             .await
             .unwrap_err()
             .to_string();
@@ -492,7 +488,7 @@ Source name "foo" occurred more than once. Make sure all source names are unique
             Topology::from_file("../shotover-proxy/tests/test-configs/invalid_subchains.yaml")
                 .unwrap();
         let error = topology
-            .run_chains(trigger_shutdown_rx, false)
+            .run_chains(trigger_shutdown_rx)
             .await
             .unwrap_err()
             .to_string();

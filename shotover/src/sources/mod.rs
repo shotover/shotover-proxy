@@ -99,7 +99,6 @@ impl SourceConfig {
     pub(crate) async fn get_source(
         &self,
         trigger_shutdown_rx: watch::Receiver<bool>,
-        hotreload_enabled: bool,
     ) -> Result<Source, Vec<String>> {
         match self {
             #[cfg(feature = "cassandra")]

@@ -196,12 +196,8 @@ impl Shotover {
         info!(configuration = ?config);
         info!(topology = ?topology);
 
-        match topology
-            .run_chains(trigger_shutdown_rx, hotreload_enabled)
-            .await
-        {
+        match topology.run_chains(trigger_shutdown_rx).await {
             Ok(sources) => {
-                // Setup Unix Socket Server for hot reload if enabled and we have channels
                 if hotreload_enabled {
                     info!("Starting shotover with hot reloading enabled");
                     crate::hot_reload::server::start_hot_reload_server(
