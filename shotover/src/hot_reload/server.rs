@@ -104,15 +104,17 @@ impl UnixSocketServer {
                     match tokio::time::timeout(std::time::Duration::from_secs(5), response_rx).await
                     {
                         Ok(Ok(response)) => {
-                            if response.listener_socket_fd.0 != -1 {
-                                info!(
-                                    "Received FD {} for port {} from source {}",
-                                    response.listener_socket_fd.0, response.port, source_name
-                                );
-                                port_to_fd
-                                    .insert(response.port as u32, response.listener_socket_fd);
-                            } else {
-                                warn!("Source {} returned invalid FD", source_name);
+                            match response {
+                                crate::hot_reload::protocol::HotReloadListenerResponse::HotReloadResponse { port, listener_socket_fd } => {
+                                    info!(
+                                        "Received FD {} for port {} from source {}",
+                                        listener_socket_fd.0, port, source_name
+                                    );
+                                    port_to_fd.insert(port as u32, listener_socket_fd);
+                                }
+                                crate::hot_reload::protocol::HotReloadListenerResponse::NoListenerAvailable => {
+                                    warn!("Source {} reported no listener available", source_name);
+                                }
                             }
                         }
                         Ok(Err(_)) => {

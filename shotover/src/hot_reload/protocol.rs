@@ -30,7 +30,10 @@ pub struct HotReloadListenerRequest {
 
 /// Response sent from TcpCodecListener back to hot reload server
 #[derive(Debug)]
-pub struct HotReloadListenerResponse {
-    pub port: u16,
-    pub listener_socket_fd: FileDescriptor,
+pub enum HotReloadListenerResponse {
+    HotReloadResponse {
+        port: u16,
+        listener_socket_fd: FileDescriptor,
+    },
+    NoListenerAvailable,
 }

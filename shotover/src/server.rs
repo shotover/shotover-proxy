@@ -202,7 +202,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                         self.connections_opened.increment(1);
 
                         let client_details = stream.peer_addr()
-                            .map(|addr| addr.to_string())
+                            .map(|p| p.ip().to_string())
                             .unwrap_or_else(|_| "Unknown Peer".to_string());
                         tracing::debug!("New connection from {}", client_details);
 
@@ -236,7 +236,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                         Ok::<(), anyhow::Error>(())
                     },
                     // Hot reload request handling
-                    hot_reload_request = Self::check_hotreload(&mut self.hot_reload_rx) => {
+                    hot_reload_request = self.hot_reload_rx.recv() => {
                         if let Some(request) = hot_reload_request{
                             self.handle_hot_reload_request(request).await;
                             return Ok(());
@@ -285,11 +285,6 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
             backoff *= 2;
         }
     }
-    async fn check_hotreload(
-        rx: &mut UnboundedReceiver<HotReloadListenerRequest>,
-    ) -> Option<HotReloadListenerRequest> {
-        rx.recv().await
-    }
 
     /// Handle hot reload request by extracting file descriptor and responding
     async fn handle_hot_reload_request(&mut self, request: HotReloadListenerRequest) {
@@ -313,16 +308,13 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
             // Stop accepting new connections by setting listener to None
             self.listener = None;
 
-            HotReloadListenerResponse {
+            HotReloadListenerResponse::HotReloadResponse {
                 port,
                 listener_socket_fd: FileDescriptor(fd),
             }
         } else {
             tracing::warn!("Hot reload request received but no listener available");
-            HotReloadListenerResponse {
-                port: 0,
-                listener_socket_fd: FileDescriptor(-1), // Invalid FD to indicate error
-            }
+            HotReloadListenerResponse::NoListenerAvailable
         };
 
         // Send response back through oneshot channel
