@@ -1,5 +1,6 @@
 use crate::hot_reload::json_parsing::read_json;
 use crate::hot_reload::protocol::{HotReloadListenerRequest, Request, Response};
+use crate::sources::Source;
 use anyhow::{Context, Result};
 use serde_json;
 use std::collections::HashMap;
@@ -12,24 +13,22 @@ use tracing::{debug, error, info, warn};
 pub struct UnixSocketServer {
     socket_path: String,
     listener: UnixListener,
-    channel_senders: HashMap<String, mpsc::UnboundedSender<HotReloadListenerRequest>>,
+    channel_senders: Vec<(String, mpsc::UnboundedSender<HotReloadListenerRequest>)>,
 }
 
 impl UnixSocketServer {
     pub fn new(
         socket_path: String,
-        channel_senders: HashMap<String, mpsc::UnboundedSender<HotReloadListenerRequest>>,
+        channel_senders: Vec<(String, mpsc::UnboundedSender<HotReloadListenerRequest>)>,
     ) -> Result<Self> {
         if Path::new(&socket_path).exists() {
             std::fs::remove_file(&socket_path).with_context(|| {
                 format!("Failed to remove existing socket file: {}", socket_path)
             })?;
         }
-
         let listener = UnixListener::bind(&socket_path)
             .with_context(|| format!("Failed to bind Unix socket to: {}", socket_path))?;
         info!("Unix socket server listening on: {}", socket_path);
-
         Ok(Self {
             socket_path,
             listener,
@@ -145,10 +144,12 @@ impl Drop for UnixSocketServer {
         }
     }
 }
-pub fn start_hot_reload_server(
-    socket_path: String,
-    channel_senders: HashMap<String, mpsc::UnboundedSender<HotReloadListenerRequest>>,
-) {
+pub fn start_hot_reload_server(socket_path: String, sources: &[Source]) {
+    let channel_senders: Vec<_> = sources
+        .iter()
+        .map(|x| (x.name().to_string(), x.get_hot_reload_tx()))
+        .collect();
+
     tokio::spawn(async move {
         match UnixSocketServer::new(socket_path, channel_senders) {
             Ok(mut server) => {
@@ -174,7 +175,8 @@ mod tests {
     async fn test_unix_socket_server_basic() {
         let socket_path = "/tmp/test-shotover-hotreload.sock";
 
-        let channel_senders = HashMap::new();
+        let channel_senders: Vec<(String, mpsc::UnboundedSender<HotReloadListenerRequest>)> =
+            vec![];
         let server = UnixSocketServer::new(socket_path.to_string(), channel_senders).unwrap();
 
         // Test that socket file was created
@@ -187,7 +189,8 @@ mod tests {
     #[tokio::test]
     async fn test_request_response() {
         let socket_path = "/tmp/test-shotover-request-response.sock";
-        let channel_senders = HashMap::new(); // Empty for test
+        let channel_senders: Vec<(String, mpsc::UnboundedSender<HotReloadListenerRequest>)> =
+            vec![]; // Empty for test
         let mut server = UnixSocketServer::new(socket_path.to_string(), channel_senders).unwrap();
 
         // Start server in background

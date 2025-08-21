@@ -1,7 +1,6 @@
 //! Tools for initializing shotover in the final binary.
 use crate::config::Config;
 use crate::config::topology::Topology;
-use crate::hot_reload::HotReloadChannelManager;
 use crate::observability::LogFilterHttpExporter;
 use anyhow::Context;
 use anyhow::{Result, anyhow};
@@ -197,27 +196,15 @@ impl Shotover {
         info!(configuration = ?config);
         info!(topology = ?topology);
 
-        // Create hot reload channel manager if hot reload is enabled
-        let mut hot_reload_channel_manager = if hotreload_enabled {
-            Some(HotReloadChannelManager::new())
-        } else {
-            None
-        };
-
-        match topology
-            .run_chains(trigger_shutdown_rx, hot_reload_channel_manager.as_mut())
-            .await
-        {
+        match topology.run_chains(trigger_shutdown_rx).await {
             Ok(sources) => {
                 // Setup Unix Socket Server for hot reload if enabled and we have channels
                 if hotreload_enabled {
-                    if let Some(ref channel_manager) = hot_reload_channel_manager {
-                        info!("Starting shotover with hot reloading enabled");
-                        crate::hot_reload::server::start_hot_reload_server(
-                            hotreload_socket_path.clone(),
-                            channel_manager.get_all_senders().clone(),
-                        );
-                    }
+                    info!("Starting shotover with hot reloading enabled");
+                    crate::hot_reload::server::start_hot_reload_server(
+                        hotreload_socket_path.clone(),
+                        &sources,
+                    );
                 }
 
                 futures::future::join_all(sources.into_iter().map(|x| x.into_join_handle())).await;

@@ -107,6 +107,7 @@ pub async fn perform_hot_reloading(socket_path: String) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::hot_reload::protocol::HotReloadListenerRequest;
     use crate::hot_reload::tests::wait_for_unix_socket_connection;
 
     #[tokio::test]
@@ -127,9 +128,13 @@ mod tests {
         let socket_path = "/tmp/test-client-server-integration.sock";
 
         // Start server
+        let channel_senders: Vec<(
+            String,
+            tokio::sync::mpsc::UnboundedSender<HotReloadListenerRequest>,
+        )> = vec![];
         let mut server = crate::hot_reload::server::UnixSocketServer::new(
             socket_path.to_string(),
-            std::collections::HashMap::new(),
+            channel_senders,
         )
         .unwrap();
 
@@ -150,8 +155,7 @@ mod tests {
         // Verify response
         match response {
             Response::SendListeningSockets { port_to_fd } => {
-                assert_eq!(port_to_fd.len(), 1);
-                assert!(port_to_fd.contains_key(&6380));
+                assert_eq!(port_to_fd.len(), 0);
             }
             Response::Error(msg) => panic!("Unexpected error response: {}", msg),
         }
@@ -165,9 +169,13 @@ mod tests {
         let socket_path = "/tmp/test-multiple-clients.sock";
 
         // Start server
+        let channel_senders: Vec<(
+            String,
+            tokio::sync::mpsc::UnboundedSender<HotReloadListenerRequest>,
+        )> = vec![];
         let mut server = crate::hot_reload::server::UnixSocketServer::new(
             socket_path.to_string(),
-            std::collections::HashMap::new(),
+            channel_senders,
         )
         .unwrap();
 
@@ -187,7 +195,7 @@ mod tests {
                 .unwrap();
             match response {
                 Response::SendListeningSockets { port_to_fd } => {
-                    assert_eq!(port_to_fd.len(), 1);
+                    assert_eq!(port_to_fd.len(), 0);
                 }
                 Response::Error(msg) => panic!("Unexpected error response: {}", msg),
             }

@@ -80,7 +80,7 @@ pub struct TcpCodecListener<C: CodecBuilder> {
     transport: Transport,
 
     /// Receiver for hot reload requests to extract listening socket file descriptor
-    hot_reload_rx: Option<tokio::sync::mpsc::UnboundedReceiver<HotReloadListenerRequest>>,
+    hot_reload_rx: tokio::sync::mpsc::UnboundedReceiver<HotReloadListenerRequest>,
 }
 
 impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
@@ -96,7 +96,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
         tls: Option<TlsAcceptor>,
         timeout: Option<Duration>,
         transport: Transport,
-        hot_reload_rx: Option<tokio::sync::mpsc::UnboundedReceiver<HotReloadListenerRequest>>,
+        hot_reload_rx: tokio::sync::mpsc::UnboundedReceiver<HotReloadListenerRequest>,
     ) -> Result<Self, Vec<String>> {
         let available_connections_gauge =
             gauge!("shotover_available_connections_count", "source" => source_name.clone());
@@ -285,16 +285,12 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
             backoff *= 2;
         }
     }
-
     async fn check_hotreload(
-        rx: &mut Option<UnboundedReceiver<HotReloadListenerRequest>>,
+        rx: &mut UnboundedReceiver<HotReloadListenerRequest>,
     ) -> Option<HotReloadListenerRequest> {
-        if let Some(rx) = rx.as_mut() {
-            rx.recv().await
-        } else {
-            std::future::pending().await
-        }
+        rx.recv().await
     }
+
     /// Handle hot reload request by extracting file descriptor and responding
     async fn handle_hot_reload_request(&mut self, request: HotReloadListenerRequest) {
         let response = if let Some(ref listener) = self.listener {

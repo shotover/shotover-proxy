@@ -1,5 +1,6 @@
 use crate::codec::{CodecBuilder, Direction, valkey::ValkeyCodecBuilder};
 use crate::config::chain::TransformChainConfig;
+use crate::hot_reload::protocol::HotReloadListenerRequest;
 use crate::server::TcpCodecListener;
 use crate::sources::{Source, Transport};
 use crate::tls::{TlsAcceptor, TlsAcceptorConfig};
@@ -7,6 +8,7 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::{Semaphore, watch};
 use tokio::task::JoinHandle;
 use tracing::error;
@@ -27,7 +29,6 @@ impl ValkeyConfig {
     pub async fn get_source(
         &self,
         trigger_shutdown_rx: watch::Receiver<bool>,
-        hot_reload_channel_manager: Option<&mut crate::hot_reload::HotReloadChannelManager>,
     ) -> Result<Source, Vec<String>> {
         Ok(Source::Valkey(
             ValkeySource::new(
@@ -39,7 +40,6 @@ impl ValkeyConfig {
                 self.hard_connection_limit,
                 self.tls.clone(),
                 self.timeout,
-                hot_reload_channel_manager,
             )
             .await?,
         ))
@@ -49,6 +49,8 @@ impl ValkeyConfig {
 #[derive(Debug)]
 pub struct ValkeySource {
     pub join_handle: JoinHandle<()>,
+    pub hot_reload_tx: UnboundedSender<HotReloadListenerRequest>,
+    pub name: String,
 }
 
 impl ValkeySource {
@@ -62,17 +64,15 @@ impl ValkeySource {
         hard_connection_limit: Option<bool>,
         tls: Option<TlsAcceptorConfig>,
         timeout: Option<u64>,
-        hot_reload_channel_manager: Option<&mut crate::hot_reload::HotReloadChannelManager>,
     ) -> Result<ValkeySource, Vec<String>> {
-        let hot_reload_rx = hot_reload_channel_manager
-            .map(|manager| manager.create_channel_for_source(name.clone()));
+        let (hot_reload_tx, hot_reload_rx) = tokio::sync::mpsc::unbounded_channel();
 
         let mut listener = TcpCodecListener::new(
             chain_config,
             name.clone(),
             listen_addr.clone(),
             hard_connection_limit.unwrap_or(false),
-            ValkeyCodecBuilder::new(Direction::Source, name),
+            ValkeyCodecBuilder::new(Direction::Source, name.clone()),
             Arc::new(Semaphore::new(connection_limit.unwrap_or(512))),
             trigger_shutdown_rx.clone(),
             tls.as_ref().map(TlsAcceptor::new).transpose()?,
@@ -98,6 +98,10 @@ impl ValkeySource {
             }
         });
 
-        Ok(ValkeySource { join_handle })
+        Ok(Self {
+            join_handle,
+            hot_reload_tx,
+            name,
+        })
     }
 }
