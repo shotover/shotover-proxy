@@ -29,11 +29,4 @@ impl HotReloadChannelManager {
     ) -> &HashMap<String, mpsc::UnboundedSender<HotReloadListenerRequest>> {
         &self.senders
     }
-
-    pub fn get_sender(
-        &self,
-        source_name: &str,
-    ) -> Option<&mpsc::UnboundedSender<HotReloadListenerRequest>> {
-        self.senders.get(source_name)
-    }
 }
