@@ -33,6 +33,39 @@ use tokio_util::codec::{Decoder, Encoder, FramedRead, FramedWrite};
 use tracing::{Instrument, trace};
 use tracing::{debug, error, warn};
 
+/// Parse port from a listen address string that can be in various formats:
+/// - "hostname:port" (e.g., "localhost:8080")
+/// - "ipv4:port" (e.g., "127.0.0.1:8080")
+/// - "[ipv6]:port" (e.g., "[::1]:8080")
+/// - "ipv6:port" (e.g., "::1:8080" )
+
+fn parse_port_from_listen_addr(listen_addr: &str) -> Option<u16> {
+    // Handle IPv6 addresses in brackets first: [ipv6]:port
+    if listen_addr.starts_with("[") {
+        if let Some(bracket_end) = listen_addr.find("]:") {
+            let port_str = &listen_addr[bracket_end + 2..];
+            return port_str.parse::<u16>().ok();
+        }
+        return None;
+    }
+
+    // Handle hostname:port and ipv4:port formats
+    // Split from the right to get the last colon
+    if let Some((_, port_str)) = listen_addr.rsplit_once(':') {
+        // Verify this is actually a port number and not part of an IPv6 address
+        if let Ok(port) = port_str.parse::<u16>() {
+            let addr_part = &listen_addr[..listen_addr.len() - port_str.len() - 1];
+            if addr_part.contains(':') {
+                return Some(port);
+            }
+
+            return Some(port);
+        }
+    }
+
+    None
+}
+
 pub struct TcpCodecListener<C: CodecBuilder> {
     chain_builder: TransformChainBuilder,
     source_name: String,
@@ -292,16 +325,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
             // Extract the file descriptor from the TcpListener
             let fd = listener.as_raw_fd();
 
-            let port = match listener.local_addr() {
-                Ok(addr) => addr.port(),
-                Err(_) => {
-                    // Fallback: split once from the right to support hostnames and [IPv6]:port formats.
-                    self.listen_addr
-                        .rsplit_once(':')
-                        .and_then(|(_, p)| p.parse::<u16>().ok())
-                        .unwrap_or(0)
-                }
-            };
+            let port = parse_port_from_listen_addr(&self.listen_addr).unwrap_or(0);
 
             tracing::info!("Hot reload: Extracting socket FD {} for port {}", fd, port);
 
@@ -321,6 +345,42 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
         if request.return_chan.send(response).is_err() {
             tracing::error!("Failed to send hot reload response - receiver dropped");
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_port_from_listen_addr() {
+        // Test hostname:port format
+        assert_eq!(parse_port_from_listen_addr("localhost:8080"), Some(8080));
+        assert_eq!(parse_port_from_listen_addr("example.com:443"), Some(443));
+
+        // Test IPv4:port format
+        assert_eq!(parse_port_from_listen_addr("127.0.0.1:8080"), Some(8080));
+        assert_eq!(parse_port_from_listen_addr("192.168.1.1:3000"), Some(3000));
+
+        // Test IPv6 with brackets format (recommended)
+        assert_eq!(parse_port_from_listen_addr("[::1]:8080"), Some(8080));
+        assert_eq!(parse_port_from_listen_addr("[2001:db8::1]:443"), Some(443));
+        assert_eq!(parse_port_from_listen_addr("[::]:8080"), Some(8080));
+
+        // Test IPv6 without brackets (less reliable but supported)
+        assert_eq!(parse_port_from_listen_addr("::1:8080"), Some(8080));
+
+        // Test invalid formats
+        assert_eq!(parse_port_from_listen_addr("localhost"), None);
+        assert_eq!(parse_port_from_listen_addr("localhost:"), None);
+        assert_eq!(parse_port_from_listen_addr("localhost:abc"), None);
+        assert_eq!(parse_port_from_listen_addr("[::1]"), None);
+        assert_eq!(parse_port_from_listen_addr("[::1]:"), None);
+        assert_eq!(parse_port_from_listen_addr("[::1]:abc"), None);
+
+        // Test edge cases
+        assert_eq!(parse_port_from_listen_addr(""), None);
+        assert_eq!(parse_port_from_listen_addr(":8080"), Some(8080)); // Empty host
     }
 }
 
