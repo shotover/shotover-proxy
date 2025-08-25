@@ -1,5 +1,6 @@
 //! Sources used to listen for connections and send/recieve with the client.
 
+use crate::hot_reload::protocol::HotReloadListenerRequest;
 #[cfg(feature = "cassandra")]
 use crate::sources::cassandra::{CassandraConfig, CassandraSource};
 #[cfg(feature = "kafka")]
@@ -10,6 +11,7 @@ use crate::sources::opensearch::{OpenSearchConfig, OpenSearchSource};
 use crate::sources::valkey::{ValkeyConfig, ValkeySource};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
+use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
@@ -52,6 +54,30 @@ impl Source {
             Source::Kafka(r) => r.join_handle,
             #[cfg(feature = "opensearch")]
             Source::OpenSearch(o) => o.join_handle,
+        }
+    }
+    pub fn get_hot_reload_tx(&self) -> UnboundedSender<HotReloadListenerRequest> {
+        match self {
+            #[cfg(feature = "cassandra")]
+            Source::Cassandra(c) => c.hot_reload_tx.clone(),
+            #[cfg(feature = "kafka")]
+            Source::Kafka(k) => k.hot_reload_tx.clone(),
+            #[cfg(feature = "valkey")]
+            Source::Valkey(v) => v.hot_reload_tx.clone(),
+            #[cfg(feature = "opensearch")]
+            Source::OpenSearch(o) => o.hot_reload_tx.clone(),
+        }
+    }
+    pub fn name(&self) -> &str {
+        match self {
+            #[cfg(feature = "cassandra")]
+            Source::Cassandra(c) => &c.name,
+            #[cfg(feature = "valkey")]
+            Source::Valkey(v) => &v.name,
+            #[cfg(feature = "kafka")]
+            Source::Kafka(k) => &k.name,
+            #[cfg(feature = "opensearch")]
+            Source::OpenSearch(o) => &o.name,
         }
     }
 }

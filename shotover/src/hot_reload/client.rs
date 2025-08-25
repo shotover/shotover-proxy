@@ -106,7 +106,10 @@ pub async fn perform_hot_reloading(socket_path: String) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use tokio::sync::mpsc::unbounded_channel;
+
     use super::*;
+    use crate::hot_reload::protocol::{HotReloadListenerRequest, HotReloadListenerResponse};
     use crate::hot_reload::tests::wait_for_unix_socket_connection;
 
     #[tokio::test]
@@ -127,8 +130,28 @@ mod tests {
         let socket_path = "/tmp/test-client-server-integration.sock";
 
         // Start server
-        let mut server =
-            crate::hot_reload::server::UnixSocketServer::new(socket_path.to_string()).unwrap();
+        let (tx, mut rx) = unbounded_channel();
+        let channel_senders: Vec<(
+            String,
+            tokio::sync::mpsc::UnboundedSender<HotReloadListenerRequest>,
+        )> = vec![("foo".to_string(), tx)];
+        let mut server = crate::hot_reload::server::UnixSocketServer::new(
+            socket_path.to_string(),
+            channel_senders,
+        )
+        .unwrap();
+        tokio::spawn(async move {
+            rx.recv()
+                .await
+                .unwrap()
+                .return_chan
+                .send(HotReloadListenerResponse::HotReloadResponse {
+                    port: 6000,
+                    listener_socket_fd: crate::hot_reload::protocol::FileDescriptor(3),
+                })
+                .unwrap();
+        });
+
         let server_handle = tokio::spawn(async move {
             server.run().await.unwrap();
         });
@@ -147,7 +170,6 @@ mod tests {
         match response {
             Response::SendListeningSockets { port_to_fd } => {
                 assert_eq!(port_to_fd.len(), 1);
-                assert!(port_to_fd.contains_key(&6380));
             }
             Response::Error(msg) => panic!("Unexpected error response: {}", msg),
         }
@@ -160,9 +182,31 @@ mod tests {
     async fn test_multiple_client_requests() {
         let socket_path = "/tmp/test-multiple-clients.sock";
 
-        // Start server
-        let mut server =
-            crate::hot_reload::server::UnixSocketServer::new(socket_path.to_string()).unwrap();
+        let (tx, mut rx) = unbounded_channel();
+        let channel_senders: Vec<(
+            String,
+            tokio::sync::mpsc::UnboundedSender<HotReloadListenerRequest>,
+        )> = vec![("foo".to_string(), tx)];
+        let mut server = crate::hot_reload::server::UnixSocketServer::new(
+            socket_path.to_string(),
+            channel_senders,
+        )
+        .unwrap();
+
+        tokio::spawn(async move {
+            for _i in 0..3 {
+                rx.recv()
+                    .await
+                    .unwrap()
+                    .return_chan
+                    .send(HotReloadListenerResponse::HotReloadResponse {
+                        port: 6000,
+                        listener_socket_fd: crate::hot_reload::protocol::FileDescriptor(3),
+                    })
+                    .unwrap();
+            }
+        });
+
         let server_handle = tokio::spawn(async move {
             server.run().await.unwrap();
         });

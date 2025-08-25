@@ -1,5 +1,6 @@
 use crate::codec::{CodecBuilder, Direction, valkey::ValkeyCodecBuilder};
 use crate::config::chain::TransformChainConfig;
+use crate::hot_reload::protocol::HotReloadListenerRequest;
 use crate::server::TcpCodecListener;
 use crate::sources::{Source, Transport};
 use crate::tls::{TlsAcceptor, TlsAcceptorConfig};
@@ -7,9 +8,10 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::{Semaphore, watch};
 use tokio::task::JoinHandle;
-use tracing::{error, info};
+use tracing::error;
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
@@ -47,6 +49,8 @@ impl ValkeyConfig {
 #[derive(Debug)]
 pub struct ValkeySource {
     pub join_handle: JoinHandle<()>,
+    pub hot_reload_tx: UnboundedSender<HotReloadListenerRequest>,
+    pub name: String,
 }
 
 impl ValkeySource {
@@ -61,19 +65,20 @@ impl ValkeySource {
         tls: Option<TlsAcceptorConfig>,
         timeout: Option<u64>,
     ) -> Result<ValkeySource, Vec<String>> {
-        info!("Starting Valkey source on [{}]", listen_addr);
+        let (hot_reload_tx, hot_reload_rx) = tokio::sync::mpsc::unbounded_channel();
 
         let mut listener = TcpCodecListener::new(
             chain_config,
             name.clone(),
             listen_addr.clone(),
             hard_connection_limit.unwrap_or(false),
-            ValkeyCodecBuilder::new(Direction::Source, name),
+            ValkeyCodecBuilder::new(Direction::Source, name.clone()),
             Arc::new(Semaphore::new(connection_limit.unwrap_or(512))),
             trigger_shutdown_rx.clone(),
             tls.as_ref().map(TlsAcceptor::new).transpose()?,
             timeout.map(Duration::from_secs),
             Transport::Tcp,
+            hot_reload_rx,
         )
         .await?;
 
@@ -93,6 +98,16 @@ impl ValkeySource {
             }
         });
 
-        Ok(ValkeySource { join_handle })
+        Ok(Self {
+            join_handle,
+            hot_reload_tx,
+            name,
+        })
+    }
+    pub fn into_join_handle(self, leak_hot_reload_tx: bool) -> JoinHandle<()> {
+        if leak_hot_reload_tx {
+            std::mem::forget(self.hot_reload_tx);
+        }
+        self.join_handle
     }
 }

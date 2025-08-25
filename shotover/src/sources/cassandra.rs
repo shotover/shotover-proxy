@@ -1,6 +1,7 @@
 use crate::codec::Direction;
 use crate::codec::{CodecBuilder, cassandra::CassandraCodecBuilder};
 use crate::config::chain::TransformChainConfig;
+use crate::hot_reload::protocol::HotReloadListenerRequest;
 use crate::server::TcpCodecListener;
 use crate::sources::{Source, Transport};
 use crate::tls::{TlsAcceptor, TlsAcceptorConfig};
@@ -8,6 +9,7 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::{Semaphore, watch};
 use tokio::task::JoinHandle;
 use tracing::{error, info};
@@ -50,6 +52,8 @@ impl CassandraConfig {
 #[derive(Debug)]
 pub struct CassandraSource {
     pub join_handle: JoinHandle<()>,
+    pub hot_reload_tx: UnboundedSender<HotReloadListenerRequest>,
+    pub name: String,
 }
 
 impl CassandraSource {
@@ -67,17 +71,20 @@ impl CassandraSource {
     ) -> Result<Self, Vec<String>> {
         info!("Starting Cassandra source on [{}]", listen_addr);
 
+        let (hot_reload_tx, hot_reload_rx) = tokio::sync::mpsc::unbounded_channel();
+
         let mut listener = TcpCodecListener::new(
             chain_config,
-            name.to_string(),
+            name.clone(),
             listen_addr.clone(),
             hard_connection_limit.unwrap_or(false),
-            CassandraCodecBuilder::new(Direction::Source, name),
+            CassandraCodecBuilder::new(Direction::Source, name.clone()),
             Arc::new(Semaphore::new(connection_limit.unwrap_or(512))),
             trigger_shutdown_rx.clone(),
             tls.as_ref().map(TlsAcceptor::new).transpose()?,
             timeout.map(Duration::from_secs),
             transport.unwrap_or(Transport::Tcp),
+            hot_reload_rx,
         )
         .await?;
 
@@ -97,6 +104,16 @@ impl CassandraSource {
             }
         });
 
-        Ok(Self { join_handle })
+        Ok(Self {
+            join_handle,
+            hot_reload_tx,
+            name,
+        })
+    }
+    pub fn into_join_handle(self, leak_hot_reload_tx: bool) -> JoinHandle<()> {
+        if leak_hot_reload_tx {
+            std::mem::forget(self.hot_reload_tx);
+        }
+        self.join_handle
     }
 }
