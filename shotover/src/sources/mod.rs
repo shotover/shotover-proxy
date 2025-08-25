@@ -1,13 +1,13 @@
 //! Sources used to listen for connections and send/recieve with the client.
 
 #[cfg(feature = "cassandra")]
-use crate::sources::cassandra::{CassandraConfig, CassandraSource};
+use crate::sources::cassandra::CassandraConfig;
 #[cfg(feature = "kafka")]
-use crate::sources::kafka::{KafkaConfig, KafkaSource};
+use crate::sources::kafka::KafkaConfig;
 #[cfg(feature = "opensearch")]
-use crate::sources::opensearch::{OpenSearchConfig, OpenSearchSource};
+use crate::sources::opensearch::OpenSearchConfig;
 #[cfg(feature = "valkey")]
-use crate::sources::valkey::{ValkeyConfig, ValkeySource};
+use crate::sources::valkey::ValkeyConfig;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
@@ -30,29 +30,17 @@ pub enum Transport {
 }
 
 #[derive(Debug)]
-pub enum Source {
-    #[cfg(feature = "cassandra")]
-    Cassandra(CassandraSource),
-    #[cfg(feature = "valkey")]
-    Valkey(ValkeySource),
-    #[cfg(feature = "kafka")]
-    Kafka(KafkaSource),
-    #[cfg(feature = "opensearch")]
-    OpenSearch(OpenSearchSource),
+pub struct Source {
+    pub join_handle: JoinHandle<()>,
 }
 
 impl Source {
+    pub fn new(join_handle: JoinHandle<()>) -> Self {
+        Self { join_handle }
+    }
+
     pub fn into_join_handle(self) -> JoinHandle<()> {
-        match self {
-            #[cfg(feature = "cassandra")]
-            Source::Cassandra(c) => c.join_handle,
-            #[cfg(feature = "valkey")]
-            Source::Valkey(r) => r.join_handle,
-            #[cfg(feature = "kafka")]
-            Source::Kafka(r) => r.join_handle,
-            #[cfg(feature = "opensearch")]
-            Source::OpenSearch(o) => o.join_handle,
-        }
+        self.join_handle
     }
 }
 
