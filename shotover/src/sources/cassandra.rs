@@ -9,7 +9,6 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{Semaphore, watch};
-use tokio::task::JoinHandle;
 use tracing::{error, info};
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -28,56 +27,21 @@ pub struct CassandraConfig {
 impl CassandraConfig {
     pub async fn get_source(
         &self,
-        trigger_shutdown_rx: watch::Receiver<bool>,
-    ) -> Result<Source, Vec<String>> {
-        Ok(Source::Cassandra(
-            CassandraSource::new(
-                self.name.clone(),
-                &self.chain,
-                self.listen_addr.clone(),
-                trigger_shutdown_rx,
-                self.connection_limit,
-                self.hard_connection_limit,
-                self.tls.clone(),
-                self.timeout,
-                self.transport,
-            )
-            .await?,
-        ))
-    }
-}
-
-#[derive(Debug)]
-pub struct CassandraSource {
-    pub join_handle: JoinHandle<()>,
-}
-
-impl CassandraSource {
-    #![allow(clippy::too_many_arguments)]
-    pub async fn new(
-        name: String,
-        chain_config: &TransformChainConfig,
-        listen_addr: String,
         mut trigger_shutdown_rx: watch::Receiver<bool>,
-        connection_limit: Option<usize>,
-        hard_connection_limit: Option<bool>,
-        tls: Option<TlsAcceptorConfig>,
-        timeout: Option<u64>,
-        transport: Option<Transport>,
-    ) -> Result<Self, Vec<String>> {
-        info!("Starting Cassandra source on [{}]", listen_addr);
+    ) -> Result<Source, Vec<String>> {
+        info!("Starting Cassandra source on [{}]", self.listen_addr);
 
         let mut listener = TcpCodecListener::new(
-            chain_config,
-            name.to_string(),
-            listen_addr.clone(),
-            hard_connection_limit.unwrap_or(false),
-            CassandraCodecBuilder::new(Direction::Source, name),
-            Arc::new(Semaphore::new(connection_limit.unwrap_or(512))),
+            &self.chain,
+            self.name.clone(),
+            self.listen_addr.clone(),
+            self.hard_connection_limit.unwrap_or(false),
+            CassandraCodecBuilder::new(Direction::Source, self.name.clone()),
+            Arc::new(Semaphore::new(self.connection_limit.unwrap_or(512))),
             trigger_shutdown_rx.clone(),
-            tls.as_ref().map(TlsAcceptor::new).transpose()?,
-            timeout.map(Duration::from_secs),
-            transport.unwrap_or(Transport::Tcp),
+            self.tls.as_ref().map(TlsAcceptor::new).transpose()?,
+            self.timeout.map(Duration::from_secs),
+            self.transport.unwrap_or(Transport::Tcp),
         )
         .await?;
 
@@ -97,6 +61,6 @@ impl CassandraSource {
             }
         });
 
-        Ok(Self { join_handle })
+        Ok(Source::new(join_handle))
     }
 }
