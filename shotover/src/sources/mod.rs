@@ -2,13 +2,13 @@
 
 use crate::hot_reload::protocol::HotReloadListenerRequest;
 #[cfg(feature = "cassandra")]
-use crate::sources::cassandra::{CassandraConfig, CassandraSource};
+use crate::sources::cassandra::CassandraConfig;
 #[cfg(feature = "kafka")]
-use crate::sources::kafka::{KafkaConfig, KafkaSource};
+use crate::sources::kafka::KafkaConfig;
 #[cfg(feature = "opensearch")]
-use crate::sources::opensearch::{OpenSearchConfig, OpenSearchSource};
+use crate::sources::opensearch::OpenSearchConfig;
 #[cfg(feature = "valkey")]
-use crate::sources::valkey::{ValkeyConfig, ValkeySource};
+use crate::sources::valkey::ValkeyConfig;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::UnboundedSender;
@@ -32,53 +32,33 @@ pub enum Transport {
 }
 
 #[derive(Debug)]
-pub enum Source {
-    #[cfg(feature = "cassandra")]
-    Cassandra(CassandraSource),
-    #[cfg(feature = "valkey")]
-    Valkey(ValkeySource),
-    #[cfg(feature = "kafka")]
-    Kafka(KafkaSource),
-    #[cfg(feature = "opensearch")]
-    OpenSearch(OpenSearchSource),
+pub struct Source {
+    pub join_handle: JoinHandle<()>,
+    pub hot_reload_tx: UnboundedSender<HotReloadListenerRequest>,
+    pub name: String,
 }
 
 impl Source {
-    pub fn into_join_handle(self) -> JoinHandle<()> {
-        match self {
-            #[cfg(feature = "cassandra")]
-            Source::Cassandra(c) => c.join_handle,
-            #[cfg(feature = "valkey")]
-            Source::Valkey(r) => r.join_handle,
-            #[cfg(feature = "kafka")]
-            Source::Kafka(r) => r.join_handle,
-            #[cfg(feature = "opensearch")]
-            Source::OpenSearch(o) => o.join_handle,
+    pub fn new(
+        join_handle: JoinHandle<()>,
+        hot_reload_tx: UnboundedSender<HotReloadListenerRequest>,
+        name: String,
+    ) -> Self {
+        Self {
+            join_handle,
+            hot_reload_tx,
+            name,
         }
+    }
+
+    pub fn into_join_handle(self) -> JoinHandle<()> {
+        self.join_handle
     }
     pub fn get_hot_reload_tx(&self) -> UnboundedSender<HotReloadListenerRequest> {
-        match self {
-            #[cfg(feature = "cassandra")]
-            Source::Cassandra(c) => c.hot_reload_tx.clone(),
-            #[cfg(feature = "kafka")]
-            Source::Kafka(k) => k.hot_reload_tx.clone(),
-            #[cfg(feature = "valkey")]
-            Source::Valkey(v) => v.hot_reload_tx.clone(),
-            #[cfg(feature = "opensearch")]
-            Source::OpenSearch(o) => o.hot_reload_tx.clone(),
-        }
+        self.hot_reload_tx.clone()
     }
     pub fn name(&self) -> &str {
-        match self {
-            #[cfg(feature = "cassandra")]
-            Source::Cassandra(c) => &c.name,
-            #[cfg(feature = "valkey")]
-            Source::Valkey(v) => &v.name,
-            #[cfg(feature = "kafka")]
-            Source::Kafka(k) => &k.name,
-            #[cfg(feature = "opensearch")]
-            Source::OpenSearch(o) => &o.name,
-        }
+        &self.name
     }
 }
 
