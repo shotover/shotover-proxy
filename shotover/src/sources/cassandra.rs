@@ -1,7 +1,6 @@
 use crate::codec::Direction;
 use crate::codec::{CodecBuilder, cassandra::CassandraCodecBuilder};
 use crate::config::chain::TransformChainConfig;
-use crate::hot_reload::protocol::HotReloadListenerRequest;
 use crate::server::TcpCodecListener;
 use crate::sources::{Source, Transport};
 use crate::tls::{TlsAcceptor, TlsAcceptorConfig};
@@ -9,7 +8,6 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::{Semaphore, watch};
 use tracing::{error, info};
 

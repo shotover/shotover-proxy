@@ -1,13 +1,11 @@
 use crate::codec::{CodecBuilder, Direction, opensearch::OpenSearchCodecBuilder};
 use crate::config::chain::TransformChainConfig;
-use crate::hot_reload::protocol::HotReloadListenerRequest;
 use crate::server::TcpCodecListener;
 use crate::sources::{Source, Transport};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::{Semaphore, watch};
 use tracing::{error, info};
 
