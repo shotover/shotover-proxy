@@ -109,7 +109,8 @@ mod tests {
     use tokio::sync::mpsc::unbounded_channel;
 
     use super::*;
-    use crate::hot_reload::protocol::{HotReloadListenerRequest, HotReloadListenerResponse};
+    use crate::hot_reload::protocol::HotReloadListenerResponse;
+    use crate::hot_reload::server::SourceHandle;
     use crate::hot_reload::tests::wait_for_unix_socket_connection;
 
     #[tokio::test]
@@ -131,13 +132,13 @@ mod tests {
 
         // Start server
         let (tx, mut rx) = unbounded_channel();
-        let channel_senders: Vec<(
-            String,
-            tokio::sync::mpsc::UnboundedSender<HotReloadListenerRequest>,
-        )> = vec![("foo".to_string(), tx)];
+        let source_handles: Vec<SourceHandle> = vec![SourceHandle {
+            name: "foo".to_string(),
+            sender: tx,
+        }];
         let mut server = crate::hot_reload::server::UnixSocketServer::new(
             socket_path.to_string(),
-            channel_senders,
+            source_handles,
         )
         .unwrap();
         tokio::spawn(async move {
@@ -183,13 +184,13 @@ mod tests {
         let socket_path = "/tmp/test-multiple-clients.sock";
 
         let (tx, mut rx) = unbounded_channel();
-        let channel_senders: Vec<(
-            String,
-            tokio::sync::mpsc::UnboundedSender<HotReloadListenerRequest>,
-        )> = vec![("foo".to_string(), tx)];
+        let source_handles: Vec<SourceHandle> = vec![SourceHandle {
+            name: "foo".to_string(),
+            sender: tx,
+        }];
         let mut server = crate::hot_reload::server::UnixSocketServer::new(
             socket_path.to_string(),
-            channel_senders,
+            source_handles,
         )
         .unwrap();
 

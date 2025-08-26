@@ -10,17 +10,19 @@ use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
 
+pub struct SourceHandle {
+    pub name: String,
+    pub sender: mpsc::UnboundedSender<HotReloadListenerRequest>,
+}
+
 pub struct UnixSocketServer {
     socket_path: String,
     listener: UnixListener,
-    channel_senders: Vec<(String, mpsc::UnboundedSender<HotReloadListenerRequest>)>,
+    sources: Vec<SourceHandle>,
 }
 
 impl UnixSocketServer {
-    pub fn new(
-        socket_path: String,
-        channel_senders: Vec<(String, mpsc::UnboundedSender<HotReloadListenerRequest>)>,
-    ) -> Result<Self> {
+    pub fn new(socket_path: String, sources: Vec<SourceHandle>) -> Result<Self> {
         if Path::new(&socket_path).exists() {
             std::fs::remove_file(&socket_path).with_context(|| {
                 format!("Failed to remove existing socket file: {}", socket_path)
@@ -32,7 +34,7 @@ impl UnixSocketServer {
         Ok(Self {
             socket_path,
             listener,
-            channel_senders,
+            sources,
         })
     }
 
@@ -82,21 +84,21 @@ impl UnixSocketServer {
 
                 let mut response_futures = Vec::new();
 
-                for (source_name, sender) in &self.channel_senders {
+                for source in &self.sources {
                     let (response_tx, response_rx) = tokio::sync::oneshot::channel();
                     let hot_reload_request = HotReloadListenerRequest {
                         return_chan: response_tx,
                     };
 
-                    if let Err(e) = sender.send(hot_reload_request) {
+                    if let Err(e) = source.sender.send(hot_reload_request) {
                         warn!(
                             "Failed to send hot reload request to source {}: {:?}",
-                            source_name, e
+                            source.name, e
                         );
                         continue;
                     }
 
-                    response_futures.push((source_name.clone(), response_rx));
+                    response_futures.push((source.name.clone(), response_rx));
                 }
 
                 // Collect all responses with timeout
@@ -147,13 +149,16 @@ impl Drop for UnixSocketServer {
     }
 }
 pub fn start_hot_reload_server(socket_path: String, sources: &[Source]) {
-    let channel_senders: Vec<_> = sources
+    let source_handles: Vec<SourceHandle> = sources
         .iter()
-        .map(|x| (x.name().to_string(), x.get_hot_reload_tx()))
+        .map(|x| SourceHandle {
+            name: x.name().to_string(),
+            sender: x.get_hot_reload_tx(),
+        })
         .collect();
 
     tokio::spawn(async move {
-        match UnixSocketServer::new(socket_path, channel_senders) {
+        match UnixSocketServer::new(socket_path, source_handles) {
             Ok(mut server) => {
                 info!("Unix socket server started for hot reload communication");
                 if let Err(e) = server.run().await {
@@ -177,9 +182,8 @@ mod tests {
     async fn test_unix_socket_server_basic() {
         let socket_path = "/tmp/test-shotover-hotreload.sock";
 
-        let channel_senders: Vec<(String, mpsc::UnboundedSender<HotReloadListenerRequest>)> =
-            vec![];
-        let server = UnixSocketServer::new(socket_path.to_string(), channel_senders).unwrap();
+        let source_handles: Vec<SourceHandle> = vec![];
+        let server = UnixSocketServer::new(socket_path.to_string(), source_handles).unwrap();
 
         // Test that socket file was created
         assert!(Path::new(socket_path).exists());
@@ -191,9 +195,8 @@ mod tests {
     #[tokio::test]
     async fn test_request_response() {
         let socket_path = "/tmp/test-shotover-request-response.sock";
-        let channel_senders: Vec<(String, mpsc::UnboundedSender<HotReloadListenerRequest>)> =
-            vec![]; // Empty for test
-        let mut server = UnixSocketServer::new(socket_path.to_string(), channel_senders).unwrap();
+        let source_handles: Vec<SourceHandle> = vec![]; // Empty for test // Empty for test
+        let mut server = UnixSocketServer::new(socket_path.to_string(), source_handles).unwrap();
 
         // Start server in background
         let server_handle = tokio::spawn(async move {
