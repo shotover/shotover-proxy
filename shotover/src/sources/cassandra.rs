@@ -31,6 +31,8 @@ impl CassandraConfig {
     ) -> Result<Source, Vec<String>> {
         info!("Starting Cassandra source on [{}]", self.listen_addr);
 
+        let (hot_reload_tx, hot_reload_rx) = tokio::sync::mpsc::unbounded_channel();
+
         let mut listener = TcpCodecListener::new(
             &self.chain,
             self.name.clone(),
@@ -42,6 +44,7 @@ impl CassandraConfig {
             self.tls.as_ref().map(TlsAcceptor::new).transpose()?,
             self.timeout.map(Duration::from_secs),
             self.transport.unwrap_or(Transport::Tcp),
+            hot_reload_rx,
         )
         .await?;
 
@@ -61,6 +64,6 @@ impl CassandraConfig {
             }
         });
 
-        Ok(Source::new(join_handle))
+        Ok(Source::new(join_handle, hot_reload_tx, self.name.clone()))
     }
 }

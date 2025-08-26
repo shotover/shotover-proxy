@@ -26,6 +26,8 @@ impl OpenSearchConfig {
     ) -> Result<Source, Vec<String>> {
         info!("Starting OpenSearch source on [{}]", self.listen_addr);
 
+        let (hot_reload_tx, hot_reload_rx) = tokio::sync::mpsc::unbounded_channel();
+
         let mut listener = TcpCodecListener::new(
             &self.chain,
             self.name.clone(),
@@ -37,6 +39,7 @@ impl OpenSearchConfig {
             None,
             self.timeout.map(Duration::from_secs),
             Transport::Tcp,
+            hot_reload_rx,
         )
         .await?;
 
@@ -56,6 +59,6 @@ impl OpenSearchConfig {
             }
         });
 
-        Ok(Source::new(join_handle))
+        Ok(Source::new(join_handle, hot_reload_tx, self.name.clone()))
     }
 }
