@@ -146,14 +146,18 @@ fn rewrite_port(message: &mut Message, column_names: &[Identifier], new_port: u1
         if let CassandraOperation::Result(CassandraResult::Rows { rows, metadata }) =
             &mut frame.operation
         {
+            let mut modified_message = false;
             for (i, col) in metadata.col_specs.iter().enumerate() {
                 if column_names.contains(&Identifier::parse(&col.name)) {
                     for row in rows.iter_mut() {
                         row[i] = GenericValue::Integer(new_port as i64, IntSize::I32);
+                        modified_message = true;
                     }
                 }
             }
-            message.invalidate_cache();
+            if modified_message {
+                message.invalidate_cache();
+            }
         }
     }
 }
