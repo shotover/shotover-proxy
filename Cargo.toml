@@ -38,7 +38,7 @@ cassandra-protocol = "3.0"
 # https://docs.rs/tracing/latest/tracing/level_filters/index.html#compile-time-filters
 # `trace` level is considered development only, and may contain sensitive data, do not include it in release builds.
 tracing = { version = "0.1.15", features = ["release_max_level_debug"] }
-tracing-subscriber = { version = "0.3.1", features = ["env-filter", "json"] }
+tracing-subscriber = { version = "0.3.20", features = ["env-filter", "json"] }
 tracing-appender = "0.2.0"
 serde_json = "1.0"
 rcgen = { version = "0.13.0", default-features = false, features = ["pem", "aws_lc_rs"] }
