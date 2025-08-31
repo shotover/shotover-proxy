@@ -1,4 +1,4 @@
-use crate::sources::{Source, SourceConfig};
+use crate::sources::{SourceConfig, SourceHandle};
 use anyhow::{Context, Result, anyhow};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
@@ -34,8 +34,8 @@ impl Topology {
     pub async fn run_chains(
         &self,
         trigger_shutdown_rx: watch::Receiver<bool>,
-    ) -> Result<Vec<Source>> {
-        let mut sources: Vec<Source> = Vec::new();
+    ) -> Result<Vec<SourceHandle>> {
+        let mut sources: Vec<SourceHandle> = Vec::new();
 
         let mut topology_errors = String::new();
 
@@ -87,7 +87,7 @@ mod topology_tests {
     use crate::transforms::debug::printer::DebugPrinterConfig;
     use crate::transforms::null::NullSinkConfig;
     use crate::{
-        sources::{Source, SourceConfig, valkey::ValkeyConfig},
+        sources::{SourceConfig, SourceHandle, valkey::ValkeyConfig},
         transforms::{
             parallel_map::ParallelMapConfig, valkey::cache::ValkeyConfig as ValkeyCacheConfig,
         },
@@ -125,7 +125,7 @@ mod topology_tests {
 
     async fn run_test_topology_valkey(
         chain: Vec<Box<dyn TransformConfig>>,
-    ) -> anyhow::Result<Vec<Source>> {
+    ) -> anyhow::Result<Vec<SourceHandle>> {
         let sources = create_source_from_chain_valkey(chain);
 
         let topology = Topology { sources };
@@ -137,7 +137,7 @@ mod topology_tests {
 
     async fn run_test_topology_cassandra(
         chain: Vec<Box<dyn TransformConfig>>,
-    ) -> anyhow::Result<Vec<Source>> {
+    ) -> anyhow::Result<Vec<SourceHandle>> {
         let sources = create_source_from_chain_cassandra(chain);
 
         let topology = Topology { sources };

@@ -292,12 +292,12 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
             // Extract the file descriptor from the TcpListener
             let fd = listener.as_raw_fd();
 
-            // Always parse port from listen_addr to support hostnames and [IPv6]:port formats.
+            // Split once from the right to support hostnames and [IPv6]:port formats.
             let port = self
                 .listen_addr
                 .rsplit_once(':')
                 .and_then(|(_, p)| p.parse::<u16>().ok())
-                .unwrap_or(0);
+                .unwrap();
 
             tracing::info!("Hot reload: Extracting socket FD {} for port {}", fd, port);
 

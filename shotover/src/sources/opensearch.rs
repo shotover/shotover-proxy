@@ -1,7 +1,7 @@
 use crate::codec::{CodecBuilder, Direction, opensearch::OpenSearchCodecBuilder};
 use crate::config::chain::TransformChainConfig;
 use crate::server::TcpCodecListener;
-use crate::sources::{Source, Transport};
+use crate::sources::{SourceHandle, Transport};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -23,7 +23,7 @@ impl OpenSearchConfig {
     pub async fn get_source(
         &self,
         mut trigger_shutdown_rx: watch::Receiver<bool>,
-    ) -> Result<Source, Vec<String>> {
+    ) -> Result<SourceHandle, Vec<String>> {
         info!("Starting OpenSearch source on [{}]", self.listen_addr);
 
         let (hot_reload_tx, hot_reload_rx) = tokio::sync::mpsc::unbounded_channel();
@@ -59,6 +59,10 @@ impl OpenSearchConfig {
             }
         });
 
-        Ok(Source::new(join_handle, hot_reload_tx, self.name.clone()))
+        Ok(SourceHandle::new(
+            join_handle,
+            hot_reload_tx,
+            self.name.clone(),
+        ))
     }
 }
