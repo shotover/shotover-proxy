@@ -51,7 +51,7 @@ impl SourceHandle {
     }
 
     pub fn into_join_handle(self) -> JoinHandle<()> {
-        // Try to extract the real JoinHandle, fallback to dummy if not possible
+        // Try to extract the JoinHandle, fallback to dummy if not possible
         match Arc::try_unwrap(self.join_handle) {
             Ok(mutex) => match mutex.into_inner() {
                 Ok(Some(handle)) => handle,
@@ -61,7 +61,7 @@ impl SourceHandle {
                 }
             },
             Err(_) => {
-                // Arc is shared (cloned), create a dummy handle
+                // Arc is cloned, create a dummy handle
                 tokio::task::spawn(async {})
             }
         }
