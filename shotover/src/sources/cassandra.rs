@@ -2,7 +2,7 @@ use crate::codec::Direction;
 use crate::codec::{CodecBuilder, cassandra::CassandraCodecBuilder};
 use crate::config::chain::TransformChainConfig;
 use crate::server::TcpCodecListener;
-use crate::sources::{SourceHandle, Transport};
+use crate::sources::{Source, Transport};
 use crate::tls::{TlsAcceptor, TlsAcceptorConfig};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
@@ -28,7 +28,7 @@ impl CassandraConfig {
     pub async fn get_source(
         &self,
         mut trigger_shutdown_rx: watch::Receiver<bool>,
-    ) -> Result<SourceHandle, Vec<String>> {
+    ) -> Result<Source, Vec<String>> {
         info!("Starting Cassandra source on [{}]", self.listen_addr);
 
         let (hot_reload_tx, hot_reload_rx) = tokio::sync::mpsc::unbounded_channel();
@@ -64,10 +64,6 @@ impl CassandraConfig {
             }
         });
 
-        Ok(SourceHandle::new(
-            join_handle,
-            hot_reload_tx,
-            self.name.clone(),
-        ))
+        Ok(Source::new(join_handle, hot_reload_tx, self.name.clone()))
     }
 }

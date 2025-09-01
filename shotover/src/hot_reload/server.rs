@@ -1,13 +1,19 @@
 use crate::hot_reload::json_parsing::read_json;
 use crate::hot_reload::protocol::{HotReloadListenerRequest, Request, Response};
-use crate::sources::SourceHandle;
+use crate::sources::Source;
 use anyhow::{Context, Result};
 use serde_json;
 use std::collections::HashMap;
 use std::path::Path;
 use tokio::io::{AsyncWriteExt, BufReader};
 use tokio::net::{UnixListener, UnixStream};
+use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
+
+pub struct SourceHandle {
+    pub name: String,
+    pub sender: mpsc::UnboundedSender<HotReloadListenerRequest>,
+}
 
 pub struct UnixSocketServer {
     socket_path: String,
@@ -84,7 +90,7 @@ impl UnixSocketServer {
                         return_chan: response_tx,
                     };
 
-                    if let Err(e) = source.get_hot_reload_tx().send(hot_reload_request) {
+                    if let Err(e) = source.sender.send(hot_reload_request) {
                         warn!(
                             "Failed to send hot reload request to source {}: {:?}",
                             source.name, e
@@ -142,8 +148,14 @@ impl Drop for UnixSocketServer {
         }
     }
 }
-pub fn start_hot_reload_server(socket_path: String, sources: &[SourceHandle]) {
-    let source_handles: Vec<SourceHandle> = sources.to_vec();
+pub fn start_hot_reload_server(socket_path: String, sources: &[Source]) {
+    let source_handles: Vec<SourceHandle> = sources
+        .iter()
+        .map(|x| SourceHandle {
+            name: x.name().to_string(),
+            sender: x.get_hot_reload_tx(),
+        })
+        .collect();
 
     tokio::spawn(async move {
         match UnixSocketServer::new(socket_path, source_handles) {

@@ -1,3 +1,5 @@
+//! Sources used to listen for connections and send/recieve with the client.
+
 use crate::hot_reload::protocol::HotReloadListenerRequest;
 #[cfg(feature = "cassandra")]
 use crate::sources::cassandra::CassandraConfig;
@@ -9,7 +11,6 @@ use crate::sources::opensearch::OpenSearchConfig;
 use crate::sources::valkey::ValkeyConfig;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
@@ -30,47 +31,32 @@ pub enum Transport {
     WebSocket,
 }
 
-#[derive(Debug, Clone)]
-pub struct SourceHandle {
-    pub join_handle: Arc<Mutex<Option<JoinHandle<()>>>>, // Wrap JoinHandle to make it cloneable
+#[derive(Debug)]
+pub struct Source {
+    pub join_handle: JoinHandle<()>,
     pub hot_reload_tx: UnboundedSender<HotReloadListenerRequest>,
     pub name: String,
 }
 
-impl SourceHandle {
+impl Source {
     pub fn new(
         join_handle: JoinHandle<()>,
         hot_reload_tx: UnboundedSender<HotReloadListenerRequest>,
         name: String,
     ) -> Self {
         Self {
-            join_handle: Arc::new(Mutex::new(Some(join_handle))),
+            join_handle,
             hot_reload_tx,
             name,
         }
     }
 
     pub fn into_join_handle(self) -> JoinHandle<()> {
-        // Try to extract the JoinHandle, fallback to dummy if not possible
-        match Arc::try_unwrap(self.join_handle) {
-            Ok(mutex) => match mutex.into_inner() {
-                Ok(Some(handle)) => handle,
-                _ => {
-                    // Create a dummy handle that completes immediately
-                    tokio::task::spawn(async {})
-                }
-            },
-            Err(_) => {
-                // Arc is cloned, create a dummy handle
-                tokio::task::spawn(async {})
-            }
-        }
+        self.join_handle
     }
-
     pub fn get_hot_reload_tx(&self) -> UnboundedSender<HotReloadListenerRequest> {
         self.hot_reload_tx.clone()
     }
-
     pub fn name(&self) -> &str {
         &self.name
     }
@@ -93,7 +79,7 @@ impl SourceConfig {
     pub(crate) async fn get_source(
         &self,
         trigger_shutdown_rx: watch::Receiver<bool>,
-    ) -> Result<SourceHandle, Vec<String>> {
+    ) -> Result<Source, Vec<String>> {
         match self {
             #[cfg(feature = "cassandra")]
             SourceConfig::Cassandra(c) => c.get_source(trigger_shutdown_rx).await,

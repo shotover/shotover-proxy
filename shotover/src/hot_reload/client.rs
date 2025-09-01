@@ -110,8 +110,8 @@ mod tests {
 
     use super::*;
     use crate::hot_reload::protocol::HotReloadListenerResponse;
+    use crate::hot_reload::server::SourceHandle;
     use crate::hot_reload::tests::wait_for_unix_socket_connection;
-    use crate::sources::SourceHandle;
 
     #[tokio::test]
     async fn test_client_connection_error() {
@@ -132,11 +132,10 @@ mod tests {
 
         // Start server
         let (tx, mut rx) = unbounded_channel();
-        let source_handles: Vec<SourceHandle> = vec![SourceHandle::new(
-            tokio::task::spawn(async {}), // dummy join handle for tests
-            tx,
-            "foo".to_string(),
-        )];
+        let source_handles: Vec<SourceHandle> = vec![SourceHandle {
+            name: "foo".to_string(),
+            sender: tx,
+        }];
         let mut server = crate::hot_reload::server::UnixSocketServer::new(
             socket_path.to_string(),
             source_handles,
@@ -185,11 +184,10 @@ mod tests {
         let socket_path = "/tmp/test-multiple-clients.sock";
 
         let (tx, mut rx) = unbounded_channel();
-        let source_handles: Vec<SourceHandle> = vec![SourceHandle::new(
-            tokio::task::spawn(async {}), // dummy join handle for tests
-            tx,
-            "foo".to_string(),
-        )];
+        let source_handles: Vec<SourceHandle> = vec![SourceHandle {
+            name: "foo".to_string(),
+            sender: tx,
+        }];
         let mut server = crate::hot_reload::server::UnixSocketServer::new(
             socket_path.to_string(),
             source_handles,
