@@ -481,7 +481,7 @@ mod system_local {
 }
 
 mod system_peers {
-    use cassandra_protocol::frame::message_error::ErrorType;
+    use cassandra_protocol::frame::message_error::{ErrorBody, ErrorType};
 
     use super::*;
 
@@ -609,6 +609,9 @@ mod system_peers {
                         ))
                     })
                     .collect(),
+                CassandraOperation::Error(ErrorBody { message, ty }) => Err(anyhow!(
+                    "system.peers or system.peers_v2 returned cassandra error: {ty:?} {message}",
+                )),
                 operation => Err(anyhow!(
                     "system.peers or system.peers_v2 returned unexpected cassandra operation: {}",
                     operation_name(operation)
