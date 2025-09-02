@@ -16,6 +16,7 @@ async fn test_create_udt(session: &CassandraConnection) {
         "INSERT INTO test_udt_keyspace.test_table (id, foo) VALUES (1, {foo: 'yes', bar: 1})",
     )
     .await;
+    run_query(session, "SELECT * FROM test_udt_keyspace.test_table").await;
 }
 
 async fn test_drop_udt(session: &CassandraConnection) {
