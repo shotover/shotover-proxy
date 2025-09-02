@@ -481,6 +481,8 @@ mod system_local {
 }
 
 mod system_peers {
+    use cassandra_protocol::frame::message_error::ErrorType;
+
     use super::*;
 
     pub async fn query(
@@ -532,7 +534,7 @@ mod system_peers {
             ..
         })) = message.frame()
         {
-            return error.message == "unconfigured table peers_v2";
+            return error.ty == ErrorType::Invalid;
         }
 
         false
