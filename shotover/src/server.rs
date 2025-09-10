@@ -1,6 +1,9 @@
 use crate::codec::{CodecBuilder, CodecReadError, CodecWriteError};
 use crate::config::chain::TransformChainConfig;
 use crate::frame::MessageType;
+use crate::hot_reload::protocol::{
+    FileDescriptor, HotReloadListenerRequest, HotReloadListenerResponse,
+};
 use crate::message::{Message, MessageIdMap, Messages, Metadata};
 use crate::sources::Transport;
 use crate::tls::{AcceptError, TlsAcceptor};
@@ -13,6 +16,7 @@ use futures::{SinkExt, StreamExt};
 use metrics::{Counter, Gauge, counter, gauge};
 use std::io::ErrorKind;
 use std::net::SocketAddr;
+use std::os::unix::io::AsRawFd;
 use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::{TcpListener, TcpStream};
@@ -74,6 +78,9 @@ pub struct TcpCodecListener<C: CodecBuilder> {
     connection_handles: Vec<JoinHandle<()>>,
 
     transport: Transport,
+
+    /// Receiver for hot reload requests to extract listening socket file descriptor
+    hot_reload_rx: tokio::sync::mpsc::UnboundedReceiver<HotReloadListenerRequest>,
 }
 
 impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
@@ -89,6 +96,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
         tls: Option<TlsAcceptor>,
         timeout: Option<Duration>,
         transport: Transport,
+        hot_reload_rx: tokio::sync::mpsc::UnboundedReceiver<HotReloadListenerRequest>,
     ) -> Result<Self, Vec<String>> {
         let available_connections_gauge =
             gauge!("shotover_available_connections_count", "source" => source_name.clone());
@@ -139,6 +147,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
             timeout,
             connection_handles: vec![],
             transport,
+            hot_reload_rx,
         })
     }
 
@@ -181,61 +190,60 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
             let span =
                 crate::connection_span::span(self.connection_count, self.source_name.as_str());
             let transport = self.transport;
+
             async {
-                // Accept a new socket. This will attempt to perform error handling.
-                // The `accept` method internally attempts to recover errors, so an
-                // error here is non-recoverable.
-                let stream = self.accept().await?;
+                tokio::select! {
+                    // Normal Connection handling
+                    stream_result = Self::accept(&mut self.listener) => {
+                        let stream = stream_result?;
 
-                debug!("got socket");
-                self.available_connections_gauge
-                    .set(self.limit_connections.available_permits() as f64);
-                self.connections_opened.increment(1);
+                        debug!("got socket");
+                        self.available_connections_gauge.set(self.limit_connections.available_permits() as f64);
+                        self.connections_opened.increment(1);
 
-                let client_details = stream
-                    .peer_addr()
-                    .map(|p| p.ip().to_string())
-                    .unwrap_or_else(|_| "Unknown peer".to_string());
-                tracing::debug!("New connection from {}", client_details);
+                        let client_details = stream.peer_addr()
+                            .map(|p| p.ip().to_string())
+                            .unwrap_or_else(|_| "Unknown Peer".to_string());
+                        tracing::debug!("New connection from {}", client_details);
 
-                let force_run_chain = Arc::new(Notify::new());
-                let context = TransformContextBuilder {
-                    force_run_chain: force_run_chain.clone(),
-                    client_details: client_details.clone(),
-                };
+                        let force_run_chain = Arc::new(Notify::new());
+                        let context = TransformContextBuilder{
+                            force_run_chain: force_run_chain.clone(),
+                            client_details:client_details.clone(),
+                        };
 
-                let handler = Handler {
-                    chain: self.chain_builder.build(context),
-                    codec: self.codec.clone(),
-                    shutdown: Shutdown::new(self.trigger_shutdown_rx.clone()),
-                    tls: self.tls.clone(),
-                    pending_requests: PendingRequests::new(self.codec.protocol()),
-                    timeout: self.timeout,
-                    _permit: permit,
-                };
-
-                // Spawn a new task to process the connections.
-                self.connection_handles.push(tokio::spawn(
-                    async move {
-                        // Process the connection. If an error is encountered, log it.
-                        if let Err(err) = handler
-                            .run(stream, transport, force_run_chain, client_details)
-                            .await
-                        {
-                            error!(
-                                "{:?}",
-                                err.context("connection was unexpectedly terminated")
-                            );
+                        let handler = Handler{
+                            chain: self.chain_builder.build(context),
+                            codec: self.codec.clone(),
+                            shutdown: Shutdown::new(self.trigger_shutdown_rx.clone()),
+                            tls: self.tls.clone(),
+                            pending_requests: PendingRequests::new(self.codec.protocol()),
+                            timeout: self.timeout,
+                            _permit: permit,
+                        };
+                        // Spawn a new task to process the connections.
+                        self.connection_handles.push(tokio::spawn(async move{
+                            // Process the connection. If an error is encountered, log it.
+                            if let Err(err) = handler.run(stream, transport, force_run_chain, client_details).await{
+                                error!("{:?}", err.context("connection was unexpectedly terminated"));
+                            }
+                        }.in_current_span()));
+                        // Only prune the list every so often
+                        // theres no point in doing it every iteration because most likely none of the handles will have completed
+                        if self.connection_count % 1000 == 0{
+                            self.connection_handles.retain(|x| !x.is_finished());
                         }
+                        Ok::<(), anyhow::Error>(())
+                    },
+                    // Hot reload request handling
+                    hot_reload_request = self.hot_reload_rx.recv() => {
+                        if let Some(request) = hot_reload_request{
+                            self.handle_hot_reload_request(request).await;
+                            return Ok(());
+                        }
+                        Ok::<(), anyhow::Error>(())
                     }
-                    .in_current_span(),
-                ));
-                // Only prune the list every so often
-                // theres no point in doing it every iteration because most likely none of the handles will have completed
-                if self.connection_count % 1000 == 0 {
-                    self.connection_handles.retain(|x| !x.is_finished());
                 }
-                Ok::<(), anyhow::Error>(())
             }
             .instrument(span)
             .await?;
@@ -253,14 +261,14 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
     /// After the second failure, the task waits for 2 seconds. Each subsequent
     /// failure doubles the wait time. If accepting fails on the 6th try after
     /// waiting for 64 seconds, then this function returns with an error.
-    async fn accept(&mut self) -> Result<TcpStream> {
+    async fn accept(listener: &mut Option<TcpListener>) -> Result<TcpStream> {
         let mut backoff = 1;
 
         // Try to accept a few times
         loop {
             // Perform the accept operation. If a socket is successfully
             // accepted, return it. Otherwise, save the error.
-            match self.listener.as_mut().unwrap().accept().await {
+            match listener.as_mut().unwrap().accept().await {
                 Ok((socket, _)) => return Ok(socket),
                 Err(err) => {
                     if backoff > 64 {
@@ -275,6 +283,39 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
 
             // Double the back off
             backoff *= 2;
+        }
+    }
+
+    /// Handle hot reload request by extracting file descriptor and responding
+    async fn handle_hot_reload_request(&mut self, request: HotReloadListenerRequest) {
+        let response = if let Some(ref listener) = self.listener {
+            // Extract the file descriptor from the TcpListener
+            let fd = listener.as_raw_fd();
+
+            // Split once from the right to support hostnames and [IPv6]:port formats.
+            let port = self
+                .listen_addr
+                .rsplit_once(':')
+                .and_then(|(_, p)| p.parse::<u16>().ok())
+                .unwrap();
+
+            tracing::info!("Hot reload: Extracting socket FD {} for port {}", fd, port);
+
+            // Stop accepting new connections by setting listener to None
+            self.listener = None;
+
+            HotReloadListenerResponse::HotReloadResponse {
+                port,
+                listener_socket_fd: FileDescriptor(fd),
+            }
+        } else {
+            tracing::warn!("Hot reload request received but no listener available");
+            HotReloadListenerResponse::NoListenerAvailable
+        };
+
+        // Send response back through oneshot channel
+        if request.return_chan.send(response).is_err() {
+            tracing::error!("Failed to send hot reload response - receiver dropped");
         }
     }
 }
@@ -740,7 +781,9 @@ impl<C: CodecBuilder + 'static> Handler<C> {
         let responses = match self.chain.process_request(&mut wrapper).await {
             Ok(x) => x,
             Err(err) => {
-                let err = err.context("Chain failed to send and/or receive messages, the connection will now be closed.");
+                let err = err.context(
+                    "Chain failed to send and/or receive messages, the connection will now be closed.",
+                );
                 // The connection is going to be closed once we return Err.
                 // So first make a best effort attempt of responding to any pending requests with an error response.
                 out_tx.send(self.pending_requests.to_errors(&err))?;

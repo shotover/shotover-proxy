@@ -1,5 +1,6 @@
 //! Sources used to listen for connections and send/recieve with the client.
 
+use crate::hot_reload::protocol::HotReloadListenerRequest;
 #[cfg(feature = "cassandra")]
 use crate::sources::cassandra::CassandraConfig;
 #[cfg(feature = "kafka")]
@@ -10,6 +11,7 @@ use crate::sources::opensearch::OpenSearchConfig;
 use crate::sources::valkey::ValkeyConfig;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
+use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
@@ -32,15 +34,31 @@ pub enum Transport {
 #[derive(Debug)]
 pub struct Source {
     pub join_handle: JoinHandle<()>,
+    pub hot_reload_tx: UnboundedSender<HotReloadListenerRequest>,
+    pub name: String,
 }
 
 impl Source {
-    pub fn new(join_handle: JoinHandle<()>) -> Self {
-        Self { join_handle }
+    pub fn new(
+        join_handle: JoinHandle<()>,
+        hot_reload_tx: UnboundedSender<HotReloadListenerRequest>,
+        name: String,
+    ) -> Self {
+        Self {
+            join_handle,
+            hot_reload_tx,
+            name,
+        }
     }
 
     pub fn into_join_handle(self) -> JoinHandle<()> {
         self.join_handle
+    }
+    pub fn get_hot_reload_tx(&self) -> UnboundedSender<HotReloadListenerRequest> {
+        self.hot_reload_tx.clone()
+    }
+    pub fn name(&self) -> &str {
+        &self.name
     }
 }
 
