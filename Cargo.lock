@@ -5046,6 +5046,7 @@ dependencies = [
  "pretty_assertions",
  "rand 0.9.1",
  "redis-protocol",
+ "rustix 0.38.44",
  "rustls 0.23.28",
  "rustls-pemfile 2.2.0",
  "rustls-pki-types",

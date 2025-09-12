@@ -8,7 +8,11 @@ use tracing::debug;
 use tracing::warn;
 
 #[cfg(target_os = "linux")]
-use std::ffi::c_int;
+use rustix::process::{pidfd_open, pidfd_getfd, PidfdFlags, PidfdGetfdFlags};
+#[cfg(target_os = "linux")]
+use rustix::fd::OwnedFd;
+#[cfg(target_os = "linux")]
+use std::os::unix::io::AsRawFd;
 
 /// Convert a raw file descriptor from another process to a TcpListener in the current process
 /// Uses pidfd_getfd() system call on Linux for secure cross-process FD transfer
@@ -23,42 +27,27 @@ pub async fn create_listener_from_remote_fd(
             _remote_fd, _source_pid
         );
 
-        // Open pidfd for the source process
-        let pidfd = unsafe { libc::syscall(libc::SYS_pidfd_open, _source_pid, 0) };
-
-        if pidfd < 0 {
-            return Err(anyhow!(
+        // Open pidfd for the source process using rustix
+        let pidfd = pidfd_open(_source_pid, PidfdFlags::empty())
+            .map_err(|e| anyhow!(
                 "Failed to open pidfd for process {}: {}",
-                _source_pid,
-                std::io::Error::last_os_error()
-            ));
-        }
+                _source_pid, e
+            ))?;
 
-        // Use pidfd_getfd to duplicate the file descriptor
-        let local_fd =
-            unsafe { libc::syscall(libc::SYS_pidfd_getfd, pidfd as c_int, _remote_fd, 0) };
-
-        // Close the pidfd as we no longer need it
-        unsafe {
-            libc::close(pidfd as c_int);
-        }
-
-        if local_fd < 0 {
-            return Err(anyhow!(
+        // Use pidfd_getfd to duplicate the file descriptor using rustix
+        let local_fd = pidfd_getfd(&pidfd, _remote_fd, PidfdGetfdFlags::empty())
+            .map_err(|e| anyhow!(
                 "Failed to duplicate FD {} from process {}: {}",
-                _remote_fd,
-                _source_pid,
-                std::io::Error::last_os_error()
-            ));
-        }
+                _remote_fd, _source_pid, e
+            ))?;
 
         debug!(
             "Successfully duplicated FD {} from process {} as local FD {}",
-            _remote_fd, _source_pid, local_fd
+            _remote_fd, _source_pid, local_fd.as_raw_fd()
         );
 
-        // Convert the raw FD to a TcpListener
-        let std_listener = unsafe { std::net::TcpListener::from_raw_fd(local_fd as RawFd) };
+        // Convert the owned FD to a TcpListener
+        let std_listener = std::net::TcpListener::from(local_fd);
 
         // Convert to tokio TcpListener
         let tokio_listener = TcpListener::from_std(std_listener)
