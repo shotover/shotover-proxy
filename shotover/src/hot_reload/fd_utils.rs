@@ -3,7 +3,9 @@ use anyhow::{Context, Result, anyhow};
 use std::os::unix::io::FromRawFd;
 use std::os::unix::io::RawFd;
 use tokio::net::TcpListener;
-use tracing::{debug, warn};
+use tracing::debug;
+#[cfg(not(target_os = "linux"))]
+use tracing::warn;
 
 #[cfg(target_os = "linux")]
 use std::ffi::c_int;
@@ -66,7 +68,6 @@ pub async fn create_listener_from_remote_fd(
     }
 
     #[cfg(not(target_os = "linux"))]
-    #[allow(unused_imports)]
     {
         warn!(
             "pidfd_getfd() not available on this platform. Hot reload socket transfer not supported."
