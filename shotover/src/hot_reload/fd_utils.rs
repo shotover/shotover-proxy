@@ -1,7 +1,7 @@
 use anyhow::{Context, Result, anyhow};
-use std::os::unix::io::{RawFd};
 #[cfg(target_os = "linux")]
 use std::os::unix::io::FromRawFd;
+use std::os::unix::io::RawFd;
 use tokio::net::TcpListener;
 use tracing::{debug, warn};
 
@@ -20,12 +20,10 @@ pub async fn create_listener_from_remote_fd(
             "Attempting to duplicate FD {} from process {} using pidfd_getfd",
             _remote_fd, _source_pid
         );
-        
+
         // Open pidfd for the source process
-        let pidfd = unsafe {
-            libc::syscall(libc::SYS_pidfd_open, _source_pid, 0)
-        };
-        
+        let pidfd = unsafe { libc::syscall(libc::SYS_pidfd_open, _source_pid, 0) };
+
         if pidfd < 0 {
             return Err(anyhow!(
                 "Failed to open pidfd for process {}: {}",
@@ -35,9 +33,8 @@ pub async fn create_listener_from_remote_fd(
         }
 
         // Use pidfd_getfd to duplicate the file descriptor
-        let local_fd = unsafe {
-            libc::syscall(libc::SYS_pidfd_getfd, pidfd as c_int, _remote_fd, 0)
-        };
+        let local_fd =
+            unsafe { libc::syscall(libc::SYS_pidfd_getfd, pidfd as c_int, _remote_fd, 0) };
 
         // Close the pidfd as we no longer need it
         unsafe {
@@ -60,7 +57,7 @@ pub async fn create_listener_from_remote_fd(
 
         // Convert the raw FD to a TcpListener
         let std_listener = unsafe { std::net::TcpListener::from_raw_fd(local_fd as RawFd) };
-        
+
         // Convert to tokio TcpListener
         let tokio_listener = TcpListener::from_std(std_listener)
             .context("Failed to convert std::net::TcpListener to tokio::net::TcpListener")?;
@@ -81,9 +78,10 @@ pub async fn create_listener_from_remote_fd(
 
 /// Validate that a file descriptor refers to a TCP socket bound to the expected address
 pub async fn validate_socket_fd(listener: &TcpListener, expected_port: u16) -> Result<()> {
-    let local_addr = listener.local_addr()
+    let local_addr = listener
+        .local_addr()
         .context("Failed to get local address from listener")?;
-    
+
     if local_addr.port() != expected_port {
         return Err(anyhow!(
             "Socket port mismatch: expected {}, got {}",
@@ -103,7 +101,7 @@ pub async fn validate_socket_fd(listener: &TcpListener, expected_port: u16) -> R
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[tokio::test]
     async fn test_validate_socket_fd() {
         // Create a test listener

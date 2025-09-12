@@ -199,7 +199,10 @@ impl Shotover {
         info!(configuration = ?config);
         info!(topology = ?topology);
 
-        match topology.run_chains(trigger_shutdown_rx, hot_reload_sockets).await {
+        match topology
+            .run_chains(trigger_shutdown_rx, hot_reload_sockets)
+            .await
+        {
             Ok(sources) => {
                 if hotreload_enabled {
                     info!("Starting shotover with hot reloading enabled");

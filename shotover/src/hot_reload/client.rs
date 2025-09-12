@@ -89,14 +89,18 @@ pub async fn perform_hot_reloading(socket_path: String) -> Result<HashMap<u32, S
         .send_request(crate::hot_reload::protocol::Request::SendListeningSockets)
         .await
     {
-        Ok(crate::hot_reload::protocol::Response::SendListeningSockets { port_to_socket_info }) => {
+        Ok(crate::hot_reload::protocol::Response::SendListeningSockets {
+            port_to_socket_info,
+        }) => {
             info!(
                 "Successfully received {} socket info entries from hot reload server",
                 port_to_socket_info.len()
             );
             for (port, socket_info) in &port_to_socket_info {
-                info!("Received file descriptor {} for port {} from PID {}", 
-                      socket_info.fd.0, port, socket_info.pid);
+                info!(
+                    "Received file descriptor {} for port {} from PID {}",
+                    socket_info.fd.0, port, socket_info.pid
+                );
             }
             Ok(port_to_socket_info)
         }
@@ -172,7 +176,9 @@ mod tests {
 
         // Verify response
         match response {
-            Response::SendListeningSockets { port_to_socket_info } => {
+            Response::SendListeningSockets {
+                port_to_socket_info,
+            } => {
                 assert_eq!(port_to_socket_info.len(), 1);
             }
             Response::Error(msg) => panic!("Unexpected error response: {}", msg),
@@ -226,7 +232,9 @@ mod tests {
                 .await
                 .unwrap();
             match response {
-                Response::SendListeningSockets { port_to_socket_info } => {
+                Response::SendListeningSockets {
+                    port_to_socket_info,
+                } => {
                     assert_eq!(port_to_socket_info.len(), 1);
                 }
                 Response::Error(msg) => panic!("Unexpected error response: {}", msg),

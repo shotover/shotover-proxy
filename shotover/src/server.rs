@@ -128,14 +128,23 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
             .await
             {
                 Ok(listener) => {
-                    info!("Successfully created listener from hot reload socket FD {}", socket_info.fd.0);
+                    info!(
+                        "Successfully created listener from hot reload socket FD {}",
+                        socket_info.fd.0
+                    );
                     // Validate the socket matches expected port
                     let expected_port = listen_addr
                         .rsplit_once(':')
                         .and_then(|(_, p)| p.parse::<u16>().ok())
                         .unwrap_or(0);
-                    if let Err(e) = crate::hot_reload::fd_utils::validate_socket_fd(&listener, expected_port).await {
-                        warn!("Hot reload socket validation failed: {}, falling back to new socket", e);
+                    if let Err(e) =
+                        crate::hot_reload::fd_utils::validate_socket_fd(&listener, expected_port)
+                            .await
+                    {
+                        warn!(
+                            "Hot reload socket validation failed: {}, falling back to new socket",
+                            e
+                        );
                         // Fall back to creating new listener
                         match create_listener(&listen_addr).await {
                             Ok(listener) => Some(listener),
@@ -149,7 +158,10 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                     }
                 }
                 Err(e) => {
-                    warn!("Failed to create listener from hot reload socket: {}, falling back to new socket", e);
+                    warn!(
+                        "Failed to create listener from hot reload socket: {}, falling back to new socket",
+                        e
+                    );
                     // Fall back to creating new listener
                     match create_listener(&listen_addr).await {
                         Ok(listener) => Some(listener),

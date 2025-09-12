@@ -1,5 +1,5 @@
-use crate::sources::{Source, SourceConfig};
 use crate::hot_reload::protocol::SocketInfo;
+use crate::sources::{Source, SourceConfig};
 use anyhow::{Context, Result, anyhow};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
@@ -57,7 +57,10 @@ impl Topology {
         }
 
         for source in &self.sources {
-            match source.get_source(trigger_shutdown_rx.clone(), hot_reload_sockets.as_ref()).await {
+            match source
+                .get_source(trigger_shutdown_rx.clone(), hot_reload_sockets.as_ref())
+                .await
+            {
                 Ok(source) => sources.push(source),
                 Err(source_errors) => {
                     if !source_errors.is_empty() {

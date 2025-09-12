@@ -136,7 +136,9 @@ impl UnixSocketServer {
                     port_to_socket_info.len()
                 );
 
-                Response::SendListeningSockets { port_to_socket_info }
+                Response::SendListeningSockets {
+                    port_to_socket_info,
+                }
             }
         }
     }
@@ -220,7 +222,9 @@ mod tests {
 
         // Verify response
         match response {
-            Response::SendListeningSockets { port_to_socket_info } => {
+            Response::SendListeningSockets {
+                port_to_socket_info,
+            } => {
                 assert_eq!(port_to_socket_info.len(), 0);
             }
             _ => panic!("Wrong response type"),
