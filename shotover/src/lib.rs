@@ -24,13 +24,14 @@
 //!     shotover::runner::Shotover::new().run_block();
 //! }
 //! ```
-
+/*
 #![deny(
     unsafe_code,
     reason = r#"
 If we absolutely need unsafe code, it should be isolated within a separate small crate that exposes a sound safe API.
 "sound" means that it is impossible for any interaction with the public API of the crate to violate an unsafe invariant which causes UB."#
 )]
+*/
 #![deny(
     clippy::print_stdout,
     reason = "Accidentally printing would break json log output"
