@@ -165,7 +165,7 @@ async fn test_hotreload_protocol_communication() {
 #[tokio::test]
 async fn test_simple_hotreload_startup_no_db() {
     let socket_path = "/tmp/test-hotreload-simple.sock";
-    
+
     // Start the first Shotover instance with hot reload enabled - no DB, just listen
     let shotover_a = shotover_process("tests/test-configs/hotreload/topology-simple.yaml")
         .with_hotreload(true)
