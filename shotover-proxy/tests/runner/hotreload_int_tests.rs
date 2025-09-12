@@ -31,7 +31,7 @@ async fn test_socket_handoff_with_valkey() {
     // Start the first Shotover instance with hot reload enabled
     let shotover_a = shotover_process("tests/test-configs/hotreload/topology.yaml")
         .with_hotreload(true)
-        .with_log_name("shotover-old")
+        .with_log_name("shot-old")
         .with_hotreload_socket_path(socket_path)
         .with_config("tests/test-configs/shotover-config/config_metrics_disabled.yaml")
         .start()
@@ -48,7 +48,7 @@ async fn test_socket_handoff_with_valkey() {
     // We need to create a topology that uses the same port (6380)
     let shotover_b = shotover_process("tests/test-configs/hotreload/topology.yaml")
         .with_hotreload_from_socket(socket_path)
-        .with_log_name("shotover-new")
+        .with_log_name("shot-new")
         .with_config("tests/test-configs/shotover-config/config_metrics_disabled.yaml")
         .start()
         .await;
@@ -88,7 +88,7 @@ async fn test_dual_shotover_instances_different_ports() {
     let _compose = docker_compose("tests/test-configs/hotreload/docker-compose.yaml");
     let shotover_a = shotover_process("tests/test-configs/hotreload/topology.yaml")
         .with_hotreload(true)
-        .with_log_name("shotover-old")
+        .with_log_name("shot-old")
         .with_hotreload_socket_path(socket_path)
         .with_config("tests/test-configs/shotover-config/config_metrics_disabled.yaml")
         .start()
@@ -100,7 +100,7 @@ async fn test_dual_shotover_instances_different_ports() {
     //Second shotover on different port (this tests the hot reload communication, not socket handoff)
     let shotover_b = shotover_process("tests/test-configs/hotreload/topology-alt.yaml")
         .with_hotreload_from_socket(socket_path)
-        .with_log_name("shotover-new")
+        .with_log_name("shot-new")
         .with_config("tests/test-configs/shotover-config/config_metrics_disabled.yaml")
         .start()
         .await;
@@ -131,7 +131,7 @@ async fn test_hotreload_protocol_communication() {
     // Start the first Shotover instance with hot reload enabled
     let shotover_a = shotover_process("tests/test-configs/hotreload/topology.yaml")
         .with_hotreload(true)
-        .with_log_name("shotover-old")
+        .with_log_name("shot-old")
         .with_hotreload_socket_path(socket_path)
         .with_config("tests/test-configs/shotover-config/config_metrics_disabled.yaml")
         .start()
@@ -145,7 +145,7 @@ async fn test_hotreload_protocol_communication() {
     // Start second instance that attempts hot reload (will get protocol response but fall back to new socket)
     let shotover_b = shotover_process("tests/test-configs/hotreload/topology-alt.yaml")
         .with_hotreload_from_socket(socket_path)
-        .with_log_name("shotover-new")
+        .with_log_name("shot-new")
         .with_config("tests/test-configs/shotover-config/config_metrics_disabled.yaml")
         .start()
         .await;
@@ -175,7 +175,7 @@ async fn test_simple_hotreload_startup_no_db() {
     // Start the first Shotover instance with hot reload enabled - no DB, just listen
     let shotover_a = shotover_process("tests/test-configs/hotreload/topology-simple.yaml")
         .with_hotreload(true)
-        .with_log_name("shotover-old")
+        .with_log_name("shot-old")
         .with_hotreload_socket_path(socket_path)
         .with_config("tests/test-configs/shotover-config/config_metrics_disabled.yaml")
         .start()
@@ -189,7 +189,7 @@ async fn test_simple_hotreload_startup_no_db() {
     // Start second instance that requests socket handoff (SAME PORT to test socket recreation logic)
     let shotover_b = shotover_process("tests/test-configs/hotreload/topology-simple.yaml")
         .with_hotreload_from_socket(socket_path)
-        .with_log_name("shotover-new")
+        .with_log_name("shot-new")
         .with_config("tests/test-configs/shotover-config/config_metrics_disabled.yaml")
         .start()
         .await;
