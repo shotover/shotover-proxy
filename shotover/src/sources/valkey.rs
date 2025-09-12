@@ -3,8 +3,10 @@ use crate::config::chain::TransformChainConfig;
 use crate::server::TcpCodecListener;
 use crate::sources::{Source, Transport};
 use crate::tls::{TlsAcceptor, TlsAcceptorConfig};
+use crate::hot_reload::protocol::SocketInfo;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -27,10 +29,19 @@ impl ValkeyConfig {
     pub async fn get_source(
         &self,
         mut trigger_shutdown_rx: watch::Receiver<bool>,
+        hot_reload_sockets: Option<&HashMap<u32, SocketInfo>>,
     ) -> Result<Source, Vec<String>> {
         info!("Starting Valkey source on [{}]", self.listen_addr);
 
         let (hot_reload_tx, hot_reload_rx) = tokio::sync::mpsc::unbounded_channel();
+
+        // Extract port and find matching hot reload socket
+        let port = self.listen_addr
+            .rsplit_once(':')
+            .and_then(|(_, p)| p.parse::<u32>().ok())
+            .unwrap_or(0);
+        let hot_reload_socket_info = hot_reload_sockets
+            .and_then(|sockets| sockets.get(&port));
 
         let mut listener = TcpCodecListener::new(
             &self.chain,
@@ -44,6 +55,7 @@ impl ValkeyConfig {
             self.timeout.map(Duration::from_secs),
             Transport::Tcp,
             hot_reload_rx,
+            hot_reload_socket_info,
         )
         .await?;
 

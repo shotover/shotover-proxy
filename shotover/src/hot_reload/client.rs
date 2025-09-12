@@ -1,8 +1,9 @@
 //This module gives client-side implementation for socket handoff as part of hot reloading
 //Client will connect to existing shotovers and requests for FDs
 use crate::hot_reload::json_parsing::read_json;
-use crate::hot_reload::protocol::{Request, Response};
+use crate::hot_reload::protocol::{Request, Response, SocketInfo};
 use anyhow::{Context, Result};
+use std::collections::HashMap;
 use std::time::Duration;
 use tokio::io::{AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
@@ -75,7 +76,8 @@ impl UnixSocketClient {
 }
 
 /// Request listening sockets from an existing Shotover instance during hot reload
-pub async fn perform_hot_reloading(socket_path: String) -> Result<()> {
+/// Returns a map of port -> socket info for reuse by the new instance
+pub async fn perform_hot_reloading(socket_path: String) -> Result<HashMap<u32, SocketInfo>> {
     info!(
         "Hot reload CLIENT will request sockets from existing shotover at: {}",
         socket_path
@@ -87,15 +89,16 @@ pub async fn perform_hot_reloading(socket_path: String) -> Result<()> {
         .send_request(crate::hot_reload::protocol::Request::SendListeningSockets)
         .await
     {
-        Ok(crate::hot_reload::protocol::Response::SendListeningSockets { port_to_fd }) => {
+        Ok(crate::hot_reload::protocol::Response::SendListeningSockets { port_to_socket_info }) => {
             info!(
-                "Successfully received {} file descriptors from hot reload server",
-                port_to_fd.len()
+                "Successfully received {} socket info entries from hot reload server",
+                port_to_socket_info.len()
             );
-            for (port, fd) in &port_to_fd {
-                info!("Received file descriptor {} for port {}", fd.0, port);
+            for (port, socket_info) in &port_to_socket_info {
+                info!("Received file descriptor {} for port {} from PID {}", 
+                      socket_info.fd.0, port, socket_info.pid);
             }
-            Ok(())
+            Ok(port_to_socket_info)
         }
         Ok(crate::hot_reload::protocol::Response::Error(msg)) => {
             Err(anyhow::anyhow!("Hot reload request failed: {}", msg))
@@ -169,8 +172,8 @@ mod tests {
 
         // Verify response
         match response {
-            Response::SendListeningSockets { port_to_fd } => {
-                assert_eq!(port_to_fd.len(), 1);
+            Response::SendListeningSockets { port_to_socket_info } => {
+                assert_eq!(port_to_socket_info.len(), 1);
             }
             Response::Error(msg) => panic!("Unexpected error response: {}", msg),
         }
@@ -223,8 +226,8 @@ mod tests {
                 .await
                 .unwrap();
             match response {
-                Response::SendListeningSockets { port_to_fd } => {
-                    assert_eq!(port_to_fd.len(), 1);
+                Response::SendListeningSockets { port_to_socket_info } => {
+                    assert_eq!(port_to_socket_info.len(), 1);
                 }
                 Response::Error(msg) => panic!("Unexpected error response: {}", msg),
             }

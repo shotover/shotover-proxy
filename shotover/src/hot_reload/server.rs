@@ -1,5 +1,5 @@
 use crate::hot_reload::json_parsing::read_json;
-use crate::hot_reload::protocol::{HotReloadListenerRequest, Request, Response};
+use crate::hot_reload::protocol::{HotReloadListenerRequest, Request, Response, SocketInfo};
 use crate::sources::Source;
 use anyhow::{Context, Result};
 use serde_json;
@@ -79,8 +79,8 @@ impl UnixSocketServer {
                 info!("Processing SendListeningSockets request");
 
                 // Send requests to all TcpCodecListener instances and collect responses
-                let mut port_to_fd: HashMap<u32, crate::hot_reload::protocol::FileDescriptor> =
-                    HashMap::new();
+                let mut port_to_socket_info: HashMap<u32, SocketInfo> = HashMap::new();
+                let current_pid = std::process::id();
 
                 let mut response_futures = Vec::new();
 
@@ -109,10 +109,13 @@ impl UnixSocketServer {
                             match response {
                                 crate::hot_reload::protocol::HotReloadListenerResponse::HotReloadResponse { port, listener_socket_fd } => {
                                     info!(
-                                        "Received FD {} for port {} from source {}",
-                                        listener_socket_fd.0, port, source_name
+                                        "Received FD {} for port {} from source {} (PID: {})",
+                                        listener_socket_fd.0, port, source_name, current_pid
                                     );
-                                    port_to_fd.insert(port as u32, listener_socket_fd);
+                                    port_to_socket_info.insert(port as u32, SocketInfo {
+                                        fd: listener_socket_fd,
+                                        pid: current_pid,
+                                    });
                                 }
                                 crate::hot_reload::protocol::HotReloadListenerResponse::NoListenerAvailable => {
                                     info!("Source {} reported no listener available", source_name);
@@ -129,11 +132,11 @@ impl UnixSocketServer {
                 }
 
                 info!(
-                    "Sending response with {} file descriptors",
-                    port_to_fd.len()
+                    "Sending response with {} socket info entries",
+                    port_to_socket_info.len()
                 );
 
-                Response::SendListeningSockets { port_to_fd }
+                Response::SendListeningSockets { port_to_socket_info }
             }
         }
     }
@@ -217,8 +220,8 @@ mod tests {
 
         // Verify response
         match response {
-            Response::SendListeningSockets { port_to_fd } => {
-                assert_eq!(port_to_fd.len(), 0);
+            Response::SendListeningSockets { port_to_socket_info } => {
+                assert_eq!(port_to_socket_info.len(), 0);
             }
             _ => panic!("Wrong response type"),
         }

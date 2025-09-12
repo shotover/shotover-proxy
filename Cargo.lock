@@ -5035,6 +5035,7 @@ dependencies = [
  "httparse",
  "itertools 0.14.0",
  "kafka-protocol",
+ "libc",
  "lz4_flex",
  "metrics",
  "metrics-exporter-prometheus",

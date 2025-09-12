@@ -130,6 +130,7 @@ xxhash-rust = { version = "0.8.6", features = ["xxh3"], optional = true }
 dashmap = { version = "6.0.0", optional = true }
 atoi = { version = "2.0.0", optional = true }
 fnv = "1.0.7"
+libc = "0.2"
 sasl = { version = "0.5.1", optional = true, default-features = false, features = [
     "scram",
 ] }
