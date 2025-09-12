@@ -2,7 +2,7 @@ use crate::codec::{CodecBuilder, CodecReadError, CodecWriteError};
 use crate::config::chain::TransformChainConfig;
 use crate::frame::MessageType;
 use crate::hot_reload::protocol::{
-    FileDescriptor, HotReloadListenerRequest, HotReloadListenerResponse,
+    FileDescriptor, HotReloadListenerRequest, HotReloadListenerResponse, SocketInfo,
 };
 use crate::message::{Message, MessageIdMap, Messages, Metadata};
 use crate::sources::Transport;
@@ -31,7 +31,7 @@ use tokio_tungstenite::tungstenite::{
 };
 use tokio_util::codec::{Decoder, Encoder, FramedRead, FramedWrite};
 use tracing::{Instrument, trace};
-use tracing::{debug, error, warn};
+use tracing::{debug, error, info, warn};
 
 pub struct TcpCodecListener<C: CodecBuilder> {
     chain_builder: TransformChainBuilder,
@@ -97,6 +97,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
         timeout: Option<Duration>,
         transport: Transport,
         hot_reload_rx: tokio::sync::mpsc::UnboundedReceiver<HotReloadListenerRequest>,
+        hot_reload_socket_info: Option<&SocketInfo>,
     ) -> Result<Self, Vec<String>> {
         let available_connections_gauge =
             gauge!("shotover_available_connections_count", "source" => source_name.clone());
@@ -118,11 +119,67 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
             .map(|x| format!("  {x}"))
             .collect::<Vec<String>>();
 
-        let listener = match create_listener(&listen_addr).await {
-            Ok(listener) => Some(listener),
-            Err(error) => {
-                errors.push(format!("{error:?}"));
-                None
+        let listener = if let Some(socket_info) = hot_reload_socket_info {
+            // Try to create listener from hot reload socket first
+            match crate::hot_reload::fd_utils::create_listener_from_remote_fd(
+                socket_info.pid,
+                socket_info.fd.0,
+            )
+            .await
+            {
+                Ok(listener) => {
+                    info!(
+                        "Successfully created listener from hot reload socket FD {}",
+                        socket_info.fd.0
+                    );
+                    // Validate the socket matches expected port
+                    let expected_port = listen_addr
+                        .rsplit_once(':')
+                        .and_then(|(_, p)| p.parse::<u16>().ok())
+                        .unwrap_or(0);
+                    if let Err(e) =
+                        crate::hot_reload::fd_utils::validate_socket_fd(&listener, expected_port)
+                            .await
+                    {
+                        warn!(
+                            "Hot reload socket validation failed: {}, falling back to new socket",
+                            e
+                        );
+                        // Fall back to creating new listener
+                        match create_listener(&listen_addr).await {
+                            Ok(listener) => Some(listener),
+                            Err(error) => {
+                                errors.push(format!("{error:?}"));
+                                None
+                            }
+                        }
+                    } else {
+                        Some(listener)
+                    }
+                }
+                Err(e) => {
+                    warn!(
+                        "Failed to create listener from hot reload socket: {}, falling back to new socket",
+                        e
+                    );
+                    // Fall back to creating new listener
+                    match create_listener(&listen_addr).await {
+                        Ok(listener) => Some(listener),
+                        Err(error) => {
+                            errors.push(format!("{error:?}"));
+                            None
+                        }
+                    }
+                }
+            }
+        } else {
+            // No hot reload socket, create new listener normally
+            match create_listener(&listen_addr).await {
+                Ok(listener) => Some(listener),
+                Err(error) => {
+                    errors.push(format!("{error:?}"));
+                    None
+                }
             }
         };
 
@@ -288,9 +345,10 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
 
     /// Handle hot reload request by extracting file descriptor and responding
     async fn handle_hot_reload_request(&mut self, request: HotReloadListenerRequest) {
-        let response = if let Some(ref listener) = self.listener {
+        let response = if let Some(listener) = self.listener.take() {
             // Extract the file descriptor from the TcpListener
             let fd = listener.as_raw_fd();
+            std::mem::forget(listener);
 
             // Split once from the right to support hostnames and [IPv6]:port formats.
             let port = self
@@ -300,9 +358,6 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                 .unwrap();
 
             tracing::info!("Hot reload: Extracting socket FD {} for port {}", fd, port);
-
-            // Stop accepting new connections by setting listener to None
-            self.listener = None;
 
             HotReloadListenerResponse::HotReloadResponse {
                 port,

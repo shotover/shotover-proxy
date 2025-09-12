@@ -14,9 +14,15 @@ pub enum Request {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+pub struct SocketInfo {
+    pub fd: FileDescriptor,
+    pub pid: u32,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub enum Response {
     SendListeningSockets {
-        port_to_fd: HashMap<u32, FileDescriptor>,
+        port_to_socket_info: HashMap<u32, SocketInfo>,
     },
 
     //BeginDrainingConnections,
