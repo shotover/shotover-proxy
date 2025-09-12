@@ -66,6 +66,7 @@ pub async fn create_listener_from_remote_fd(
     }
 
     #[cfg(not(target_os = "linux"))]
+    #[allow(unused_imports)]
     {
         warn!(
             "pidfd_getfd() not available on this platform. Hot reload socket transfer not supported."
