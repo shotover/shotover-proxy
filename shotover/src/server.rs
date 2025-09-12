@@ -359,8 +359,6 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
 
             tracing::info!("Hot reload: Extracting socket FD {} for port {}", fd, port);
 
-
-
             HotReloadListenerResponse::HotReloadResponse {
                 port,
                 listener_socket_fd: FileDescriptor(fd),

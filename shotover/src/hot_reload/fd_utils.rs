@@ -1,6 +1,4 @@
 use anyhow::{Context, Result, anyhow};
-#[cfg(target_os = "linux")]
-use std::os::unix::io::FromRawFd;
 use std::os::unix::io::RawFd;
 use tokio::net::TcpListener;
 use tracing::debug;
@@ -8,9 +6,7 @@ use tracing::debug;
 use tracing::warn;
 
 #[cfg(target_os = "linux")]
-use rustix::process::{pidfd_open, pidfd_getfd, PidfdFlags, PidfdGetfdFlags};
-#[cfg(target_os = "linux")]
-use rustix::fd::OwnedFd;
+use rustix::process::{Pid, PidfdFlags, PidfdGetfdFlags, pidfd_getfd, pidfd_open};
 #[cfg(target_os = "linux")]
 use std::os::unix::io::AsRawFd;
 
@@ -28,22 +24,26 @@ pub async fn create_listener_from_remote_fd(
         );
 
         // Open pidfd for the source process using rustix
-        let pidfd = pidfd_open(_source_pid, PidfdFlags::empty())
-            .map_err(|e| anyhow!(
-                "Failed to open pidfd for process {}: {}",
-                _source_pid, e
-            ))?;
+        let pid = Pid::from_raw(_source_pid as i32)
+            .ok_or_else(|| anyhow!("Invalid PID: {}", _source_pid))?;
+        let pidfd = pidfd_open(pid, PidfdFlags::empty())
+            .map_err(|e| anyhow!("Failed to open pidfd for process {}: {}", _source_pid, e))?;
 
         // Use pidfd_getfd to duplicate the file descriptor using rustix
-        let local_fd = pidfd_getfd(&pidfd, _remote_fd, PidfdGetfdFlags::empty())
-            .map_err(|e| anyhow!(
+        let local_fd = pidfd_getfd(&pidfd, _remote_fd, PidfdGetfdFlags::empty()).map_err(|e| {
+            anyhow!(
                 "Failed to duplicate FD {} from process {}: {}",
-                _remote_fd, _source_pid, e
-            ))?;
+                _remote_fd,
+                _source_pid,
+                e
+            )
+        })?;
 
         debug!(
             "Successfully duplicated FD {} from process {} as local FD {}",
-            _remote_fd, _source_pid, local_fd.as_raw_fd()
+            _remote_fd,
+            _source_pid,
+            local_fd.as_raw_fd()
         );
 
         // Convert the owned FD to a TcpListener
