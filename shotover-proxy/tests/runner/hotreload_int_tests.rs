@@ -161,3 +161,39 @@ async fn test_hotreload_protocol_communication() {
     shotover_a.shutdown_and_then_consume_events(&[]).await;
     shotover_b.shutdown_and_then_consume_events(&[]).await;
 }
+
+#[tokio::test]
+async fn test_simple_hotreload_startup_no_db() {
+    let socket_path = "/tmp/test-hotreload-simple.sock";
+    
+    // Start the first Shotover instance with hot reload enabled - no DB, just listen
+    let shotover_a = shotover_process("tests/test-configs/hotreload/topology-simple.yaml")
+        .with_hotreload(true)
+        .with_hotreload_socket_path(socket_path)
+        .with_config("tests/test-configs/shotover-config/config_metrics_disabled.yaml")
+        .start()
+        .await;
+
+    println!("First Shotover instance started with hot reload enabled");
+
+    // Give it time to fully start
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+
+    // Start second instance that requests socket handoff (but on different port to avoid conflict)
+    let shotover_b = shotover_process("tests/test-configs/hotreload/topology-simple-b.yaml")
+        .with_hotreload_from_socket(socket_path)
+        .with_config("tests/test-configs/shotover-config/config_metrics_disabled.yaml")
+        .start()
+        .await;
+
+    println!("Second Shotover instance started - hot reload communication should occur");
+
+    // Give time for hot reload communication
+    tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
+
+    println!("Hot reload startup test completed successfully");
+
+    // Shutdown both instances
+    shotover_a.shutdown_and_then_consume_events(&[]).await;
+    shotover_b.shutdown_and_then_consume_events(&[]).await;
+}

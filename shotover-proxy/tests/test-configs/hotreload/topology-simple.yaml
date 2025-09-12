@@ -1,0 +1,10 @@
+sources:
+- Valkey:
+    name: "simple-valkey-source"
+    listen_addr: "127.0.0.1:6382" 
+    chain:
+      - QueryCounter:
+          name: "simple-query-counter"
+      - ValkeySinkSingle:
+          remote_address: "127.0.0.1:1111"  
+          connect_timeout_ms: 5000
