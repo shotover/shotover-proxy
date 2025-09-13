@@ -81,7 +81,7 @@ pub struct TcpCodecListener<C: CodecBuilder> {
 
     /// Receiver for hot reload requests to extract listening socket file descriptor
     hot_reload_rx: tokio::sync::mpsc::UnboundedReceiver<HotReloadListenerRequest>,
-    
+
     /// Flag to indicate we're in drain mode after hot reload (only serve existing connections)
     hot_reload_drain_mode: bool,
 }
@@ -249,8 +249,9 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
             } else {
                 self.limit_connections.clone().acquire_owned().await?
             };
-            
-            if self.listener.is_none() {
+
+            // Only recreate listener if we're not in drain mode
+            if self.listener.is_none() && !self.hot_reload_drain_mode {
                 self.listener = Some(create_listener(&self.listen_addr).await?);
             }
 
@@ -328,8 +329,11 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
 
         // Drain mode: wait for existing connections to complete
         if self.hot_reload_drain_mode {
-            tracing::info!("In drain mode, waiting for {} existing connections to complete", self.connection_handles.len());
-            
+            tracing::info!(
+                "In drain mode, waiting for {} existing connections to complete",
+                self.connection_handles.len()
+            );
+
             // Monitor existing connections and shutdown signal
             loop {
                 tokio::select! {
@@ -344,7 +348,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                     _ = tokio::time::sleep(Duration::from_millis(100)) => {
                         // Clean up completed connections
                         self.connection_handles.retain(|handle| !handle.is_finished());
-                        
+
                         if self.connection_handles.is_empty() {
                             tracing::info!("All connections drained, exiting");
                             break;
