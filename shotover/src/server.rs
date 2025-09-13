@@ -2,7 +2,7 @@ use crate::codec::{CodecBuilder, CodecReadError, CodecWriteError};
 use crate::config::chain::TransformChainConfig;
 use crate::frame::MessageType;
 use crate::hot_reload::protocol::{
-    FileDescriptor, HotReloadListenerRequest, HotReloadListenerResponse,
+    FileDescriptor, HotReloadListenerRequest, HotReloadListenerResponse, SocketInfo,
 };
 use crate::message::{Message, MessageIdMap, Messages, Metadata};
 use crate::sources::Transport;
@@ -31,7 +31,7 @@ use tokio_tungstenite::tungstenite::{
 };
 use tokio_util::codec::{Decoder, Encoder, FramedRead, FramedWrite};
 use tracing::{Instrument, trace};
-use tracing::{debug, error, warn};
+use tracing::{debug, error, info, warn};
 
 pub struct TcpCodecListener<C: CodecBuilder> {
     chain_builder: TransformChainBuilder,
@@ -81,6 +81,9 @@ pub struct TcpCodecListener<C: CodecBuilder> {
 
     /// Receiver for hot reload requests to extract listening socket file descriptor
     hot_reload_rx: tokio::sync::mpsc::UnboundedReceiver<HotReloadListenerRequest>,
+
+    /// Flag to indicate we're in drain mode after hot reload (only serve existing connections)
+    hot_reload_drain_mode: bool,
 }
 
 impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
@@ -97,6 +100,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
         timeout: Option<Duration>,
         transport: Transport,
         hot_reload_rx: tokio::sync::mpsc::UnboundedReceiver<HotReloadListenerRequest>,
+        hot_reload_socket_info: Option<&SocketInfo>,
     ) -> Result<Self, Vec<String>> {
         let available_connections_gauge =
             gauge!("shotover_available_connections_count", "source" => source_name.clone());
@@ -118,11 +122,67 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
             .map(|x| format!("  {x}"))
             .collect::<Vec<String>>();
 
-        let listener = match create_listener(&listen_addr).await {
-            Ok(listener) => Some(listener),
-            Err(error) => {
-                errors.push(format!("{error:?}"));
-                None
+        let listener = if let Some(socket_info) = hot_reload_socket_info {
+            // Try to create listener from hot reload socket first
+            match crate::hot_reload::fd_utils::create_listener_from_remote_fd(
+                socket_info.pid,
+                socket_info.fd.0,
+            )
+            .await
+            {
+                Ok(listener) => {
+                    info!(
+                        "Successfully created listener from hot reload socket FD {}",
+                        socket_info.fd.0
+                    );
+                    // Validate the socket matches expected port
+                    let expected_port = listen_addr
+                        .rsplit_once(':')
+                        .and_then(|(_, p)| p.parse::<u16>().ok())
+                        .unwrap_or(0);
+                    if let Err(e) =
+                        crate::hot_reload::fd_utils::validate_socket_fd(&listener, expected_port)
+                            .await
+                    {
+                        warn!(
+                            "Hot reload socket validation failed: {}, falling back to new socket",
+                            e
+                        );
+                        // Fall back to creating new listener
+                        match create_listener(&listen_addr).await {
+                            Ok(listener) => Some(listener),
+                            Err(error) => {
+                                errors.push(format!("{error:?}"));
+                                None
+                            }
+                        }
+                    } else {
+                        Some(listener)
+                    }
+                }
+                Err(e) => {
+                    warn!(
+                        "Failed to create listener from hot reload socket: {}, falling back to new socket",
+                        e
+                    );
+                    // Fall back to creating new listener
+                    match create_listener(&listen_addr).await {
+                        Ok(listener) => Some(listener),
+                        Err(error) => {
+                            errors.push(format!("{error:?}"));
+                            None
+                        }
+                    }
+                }
+            }
+        } else {
+            // No hot reload socket, create new listener normally
+            match create_listener(&listen_addr).await {
+                Ok(listener) => Some(listener),
+                Err(error) => {
+                    errors.push(format!("{error:?}"));
+                    None
+                }
             }
         };
 
@@ -148,6 +208,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
             connection_handles: vec![],
             transport,
             hot_reload_rx,
+            hot_reload_drain_mode: false,
         })
     }
 
@@ -167,7 +228,13 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
     /// itself. One strategy for handling this is to implement a back off
     /// strategy, which is what we do here.
     pub async fn run(&mut self) -> Result<()> {
+        // Main accept loop - accept new connections until hot reload
         loop {
+            // If we're in drain mode, don't accept new connections
+            if self.hot_reload_drain_mode {
+                break;
+            }
+
             // Wait for a permit to become available
             let permit = if self.hard_connection_limit {
                 match self.limit_connections.clone().try_acquire_owned() {
@@ -182,7 +249,9 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
             } else {
                 self.limit_connections.clone().acquire_owned().await?
             };
-            if self.listener.is_none() {
+
+            // Only recreate listener if we're not in drain mode
+            if self.listener.is_none() && !self.hot_reload_drain_mode {
                 self.listener = Some(create_listener(&self.listen_addr).await?);
             }
 
@@ -191,7 +260,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                 crate::connection_span::span(self.connection_count, self.source_name.as_str());
             let transport = self.transport;
 
-            async {
+            let result = async {
                 tokio::select! {
                     // Normal Connection handling
                     stream_result = Self::accept(&mut self.listener) => {
@@ -239,15 +308,57 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                     hot_reload_request = self.hot_reload_rx.recv() => {
                         if let Some(request) = hot_reload_request{
                             self.handle_hot_reload_request(request).await;
+                            // After hot reload, enter drain mode
+                            tracing::info!("Hot reload completed, entering drain mode for existing connections");
+                            self.hot_reload_drain_mode = true;
+                            // Return permit since we're not processing a new connection
+                            drop(permit);
                             return Ok(());
                         }
+                        // Return permit since we're not processing a new connection
+                        drop(permit);
                         Ok::<(), anyhow::Error>(())
                     }
                 }
             }
             .instrument(span)
-            .await?;
+            .await;
+
+            result?;
         }
+
+        // Drain mode: wait for existing connections to complete
+        if self.hot_reload_drain_mode {
+            tracing::info!(
+                "In drain mode, waiting for {} existing connections to complete",
+                self.connection_handles.len()
+            );
+
+            // Monitor existing connections and shutdown signal
+            loop {
+                tokio::select! {
+                    // Check if shutdown was requested
+                    _ = self.trigger_shutdown_rx.changed() => {
+                        if *self.trigger_shutdown_rx.borrow() {
+                            tracing::info!("Shutdown signal received during drain mode");
+                            break;
+                        }
+                    }
+                    // Wait a bit and check connection status
+                    _ = tokio::time::sleep(Duration::from_millis(100)) => {
+                        // Clean up completed connections
+                        self.connection_handles.retain(|handle| !handle.is_finished());
+
+                        if self.connection_handles.is_empty() {
+                            tracing::info!("All connections drained, exiting");
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
     }
 
     pub async fn shutdown(&mut self) {
@@ -288,9 +399,10 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
 
     /// Handle hot reload request by extracting file descriptor and responding
     async fn handle_hot_reload_request(&mut self, request: HotReloadListenerRequest) {
-        let response = if let Some(ref listener) = self.listener {
+        let response = if let Some(listener) = self.listener.take() {
             // Extract the file descriptor from the TcpListener
             let fd = listener.as_raw_fd();
+            std::mem::forget(listener);
 
             // Split once from the right to support hostnames and [IPv6]:port formats.
             let port = self
@@ -300,9 +412,6 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                 .unwrap();
 
             tracing::info!("Hot reload: Extracting socket FD {} for port {}", fd, port);
-
-            // Stop accepting new connections by setting listener to None
-            self.listener = None;
 
             HotReloadListenerResponse::HotReloadResponse {
                 port,

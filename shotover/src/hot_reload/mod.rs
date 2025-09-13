@@ -1,4 +1,5 @@
 pub mod client;
+pub mod fd_utils;
 pub mod json_parsing;
 pub mod protocol;
 pub mod server;
