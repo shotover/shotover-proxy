@@ -81,6 +81,9 @@ pub struct TcpCodecListener<C: CodecBuilder> {
 
     /// Receiver for hot reload requests to extract listening socket file descriptor
     hot_reload_rx: tokio::sync::mpsc::UnboundedReceiver<HotReloadListenerRequest>,
+    
+    /// Flag to indicate we're in drain mode after hot reload (only serve existing connections)
+    hot_reload_drain_mode: bool,
 }
 
 impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
@@ -205,6 +208,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
             connection_handles: vec![],
             transport,
             hot_reload_rx,
+            hot_reload_drain_mode: false,
         })
     }
 
@@ -224,7 +228,13 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
     /// itself. One strategy for handling this is to implement a back off
     /// strategy, which is what we do here.
     pub async fn run(&mut self) -> Result<()> {
+        // Main accept loop - accept new connections until hot reload
         loop {
+            // If we're in drain mode, don't accept new connections
+            if self.hot_reload_drain_mode {
+                break;
+            }
+
             // Wait for a permit to become available
             let permit = if self.hard_connection_limit {
                 match self.limit_connections.clone().try_acquire_owned() {
@@ -239,6 +249,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
             } else {
                 self.limit_connections.clone().acquire_owned().await?
             };
+            
             if self.listener.is_none() {
                 self.listener = Some(create_listener(&self.listen_addr).await?);
             }
@@ -248,7 +259,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                 crate::connection_span::span(self.connection_count, self.source_name.as_str());
             let transport = self.transport;
 
-            async {
+            let result = async {
                 tokio::select! {
                     // Normal Connection handling
                     stream_result = Self::accept(&mut self.listener) => {
@@ -296,15 +307,54 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                     hot_reload_request = self.hot_reload_rx.recv() => {
                         if let Some(request) = hot_reload_request{
                             self.handle_hot_reload_request(request).await;
+                            // After hot reload, enter drain mode
+                            tracing::info!("Hot reload completed, entering drain mode for existing connections");
+                            self.hot_reload_drain_mode = true;
+                            // Return permit since we're not processing a new connection
+                            drop(permit);
                             return Ok(());
                         }
+                        // Return permit since we're not processing a new connection
+                        drop(permit);
                         Ok::<(), anyhow::Error>(())
                     }
                 }
             }
             .instrument(span)
-            .await?;
+            .await;
+
+            result?;
         }
+
+        // Drain mode: wait for existing connections to complete
+        if self.hot_reload_drain_mode {
+            tracing::info!("In drain mode, waiting for {} existing connections to complete", self.connection_handles.len());
+            
+            // Monitor existing connections and shutdown signal
+            loop {
+                tokio::select! {
+                    // Check if shutdown was requested
+                    _ = self.trigger_shutdown_rx.changed() => {
+                        if *self.trigger_shutdown_rx.borrow() {
+                            tracing::info!("Shutdown signal received during drain mode");
+                            break;
+                        }
+                    }
+                    // Wait a bit and check connection status
+                    _ = tokio::time::sleep(Duration::from_millis(100)) => {
+                        // Clean up completed connections
+                        self.connection_handles.retain(|handle| !handle.is_finished());
+                        
+                        if self.connection_handles.is_empty() {
+                            tracing::info!("All connections drained, exiting");
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
     }
 
     pub async fn shutdown(&mut self) {
