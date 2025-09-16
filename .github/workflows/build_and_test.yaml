@@ -58,7 +58,7 @@ jobs:
 
       - name: Build tests
         run: |
-          cargo nextest run ${{ matrix.cargo_flags }} -p shotover-proxy --no-default-features --features valkey --all-targets hotreload_int_tests
+          cargo nextest run ${{ matrix.cargo_flags }} -p shotover-proxy --features alpha-transforms --all-targets hotreload_int_tests
       - name: Ensure that tests did not create or modify any files that arent .gitignore'd
         run: |
           if [ -n "$(git status --porcelain)" ]; then
