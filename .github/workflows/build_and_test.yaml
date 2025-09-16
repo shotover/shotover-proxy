@@ -51,13 +51,6 @@ jobs:
           # downsides:
           # * PRs that update rust version or changes deps will be slow to iterate on due to changes not being cached.
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - name: cache custom ubuntu packages
-        uses: actions/cache@v4
-        with:
-          path: shotover-proxy/build/packages
-          key: ubuntu-24.04-packages
-      - name: Install ubuntu packages
-        run: shotover-proxy/build/install_ubuntu_packages.sh
       - name: Install nextest
         uses: taiki-e/install-action@v2
         with:
@@ -65,7 +58,7 @@ jobs:
 
       - name: Build tests
         run: |
-          cargo nextest run ${{ matrix.cargo_flags }} --all-features --all-targets  hotreload_int_tests
+          cargo nextest run ${{ matrix.cargo_flags }} -p shotover-proxy --no-default-features --features valkey --all-targets hotreload_int_tests
       - name: Ensure that tests did not create or modify any files that arent .gitignore'd
         run: |
           if [ -n "$(git status --porcelain)" ]; then
