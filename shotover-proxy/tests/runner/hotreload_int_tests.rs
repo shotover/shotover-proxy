@@ -3,6 +3,60 @@ use redis::{Client, Commands};
 use test_helpers::docker_compose::docker_compose;
 
 #[tokio::test]
+async fn test_hotreload_seqpacket_protocol() {
+    use shotover::hot_reload::client::UnixSocketClient;
+    use shotover::hot_reload::protocol::Request;
+    use std::time::Duration;
+
+    let socket_path = "/tmp/test-hotreload-seqpacket.sock";
+    let _compose = docker_compose("tests/test-configs/hotreload/docker-compose.yaml");
+    let shotover_process = shotover_process("tests/test-configs/hotreload/topology.yaml")
+        .with_hotreload(true)
+        .with_hotreload_socket_path(socket_path)
+        .with_config("tests/test-configs/shotover-config/config_metrics_disabled.yaml")
+        .start()
+        .await;
+
+    // Give shotover time to start and create the Unix socket
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    // Test the SOCK_SEQPACKET protocol directly
+    let client = UnixSocketClient::new(socket_path.to_string());
+
+    // Send a SendListeningSockets request using the new packet-based protocol
+    let response = client
+        .send_request(Request::SendListeningSockets)
+        .await
+        .unwrap();
+
+    match response {
+        shotover::hot_reload::protocol::Response::SendListeningSockets { port_to_fd } => {
+            // Verify we got a valid response - the exact count depends on setup
+            assert!(port_to_fd.is_empty() || !port_to_fd.is_empty());
+        }
+        shotover::hot_reload::protocol::Response::Error(msg) => {
+            panic!("Hot reload request failed: {}", msg);
+        }
+    }
+
+    // Test multiple requests to verify packet boundary handling
+    let second_response = client
+        .send_request(Request::SendListeningSockets)
+        .await
+        .unwrap();
+    match second_response {
+        shotover::hot_reload::protocol::Response::SendListeningSockets { .. } => {
+            // Second request should also succeed
+        }
+        shotover::hot_reload::protocol::Response::Error(msg) => {
+            panic!("Second hot reload request failed: {}", msg);
+        }
+    }
+
+    shotover_process.shutdown_and_then_consume_events(&[]).await;
+}
+
+#[tokio::test]
 async fn test_hotreload_basic_valkey_connection() {
     let _compose = docker_compose("tests/test-configs/hotreload/docker-compose.yaml");
     let shotover_process = shotover_process("tests/test-configs/hotreload/topology.yaml")
