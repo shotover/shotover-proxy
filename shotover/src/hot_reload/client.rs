@@ -1,14 +1,12 @@
 //This module gives client-side implementation for socket handoff as part of hot reloading
 //Client will connect to existing shotovers and requests for FDs
-use crate::hot_reload::json_parsing::read_json;
 use crate::hot_reload::protocol::{Request, Response, SocketInfo};
 use anyhow::{Context, Result};
 use std::collections::HashMap;
 use std::time::Duration;
-use tokio::io::{AsyncWriteExt, BufReader};
-use tokio::net::UnixStream;
 use tokio::time::timeout;
 use tracing::{debug, info};
+use uds::tokio::UnixSeqpacketConn;
 
 pub struct UnixSocketClient {
     socket_path: String,
@@ -45,30 +43,34 @@ impl UnixSocketClient {
 
     async fn send_request_inner(&self, request: Request) -> Result<Response> {
         // Connect to server
-        let stream = UnixStream::connect(&self.socket_path)
-            .await
-            .with_context(|| {
-                format!(
-                    "Failed to connect to hot reload server at: {}",
-                    self.socket_path
-                )
-            })?;
-
-        let (reader, mut writer) = stream.into_split();
-        let mut reader = BufReader::new(reader);
+        let mut conn = UnixSeqpacketConn::connect(&self.socket_path).with_context(|| {
+            format!(
+                "Failed to connect to hot reload server at: {}",
+                self.socket_path
+            )
+        })?;
 
         // Send request
         let request_json =
             serde_json::to_string(&request).context("Failed to serialize request")?;
 
         debug!("Sending request: {}", request_json);
-        writer
-            .write_all(request_json.as_bytes())
+
+        // Send as a single packet
+        conn.send(request_json.as_bytes())
             .await
             .context("Failed to send request")?;
 
-        // Read response
-        let response: Response = read_json(&mut reader).await?;
+        // Read response as a single packet
+        let mut response_buf = vec![0u8; 8192]; // Buffer for response
+        let len = conn
+            .recv(&mut response_buf)
+            .await
+            .context("Failed to receive response")?;
+
+        response_buf.truncate(len);
+        let response: Response =
+            serde_json::from_slice(&response_buf).context("Failed to deserialize response")?;
         debug!("Received response: {:?}", response);
 
         Ok(response)

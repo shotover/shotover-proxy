@@ -5064,6 +5064,7 @@ dependencies = [
  "tracing-appender",
  "tracing-subscriber",
  "typetag",
+ "uds",
  "uuid",
  "version-compare",
  "xxhash-rust",
@@ -5891,6 +5892,16 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.104",
+]
+
+[[package]]
+name = "uds"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "885c31f06fce836457fe3ef09a59f83fe8db95d270b11cd78f40a4666c4d1661"
+dependencies = [
+ "libc",
+ "tokio",
 ]
 
 [[package]]

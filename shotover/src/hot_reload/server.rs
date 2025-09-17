@@ -1,14 +1,12 @@
-use crate::hot_reload::json_parsing::read_json;
 use crate::hot_reload::protocol::{HotReloadListenerRequest, Request, Response, SocketInfo};
 use crate::sources::Source;
 use anyhow::{Context, Result};
 use serde_json;
 use std::collections::HashMap;
 use std::path::Path;
-use tokio::io::{AsyncWriteExt, BufReader};
-use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
+use uds::tokio::{UnixSeqpacketConn, UnixSeqpacketListener};
 
 pub struct SourceHandle {
     pub name: String,
@@ -17,7 +15,7 @@ pub struct SourceHandle {
 
 pub struct UnixSocketServer {
     socket_path: String,
-    listener: UnixListener,
+    listener: UnixSeqpacketListener,
     sources: Vec<SourceHandle>,
 }
 
@@ -28,9 +26,9 @@ impl UnixSocketServer {
                 format!("Failed to remove existing socket file: {}", socket_path)
             })?;
         }
-        let listener = UnixListener::bind(&socket_path)
-            .with_context(|| format!("Failed to bind Unix socket to: {}", socket_path))?;
-        info!("Unix socket server listening on: {}", socket_path);
+        let listener = UnixSeqpacketListener::bind(&socket_path)
+            .with_context(|| format!("Failed to bind Unix seqpacket socket to: {}", socket_path))?;
+        info!("Unix seqpacket socket server listening on: {}", socket_path);
         Ok(Self {
             socket_path,
             listener,
@@ -41,9 +39,9 @@ impl UnixSocketServer {
     pub async fn run(&mut self) -> Result<()> {
         loop {
             match self.listener.accept().await {
-                Ok((stream, _)) => {
-                    debug!("New connection received on Unix socket");
-                    if let Err(e) = self.handle_connection(stream).await {
+                Ok((conn, _)) => {
+                    debug!("New connection received on Unix seqpacket socket");
+                    if let Err(e) = self.handle_connection(conn).await {
                         error!("Error handling connection: {:?}", e);
                     }
                 }
@@ -54,21 +52,28 @@ impl UnixSocketServer {
         }
     }
 
-    async fn handle_connection(&self, stream: UnixStream) -> Result<()> {
-        let (reader, mut writer) = stream.into_split();
-        let mut reader = BufReader::new(reader);
+    async fn handle_connection(&self, mut conn: UnixSeqpacketConn) -> Result<()> {
+        // Receive request as a single packet
+        let mut request_buf = vec![0u8; 8192]; // Buffer for request
+        let len = conn
+            .recv(&mut request_buf)
+            .await
+            .context("Failed to receive request")?;
 
-        let request: Request = read_json(&mut reader).await?;
+        request_buf.truncate(len);
+        let request: Request =
+            serde_json::from_slice(&request_buf).context("Failed to deserialize request")?;
         debug!("Received request: {:?}", request);
 
         let response = self.process_request(request).await;
 
         let response_json =
             serde_json::to_string(&response).context("Failed to serialize response")?;
-        writer
-            .write_all(response_json.as_bytes())
+
+        // Send response as a single packet
+        conn.send(response_json.as_bytes())
             .await
-            .context("Failed to write response")?;
+            .context("Failed to send response")?;
         debug!("Sent response: {}", response_json);
         Ok(())
     }
@@ -181,7 +186,7 @@ pub fn start_hot_reload_server(socket_path: String, sources: &[Source]) {
 mod tests {
     use super::*;
     use crate::hot_reload::tests::wait_for_unix_socket_connection;
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use uds::tokio::UnixSeqpacketConn;
 
     #[tokio::test]
     async fn test_unix_socket_server_basic() {
@@ -208,17 +213,18 @@ mod tests {
             server.run().await.unwrap();
         });
         wait_for_unix_socket_connection(socket_path, 2000).await;
-        let mut stream = UnixStream::connect(socket_path).await.unwrap();
+        let mut conn = UnixSeqpacketConn::connect(socket_path).unwrap();
 
         // Send request
         let request = Request::SendListeningSockets;
         let request_json = serde_json::to_string(&request).unwrap();
-        stream.write_all(request_json.as_bytes()).await.unwrap();
+        conn.send(request_json.as_bytes()).await.unwrap();
 
         // Read response
-        let mut response_data = Vec::new();
-        stream.read_to_end(&mut response_data).await.unwrap();
-        let response: Response = serde_json::from_slice(&response_data).unwrap();
+        let mut response_buf = vec![0u8; 8192];
+        let len = conn.recv(&mut response_buf).await.unwrap();
+        response_buf.truncate(len);
+        let response: Response = serde_json::from_slice(&response_buf).unwrap();
 
         // Verify response
         match response {
