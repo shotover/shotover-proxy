@@ -134,7 +134,7 @@ jobs:
           name: nextest-${{ matrix.profile }}
       - name: Run tests
         run: |
-          sudo ~/.cargo/bin/cargo-nextest nextest run --archive-file nextest-${{ matrix.profile }}.tar.zst \
+          ~/.cargo/bin/cargo-nextest nextest run --archive-file nextest-${{ matrix.profile }}.tar.zst \
             --partition count:${{ matrix.partition }}/15 --extract-to . --run-ignored all
       - name: Cleanup archive
         run: rm nextest-${{ matrix.profile }}.tar.zst
