@@ -42,13 +42,12 @@ impl UnixSocketClient {
 
     async fn send_request_inner(&self, request: Request) -> Result<Response> {
         // Connect to server
-        let mut conn = UnixSeqpacketConn::connect(&self.socket_path)
-            .with_context(|| {
-                format!(
-                    "Failed to connect to hot reload server at: {}",
-                    self.socket_path
-                )
-            })?;
+        let mut conn = UnixSeqpacketConn::connect(&self.socket_path).with_context(|| {
+            format!(
+                "Failed to connect to hot reload server at: {}",
+                self.socket_path
+            )
+        })?;
 
         // Send request as a single packet
         let request_json =
@@ -61,13 +60,14 @@ impl UnixSocketClient {
 
         // Read response as a single packet
         let mut buffer = vec![0u8; 4096]; // Should be plenty for JSON responses
-        let len = conn.recv(&mut buffer)
+        let len = conn
+            .recv(&mut buffer)
             .await
             .context("Failed to receive response")?;
         buffer.truncate(len);
 
-        let response: Response = serde_json::from_slice(&buffer)
-            .context("Failed to parse JSON response")?;
+        let response: Response =
+            serde_json::from_slice(&buffer).context("Failed to parse JSON response")?;
         debug!("Received response: {:?}", response);
 
         Ok(response)

@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
-use uds::tokio::{UnixSeqpacketListener, UnixSeqpacketConn};
+use uds::tokio::{UnixSeqpacketConn, UnixSeqpacketListener};
 
 pub struct SourceHandle {
     pub name: String,
@@ -55,13 +55,14 @@ impl UnixSocketServer {
     async fn handle_connection(&self, mut conn: UnixSeqpacketConn) -> Result<()> {
         // Receive request as a single packet
         let mut buffer = vec![0u8; 4096]; // Should be plenty for JSON requests
-        let len = conn.recv(&mut buffer)
+        let len = conn
+            .recv(&mut buffer)
             .await
             .context("Failed to receive request")?;
         buffer.truncate(len);
 
-        let request: Request = serde_json::from_slice(&buffer)
-            .context("Failed to parse JSON request")?;
+        let request: Request =
+            serde_json::from_slice(&buffer).context("Failed to parse JSON request")?;
         debug!("Received request: {:?}", request);
 
         let response = self.process_request(request).await;
