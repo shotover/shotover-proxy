@@ -28,7 +28,7 @@ async fn test_hotreload_uds_socket_communication() {
     let socket_path = "/tmp/test-hotreload-uds-comm.sock";
     let _compose = docker_compose("tests/test-configs/hotreload/docker-compose.yaml");
 
-    // Start Shotover with hot reload enabled - this will start the UDS socket server
+    // Start Shotover with hot reload enabled and UDS socket path
     let shotover_process = shotover_process("tests/test-configs/hotreload/topology.yaml")
         .with_hotreload(true)
         .with_hotreload_socket_path(socket_path)
@@ -46,14 +46,12 @@ async fn test_hotreload_uds_socket_communication() {
     // Give server time to fully initialize
     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
 
-    // Test the UDS socket communication directly using our new client
-    // This simulates what a second Shotover instance would do
     use shotover::hot_reload::client::UnixSocketClient;
     use shotover::hot_reload::protocol::Request;
 
     let client = UnixSocketClient::new(socket_path.to_string());
 
-    // Send a SendListeningSockets request - this tests our Step 1 packet-based protocol
+    // Send a SendListeningSockets request
     match client.send_request(Request::SendListeningSockets).await {
         Ok(response) => {
             match response {
