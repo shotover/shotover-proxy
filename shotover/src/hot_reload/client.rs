@@ -1,13 +1,11 @@
 //This module gives client-side implementation for socket handoff as part of hot reloading
 //Client will connect to existing shotovers and requests for FDs
-use crate::hot_reload::json_parsing::read_json;
 use crate::hot_reload::protocol::{Request, Response};
 use anyhow::{Context, Result};
 use std::time::Duration;
-use tokio::io::{AsyncWriteExt, BufReader};
-use tokio::net::UnixStream;
 use tokio::time::timeout;
 use tracing::{debug, info};
+use uds::tokio::UnixSeqpacketConn;
 
 pub struct UnixSocketClient {
     socket_path: String,
@@ -44,8 +42,7 @@ impl UnixSocketClient {
 
     async fn send_request_inner(&self, request: Request) -> Result<Response> {
         // Connect to server
-        let stream = UnixStream::connect(&self.socket_path)
-            .await
+        let mut conn = UnixSeqpacketConn::connect(&self.socket_path)
             .with_context(|| {
                 format!(
                     "Failed to connect to hot reload server at: {}",
@@ -53,21 +50,24 @@ impl UnixSocketClient {
                 )
             })?;
 
-        let (reader, mut writer) = stream.into_split();
-        let mut reader = BufReader::new(reader);
-
-        // Send request
+        // Send request as a single packet
         let request_json =
             serde_json::to_string(&request).context("Failed to serialize request")?;
 
         debug!("Sending request: {}", request_json);
-        writer
-            .write_all(request_json.as_bytes())
+        conn.send(request_json.as_bytes())
             .await
             .context("Failed to send request")?;
 
-        // Read response
-        let response: Response = read_json(&mut reader).await?;
+        // Read response as a single packet
+        let mut buffer = vec![0u8; 4096]; // Should be plenty for JSON responses
+        let len = conn.recv(&mut buffer)
+            .await
+            .context("Failed to receive response")?;
+        buffer.truncate(len);
+
+        let response: Response = serde_json::from_slice(&buffer)
+            .context("Failed to parse JSON response")?;
         debug!("Received response: {:?}", response);
 
         Ok(response)
