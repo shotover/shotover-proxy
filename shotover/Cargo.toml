@@ -39,6 +39,7 @@ opensearch = ["dep:atoi", "dep:http", "dep:httparse"]
 default = ["cassandra", "valkey", "kafka", "opensearch"]
 
 [dependencies]
+uds = { version = "0.4.2", features = ["tokio"] }
 atomic_enum = "0.3.0"
 axum = { version = "0.8", default-features = false, features = [
     "tokio",

@@ -1,25 +1,30 @@
 use anyhow::{Context, Result};
+use serde::Serialize;
 use serde::de::DeserializeOwned;
-use tokio::io::AsyncReadExt;
+use uds::tokio::UnixSeqpacketConn;
 
-pub async fn read_json<T: DeserializeOwned, R: AsyncReadExt + Unpin>(reader: &mut R) -> Result<T> {
-    let mut received_bytes = Vec::new();
-    loop {
-        let mut buf = [0u8; 1024];
-        let n = reader
-            .read(&mut buf)
-            .await
-            .context("Failed to read from stream")?;
-        if n == 0 {
-            return Err(anyhow::anyhow!(
-                "Connection closed before full JSON message received"
-            ));
-        }
-        received_bytes.extend_from_slice(&buf[..n]);
-        match serde_json::from_slice(&received_bytes) {
-            Ok(response) => return Ok(response),
-            Err(e) if e.is_eof() => continue,
-            Err(e) => return Err(e).context("Failed to parse JSON"),
-        }
-    }
+/// Read a complete JSON message from a SEQPACKET socket
+pub async fn read_json<T: DeserializeOwned>(conn: &mut UnixSeqpacketConn) -> Result<T> {
+    let mut buf = vec![0u8; 65536]; // Large buffer for JSON messages
+    let bytes_read = conn
+        .recv(&mut buf)
+        .await
+        .context("Failed to read packet from socket")?;
+
+    // Resize buffer to actual data received
+    buf.truncate(bytes_read);
+
+    // Parse the complete JSON message
+    serde_json::from_slice(&buf).context("Failed to parse JSON from packet")
+}
+
+/// Write a complete JSON message to a SEQPACKET socket
+pub async fn write_json<T: Serialize>(conn: &mut UnixSeqpacketConn, data: &T) -> Result<()> {
+    let json_bytes = serde_json::to_vec(data).context("Failed to serialize JSON")?;
+
+    conn.send(&json_bytes)
+        .await
+        .context("Failed to send JSON packet")?;
+
+    Ok(())
 }
