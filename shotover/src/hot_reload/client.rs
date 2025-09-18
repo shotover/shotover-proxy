@@ -101,7 +101,6 @@ mod tests {
     use crate::hot_reload::server::SourceHandle;
     use crate::hot_reload::tests::wait_for_unix_socket_connection;
 
-    #[tokio::test]
     #[cfg(target_os = "linux")]
     #[tokio::test]
     async fn test_client_connection_error() {
@@ -116,7 +115,6 @@ mod tests {
         );
     }
 
-    #[tokio::test]
     #[cfg(target_os = "linux")]
     #[tokio::test]
     async fn test_client_server_integration() {
@@ -171,7 +169,6 @@ mod tests {
         server_handle.abort();
     }
 
-    #[tokio::test]
     #[cfg(target_os = "linux")]
     #[tokio::test]
     async fn test_multiple_client_requests() {
