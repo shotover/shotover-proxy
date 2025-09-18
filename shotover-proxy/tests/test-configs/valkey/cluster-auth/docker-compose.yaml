@@ -1,6 +1,6 @@
 services:
   valkey-node-0:
-    image: &image bitnami/valkey-cluster:7.2.5-debian-12-r4
+    image: &image bitnamilegacy/valkey-cluster:7.2.5-debian-12-r4
     ports:
       - "2230:6379"
     environment: &environment

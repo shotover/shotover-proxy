@@ -1,7 +1,7 @@
-  services:
-    valkey-one:
-      image: bitnami/valkey:7.2.5-debian-12-r9
-      ports:
-        - "6379:6379"
-      environment:
-        ALLOW_EMPTY_PASSWORD: "yes"
+services:
+  valkey-one:
+    image: bitnamilegacy/valkey:7.2.5-debian-12-r9
+    ports:
+      - "6379:6379"
+    environment:
+      ALLOW_EMPTY_PASSWORD: "yes"

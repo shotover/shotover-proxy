@@ -144,7 +144,7 @@ impl KafkaBench {
 
             tasks.push(tokio::spawn(async move {
                 node.run_container(
-                    "bitnami/kafka:3.9.0-debian-12-r6",
+                    "bitnamilegacy/kafka:3.9.0-debian-12-r6",
                     &[
                         ("ALLOW_PLAINTEXT_LISTENER".to_owned(), "yes".to_owned()),
                         (
