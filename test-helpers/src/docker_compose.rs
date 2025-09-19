@@ -15,7 +15,7 @@ pub fn new_moto() -> DockerCompose {
     docker_compose("tests/transforms/docker-compose-moto.yaml")
 }
 
-pub static IMAGE_WAITERS: [Image; 10] = [
+pub static IMAGE_WAITERS: [Image; 9] = [
     Image {
         name: "motoserver/moto",
         log_regex_to_wait_for: r"Press CTRL\+C to quit",
@@ -27,20 +27,15 @@ pub static IMAGE_WAITERS: [Image; 10] = [
         timeout: Duration::from_secs(120),
     },
     Image {
-        name: "bitnami/valkey:7.2.5-debian-12-r9",
+        name: "bitnamilegacy/valkey:7.2.5-debian-12-r9",
         log_regex_to_wait_for: r"Ready to accept connections",
         timeout: Duration::from_secs(120),
     },
     Image {
-        name: "bitnami/valkey-cluster:7.2.5-debian-12-r4",
+        name: "bitnamilegacy/valkey-cluster:7.2.5-debian-12-r4",
         //`Cluster state changed` is created by the node services
         //`Cluster correctly created` is created by the init service
         log_regex_to_wait_for: r"Cluster state changed|Cluster correctly created",
-        timeout: Duration::from_secs(120),
-    },
-    Image {
-        name: "bitnami/cassandra:4.0.6",
-        log_regex_to_wait_for: r"Startup complete",
         timeout: Duration::from_secs(120),
     },
     Image {
@@ -59,7 +54,7 @@ pub static IMAGE_WAITERS: [Image; 10] = [
         timeout: Duration::from_secs(120),
     },
     Image {
-        name: "bitnami/kafka:3.9.0-debian-12-r6",
+        name: "bitnamilegacy/kafka:3.9.0-debian-12-r6",
         log_regex_to_wait_for: r"Kafka Server started",
         timeout: Duration::from_secs(120),
     },

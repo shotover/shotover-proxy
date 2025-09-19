@@ -24,7 +24,7 @@ Below we can see an example of a Valkey node and it's Shotover sidecar. Notice t
 ```YAML
 
 valkey-node-0:
-  image: bitnami/valkey-cluster:7.2.5-debian-12-r4
+  image: bitnamilegacy/valkey-cluster:7.2.5-debian-12-r4
   networks:
     cluster_subnet:
       ipv4_address: 172.16.1.2
