@@ -164,8 +164,8 @@ pub fn start_hot_reload_server(socket_path: String, sources: &[Source]) {
 
 #[cfg(test)]
 mod tests {
-    #[cfg(target_os = "linux")]
-    use {super::*, crate::hot_reload::tests::wait_for_unix_socket_connection};
+    use super::*;
+    use crate::hot_reload::tests::wait_for_unix_socket_connection;
 
     #[cfg(target_os = "linux")]
     #[tokio::test]

@@ -1,4 +1,4 @@
-/*use crate::shotover_process;
+use crate::shotover_process;
 use redis::{Client, Commands};
 use test_helpers::docker_compose::docker_compose;
 
@@ -57,4 +57,3 @@ async fn test_dual_shotover_instances_with_valkey() {
     shotover_a.shutdown_and_then_consume_events(&[]).await;
     shotover_b.shutdown_and_then_consume_events(&[]).await;
 }
-*/
