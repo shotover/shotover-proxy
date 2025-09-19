@@ -1,13 +1,12 @@
 //This module gives client-side implementation for socket handoff as part of hot reloading
 //Client will connect to existing shotovers and requests for FDs
-use crate::hot_reload::json_parsing::read_json;
+use crate::hot_reload::json_parsing::{read_json, write_json};
 use crate::hot_reload::protocol::{Request, Response};
 use anyhow::{Context, Result};
 use std::time::Duration;
-use tokio::io::{AsyncWriteExt, BufReader};
-use tokio::net::UnixStream;
 use tokio::time::timeout;
 use tracing::{debug, info};
+use uds::tokio::UnixSeqpacketConn;
 
 pub struct UnixSocketClient {
     socket_path: String,
@@ -44,30 +43,19 @@ impl UnixSocketClient {
 
     async fn send_request_inner(&self, request: Request) -> Result<Response> {
         // Connect to server
-        let stream = UnixStream::connect(&self.socket_path)
-            .await
-            .with_context(|| {
-                format!(
-                    "Failed to connect to hot reload server at: {}",
-                    self.socket_path
-                )
-            })?;
-
-        let (reader, mut writer) = stream.into_split();
-        let mut reader = BufReader::new(reader);
+        let mut stream = UnixSeqpacketConn::connect(&self.socket_path).with_context(|| {
+            format!(
+                "Failed to connect to hot reload server at: {}",
+                self.socket_path
+            )
+        })?;
 
         // Send request
-        let request_json =
-            serde_json::to_string(&request).context("Failed to serialize request")?;
-
-        debug!("Sending request: {}", request_json);
-        writer
-            .write_all(request_json.as_bytes())
-            .await
-            .context("Failed to send request")?;
+        debug!("Sending request: {:?}", request);
+        write_json(&mut stream, &request).await?;
 
         // Read response
-        let response: Response = read_json(&mut reader).await?;
+        let response: Response = read_json(&mut stream).await?;
         debug!("Received response: {:?}", response);
 
         Ok(response)
@@ -113,6 +101,7 @@ mod tests {
     use crate::hot_reload::server::SourceHandle;
     use crate::hot_reload::tests::wait_for_unix_socket_connection;
 
+    #[cfg(target_os = "linux")]
     #[tokio::test]
     async fn test_client_connection_error() {
         let client = UnixSocketClient::new("/nonexistent/path.sock".to_string());
@@ -126,6 +115,7 @@ mod tests {
         );
     }
 
+    #[cfg(target_os = "linux")]
     #[tokio::test]
     async fn test_client_server_integration() {
         let socket_path = "/tmp/test-client-server-integration.sock";
@@ -179,6 +169,7 @@ mod tests {
         server_handle.abort();
     }
 
+    #[cfg(target_os = "linux")]
     #[tokio::test]
     async fn test_multiple_client_requests() {
         let socket_path = "/tmp/test-multiple-clients.sock";
