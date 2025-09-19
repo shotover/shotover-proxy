@@ -1,4 +1,4 @@
-//! Hot reload integration tests - Linux only due to Unix domain socket requirements
+//! Hot reload integration tests - Linux only
 #[cfg(target_os = "linux")]
 mod tests {
     use crate::shotover_process;
