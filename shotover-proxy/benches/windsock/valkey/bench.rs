@@ -518,7 +518,7 @@ impl ValkeyCluster {
                     wait_for.push(tokio::spawn(async move {
                         instance
                             .run_container(
-                                "bitnami/valkey-cluster:7.2.5-debian-12-r4",
+                                "bitnamilegacy/valkey-cluster:7.2.5-debian-12-r4",
                                 &[
                                     ("ALLOW_EMPTY_PASSWORD".to_owned(), "yes".to_owned()),
                                     (
@@ -534,7 +534,7 @@ impl ValkeyCluster {
                 let node_addresses = self.private_ips();
                 cluster_creator
                     .run_container(
-                        "bitnami/valkey-cluster:7.2.5-debian-12-r4",
+                        "bitnamilegacy/valkey-cluster:7.2.5-debian-12-r4",
                         &[
                             ("ALLOW_EMPTY_PASSWORD".to_owned(), "yes".to_owned()),
                             (

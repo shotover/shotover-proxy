@@ -1,6 +1,6 @@
 services:
   valkey-one:
-    image: bitnami/valkey:7.2.5-debian-12-r9
+    image: bitnamilegacy/valkey:7.2.5-debian-12-r9
     ports:
       - "1111:6379"
     environment:
