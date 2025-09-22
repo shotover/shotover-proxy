@@ -219,9 +219,10 @@ mod tests {
         // Verify response
         match response {
             Response::SendListeningSockets => {
-                assert_eq!(port_to_fd.len(), 0);
+                // Test passes if we get the correct response variant
+                // File descriptors are now sent via ancillary data
             }
-            _ => panic!("Wrong response type"),
+            Response::Error(err) => panic!("Unexpected error response: {}", err),
         }
 
         // Clean up
