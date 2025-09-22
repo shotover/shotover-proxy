@@ -197,7 +197,7 @@ mod tests {
     #[cfg(target_os = "linux")]
     #[tokio::test]
     async fn test_request_response() {
-        use crate::hot_reload::json_parsing::{read_json, write_json, write_json_with_fds};
+        use crate::hot_reload::json_parsing::{read_json, write_json};
         use uds::tokio::UnixSeqpacketConn;
 
         let socket_path = "/tmp/test-shotover-request-response.sock";
