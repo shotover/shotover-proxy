@@ -218,7 +218,7 @@ mod tests {
 
         // Verify response
         match response {
-            Response::SendListeningSockets { port_to_fd } => {
+            Response::SendListeningSockets => {
                 assert_eq!(port_to_fd.len(), 0);
             }
             _ => panic!("Wrong response type"),
