@@ -140,17 +140,6 @@ async fn test_dual_shotover_instances_with_valkey_ancillary_FD() {
     let final_check: String = con_a.get("key_from_a").unwrap();
     assert_eq!(final_check, "value_from_a");
 
-    // Verify no sudo was required
-    let uid = nix::unistd::getuid();
-    if uid.is_root() {
-        warn!("Running as root - cannot validate sudo-free operation");
-    } else {
-        info!(
-            "Running as non-root user (UID: {}) - sudo-free operation confirmed",
-            uid
-        );
-    }
-
     shotover_a.shutdown_and_then_consume_events(&[]).await;
     shotover_b.shutdown_and_then_consume_events(&[]).await;
 }
