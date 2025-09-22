@@ -63,7 +63,7 @@ async fn test_dual_shotover_instances_with_valkey() {
 }
 
 #[tokio::test]
-async fn test_dual_shotover_instances_with_valkey_ancillary_FD() {
+async fn test_dual_shotover_instances_with_valkey_ancillary_fd() {
     use tracing::{info, warn};
 
     let socket_path = "/tmp/test-hotreload.sock";
