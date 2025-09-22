@@ -288,10 +288,9 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
 
     /// Handle hot reload request by extracting file descriptor and responding
     async fn handle_hot_reload_request(&mut self, request: HotReloadListenerRequest) {
-        let response = if let Some(listener) = self.listener.take() {
+        let response = if let Some(ref listener) = self.listener {
             // Extract the file descriptor from the TcpListener
             let fd = listener.as_raw_fd();
-            std::mem::forget(listener);
 
             // Split once from the right to support hostnames and [IPv6]:port formats.
             let port = self
@@ -301,6 +300,9 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                 .unwrap();
 
             tracing::info!("Hot reload: Extracting socket FD {} for port {}", fd, port);
+
+            // Stop accepting new connections by setting listener to None
+            self.listener = None;
 
             HotReloadListenerResponse::HotReloadResponse {
                 port,
