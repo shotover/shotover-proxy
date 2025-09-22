@@ -2,7 +2,7 @@ use crate::hot_reload::json_parsing::{read_json, write_json, write_json_with_fds
 use crate::hot_reload::protocol::{HotReloadListenerRequest, Request, Response};
 use crate::sources::Source;
 use anyhow::{Context, Result};
-use std::collections::HashMap;
+use std::os::unix::io::RawFd;
 use std::path::Path;
 use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
@@ -56,10 +56,9 @@ impl UnixSocketServer {
         let request: Request = read_json(&mut stream).await?;
         debug!("Received request: {:?}", request);
 
-        let response = self.process_request(request).await;
+        let (response, fds) = self.process_request(request).await;
 
-        // Check if we need to send file descriptors
-        let fds = response.collect_fds();
+        // Send response with file descriptors
         if fds.is_empty() {
             write_json(&mut stream, &response).await?;
             debug!("Sent response without FDs: {:?}", response);
@@ -75,14 +74,13 @@ impl UnixSocketServer {
         Ok(())
     }
 
-    async fn process_request(&self, request: Request) -> Response {
+    async fn process_request(&self, request: Request) -> (Response, Vec<RawFd>) {
         match request {
             Request::SendListeningSockets => {
                 info!("Processing SendListeningSockets request");
 
                 // Send requests to all TcpCodecListener instances and collect responses
-                let mut port_to_fd: HashMap<u32, crate::hot_reload::protocol::FileDescriptor> =
-                    HashMap::new();
+                let mut collected_fds = Vec::new();
 
                 let mut response_futures = Vec::new();
 
@@ -114,7 +112,7 @@ impl UnixSocketServer {
                                         "Received FD {} for port {} from source {}",
                                         listener_socket_fd.0, port, source_name
                                     );
-                                    port_to_fd.insert(port as u32, listener_socket_fd);
+                                    collected_fds.push(listener_socket_fd.0);
                                 }
                                 crate::hot_reload::protocol::HotReloadListenerResponse::NoListenerAvailable => {
                                     info!("Source {} reported no listener available", source_name);
@@ -132,10 +130,10 @@ impl UnixSocketServer {
 
                 info!(
                     "Sending response with {} file descriptors",
-                    port_to_fd.len()
+                    collected_fds.len()
                 );
 
-                Response::SendListeningSockets { port_to_fd }
+                (Response::SendListeningSockets, collected_fds)
             }
         }
     }
@@ -176,7 +174,9 @@ pub fn start_hot_reload_server(socket_path: String, sources: &[Source]) {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(target_os = "linux")]
     use super::*;
+    #[cfg(target_os = "linux")]
     use crate::hot_reload::tests::wait_for_unix_socket_connection;
 
     #[cfg(target_os = "linux")]

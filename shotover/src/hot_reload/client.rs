@@ -1,12 +1,13 @@
 //This module gives client-side implementation for socket handoff as part of hot reloading
 //Client will connect to existing shotovers and requests for FDs
+use crate::hot_reload::fd_utils::extract_port_from_listener_fd;
 use crate::hot_reload::json_parsing::{read_json_with_fds, write_json};
 use crate::hot_reload::protocol::{Request, Response};
 use anyhow::{Context, Result};
 use std::os::unix::io::RawFd;
 use std::time::Duration;
 use tokio::time::timeout;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 use uds::tokio::UnixSeqpacketConn;
 
 pub struct UnixSocketClient {
@@ -56,7 +57,7 @@ impl UnixSocketClient {
         write_json(&mut stream, &request).await?;
 
         // Read response
-        let (mut response, received_fds): (Response, Vec<RawFd>) =
+        let (response, received_fds): (Response, Vec<RawFd>) =
             read_json_with_fds(&mut stream).await?;
 
         if !received_fds.is_empty() {
@@ -64,7 +65,18 @@ impl UnixSocketClient {
                 "Received {} file descriptors via ancillary data",
                 received_fds.len()
             );
-            response.replace_fds_with_received(received_fds);
+
+            // Extract port information from each file descriptor
+            for fd in &received_fds {
+                match extract_port_from_listener_fd(*fd) {
+                    Ok(port) => {
+                        info!("Received file descriptor {} for port {}", fd, port);
+                    }
+                    Err(e) => {
+                        warn!("Failed to extract port from FD {}: {}", fd, e);
+                    }
+                }
+            }
         }
 
         debug!("Received response: {:?}", response);
@@ -81,34 +93,34 @@ pub async fn perform_hot_reloading(socket_path: String) -> Result<()> {
 
     let client = UnixSocketClient::new(socket_path.clone());
 
-    match client
+    let response = client
         .send_request(crate::hot_reload::protocol::Request::SendListeningSockets)
-        .await
-    {
-        Ok(crate::hot_reload::protocol::Response::SendListeningSockets { port_to_fd }) => {
-            info!(
-                "Successfully received {} file descriptors from hot reload server",
-                port_to_fd.len()
-            );
-            for (port, fd) in &port_to_fd {
-                info!("Received file descriptor {} for port {}", fd.0, port);
-            }
+        .await?;
+
+    match response {
+        crate::hot_reload::protocol::Response::SendListeningSockets => {
+            // File descriptors were received separately via ancillary data
+            info!("Successfully completed hot reload socket handoff");
             Ok(())
         }
-        Ok(crate::hot_reload::protocol::Response::Error(msg)) => {
+        crate::hot_reload::protocol::Response::Error(msg) => {
             Err(anyhow::anyhow!("Hot reload request failed: {}", msg))
         }
-        Err(e) => Err(e).context("Failed to communicate with hot reload server"),
     }
 }
 
 #[cfg(test)]
 mod tests {
+    #[cfg(target_os = "linux")]
     use tokio::sync::mpsc::unbounded_channel;
 
+    #[cfg(target_os = "linux")]
     use super::*;
+    #[cfg(target_os = "linux")]
     use crate::hot_reload::protocol::HotReloadListenerResponse;
+    #[cfg(target_os = "linux")]
     use crate::hot_reload::server::SourceHandle;
+    #[cfg(target_os = "linux")]
     use crate::hot_reload::tests::wait_for_unix_socket_connection;
 
     #[cfg(target_os = "linux")]
@@ -169,8 +181,8 @@ mod tests {
 
         // Verify response
         match response {
-            Response::SendListeningSockets { port_to_fd } => {
-                assert_eq!(port_to_fd.len(), 1);
+            Response::SendListeningSockets => {
+                // File descriptors are handled via ancillary data
             }
             Response::Error(msg) => panic!("Unexpected error response: {}", msg),
         }
@@ -224,9 +236,7 @@ mod tests {
                 .await
                 .unwrap();
             match response {
-                Response::SendListeningSockets { port_to_fd } => {
-                    assert_eq!(port_to_fd.len(), 1);
-                }
+                Response::SendListeningSockets => {}
                 Response::Error(msg) => panic!("Unexpected error response: {}", msg),
             }
         }
