@@ -1,8 +1,9 @@
 //This module gives client-side implementation for socket handoff as part of hot reloading
 //Client will connect to existing shotovers and requests for FDs
-use crate::hot_reload::json_parsing::{read_json, write_json};
+use crate::hot_reload::json_parsing::{read_json_with_fds, write_json};
 use crate::hot_reload::protocol::{Request, Response};
 use anyhow::{Context, Result};
+use std::os::unix::io::RawFd;
 use std::time::Duration;
 use tokio::time::timeout;
 use tracing::{debug, info};
@@ -55,9 +56,18 @@ impl UnixSocketClient {
         write_json(&mut stream, &request).await?;
 
         // Read response
-        let response: Response = read_json(&mut stream).await?;
-        debug!("Received response: {:?}", response);
+        let (mut response, received_fds): (Response, Vec<RawFd>) =
+            read_json_with_fds(&mut stream).await?;
 
+        if !received_fds.is_empty() {
+            info!(
+                "Received {} file descriptors via ancillary data",
+                received_fds.len()
+            );
+            response.replace_fds_with_received(received_fds);
+        }
+
+        debug!("Received response: {:?}", response);
         Ok(response)
     }
 }

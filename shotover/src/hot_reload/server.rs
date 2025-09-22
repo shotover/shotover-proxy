@@ -1,4 +1,4 @@
-use crate::hot_reload::json_parsing::{read_json, write_json};
+use crate::hot_reload::json_parsing::{read_json, write_json, write_json_with_fds};
 use crate::hot_reload::protocol::{HotReloadListenerRequest, Request, Response};
 use crate::sources::Source;
 use anyhow::{Context, Result};
@@ -58,8 +58,20 @@ impl UnixSocketServer {
 
         let response = self.process_request(request).await;
 
-        write_json(&mut stream, &response).await?;
-        debug!("Sent response: {:?}", response);
+        // Check if we need to send file descriptors
+        let fds = response.collect_fds();
+        if fds.is_empty() {
+            write_json(&mut stream, &response).await?;
+            debug!("Sent response without FDs: {:?}", response);
+        } else {
+            write_json_with_fds(&mut stream, &response, &fds).await?;
+            info!(
+                "Sent response with {} file descriptors via ancillary data: {:?}",
+                fds.len(),
+                response
+            );
+        }
+
         Ok(())
     }
 
@@ -185,7 +197,7 @@ mod tests {
     #[cfg(target_os = "linux")]
     #[tokio::test]
     async fn test_request_response() {
-        use crate::hot_reload::json_parsing::{read_json, write_json};
+        use crate::hot_reload::json_parsing::{read_json, write_json, write_json_with_fds};
         use uds::tokio::UnixSeqpacketConn;
 
         let socket_path = "/tmp/test-shotover-request-response.sock";
