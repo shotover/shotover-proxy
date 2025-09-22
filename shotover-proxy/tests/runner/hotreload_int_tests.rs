@@ -1,5 +1,7 @@
 use crate::shotover_process;
 use redis::{Client, Commands};
+use shotover::hot_reload::client::UnixSocketClient;
+use shotover::hot_reload::protocol::{Request, Response};
 use test_helpers::docker_compose::docker_compose;
 
 #[tokio::test]
@@ -85,16 +87,13 @@ async fn test_dual_shotover_instances_with_valkey_ancillary_FD() {
 
     // Validate file descriptor passing implementation
     info!("Testing file descriptor passing implementation");
-    let test_client =
-        crate::shotover::hot_reload::client::UnixSocketClient::new(socket_path.to_string());
+    let test_client = UnixSocketClient::new(socket_path.to_string());
 
     match test_client
-        .send_request(crate::shotover::hot_reload::protocol::Request::SendListeningSockets)
+        .send_request(Request::SendListeningSockets)
         .await
     {
-        Ok(crate::shotover::hot_reload::protocol::Response::SendListeningSockets {
-            port_to_fd,
-        }) => {
+        Ok(Response::SendListeningSockets { port_to_fd }) => {
             info!(
                 "Successfully received {} file descriptors from shotover_a",
                 port_to_fd.len()
@@ -112,7 +111,7 @@ async fn test_dual_shotover_instances_with_valkey_ancillary_FD() {
                 info!("File descriptor passing validation passed");
             }
         }
-        Ok(crate::shotover::hot_reload::protocol::Response::Error(msg)) => {
+        Ok(Response::Error(msg)) => {
             panic!("Hot reload request failed: {}", msg);
         }
         Err(e) => {
