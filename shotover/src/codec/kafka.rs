@@ -305,13 +305,12 @@ impl Encoder<Messages> for KafkaEncoder {
                             body: RequestKind::SaslHandshake(sasl_handshake),
                             header,
                         } = &frame
+                            && header.request_api_version == 0
                         {
-                            if header.request_api_version == 0 {
-                                expect_raw_sasl = Some(
-                                    SaslMessageState::from_name(&sasl_handshake.mechanism)
-                                        .map_err(CodecWriteError::Encoder)?,
-                                );
-                            }
+                            expect_raw_sasl = Some(
+                                SaslMessageState::from_name(&sasl_handshake.mechanism)
+                                    .map_err(CodecWriteError::Encoder)?,
+                            );
                         }
                         frame.encode(dst)
                     }
@@ -320,34 +319,33 @@ impl Encoder<Messages> for KafkaEncoder {
 
             // Skip if the message wrote nothing to dst, possibly due to being a dummy message.
             // or if it will generate a dummy response
-            if !dst[start..].is_empty() && !response_is_dummy {
-                if let Some(tx) = self.request_header_tx.as_ref() {
-                    let header = if message_contains_raw_sasl {
-                        RequestHeader {
-                            api_key: ApiKey::SaslAuthenticate,
-                            version: 0,
-                        }
-                    } else {
-                        let api_key =
-                            i16::from_be_bytes(dst[start + 4..start + 6].try_into().unwrap());
-                        let version =
-                            i16::from_be_bytes(dst[start + 6..start + 8].try_into().unwrap());
-                        // TODO: handle unknown API key
-                        let api_key = ApiKey::try_from(api_key).map_err(|_| {
-                            CodecWriteError::Encoder(anyhow!("unknown api key {api_key}"))
-                        })?;
+            if !dst[start..].is_empty()
+                && !response_is_dummy
+                && let Some(tx) = self.request_header_tx.as_ref()
+            {
+                let header = if message_contains_raw_sasl {
+                    RequestHeader {
+                        api_key: ApiKey::SaslAuthenticate,
+                        version: 0,
+                    }
+                } else {
+                    let api_key = i16::from_be_bytes(dst[start + 4..start + 6].try_into().unwrap());
+                    let version = i16::from_be_bytes(dst[start + 6..start + 8].try_into().unwrap());
+                    // TODO: handle unknown API key
+                    let api_key = ApiKey::try_from(api_key).map_err(|_| {
+                        CodecWriteError::Encoder(anyhow!("unknown api key {api_key}"))
+                    })?;
 
-                        RequestHeader { api_key, version }
-                    };
+                    RequestHeader { api_key, version }
+                };
 
-                    let request_info = RequestInfo {
-                        header,
-                        id,
-                        expect_raw_sasl,
-                    };
-                    tx.send(request_info)
-                        .map_err(|e| CodecWriteError::Encoder(anyhow!(e)))?;
-                }
+                let request_info = RequestInfo {
+                    header,
+                    id,
+                    expect_raw_sasl,
+                };
+                tx.send(request_info)
+                    .map_err(|e| CodecWriteError::Encoder(anyhow!(e)))?;
             }
 
             if let Some(received_at) = received_at {

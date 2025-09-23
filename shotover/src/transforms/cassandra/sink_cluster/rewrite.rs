@@ -256,10 +256,10 @@ impl MessageRewriter {
         }
 
         for message_or_id in table.collected_messages.iter_mut() {
-            if let MessageOrId::Id(id) = message_or_id {
-                if let Some(i) = responses.iter().position(|x| x.request_id() == Some(*id)) {
-                    *message_or_id = MessageOrId::Message(responses.swap_remove(i));
-                }
+            if let MessageOrId::Id(id) = message_or_id
+                && let Some(i) = responses.iter().position(|x| x.request_id() == Some(*id))
+            {
+                *message_or_id = MessageOrId::Message(responses.swap_remove(i));
             }
         }
 
@@ -432,39 +432,39 @@ impl MessageRewriter {
         let mut tokens_alias = "tokens";
         let mut schema_version_alias = "schema_version";
         for select in &table.selects {
-            if let SelectElement::Column(column) = select {
-                if let Some(alias) = &column.alias {
-                    let alias = match alias {
-                        Identifier::Unquoted(alias) => alias,
-                        Identifier::Quoted(alias) => alias,
-                    };
-                    if column.name == IdentifierRef::Quoted("data_center") {
-                        data_center_alias = alias;
-                    } else if column.name == IdentifierRef::Quoted("rack") {
-                        rack_alias = alias;
-                    } else if column.name == IdentifierRef::Quoted("host_id") {
-                        host_id_alias = alias;
-                    } else if column.name == IdentifierRef::Quoted("native_address") {
-                        native_address_alias = alias;
-                    } else if column.name == IdentifierRef::Quoted("native_port") {
-                        native_port_alias = alias;
-                    } else if column.name == IdentifierRef::Quoted("preferred_ip") {
-                        preferred_ip_alias = alias;
-                    } else if column.name == IdentifierRef::Quoted("preferred_port") {
-                        preferred_port_alias = alias;
-                    } else if column.name == IdentifierRef::Quoted("rpc_address") {
-                        rpc_address_alias = alias;
-                    } else if column.name == IdentifierRef::Quoted("peer") {
-                        peer_alias = alias;
-                    } else if column.name == IdentifierRef::Quoted("peer_port") {
-                        peer_port_alias = alias;
-                    } else if column.name == IdentifierRef::Quoted("release_version") {
-                        release_version_alias = alias;
-                    } else if column.name == IdentifierRef::Quoted("tokens") {
-                        tokens_alias = alias;
-                    } else if column.name == IdentifierRef::Quoted("schema_version") {
-                        schema_version_alias = alias;
-                    }
+            if let SelectElement::Column(column) = select
+                && let Some(alias) = &column.alias
+            {
+                let alias = match alias {
+                    Identifier::Unquoted(alias) => alias,
+                    Identifier::Quoted(alias) => alias,
+                };
+                if column.name == IdentifierRef::Quoted("data_center") {
+                    data_center_alias = alias;
+                } else if column.name == IdentifierRef::Quoted("rack") {
+                    rack_alias = alias;
+                } else if column.name == IdentifierRef::Quoted("host_id") {
+                    host_id_alias = alias;
+                } else if column.name == IdentifierRef::Quoted("native_address") {
+                    native_address_alias = alias;
+                } else if column.name == IdentifierRef::Quoted("native_port") {
+                    native_port_alias = alias;
+                } else if column.name == IdentifierRef::Quoted("preferred_ip") {
+                    preferred_ip_alias = alias;
+                } else if column.name == IdentifierRef::Quoted("preferred_port") {
+                    preferred_port_alias = alias;
+                } else if column.name == IdentifierRef::Quoted("rpc_address") {
+                    rpc_address_alias = alias;
+                } else if column.name == IdentifierRef::Quoted("peer") {
+                    peer_alias = alias;
+                } else if column.name == IdentifierRef::Quoted("peer_port") {
+                    peer_port_alias = alias;
+                } else if column.name == IdentifierRef::Quoted("release_version") {
+                    release_version_alias = alias;
+                } else if column.name == IdentifierRef::Quoted("tokens") {
+                    tokens_alias = alias;
+                } else if column.name == IdentifierRef::Quoted("schema_version") {
+                    schema_version_alias = alias;
                 }
             }
         }
@@ -589,29 +589,29 @@ impl MessageRewriter {
         let mut rpc_address_alias = "rpc_address";
         let mut rpc_port_alias = "rpc_port";
         for select in &table.selects {
-            if let SelectElement::Column(column) = select {
-                if let Some(alias) = &column.alias {
-                    let alias = match alias {
-                        Identifier::Unquoted(alias) => alias,
-                        Identifier::Quoted(alias) => alias,
-                    };
-                    if column.name == IdentifierRef::Quoted("release_version") {
-                        release_version_alias = alias;
-                    } else if column.name == IdentifierRef::Quoted("tokens") {
-                        tokens_alias = alias;
-                    } else if column.name == IdentifierRef::Quoted("schema_version") {
-                        schema_version_alias = alias;
-                    } else if column.name == IdentifierRef::Quoted("broadcast_address") {
-                        broadcast_address_alias = alias;
-                    } else if column.name == IdentifierRef::Quoted("listen_address") {
-                        listen_address_alias = alias;
-                    } else if column.name == IdentifierRef::Quoted("host_id") {
-                        host_id_alias = alias;
-                    } else if column.name == IdentifierRef::Quoted("rpc_address") {
-                        rpc_address_alias = alias
-                    } else if column.name == IdentifierRef::Quoted("rpc_port") {
-                        rpc_port_alias = alias
-                    }
+            if let SelectElement::Column(column) = select
+                && let Some(alias) = &column.alias
+            {
+                let alias = match alias {
+                    Identifier::Unquoted(alias) => alias,
+                    Identifier::Quoted(alias) => alias,
+                };
+                if column.name == IdentifierRef::Quoted("release_version") {
+                    release_version_alias = alias;
+                } else if column.name == IdentifierRef::Quoted("tokens") {
+                    tokens_alias = alias;
+                } else if column.name == IdentifierRef::Quoted("schema_version") {
+                    schema_version_alias = alias;
+                } else if column.name == IdentifierRef::Quoted("broadcast_address") {
+                    broadcast_address_alias = alias;
+                } else if column.name == IdentifierRef::Quoted("listen_address") {
+                    listen_address_alias = alias;
+                } else if column.name == IdentifierRef::Quoted("host_id") {
+                    host_id_alias = alias;
+                } else if column.name == IdentifierRef::Quoted("rpc_address") {
+                    rpc_address_alias = alias
+                } else if column.name == IdentifierRef::Quoted("rpc_port") {
+                    rpc_port_alias = alias
                 }
             }
         }
@@ -663,15 +663,15 @@ impl MessageRewriter {
                                 *host_id = self.local_shotover_node.host_id;
                             }
                         } else if col_meta.name == rpc_address_alias {
-                            if let GenericValue::Inet(address) = col {
-                                if address != &IpAddr::V4(Ipv4Addr::UNSPECIFIED) {
-                                    *address = self.local_shotover_node.address.ip()
-                                }
+                            if let GenericValue::Inet(address) = col
+                                && address != &IpAddr::V4(Ipv4Addr::UNSPECIFIED)
+                            {
+                                *address = self.local_shotover_node.address.ip()
                             }
-                        } else if col_meta.name == rpc_port_alias {
-                            if let GenericValue::Integer(rpc_port, _) = col {
-                                *rpc_port = self.local_shotover_node.address.port() as i64;
-                            }
+                        } else if col_meta.name == rpc_port_alias
+                            && let GenericValue::Integer(rpc_port, _) = col
+                        {
+                            *rpc_port = self.local_shotover_node.address.port() as i64;
                         }
                     }
                 }

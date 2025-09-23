@@ -410,13 +410,12 @@ impl RunningShotover {
         ];
 
         while let Some(event) = self.event_rx.recv().await {
-            if let Level::Warn | Level::Error = event.level {
-                if !ignore
+            if let Level::Warn | Level::Error = event.level
+                && !ignore
                     .iter()
                     .any(|ignore| event.fields.message.contains(ignore))
-                {
-                    panic!("Received error/warn event from shotover:\n     {event}")
-                }
+            {
+                panic!("Received error/warn event from shotover:\n     {event}")
             }
         }
     }

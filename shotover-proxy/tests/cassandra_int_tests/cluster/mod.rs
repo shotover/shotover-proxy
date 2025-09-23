@@ -57,8 +57,8 @@ pub async fn run_topology_task(ca_path: Option<&str>, port: Option<u32>) -> Vec<
         .await
         .unwrap()
         .unwrap();
-    let nodes = nodes_rx.borrow().clone();
-    nodes
+
+    nodes_rx.borrow().clone()
 }
 
 fn create_handshake() -> Vec<Message> {
