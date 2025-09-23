@@ -1,10 +1,4 @@
 //! Safe utilities for working with file descriptors in hot reload context
-//!
-//! This module provides a sound safe API around unsafe file descriptor operations
-//! needed for the hot reload functionality.
-
-// Allow unsafe code in this module as we implement sound safe API around raw FDs
-#![allow(unsafe_code)]
 
 use anyhow::{Context, Result};
 use std::os::unix::io::OwnedFd;
@@ -34,17 +28,15 @@ pub fn create_tcp_listener_from_fd(fd: OwnedFd) -> Result<(TcpListener, u16)> {
 mod tests {
     use super::*;
     use std::net::TcpListener;
-    use std::os::unix::io::{FromRawFd, IntoRawFd};
+    use std::os::fd::AsFd;
 
     #[tokio::test]
     async fn test_create_tcp_listener_from_fd() {
         // Create a test listener
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let expected_port = listener.local_addr().unwrap().port();
-        let fd = listener.into_raw_fd();
 
-        // Convert RawFd to OwnedFd
-        let owned_fd = unsafe { OwnedFd::from_raw_fd(fd) };
+        let owned_fd = listener.as_fd().try_clone_to_owned().unwrap();
 
         // Test our function
         let (tokio_listener, extracted_port) = create_tcp_listener_from_fd(owned_fd).unwrap();

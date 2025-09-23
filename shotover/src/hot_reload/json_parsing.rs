@@ -1,6 +1,3 @@
-// Allow unsafe code in this module for file descriptor handling
-#![allow(unsafe_code)]
-
 use anyhow::{Context, Result};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -45,7 +42,8 @@ pub async fn read_json_with_fds<T: DeserializeOwned>(
         .context("Failed to read packet with FDs from socket")?;
 
     // Convert RawFds to OwnedFds immediately after receiving from recv_fds
-    // This is safe because we just received these FDs from the OS via recv_fds
+    // SAFETY: This is safe because we just received these FDs from the OS via recv_fds
+    #[allow(unsafe_code)]
     let owned_fds: Vec<OwnedFd> = fd_buf[..fds_read]
         .iter()
         .map(|&raw_fd| unsafe { OwnedFd::from_raw_fd(raw_fd) })
