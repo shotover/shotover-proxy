@@ -7,12 +7,8 @@
 #![allow(unsafe_code)]
 
 use anyhow::{Context, Result};
-use std::os::unix::io::{FromRawFd, OwnedFd, RawFd};
+use std::os::unix::io::OwnedFd;
 use tokio::net::TcpListener;
-
-pub fn take_ownership_of_fd(fd: RawFd) -> OwnedFd {
-    unsafe { OwnedFd::from_raw_fd(fd) }
-}
 
 /// Create a TcpListener from an owned file descriptor and return both the listener and port
 pub fn create_tcp_listener_from_fd(fd: OwnedFd) -> Result<(TcpListener, u16)> {
@@ -38,7 +34,7 @@ pub fn create_tcp_listener_from_fd(fd: OwnedFd) -> Result<(TcpListener, u16)> {
 mod tests {
     use super::*;
     use std::net::TcpListener;
-    use std::os::unix::io::IntoRawFd;
+    use std::os::unix::io::{FromRawFd, IntoRawFd};
 
     #[tokio::test]
     async fn test_create_tcp_listener_from_fd() {

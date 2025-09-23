@@ -1,7 +1,10 @@
+// Allow unsafe code in this module for file descriptor handling
+#![allow(unsafe_code)]
+
 use anyhow::{Context, Result};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
-use std::os::unix::io::RawFd;
+use std::os::unix::io::{FromRawFd, OwnedFd, RawFd};
 use uds::tokio::UnixSeqpacketConn;
 
 /// Read a complete JSON message from a SEQPACKET socket
@@ -33,7 +36,7 @@ pub async fn write_json<T: Serialize>(conn: &mut UnixSeqpacketConn, data: &T) ->
 /// Read a complete JSON message from a SEQPACKET socket with file descriptors
 pub async fn read_json_with_fds<T: DeserializeOwned>(
     conn: &mut UnixSeqpacketConn,
-) -> Result<(T, Vec<RawFd>)> {
+) -> Result<(T, Vec<OwnedFd>)> {
     let mut buf = vec![0u8; 65536]; // Large buffer for JSON messages
     let mut fd_buf = vec![0i32; 250]; // Buffer for file descriptors
     let (bytes_read, _truncated, fds_read) = conn
@@ -41,14 +44,20 @@ pub async fn read_json_with_fds<T: DeserializeOwned>(
         .await
         .context("Failed to read packet with FDs from socket")?;
 
+    // Convert RawFds to OwnedFds immediately after receiving from recv_fds
+    // This is safe because we just received these FDs from the OS via recv_fds
+    let owned_fds: Vec<OwnedFd> = fd_buf[..fds_read]
+        .iter()
+        .map(|&raw_fd| unsafe { OwnedFd::from_raw_fd(raw_fd) })
+        .collect();
+
     // Resize buffer to actual data received
     buf.truncate(bytes_read);
-    fd_buf.truncate(fds_read);
 
     // Parse the complete JSON message
     let data = serde_json::from_slice(&buf).context("Failed to parse JSON from packet")?;
 
-    Ok((data, fd_buf))
+    Ok((data, owned_fds))
 }
 
 /// Write a complete JSON message to a SEQPACKET socket with file descriptors

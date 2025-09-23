@@ -1,10 +1,10 @@
 //This module gives client-side implementation for socket handoff as part of hot reloading
 //Client will connect to existing shotovers and requests for FDs
-use crate::hot_reload::fd_utils::{create_tcp_listener_from_fd, take_ownership_of_fd};
+use crate::hot_reload::fd_utils::create_tcp_listener_from_fd;
 use crate::hot_reload::json_parsing::{read_json_with_fds, write_json};
 use crate::hot_reload::protocol::{Request, Response};
 use anyhow::{Context, Result};
-use std::os::unix::io::RawFd;
+use std::os::unix::io::OwnedFd;
 use std::time::Duration;
 use tokio::time::timeout;
 use tracing::{debug, info, warn};
@@ -57,7 +57,7 @@ impl UnixSocketClient {
         write_json(&mut stream, &request).await?;
 
         // Read response
-        let (response, received_fds): (Response, Vec<RawFd>) =
+        let (response, received_fds): (Response, Vec<OwnedFd>) =
             read_json_with_fds(&mut stream).await?;
 
         if !received_fds.is_empty() {
@@ -66,23 +66,17 @@ impl UnixSocketClient {
                 received_fds.len()
             );
 
-            // Convert RawFd to OwnedFd at the point where we receive them from the OS
-            for fd in received_fds {
-                // Take ownership of the file descriptor we received from recv_fds()
-                let owned_fd = take_ownership_of_fd(fd);
-
+            // Process each owned file descriptor received from the OS
+            for owned_fd in received_fds {
                 match create_tcp_listener_from_fd(owned_fd) {
                     Ok((listener, port)) => {
-                        info!(
-                            "Created TcpListener from file descriptor {} for port {}",
-                            fd, port
-                        );
+                        info!("Created TcpListener from file descriptor for port {}", port);
                         // TODO: Store the listener for later use in hot reload
                         // ATM we just drop the listener since the recreation logic isn't implemented yet
                         drop(listener);
                     }
                     Err(e) => {
-                        warn!("Failed to create listener from FD {}: {}", fd, e);
+                        warn!("Failed to create listener from FD: {}", e);
                     }
                 }
             }
