@@ -172,14 +172,11 @@ pub fn start_hot_reload_server(socket_path: String, sources: &[Source]) {
     });
 }
 
-#[cfg(test)]
+#[cfg(all(test, target_os = "linux"))]
 mod tests {
-    #[cfg(target_os = "linux")]
     use super::*;
-    #[cfg(target_os = "linux")]
     use crate::hot_reload::tests::wait_for_unix_socket_connection;
 
-    #[cfg(target_os = "linux")]
     #[tokio::test]
     async fn test_unix_socket_server_basic() {
         let socket_path = "/tmp/test-shotover-hotreload.sock";
@@ -194,7 +191,6 @@ mod tests {
         assert!(!Path::new(socket_path).exists());
     }
 
-    #[cfg(target_os = "linux")]
     #[tokio::test]
     async fn test_request_response() {
         use crate::hot_reload::json_parsing::{read_json, write_json};

@@ -1,6 +1,6 @@
 //This module gives client-side implementation for socket handoff as part of hot reloading
 //Client will connect to existing shotovers and requests for FDs
-use crate::hot_reload::fd_utils::create_tcp_listener_from_fd;
+use crate::hot_reload::fd_utils::{create_tcp_listener_from_fd, take_ownership_of_fd};
 use crate::hot_reload::json_parsing::{read_json_with_fds, write_json};
 use crate::hot_reload::protocol::{Request, Response};
 use anyhow::{Context, Result};
@@ -66,11 +66,17 @@ impl UnixSocketClient {
                 received_fds.len()
             );
 
-            // Create TcpListeners from file descriptors and extract port information
-            for fd in &received_fds {
-                match create_tcp_listener_from_fd(*fd) {
+            // Convert RawFd to OwnedFd at the point where we receive them from the OS
+            for fd in received_fds {
+                // Take ownership of the file descriptor we received from recv_fds()
+                let owned_fd = take_ownership_of_fd(fd);
+
+                match create_tcp_listener_from_fd(owned_fd) {
                     Ok((listener, port)) => {
-                        info!("Received file descriptor {} for port {}", fd, port);
+                        info!(
+                            "Created TcpListener from file descriptor {} for port {}",
+                            fd, port
+                        );
                         // TODO: Store the listener for later use in hot reload
                         // ATM we just drop the listener since the recreation logic isn't implemented yet
                         drop(listener);
@@ -112,21 +118,13 @@ pub async fn perform_hot_reloading(socket_path: String) -> Result<()> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, target_os = "linux"))]
 mod tests {
-    #[cfg(target_os = "linux")]
-    use tokio::sync::mpsc::unbounded_channel;
-
-    #[cfg(target_os = "linux")]
     use super::*;
-    #[cfg(target_os = "linux")]
     use crate::hot_reload::protocol::HotReloadListenerResponse;
-    #[cfg(target_os = "linux")]
     use crate::hot_reload::server::SourceHandle;
-    #[cfg(target_os = "linux")]
     use crate::hot_reload::tests::wait_for_unix_socket_connection;
-
-    #[cfg(target_os = "linux")]
+    use tokio::sync::mpsc::unbounded_channel;
     #[tokio::test]
     async fn test_client_connection_error() {
         let client = UnixSocketClient::new("/nonexistent/path.sock".to_string());
@@ -140,7 +138,6 @@ mod tests {
         );
     }
 
-    #[cfg(target_os = "linux")]
     #[tokio::test]
     async fn test_client_server_integration() {
         let socket_path = "/tmp/test-client-server-integration.sock";
@@ -194,7 +191,6 @@ mod tests {
         server_handle.abort();
     }
 
-    #[cfg(target_os = "linux")]
     #[tokio::test]
     async fn test_multiple_client_requests() {
         let socket_path = "/tmp/test-multiple-clients.sock";

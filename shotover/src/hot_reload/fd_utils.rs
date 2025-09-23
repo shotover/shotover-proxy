@@ -7,12 +7,16 @@
 #![allow(unsafe_code)]
 
 use anyhow::{Context, Result};
-use std::os::unix::io::{FromRawFd, RawFd};
+use std::os::unix::io::{FromRawFd, OwnedFd, RawFd};
 use tokio::net::TcpListener;
 
-/// Create a TcpListener from a raw file descriptor and return both the listener and port
-pub fn create_tcp_listener_from_fd(fd: RawFd) -> Result<(TcpListener, u16)> {
-    let std_listener = unsafe { std::net::TcpListener::from_raw_fd(fd) };
+pub fn take_ownership_of_fd(fd: RawFd) -> OwnedFd {
+    unsafe { OwnedFd::from_raw_fd(fd) }
+}
+
+/// Create a TcpListener from an owned file descriptor and return both the listener and port
+pub fn create_tcp_listener_from_fd(fd: OwnedFd) -> Result<(TcpListener, u16)> {
+    let std_listener = std::net::TcpListener::from(fd);
 
     std_listener
         .set_nonblocking(true)
@@ -43,8 +47,11 @@ mod tests {
         let expected_port = listener.local_addr().unwrap().port();
         let fd = listener.into_raw_fd();
 
+        // Convert RawFd to OwnedFd
+        let owned_fd = unsafe { OwnedFd::from_raw_fd(fd) };
+
         // Test our function
-        let (tokio_listener, extracted_port) = create_tcp_listener_from_fd(fd).unwrap();
+        let (tokio_listener, extracted_port) = create_tcp_listener_from_fd(owned_fd).unwrap();
         assert_eq!(expected_port, extracted_port);
 
         // Verify the tokio listener works
