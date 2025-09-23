@@ -7,45 +7,47 @@
 #![allow(unsafe_code)]
 
 use anyhow::{Context, Result};
-use std::os::unix::io::{FromRawFd, IntoRawFd, RawFd};
+use std::os::unix::io::{FromRawFd, RawFd};
+use tokio::net::TcpListener;
 
-pub fn extract_port_from_listener_fd(fd: RawFd) -> Result<u16> {
-    let listener = unsafe { std::net::TcpListener::from_raw_fd(fd) };
+/// Create a TcpListener from a raw file descriptor and return both the listener and port
+pub fn create_tcp_listener_from_fd(fd: RawFd) -> Result<(TcpListener, u16)> {
+    let std_listener = unsafe { std::net::TcpListener::from_raw_fd(fd) };
 
-    let port = listener
+    std_listener
+        .set_nonblocking(true)
+        .context("Failed to set listener to non-blocking mode")?;
+
+    let port = std_listener
         .local_addr()
         .context("Failed to get local address from listener socket")?
         .port();
 
-    // Convert back to raw FD to avoid dropping the socket
-    let recovered_fd = listener.into_raw_fd();
+    // Convert to tokio listener
+    let tokio_listener = TcpListener::from_std(std_listener)
+        .context("Failed to convert std TcpListener to tokio TcpListener")?;
 
-    // Sanity check that we got the same FD back
-    debug_assert_eq!(
-        fd, recovered_fd,
-        "File descriptor should be preserved during conversion"
-    );
-
-    Ok(port)
+    Ok((tokio_listener, port))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::net::TcpListener;
+    use std::os::unix::io::IntoRawFd;
 
-    #[test]
-    fn test_extract_port_from_listener_fd() {
+    #[tokio::test]
+    async fn test_create_tcp_listener_from_fd() {
         // Create a test listener
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let expected_port = listener.local_addr().unwrap().port();
         let fd = listener.into_raw_fd();
 
         // Test our function
-        let extracted_port = extract_port_from_listener_fd(fd).unwrap();
+        let (tokio_listener, extracted_port) = create_tcp_listener_from_fd(fd).unwrap();
         assert_eq!(expected_port, extracted_port);
 
-        // Clean up
-        let _listener = unsafe { TcpListener::from_raw_fd(fd) };
+        // Verify the tokio listener works
+        assert_eq!(tokio_listener.local_addr().unwrap().port(), expected_port);
     }
 }

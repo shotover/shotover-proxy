@@ -20,19 +20,6 @@ pub enum Response {
     //ShutdownOriginalNode,
     Error(String),
 }
-
-impl Response {
-    /// Collect all file descriptors from the response for ancillary data transmission
-    pub fn collect_fds(&self) -> Vec<RawFd> {
-        match self {
-            Response::SendListeningSockets => Vec::new(), // FDs will be passed separately
-            Response::Error(_) => Vec::new(),
-        }
-    }
-
-    pub fn replace_fds_with_received(&mut self, _received_fds: Vec<RawFd>) {}
-}
-
 /// Request sent from hot reload server to TcpCodecListener
 pub struct HotReloadListenerRequest {
     pub return_chan: tokio::sync::oneshot::Sender<HotReloadListenerResponse>,

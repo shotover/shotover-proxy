@@ -35,7 +35,7 @@ pub async fn read_json_with_fds<T: DeserializeOwned>(
     conn: &mut UnixSeqpacketConn,
 ) -> Result<(T, Vec<RawFd>)> {
     let mut buf = vec![0u8; 65536]; // Large buffer for JSON messages
-    let mut fd_buf = vec![0i32; 16]; // Buffer for file descriptors
+    let mut fd_buf = vec![0i32; 250]; // Buffer for file descriptors
     let (bytes_read, _truncated, fds_read) = conn
         .recv_fds(&mut buf, &mut fd_buf)
         .await
