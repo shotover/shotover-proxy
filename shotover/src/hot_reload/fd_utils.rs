@@ -1,4 +1,4 @@
-//! Safe utilities for working with file descriptors in hot reload context
+//! utilities for working with file descriptors in hot reload context
 
 use anyhow::{Context, Result};
 use std::os::unix::io::OwnedFd;
