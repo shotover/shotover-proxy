@@ -28,11 +28,6 @@ pub struct Args {
 
 #[tokio::main]
 async fn main() {
-    // Needed to disable anyhow stacktraces by default
-    if std::env::var("RUST_LIB_BACKTRACE").is_err() {
-        std::env::set_var("RUST_LIB_BACKTRACE", "0");
-    }
-
     let (non_blocking, _guard) = tracing_appender::non_blocking(std::io::stdout());
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_default_env())
