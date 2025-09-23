@@ -36,10 +36,6 @@ async fn load_instance(cargo_meta: &Metadata) -> Instance {
 
 #[tokio::main]
 async fn main() {
-    if std::env::var("RUST_LIB_BACKTRACE").is_err() {
-        std::env::set_var("RUST_LIB_BACKTRACE", "0");
-    }
-
     let (non_blocking, _guard) = tracing_appender::non_blocking(std::io::stdout());
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_default_env())
