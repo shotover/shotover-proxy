@@ -69,10 +69,10 @@ impl Transform for ValkeyGetRewrite {
         chain_state: &'shorter mut ChainState<'longer>,
     ) -> Result<Messages> {
         for message in chain_state.requests.iter_mut() {
-            if let Some(frame) = message.frame() {
-                if is_get(frame) {
-                    self.get_requests.insert(message.id());
-                }
+            if let Some(frame) = message.frame()
+                && is_get(frame)
+            {
+                self.get_requests.insert(message.id());
             }
         }
         let mut responses = chain_state.call_next_transform().await?;
@@ -82,11 +82,10 @@ impl Transform for ValkeyGetRewrite {
                 .request_id()
                 .map(|id| self.get_requests.remove(&id))
                 .unwrap_or(false)
+                && let Some(frame) = response.frame()
             {
-                if let Some(frame) = response.frame() {
-                    rewrite_get(frame, &self.result);
-                    response.invalidate_cache();
-                }
+                rewrite_get(frame, &self.result);
+                response.invalidate_cache();
             }
         }
 

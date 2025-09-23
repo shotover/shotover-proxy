@@ -120,12 +120,12 @@ impl Cloud for AwsCloud {
                 )
             }
         }
-        if let Some(instance) = &resources.bencher {
-            if Arc::strong_count(instance) != 1 {
-                panic!(
-                    "A reference to a bencher instance has been held past the end of the benchmark. Ensure the benchmark destroys all instance references before ending."
-                )
-            }
+        if let Some(instance) = &resources.bencher
+            && Arc::strong_count(instance) != 1
+        {
+            panic!(
+                "A reference to a bencher instance has been held past the end of the benchmark. Ensure the benchmark destroys all instance references before ending."
+            )
         }
 
         // TODO: spin up background tokio task to delete unneeded EC2 instances once we add the functionality to aws_throwaway
