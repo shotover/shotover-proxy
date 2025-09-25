@@ -35,6 +35,8 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
+      - name: Install toolchain
+        run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
         with:
           # rust-cache already handles all the sane defaults for caching rust builds.
