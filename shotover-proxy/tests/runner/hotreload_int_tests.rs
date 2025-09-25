@@ -28,6 +28,7 @@ async fn test_dual_shotover_instances_with_valkey() {
     let _compose = docker_compose("tests/test-configs/hotreload/docker-compose.yaml");
     let shotover_a = shotover_process("tests/test-configs/hotreload/topology.yaml")
         .with_hotreload(true)
+        .with_log_name("shot_old")
         .with_hotreload_socket_path(socket_path)
         .with_config("tests/test-configs/shotover-config/config_metrics_disabled.yaml")
         .start()
@@ -39,6 +40,7 @@ async fn test_dual_shotover_instances_with_valkey() {
     //Second shotover
     let shotover_b = shotover_process("tests/test-configs/hotreload/topology-alt.yaml")
         .with_hotreload_from_socket(socket_path)
+        .with_log_name("shot_new")
         .with_config("tests/test-configs/shotover-config/config_metrics_disabled.yaml")
         .start()
         .await;

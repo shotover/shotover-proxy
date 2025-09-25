@@ -1,8 +1,8 @@
-use crate::hot_reload::json_parsing::{read_json, write_json};
+use crate::hot_reload::json_parsing::{read_json, write_json, write_json_with_fds};
 use crate::hot_reload::protocol::{HotReloadListenerRequest, Request, Response};
 use crate::sources::Source;
 use anyhow::{Context, Result};
-use std::collections::HashMap;
+use std::os::unix::io::RawFd;
 use std::path::Path;
 use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
@@ -56,21 +56,31 @@ impl UnixSocketServer {
         let request: Request = read_json(&mut stream).await?;
         debug!("Received request: {:?}", request);
 
-        let response = self.process_request(request).await;
+        let (response, fds) = self.process_request(request).await;
 
-        write_json(&mut stream, &response).await?;
-        debug!("Sent response: {:?}", response);
+        // Send response with file descriptors
+        if fds.is_empty() {
+            write_json(&mut stream, &response).await?;
+            debug!("Sent response without FDs: {:?}", response);
+        } else {
+            write_json_with_fds(&mut stream, &response, &fds).await?;
+            info!(
+                "Sent response with {} file descriptors via ancillary data: {:?}",
+                fds.len(),
+                response
+            );
+        }
+
         Ok(())
     }
 
-    async fn process_request(&self, request: Request) -> Response {
+    async fn process_request(&self, request: Request) -> (Response, Vec<RawFd>) {
         match request {
             Request::SendListeningSockets => {
                 info!("Processing SendListeningSockets request");
 
                 // Send requests to all TcpCodecListener instances and collect responses
-                let mut port_to_fd: HashMap<u32, crate::hot_reload::protocol::FileDescriptor> =
-                    HashMap::new();
+                let mut collected_fds = Vec::new();
 
                 let mut response_futures = Vec::new();
 
@@ -102,7 +112,7 @@ impl UnixSocketServer {
                                         "Received FD {} for port {} from source {}",
                                         listener_socket_fd.0, port, source_name
                                     );
-                                    port_to_fd.insert(port as u32, listener_socket_fd);
+                                    collected_fds.push(listener_socket_fd.0);
                                 }
                                 crate::hot_reload::protocol::HotReloadListenerResponse::NoListenerAvailable => {
                                     info!("Source {} reported no listener available", source_name);
@@ -120,10 +130,10 @@ impl UnixSocketServer {
 
                 info!(
                     "Sending response with {} file descriptors",
-                    port_to_fd.len()
+                    collected_fds.len()
                 );
 
-                Response::SendListeningSockets { port_to_fd }
+                (Response::SendListeningSockets, collected_fds)
             }
         }
     }
@@ -162,12 +172,11 @@ pub fn start_hot_reload_server(socket_path: String, sources: &[Source]) {
     });
 }
 
-#[cfg(test)]
+#[cfg(all(test, target_os = "linux"))]
 mod tests {
     use super::*;
     use crate::hot_reload::tests::wait_for_unix_socket_connection;
 
-    #[cfg(target_os = "linux")]
     #[tokio::test]
     async fn test_unix_socket_server_basic() {
         let socket_path = "/tmp/test-shotover-hotreload.sock";
@@ -182,7 +191,6 @@ mod tests {
         assert!(!Path::new(socket_path).exists());
     }
 
-    #[cfg(target_os = "linux")]
     #[tokio::test]
     async fn test_request_response() {
         use crate::hot_reload::json_parsing::{read_json, write_json};
@@ -206,10 +214,11 @@ mod tests {
 
         // Verify response
         match response {
-            Response::SendListeningSockets { port_to_fd } => {
-                assert_eq!(port_to_fd.len(), 0);
+            Response::SendListeningSockets => {
+                // Test passes if we get the correct response variant
+                // File descriptors are now sent via ancillary data
             }
-            _ => panic!("Wrong response type"),
+            Response::Error(err) => panic!("Unexpected error response: {}", err),
         }
 
         // Clean up

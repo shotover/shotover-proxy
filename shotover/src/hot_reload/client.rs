@@ -1,11 +1,13 @@
 //This module gives client-side implementation for socket handoff as part of hot reloading
 //Client will connect to existing shotovers and requests for FDs
-use crate::hot_reload::json_parsing::{read_json, write_json};
+use crate::hot_reload::fd_utils::create_tcp_listener_from_fd;
+use crate::hot_reload::json_parsing::{read_json_with_fds, write_json};
 use crate::hot_reload::protocol::{Request, Response};
 use anyhow::{Context, Result};
+use std::os::unix::io::OwnedFd;
 use std::time::Duration;
 use tokio::time::timeout;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 use uds::tokio::UnixSeqpacketConn;
 
 pub struct UnixSocketClient {
@@ -55,9 +57,32 @@ impl UnixSocketClient {
         write_json(&mut stream, &request).await?;
 
         // Read response
-        let response: Response = read_json(&mut stream).await?;
-        debug!("Received response: {:?}", response);
+        let (response, received_fds): (Response, Vec<OwnedFd>) =
+            read_json_with_fds(&mut stream).await?;
 
+        if !received_fds.is_empty() {
+            info!(
+                "Received {} file descriptors via ancillary data",
+                received_fds.len()
+            );
+
+            // Process each owned file descriptor received from the OS
+            for owned_fd in received_fds {
+                match create_tcp_listener_from_fd(owned_fd) {
+                    Ok((listener, port)) => {
+                        info!("Created TcpListener from file descriptor for port {}", port);
+                        // TODO: Store the listener for later use in hot reload
+                        // ATM we just drop the listener since the recreation logic isn't implemented yet
+                        drop(listener);
+                    }
+                    Err(e) => {
+                        warn!("Failed to create listener from FD: {}", e);
+                    }
+                }
+            }
+        }
+
+        debug!("Received response: {:?}", response);
         Ok(response)
     }
 }
@@ -71,37 +96,29 @@ pub async fn perform_hot_reloading(socket_path: String) -> Result<()> {
 
     let client = UnixSocketClient::new(socket_path.clone());
 
-    match client
+    let response = client
         .send_request(crate::hot_reload::protocol::Request::SendListeningSockets)
-        .await
-    {
-        Ok(crate::hot_reload::protocol::Response::SendListeningSockets { port_to_fd }) => {
-            info!(
-                "Successfully received {} file descriptors from hot reload server",
-                port_to_fd.len()
-            );
-            for (port, fd) in &port_to_fd {
-                info!("Received file descriptor {} for port {}", fd.0, port);
-            }
+        .await?;
+
+    match response {
+        crate::hot_reload::protocol::Response::SendListeningSockets => {
+            // File descriptors were received separately via ancillary data
+            info!("Successfully completed hot reload socket handoff");
             Ok(())
         }
-        Ok(crate::hot_reload::protocol::Response::Error(msg)) => {
+        crate::hot_reload::protocol::Response::Error(msg) => {
             Err(anyhow::anyhow!("Hot reload request failed: {}", msg))
         }
-        Err(e) => Err(e).context("Failed to communicate with hot reload server"),
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, target_os = "linux"))]
 mod tests {
-    use tokio::sync::mpsc::unbounded_channel;
-
     use super::*;
     use crate::hot_reload::protocol::HotReloadListenerResponse;
     use crate::hot_reload::server::SourceHandle;
     use crate::hot_reload::tests::wait_for_unix_socket_connection;
-
-    #[cfg(target_os = "linux")]
+    use tokio::sync::mpsc::unbounded_channel;
     #[tokio::test]
     async fn test_client_connection_error() {
         let client = UnixSocketClient::new("/nonexistent/path.sock".to_string());
@@ -115,7 +132,6 @@ mod tests {
         );
     }
 
-    #[cfg(target_os = "linux")]
     #[tokio::test]
     async fn test_client_server_integration() {
         let socket_path = "/tmp/test-client-server-integration.sock";
@@ -159,8 +175,8 @@ mod tests {
 
         // Verify response
         match response {
-            Response::SendListeningSockets { port_to_fd } => {
-                assert_eq!(port_to_fd.len(), 1);
+            Response::SendListeningSockets => {
+                // File descriptors are handled via ancillary data
             }
             Response::Error(msg) => panic!("Unexpected error response: {}", msg),
         }
@@ -169,7 +185,6 @@ mod tests {
         server_handle.abort();
     }
 
-    #[cfg(target_os = "linux")]
     #[tokio::test]
     async fn test_multiple_client_requests() {
         let socket_path = "/tmp/test-multiple-clients.sock";
@@ -214,9 +229,7 @@ mod tests {
                 .await
                 .unwrap();
             match response {
-                Response::SendListeningSockets { port_to_fd } => {
-                    assert_eq!(port_to_fd.len(), 1);
-                }
+                Response::SendListeningSockets => {}
                 Response::Error(msg) => panic!("Unexpected error response: {}", msg),
             }
         }
