@@ -2,7 +2,7 @@
 name = "shotover"
 version = "0.6.0"
 authors = ["Ben <ben@instaclustr.com>"]
-edition = "2021"
+edition = "2024"
 license = "Apache-2.0"
 repository = "https://github.com/shotover/shotover-proxy"
 description = "Shotover API for building custom transforms"
