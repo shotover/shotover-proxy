@@ -30,7 +30,7 @@ use tokio_tungstenite::tungstenite::{
     protocol::Message as WsMessage,
 };
 use tokio_util::codec::{Decoder, Encoder, FramedRead, FramedWrite};
-use tracing::{Instrument, trace};
+use tracing::{Instrument, info, trace};
 use tracing::{debug, error, warn};
 
 pub struct TcpCodecListener<C: CodecBuilder> {
@@ -85,7 +85,7 @@ pub struct TcpCodecListener<C: CodecBuilder> {
 
 impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
     #![allow(clippy::too_many_arguments)]
-    pub async fn new(
+    pub async fn new_with_listener(
         chain_config: &TransformChainConfig,
         source_name: String,
         listen_addr: String,
@@ -97,6 +97,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
         timeout: Option<Duration>,
         transport: Transport,
         hot_reload_rx: tokio::sync::mpsc::UnboundedReceiver<HotReloadListenerRequest>,
+        hot_reload_listener: Option<TcpListener>,
     ) -> Result<Self, Vec<String>> {
         let available_connections_gauge =
             gauge!("shotover_available_connections_count", "source" => source_name.clone());
@@ -118,11 +119,19 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
             .map(|x| format!("  {x}"))
             .collect::<Vec<String>>();
 
-        let listener = match create_listener(&listen_addr).await {
-            Ok(listener) => Some(listener),
-            Err(error) => {
-                errors.push(format!("{error:?}"));
-                None
+        let listener = if let Some(hot_reload_listener) = hot_reload_listener {
+            info!("Using hot-reloaded listener for {}", listen_addr);
+            Some(hot_reload_listener)
+        } else {
+            match create_listener(&listen_addr).await {
+                Ok(listener) => {
+                    info!("Created new listener for {}", listen_addr);
+                    Some(listener)
+                }
+                Err(error) => {
+                    errors.push(format!("{error:?}"));
+                    None
+                }
             }
         };
 

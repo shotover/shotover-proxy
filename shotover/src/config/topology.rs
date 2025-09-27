@@ -2,7 +2,9 @@ use crate::sources::{Source, SourceConfig};
 use anyhow::{Context, Result, anyhow};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fmt::Write;
+use tokio::net::TcpListener;
 use tokio::sync::watch;
 use tracing::info;
 
@@ -35,6 +37,15 @@ impl Topology {
         &self,
         trigger_shutdown_rx: watch::Receiver<bool>,
     ) -> Result<Vec<Source>> {
+        self.run_chains_with_listeners(trigger_shutdown_rx, HashMap::new())
+            .await
+    }
+
+    pub async fn run_chains_with_listeners(
+        &self,
+        trigger_shutdown_rx: watch::Receiver<bool>,
+        mut hot_reload_listeners: HashMap<u16, TcpListener>,
+    ) -> Result<Vec<Source>> {
         let mut sources: Vec<Source> = Vec::new();
 
         let mut topology_errors = String::new();
@@ -54,7 +65,10 @@ impl Topology {
         }
 
         for source in &self.sources {
-            match source.get_source(trigger_shutdown_rx.clone()).await {
+            match source
+                .get_source_with_listener(trigger_shutdown_rx.clone(), &mut hot_reload_listeners)
+                .await
+            {
                 Ok(source) => sources.push(source),
                 Err(source_errors) => {
                     if !source_errors.is_empty() {
