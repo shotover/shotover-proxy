@@ -185,18 +185,23 @@ impl Shotover {
         hotreload_from_socket: Option<String>,
         trigger_shutdown_rx: watch::Receiver<bool>,
     ) -> Result<()> {
-        if let Some(socket_path) = hotreload_from_socket.clone() {
+        let hot_reload_listeners = if let Some(socket_path) = hotreload_from_socket.clone() {
             info!("Hot reload CLIENT mode - requesting socket handoff from existing shotover");
             crate::hot_reload::client::perform_hot_reloading(socket_path)
                 .await
-                .context("Hot reload client failed")?;
-        }
+                .context("Hot reload client failed")?
+        } else {
+            std::collections::HashMap::new()
+        };
 
         info!("Starting Shotover {}", crate_version!());
         info!(configuration = ?config);
         info!(topology = ?topology);
 
-        match topology.run_chains(trigger_shutdown_rx).await {
+        match topology
+            .run_chains_with_listeners(trigger_shutdown_rx, hot_reload_listeners)
+            .await
+        {
             Ok(sources) => {
                 if hotreload_enabled {
                     info!("Starting shotover with hot reloading enabled");
