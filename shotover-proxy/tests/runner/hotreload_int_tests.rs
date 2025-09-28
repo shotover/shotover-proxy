@@ -61,7 +61,7 @@ async fn test_dual_shotover_instances_with_valkey() {
         .with_config("tests/test-configs/shotover-config/config_metrics_disabled.yaml")
         .start()
         .await;
-
+    sleep(Duration::from_secs(4)).await;
     let client_new = Client::open("valkey://127.0.0.1:6380").unwrap();
     let connection_result = timeout(Duration::from_secs(10), async {
         // Retry connection a few times as the handoff might take a moment
