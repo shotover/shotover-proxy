@@ -62,9 +62,6 @@ async fn test_dual_shotover_instances_with_valkey() {
         .start()
         .await;
 
-    // Give some time for hot reload process to complete
-    sleep(Duration::from_secs(4)).await;
-
     let client_new = Client::open("valkey://127.0.0.1:6380").unwrap();
     let connection_result = timeout(Duration::from_secs(10), async {
         // Retry connection a few times as the handoff might take a moment
