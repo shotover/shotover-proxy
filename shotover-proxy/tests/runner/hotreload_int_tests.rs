@@ -62,7 +62,9 @@ async fn test_dual_shotover_instances_with_valkey() {
         .await;
 
     let client_new = Client::open("valkey://127.0.0.1:6380").unwrap();
-    let mut con_new = connection_result;
+    let mut con_new = client_new
+        .get_connection()
+        .expect("Failed to connect to new instance");
 
     // Verify that data stored in old instance is still accessible
     let persistent_value: String = con_new.get("persistent_key").unwrap();
