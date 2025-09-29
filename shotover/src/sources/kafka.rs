@@ -34,7 +34,7 @@ impl KafkaConfig {
 
         let (hot_reload_tx, hot_reload_rx) = tokio::sync::mpsc::unbounded_channel();
 
-        let mut listener = TcpCodecListener::new_with_listener(
+        let mut listener = TcpCodecListener::new(
             &self.chain,
             self.name.clone(),
             self.listen_addr.clone(),

@@ -87,7 +87,7 @@ pub struct TcpCodecListener<C: CodecBuilder> {
 
 impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
     #![allow(clippy::too_many_arguments)]
-    pub async fn new_with_listener(
+    pub async fn new(
         chain_config: &TransformChainConfig,
         source_name: String,
         listen_addr: String,
