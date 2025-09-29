@@ -1,8 +1,6 @@
 use crate::shotover_process;
 use redis::{Client, Commands};
-use std::time::Duration;
 use test_helpers::docker_compose::docker_compose;
-use tokio::time::{sleep, timeout};
 
 #[tokio::test]
 async fn test_hotreload_basic_valkey_connection() {
