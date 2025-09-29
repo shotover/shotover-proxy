@@ -27,14 +27,6 @@ pub struct CassandraConfig {
 }
 
 impl CassandraConfig {
-    pub async fn get_source(
-        &self,
-        trigger_shutdown_rx: watch::Receiver<bool>,
-    ) -> Result<Source, Vec<String>> {
-        self.get_source_with_listener(trigger_shutdown_rx, &mut HashMap::new())
-            .await
-    }
-
     pub async fn get_source_with_listener(
         &self,
         mut trigger_shutdown_rx: watch::Receiver<bool>,
