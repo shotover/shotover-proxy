@@ -199,7 +199,7 @@ impl Shotover {
         info!(topology = ?topology);
 
         match topology
-            .run_chains_with_listeners(trigger_shutdown_rx, hot_reload_listeners)
+            .run_chains(trigger_shutdown_rx, hot_reload_listeners)
             .await
         {
             Ok(sources) => {
