@@ -78,32 +78,20 @@ pub enum SourceConfig {
 }
 
 impl SourceConfig {
-    pub(crate) async fn get_source_with_listener(
+    pub(crate) async fn build(
         &self,
         trigger_shutdown_rx: watch::Receiver<bool>,
         hot_reload_listeners: &mut HashMap<u16, TcpListener>,
     ) -> Result<Source, Vec<String>> {
         match self {
             #[cfg(feature = "cassandra")]
-            SourceConfig::Cassandra(c) => {
-                c.get_source_with_listener(trigger_shutdown_rx, hot_reload_listeners)
-                    .await
-            }
+            SourceConfig::Cassandra(c) => c.build(trigger_shutdown_rx, hot_reload_listeners).await,
             #[cfg(feature = "valkey")]
-            SourceConfig::Valkey(r) => {
-                r.get_source_with_listener(trigger_shutdown_rx, hot_reload_listeners)
-                    .await
-            }
+            SourceConfig::Valkey(r) => r.build(trigger_shutdown_rx, hot_reload_listeners).await,
             #[cfg(feature = "kafka")]
-            SourceConfig::Kafka(r) => {
-                r.get_source_with_listener(trigger_shutdown_rx, hot_reload_listeners)
-                    .await
-            }
+            SourceConfig::Kafka(r) => r.build(trigger_shutdown_rx, hot_reload_listeners).await,
             #[cfg(feature = "opensearch")]
-            SourceConfig::OpenSearch(r) => {
-                r.get_source_with_listener(trigger_shutdown_rx, hot_reload_listeners)
-                    .await
-            }
+            SourceConfig::OpenSearch(r) => r.build(trigger_shutdown_rx, hot_reload_listeners).await,
         }
     }
 

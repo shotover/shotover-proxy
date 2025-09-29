@@ -58,7 +58,7 @@ impl Topology {
 
         for source in &self.sources {
             match source
-                .get_source_with_listener(trigger_shutdown_rx.clone(), &mut hot_reload_listeners)
+                .build(trigger_shutdown_rx.clone(), &mut hot_reload_listeners)
                 .await
             {
                 Ok(source) => sources.push(source),

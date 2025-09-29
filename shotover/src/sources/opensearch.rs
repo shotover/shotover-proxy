@@ -22,7 +22,7 @@ pub struct OpenSearchConfig {
 }
 
 impl OpenSearchConfig {
-    pub async fn get_source_with_listener(
+    pub async fn build(
         &self,
         mut trigger_shutdown_rx: watch::Receiver<bool>,
         hot_reload_listeners: &mut HashMap<u16, TcpListener>,

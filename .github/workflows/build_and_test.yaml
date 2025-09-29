@@ -135,7 +135,7 @@ jobs:
       - name: Run tests
         run: |
           ~/.cargo/bin/cargo-nextest nextest run --archive-file nextest-${{ matrix.profile }}.tar.zst \
-            --partition count:${{ matrix.partition }}/15 --extract-to . --run-ignored all --no-capture
+            --partition count:${{ matrix.partition }}/15 --extract-to . --run-ignored all --success-output=immediate
       - name: Cleanup archive
         run: rm nextest-${{ matrix.profile }}.tar.zst
       - name: Ensure that tests did not create or modify any files that arent .gitignore'd

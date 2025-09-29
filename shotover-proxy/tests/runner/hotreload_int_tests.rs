@@ -1,6 +1,8 @@
 use crate::shotover_process;
 use redis::{Client, Commands};
+use std::time::Duration;
 use test_helpers::docker_compose::docker_compose;
+use tokio::time::{sleep, timeout};
 
 #[tokio::test]
 async fn test_hotreload_basic_valkey_connection() {
@@ -24,9 +26,6 @@ async fn test_hotreload_basic_valkey_connection() {
 
 #[tokio::test]
 async fn test_dual_shotover_instances_with_valkey() {
-    use std::time::Duration;
-    use tokio::time::{sleep, timeout};
-
     let socket_path = "/tmp/test-hotreload-fd-transfer.sock";
     let _compose = docker_compose("tests/test-configs/hotreload/docker-compose.yaml");
 
@@ -63,25 +62,6 @@ async fn test_dual_shotover_instances_with_valkey() {
         .await;
 
     let client_new = Client::open("valkey://127.0.0.1:6380").unwrap();
-    let connection_result = timeout(Duration::from_secs(10), async {
-        // Retry connection a few times as the handoff might take a moment
-        for i in 0..5 {
-            match client_new.get_connection() {
-                Ok(conn) => return Ok(conn),
-                Err(e) => {
-                    if i == 4 {
-                        return Err(e);
-                    }
-                    sleep(Duration::from_millis(500)).await;
-                }
-            }
-        }
-        unreachable!()
-    })
-    .await
-    .expect("Connection timeout")
-    .expect("Failed to connect to new instance");
-
     let mut con_new = connection_result;
 
     // Verify that data stored in old instance is still accessible
