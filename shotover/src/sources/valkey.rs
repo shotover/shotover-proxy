@@ -43,21 +43,6 @@ impl ValkeyConfig {
 
         let (hot_reload_tx, hot_reload_rx) = tokio::sync::mpsc::unbounded_channel();
 
-        // Check if we have a hot reload listener for this port
-        let port = self
-            .listen_addr
-            .rsplit_once(':')
-            .and_then(|(_, p)| p.parse::<u16>().ok());
-
-        let hot_reload_listener = port.and_then(|p| hot_reload_listeners.remove(&p));
-
-        if hot_reload_listener.is_some() {
-            info!(
-                "Using hot reloaded listener for Valkey source on [{}]",
-                self.listen_addr
-            );
-        }
-
         let mut listener = TcpCodecListener::new_with_listener(
             &self.chain,
             self.name.clone(),
@@ -70,7 +55,7 @@ impl ValkeyConfig {
             self.timeout.map(Duration::from_secs),
             Transport::Tcp,
             hot_reload_rx,
-            hot_reload_listener,
+            hot_reload_listeners,
         )
         .await?;
 

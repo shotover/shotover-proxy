@@ -14,6 +14,7 @@ use bytes::BytesMut;
 use futures::future::join_all;
 use futures::{SinkExt, StreamExt};
 use metrics::{Counter, Gauge, counter, gauge};
+use std::collections::HashMap;
 use std::io::ErrorKind;
 use std::net::SocketAddr;
 use std::os::unix::io::AsRawFd;
@@ -97,7 +98,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
         timeout: Option<Duration>,
         transport: Transport,
         hot_reload_rx: tokio::sync::mpsc::UnboundedReceiver<HotReloadListenerRequest>,
-        hot_reload_listener: Option<TcpListener>,
+        hot_reload_listeners: &mut HashMap<u16, TcpListener>,
     ) -> Result<Self, Vec<String>> {
         let available_connections_gauge =
             gauge!("shotover_available_connections_count", "source" => source_name.clone());
@@ -118,6 +119,20 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
             .iter()
             .map(|x| format!("  {x}"))
             .collect::<Vec<String>>();
+
+        // Check if we have a hot reload listener for this port
+        let port = listen_addr
+            .rsplit_once(':')
+            .and_then(|(_, p)| p.parse::<u16>().ok());
+
+        let hot_reload_listener = port.and_then(|p| hot_reload_listeners.remove(&p));
+
+        if hot_reload_listener.is_some() {
+            info!(
+                "Using hot reloaded listener for {} source on [{}]",
+                source_name, listen_addr
+            );
+        }
 
         let listener = if let Some(hot_reload_listener) = hot_reload_listener {
             info!("Using hot-reloaded listener for {}", listen_addr);
