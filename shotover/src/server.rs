@@ -82,6 +82,7 @@ pub struct TcpCodecListener<C: CodecBuilder> {
 
     /// Receiver for hot reload requests to extract listening socket file descriptor
     hot_reload_rx: tokio::sync::mpsc::UnboundedReceiver<HotReloadListenerRequest>,
+    port: u16,
 }
 
 impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
@@ -120,23 +121,21 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
             .map(|x| format!("  {x}"))
             .collect::<Vec<String>>();
 
-        // Check if we have a hot reload listener for this port
-        let port = listen_addr
+        let Some(port) = listen_addr
             .rsplit_once(':')
-            .and_then(|(_, p)| p.parse::<u16>().ok());
+            .and_then(|(_, p)| p.parse::<u16>().ok())
+        else {
+            return Err(vec![format!(
+                "Invalid listening address {listen_addr:?}, must follow the format ip_address:port e.g. 10.0.0.1:9042"
+            )]);
+        };
 
-        let hot_reload_listener = port.and_then(|p| hot_reload_listeners.remove(&p));
-
-        if hot_reload_listener.is_some() {
+        let listener = if let Some(listener) = hot_reload_listeners.remove(&port) {
             info!(
                 "Using hot reloaded listener for {} source on [{}]",
                 source_name, listen_addr
             );
-        }
-
-        let listener = if let Some(hot_reload_listener) = hot_reload_listener {
-            info!("Using hot-reloaded listener for {}", listen_addr);
-            Some(hot_reload_listener)
+            Some(listener)
         } else {
             match create_listener(&listen_addr).await {
                 Ok(listener) => {
@@ -172,6 +171,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
             connection_handles: vec![],
             transport,
             hot_reload_rx,
+            port,
         })
     }
 
@@ -316,12 +316,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
             // Extract the file descriptor from the TcpListener
             let fd = listener.as_raw_fd();
 
-            // Split once from the right to support hostnames and [IPv6]:port formats.
-            let port = self
-                .listen_addr
-                .rsplit_once(':')
-                .and_then(|(_, p)| p.parse::<u16>().ok())
-                .unwrap();
+            let port = self.port;
 
             tracing::info!("Hot reload: Extracting socket FD {} for port {}", fd, port);
 
