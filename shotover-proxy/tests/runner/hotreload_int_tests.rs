@@ -21,7 +21,7 @@ fn assert_valkey_connection_works(
 
     // Test counter if expected value is provided
     if let Some(expected) = expected_counter {
-        let counter_value: i32 = connection.get("counter")?;
+        let counter_value: i32 = connection.incr("counter", 1)?;
         assert_eq!(
             counter_value, expected,
             "Counter value should be {expected} but was {counter_value}"
@@ -126,7 +126,7 @@ async fn test_dual_shotover_instances_with_valkey() {
     );
 
     // Verify old connection works with counter after hot reload
-    assert_valkey_connection_works(&mut con_old, Some(11), &[]).unwrap();
+    assert_valkey_connection_works(&mut con_old, Some(12), &[]).unwrap();
 
     // Test setting and getting a new key through old connection
     let _: () = con_old
@@ -136,15 +136,8 @@ async fn test_dual_shotover_instances_with_valkey() {
     // Verify new instance can handle new operations
     let _: () = con_new.set("new_key", "data_from_new_instance").unwrap();
 
-    // Test that we can increment the counter
-    let counter_value: i32 = con_new.incr("counter", 1).unwrap();
-    assert_eq!(
-        counter_value, 12,
-        "Counter should increment from value set by old instance"
-    );
-
     // Verify basic functionality on new connection
-    assert_valkey_connection_works(&mut con_new, Some(12), &[]).unwrap();
+    assert_valkey_connection_works(&mut con_new, Some(13), &[]).unwrap();
 
     // Shutdown old shotover instance
     shotover_old.shutdown_and_then_consume_events(&[]).await;
@@ -162,7 +155,7 @@ async fn test_dual_shotover_instances_with_valkey() {
 
     assert_valkey_connection_works(
         &mut con_after_old_shutdown,
-        Some(12),
+        Some(14),
         &[
             ("persistent_key", "data_from_old_instance"),
             ("new_key", "data_from_new_instance"),
