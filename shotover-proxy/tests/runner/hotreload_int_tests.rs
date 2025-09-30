@@ -2,6 +2,44 @@ use crate::shotover_process;
 use redis::{Client, Commands};
 use test_helpers::docker_compose::docker_compose;
 
+/// Helper function to verify comprehensive Valkey connection functionality
+fn assert_valkey_connection_works(
+    connection: &mut redis::Connection,
+    expected_counter: Option<i32>,
+    expected_data: &[(&str, &str)],
+) -> Result<(), Box<dyn std::error::Error>> {
+    // Test basic PING
+    let pong: String = redis::cmd("PING").query(connection)?;
+    assert_eq!(pong, "PONG");
+
+    // Test basic SET/GET operation
+    let test_key = format!("test_key_{}", std::process::id());
+    let test_value = "test_connection_works";
+    let _: () = connection.set(&test_key, test_value)?;
+    let result: String = connection.get(&test_key)?;
+    assert_eq!(result, test_value);
+
+    // Test counter if expected value is provided
+    if let Some(expected) = expected_counter {
+        let counter_value: i32 = connection.get("counter")?;
+        assert_eq!(
+            counter_value, expected,
+            "Counter value should be {expected} but was {counter_value}"
+        );
+    }
+
+    // Test data persistence for specific keys
+    for (key, expected_value) in expected_data {
+        let actual_value: String = connection.get(*key)?;
+        assert_eq!(
+            actual_value, *expected_value,
+            "Key '{key}' should contain '{expected_value}' but contained '{actual_value}'"
+        );
+    }
+
+    Ok(())
+}
+
 #[tokio::test]
 async fn test_hotreload_basic_valkey_connection() {
     let _compose = docker_compose("tests/test-configs/hotreload/docker-compose.yaml");
@@ -13,11 +51,7 @@ async fn test_hotreload_basic_valkey_connection() {
     let client = Client::open("valkey://127.0.0.1:6380").unwrap();
     let mut con = client.get_connection().unwrap();
 
-    let _: () = con.set("test_key", "test_value").unwrap();
-    let result: String = con.get("test_key").unwrap();
-    assert_eq!(result, "test_value");
-    let pong: String = redis::cmd("PING").query(&mut con).unwrap();
-    assert_eq!(pong, "PONG");
+    assert_valkey_connection_works(&mut con, None, &[]).unwrap();
 
     shotover_process.shutdown_and_then_consume_events(&[]).await;
 }
@@ -72,25 +106,17 @@ async fn test_dual_shotover_instances_with_valkey() {
     );
 
     // Test that the old connection continues to function after hot reload
-    let old_connection_test: String = con_old.get("persistent_key").unwrap();
-    assert_eq!(
-        old_connection_test, "data_from_old_instance",
-        "Old connection should continue to function after hot reload"
-    );
+    assert_valkey_connection_works(
+        &mut con_old,
+        None,
+        &[("persistent_key", "data_from_old_instance")],
+    )
+    .unwrap();
 
     // Test that old connection can still perform operations
     let _: () = con_old
         .set("old_connection_key", "old_still_works")
         .unwrap();
-    let old_op_result: String = con_old.get("old_connection_key").unwrap();
-    assert_eq!(old_op_result, "old_still_works");
-
-    // Tests to ensure con_old continues functioning after hot reload
-    let old_pong: String = redis::cmd("PING").query(&mut con_old).unwrap();
-    assert_eq!(
-        old_pong, "PONG",
-        "Old connection should respond to PING after hot reload"
-    );
 
     // Test increment operation on old connection
     let old_incr: i32 = con_old.incr("counter", 10).unwrap();
@@ -99,20 +125,16 @@ async fn test_dual_shotover_instances_with_valkey() {
         "Old connection should handle increment operations after hot reload"
     );
 
+    // Verify old connection works with counter after hot reload
+    assert_valkey_connection_works(&mut con_old, Some(11), &[]).unwrap();
+
     // Test setting and getting a new key through old connection
     let _: () = con_old
         .set("old_post_reload", "value_set_after_reload")
         .unwrap();
-    let old_post_reload_value: String = con_old.get("old_post_reload").unwrap();
-    assert_eq!(
-        old_post_reload_value, "value_set_after_reload",
-        "Old connection should handle new operations after hot reload"
-    );
 
     // Verify new instance can handle new operations
     let _: () = con_new.set("new_key", "data_from_new_instance").unwrap();
-    let new_value: String = con_new.get("new_key").unwrap();
-    assert_eq!(new_value, "data_from_new_instance");
 
     // Test that we can increment the counter
     let counter_value: i32 = con_new.incr("counter", 1).unwrap();
@@ -121,9 +143,8 @@ async fn test_dual_shotover_instances_with_valkey() {
         "Counter should increment from value set by old instance"
     );
 
-    // Verify ping works
-    let pong: String = redis::cmd("PING").query(&mut con_new).unwrap();
-    assert_eq!(pong, "PONG");
+    // Verify basic functionality on new connection
+    assert_valkey_connection_works(&mut con_new, Some(12), &[]).unwrap();
 
     // Shutdown old shotover instance
     shotover_old.shutdown_and_then_consume_events(&[]).await;
@@ -134,51 +155,23 @@ async fn test_dual_shotover_instances_with_valkey() {
         .get_connection()
         .expect("Failed to connect after old shotover shutdown - hot reload may have failed");
 
-    // Verify that the new connection can access data that was originally set by the old instance
-    let final_check: String = con_after_old_shutdown.get("persistent_key").unwrap();
-    assert_eq!(
-        final_check, "data_from_old_instance",
-        "New connection after old shotover shutdown should still access persistent data"
-    );
-
-    // Verify that the new connection can access data set by the new instance
-    let new_instance_check: String = con_after_old_shutdown.get("new_key").unwrap();
-    assert_eq!(
-        new_instance_check, "data_from_new_instance",
-        "New connection should access data from new instance"
-    );
-
-    // Verify that the new connection can access data set by the old connection after hot reload
-    let old_post_reload_check: String = con_after_old_shutdown.get("old_post_reload").unwrap();
-    assert_eq!(
-        old_post_reload_check, "value_set_after_reload",
-        "New connection should access data set by old connection after hot reload"
-    );
-
-    // Test that new connection can perform operations
+    // Verify that all expected data persists after old shotover shutdown and test final state
     let _: () = con_after_old_shutdown
         .set("post_handoff_key", "post_handoff_value")
         .unwrap();
-    let post_handoff_result: String = con_after_old_shutdown.get("post_handoff_key").unwrap();
-    assert_eq!(post_handoff_result, "post_handoff_value");
 
-    // Verify ping works on the post-handoff connection
-    let pong_after: String = redis::cmd("PING")
-        .query(&mut con_after_old_shutdown)
-        .unwrap();
-    assert_eq!(pong_after, "PONG");
-
-    // Verify the counter value reflects all operations from both old and new connections
-    let final_counter: i32 = con_after_old_shutdown.get("counter").unwrap();
-    assert_eq!(
-        final_counter, 12,
-        "Counter should reflect all increment operations from both old and new connections"
-    );
+    assert_valkey_connection_works(
+        &mut con_after_old_shutdown,
+        Some(12),
+        &[
+            ("persistent_key", "data_from_old_instance"),
+            ("new_key", "data_from_new_instance"),
+            ("old_post_reload", "value_set_after_reload"),
+            ("post_handoff_key", "post_handoff_value"),
+        ],
+    )
+    .unwrap();
 
     // Final cleanup
     shotover_new.shutdown_and_then_consume_events(&[]).await;
-
-    // Clean up socket files
-    let _ = std::fs::remove_file(socket_path);
-    let _ = std::fs::remove_file("/tmp/shotover-new.sock");
 }
