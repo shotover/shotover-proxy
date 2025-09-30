@@ -119,7 +119,7 @@ async fn test_dual_shotover_instances_with_valkey() {
         .unwrap();
 
     // Verify old connection works with counter after hot reload
-    assert_valkey_connection_works(&mut con_old, Some(11), &[]).unwrap();
+    assert_valkey_connection_works(&mut con_old, Some(2), &[]).unwrap();
 
     // Test setting and getting a new key through old connection
     let _: () = con_old
@@ -130,7 +130,7 @@ async fn test_dual_shotover_instances_with_valkey() {
     let _: () = con_new.set("new_key", "data_from_new_instance").unwrap();
 
     // Verify basic functionality on new connection
-    assert_valkey_connection_works(&mut con_new, Some(12), &[]).unwrap();
+    assert_valkey_connection_works(&mut con_new, Some(3), &[]).unwrap();
 
     // Shutdown old shotover instance
     shotover_old.shutdown_and_then_consume_events(&[]).await;
@@ -148,7 +148,7 @@ async fn test_dual_shotover_instances_with_valkey() {
 
     assert_valkey_connection_works(
         &mut con_after_old_shutdown,
-        Some(13),
+        Some(4),
         &[
             ("persistent_key", "data_from_old_instance"),
             ("new_key", "data_from_new_instance"),
