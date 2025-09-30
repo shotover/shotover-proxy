@@ -15,8 +15,8 @@ fn assert_valkey_connection_works(
     // Test basic SET/GET operation
     let test_key = "test_key";
     let test_value = "test_connection_works";
-    let _: () = connection.set(&test_key, test_value)?;
-    let result: String = connection.get(&test_key)?;
+    let _: () = connection.set(test_key, test_value)?;
+    let result: String = connection.get(test_key)?;
     assert_eq!(result, test_value);
 
     // Test counter if expected value is provided
