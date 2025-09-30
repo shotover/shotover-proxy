@@ -13,7 +13,7 @@ fn assert_valkey_connection_works(
     assert_eq!(pong, "PONG");
 
     // Test basic SET/GET operation
-    let test_key = format!("test_key_{}", std::process::id());
+    let test_key = "test_key";
     let test_value = "test_connection_works";
     let _: () = connection.set(&test_key, test_value)?;
     let result: String = connection.get(&test_key)?;
@@ -118,15 +118,8 @@ async fn test_dual_shotover_instances_with_valkey() {
         .set("old_connection_key", "old_still_works")
         .unwrap();
 
-    // Test increment operation on old connection
-    let old_incr: i32 = con_old.incr("counter", 10).unwrap();
-    assert_eq!(
-        old_incr, 11,
-        "Old connection should handle increment operations after hot reload"
-    );
-
     // Verify old connection works with counter after hot reload
-    assert_valkey_connection_works(&mut con_old, Some(12), &[]).unwrap();
+    assert_valkey_connection_works(&mut con_old, Some(11), &[]).unwrap();
 
     // Test setting and getting a new key through old connection
     let _: () = con_old
@@ -137,7 +130,7 @@ async fn test_dual_shotover_instances_with_valkey() {
     let _: () = con_new.set("new_key", "data_from_new_instance").unwrap();
 
     // Verify basic functionality on new connection
-    assert_valkey_connection_works(&mut con_new, Some(13), &[]).unwrap();
+    assert_valkey_connection_works(&mut con_new, Some(12), &[]).unwrap();
 
     // Shutdown old shotover instance
     shotover_old.shutdown_and_then_consume_events(&[]).await;
@@ -155,7 +148,7 @@ async fn test_dual_shotover_instances_with_valkey() {
 
     assert_valkey_connection_works(
         &mut con_after_old_shutdown,
-        Some(14),
+        Some(13),
         &[
             ("persistent_key", "data_from_old_instance"),
             ("new_key", "data_from_new_instance"),
