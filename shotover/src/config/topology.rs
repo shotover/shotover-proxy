@@ -2,7 +2,9 @@ use crate::sources::{Source, SourceConfig};
 use anyhow::{Context, Result, anyhow};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fmt::Write;
+use tokio::net::TcpListener;
 use tokio::sync::watch;
 use tracing::info;
 
@@ -34,6 +36,7 @@ impl Topology {
     pub async fn run_chains(
         &self,
         trigger_shutdown_rx: watch::Receiver<bool>,
+        mut hot_reload_listeners: HashMap<u16, TcpListener>,
     ) -> Result<Vec<Source>> {
         let mut sources: Vec<Source> = Vec::new();
 
@@ -54,7 +57,10 @@ impl Topology {
         }
 
         for source in &self.sources {
-            match source.get_source(trigger_shutdown_rx.clone()).await {
+            match source
+                .build(trigger_shutdown_rx.clone(), &mut hot_reload_listeners)
+                .await
+            {
                 Ok(source) => sources.push(source),
                 Err(source_errors) => {
                     if !source_errors.is_empty() {
@@ -132,7 +138,9 @@ mod topology_tests {
 
         let (_sender, trigger_shutdown_rx) = watch::channel::<bool>(false);
 
-        topology.run_chains(trigger_shutdown_rx).await
+        topology
+            .run_chains(trigger_shutdown_rx, HashMap::new())
+            .await
     }
 
     async fn run_test_topology_cassandra(
@@ -144,7 +152,9 @@ mod topology_tests {
 
         let (_sender, trigger_shutdown_rx) = watch::channel::<bool>(false);
 
-        topology.run_chains(trigger_shutdown_rx).await
+        topology
+            .run_chains(trigger_shutdown_rx, HashMap::new())
+            .await
     }
 
     #[tokio::test]
@@ -472,7 +482,7 @@ Source name "foo" occurred more than once. Make sure all source names are unique
         let topology = Topology { sources };
         let (_sender, trigger_shutdown_rx) = watch::channel::<bool>(false);
         let error = topology
-            .run_chains(trigger_shutdown_rx)
+            .run_chains(trigger_shutdown_rx, HashMap::new())
             .await
             .unwrap_err()
             .to_string();
@@ -488,7 +498,7 @@ Source name "foo" occurred more than once. Make sure all source names are unique
             Topology::from_file("../shotover-proxy/tests/test-configs/invalid_subchains.yaml")
                 .unwrap();
         let error = topology
-            .run_chains(trigger_shutdown_rx)
+            .run_chains(trigger_shutdown_rx, HashMap::new())
             .await
             .unwrap_err()
             .to_string();

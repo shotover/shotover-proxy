@@ -4,8 +4,10 @@ use crate::hot_reload::fd_utils::create_tcp_listener_from_fd;
 use crate::hot_reload::json_parsing::{read_json_with_fds, write_json};
 use crate::hot_reload::protocol::{Request, Response};
 use anyhow::{Context, Result};
+use std::collections::HashMap;
 use std::os::unix::io::OwnedFd;
 use std::time::Duration;
+use tokio::net::TcpListener;
 use tokio::time::timeout;
 use tracing::{debug, info, warn};
 use uds::tokio::UnixSeqpacketConn;
@@ -29,7 +31,7 @@ impl UnixSocketClient {
         self
     }
 
-    pub async fn send_request(&self, request: Request) -> Result<Response> {
+    pub async fn send_request(&self, request: Request) -> Result<HashMap<u16, TcpListener>> {
         info!("Connecting to hot reload server at: {}", self.socket_path);
 
         let result = timeout(self.timeout_duration, self.send_request_inner(request)).await;
@@ -43,7 +45,7 @@ impl UnixSocketClient {
         }
     }
 
-    async fn send_request_inner(&self, request: Request) -> Result<Response> {
+    async fn send_request_inner(&self, request: Request) -> Result<HashMap<u16, TcpListener>> {
         // Connect to server
         let mut stream = UnixSeqpacketConn::connect(&self.socket_path).with_context(|| {
             format!(
@@ -60,6 +62,8 @@ impl UnixSocketClient {
         let (response, received_fds): (Response, Vec<OwnedFd>) =
             read_json_with_fds(&mut stream).await?;
 
+        let mut listeners_by_port = HashMap::new();
+
         if !received_fds.is_empty() {
             info!(
                 "Received {} file descriptors via ancillary data",
@@ -71,9 +75,7 @@ impl UnixSocketClient {
                 match create_tcp_listener_from_fd(owned_fd) {
                     Ok((listener, port)) => {
                         info!("Created TcpListener from file descriptor for port {}", port);
-                        // TODO: Store the listener for later use in hot reload
-                        // ATM we just drop the listener since the recreation logic isn't implemented yet
-                        drop(listener);
+                        listeners_by_port.insert(port, listener);
                     }
                     Err(e) => {
                         warn!("Failed to create listener from FD: {}", e);
@@ -83,12 +85,13 @@ impl UnixSocketClient {
         }
 
         debug!("Received response: {:?}", response);
-        Ok(response)
+        Ok(listeners_by_port)
     }
 }
 
 /// Request listening sockets from an existing Shotover instance during hot reload
-pub async fn perform_hot_reloading(socket_path: String) -> Result<()> {
+/// Returns a HashMap mapping port numbers to TcpListener instances
+pub async fn perform_hot_reloading(socket_path: String) -> Result<HashMap<u16, TcpListener>> {
     info!(
         "Hot reload CLIENT will request sockets from existing shotover at: {}",
         socket_path
@@ -96,20 +99,20 @@ pub async fn perform_hot_reloading(socket_path: String) -> Result<()> {
 
     let client = UnixSocketClient::new(socket_path.clone());
 
-    let response = client
+    let listeners = client
         .send_request(crate::hot_reload::protocol::Request::SendListeningSockets)
         .await?;
 
-    match response {
-        crate::hot_reload::protocol::Response::SendListeningSockets => {
-            // File descriptors were received separately via ancillary data
-            info!("Successfully completed hot reload socket handoff");
-            Ok(())
-        }
-        crate::hot_reload::protocol::Response::Error(msg) => {
-            Err(anyhow::anyhow!("Hot reload request failed: {}", msg))
-        }
+    if listeners.is_empty() {
+        warn!("No listeners received during hot reload");
+    } else {
+        info!(
+            "Successfully received {} listeners during hot reload",
+            listeners.len()
+        );
     }
+
+    Ok(listeners)
 }
 
 #[cfg(all(test, target_os = "linux"))]
@@ -168,18 +171,13 @@ mod tests {
 
         // Create client and send request
         let client = UnixSocketClient::new(socket_path.to_string());
-        let response = client
+        let listeners = client
             .send_request(Request::SendListeningSockets)
             .await
             .unwrap();
 
         // Verify response
-        match response {
-            Response::SendListeningSockets => {
-                // File descriptors are handled via ancillary data
-            }
-            Response::Error(msg) => panic!("Unexpected error response: {}", msg),
-        }
+        assert_eq!(listeners.len(), 0); // No actual FDs in test
 
         // Cleanup
         server_handle.abort();
@@ -224,14 +222,12 @@ mod tests {
         let client = UnixSocketClient::new(socket_path.to_string());
 
         for _i in 0..3 {
-            let response = client
+            let listeners = client
                 .send_request(Request::SendListeningSockets)
                 .await
                 .unwrap();
-            match response {
-                Response::SendListeningSockets => {}
-                Response::Error(msg) => panic!("Unexpected error response: {}", msg),
-            }
+            // Verify we get a valid response
+            assert_eq!(listeners.len(), 0);
         }
 
         // Cleanup

@@ -11,6 +11,8 @@ use crate::sources::opensearch::OpenSearchConfig;
 use crate::sources::valkey::ValkeyConfig;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use tokio::net::TcpListener;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
@@ -76,19 +78,20 @@ pub enum SourceConfig {
 }
 
 impl SourceConfig {
-    pub(crate) async fn get_source(
+    pub(crate) async fn build(
         &self,
         trigger_shutdown_rx: watch::Receiver<bool>,
+        hot_reload_listeners: &mut HashMap<u16, TcpListener>,
     ) -> Result<Source, Vec<String>> {
         match self {
             #[cfg(feature = "cassandra")]
-            SourceConfig::Cassandra(c) => c.get_source(trigger_shutdown_rx).await,
+            SourceConfig::Cassandra(c) => c.build(trigger_shutdown_rx, hot_reload_listeners).await,
             #[cfg(feature = "valkey")]
-            SourceConfig::Valkey(r) => r.get_source(trigger_shutdown_rx).await,
+            SourceConfig::Valkey(r) => r.build(trigger_shutdown_rx, hot_reload_listeners).await,
             #[cfg(feature = "kafka")]
-            SourceConfig::Kafka(r) => r.get_source(trigger_shutdown_rx).await,
+            SourceConfig::Kafka(r) => r.build(trigger_shutdown_rx, hot_reload_listeners).await,
             #[cfg(feature = "opensearch")]
-            SourceConfig::OpenSearch(r) => r.get_source(trigger_shutdown_rx).await,
+            SourceConfig::OpenSearch(r) => r.build(trigger_shutdown_rx, hot_reload_listeners).await,
         }
     }
 

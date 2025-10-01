@@ -6,8 +6,10 @@ use crate::sources::{Source, Transport};
 use crate::tls::{TlsAcceptor, TlsAcceptorConfig};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::net::TcpListener;
 use tokio::sync::{Semaphore, watch};
 use tracing::{error, info};
 
@@ -25,9 +27,10 @@ pub struct CassandraConfig {
 }
 
 impl CassandraConfig {
-    pub async fn get_source(
+    pub async fn build(
         &self,
         mut trigger_shutdown_rx: watch::Receiver<bool>,
+        hot_reload_listeners: &mut HashMap<u16, TcpListener>,
     ) -> Result<Source, Vec<String>> {
         info!("Starting Cassandra source on [{}]", self.listen_addr);
 
@@ -45,6 +48,7 @@ impl CassandraConfig {
             self.timeout.map(Duration::from_secs),
             self.transport.unwrap_or(Transport::Tcp),
             hot_reload_rx,
+            hot_reload_listeners,
         )
         .await?;
 

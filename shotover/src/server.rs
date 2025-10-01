@@ -14,6 +14,7 @@ use bytes::BytesMut;
 use futures::future::join_all;
 use futures::{SinkExt, StreamExt};
 use metrics::{Counter, Gauge, counter, gauge};
+use std::collections::HashMap;
 use std::io::ErrorKind;
 use std::net::SocketAddr;
 use std::os::unix::io::AsRawFd;
@@ -30,7 +31,7 @@ use tokio_tungstenite::tungstenite::{
     protocol::Message as WsMessage,
 };
 use tokio_util::codec::{Decoder, Encoder, FramedRead, FramedWrite};
-use tracing::{Instrument, trace};
+use tracing::{Instrument, info, trace};
 use tracing::{debug, error, warn};
 
 pub struct TcpCodecListener<C: CodecBuilder> {
@@ -81,6 +82,7 @@ pub struct TcpCodecListener<C: CodecBuilder> {
 
     /// Receiver for hot reload requests to extract listening socket file descriptor
     hot_reload_rx: tokio::sync::mpsc::UnboundedReceiver<HotReloadListenerRequest>,
+    port: u16,
 }
 
 impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
@@ -97,6 +99,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
         timeout: Option<Duration>,
         transport: Transport,
         hot_reload_rx: tokio::sync::mpsc::UnboundedReceiver<HotReloadListenerRequest>,
+        hot_reload_listeners: &mut HashMap<u16, TcpListener>,
     ) -> Result<Self, Vec<String>> {
         let available_connections_gauge =
             gauge!("shotover_available_connections_count", "source" => source_name.clone());
@@ -118,11 +121,31 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
             .map(|x| format!("  {x}"))
             .collect::<Vec<String>>();
 
-        let listener = match create_listener(&listen_addr).await {
-            Ok(listener) => Some(listener),
-            Err(error) => {
-                errors.push(format!("{error:?}"));
-                None
+        let Some(port) = listen_addr
+            .rsplit_once(':')
+            .and_then(|(_, p)| p.parse::<u16>().ok())
+        else {
+            return Err(vec![format!(
+                "Invalid listening address {listen_addr:?}, must follow the format ip_address:port e.g. 10.0.0.1:9042"
+            )]);
+        };
+
+        let listener = if let Some(listener) = hot_reload_listeners.remove(&port) {
+            info!(
+                "Using hot reloaded listener for {} source on [{}]",
+                source_name, listen_addr
+            );
+            Some(listener)
+        } else {
+            match create_listener(&listen_addr).await {
+                Ok(listener) => {
+                    info!("Created new listener for {}", listen_addr);
+                    Some(listener)
+                }
+                Err(error) => {
+                    errors.push(format!("{error:?}"));
+                    None
+                }
             }
         };
 
@@ -148,6 +171,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
             connection_handles: vec![],
             transport,
             hot_reload_rx,
+            port,
         })
     }
 
@@ -292,12 +316,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
             // Extract the file descriptor from the TcpListener
             let fd = listener.as_raw_fd();
 
-            // Split once from the right to support hostnames and [IPv6]:port formats.
-            let port = self
-                .listen_addr
-                .rsplit_once(':')
-                .and_then(|(_, p)| p.parse::<u16>().ok())
-                .unwrap();
+            let port = self.port;
 
             tracing::info!("Hot reload: Extracting socket FD {} for port {}", fd, port);
 
