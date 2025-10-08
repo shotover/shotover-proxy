@@ -193,15 +193,16 @@ pub fn start_hot_reload_server(
 mod tests {
     use super::*;
     use crate::hot_reload::tests::wait_for_unix_socket_connection;
+    use tokio::sync::watch;
 
     #[tokio::test]
     async fn test_unix_socket_server_basic() {
         let socket_path = "/tmp/test-shotover-hotreload.sock";
 
         let source_handles: Vec<SourceHandle> = vec![];
+        let (shutdown_tx, _shutdown_rx) = watch::channel(false);
         let server =
-            UnixSocketServer::new(socket_path.to_string(), source_handles, shutdown_tx.clone())
-                .unwrap();
+            UnixSocketServer::new(socket_path.to_string(), source_handles, shutdown_tx).unwrap();
 
         // Test that socket file was created
         assert!(Path::new(socket_path).exists());
@@ -216,10 +217,10 @@ mod tests {
         use uds::tokio::UnixSeqpacketConn;
 
         let socket_path = "/tmp/test-shotover-request-response.sock";
-        let source_handles: Vec<SourceHandle> = vec![]; // Empty for test 
+        let source_handles: Vec<SourceHandle> = vec![]; // Empty for test
+        let (shutdown_tx, _shutdown_rx) = watch::channel(false);
         let mut server =
-            UnixSocketServer::new(socket_path.to_string(), source_handles, shutdown_tx.clone())
-                .unwrap();
+            UnixSocketServer::new(socket_path.to_string(), source_handles, shutdown_tx).unwrap();
 
         // Start server in background
         let server_handle = tokio::spawn(async move {

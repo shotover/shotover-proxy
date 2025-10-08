@@ -154,7 +154,7 @@ mod tests {
     use crate::hot_reload::protocol::HotReloadListenerResponse;
     use crate::hot_reload::server::SourceHandle;
     use crate::hot_reload::tests::wait_for_unix_socket_connection;
-    use tokio::sync::mpsc::unbounded_channel;
+    use tokio::sync::{mpsc::unbounded_channel, watch};
     #[tokio::test]
     async fn test_client_connection_error() {
         let client = UnixSocketClient::new("/nonexistent/path.sock".to_string());
@@ -178,10 +178,11 @@ mod tests {
             name: "foo".to_string(),
             sender: tx,
         }];
+        let (shutdown_tx, _shutdown_rx) = watch::channel(false);
         let mut server = crate::hot_reload::server::UnixSocketServer::new(
             socket_path.to_string(),
             source_handles,
-            shutdown_tx.clone(),
+            shutdown_tx,
         )
         .unwrap();
         tokio::spawn(async move {
@@ -226,10 +227,11 @@ mod tests {
             name: "foo".to_string(),
             sender: tx,
         }];
+        let (shutdown_tx, _shutdown_rx) = watch::channel(false);
         let mut server = crate::hot_reload::server::UnixSocketServer::new(
             socket_path.to_string(),
             source_handles,
-            shutdown_tx.clone(),
+            shutdown_tx,
         )
         .unwrap();
 
