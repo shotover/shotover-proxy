@@ -115,6 +115,39 @@ pub async fn perform_hot_reloading(socket_path: String) -> Result<HashMap<u16, T
     Ok(listeners)
 }
 
+pub async fn trigger_shutdown(socket_path: String) -> Result<()> {
+    info!(
+        "Requesting Old Shotover Instance to Shutdown via Socket: {}",
+        socket_path
+    );
+    let client = UnixSocketClient::new(socket_path);
+
+    //Connect to server
+    let mut stream = UnixSeqpacketConn::connect(&client.socket_path).with_context(|| {
+        format!(
+            "Failed to connect to hot reload server at: {}",
+            &client.socket_path
+        )
+    })?;
+
+    // Send shutdown request
+    write_json(&mut stream, &Request::ShutdownOldInstance).await?;
+
+    // Read response
+    let (response, _): (Response, Vec<OwnedFd>) = read_json_with_fds(&mut stream).await?;
+
+    match response {
+        Response::ShutdownOldInstanceAck => {
+            info!("Old Shotover Instance acknowledged shutdown request");
+            Ok(())
+        }
+        _ => Err(anyhow::anyhow!(
+            "Unexpected response to shutdown request: {:?}",
+            response
+        )),
+    }
+}
+
 #[cfg(all(test, target_os = "linux"))]
 mod tests {
     use super::*;

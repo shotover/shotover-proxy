@@ -17,10 +17,15 @@ pub struct UnixSocketServer {
     socket_path: String,
     listener: UnixSeqpacketListener,
     sources: Vec<SourceHandle>,
+    shutdown_sender: tokio::sync::watch::Sender<bool>,
 }
 
 impl UnixSocketServer {
-    pub fn new(socket_path: String, sources: Vec<SourceHandle>) -> Result<Self> {
+    pub fn new(
+        socket_path: String,
+        sources: Vec<SourceHandle>,
+        shutdown_sender: tokio::sync::watch::Sender<bool>,
+    ) -> Result<Self> {
         if Path::new(&socket_path).exists() {
             std::fs::remove_file(&socket_path).with_context(|| {
                 format!("Failed to remove existing socket file: {}", socket_path)
@@ -33,6 +38,7 @@ impl UnixSocketServer {
             socket_path,
             listener,
             sources,
+            shutdown_sender,
         })
     }
 
@@ -135,6 +141,13 @@ impl UnixSocketServer {
 
                 (Response::SendListeningSockets, collected_fds)
             }
+            Request::ShutdownOldInstance => {
+                info!("Received ShutdownOldInstance request, Triggering Shutdown");
+                if self.shutdown_sender.send(true).is_err() {
+                    error!("Failed to send shutdown signal: receiver has been dropped");
+                }
+                (Response::ShutdownOldInstanceAck, vec![])
+            }
         }
     }
 }
@@ -148,7 +161,11 @@ impl Drop for UnixSocketServer {
         }
     }
 }
-pub fn start_hot_reload_server(socket_path: String, sources: &[Source]) {
+pub fn start_hot_reload_server(
+    socket_path: String,
+    sources: &[Source],
+    shutdown_sender: tokio::sync::watch::Sender<bool>,
+) {
     let source_handles: Vec<SourceHandle> = sources
         .iter()
         .map(|x| SourceHandle {
@@ -158,7 +175,7 @@ pub fn start_hot_reload_server(socket_path: String, sources: &[Source]) {
         .collect();
 
     tokio::spawn(async move {
-        match UnixSocketServer::new(socket_path, source_handles) {
+        match UnixSocketServer::new(socket_path, source_handles, shutdown_sender) {
             Ok(mut server) => {
                 info!("Unix socket server started for hot reload communication");
                 if let Err(e) = server.run().await {

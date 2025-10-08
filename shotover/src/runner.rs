@@ -12,7 +12,7 @@ use std::net::SocketAddr;
 use tokio::runtime::{self, Runtime};
 use tokio::signal::unix::{SignalKind, signal};
 use tokio::sync::watch;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 use tracing_appender::non_blocking::{NonBlocking, WorkerGuard};
 use tracing_subscriber::filter::Directive;
 use tracing_subscriber::fmt::Layer;
@@ -183,13 +183,21 @@ impl Shotover {
         hotreload_enabled: bool,
         hotreload_socket_path: String,
         hotreload_from_socket: Option<String>,
+        trigger_shutdown_tx: watch::Sender<bool>,
         trigger_shutdown_rx: watch::Receiver<bool>,
     ) -> Result<()> {
         let hot_reload_listeners = if let Some(socket_path) = hotreload_from_socket.clone() {
             info!("Hot reload CLIENT mode - requesting socket handoff from existing shotover");
-            crate::hot_reload::client::perform_hot_reloading(socket_path)
+            let listener = crate::hot_reload::client::perform_hot_reloading(socket_path.clone())
                 .await
-                .context("Hot reload client failed")?
+                .context("Hot reload client failed")?;
+
+            // After succesfully getting the sockets, request the old shotover instance to shutdown
+
+            if let Err(e) = crate::hot_reload::client::trigger_shutdown(socket_path).await {
+                warn!("Failed to request old shotover instance to shutdown: {}", e);
+            }
+            listener
         } else {
             std::collections::HashMap::new()
         };
@@ -208,6 +216,7 @@ impl Shotover {
                     crate::hot_reload::server::start_hot_reload_server(
                         hotreload_socket_path.clone(),
                         &sources,
+                        trigger_shutdown_tx,
                     );
                 }
 
@@ -241,6 +250,7 @@ impl Shotover {
                 signal(SignalKind::terminate()).unwrap(),
             )
         });
+        let trigger_shutdown_tx_signals = trigger_shutdown_tx.clone();
         runtime.spawn(async move {
             tokio::select! {
                 _ = interrupt.recv() => {
@@ -251,7 +261,9 @@ impl Shotover {
                 },
             };
 
-            trigger_shutdown_tx.send(true).unwrap();
+            if trigger_shutdown_tx_signals.send(true).is_err() {
+                warn!("failed to notify runtime to shut down after receiving signal");
+            }
         });
 
         let code = match runtime.block_on(Shotover::run_inner(
@@ -260,6 +272,7 @@ impl Shotover {
             hotreload_enabled,
             hotreload_socket_path,
             hotreload_from_socket,
+            trigger_shutdown_tx,
             trigger_shutdown_rx,
         )) {
             Ok(()) => {

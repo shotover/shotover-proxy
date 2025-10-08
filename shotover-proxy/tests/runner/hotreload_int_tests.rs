@@ -93,6 +93,15 @@ async fn test_dual_shotover_instances_with_valkey() {
         .start()
         .await;
 
+    // Delay
+    tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+
+    // Verify that the old instance has been automatically shut down
+    assert!(
+        !shotover_old.is_running(),
+        "Old shotover instance should have been automatically shut down after hot reload, but it's still running"
+    );
+
     let client_new = Client::open("valkey://127.0.0.1:6380").unwrap();
     let mut con_new = client_new
         .get_connection()
@@ -105,54 +114,35 @@ async fn test_dual_shotover_instances_with_valkey() {
         "Data should persist after hot reload socket handoff"
     );
 
-    // Test that the old connection continues to function after hot reload
-    assert_valkey_connection_works(
-        &mut con_old,
-        None,
-        &[("persistent_key", "data_from_old_instance")],
-    )
-    .unwrap();
-
-    // Test that old connection can still perform operations
-    let _: () = con_old
-        .set("old_connection_key", "old_still_works")
-        .unwrap();
-
-    // Verify old connection works with counter after hot reload
-    assert_valkey_connection_works(&mut con_old, Some(2), &[]).unwrap();
-
-    // Test setting and getting a new key through old connection
-    let _: () = con_old
-        .set("old_post_reload", "value_set_after_reload")
-        .unwrap();
-
     // Verify new instance can handle new operations
     let _: () = con_new.set("new_key", "data_from_new_instance").unwrap();
 
     // Verify basic functionality on new connection
-    assert_valkey_connection_works(&mut con_new, Some(3), &[]).unwrap();
+    assert_valkey_connection_works(&mut con_new, Some(2), &[]).unwrap();
 
-    // Shutdown old shotover instance
-    shotover_old.shutdown_and_then_consume_events(&[]).await;
+    // Test setting and getting additional keys through new connection
+    let _: () = con_new
+        .set("post_reload", "value_set_after_reload")
+        .unwrap();
 
     // Open a new connection after shutting down old shotover to verify hot reload occurred
-    let client_after_old_shutdown = Client::open("valkey://127.0.0.1:6380").unwrap();
-    let mut con_after_old_shutdown = client_after_old_shutdown
+    let client_after_shutdown = Client::open("valkey://127.0.0.1:6380").unwrap();
+    let mut con_after_shutdown = client_after_shutdown
         .get_connection()
         .expect("Failed to connect after old shotover shutdown - hot reload may have failed");
 
     // Verify that all expected data persists after old shotover shutdown and test final state
-    let _: () = con_after_old_shutdown
+    let _: () = con_after_shutdown
         .set("post_handoff_key", "post_handoff_value")
         .unwrap();
 
     assert_valkey_connection_works(
-        &mut con_after_old_shutdown,
-        Some(4),
+        &mut con_after_shutdown,
+        Some(3),
         &[
             ("persistent_key", "data_from_old_instance"),
             ("new_key", "data_from_new_instance"),
-            ("old_post_reload", "value_set_after_reload"),
+            ("post_reload", "value_set_after_reload"),
             ("post_handoff_key", "post_handoff_value"),
         ],
     )
