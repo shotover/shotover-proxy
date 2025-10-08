@@ -181,6 +181,7 @@ mod tests {
         let mut server = crate::hot_reload::server::UnixSocketServer::new(
             socket_path.to_string(),
             source_handles,
+            shutdown_tx.clone(),
         )
         .unwrap();
         tokio::spawn(async move {
@@ -228,6 +229,7 @@ mod tests {
         let mut server = crate::hot_reload::server::UnixSocketServer::new(
             socket_path.to_string(),
             source_handles,
+            shutdown_tx.clone(),
         )
         .unwrap();
 

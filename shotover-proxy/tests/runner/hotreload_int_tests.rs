@@ -96,10 +96,10 @@ async fn test_dual_shotover_instances_with_valkey() {
     // Delay
     tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
 
-    // Verify that the old instance has been automatically shut down
+    // Verify that the old instance has been shut down
     assert!(
         !shotover_old.is_running(),
-        "Old shotover instance should have been automatically shut down after hot reload, but it's still running"
+        "Old shotover instance should have been shut down after hot reload, but it's still running"
     );
 
     let client_new = Client::open("valkey://127.0.0.1:6380").unwrap();

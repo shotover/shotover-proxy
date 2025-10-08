@@ -199,7 +199,9 @@ mod tests {
         let socket_path = "/tmp/test-shotover-hotreload.sock";
 
         let source_handles: Vec<SourceHandle> = vec![];
-        let server = UnixSocketServer::new(socket_path.to_string(), source_handles).unwrap();
+        let server =
+            UnixSocketServer::new(socket_path.to_string(), source_handles, shutdown_tx.clone())
+                .unwrap();
 
         // Test that socket file was created
         assert!(Path::new(socket_path).exists());
@@ -215,7 +217,9 @@ mod tests {
 
         let socket_path = "/tmp/test-shotover-request-response.sock";
         let source_handles: Vec<SourceHandle> = vec![]; // Empty for test 
-        let mut server = UnixSocketServer::new(socket_path.to_string(), source_handles).unwrap();
+        let mut server =
+            UnixSocketServer::new(socket_path.to_string(), source_handles, shutdown_tx.clone())
+                .unwrap();
 
         // Start server in background
         let server_handle = tokio::spawn(async move {
