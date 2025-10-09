@@ -169,5 +169,10 @@ async fn test_dual_shotover_instances_with_valkey() {
     .unwrap();
 
     // Final cleanup
-    shotover_new.shutdown_and_then_consume_events(&[]).await;
+    shotover_new
+        .shutdown_and_then_consume_events(&[EventMatcher::new()
+            .with_level(Level::Info)
+            .with_target("shotover::hot_reload::client")
+            .with_message("Old Shotover Instance acknowledged shutdown request")])
+        .await;
 }
