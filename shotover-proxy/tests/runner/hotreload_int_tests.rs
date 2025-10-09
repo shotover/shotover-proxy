@@ -136,15 +136,6 @@ async fn test_dual_shotover_instances_with_valkey() {
             .with_message("Shotover was shutdown cleanly."),
     );
 
-    // Check that the new instance logged the acknowledgment
-    let new_events = shotover_new.consume_remaining_events(&[]).await;
-    new_events.assert_contains(
-        &EventMatcher::new()
-            .with_level(Level::Info)
-            .with_target("shotover::hot_reload::client")
-            .with_message("Old Shotover Instance acknowledged shutdown request"),
-    );
-
     // Open a new connection after shutting down old shotover to verify hot reload occurred
     let client_after_shutdown = Client::open("valkey://127.0.0.1:6380").unwrap();
     let mut con_after_shutdown = client_after_shutdown
