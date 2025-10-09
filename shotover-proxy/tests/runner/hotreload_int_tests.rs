@@ -99,6 +99,14 @@ async fn test_dual_shotover_instances_with_valkey() {
         .get_connection()
         .expect("Failed to connect to new instance");
 
+    let new_initial_events = shotover_new.consume_remaining_events(&[]).await;
+    new_initial_events.assert_contains(
+        &EventMatcher::new()
+            .with_level(Level::Info)
+            .with_target("shotover::hot_reload::client")
+            .with_message("Old Shotover Instance acknowledged shutdown request"),
+    );
+
     // Verify that data stored in old instance is still accessible
     let persistent_value: String = con_new.get("persistent_key").unwrap();
     assert_eq!(
@@ -159,11 +167,5 @@ async fn test_dual_shotover_instances_with_valkey() {
     .unwrap();
 
     // Final cleanup
-    let new_events = shotover_new.shutdown_and_then_consume_events(&[]).await;
-    new_events.assert_contains(
-        &EventMatcher::new()
-            .with_level(Level::Info)
-            .with_target("shotover::hot_reload::client")
-            .with_message("Old Shotover Instance acknowledged shutdown request"),
-    );
+    shotover_new.shutdown_and_then_consume_events(&[]).await;
 }
