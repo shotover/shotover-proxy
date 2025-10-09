@@ -1,6 +1,7 @@
 use crate::shotover_process;
 use redis::{Client, Commands};
 use test_helpers::docker_compose::docker_compose;
+use test_helpers::shotover_process::{EventMatcher, Level};
 
 /// Helper function to verify comprehensive Valkey connection functionality
 fn assert_valkey_connection_works(
@@ -93,15 +94,6 @@ async fn test_dual_shotover_instances_with_valkey() {
         .start()
         .await;
 
-    // Delay
-    tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-
-    // Verify that the old instance has been shut down
-    assert!(
-        !shotover_old.is_running(),
-        "Old shotover instance should have been shut down after hot reload, but it's still running"
-    );
-
     let client_new = Client::open("valkey://127.0.0.1:6380").unwrap();
     let mut con_new = client_new
         .get_connection()
@@ -124,6 +116,24 @@ async fn test_dual_shotover_instances_with_valkey() {
     let _: () = con_new
         .set("post_reload", "value_set_after_reload")
         .unwrap();
+
+    drop(con_old);
+
+    tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+
+    let old_events = shotover_old.consume_remaining_events(&[]).await;
+    old_events.assert_contains(
+        &EventMatcher::new()
+            .with_level(Level::Info)
+            .with_target("shotover::hot_reload::server")
+            .with_message("Received ShutdownOldInstance request, Triggering Shutdown"),
+    );
+    old_events.assert_contains(
+        &EventMatcher::new()
+            .with_level(Level::Info)
+            .with_target("shotover::runner")
+            .with_message("Shotover was shutdown cleanly."),
+    );
 
     // Open a new connection after shutting down old shotover to verify hot reload occurred
     let client_after_shutdown = Client::open("valkey://127.0.0.1:6380").unwrap();
@@ -149,5 +159,11 @@ async fn test_dual_shotover_instances_with_valkey() {
     .unwrap();
 
     // Final cleanup
-    shotover_new.shutdown_and_then_consume_events(&[]).await;
+    let new_events = shotover_new.shutdown_and_then_consume_events(&[]).await;
+    new_events.assert_contains(
+        &EventMatcher::new()
+            .with_level(Level::Info)
+            .with_target("shotover::hot_reload::client")
+            .with_message("Old Shotover Instance acknowledged shutdown request"),
+    );
 }
