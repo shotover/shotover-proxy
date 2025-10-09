@@ -42,6 +42,7 @@ fn assert_valkey_connection_works(
 }
 
 #[tokio::test]
+#[cfg_attr(not(target_os = "linux"), ignore)]
 async fn test_hotreload_basic_valkey_connection() {
     let _compose = docker_compose("tests/test-configs/hotreload/docker-compose.yaml");
     let shotover_process = shotover_process("tests/test-configs/hotreload/topology.yaml")
@@ -58,6 +59,7 @@ async fn test_hotreload_basic_valkey_connection() {
 }
 
 #[tokio::test]
+#[cfg_attr(not(target_os = "linux"), ignore)]
 async fn test_dual_shotover_instances_with_valkey() {
     let socket_path = "/tmp/test-hotreload-fd-transfer.sock";
     let _compose = docker_compose("tests/test-configs/hotreload/docker-compose.yaml");
@@ -91,6 +93,12 @@ async fn test_dual_shotover_instances_with_valkey() {
         .with_hotreload_socket_path("/tmp/shotover-new.sock") // Different socket for new instance
         .with_hotreload_from_socket(socket_path) // Request handoff from old instance
         .with_config("tests/test-configs/shotover-config/config_metrics_disabled.yaml")
+        .expect_startup_events(vec![
+            EventMatcher::new()
+                .with_level(Level::Info)
+                .with_target("shotover::hot_reload::client")
+                .with_message("Old Shotover Instance acknowledged shutdown request"),
+        ])
         .start()
         .await;
 
@@ -158,14 +166,6 @@ async fn test_dual_shotover_instances_with_valkey() {
         ],
     )
     .unwrap();
-
-    let new_events = shotover_new.consume_remaining_events(&[]).await;
-    new_events.assert_contains(
-        &EventMatcher::new()
-            .with_level(Level::Info)
-            .with_target("shotover::hot_reload::client")
-            .with_message("Old Shotover Instance acknowledged shutdown request"),
-    );
 
     // Final cleanup
     shotover_new.shutdown_and_then_consume_events(&[]).await;
