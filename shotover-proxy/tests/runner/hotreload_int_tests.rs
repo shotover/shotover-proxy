@@ -91,12 +91,6 @@ async fn test_dual_shotover_instances_with_valkey() {
         .with_hotreload_socket_path("/tmp/shotover-new.sock") // Different socket for new instance
         .with_hotreload_from_socket(socket_path) // Request handoff from old instance
         .with_config("tests/test-configs/shotover-config/config_metrics_disabled.yaml")
-        .expect_startup_events(vec![
-            EventMatcher::new()
-                .with_level(Level::Info)
-                .with_target("shotover::hot_reload::client")
-                .with_message("Old Shotover Instance acknowledged shutdown request"),
-        ])
         .start()
         .await;
 
@@ -140,6 +134,15 @@ async fn test_dual_shotover_instances_with_valkey() {
             .with_level(Level::Info)
             .with_target("shotover::runner")
             .with_message("Shotover was shutdown cleanly."),
+    );
+
+    // Check that the new instance logged the acknowledgment
+    let new_events = shotover_new.consume_remaining_events(&[]).await;
+    new_events.assert_contains(
+        &EventMatcher::new()
+            .with_level(Level::Info)
+            .with_target("shotover::hot_reload::client")
+            .with_message("Old Shotover Instance acknowledged shutdown request"),
     );
 
     // Open a new connection after shutting down old shotover to verify hot reload occurred
