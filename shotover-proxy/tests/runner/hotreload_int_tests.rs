@@ -124,6 +124,7 @@ async fn test_dual_shotover_instances_with_valkey() {
         .unwrap();
 
     drop(con_old);
+    drop(con_new);
 
     tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
 
