@@ -95,17 +95,16 @@ impl TransformBuilder for Protect {
 impl Protect {
     fn get_protected_columns(&self, statement: &CassandraStatement) -> &[Identifier] {
         // TODO replace `Identifier::default()` with cached keyspace name
-        if let Some(table_name) = statement.get_table_name() {
-            if let Some(tables) = self.keyspace_table_columns.get(
+        if let Some(table_name) = statement.get_table_name()
+            && let Some(tables) = self.keyspace_table_columns.get(
                 table_name
                     .keyspace
                     .as_ref()
                     .unwrap_or(&Identifier::default()),
-            ) {
-                if let Some(columns) = tables.get(&table_name.name) {
-                    return columns;
-                }
-            }
+            )
+            && let Some(columns) = tables.get(&table_name.name)
+        {
+            return columns;
         }
         &[]
     }
@@ -160,15 +159,15 @@ impl Protect {
         if let CassandraStatement::Select(select) = &statement {
             let columns_to_decrypt = self.get_protected_columns(statement);
             for (i, col) in select.columns.iter().enumerate() {
-                if let SelectElement::Column(col) = col {
-                    if columns_to_decrypt.contains(&col.name) {
-                        for row in &mut *rows {
-                            if let Some(message_value) = row.get_mut(i) {
-                                *message_value =
-                                    crypto::decrypt(message_value, &self.key_source, &self.key_id)
-                                        .await?;
-                                invalidate_cache = true;
-                            }
+                if let SelectElement::Column(col) = col
+                    && columns_to_decrypt.contains(&col.name)
+                {
+                    for row in &mut *rows {
+                        if let Some(message_value) = row.get_mut(i) {
+                            *message_value =
+                                crypto::decrypt(message_value, &self.key_source, &self.key_id)
+                                    .await?;
+                            invalidate_cache = true;
                         }
                     }
                 }
@@ -210,15 +209,14 @@ impl Transform for Protect {
                 let mut request = self.requests.remove(&request_id).unwrap();
 
                 let mut invalidate_cache = false;
-                if let Some(Frame::Cassandra(CassandraFrame { operation, .. })) = request.frame() {
-                    if let Some(Frame::Cassandra(CassandraFrame {
+                if let Some(Frame::Cassandra(CassandraFrame { operation, .. })) = request.frame()
+                    && let Some(Frame::Cassandra(CassandraFrame {
                         operation: CassandraOperation::Result(CassandraResult::Rows { rows, .. }),
                         ..
                     })) = response.frame()
-                    {
-                        for statement in operation.queries() {
-                            invalidate_cache |= self.decrypt_results(statement, rows).await?
-                        }
+                {
+                    for statement in operation.queries() {
+                        invalidate_cache |= self.decrypt_results(statement, rows).await?
                     }
                 }
                 if invalidate_cache {
