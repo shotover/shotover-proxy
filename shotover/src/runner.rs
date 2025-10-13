@@ -192,11 +192,6 @@ impl Shotover {
                 .await
                 .context("Hot reload client failed")?;
 
-            // After succesfully getting the sockets, request the old shotover instance to shutdown
-
-            if let Err(e) = crate::hot_reload::client::trigger_shutdown(socket_path).await {
-                warn!("Failed to request old shotover instance to shutdown: {}", e);
-            }
             listener
         } else {
             std::collections::HashMap::new()
@@ -218,6 +213,16 @@ impl Shotover {
                         &sources,
                         trigger_shutdown_tx,
                     );
+                }
+
+                // Now that the new shotover is fully operational, request the old instance to shutdown
+                if let Some(socket_path) = hotreload_from_socket {
+                    info!(
+                        "New shotover instance is operational, requesting old instance to shutdown"
+                    );
+                    if let Err(e) = crate::hot_reload::client::trigger_shutdown(socket_path).await {
+                        warn!("Failed to request old shotover instance to shutdown: {}", e);
+                    }
                 }
 
                 futures::future::join_all(sources.into_iter().map(|x| x.into_join_handle())).await;

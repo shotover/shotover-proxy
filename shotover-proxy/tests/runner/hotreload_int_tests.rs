@@ -96,6 +96,12 @@ async fn test_dual_shotover_instances_with_valkey() {
         .expect_startup_events(vec![
             EventMatcher::new()
                 .with_level(Level::Info)
+                .with_target("shotover::runner")
+                .with_message(
+                    "New shotover instance is operational, requesting old instance to shutdown",
+                ),
+            EventMatcher::new()
+                .with_level(Level::Info)
                 .with_target("shotover::hot_reload::client")
                 .with_message("Old Shotover Instance acknowledged shutdown request"),
         ])
