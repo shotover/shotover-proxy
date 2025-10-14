@@ -247,6 +247,9 @@ mod tests {
                 // Test passes if we get the correct response variant
                 // File descriptors are now sent via ancillary data
             }
+            Response::ShutdownOriginalNode => {
+                panic!("Unexpected ShutdownOriginalNode response");
+            }
             Response::Error(err) => panic!("Unexpected error response: {}", err),
         }
 

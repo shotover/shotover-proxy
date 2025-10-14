@@ -170,9 +170,11 @@ mod tests {
             name: "foo".to_string(),
             sender: tx,
         }];
+        let (shutdown_tx, _shutdown_rx) = tokio::sync::watch::channel(false);
         let mut server = crate::hot_reload::server::UnixSocketServer::new(
             socket_path.to_string(),
             source_handles,
+            shutdown_tx,
         )
         .unwrap();
         tokio::spawn(async move {
@@ -217,9 +219,11 @@ mod tests {
             name: "foo".to_string(),
             sender: tx,
         }];
+        let (shutdown_tx, _shutdown_rx) = tokio::sync::watch::channel(false);
         let mut server = crate::hot_reload::server::UnixSocketServer::new(
             socket_path.to_string(),
             source_handles,
+            shutdown_tx,
         )
         .unwrap();
 
