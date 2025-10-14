@@ -12,7 +12,7 @@ use std::net::SocketAddr;
 use tokio::runtime::{self, Runtime};
 use tokio::signal::unix::{SignalKind, signal};
 use tokio::sync::watch;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 use tracing_appender::non_blocking::{NonBlocking, WorkerGuard};
 use tracing_subscriber::filter::Directive;
 use tracing_subscriber::fmt::Layer;
@@ -204,6 +204,19 @@ impl Shotover {
             .await
         {
             Ok(sources) => {
+                // After the new instance is fully started and accepting connections,
+                // request the old instance to shut down
+                if let Some(socket_path) = hotreload_from_socket {
+                    if let Err(e) =
+                        crate::hot_reload::client::request_shutdown_old_instance(socket_path).await
+                    {
+                        warn!(
+                            "Failed to send shutdown request to old shotover instance: {}",
+                            e
+                        );
+                    }
+                }
+
                 if hotreload_enabled {
                     info!("Starting shotover with hot reloading enabled");
                     crate::hot_reload::server::start_hot_reload_server(
