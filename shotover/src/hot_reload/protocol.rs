@@ -8,16 +8,13 @@ pub struct FileDescriptor(pub RawFd);
 #[derive(Debug, Serialize, Deserialize)]
 pub enum Request {
     SendListeningSockets,
-    //BeginDrainingConnections,
-    //ShutdownOriginalNode,
+    ShutdownOriginalNode,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum Response {
     SendListeningSockets,
-
-    //BeginDrainingConnections,
-    //ShutdownOriginalNode,
+    ShutdownOriginalNode,
     Error(String),
 }
 /// Request sent from hot reload server to TcpCodecListener

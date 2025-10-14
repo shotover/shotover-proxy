@@ -12,7 +12,7 @@ use std::net::SocketAddr;
 use tokio::runtime::{self, Runtime};
 use tokio::signal::unix::{SignalKind, signal};
 use tokio::sync::watch;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 use tracing_appender::non_blocking::{NonBlocking, WorkerGuard};
 use tracing_subscriber::filter::Directive;
 use tracing_subscriber::fmt::Layer;
@@ -184,6 +184,7 @@ impl Shotover {
         hotreload_socket_path: String,
         hotreload_from_socket: Option<String>,
         trigger_shutdown_rx: watch::Receiver<bool>,
+        trigger_shutdown_tx: watch::Sender<bool>,
     ) -> Result<()> {
         let hot_reload_listeners = if let Some(socket_path) = hotreload_from_socket.clone() {
             info!("Hot reload CLIENT mode - requesting socket handoff from existing shotover");
@@ -203,11 +204,26 @@ impl Shotover {
             .await
         {
             Ok(sources) => {
+                // If we performed hot reload from an existing instance, request it to shutdown now
+                if let Some(old_socket_path) = hotreload_from_socket.clone() {
+                    info!("New shotover started successfully, requesting old instance to shutdown");
+                    if let Err(e) =
+                        crate::hot_reload::client::request_shutdown_old_instance(old_socket_path)
+                            .await
+                    {
+                        warn!(
+                            "Failed to request shutdown of old shotover instance: {:?}",
+                            e
+                        );
+                    }
+                }
+
                 if hotreload_enabled {
                     info!("Starting shotover with hot reloading enabled");
                     crate::hot_reload::server::start_hot_reload_server(
                         hotreload_socket_path.clone(),
                         &sources,
+                        trigger_shutdown_tx,
                     );
                 }
 
@@ -233,6 +249,9 @@ impl Shotover {
 
         let (trigger_shutdown_tx, trigger_shutdown_rx) = tokio::sync::watch::channel(false);
 
+        // Clone the shutdown sender for signal handler
+        let trigger_shutdown_tx_for_signals = trigger_shutdown_tx.clone();
+
         // We need to block on this part to ensure that we immediately register these signals.
         // Otherwise if we included signal creation in the below spawned task we would be at the mercy of whenever tokio decides to start running the task.
         let (mut interrupt, mut terminate) = runtime.block_on(async {
@@ -251,7 +270,7 @@ impl Shotover {
                 },
             };
 
-            trigger_shutdown_tx.send(true).unwrap();
+            trigger_shutdown_tx_for_signals.send(true).unwrap();
         });
 
         let code = match runtime.block_on(Shotover::run_inner(
@@ -261,6 +280,7 @@ impl Shotover {
             hotreload_socket_path,
             hotreload_from_socket,
             trigger_shutdown_rx,
+            trigger_shutdown_tx,
         )) {
             Ok(()) => {
                 info!("Shotover was shutdown cleanly.");

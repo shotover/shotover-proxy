@@ -85,6 +85,15 @@ impl UnixSocketClient {
         }
 
         debug!("Received response: {:?}", response);
+        
+        // Handle error responses
+        match response {
+            Response::Error(err) => {
+                return Err(anyhow::anyhow!("Hot reload server returned error: {}", err));
+            }
+            _ => {}
+        }
+        
         Ok(listeners_by_port)
     }
 }
@@ -113,6 +122,25 @@ pub async fn perform_hot_reloading(socket_path: String) -> Result<HashMap<u16, T
     }
 
     Ok(listeners)
+}
+
+/// Request the old Shotover instance to shutdown after hot reload handoff
+pub async fn request_shutdown_old_instance(socket_path: String) -> Result<()> {
+    info!(
+        "Hot reload CLIENT requesting shutdown of old shotover at: {}",
+        socket_path
+    );
+
+    let client = UnixSocketClient::new(socket_path.clone());
+
+    // Send the shutdown request - we don't expect any listeners back
+    let _listeners = client
+        .send_request(crate::hot_reload::protocol::Request::ShutdownOriginalNode)
+        .await?;
+
+    info!("Successfully sent shutdown request to old shotover instance");
+
+    Ok(())
 }
 
 #[cfg(all(test, target_os = "linux"))]
