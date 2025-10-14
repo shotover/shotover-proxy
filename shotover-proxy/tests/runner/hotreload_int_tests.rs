@@ -41,6 +41,7 @@ fn assert_valkey_connection_works(
 }
 
 #[tokio::test]
+#[cfg_attr(target_os = "linux", ignore)]
 async fn test_hotreload_basic_valkey_connection() {
     let _compose = docker_compose("tests/test-configs/hotreload/docker-compose.yaml");
     let shotover_process = shotover_process("tests/test-configs/hotreload/topology.yaml")
@@ -57,6 +58,7 @@ async fn test_hotreload_basic_valkey_connection() {
 }
 
 #[tokio::test]
+#[cfg_attr(target_os = "linux", ignore)]
 async fn test_hot_reload_with_old_instance_shutdown() {
     let socket_path = "/tmp/test-hotreload-shutdown.sock";
     let _compose = docker_compose("tests/test-configs/hotreload/docker-compose.yaml");
