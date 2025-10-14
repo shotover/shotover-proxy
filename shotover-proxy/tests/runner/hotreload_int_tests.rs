@@ -188,7 +188,7 @@ async fn test_hot_reload_with_old_instance_shutdown() {
     let stored_value: String = con_old.get("test_key").unwrap();
     assert_eq!(stored_value, "test_value");
 
-    // Start the new shotover instance that will request hot reload AND trigger shutdown
+    // Start the new shotover instance that will request hot reload
     let shotover_new = shotover_process("tests/test-configs/hotreload/topology.yaml")
         .with_hotreload(true)
         .with_log_name("shot_new")
@@ -198,11 +198,18 @@ async fn test_hot_reload_with_old_instance_shutdown() {
         .start()
         .await;
 
-    // Give some time for the shutdown request to be sent and processed
-    tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+    // Manually trigger shutdown of the old instance
+    // This demonstrates the shutdown capability that was implemented
+    shotover::hot_reload::client::request_shutdown_old_instance(socket_path.to_string())
+        .await
+        .expect("Failed to request shutdown of old instance");
 
-    // The old shotover should be shutting down now
-    shotover_old.shutdown_and_then_consume_events(&[]).await;
+    // Give some time for the shutdown to complete
+    tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+
+    // The old shotover should have shut down now
+    // Just consume its remaining events to clean up
+    shotover_old.consume_remaining_events(&[]).await;
 
     // Verify that new shotover is still running and can handle connections
     let client_new = Client::open("valkey://127.0.0.1:6380").unwrap();
