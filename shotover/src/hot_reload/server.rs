@@ -143,13 +143,16 @@ impl UnixSocketServer {
             }
             Request::ShutdownOriginalNode => {
                 info!("Processing ShutdownOriginalNode request - initiating immediate shutdown");
-                
+
                 // Trigger shutdown by sending true through the watch channel
                 if let Err(e) = self.shutdown_tx.send(true) {
                     error!("Failed to send shutdown signal: {:?}", e);
-                    return (Response::Error("Failed to trigger shutdown".to_string()), vec![]);
+                    return (
+                        Response::Error("Failed to trigger shutdown".to_string()),
+                        vec![],
+                    );
                 }
-                
+
                 info!("Shutdown signal sent successfully");
                 (Response::ShutdownOriginalNode, vec![])
             }

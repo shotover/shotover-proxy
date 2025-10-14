@@ -85,15 +85,12 @@ impl UnixSocketClient {
         }
 
         debug!("Received response: {:?}", response);
-        
+
         // Handle error responses
-        match response {
-            Response::Error(err) => {
-                return Err(anyhow::anyhow!("Hot reload server returned error: {}", err));
-            }
-            _ => {}
+        if let Response::Error(err) = response {
+            return Err(anyhow::anyhow!("Hot reload server returned error: {}", err));
         }
-        
+
         Ok(listeners_by_port)
     }
 }
