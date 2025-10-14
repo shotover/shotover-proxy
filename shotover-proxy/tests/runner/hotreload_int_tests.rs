@@ -12,8 +12,17 @@ fn assert_valkey_connection_works(
     let pong: String = redis::cmd("PING").query(connection)?;
     assert_eq!(pong, "PONG");
 
-    // Test basic SET/GET operation
-    let test_key = "test_key";
+    // Test data persistence for specific keys FIRST (before we overwrite any keys)
+    for (key, expected_value) in expected_data {
+        let actual_value: String = connection.get(*key)?;
+        assert_eq!(
+            actual_value, *expected_value,
+            "Key '{key}' should contain '{expected_value}' but contained '{actual_value}'"
+        );
+    }
+
+    // Test basic SET/GET operation using a dedicated test key that won't conflict
+    let test_key = "_connection_test_key";
     let test_value = "test_connection_works";
     let _: () = connection.set(test_key, test_value)?;
     let result: String = connection.get(test_key)?;
@@ -25,15 +34,6 @@ fn assert_valkey_connection_works(
         assert_eq!(
             counter_value, expected,
             "Counter value should be {expected} but was {counter_value}"
-        );
-    }
-
-    // Test data persistence for specific keys
-    for (key, expected_value) in expected_data {
-        let actual_value: String = connection.get(*key)?;
-        assert_eq!(
-            actual_value, *expected_value,
-            "Key '{key}' should contain '{expected_value}' but contained '{actual_value}'"
         );
     }
 
@@ -199,7 +199,6 @@ async fn test_hot_reload_with_old_instance_shutdown() {
         .await;
 
     // Manually trigger shutdown of the old instance
-    // This demonstrates the shutdown capability that was implemented
     shotover::hot_reload::client::request_shutdown_old_instance(socket_path.to_string())
         .await
         .expect("Failed to request shutdown of old instance");
@@ -208,7 +207,6 @@ async fn test_hot_reload_with_old_instance_shutdown() {
     tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
 
     // The old shotover should have shut down now
-    // Just consume its remaining events to clean up
     shotover_old.consume_remaining_events(&[]).await;
 
     // Verify that new shotover is still running and can handle connections
