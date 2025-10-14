@@ -12,7 +12,7 @@ fn assert_valkey_connection_works(
     let pong: String = redis::cmd("PING").query(connection)?;
     assert_eq!(pong, "PONG");
 
-    // Test data persistence for specific keys FIRST (before we overwrite any keys)
+    // Test data persistence for specific keys
     for (key, expected_value) in expected_data {
         let actual_value: String = connection.get(*key)?;
         assert_eq!(
@@ -21,7 +21,7 @@ fn assert_valkey_connection_works(
         );
     }
 
-    // Test basic SET/GET operation using a dedicated test key that won't conflict
+    // Test basic SET/GET operation using a dedicated test key
     let test_key = "_connection_test_key";
     let test_value = "test_connection_works";
     let _: () = connection.set(test_key, test_value)?;
@@ -189,6 +189,8 @@ async fn test_hot_reload_with_old_instance_shutdown() {
     assert_eq!(stored_value, "test_value");
 
     // Start the new shotover instance that will request hot reload
+    // The new instance will automatically request the old instance to shut down
+    // after successfully receiving the socket file descriptors
     let shotover_new = shotover_process("tests/test-configs/hotreload/topology.yaml")
         .with_hotreload(true)
         .with_log_name("shot_new")
@@ -198,12 +200,7 @@ async fn test_hot_reload_with_old_instance_shutdown() {
         .start()
         .await;
 
-    // Manually trigger shutdown of the old instance
-    shotover::hot_reload::client::request_shutdown_old_instance(socket_path.to_string())
-        .await
-        .expect("Failed to request shutdown of old instance");
-
-    // Give some time for the shutdown to complete
+    // Give some time for the hot reload handoff and shutdown to complete
     tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
 
     // The old shotover should have shut down now

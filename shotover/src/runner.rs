@@ -204,11 +204,6 @@ impl Shotover {
             .await
         {
             Ok(sources) => {
-                // Note: Automatic shutdown of old instance is not implemented in this PR
-                // The shutdown capability is available via request_shutdown_old_instance()
-                // but should be triggered manually or via a separate mechanism
-                // Automatic graceful shutdown will be implemented in a future PR
-
                 if hotreload_enabled {
                     info!("Starting shotover with hot reloading enabled");
                     crate::hot_reload::server::start_hot_reload_server(
