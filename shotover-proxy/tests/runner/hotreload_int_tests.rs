@@ -96,10 +96,7 @@ async fn test_hot_reload_with_old_instance_shutdown() {
         .start()
         .await;
 
-    // Give some time for the hot reload handoff and shutdown to complete
-    tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-
-    // The old shotover should have shut down now
+    // Wait for the old shotover to shut down
     shotover_old.consume_remaining_events(&[]).await;
 
     // Verify that new shotover is still running and can handle connections

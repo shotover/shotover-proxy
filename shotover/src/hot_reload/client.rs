@@ -97,9 +97,6 @@ impl UnixSocketClient {
 
 /// Request listening sockets from an existing Shotover instance during hot reload
 /// Returns a HashMap mapping port numbers to TcpListener instances
-///
-/// After successfully receiving the sockets, this function will automatically
-/// request the old instance to shut down gracefully.
 pub async fn perform_hot_reloading(socket_path: String) -> Result<HashMap<u16, TcpListener>> {
     info!(
         "Hot reload CLIENT will request sockets from existing shotover at: {}",
