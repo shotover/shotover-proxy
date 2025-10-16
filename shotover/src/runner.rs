@@ -187,7 +187,7 @@ impl Shotover {
         config: Config,
         hotreload_enabled: bool,
         hotreload_socket_path: String,
-        hotreload_client: Option<crate::hot_reload::client::HotReloadClient>,
+        hotreload_client: Option<HotReloadClient>,
         trigger_shutdown_rx: watch::Receiver<bool>,
         trigger_shutdown_tx: watch::Sender<bool>,
     ) -> Result<()> {
