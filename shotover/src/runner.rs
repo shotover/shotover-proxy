@@ -147,9 +147,7 @@ impl Shotover {
 
         Shotover::start_observability_interface(&runtime, &config, &tracing)?;
 
-        let hotreload_client = params
-            .hotreload_from_socket
-            .map(crate::hot_reload::client::HotReloadClient::new);
+        let hotreload_client = params.hotreload_from_socket.map(HotReloadClient::new);
 
         Ok(Shotover {
             runtime,
