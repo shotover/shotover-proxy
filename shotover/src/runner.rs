@@ -87,7 +87,7 @@ pub struct Shotover {
     tracing: TracingState,
     hotreload_enabled: bool,
     hotreload_socket_path: String,
-    hotreload_from_socket: Option<String>,
+    hotreload_client: Option<crate::hot_reload::client::HotReloadClient>,
 }
 
 impl Shotover {
@@ -146,6 +146,10 @@ impl Shotover {
 
         Shotover::start_observability_interface(&runtime, &config, &tracing)?;
 
+        let hotreload_client = params
+            .hotreload_from_socket
+            .map(crate::hot_reload::client::HotReloadClient::new);
+
         Ok(Shotover {
             runtime,
             topology,
@@ -153,7 +157,7 @@ impl Shotover {
             tracing,
             hotreload_enabled: params.hotreload,
             hotreload_socket_path: params.hotreload_socket_path,
-            hotreload_from_socket: params.hotreload_from_socket,
+            hotreload_client,
         })
     }
 
@@ -182,13 +186,14 @@ impl Shotover {
         config: Config,
         hotreload_enabled: bool,
         hotreload_socket_path: String,
-        hotreload_from_socket: Option<String>,
+        hotreload_client: Option<crate::hot_reload::client::HotReloadClient>,
         trigger_shutdown_rx: watch::Receiver<bool>,
         trigger_shutdown_tx: watch::Sender<bool>,
     ) -> Result<()> {
-        let hot_reload_listeners = if let Some(socket_path) = hotreload_from_socket.clone() {
+        let hot_reload_listeners = if let Some(client) = &hotreload_client {
             info!("Hot reload CLIENT mode - requesting socket handoff from existing shotover");
-            crate::hot_reload::client::perform_hot_reloading(socket_path)
+            client
+                .perform_hot_reloading()
                 .await
                 .context("Hot reload client failed")?
         } else {
@@ -206,10 +211,8 @@ impl Shotover {
             Ok(sources) => {
                 // After the new instance is fully started and accepting connections,
                 // request the old instance to shut down
-                if let Some(socket_path) = hotreload_from_socket {
-                    if let Err(e) =
-                        crate::hot_reload::client::request_shutdown_old_instance(socket_path).await
-                    {
+                if let Some(client) = &hotreload_client {
+                    if let Err(e) = client.request_shutdown_old_instance().await {
                         warn!(
                             "Failed to send shutdown request to old shotover instance: {}",
                             e
@@ -243,7 +246,7 @@ impl Shotover {
             tracing,
             hotreload_enabled,
             hotreload_socket_path,
-            hotreload_from_socket,
+            hotreload_client,
         } = self;
 
         let (trigger_shutdown_tx, trigger_shutdown_rx) = tokio::sync::watch::channel(false);
@@ -277,7 +280,7 @@ impl Shotover {
             config,
             hotreload_enabled,
             hotreload_socket_path,
-            hotreload_from_socket,
+            hotreload_client,
             trigger_shutdown_rx,
             trigger_shutdown_tx,
         )) {
