@@ -1,6 +1,7 @@
 //! Tools for initializing shotover in the final binary.
 use crate::config::Config;
 use crate::config::topology::Topology;
+use crate::hot_reload::client::HotReloadClient;
 use crate::observability::LogFilterHttpExporter;
 use anyhow::Context;
 use anyhow::{Result, anyhow};
@@ -87,7 +88,7 @@ pub struct Shotover {
     tracing: TracingState,
     hotreload_enabled: bool,
     hotreload_socket_path: String,
-    hotreload_client: Option<crate::hot_reload::client::HotReloadClient>,
+    hotreload_client: Option<HotReloadClient>,
 }
 
 impl Shotover {

@@ -150,22 +150,6 @@ impl HotReloadClient {
     }
 }
 
-/// Request listening sockets from an existing Shotover instance during hot reload
-/// Returns a HashMap mapping port numbers to TcpListener instances
-pub async fn perform_hot_reloading(socket_path: String) -> Result<HashMap<u16, TcpListener>> {
-    HotReloadClient::new(socket_path)
-        .perform_hot_reloading()
-        .await
-}
-
-/// Request the old Shotover instance to shutdown after hot reload handoff
-/// This should be called after the new instance is fully started and ready to accept connections
-pub async fn request_shutdown_old_instance(socket_path: String) -> Result<()> {
-    HotReloadClient::new(socket_path)
-        .request_shutdown_old_instance()
-        .await
-}
-
 #[cfg(all(test, target_os = "linux"))]
 mod tests {
     use super::*;
