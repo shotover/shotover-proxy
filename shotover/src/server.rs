@@ -1,9 +1,7 @@
 use crate::codec::{CodecBuilder, CodecReadError, CodecWriteError};
 use crate::config::chain::TransformChainConfig;
 use crate::frame::MessageType;
-use crate::hot_reload::protocol::{
-    FileDescriptor, HotReloadListenerRequest, HotReloadListenerResponse,
-};
+use crate::hot_reload::protocol::{HotReloadListenerRequest, HotReloadListenerResponse};
 use crate::message::{Message, MessageIdMap, Messages, Metadata};
 use crate::sources::Transport;
 use crate::tls::{AcceptError, TlsAcceptor};
@@ -17,7 +15,6 @@ use metrics::{Counter, Gauge, counter, gauge};
 use std::collections::HashMap;
 use std::io::ErrorKind;
 use std::net::SocketAddr;
-use std::os::unix::io::AsRawFd;
 use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::{TcpListener, TcpStream};
@@ -312,20 +309,24 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
 
     /// Handle hot reload request by extracting file descriptor and responding
     async fn handle_hot_reload_request(&mut self, request: HotReloadListenerRequest) {
-        let response = if let Some(ref listener) = self.listener {
-            // Extract the file descriptor from the TcpListener
-            let fd = listener.as_raw_fd();
-
+        let response = if let Some(listener) = self.listener.take() {
             let port = self.port;
 
-            tracing::info!("Hot reload: Extracting socket FD {} for port {}", fd, port);
+            // Convert tokio::TcpListener to std::net::TcpListener to OwnedFd
+            match listener.into_std() {
+                Ok(std_listener) => {
+                    let owned_fd: std::os::unix::io::OwnedFd = std_listener.into();
+                    tracing::info!("Hot reload: Extracted socket OwnedFd for port {}", port);
 
-            // Stop accepting new connections by setting listener to None
-            self.listener = None;
-
-            HotReloadListenerResponse::HotReloadResponse {
-                port,
-                listener_socket_fd: FileDescriptor(fd),
+                    HotReloadListenerResponse::HotReloadResponse {
+                        port,
+                        listener_socket_fd: owned_fd,
+                    }
+                }
+                Err(e) => {
+                    tracing::error!("Failed to convert listener to std: {:?}", e);
+                    HotReloadListenerResponse::NoListenerAvailable
+                }
             }
         } else {
             tracing::warn!("Hot reload request received but no listener available");

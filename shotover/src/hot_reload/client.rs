@@ -194,7 +194,11 @@ mod tests {
                 .return_chan
                 .send(HotReloadListenerResponse::HotReloadResponse {
                     port: 6000,
-                    listener_socket_fd: crate::hot_reload::protocol::FileDescriptor(3),
+                    // Create a dummy OwnedFd for testing using a Unix socket pair
+                    listener_socket_fd: {
+                        let (sock, _) = std::os::unix::net::UnixStream::pair().unwrap();
+                        sock.into()
+                    },
                 })
                 .unwrap();
         });
@@ -245,7 +249,11 @@ mod tests {
                     .return_chan
                     .send(HotReloadListenerResponse::HotReloadResponse {
                         port: 6000,
-                        listener_socket_fd: crate::hot_reload::protocol::FileDescriptor(3),
+                        // Create a dummy OwnedFd for testing using a Unix socket pair
+                        listener_socket_fd: {
+                            let (sock, _) = std::os::unix::net::UnixStream::pair().unwrap();
+                            sock.into()
+                        },
                     })
                     .unwrap();
             }
