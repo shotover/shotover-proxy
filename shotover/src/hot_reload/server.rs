@@ -77,9 +77,7 @@ impl UnixSocketServer {
                 fds.len(),
                 response
             );
-            // Prevent OwnedFd from closing the file descriptors we just sent
-            // The FDs have been duplicated by the kernel during the Unix socket transfer
-            // and the new process now owns the duplicated FDs
+            // Prevent OwnedFd from closing the file descriptors
             std::mem::forget(fds);
         }
 
