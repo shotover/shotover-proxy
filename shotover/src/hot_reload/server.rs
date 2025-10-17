@@ -2,6 +2,7 @@ use crate::hot_reload::json_parsing::{read_json, write_json, write_json_with_fds
 use crate::hot_reload::protocol::{HotReloadListenerRequest, Request, Response};
 use crate::sources::Source;
 use anyhow::{Context, Result};
+use std::os::fd::OwnedFd;
 use std::os::unix::io::{AsRawFd, RawFd};
 use std::path::Path;
 use tokio::sync::mpsc;
@@ -69,7 +70,8 @@ impl UnixSocketServer {
             write_json(&mut stream, &response).await?;
             debug!("Sent response without FDs: {:?}", response);
         } else {
-            write_json_with_fds(&mut stream, &response, &fds).await?;
+            let raw_fds: Vec<RawFd> = fds.iter().map(|fd| fd.as_raw_fd()).collect();
+            write_json_with_fds(&mut stream, &response, &raw_fds).await?;
             info!(
                 "Sent response with {} file descriptors via ancillary data: {:?}",
                 fds.len(),
@@ -80,7 +82,7 @@ impl UnixSocketServer {
         Ok(())
     }
 
-    async fn process_request(&self, request: Request) -> (Response, Vec<RawFd>) {
+    async fn process_request(&self, request: Request) -> (Response, Vec<OwnedFd>) {
         match request {
             Request::SendListeningSockets => {
                 info!("Processing SendListeningSockets request");
@@ -134,21 +136,13 @@ impl UnixSocketServer {
                     }
                 }
 
-                // Extract RawFd only for transfer
-                let raw_fds: Vec<RawFd> = collected_owned_fds
-                    .iter()
-                    .map(|owned_fd| owned_fd.as_raw_fd())
-                    .collect();
+                info!(
+                    "Sending response with {} file descriptors",
+                    collected_owned_fds.len()
+                );
 
-                info!("Sending response with {} file descriptors", raw_fds.len());
-
-                // Transfer ownership to receiver
-                // SAFETY: We're transferring these FDs via Unix socket to the new process.
-                // The FDs will be duplicated by the kernel during transfer.
-                // The new process will take ownership of the duplicated FDs.
-                std::mem::forget(collected_owned_fds);
-
-                (Response::SendListeningSockets, raw_fds)
+                // Return the OwnedFds. They will be converted to RawFds when needed.
+                (Response::SendListeningSockets, collected_owned_fds)
             }
             Request::ShutdownOriginalNode => {
                 info!("Processing ShutdownOriginalNode request - initiating immediate shutdown");
@@ -158,12 +152,12 @@ impl UnixSocketServer {
                     error!("Failed to send shutdown signal: {:?}", e);
                     return (
                         Response::Error("Failed to trigger shutdown".to_string()),
-                        vec![],
+                        Vec::new(),
                     );
                 }
 
                 info!("Shutdown signal sent successfully");
-                (Response::ShutdownOriginalNode, vec![])
+                (Response::ShutdownOriginalNode, Vec::new())
             }
         }
     }
