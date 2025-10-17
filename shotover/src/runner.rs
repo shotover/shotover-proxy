@@ -1,6 +1,7 @@
 //! Tools for initializing shotover in the final binary.
 use crate::config::Config;
 use crate::config::topology::Topology;
+use crate::hot_reload::client::HotReloadClient;
 use crate::observability::LogFilterHttpExporter;
 use anyhow::Context;
 use anyhow::{Result, anyhow};
@@ -12,7 +13,7 @@ use std::net::SocketAddr;
 use tokio::runtime::{self, Runtime};
 use tokio::signal::unix::{SignalKind, signal};
 use tokio::sync::watch;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 use tracing_appender::non_blocking::{NonBlocking, WorkerGuard};
 use tracing_subscriber::filter::Directive;
 use tracing_subscriber::fmt::Layer;
@@ -87,7 +88,7 @@ pub struct Shotover {
     tracing: TracingState,
     hotreload_enabled: bool,
     hotreload_socket_path: String,
-    hotreload_from_socket: Option<String>,
+    hotreload_client: Option<HotReloadClient>,
 }
 
 impl Shotover {
@@ -146,6 +147,8 @@ impl Shotover {
 
         Shotover::start_observability_interface(&runtime, &config, &tracing)?;
 
+        let hotreload_client = params.hotreload_from_socket.map(HotReloadClient::new);
+
         Ok(Shotover {
             runtime,
             topology,
@@ -153,7 +156,7 @@ impl Shotover {
             tracing,
             hotreload_enabled: params.hotreload,
             hotreload_socket_path: params.hotreload_socket_path,
-            hotreload_from_socket: params.hotreload_from_socket,
+            hotreload_client,
         })
     }
 
@@ -182,12 +185,14 @@ impl Shotover {
         config: Config,
         hotreload_enabled: bool,
         hotreload_socket_path: String,
-        hotreload_from_socket: Option<String>,
+        hotreload_client: Option<HotReloadClient>,
         trigger_shutdown_rx: watch::Receiver<bool>,
+        trigger_shutdown_tx: watch::Sender<bool>,
     ) -> Result<()> {
-        let hot_reload_listeners = if let Some(socket_path) = hotreload_from_socket.clone() {
+        let hot_reload_listeners = if let Some(client) = &hotreload_client {
             info!("Hot reload CLIENT mode - requesting socket handoff from existing shotover");
-            crate::hot_reload::client::perform_hot_reloading(socket_path)
+            client
+                .perform_hot_reloading()
                 .await
                 .context("Hot reload client failed")?
         } else {
@@ -203,11 +208,23 @@ impl Shotover {
             .await
         {
             Ok(sources) => {
+                // After the new instance is fully started and accepting connections,
+                // request the old instance to shut down
+                if let Some(client) = &hotreload_client {
+                    if let Err(e) = client.request_shutdown_old_instance().await {
+                        warn!(
+                            "Failed to send shutdown request to old shotover instance: {}",
+                            e
+                        );
+                    }
+                }
+
                 if hotreload_enabled {
                     info!("Starting shotover with hot reloading enabled");
                     crate::hot_reload::server::start_hot_reload_server(
                         hotreload_socket_path.clone(),
                         &sources,
+                        trigger_shutdown_tx,
                     );
                 }
 
@@ -228,10 +245,13 @@ impl Shotover {
             tracing,
             hotreload_enabled,
             hotreload_socket_path,
-            hotreload_from_socket,
+            hotreload_client,
         } = self;
 
         let (trigger_shutdown_tx, trigger_shutdown_rx) = tokio::sync::watch::channel(false);
+
+        // Clone the shutdown sender for signal handler
+        let trigger_shutdown_tx_for_signals = trigger_shutdown_tx.clone();
 
         // We need to block on this part to ensure that we immediately register these signals.
         // Otherwise if we included signal creation in the below spawned task we would be at the mercy of whenever tokio decides to start running the task.
@@ -251,7 +271,7 @@ impl Shotover {
                 },
             };
 
-            trigger_shutdown_tx.send(true).unwrap();
+            trigger_shutdown_tx_for_signals.send(true).unwrap();
         });
 
         let code = match runtime.block_on(Shotover::run_inner(
@@ -259,8 +279,9 @@ impl Shotover {
             config,
             hotreload_enabled,
             hotreload_socket_path,
-            hotreload_from_socket,
+            hotreload_client,
             trigger_shutdown_rx,
+            trigger_shutdown_tx,
         )) {
             Ok(()) => {
                 info!("Shotover was shutdown cleanly.");

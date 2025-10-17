@@ -85,34 +85,69 @@ impl UnixSocketClient {
         }
 
         debug!("Received response: {:?}", response);
+
+        // Handle error responses
+        if let Response::Error(err) = response {
+            return Err(anyhow::anyhow!("Hot reload server returned error: {}", err));
+        }
+
         Ok(listeners_by_port)
     }
 }
+pub struct HotReloadClient {
+    socket_path: String,
+}
 
-/// Request listening sockets from an existing Shotover instance during hot reload
-/// Returns a HashMap mapping port numbers to TcpListener instances
-pub async fn perform_hot_reloading(socket_path: String) -> Result<HashMap<u16, TcpListener>> {
-    info!(
-        "Hot reload CLIENT will request sockets from existing shotover at: {}",
-        socket_path
-    );
-
-    let client = UnixSocketClient::new(socket_path.clone());
-
-    let listeners = client
-        .send_request(crate::hot_reload::protocol::Request::SendListeningSockets)
-        .await?;
-
-    if listeners.is_empty() {
-        warn!("No listeners received during hot reload");
-    } else {
-        info!(
-            "Successfully received {} listeners during hot reload",
-            listeners.len()
-        );
+impl HotReloadClient {
+    pub fn new(socket_path: String) -> Self {
+        Self { socket_path }
     }
 
-    Ok(listeners)
+    /// Request listening sockets from an existing Shotover instance during hot reload
+    /// Returns a HashMap mapping port numbers to TcpListener instances
+    pub async fn perform_hot_reloading(&self) -> Result<HashMap<u16, TcpListener>> {
+        info!(
+            "Hot reload CLIENT will request sockets from existing shotover at: {}",
+            self.socket_path
+        );
+
+        let client = UnixSocketClient::new(self.socket_path.clone());
+
+        let listeners = client
+            .send_request(crate::hot_reload::protocol::Request::SendListeningSockets)
+            .await?;
+
+        if listeners.is_empty() {
+            warn!("No listeners received during hot reload");
+        } else {
+            info!(
+                "Successfully received {} listeners during hot reload",
+                listeners.len()
+            );
+        }
+
+        Ok(listeners)
+    }
+
+    /// Request the old Shotover instance to shutdown after hot reload handoff
+    /// This should be called after the new instance is fully started and ready to accept connections
+    pub async fn request_shutdown_old_instance(&self) -> Result<()> {
+        info!(
+            "Hot reload CLIENT requesting shutdown of old shotover at: {}",
+            self.socket_path
+        );
+
+        let client = UnixSocketClient::new(self.socket_path.clone());
+
+        // Send the shutdown request - we don't expect any listeners back
+        let _listeners = client
+            .send_request(crate::hot_reload::protocol::Request::ShutdownOriginalNode)
+            .await?;
+
+        info!("Successfully sent shutdown request to old shotover instance");
+
+        Ok(())
+    }
 }
 
 #[cfg(all(test, target_os = "linux"))]
@@ -145,9 +180,11 @@ mod tests {
             name: "foo".to_string(),
             sender: tx,
         }];
+        let (shutdown_tx, _shutdown_rx) = tokio::sync::watch::channel(false);
         let mut server = crate::hot_reload::server::UnixSocketServer::new(
             socket_path.to_string(),
             source_handles,
+            shutdown_tx,
         )
         .unwrap();
         tokio::spawn(async move {
@@ -192,9 +229,11 @@ mod tests {
             name: "foo".to_string(),
             sender: tx,
         }];
+        let (shutdown_tx, _shutdown_rx) = tokio::sync::watch::channel(false);
         let mut server = crate::hot_reload::server::UnixSocketServer::new(
             socket_path.to_string(),
             source_handles,
+            shutdown_tx,
         )
         .unwrap();
 

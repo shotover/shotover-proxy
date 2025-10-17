@@ -17,10 +17,15 @@ pub struct UnixSocketServer {
     socket_path: String,
     listener: UnixSeqpacketListener,
     sources: Vec<SourceHandle>,
+    shutdown_tx: tokio::sync::watch::Sender<bool>,
 }
 
 impl UnixSocketServer {
-    pub fn new(socket_path: String, sources: Vec<SourceHandle>) -> Result<Self> {
+    pub fn new(
+        socket_path: String,
+        sources: Vec<SourceHandle>,
+        shutdown_tx: tokio::sync::watch::Sender<bool>,
+    ) -> Result<Self> {
         if Path::new(&socket_path).exists() {
             std::fs::remove_file(&socket_path).with_context(|| {
                 format!("Failed to remove existing socket file: {}", socket_path)
@@ -33,6 +38,7 @@ impl UnixSocketServer {
             socket_path,
             listener,
             sources,
+            shutdown_tx,
         })
     }
 
@@ -135,6 +141,21 @@ impl UnixSocketServer {
 
                 (Response::SendListeningSockets, collected_fds)
             }
+            Request::ShutdownOriginalNode => {
+                info!("Processing ShutdownOriginalNode request - initiating immediate shutdown");
+
+                // Trigger shutdown by sending true through the watch channel
+                if let Err(e) = self.shutdown_tx.send(true) {
+                    error!("Failed to send shutdown signal: {:?}", e);
+                    return (
+                        Response::Error("Failed to trigger shutdown".to_string()),
+                        vec![],
+                    );
+                }
+
+                info!("Shutdown signal sent successfully");
+                (Response::ShutdownOriginalNode, vec![])
+            }
         }
     }
 }
@@ -148,7 +169,11 @@ impl Drop for UnixSocketServer {
         }
     }
 }
-pub fn start_hot_reload_server(socket_path: String, sources: &[Source]) {
+pub fn start_hot_reload_server(
+    socket_path: String,
+    sources: &[Source],
+    shutdown_tx: tokio::sync::watch::Sender<bool>,
+) {
     let source_handles: Vec<SourceHandle> = sources
         .iter()
         .map(|x| SourceHandle {
@@ -158,7 +183,7 @@ pub fn start_hot_reload_server(socket_path: String, sources: &[Source]) {
         .collect();
 
     tokio::spawn(async move {
-        match UnixSocketServer::new(socket_path, source_handles) {
+        match UnixSocketServer::new(socket_path, source_handles, shutdown_tx) {
             Ok(mut server) => {
                 info!("Unix socket server started for hot reload communication");
                 if let Err(e) = server.run().await {
@@ -182,7 +207,9 @@ mod tests {
         let socket_path = "/tmp/test-shotover-hotreload.sock";
 
         let source_handles: Vec<SourceHandle> = vec![];
-        let server = UnixSocketServer::new(socket_path.to_string(), source_handles).unwrap();
+        let (shutdown_tx, _shutdown_rx) = tokio::sync::watch::channel(false);
+        let server =
+            UnixSocketServer::new(socket_path.to_string(), source_handles, shutdown_tx).unwrap();
 
         // Test that socket file was created
         assert!(Path::new(socket_path).exists());
@@ -197,8 +224,10 @@ mod tests {
         use uds::tokio::UnixSeqpacketConn;
 
         let socket_path = "/tmp/test-shotover-request-response.sock";
-        let source_handles: Vec<SourceHandle> = vec![]; // Empty for test 
-        let mut server = UnixSocketServer::new(socket_path.to_string(), source_handles).unwrap();
+        let source_handles: Vec<SourceHandle> = vec![]; // Empty for test
+        let (shutdown_tx, _shutdown_rx) = tokio::sync::watch::channel(false);
+        let mut server =
+            UnixSocketServer::new(socket_path.to_string(), source_handles, shutdown_tx).unwrap();
 
         // Start server in background
         let server_handle = tokio::spawn(async move {
@@ -217,6 +246,9 @@ mod tests {
             Response::SendListeningSockets => {
                 // Test passes if we get the correct response variant
                 // File descriptors are now sent via ancillary data
+            }
+            Response::ShutdownOriginalNode => {
+                panic!("Unexpected ShutdownOriginalNode response");
             }
             Response::Error(err) => panic!("Unexpected error response: {}", err),
         }
