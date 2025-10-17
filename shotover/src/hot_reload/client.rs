@@ -194,7 +194,7 @@ mod tests {
                 .return_chan
                 .send(HotReloadListenerResponse::HotReloadResponse {
                     port: 6000,
-                    listener_socket_fd: crate::hot_reload::protocol::FileDescriptor(3),
+                    listener_socket_fd: unsafe { std::os::unix::io::OwnedFd::from_raw_fd(2) },
                 })
                 .unwrap();
         });
@@ -245,7 +245,8 @@ mod tests {
                     .return_chan
                     .send(HotReloadListenerResponse::HotReloadResponse {
                         port: 6000,
-                        listener_socket_fd: crate::hot_reload::protocol::FileDescriptor(3),
+                        // Create a dummy OwnedFd for testing (using stderr as a safe FD that won't be closed)
+                        listener_socket_fd: unsafe { std::os::unix::io::OwnedFd::from_raw_fd(2) },
                     })
                     .unwrap();
             }
