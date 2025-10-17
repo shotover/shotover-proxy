@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::os::unix::io::RawFd;
+use std::os::unix::io::{OwnedFd, RawFd};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileDescriptor(pub RawFd);
@@ -23,11 +23,12 @@ pub struct HotReloadListenerRequest {
 }
 
 /// Response sent from TcpCodecListener back to hot reload server
+/// listener_socket_fd is an OwnedFd. It will be converted to RawFd only during transfer.
 #[derive(Debug)]
 pub enum HotReloadListenerResponse {
     HotReloadResponse {
         port: u16,
-        listener_socket_fd: FileDescriptor,
+        listener_socket_fd: OwnedFd,
     },
     NoListenerAvailable,
 }
