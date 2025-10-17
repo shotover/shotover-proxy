@@ -1,8 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::os::unix::io::{OwnedFd, RawFd};
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FileDescriptor(pub RawFd);
+use std::os::unix::io::OwnedFd;
 
 /// Requests that can be sent from replacement shotover to original shotover
 #[derive(Debug, Serialize, Deserialize)]
