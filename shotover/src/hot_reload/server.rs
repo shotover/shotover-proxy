@@ -141,13 +141,13 @@ impl UnixSocketServer {
                     .collect();
 
                 info!("Sending response with {} file descriptors", raw_fds.len());
-                
+
                 // Transfer ownership to receiver
                 // SAFETY: We're transferring these FDs via Unix socket to the new process.
                 // The FDs will be duplicated by the kernel during transfer.
                 // The new process will take ownership of the duplicated FDs.
                 std::mem::forget(collected_owned_fds);
-                
+
                 (Response::SendListeningSockets, raw_fds)
             }
             Request::ShutdownOriginalNode => {
