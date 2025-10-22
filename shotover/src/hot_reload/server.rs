@@ -72,14 +72,14 @@ impl UnixSocketServer {
         } else {
             let raw_fds: Vec<RawFd> = fds.iter().map(|fd| fd.as_raw_fd()).collect();
             write_json_with_fds(&mut stream, &response, &raw_fds).await?;
+            // Explicitly drop the OwnedFds immediately after sending to close the original FDs
+            // and unbind the addresses. The kernel has already duplicated the FDs during transfer.
+            drop(fds);
             info!(
                 "Sent response with {} file descriptors via ancillary data: {:?}",
-                fds.len(),
+                raw_fds.len(),
                 response
             );
-            // The file descriptors have been duplicated by the kernel during Unix socket transfer.
-            // We let OwnedFd close the original FDs here, which unbinds the address.
-            // The new process owns the duplicated FDs.
         }
 
         Ok(())
