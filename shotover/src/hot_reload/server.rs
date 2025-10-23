@@ -91,7 +91,7 @@ impl UnixSocketServer {
                 info!("Processing SendListeningSockets request");
 
                 // Send requests to all TcpCodecListener instances and collect responses
-                let mut collected_owned_fds = Vec::new();
+                let mut collected_fds = Vec::new();
 
                 let mut response_futures = Vec::new();
 
@@ -123,7 +123,7 @@ impl UnixSocketServer {
                                         "Received OwnedFd for port {} from source {}",
                                         port, source_name
                                     );
-                                    collected_owned_fds.push(listener_socket_fd);
+                                    collected_fds.push(listener_socket_fd);
                                 }
                                 crate::hot_reload::protocol::HotReloadListenerResponse::NoListenerAvailable => {
                                     info!("Source {} reported no listener available", source_name);
@@ -141,11 +141,9 @@ impl UnixSocketServer {
 
                 info!(
                     "Sending response with {} file descriptors",
-                    collected_owned_fds.len()
+                    collected_fds.len()
                 );
-
-                // Return the OwnedFds. They will be converted to RawFds when needed.
-                (Response::SendListeningSockets, collected_owned_fds)
+                (Response::SendListeningSockets, collected_fds)
             }
             Request::ShutdownOriginalNode => {
                 info!("Processing ShutdownOriginalNode request - initiating immediate shutdown");

@@ -262,9 +262,8 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                             self.handle_hot_reload_request(request).await;
                             // Wait forever once the FD has been sent. This prevents the loop from continuing
                             // and attempting to recreate the listener.
-                            // The TcpCodecListener has no more work to do once it has handed off its listener.
-                            // Note: The Ok(()) below only returns to the tokio::select! macro level, not from
-                            // the run function, attempting to return from run would shut down shotover anyway.
+                            // This is fine, since the TcpCodecListener has no more work to do once it has handed off its listener.
+                            // Unfortunately, simply returning from `run` would not work as that would cause shotover to shutdown since there are no more sources running.
                             futures::future::pending().await
                         }
                         Ok::<(), anyhow::Error>(())
