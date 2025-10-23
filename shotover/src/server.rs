@@ -260,7 +260,12 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                     hot_reload_request = self.hot_reload_rx.recv() => {
                         if let Some(request) = hot_reload_request{
                             self.handle_hot_reload_request(request).await;
-                            return Ok(());
+                            // Wait forever once the FD has been sent. This prevents the loop from continuing
+                            // and attempting to recreate the listener.
+                            // The TcpCodecListener has no more work to do once it has handed off its listener.
+                            // Note: The Ok(()) below only returns to the tokio::select! macro level, not from
+                            // the run function, attempting to return from run would shut down shotover anyway.
+                            futures::future::pending().await
                         }
                         Ok::<(), anyhow::Error>(())
                     }
