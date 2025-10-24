@@ -263,6 +263,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                             // Wait forever once the FD has been sent. This prevents the loop from continuing
                             // and attempting to recreate the listener.
                             // This is fine, since the TcpCodecListener has no more work to do once it has handed off its listener.
+                            // Note: `return Ok(())` inside `tokio::select!` only returns to the macro level, not from the enclosing function.
                             // Unfortunately, simply returning from `run` would not work as that would cause shotover to shutdown since there are no more sources running.
                             futures::future::pending().await
                         }
