@@ -2,7 +2,8 @@ use crate::hot_reload::json_parsing::{read_json, write_json, write_json_with_fds
 use crate::hot_reload::protocol::{HotReloadListenerRequest, Request, Response};
 use crate::sources::Source;
 use anyhow::{Context, Result};
-use std::os::unix::io::RawFd;
+use std::os::fd::OwnedFd;
+use std::os::unix::io::{AsRawFd, RawFd};
 use std::path::Path;
 use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
@@ -69,10 +70,14 @@ impl UnixSocketServer {
             write_json(&mut stream, &response).await?;
             debug!("Sent response without FDs: {:?}", response);
         } else {
-            write_json_with_fds(&mut stream, &response, &fds).await?;
+            let raw_fds: Vec<RawFd> = fds.iter().map(|fd| fd.as_raw_fd()).collect();
+            write_json_with_fds(&mut stream, &response, &raw_fds).await?;
+            // Explicitly drop the OwnedFds immediately after sending to close the original FDs
+            // and unbind the addresses. The kernel has already duplicated the FDs during transfer.
+            drop(fds);
             info!(
                 "Sent response with {} file descriptors via ancillary data: {:?}",
-                fds.len(),
+                raw_fds.len(),
                 response
             );
         }
@@ -80,7 +85,7 @@ impl UnixSocketServer {
         Ok(())
     }
 
-    async fn process_request(&self, request: Request) -> (Response, Vec<RawFd>) {
+    async fn process_request(&self, request: Request) -> (Response, Vec<OwnedFd>) {
         match request {
             Request::SendListeningSockets => {
                 info!("Processing SendListeningSockets request");
@@ -115,10 +120,10 @@ impl UnixSocketServer {
                             match response {
                                 crate::hot_reload::protocol::HotReloadListenerResponse::HotReloadResponse { port, listener_socket_fd } => {
                                     info!(
-                                        "Received FD {} for port {} from source {}",
-                                        listener_socket_fd.0, port, source_name
+                                        "Received OwnedFd for port {} from source {}",
+                                        port, source_name
                                     );
-                                    collected_fds.push(listener_socket_fd.0);
+                                    collected_fds.push(listener_socket_fd);
                                 }
                                 crate::hot_reload::protocol::HotReloadListenerResponse::NoListenerAvailable => {
                                     info!("Source {} reported no listener available", source_name);
@@ -138,7 +143,6 @@ impl UnixSocketServer {
                     "Sending response with {} file descriptors",
                     collected_fds.len()
                 );
-
                 (Response::SendListeningSockets, collected_fds)
             }
             Request::ShutdownOriginalNode => {
@@ -149,12 +153,12 @@ impl UnixSocketServer {
                     error!("Failed to send shutdown signal: {:?}", e);
                     return (
                         Response::Error("Failed to trigger shutdown".to_string()),
-                        vec![],
+                        Vec::new(),
                     );
                 }
 
                 info!("Shutdown signal sent successfully");
-                (Response::ShutdownOriginalNode, vec![])
+                (Response::ShutdownOriginalNode, Vec::new())
             }
         }
     }
