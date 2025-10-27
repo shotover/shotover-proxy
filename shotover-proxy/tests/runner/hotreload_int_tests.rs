@@ -72,21 +72,30 @@ async fn test_hot_reload_with_old_instance_shutdown() {
         .start()
         .await;
 
-    // Establish connection to old instance and store test data
+    // Establish multiple connections to old instance to test gradual draining
     let client_old = Client::open("valkey://127.0.0.1:6380").unwrap();
-    let mut con_old = client_old.get_connection().unwrap();
 
-    // Store data in the old instance
-    let _: () = con_old.set("test_key", "test_value").unwrap();
-    let _: () = con_old.set("counter", 0).unwrap();
+    // Create 10 connections to the old instance
+    let mut connections = Vec::new();
+    for i in 0..10 {
+        let mut con = client_old.get_connection().unwrap();
+        // Store some data in each connection
+        let _: () = con
+            .set(format!("key_{}", i), format!("value_{}", i))
+            .unwrap();
+        connections.push(con);
+    }
 
-    // Verify data is accessible through old instance
-    let stored_value: String = con_old.get("test_key").unwrap();
-    assert_eq!(stored_value, "test_value");
+    // Set a counter to track
+    let _: () = connections[0].set("counter", 0).unwrap();
+
+    // Verify all connections work
+    for (i, con) in connections.iter_mut().enumerate() {
+        let value: String = con.get(format!("key_{}", i)).unwrap();
+        assert_eq!(value, format!("value_{}", i));
+    }
 
     // Start the new shotover instance that will request hot reload
-    // The new instance will automatically request the old instance to shut down
-    // after successfully receiving the socket file descriptors
     let shotover_new = shotover_process("tests/test-configs/hotreload/topology.yaml")
         .with_hotreload(true)
         .with_log_name("shot_new")
@@ -96,19 +105,54 @@ async fn test_hot_reload_with_old_instance_shutdown() {
         .start()
         .await;
 
-    // Wait for the old shotover to shut down
-    shotover_old.consume_remaining_events(&[]).await;
-
-    // Verify that new shotover is still running and can handle connections
+    // Verify that new shotover is running and can handle new connections
     let client_new = Client::open("valkey://127.0.0.1:6380").unwrap();
     let mut con_new = client_new.get_connection().unwrap();
 
     // Verify data persistence
-    let value: String = con_new.get("test_key").unwrap();
-    assert_eq!(value, "test_value");
+    let value: String = con_new.get("key_0").unwrap();
+    assert_eq!(value, "value_0");
 
-    // Verify new operations work
-    assert_valkey_connection_works(&mut con_new, Some(1), &[("test_key", "test_value")]).unwrap();
+    // Keep testing old connections periodically
+    // Some should start failing as they are gradually drained
+    let mut connections_failed = 0;
+
+    // Test over a period of time (e.g., 35 seconds to allow for 3-4 drain cycles)
+    // Each cycle drains 10% every 10 seconds
+    for round in 0..7 {
+        tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+
+        connections_failed = 0;
+        let mut connections_still_working = 0;
+
+        for (i, con) in connections.iter_mut().enumerate() {
+            match con.get::<_, String>(format!("key_{}", i)) {
+                Ok(_) => {
+                    connections_still_working += 1;
+                }
+                Err(_) => {
+                    connections_failed += 1;
+                }
+            }
+        }
+
+        println!(
+            "Round {}: {} connections still working, {} failed",
+            round, connections_still_working, connections_failed
+        );
+    }
+
+    // After sufficient time, most or all old connections should have been drained
+    assert!(
+        connections_failed > 0,
+        "Expected some connections to be drained, but none were"
+    );
+
+    // Verify new connections still work
+    assert_valkey_connection_works(&mut con_new, Some(1), &[("key_0", "value_0")]).unwrap();
+
+    // Wait for the old shotover to complete draining
+    shotover_old.consume_remaining_events(&[]).await;
 
     // Cleanup
     shotover_new.shutdown_and_then_consume_events(&[]).await;

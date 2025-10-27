@@ -1,7 +1,9 @@
 use crate::codec::{CodecBuilder, CodecReadError, CodecWriteError};
 use crate::config::chain::TransformChainConfig;
 use crate::frame::MessageType;
-use crate::hot_reload::protocol::{HotReloadListenerRequest, HotReloadListenerResponse};
+use crate::hot_reload::protocol::{
+    GradualShutdownRequest, HotReloadListenerRequest, HotReloadListenerResponse,
+};
 use crate::message::{Message, MessageIdMap, Messages, Metadata};
 use crate::sources::Transport;
 use crate::tls::{AcceptError, TlsAcceptor};
@@ -30,6 +32,26 @@ use tokio_tungstenite::tungstenite::{
 use tokio_util::codec::{Decoder, Encoder, FramedRead, FramedWrite};
 use tracing::{Instrument, info, trace};
 use tracing::{debug, error, warn};
+
+/// Represents a tracked connection with an abort handle
+struct TrackedConnection {
+    handle: JoinHandle<()>,
+    abort_handle: tokio::task::AbortHandle,
+}
+
+impl TrackedConnection {
+    fn new(handle: JoinHandle<()>) -> Self {
+        let abort_handle = handle.abort_handle();
+        Self {
+            handle,
+            abort_handle,
+        }
+    }
+
+    fn is_finished(&self) -> bool {
+        self.handle.is_finished()
+    }
+}
 
 pub struct TcpCodecListener<C: CodecBuilder> {
     chain_builder: TransformChainBuilder,
@@ -73,12 +95,16 @@ pub struct TcpCodecListener<C: CodecBuilder> {
     /// Timeout after which to kill an idle connection. No timeout means connections will never be timed out.
     timeout: Option<Duration>,
 
-    connection_handles: Vec<JoinHandle<()>>,
+    connection_handles: Arc<tokio::sync::Mutex<Vec<TrackedConnection>>>,
 
     transport: Transport,
 
     /// Receiver for hot reload requests to extract listening socket file descriptor
     hot_reload_rx: tokio::sync::mpsc::UnboundedReceiver<HotReloadListenerRequest>,
+
+    /// Receiver for gradual shutdown requests
+    gradual_shutdown_rx: tokio::sync::mpsc::UnboundedReceiver<GradualShutdownRequest>,
+
     port: u16,
 }
 
@@ -96,6 +122,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
         timeout: Option<Duration>,
         transport: Transport,
         hot_reload_rx: tokio::sync::mpsc::UnboundedReceiver<HotReloadListenerRequest>,
+        gradual_shutdown_rx: tokio::sync::mpsc::UnboundedReceiver<GradualShutdownRequest>,
         hot_reload_listeners: &mut HashMap<u16, TcpListener>,
     ) -> Result<Self, Vec<String>> {
         let available_connections_gauge =
@@ -165,9 +192,10 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
             available_connections_gauge,
             connections_opened,
             timeout,
-            connection_handles: vec![],
+            connection_handles: Arc::new(tokio::sync::Mutex::new(vec![])),
             transport,
             hot_reload_rx,
+            gradual_shutdown_rx,
             port,
         })
     }
@@ -243,16 +271,18 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                             _permit: permit,
                         };
                         // Spawn a new task to process the connections.
-                        self.connection_handles.push(tokio::spawn(async move{
+                        let handle = tokio::spawn(async move{
                             // Process the connection. If an error is encountered, log it.
                             if let Err(err) = handler.run(stream, transport, force_run_chain, client_details).await{
                                 error!("{:?}", err.context("connection was unexpectedly terminated"));
                             }
-                        }.in_current_span()));
+                        }.in_current_span());
+                        let tracked_connection = TrackedConnection::new(handle);
+                        self.connection_handles.lock().await.push(tracked_connection);
                         // Only prune the list every so often
                         // theres no point in doing it every iteration because most likely none of the handles will have completed
                         if self.connection_count % 1000 == 0{
-                            self.connection_handles.retain(|x| !x.is_finished());
+                            self.connection_handles.lock().await.retain(|x| !x.is_finished());
                         }
                         Ok::<(), anyhow::Error>(())
                     },
@@ -267,6 +297,13 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                             futures::future::pending().await
                         }
                         Ok::<(), anyhow::Error>(())
+                    },
+                    // Gradual shutdown request handling
+                    gradual_shutdown_request = self.gradual_shutdown_rx.recv() => {
+                        if let Some(request) = gradual_shutdown_request{
+                            self.handle_gradual_shutdown_request(request).await;
+                        }
+                        Ok::<(), anyhow::Error>(())
                     }
                 }
             }
@@ -276,7 +313,9 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
     }
 
     pub async fn shutdown(&mut self) {
-        join_all(&mut self.connection_handles).await;
+        let mut handles = self.connection_handles.lock().await;
+        let futures: Vec<_> = handles.iter_mut().map(|tc| &mut tc.handle).collect();
+        join_all(futures).await;
     }
 
     /// Accept an inbound connection.
@@ -340,6 +379,66 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
         // Send response back through oneshot channel
         if request.return_chan.send(response).is_err() {
             tracing::error!("Failed to send hot reload response - receiver dropped");
+        }
+    }
+
+    /// Handle gradual shutdown request by spawning a background task to drain connections
+    async fn handle_gradual_shutdown_request(&mut self, request: GradualShutdownRequest) {
+        info!("Gradual shutdown request received for {}", self.source_name);
+
+        let connection_handles = self.connection_handles.clone();
+        let source_name = self.source_name.clone();
+
+        // Spawn background task to drain connections gradually
+        tokio::spawn(async move {
+            info!("[{}] Starting gradual connection draining", source_name);
+
+            loop {
+                // Wait 10 seconds before each drain cycle
+                tokio::time::sleep(Duration::from_secs(10)).await;
+
+                let mut handles = connection_handles.lock().await;
+
+                // Remove finished connections
+                handles.retain(|tc| !tc.is_finished());
+
+                let total_connections = handles.len();
+
+                if total_connections == 0 {
+                    info!("[{}] All connections have been drained", source_name);
+                    break;
+                }
+
+                // Calculate 10% of connections to drain (at least 1 if there are any connections)
+                let connections_to_drain =
+                    std::cmp::max(1, (total_connections as f64 * 0.1).ceil() as usize);
+
+                info!(
+                    "[{}] Draining {} out of {} connections (10%)",
+                    source_name, connections_to_drain, total_connections
+                );
+
+                // Abort the first N connections
+                for tc in handles.iter().take(connections_to_drain) {
+                    tc.abort_handle.abort();
+                }
+
+                // Remove the aborted connections from the list
+                handles.drain(..connections_to_drain);
+
+                info!(
+                    "[{}] {} connections remaining after drain",
+                    source_name,
+                    handles.len()
+                );
+            }
+
+            info!("[{}] Gradual shutdown completed", source_name);
+        });
+
+        // Acknowledge the gradual shutdown request
+        if request.return_chan.send(()).is_err() {
+            tracing::error!("Failed to send gradual shutdown acknowledgment - receiver dropped");
         }
     }
 }

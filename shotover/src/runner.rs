@@ -187,7 +187,7 @@ impl Shotover {
         hotreload_socket_path: String,
         hotreload_client: Option<HotReloadClient>,
         trigger_shutdown_rx: watch::Receiver<bool>,
-        trigger_shutdown_tx: watch::Sender<bool>,
+        _trigger_shutdown_tx: watch::Sender<bool>,
     ) -> Result<()> {
         let hot_reload_listeners = if let Some(client) = &hotreload_client {
             info!("Hot reload CLIENT mode - requesting socket handoff from existing shotover");
@@ -224,7 +224,6 @@ impl Shotover {
                     crate::hot_reload::server::start_hot_reload_server(
                         hotreload_socket_path.clone(),
                         &sources,
-                        trigger_shutdown_tx,
                     );
                 }
 

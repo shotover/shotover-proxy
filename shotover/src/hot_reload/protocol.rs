@@ -5,18 +5,23 @@ use std::os::unix::io::OwnedFd;
 #[derive(Debug, Serialize, Deserialize)]
 pub enum Request {
     SendListeningSockets,
-    ShutdownOriginalNode,
+    GradualShutdown,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum Response {
     SendListeningSockets,
-    ShutdownOriginalNode,
+    GradualShutdown,
     Error(String),
 }
 /// Request sent from hot reload server to TcpCodecListener
 pub struct HotReloadListenerRequest {
     pub return_chan: tokio::sync::oneshot::Sender<HotReloadListenerResponse>,
+}
+
+/// Request sent from hot reload server to TcpCodecListener for gradual shutdown
+pub struct GradualShutdownRequest {
+    pub return_chan: tokio::sync::oneshot::Sender<()>,
 }
 
 /// Response sent from TcpCodecListener back to hot reload server
