@@ -106,6 +106,10 @@ pub struct TcpCodecListener<C: CodecBuilder> {
     gradual_shutdown_rx: tokio::sync::mpsc::UnboundedReceiver<GradualShutdownRequest>,
 
     port: u16,
+
+    /// Flag indicating whether the socket has been handed off during hot reload
+    /// When true, prevents attempting to recreate the listener
+    socket_handed_off: bool,
 }
 
 impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
@@ -197,6 +201,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
             hot_reload_rx,
             gradual_shutdown_rx,
             port,
+            socket_handed_off: false,
         })
     }
 
@@ -231,7 +236,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
             } else {
                 self.limit_connections.clone().acquire_owned().await?
             };
-            if self.listener.is_none() {
+            if self.listener.is_none() && !self.socket_handed_off {
                 self.listener = Some(create_listener(&self.listen_addr).await?);
             }
 
@@ -290,11 +295,10 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                     hot_reload_request = self.hot_reload_rx.recv() => {
                         if let Some(request) = hot_reload_request{
                             self.handle_hot_reload_request(request).await;
-                            // Wait forever once the FD has been sent. This prevents the loop from continuing
-                            // and attempting to recreate the listener.
-                            // This is fine, since the TcpCodecListener has no more work to do once it has handed off its listener.
-                            // Unfortunately, simply returning from `run` would not work as that would cause shotover to shutdown since there are no more sources running.
-                            futures::future::pending().await
+                            // After handing off the socket FD, mark it as handed off and clear the listener
+                            // This prevents attempting to recreate the listener on the same address
+                            self.socket_handed_off = true;
+                            self.listener = None;
                         }
                         Ok::<(), anyhow::Error>(())
                     },
