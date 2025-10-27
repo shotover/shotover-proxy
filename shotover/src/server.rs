@@ -248,7 +248,15 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
             async {
                 tokio::select! {
                     // Normal Connection handling
-                    stream_result = Self::accept(&mut self.listener) => {
+                    // Only accept new connections if socket hasn't been handed off
+                    stream_result = async {
+                        if self.socket_handed_off {
+                            // Socket handed off, never accept new connections
+                            futures::future::pending::<Result<TcpStream>>().await
+                        } else {
+                            Self::accept(&mut self.listener).await
+                        }
+                    } => {
                         let stream = stream_result?;
 
                         debug!("got socket");
