@@ -110,6 +110,9 @@ pub struct TcpCodecListener<C: CodecBuilder> {
     /// Flag indicating whether the socket has been handed off during hot reload
     /// When true, prevents attempting to recreate the listener
     socket_handed_off: bool,
+
+    /// Receiver for notification when gradual shutdown draining is complete
+    draining_complete_rx: Option<tokio::sync::oneshot::Receiver<()>>,
 }
 
 impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
@@ -202,6 +205,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
             gradual_shutdown_rx,
             port,
             socket_handed_off: false,
+            draining_complete_rx: None,
         })
     }
 
@@ -251,7 +255,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                     // Only accept new connections if socket hasn't been handed off
                     stream_result = async {
                         if self.socket_handed_off {
-                            // Socket handed off, never accept new connections
+                            // Socket handed off, do not accept new connections
                             futures::future::pending::<Result<TcpStream>>().await
                         } else {
                             Self::accept(&mut self.listener).await
@@ -316,6 +320,17 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                             self.handle_gradual_shutdown_request(request).await;
                         }
                         Ok::<(), anyhow::Error>(())
+                    },
+                    // Wait for gradual shutdown draining to complete
+                    _ = async {
+                        if let Some(ref mut rx) = self.draining_complete_rx {
+                            rx.await.ok();
+                        } else {
+                            futures::future::pending::<()>().await
+                        }
+                    } => {
+                        info!("Gradual shutdown draining completed, exiting main loop");
+                        return Ok(());
                     }
                 }
             }
@@ -401,6 +416,10 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
         let connection_handles = self.connection_handles.clone();
         let source_name = self.source_name.clone();
 
+        // Create a oneshot channel to signal when draining is complete
+        let (draining_complete_tx, draining_complete_rx) = tokio::sync::oneshot::channel();
+        self.draining_complete_rx = Some(draining_complete_rx);
+
         // Spawn background task to drain connections gradually
         tokio::spawn(async move {
             info!("[{}] Starting gradual connection draining", source_name);
@@ -446,6 +465,9 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
             }
 
             info!("[{}] Gradual shutdown completed", source_name);
+
+            // Signal that draining is complete
+            let _ = draining_complete_tx.send(());
         });
 
         // Acknowledge the gradual shutdown request
