@@ -44,17 +44,17 @@ impl UnixSocketServer {
 
     pub async fn run(&mut self) -> Result<()> {
         loop {
+            // Exit if gradual shutdown has been initiated
+            if self.gradual_shutdown_initiated {
+                info!("Gradual shutdown initiated, hot reload server exiting");
+                return Ok(());
+            }
+
             match self.listener.accept().await {
                 Ok((stream, _)) => {
                     debug!("New connection received on Unix socket");
                     if let Err(e) = self.handle_connection(stream).await {
                         error!("Error handling connection: {:?}", e);
-                    }
-                    // Exit the loop after gradual shutdown has been initiated
-                    // The old instance no longer needs to accept hot reload requests
-                    if self.gradual_shutdown_initiated {
-                        info!("Gradual shutdown initiated, hot reload server exiting");
-                        return Ok(());
                     }
                 }
                 Err(e) => {
