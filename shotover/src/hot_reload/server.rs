@@ -21,6 +21,7 @@ pub struct UnixSocketServer {
     socket_path: String,
     listener: UnixSeqpacketListener,
     sources: Vec<SourceHandle>,
+    gradual_shutdown_initiated: bool,
 }
 
 impl UnixSocketServer {
@@ -37,6 +38,7 @@ impl UnixSocketServer {
             socket_path,
             listener,
             sources,
+            gradual_shutdown_initiated: false,
         })
     }
 
@@ -48,6 +50,12 @@ impl UnixSocketServer {
                     if let Err(e) = self.handle_connection(stream).await {
                         error!("Error handling connection: {:?}", e);
                     }
+                    // Exit the loop after gradual shutdown has been initiated
+                    // The old instance no longer needs to accept hot reload requests
+                    if self.gradual_shutdown_initiated {
+                        info!("Gradual shutdown initiated, hot reload server exiting");
+                        return Ok(());
+                    }
                 }
                 Err(e) => {
                     error!("Error accepting connection: {:?}", e);
@@ -56,7 +64,7 @@ impl UnixSocketServer {
         }
     }
 
-    async fn handle_connection(&self, mut stream: UnixSeqpacketConn) -> Result<()> {
+    async fn handle_connection(&mut self, mut stream: UnixSeqpacketConn) -> Result<()> {
         let request: Request = read_json(&mut stream).await?;
         debug!("Received request: {:?}", request);
 
@@ -82,7 +90,7 @@ impl UnixSocketServer {
         Ok(())
     }
 
-    async fn process_request(&self, request: Request) -> (Response, Vec<OwnedFd>) {
+    async fn process_request(&mut self, request: Request) -> (Response, Vec<OwnedFd>) {
         match request {
             Request::SendListeningSockets => {
                 info!("Processing SendListeningSockets request");
@@ -178,6 +186,7 @@ impl UnixSocketServer {
                 }
 
                 info!("Gradual shutdown initiated for all sources");
+                self.gradual_shutdown_initiated = true;
                 (Response::GradualShutdown, Vec::new())
             }
         }
