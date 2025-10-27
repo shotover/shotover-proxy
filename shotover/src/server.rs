@@ -330,7 +330,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                         }
                     } => {
                         info!("Gradual shutdown draining completed, exiting main loop");
-                        return Ok(());
+                        Ok(())
                     }
                 }
             }
