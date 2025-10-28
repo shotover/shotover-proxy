@@ -327,20 +327,26 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                     },
                     // Gradual shutdown request handling
                     gradual_shutdown_request = self.gradual_shutdown_rx.recv() => {
-                        info!("[{}] Received gradual shutdown request on select branch", self.source_name);
                         if let Some(request) = gradual_shutdown_request{
+                            info!("[{}] Received gradual shutdown request", self.source_name);
                             self.handle_gradual_shutdown_request(request).await;
                             info!("[{}] Gradual shutdown request handled", self.source_name);
-                        }
-
-                        if let Some(rx) = &mut self.draining_complete_rx {
-                            info!("[{}] Waiting for draining to complete", self.source_name);
-                            rx.await.ok();
-                            info!("[{}] Draining complete, shutting down listener", self.source_name);
+                            
+                            // Wait for draining to complete
+                            if let Some(rx) = &mut self.draining_complete_rx {
+                                info!("[{}] Waiting for draining to complete", self.source_name);
+                                rx.await.ok();
+                                info!("[{}] Draining complete, shutting down listener", self.source_name);
+                            } else {
+                                warn!("[{}] Draining complete receiver was None, this shouldn't happen", self.source_name);
+                            }
+                            Ok::<bool, anyhow::Error>(true)
                         } else {
-                            warn!("[{}] Draining complete receiver was None, this shouldn't happen", self.source_name);
+                            // Channel was closed, but this is expected during normal shutdown
+                            // Just continue the loop - shotover shutdown will be triggered via the shutdown signal
+                            debug!("[{}] Gradual shutdown channel closed", self.source_name);
+                            Ok::<bool, anyhow::Error>(false)
                         }
-                        Ok::<bool, anyhow::Error>(true)
                     },
             }
         }
