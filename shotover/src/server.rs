@@ -334,13 +334,15 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                     },
                     // Wait for gradual shutdown draining to complete
                     _ = async {
-                        if let Some(rx) = self.draining_complete_rx.take() {
+                        if let Some(rx) = &mut self.draining_complete_rx {
                             rx.await.ok();
                         } else {
                             futures::future::pending::<()>().await
                         }
                     } => {
                         info!("Gradual shutdown draining completed, exiting main loop");
+                        // Clear the receiver now that we've successfully received the signal
+                        self.draining_complete_rx = None;
                         #[allow(clippy::needless_return)]
                         return Ok(());
                     }
