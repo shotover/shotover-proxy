@@ -235,7 +235,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                 crate::connection_span::span(self.connection_count, self.source_name.as_str());
             let transport = self.transport;
 
-            async {
+            let should_return = async {
                 tokio::select! {
                     // Wait for a permit to become available and accept new connection
                     stream_result = async {
@@ -268,7 +268,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                             Err(e) => {
                                 // If this was a connection limit error, continue to next iteration
                                 if e.to_string().contains("Connection limit reached") {
-                                    return Ok(());
+                                    return Ok(false);
                                 }
                                 return Err(e);
                             }
@@ -312,7 +312,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                         if self.connection_count % 1000 == 0{
                             self.connection_handles.lock().await.retain(|x| !x.is_finished());
                         }
-                        Ok::<(), anyhow::Error>(())
+                        Ok::<bool, anyhow::Error>(false)
                     },
                     // Hot reload request handling
                     hot_reload_request = self.hot_reload_rx.recv() => {
@@ -323,7 +323,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                             self.socket_handed_off = true;
                             self.listener = None;
                         }
-                        Ok::<(), anyhow::Error>(())
+                        Ok::<bool, anyhow::Error>(false)
                     },
                     // Gradual shutdown request handling
                     gradual_shutdown_request = self.gradual_shutdown_rx.recv() => {
@@ -332,27 +332,22 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                             self.handle_gradual_shutdown_request(request).await;
                             info!("[{}] Gradual shutdown request handled", self.source_name);
                         }
-                        Ok::<(), anyhow::Error>(())
-                    },
-                    // Wait for gradual shutdown draining to complete
-                    _ = async {
+
                         if let Some(rx) = &mut self.draining_complete_rx {
                             info!("[{}] Waiting for draining to complete", self.source_name);
                             rx.await.ok();
                         } else {
-                            futures::future::pending::<()>().await
-                        }
-                    } => {
-                        info!("[{}] Gradual shutdown draining completed, exiting main loop", self.source_name);
-                        // Clear the receiver now that we've successfully received the signal
-                        self.draining_complete_rx = None;
-                        #[allow(clippy::needless_return)]
-                        return Ok(());
+                            error!("uh oh");
                     }
-                }
+                    Ok::<bool, anyhow::Error>(true)
+                },
             }
-            .instrument(span)
-            .await?;
+        }
+        .instrument(span)
+        .await?;
+            if should_return {
+                return Ok(());
+            }
         }
     }
 
