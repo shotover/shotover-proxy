@@ -327,20 +327,23 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                     },
                     // Gradual shutdown request handling
                     gradual_shutdown_request = self.gradual_shutdown_rx.recv() => {
+                        info!("[{}] Received gradual shutdown request on select branch", self.source_name);
                         if let Some(request) = gradual_shutdown_request{
                             self.handle_gradual_shutdown_request(request).await;
+                            info!("[{}] Gradual shutdown request handled", self.source_name);
                         }
                         Ok::<(), anyhow::Error>(())
                     },
                     // Wait for gradual shutdown draining to complete
                     _ = async {
                         if let Some(rx) = &mut self.draining_complete_rx {
+                            info!("[{}] Waiting for draining to complete", self.source_name);
                             rx.await.ok();
                         } else {
                             futures::future::pending::<()>().await
                         }
                     } => {
-                        info!("Gradual shutdown draining completed, exiting main loop");
+                        info!("[{}] Gradual shutdown draining completed, exiting main loop", self.source_name);
                         // Clear the receiver now that we've successfully received the signal
                         self.draining_complete_rx = None;
                         #[allow(clippy::needless_return)]
@@ -433,6 +436,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
         // Create a oneshot channel to signal when draining is complete
         let (draining_complete_tx, draining_complete_rx) = tokio::sync::oneshot::channel();
         self.draining_complete_rx = Some(draining_complete_rx);
+        info!("[{}] Created draining completion channel", self.source_name);
 
         // Spawn background task to drain connections gradually
         tokio::spawn(async move {
@@ -440,12 +444,27 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
 
             loop {
                 // Wait 10 seconds before each drain cycle
+                info!(
+                    "[{}] Waiting 10 seconds before next drain cycle",
+                    source_name
+                );
                 tokio::time::sleep(Duration::from_secs(10)).await;
+                info!("[{}] Drain cycle starting", source_name);
 
                 let mut handles = connection_handles.lock().await;
+                info!("[{}] Acquired connection handles lock", source_name);
 
                 // Remove finished connections
+                let before_retain = handles.len();
                 handles.retain(|tc| !tc.is_finished());
+                let after_retain = handles.len();
+                if before_retain != after_retain {
+                    info!(
+                        "[{}] Removed {} finished connections",
+                        source_name,
+                        before_retain - after_retain
+                    );
+                }
 
                 let total_connections = handles.len();
 
@@ -464,7 +483,13 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                 );
 
                 // Abort the first N connections
-                for tc in handles.iter().take(connections_to_drain) {
+                for (i, tc) in handles.iter().take(connections_to_drain).enumerate() {
+                    info!(
+                        "[{}] Aborting connection {}/{}",
+                        source_name,
+                        i + 1,
+                        connections_to_drain
+                    );
                     tc.abort_handle.abort();
                 }
 
@@ -476,12 +501,28 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                     source_name,
                     handles.len()
                 );
+
+                drop(handles);
+                info!("[{}] Released connection handles lock", source_name);
             }
 
-            info!("[{}] Gradual shutdown completed", source_name);
+            info!(
+                "[{}] Gradual shutdown completed, sending completion signal",
+                source_name
+            );
 
             // Signal that draining is complete
-            let _ = draining_complete_tx.send(());
+            if draining_complete_tx.send(()).is_ok() {
+                info!(
+                    "[{}] Draining completion signal sent successfully",
+                    source_name
+                );
+            } else {
+                info!(
+                    "[{}] Draining completion signal failed to send (receiver dropped)",
+                    source_name
+                );
+            }
         });
 
         // Acknowledge the gradual shutdown request
