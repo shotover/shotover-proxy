@@ -331,7 +331,6 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                             info!("[{}] Received gradual shutdown request", self.source_name);
                             self.handle_gradual_shutdown_request(request).await;
                             info!("[{}] Gradual shutdown request handled", self.source_name);
-                            
                             // Wait for draining to complete
                             if let Some(rx) = &mut self.draining_complete_rx {
                                 info!("[{}] Waiting for draining to complete", self.source_name);
