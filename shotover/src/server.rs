@@ -336,11 +336,12 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                         if let Some(rx) = &mut self.draining_complete_rx {
                             info!("[{}] Waiting for draining to complete", self.source_name);
                             rx.await.ok();
+                            info!("[{}] Draining complete, shutting down listener", self.source_name);
                         } else {
-                            error!("uh oh");
-                    }
-                    Ok::<bool, anyhow::Error>(true)
-                },
+                            warn!("[{}] Draining complete receiver was None, this shouldn't happen", self.source_name);
+                        }
+                        Ok::<bool, anyhow::Error>(true)
+                    },
             }
         }
         .instrument(span)
