@@ -191,7 +191,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
         // Create interval for gradual shutdown draining with a delayed first tick
         let mut drain_interval = tokio::time::interval(Duration::from_secs(10));
         drain_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-        // Skip the first immediate tick so draining starts after 10 seconds, not immediately
+        // Skip the first immediate tick so draining starts after 10 seconds
         drain_interval.reset();
 
         Ok(TcpCodecListener {
