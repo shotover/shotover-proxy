@@ -113,6 +113,9 @@ pub struct TcpCodecListener<C: CodecBuilder> {
 
     /// Flag indicating whether gradual shutdown is in progress
     gradual_shutdown_in_progress: bool,
+
+    /// Interval timer for gradual shutdown draining cycles
+    drain_interval: tokio::time::Interval,
 }
 
 impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
@@ -185,6 +188,12 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
             return Err(errors);
         }
 
+        // Create interval for gradual shutdown draining with a delayed first tick
+        let mut drain_interval = tokio::time::interval(Duration::from_secs(10));
+        drain_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        // Skip the first immediate tick so draining starts after 10 seconds, not immediately
+        drain_interval.reset();
+
         Ok(TcpCodecListener {
             chain_builder,
             source_name,
@@ -206,6 +215,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
             port,
             socket_handed_off: false,
             gradual_shutdown_in_progress: false,
+            drain_interval,
         })
     }
 
@@ -339,7 +349,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                         Ok::<bool, anyhow::Error>(false)
                     },
                     // Gradual shutdown draining - runs every 10 seconds when in shutdown mode
-                    _ = tokio::time::sleep(Duration::from_secs(10)), if self.gradual_shutdown_in_progress => {
+                    _ = self.drain_interval.tick(), if self.gradual_shutdown_in_progress => {
                         info!("[{}] Drain cycle starting", self.source_name);
 
                         // Remove finished connections
