@@ -21,7 +21,6 @@ pub struct UnixSocketServer {
     socket_path: String,
     listener: UnixSeqpacketListener,
     sources: Vec<SourceHandle>,
-    gradual_shutdown_initiated: bool,
 }
 
 impl UnixSocketServer {
@@ -38,18 +37,11 @@ impl UnixSocketServer {
             socket_path,
             listener,
             sources,
-            gradual_shutdown_initiated: false,
         })
     }
 
     pub async fn run(&mut self) -> Result<()> {
         loop {
-            // Exit if gradual shutdown has been initiated
-            if self.gradual_shutdown_initiated {
-                info!("Gradual shutdown initiated, hot reload server exiting");
-                return Ok(());
-            }
-
             match self.listener.accept().await {
                 Ok((stream, _)) => {
                     debug!("New connection received on Unix socket");
@@ -186,7 +178,6 @@ impl UnixSocketServer {
                 }
 
                 info!("Gradual shutdown initiated for all sources");
-                self.gradual_shutdown_initiated = true;
                 (Response::GradualShutdown, Vec::new())
             }
         }
