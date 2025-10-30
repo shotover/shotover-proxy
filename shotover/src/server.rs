@@ -33,24 +33,70 @@ use tokio_util::codec::{Decoder, Encoder, FramedRead, FramedWrite};
 use tracing::{Instrument, info, trace};
 use tracing::{debug, error, warn};
 
-/// Represents a tracked connection with an abort handle
+/// Represents a tracked connection with a shutdown sender
 struct TrackedConnection {
     handle: JoinHandle<()>,
-    abort_handle: tokio::task::AbortHandle,
+    shutdown_tx: watch::Sender<bool>,
 }
 
 impl TrackedConnection {
-    fn new(handle: JoinHandle<()>) -> Self {
-        let abort_handle = handle.abort_handle();
+    fn new(handle: JoinHandle<()>, shutdown_tx: watch::Sender<bool>) -> Self {
         Self {
             handle,
-            abort_handle,
+            shutdown_tx,
         }
     }
 
     fn is_finished(&self) -> bool {
         self.handle.is_finished()
     }
+
+    fn shutdown(&self) {
+        // Send shutdown signal
+        let _ = self.shutdown_tx.send(true);
+    }
+}
+
+/// Creates a combined shutdown receiver that triggers when either the global shutdown or the connection-specific shutdown is triggered
+fn create_combined_shutdown(
+    global_shutdown: watch::Receiver<bool>,
+    connection_shutdown: watch::Receiver<bool>,
+) -> watch::Receiver<bool> {
+    let (tx, rx) = watch::channel(false);
+
+    tokio::spawn(async move {
+        let mut global_shutdown = global_shutdown;
+        let mut connection_shutdown = connection_shutdown;
+
+        tokio::select! {
+            _ = async {
+                loop {
+                    if *global_shutdown.borrow_and_update() {
+                        break;
+                    }
+                    if global_shutdown.changed().await.is_err() {
+                        break;
+                    }
+                }
+            } => {
+                let _ = tx.send(true);
+            }
+            _ = async {
+                loop {
+                    if *connection_shutdown.borrow_and_update() {
+                        break;
+                    }
+                    if connection_shutdown.changed().await.is_err() {
+                        break;
+                    }
+                }
+            } => {
+                let _ = tx.send(true);
+            }
+        }
+    });
+
+    rx
 }
 
 pub struct TcpCodecListener<C: CodecBuilder> {
@@ -299,10 +345,18 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                             client_details:client_details.clone(),
                         };
 
+                        // Create a unique shutdown channel for this connection
+                        let (connection_shutdown_tx, connection_shutdown_rx) = watch::channel(false);
+                        // Create a combined shutdown receiver that responds to both global and connection specific shutdowns
+                        let combined_shutdown_rx = create_combined_shutdown(
+                            self.trigger_shutdown_rx.clone(),
+                            connection_shutdown_rx,
+                        );
+
                         let handler = Handler{
                             chain: self.chain_builder.build(context),
                             codec: self.codec.clone(),
-                            shutdown: Shutdown::new(self.trigger_shutdown_rx.clone()),
+                            shutdown: Shutdown::new(combined_shutdown_rx),
                             tls: self.tls.clone(),
                             pending_requests: PendingRequests::new(self.codec.protocol()),
                             timeout: self.timeout,
@@ -315,7 +369,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                                 error!("{:?}", err.context("connection was unexpectedly terminated"));
                             }
                         }.in_current_span());
-                        let tracked_connection = TrackedConnection::new(handle);
+                        let tracked_connection = TrackedConnection::new(handle, connection_shutdown_tx);
                         self.connection_handles.push(tracked_connection);
                         // Only prune the list every so often
                         // theres no point in doing it every iteration because most likely none of the handles will have completed
@@ -383,12 +437,12 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                         // Abort the first N connections
                         for (i, tc) in self.connection_handles.iter().take(connections_to_drain).enumerate() {
                             info!(
-                                "[{}] Aborting connection {}/{}",
+                                "[{}] Shutting down connection {}/{}",
                                 self.source_name,
                                 i + 1,
                                 connections_to_drain
                             );
-                            tc.abort_handle.abort();
+                            tc.shutdown();
                         }
 
                         // Remove the aborted connections from the list
