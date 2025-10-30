@@ -434,7 +434,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                             self.source_name, connections_to_drain, total_connections
                         );
 
-                        // Abort the first N connections
+                        // Shutdown the first N connections
                         for (i, tc) in self.connection_handles.iter().take(connections_to_drain).enumerate() {
                             info!(
                                 "[{}] Shutting down connection {}/{}",
@@ -445,7 +445,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                             tc.shutdown();
                         }
 
-                        // Remove the aborted connections from the list
+                        // Remove the shutdown connections from the list
                         self.connection_handles.drain(..connections_to_drain);
 
                         info!(
