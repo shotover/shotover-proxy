@@ -1,7 +1,9 @@
 use crate::codec::{CodecBuilder, CodecReadError, CodecWriteError};
 use crate::config::chain::TransformChainConfig;
 use crate::frame::MessageType;
-use crate::hot_reload::protocol::{HotReloadListenerRequest, HotReloadListenerResponse};
+use crate::hot_reload::protocol::{
+    GradualShutdownRequest, HotReloadListenerRequest, HotReloadListenerResponse,
+};
 use crate::message::{Message, MessageIdMap, Messages, Metadata};
 use crate::sources::Transport;
 use crate::tls::{AcceptError, TlsAcceptor};
@@ -30,6 +32,72 @@ use tokio_tungstenite::tungstenite::{
 use tokio_util::codec::{Decoder, Encoder, FramedRead, FramedWrite};
 use tracing::{Instrument, info, trace};
 use tracing::{debug, error, warn};
+
+/// Represents a tracked connection with a shutdown sender
+struct TrackedConnection {
+    handle: JoinHandle<()>,
+    shutdown_tx: watch::Sender<bool>,
+}
+
+impl TrackedConnection {
+    fn new(handle: JoinHandle<()>, shutdown_tx: watch::Sender<bool>) -> Self {
+        Self {
+            handle,
+            shutdown_tx,
+        }
+    }
+
+    fn is_finished(&self) -> bool {
+        self.handle.is_finished()
+    }
+
+    fn shutdown(&self) {
+        // Send shutdown signal
+        let _ = self.shutdown_tx.send(true);
+    }
+}
+
+/// Creates a combined shutdown receiver that triggers when either the global shutdown or the connection-specific shutdown is triggered
+fn create_combined_shutdown(
+    global_shutdown: watch::Receiver<bool>,
+    connection_shutdown: watch::Receiver<bool>,
+) -> watch::Receiver<bool> {
+    let (tx, rx) = watch::channel(false);
+
+    tokio::spawn(async move {
+        let mut global_shutdown = global_shutdown;
+        let mut connection_shutdown = connection_shutdown;
+
+        tokio::select! {
+            _ = async {
+                loop {
+                    if *global_shutdown.borrow_and_update() {
+                        break;
+                    }
+                    if global_shutdown.changed().await.is_err() {
+                        break;
+                    }
+                }
+            } => {
+                let _ = tx.send(true);
+            }
+            _ = async {
+                loop {
+                    if *connection_shutdown.borrow_and_update() {
+                        break;
+                    }
+                    if connection_shutdown.changed().await.is_err() {
+                        break;
+                    }
+                }
+            } => {
+                let _ = tx.send(true);
+            }
+        }
+    });
+
+    rx
+}
 
 pub struct TcpCodecListener<C: CodecBuilder> {
     chain_builder: TransformChainBuilder,
@@ -73,13 +141,27 @@ pub struct TcpCodecListener<C: CodecBuilder> {
     /// Timeout after which to kill an idle connection. No timeout means connections will never be timed out.
     timeout: Option<Duration>,
 
-    connection_handles: Vec<JoinHandle<()>>,
+    connection_handles: Vec<TrackedConnection>,
 
     transport: Transport,
 
     /// Receiver for hot reload requests to extract listening socket file descriptor
     hot_reload_rx: tokio::sync::mpsc::UnboundedReceiver<HotReloadListenerRequest>,
+
+    /// Receiver for gradual shutdown requests
+    gradual_shutdown_rx: tokio::sync::mpsc::UnboundedReceiver<GradualShutdownRequest>,
+
     port: u16,
+
+    /// Flag indicating whether the socket has been handed off during hot reload
+    /// When true, prevents attempting to recreate the listener
+    socket_handed_off: bool,
+
+    /// Flag indicating whether gradual shutdown is in progress
+    gradual_shutdown_in_progress: bool,
+
+    /// Interval timer for gradual shutdown draining cycles
+    drain_interval: tokio::time::Interval,
 }
 
 impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
@@ -96,6 +178,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
         timeout: Option<Duration>,
         transport: Transport,
         hot_reload_rx: tokio::sync::mpsc::UnboundedReceiver<HotReloadListenerRequest>,
+        gradual_shutdown_rx: tokio::sync::mpsc::UnboundedReceiver<GradualShutdownRequest>,
         hot_reload_listeners: &mut HashMap<u16, TcpListener>,
     ) -> Result<Self, Vec<String>> {
         let available_connections_gauge =
@@ -151,6 +234,12 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
             return Err(errors);
         }
 
+        // Create interval for gradual shutdown draining with a delayed first tick
+        let mut drain_interval = tokio::time::interval(Duration::from_secs(10));
+        drain_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        // Skip the first immediate tick so draining starts after 10 seconds
+        drain_interval.reset();
+
         Ok(TcpCodecListener {
             chain_builder,
             source_name,
@@ -168,7 +257,11 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
             connection_handles: vec![],
             transport,
             hot_reload_rx,
+            gradual_shutdown_rx,
             port,
+            socket_handed_off: false,
+            gradual_shutdown_in_progress: false,
+            drain_interval,
         })
     }
 
@@ -189,21 +282,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
     /// strategy, which is what we do here.
     pub async fn run(&mut self) -> Result<()> {
         loop {
-            // Wait for a permit to become available
-            let permit = if self.hard_connection_limit {
-                match self.limit_connections.clone().try_acquire_owned() {
-                    Ok(p) => p,
-                    Err(_e) => {
-                        //close the socket too full!
-                        self.listener = None;
-                        tokio::time::sleep(Duration::from_secs(1)).await;
-                        continue;
-                    }
-                }
-            } else {
-                self.limit_connections.clone().acquire_owned().await?
-            };
-            if self.listener.is_none() {
+            if self.listener.is_none() && !self.socket_handed_off {
                 self.listener = Some(create_listener(&self.listen_addr).await?);
             }
 
@@ -212,11 +291,44 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                 crate::connection_span::span(self.connection_count, self.source_name.as_str());
             let transport = self.transport;
 
-            async {
+            let should_return = async {
                 tokio::select! {
-                    // Normal Connection handling
-                    stream_result = Self::accept(&mut self.listener) => {
-                        let stream = stream_result?;
+                    // Wait for a permit to become available and accept new connection
+                    stream_result = async {
+                        // Wait for a permit to become available
+                        let permit = if self.hard_connection_limit {
+                            match self.limit_connections.clone().try_acquire_owned() {
+                                Ok(p) => p,
+                                Err(_e) => {
+                                    //close the socket too full!
+                                    self.listener = None;
+                                    tokio::time::sleep(Duration::from_secs(1)).await;
+                                    return Err(anyhow!("Connection limit reached, retrying"));
+                                }
+                            }
+                        } else {
+                            self.limit_connections.clone().acquire_owned().await?
+                        };
+
+                        // Only accept new connections if socket hasn't been handed off
+                        if self.socket_handed_off {
+                            // Socket handed off, do not accept new connections
+                            futures::future::pending::<Result<(TcpStream, OwnedSemaphorePermit)>>().await
+                        } else {
+                            let stream = Self::accept(&mut self.listener).await?;
+                            Ok::<(TcpStream, OwnedSemaphorePermit), anyhow::Error>((stream, permit))
+                        }
+                    } => {
+                        let (stream, permit) = match stream_result {
+                            Ok(result) => result,
+                            Err(e) => {
+                                // If this was a connection limit error, continue to next iteration
+                                if e.to_string().contains("Connection limit reached") {
+                                    return Ok(false);
+                                }
+                                return Err(e);
+                            }
+                        };
 
                         debug!("got socket");
                         self.available_connections_gauge.set(self.limit_connections.available_permits() as f64);
@@ -233,50 +345,134 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                             client_details:client_details.clone(),
                         };
 
+                        // Create a unique shutdown channel for this connection
+                        let (connection_shutdown_tx, connection_shutdown_rx) = watch::channel(false);
+                        // Create a combined shutdown receiver that responds to both global and connection specific shutdowns
+                        let combined_shutdown_rx = create_combined_shutdown(
+                            self.trigger_shutdown_rx.clone(),
+                            connection_shutdown_rx,
+                        );
+
                         let handler = Handler{
                             chain: self.chain_builder.build(context),
                             codec: self.codec.clone(),
-                            shutdown: Shutdown::new(self.trigger_shutdown_rx.clone()),
+                            shutdown: Shutdown::new(combined_shutdown_rx),
                             tls: self.tls.clone(),
                             pending_requests: PendingRequests::new(self.codec.protocol()),
                             timeout: self.timeout,
                             _permit: permit,
                         };
                         // Spawn a new task to process the connections.
-                        self.connection_handles.push(tokio::spawn(async move{
+                        let handle = tokio::spawn(async move{
                             // Process the connection. If an error is encountered, log it.
                             if let Err(err) = handler.run(stream, transport, force_run_chain, client_details).await{
                                 error!("{:?}", err.context("connection was unexpectedly terminated"));
                             }
-                        }.in_current_span()));
+                        }.in_current_span());
+                        let tracked_connection = TrackedConnection::new(handle, connection_shutdown_tx);
+                        self.connection_handles.push(tracked_connection);
                         // Only prune the list every so often
                         // theres no point in doing it every iteration because most likely none of the handles will have completed
                         if self.connection_count % 1000 == 0{
                             self.connection_handles.retain(|x| !x.is_finished());
                         }
-                        Ok::<(), anyhow::Error>(())
+                        Ok::<bool, anyhow::Error>(false)
                     },
                     // Hot reload request handling
                     hot_reload_request = self.hot_reload_rx.recv() => {
                         if let Some(request) = hot_reload_request{
                             self.handle_hot_reload_request(request).await;
-                            // Wait forever once the FD has been sent. This prevents the loop from continuing
-                            // and attempting to recreate the listener.
-                            // This is fine, since the TcpCodecListener has no more work to do once it has handed off its listener.
-                            // Unfortunately, simply returning from `run` would not work as that would cause shotover to shutdown since there are no more sources running.
-                            futures::future::pending().await
+                            // After handing off the socket FD, mark it as handed off and clear the listener
+                            // This prevents attempting to recreate the listener on the same address
+                            self.socket_handed_off = true;
+                            self.listener = None;
                         }
-                        Ok::<(), anyhow::Error>(())
-                    }
-                }
+                        Ok::<bool, anyhow::Error>(false)
+                    },
+                    // Gradual shutdown request handling
+                    gradual_shutdown_request = self.gradual_shutdown_rx.recv() => {
+                        if let Some(request) = gradual_shutdown_request{
+                            info!("[{}] Received gradual shutdown request", self.source_name);
+                            self.handle_gradual_shutdown_request(request).await;
+                            info!("[{}] Gradual shutdown initiated", self.source_name);
+                        } else {
+                            // Channel was closed, but this is expected during normal shutdown
+                            // Just continue the loop - shotover shutdown will be triggered via the shutdown signal
+                            debug!("[{}] Gradual shutdown channel closed", self.source_name);
+                        }
+                        Ok::<bool, anyhow::Error>(false)
+                    },
+                    // Gradual shutdown draining - runs every 10 seconds when in shutdown mode
+                    _ = self.drain_interval.tick(), if self.gradual_shutdown_in_progress => {
+                        info!("[{}] Drain cycle starting", self.source_name);
+
+                        // Remove finished connections
+                        let before_retain = self.connection_handles.len();
+                        self.connection_handles.retain(|tc| !tc.is_finished());
+                        let after_retain = self.connection_handles.len();
+                        if before_retain != after_retain {
+                            info!(
+                                "[{}] Removed {} finished connections",
+                                self.source_name,
+                                before_retain - after_retain
+                            );
+                        }
+
+                        let total_connections = self.connection_handles.len();
+
+                        if total_connections == 0 {
+                            info!("[{}] All connections have been drained, shutting down listener", self.source_name);
+                            return Ok::<bool, anyhow::Error>(true);
+                        }
+
+                        // Calculate 10% of connections to drain (at least 1 if there are any connections)
+                        let connections_to_drain =
+                            std::cmp::max(1, (total_connections as f64 * 0.1).ceil() as usize);
+
+                        info!(
+                            "[{}] Draining {} out of {} connections (10%)",
+                            self.source_name, connections_to_drain, total_connections
+                        );
+
+                        // Shutdown the first N connections
+                        for (i, tc) in self.connection_handles.iter().take(connections_to_drain).enumerate() {
+                            info!(
+                                "[{}] Shutting down connection {}/{}",
+                                self.source_name,
+                                i + 1,
+                                connections_to_drain
+                            );
+                            tc.shutdown();
+                        }
+
+                        // Remove the shutdown connections from the list
+                        self.connection_handles.drain(..connections_to_drain);
+
+                        info!(
+                            "[{}] {} connections remaining after drain",
+                            self.source_name,
+                            self.connection_handles.len()
+                        );
+
+                        Ok::<bool, anyhow::Error>(false)
+                    },
             }
-            .instrument(span)
-            .await?;
+        }
+        .instrument(span)
+        .await?;
+            if should_return {
+                return Ok(());
+            }
         }
     }
 
     pub async fn shutdown(&mut self) {
-        join_all(&mut self.connection_handles).await;
+        let futures: Vec<_> = self
+            .connection_handles
+            .iter_mut()
+            .map(|tc| &mut tc.handle)
+            .collect();
+        join_all(futures).await;
     }
 
     /// Accept an inbound connection.
@@ -340,6 +536,19 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
         // Send response back through oneshot channel
         if request.return_chan.send(response).is_err() {
             tracing::error!("Failed to send hot reload response - receiver dropped");
+        }
+    }
+
+    /// Handle gradual shutdown request by setting the shutdown flag
+    async fn handle_gradual_shutdown_request(&mut self, request: GradualShutdownRequest) {
+        info!("Gradual shutdown request received for {}", self.source_name);
+
+        // Set the flag to enable gradual shutdown draining in the main loop
+        self.gradual_shutdown_in_progress = true;
+
+        // Acknowledge the gradual shutdown request
+        if request.return_chan.send(()).is_err() {
+            tracing::error!("Failed to send gradual shutdown acknowledgment - receiver dropped");
         }
     }
 }

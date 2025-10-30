@@ -1,6 +1,6 @@
 //! Sources used to listen for connections and send/recieve with the client.
 
-use crate::hot_reload::protocol::HotReloadListenerRequest;
+use crate::hot_reload::protocol::{GradualShutdownRequest, HotReloadListenerRequest};
 #[cfg(feature = "cassandra")]
 use crate::sources::cassandra::CassandraConfig;
 #[cfg(feature = "kafka")]
@@ -37,6 +37,7 @@ pub enum Transport {
 pub struct Source {
     pub join_handle: JoinHandle<()>,
     pub hot_reload_tx: UnboundedSender<HotReloadListenerRequest>,
+    pub gradual_shutdown_tx: UnboundedSender<GradualShutdownRequest>,
     pub name: String,
 }
 
@@ -44,11 +45,13 @@ impl Source {
     pub fn new(
         join_handle: JoinHandle<()>,
         hot_reload_tx: UnboundedSender<HotReloadListenerRequest>,
+        gradual_shutdown_tx: UnboundedSender<GradualShutdownRequest>,
         name: String,
     ) -> Self {
         Self {
             join_handle,
             hot_reload_tx,
+            gradual_shutdown_tx,
             name,
         }
     }
@@ -58,6 +61,9 @@ impl Source {
     }
     pub fn get_hot_reload_tx(&self) -> UnboundedSender<HotReloadListenerRequest> {
         self.hot_reload_tx.clone()
+    }
+    pub fn get_gradual_shutdown_tx(&self) -> UnboundedSender<GradualShutdownRequest> {
+        self.gradual_shutdown_tx.clone()
     }
     pub fn name(&self) -> &str {
         &self.name

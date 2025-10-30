@@ -131,9 +131,10 @@ impl HotReloadClient {
 
     /// Request the old Shotover instance to shutdown after hot reload handoff
     /// This should be called after the new instance is fully started and ready to accept connections
+    /// The old instance will drain connections gradually 10% every 10 seconds
     pub async fn request_shutdown_old_instance(&self) -> Result<()> {
         info!(
-            "Hot reload CLIENT requesting shutdown of old shotover at: {}",
+            "Hot reload CLIENT requesting gradual shutdown of old shotover at: {}",
             self.socket_path
         );
 
@@ -141,10 +142,10 @@ impl HotReloadClient {
 
         // Send the shutdown request - we don't expect any listeners back
         let _listeners = client
-            .send_request(crate::hot_reload::protocol::Request::ShutdownOriginalNode)
+            .send_request(crate::hot_reload::protocol::Request::GradualShutdown)
             .await?;
 
-        info!("Successfully sent shutdown request to old shotover instance");
+        info!("Successfully sent gradual shutdown request to old shotover instance");
 
         Ok(())
     }
@@ -176,15 +177,15 @@ mod tests {
 
         // Start server
         let (tx, mut rx) = unbounded_channel();
+        let (gradual_shutdown_tx, _gradual_shutdown_rx) = unbounded_channel();
         let source_handles: Vec<SourceHandle> = vec![SourceHandle {
             name: "foo".to_string(),
             sender: tx,
+            gradual_shutdown_tx,
         }];
-        let (shutdown_tx, _shutdown_rx) = tokio::sync::watch::channel(false);
         let mut server = crate::hot_reload::server::UnixSocketServer::new(
             socket_path.to_string(),
             source_handles,
-            shutdown_tx,
         )
         .unwrap();
         tokio::spawn(async move {
@@ -229,15 +230,15 @@ mod tests {
         let socket_path = "/tmp/test-multiple-clients.sock";
 
         let (tx, mut rx) = unbounded_channel();
+        let (gradual_shutdown_tx, _gradual_shutdown_rx) = unbounded_channel();
         let source_handles: Vec<SourceHandle> = vec![SourceHandle {
             name: "foo".to_string(),
             sender: tx,
+            gradual_shutdown_tx,
         }];
-        let (shutdown_tx, _shutdown_rx) = tokio::sync::watch::channel(false);
         let mut server = crate::hot_reload::server::UnixSocketServer::new(
             socket_path.to_string(),
             source_handles,
-            shutdown_tx,
         )
         .unwrap();
 

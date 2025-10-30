@@ -33,6 +33,7 @@ impl KafkaConfig {
         info!("Starting Kafka source on [{}]", self.listen_addr);
 
         let (hot_reload_tx, hot_reload_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (gradual_shutdown_tx, gradual_shutdown_rx) = tokio::sync::mpsc::unbounded_channel();
 
         let mut listener = TcpCodecListener::new(
             &self.chain,
@@ -46,6 +47,7 @@ impl KafkaConfig {
             self.timeout.map(Duration::from_secs),
             Transport::Tcp,
             hot_reload_rx,
+            gradual_shutdown_rx,
             hot_reload_listeners,
         )
         .await?;
@@ -66,6 +68,11 @@ impl KafkaConfig {
             }
         });
 
-        Ok(Source::new(join_handle, hot_reload_tx, self.name.clone()))
+        Ok(Source::new(
+            join_handle,
+            hot_reload_tx,
+            gradual_shutdown_tx,
+            self.name.clone(),
+        ))
     }
 }
