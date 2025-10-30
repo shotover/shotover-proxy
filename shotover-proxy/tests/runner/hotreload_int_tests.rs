@@ -181,7 +181,13 @@ async fn test_hot_reload_with_old_instance_shutdown() {
 
     // Wait for the old shotover to complete draining
     info!("Waiting for old shotover to complete draining and consume remaining events");
-    shotover_old.consume_remaining_events(&[]).await;
+    tokio::time::timeout(
+        Duration::from_secs(100),
+        shotover_old.consume_remaining_events(&[]),
+    )
+    .await
+    .unwrap();
+
     info!("Old shotover draining completed");
 
     // Cleanup
