@@ -104,12 +104,6 @@ pub struct TcpCodecListener<C: CodecBuilder> {
     /// Flag indicating whether the socket has been handed off during hot reload
     /// When true, prevents attempting to recreate the listener
     socket_handed_off: bool,
-
-    /// Flag indicating whether gradual shutdown is in progress
-    gradual_shutdown_in_progress: bool,
-
-    /// Interval timer for gradual shutdown draining cycles
-    drain_interval: tokio::time::Interval,
 }
 
 impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
@@ -181,12 +175,6 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
             return Err(errors);
         }
 
-        // Create interval for gradual shutdown draining with a delayed first tick
-        let mut drain_interval = tokio::time::interval(Duration::from_secs(10));
-        drain_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-        // Skip the first immediate tick so draining starts after 10 seconds
-        drain_interval.reset();
-
         Ok(TcpCodecListener {
             chain_builder,
             source_name,
@@ -206,8 +194,6 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
             gradual_shutdown_rx,
             port,
             socket_handed_off: false,
-            gradual_shutdown_in_progress: false,
-            drain_interval,
         })
     }
 
@@ -334,67 +320,68 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                     gradual_shutdown_request = self.gradual_shutdown_rx.recv() => {
                         if let Some(request) = gradual_shutdown_request{
                             info!("[{}] Received gradual shutdown request", self.source_name);
-                            self.handle_gradual_shutdown_request(request).await;
-                            info!("[{}] Gradual shutdown initiated", self.source_name);
+                            // Acknowledge the gradual shutdown request immediately
+                            if request.return_chan.send(()).is_err() {
+                                tracing::error!("Failed to send gradual shutdown acknowledgment - receiver dropped");
+                            }
+                            info!("[{}] Gradual shutdown initiated - starting drain loop", self.source_name);
+                            // Start the drain loop - continue until all connections are drained
+                            loop {
+                                // Remove finished connections
+                                let before_retain = self.connection_handles.len();
+                                self.connection_handles.retain(|tc| !tc.is_finished());
+                                let after_retain = self.connection_handles.len();
+                                if before_retain != after_retain {
+                                    info!(
+                                        "[{}] Removed {} finished connections",
+                                        self.source_name,
+                                        before_retain - after_retain
+                                    );
+                                }
+
+                                let total_connections = self.connection_handles.len();
+
+                                if total_connections == 0 {
+                                    info!("[{}] All connections have been drained, shutting down listener", self.source_name);
+                                    return Ok::<bool, anyhow::Error>(true);
+                                }
+
+                                // Calculate 10% of connections to drain (at least 1 if there are any connections)
+                                let connections_to_drain =
+                                    std::cmp::max(1, (total_connections as f64 * 0.1).ceil() as usize);
+
+                                info!(
+                                    "[{}] Draining {} out of {} connections (10%)",
+                                    self.source_name, connections_to_drain, total_connections
+                                );
+
+                                // Shutdown the first N connections
+                                for (i, tc) in self.connection_handles.iter().take(connections_to_drain).enumerate() {
+                                    info!(
+                                        "[{}] Shutting down connection {}/{}",
+                                        self.source_name,
+                                        i + 1,
+                                        connections_to_drain
+                                    );
+                                    tc.shutdown();
+                                }
+
+                                // Remove the shutdown connections from the list
+                                self.connection_handles.drain(..connections_to_drain);
+
+                                info!(
+                                    "[{}] {} connections remaining after drain",
+                                    self.source_name,
+                                    self.connection_handles.len()
+                                );
+                                // Wait 10 seconds before the next drain cycle
+                                tokio::time::sleep(Duration::from_secs(10)).await;
+                            }
                         } else {
                             // Channel was closed, but this is expected during normal shutdown
                             // Just continue the loop - shotover shutdown will be triggered via the shutdown signal
                             debug!("[{}] Gradual shutdown channel closed", self.source_name);
                         }
-                        Ok::<bool, anyhow::Error>(false)
-                    },
-                    // Gradual shutdown draining - runs every 10 seconds when in shutdown mode
-                    _ = self.drain_interval.tick(), if self.gradual_shutdown_in_progress => {
-                        info!("[{}] Drain cycle starting", self.source_name);
-
-                        // Remove finished connections
-                        let before_retain = self.connection_handles.len();
-                        self.connection_handles.retain(|tc| !tc.is_finished());
-                        let after_retain = self.connection_handles.len();
-                        if before_retain != after_retain {
-                            info!(
-                                "[{}] Removed {} finished connections",
-                                self.source_name,
-                                before_retain - after_retain
-                            );
-                        }
-
-                        let total_connections = self.connection_handles.len();
-
-                        if total_connections == 0 {
-                            info!("[{}] All connections have been drained, shutting down listener", self.source_name);
-                            return Ok::<bool, anyhow::Error>(true);
-                        }
-
-                        // Calculate 10% of connections to drain (at least 1 if there are any connections)
-                        let connections_to_drain =
-                            std::cmp::max(1, (total_connections as f64 * 0.1).ceil() as usize);
-
-                        info!(
-                            "[{}] Draining {} out of {} connections (10%)",
-                            self.source_name, connections_to_drain, total_connections
-                        );
-
-                        // Shutdown the first N connections
-                        for (i, tc) in self.connection_handles.iter().take(connections_to_drain).enumerate() {
-                            info!(
-                                "[{}] Shutting down connection {}/{}",
-                                self.source_name,
-                                i + 1,
-                                connections_to_drain
-                            );
-                            tc.shutdown();
-                        }
-
-                        // Remove the shutdown connections from the list
-                        self.connection_handles.drain(..connections_to_drain);
-
-                        info!(
-                            "[{}] {} connections remaining after drain",
-                            self.source_name,
-                            self.connection_handles.len()
-                        );
-
                         Ok::<bool, anyhow::Error>(false)
                     },
             }
@@ -483,19 +470,6 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
         // Send response back through oneshot channel
         if request.return_chan.send(response).is_err() {
             tracing::error!("Failed to send hot reload response - receiver dropped");
-        }
-    }
-
-    /// Handle gradual shutdown request by setting the shutdown flag
-    async fn handle_gradual_shutdown_request(&mut self, request: GradualShutdownRequest) {
-        info!("Gradual shutdown request received for {}", self.source_name);
-
-        // Set the flag to enable gradual shutdown draining in the main loop
-        self.gradual_shutdown_in_progress = true;
-
-        // Acknowledge the gradual shutdown request
-        if request.return_chan.send(()).is_err() {
-            tracing::error!("Failed to send gradual shutdown acknowledgment - receiver dropped");
         }
     }
 }
