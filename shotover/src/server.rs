@@ -57,48 +57,6 @@ impl TrackedConnection {
     }
 }
 
-/// Creates a combined shutdown receiver that triggers when either the global shutdown or the connection-specific shutdown is triggered
-fn create_combined_shutdown(
-    global_shutdown: watch::Receiver<bool>,
-    connection_shutdown: watch::Receiver<bool>,
-) -> watch::Receiver<bool> {
-    let (tx, rx) = watch::channel(false);
-
-    tokio::spawn(async move {
-        let mut global_shutdown = global_shutdown;
-        let mut connection_shutdown = connection_shutdown;
-
-        tokio::select! {
-            _ = async {
-                loop {
-                    if *global_shutdown.borrow_and_update() {
-                        break;
-                    }
-                    if global_shutdown.changed().await.is_err() {
-                        break;
-                    }
-                }
-            } => {
-                let _ = tx.send(true);
-            }
-            _ = async {
-                loop {
-                    if *connection_shutdown.borrow_and_update() {
-                        break;
-                    }
-                    if connection_shutdown.changed().await.is_err() {
-                        break;
-                    }
-                }
-            } => {
-                let _ = tx.send(true);
-            }
-        }
-    });
-
-    rx
-}
-
 pub struct TcpCodecListener<C: CodecBuilder> {
     chain_builder: TransformChainBuilder,
     source_name: String,
@@ -119,16 +77,6 @@ pub struct TcpCodecListener<C: CodecBuilder> {
     /// When handlers complete processing a connection, the permit is returned
     /// to the semaphore.
     limit_connections: Arc<Semaphore>,
-
-    /// Broadcasts a shutdown signal to all active connections.
-    ///
-    /// The initial `shutdown` trigger is provided by the `run` caller. The
-    /// server is responsible for gracefully shutting down active connections.
-    /// When a connection task is spawned, it is passed a broadcast receiver
-    /// handle. When a graceful shutdown is initiated, a `true` value is sent via
-    /// the watch::Sender. Each active connection receives it, reaches a
-    /// safe terminal state, and completes the task.
-    trigger_shutdown_rx: watch::Receiver<bool>,
 
     tls: Option<TlsAcceptor>,
 
@@ -173,7 +121,6 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
         hard_connection_limit: bool,
         codec: C,
         limit_connections: Arc<Semaphore>,
-        trigger_shutdown_rx: watch::Receiver<bool>,
         tls: Option<TlsAcceptor>,
         timeout: Option<Duration>,
         transport: Transport,
@@ -248,7 +195,6 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
             hard_connection_limit,
             codec,
             limit_connections,
-            trigger_shutdown_rx,
             tls,
             connection_count: 0,
             available_connections_gauge,
@@ -347,16 +293,11 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
 
                         // Create a unique shutdown channel for this connection
                         let (connection_shutdown_tx, connection_shutdown_rx) = watch::channel(false);
-                        // Create a combined shutdown receiver that responds to both global and connection specific shutdowns
-                        let combined_shutdown_rx = create_combined_shutdown(
-                            self.trigger_shutdown_rx.clone(),
-                            connection_shutdown_rx,
-                        );
 
                         let handler = Handler{
                             chain: self.chain_builder.build(context),
                             codec: self.codec.clone(),
-                            shutdown: Shutdown::new(combined_shutdown_rx),
+                            shutdown: Shutdown::new(connection_shutdown_rx),
                             tls: self.tls.clone(),
                             pending_requests: PendingRequests::new(self.codec.protocol()),
                             timeout: self.timeout,
@@ -467,6 +408,12 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
     }
 
     pub async fn shutdown(&mut self) {
+        // First, signal all connections to shutdown
+        for tc in &self.connection_handles {
+            tc.shutdown();
+        }
+
+        // Then wait for all connections to complete
         let futures: Vec<_> = self
             .connection_handles
             .iter_mut()

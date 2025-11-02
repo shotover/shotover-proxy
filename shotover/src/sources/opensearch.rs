@@ -39,7 +39,6 @@ impl OpenSearchConfig {
             self.hard_connection_limit.unwrap_or(false),
             OpenSearchCodecBuilder::new(Direction::Source, self.name.clone()),
             Arc::new(Semaphore::new(self.connection_limit.unwrap_or(512))),
-            trigger_shutdown_rx.clone(),
             None,
             self.timeout.map(Duration::from_secs),
             Transport::Tcp,

@@ -44,7 +44,6 @@ impl CassandraConfig {
             self.hard_connection_limit.unwrap_or(false),
             CassandraCodecBuilder::new(Direction::Source, self.name.clone()),
             Arc::new(Semaphore::new(self.connection_limit.unwrap_or(512))),
-            trigger_shutdown_rx.clone(),
             self.tls.as_ref().map(TlsAcceptor::new).transpose()?,
             self.timeout.map(Duration::from_secs),
             self.transport.unwrap_or(Transport::Tcp),
