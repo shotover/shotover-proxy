@@ -224,42 +224,38 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
             let transport = self.transport;
 
             let should_return = async {
+                // Wait for a permit to become available before accepting new connections
+                let permit = if !self.socket_handed_off {
+                    if self.hard_connection_limit {
+                        match self.limit_connections.clone().try_acquire_owned() {
+                            Ok(p) => Some(p),
+                            Err(_e) => {
+                                //close the socket too full!
+                                self.listener = None;
+                                tokio::time::sleep(Duration::from_secs(1)).await;
+                                return Ok(false);
+                            }
+                        }
+                    } else {
+                        Some(self.limit_connections.clone().acquire_owned().await?)
+                    }
+                } else {
+                    None
+                };
+
                 tokio::select! {
-                    // Wait for a permit to become available and accept new connection
+                    // Accept new connection
                     stream_result = async {
                         if !self.socket_handed_off {
-                            // Wait for a permit to become available
-                            let permit = if self.hard_connection_limit {
-                                match self.limit_connections.clone().try_acquire_owned() {
-                                    Ok(p) => p,
-                                    Err(_e) => {
-                                        //close the socket too full!
-                                        self.listener = None;
-                                        tokio::time::sleep(Duration::from_secs(1)).await;
-                                        return Err(anyhow!("Connection limit reached, retrying"));
-                                    }
-                                }
-                            } else {
-                                self.limit_connections.clone().acquire_owned().await?
-                            };
-
                             let stream = Self::accept(&mut self.listener).await?;
-                            Ok::<(TcpStream, OwnedSemaphorePermit), anyhow::Error>((stream, permit))
+                            Ok::<TcpStream, anyhow::Error>(stream)
                         } else {
                             // Socket handed off, do not accept new connections
-                            futures::future::pending::<Result<(TcpStream, OwnedSemaphorePermit)>>().await
+                            futures::future::pending::<Result<TcpStream>>().await
                         }
                     } => {
-                        let (stream, permit) = match stream_result {
-                            Ok(result) => result,
-                            Err(e) => {
-                                // If this was a connection limit error, continue to next iteration
-                                if e.to_string().contains("Connection limit reached") {
-                                    return Ok(false);
-                                }
-                                return Err(e);
-                            }
-                        };
+                        let stream = stream_result?;
+                        let permit = permit.expect("permit should be Some when socket_handed_off is false");
 
                         debug!("got socket");
                         self.available_connections_gauge.set(self.limit_connections.available_permits() as f64);
