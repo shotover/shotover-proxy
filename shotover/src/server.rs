@@ -229,8 +229,8 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                     if self.hard_connection_limit {
                         match self.limit_connections.clone().try_acquire_owned() {
                             Ok(p) => Some(p),
-                            Err(_e) => {
-                                //close the socket too full!
+                            Err(_) => {
+                                // Close the socket - connection limit reached
                                 self.listener = None;
                                 tokio::time::sleep(Duration::from_secs(1)).await;
                                 return Ok(false);
@@ -314,30 +314,20 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                     // Gradual shutdown request handling
                     gradual_shutdown_request = self.gradual_shutdown_rx.recv() => {
                         if let Some(request) = gradual_shutdown_request{
-                            info!("[{}] Received gradual shutdown request", self.source_name);
+                            info!("[{}] Gradual shutdown initiated - draining connections", self.source_name);
                             // Acknowledge the gradual shutdown request immediately
                             if request.return_chan.send(()).is_err() {
-                                tracing::error!("Failed to send gradual shutdown acknowledgment - receiver dropped");
+                                error!("Failed to send gradual shutdown acknowledgment - receiver dropped");
                             }
-                            info!("[{}] Gradual shutdown initiated - starting drain loop", self.source_name);
                             // Start the drain loop - continue until all connections are drained
                             loop {
                                 // Remove finished connections
-                                let before_retain = self.connection_handles.len();
                                 self.connection_handles.retain(|tc| !tc.is_finished());
-                                let after_retain = self.connection_handles.len();
-                                if before_retain != after_retain {
-                                    info!(
-                                        "[{}] Removed {} finished connections",
-                                        self.source_name,
-                                        before_retain - after_retain
-                                    );
-                                }
 
                                 let total_connections = self.connection_handles.len();
 
                                 if total_connections == 0 {
-                                    info!("[{}] All connections have been drained, shutting down listener", self.source_name);
+                                    info!("[{}] All connections drained, shutting down listener", self.source_name);
                                     return Ok::<bool, anyhow::Error>(true);
                                 }
 
@@ -351,13 +341,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                                 );
 
                                 // Shutdown the first N connections
-                                for (i, tc) in self.connection_handles.iter().take(connections_to_drain).enumerate() {
-                                    info!(
-                                        "[{}] Shutting down connection {}/{}",
-                                        self.source_name,
-                                        i + 1,
-                                        connections_to_drain
-                                    );
+                                for tc in self.connection_handles.iter().take(connections_to_drain) {
                                     tc.shutdown();
                                 }
 
