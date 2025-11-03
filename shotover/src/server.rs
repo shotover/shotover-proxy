@@ -230,7 +230,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                         match self.limit_connections.clone().try_acquire_owned() {
                             Ok(p) => Some(p),
                             Err(_) => {
-                                // Close the socket - connection limit reached
+                                // Close the socket
                                 self.listener = None;
                                 tokio::time::sleep(Duration::from_secs(1)).await;
                                 return Ok(false);
@@ -380,12 +380,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
         }
 
         // Then wait for all connections to complete
-        let futures: Vec<_> = self
-            .connection_handles
-            .iter_mut()
-            .map(|tc| &mut tc.handle)
-            .collect();
-        join_all(futures).await;
+        join_all(self.connection_handles.iter_mut().map(|tc| &mut tc.handle)).await;
     }
 
     /// Accept an inbound connection.
