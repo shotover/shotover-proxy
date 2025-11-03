@@ -227,28 +227,27 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                 tokio::select! {
                     // Wait for a permit to become available and accept new connection
                     stream_result = async {
-                        // Wait for a permit to become available
-                        let permit = if self.hard_connection_limit {
-                            match self.limit_connections.clone().try_acquire_owned() {
-                                Ok(p) => p,
-                                Err(_e) => {
-                                    //close the socket too full!
-                                    self.listener = None;
-                                    tokio::time::sleep(Duration::from_secs(1)).await;
-                                    return Err(anyhow!("Connection limit reached, retrying"));
+                        if !self.socket_handed_off {
+                            // Wait for a permit to become available
+                            let permit = if self.hard_connection_limit {
+                                match self.limit_connections.clone().try_acquire_owned() {
+                                    Ok(p) => p,
+                                    Err(_e) => {
+                                        //close the socket too full!
+                                        self.listener = None;
+                                        tokio::time::sleep(Duration::from_secs(1)).await;
+                                        return Err(anyhow!("Connection limit reached, retrying"));
+                                    }
                                 }
-                            }
-                        } else {
-                            self.limit_connections.clone().acquire_owned().await?
-                        };
+                            } else {
+                                self.limit_connections.clone().acquire_owned().await?
+                            };
 
-                        // Only accept new connections if socket hasn't been handed off
-                        if self.socket_handed_off {
-                            // Socket handed off, do not accept new connections
-                            futures::future::pending::<Result<(TcpStream, OwnedSemaphorePermit)>>().await
-                        } else {
                             let stream = Self::accept(&mut self.listener).await?;
                             Ok::<(TcpStream, OwnedSemaphorePermit), anyhow::Error>((stream, permit))
+                        } else {
+                            // Socket handed off, do not accept new connections
+                            futures::future::pending::<Result<(TcpStream, OwnedSemaphorePermit)>>().await
                         }
                     } => {
                         let (stream, permit) = match stream_result {
