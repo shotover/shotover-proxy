@@ -2,7 +2,6 @@ use crate::shotover_process;
 use redis::{Client, Commands};
 use std::time::Duration;
 use test_helpers::docker_compose::docker_compose;
-use tracing::info;
 
 /// Helper function to verify comprehensive Valkey connection functionality
 fn assert_valkey_connection_works(
@@ -91,6 +90,8 @@ async fn test_hot_reload_with_old_instance_shutdown() {
 
     // Set a counter to track
     let _: () = connections[0].set("counter", 0).unwrap();
+
+    // Verify all connections work
     for (i, con) in connections.iter_mut().enumerate() {
         let value: String = con.get(format!("key_{}", i)).unwrap();
         assert_eq!(value, format!("value_{}", i));
@@ -113,29 +114,25 @@ async fn test_hot_reload_with_old_instance_shutdown() {
     // Verify data persistence
     let value: String = con_new.get("key_0").unwrap();
     assert_eq!(value, "value_0");
+
     // Keep testing old connections periodically
     // Some should start failing as they are gradually drained
     let mut connections_failed = 0;
 
     // Test over a period of time (e.g., 35 seconds to allow for 3-4 drain cycles)
     // Each cycle drains 10% every 10 seconds
-    for round in 0..7 {
+    for _ in 0..7 {
         tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
 
         connections_failed = 0;
-        let mut connections_still_working = 0;
 
         for (i, con) in connections.iter_mut().enumerate() {
-            match con.get::<_, String>(format!("key_{}", i)) {
-                Ok(_) => {
-                    connections_still_working += 1;
-                }
-                Err(e) => {
-                    connections_failed += 1;
-                }
+            if con.get::<_, String>(format!("key_{}", i)).is_err() {
+                connections_failed += 1;
             }
         }
     }
+
     // After sufficient time, most or all old connections should have been drained
     assert!(
         connections_failed > 0,
