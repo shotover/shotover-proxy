@@ -58,11 +58,10 @@ jobs:
 
       - name: Build tests
         run: |
-          cargo nextest run ${{ matrix.cargo_flags }} --features alpha-transforms --all-targets hotreload_int_tests
+          cargo nextest run ${{ matrix.cargo_flags }} --features alpha-transforms --all-targets hotreload_int_tests --no-capture
       - name: Ensure that tests did not create or modify any files that arent .gitignore'd
         run: |
           if [ -n "$(git status --porcelain)" ]; then
             git status
             exit 1
           fi
-          

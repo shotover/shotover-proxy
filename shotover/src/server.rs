@@ -285,11 +285,11 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                             futures::future::pending().await
                         }
                         Ok::<(), anyhow::Error>(())
-                    },
+                    }
+                }
             }
-        }
-        .instrument(span)
-        .await?;
+            .instrument(span)
+            .await?;
         }
     }
 
