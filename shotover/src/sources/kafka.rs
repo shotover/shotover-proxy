@@ -1,5 +1,6 @@
 use crate::codec::{CodecBuilder, Direction, kafka::KafkaCodecBuilder};
 use crate::config::chain::TransformChainConfig;
+use crate::hot_reload::protocol::GradualShutdownRequest;
 use crate::server::TcpCodecListener;
 use crate::sources::{Source, Transport};
 use crate::tls::{TlsAcceptor, TlsAcceptorConfig};
@@ -33,7 +34,8 @@ impl KafkaConfig {
         info!("Starting Kafka source on [{}]", self.listen_addr);
 
         let (hot_reload_tx, hot_reload_rx) = tokio::sync::mpsc::unbounded_channel();
-        let (gradual_shutdown_tx, gradual_shutdown_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (gradual_shutdown_tx, mut gradual_shutdown_rx) =
+            tokio::sync::mpsc::unbounded_channel::<GradualShutdownRequest>();
 
         let mut listener = TcpCodecListener::new(
             &self.chain,
@@ -46,7 +48,6 @@ impl KafkaConfig {
             self.timeout.map(Duration::from_secs),
             Transport::Tcp,
             hot_reload_rx,
-            gradual_shutdown_rx,
             hot_reload_listeners,
         )
         .await?;
@@ -62,6 +63,15 @@ impl KafkaConfig {
                     }
                     _ = trigger_shutdown_rx.changed() => {
                         listener.shutdown().await;
+                    }
+                    gradual_shutdown_request = gradual_shutdown_rx.recv() => {
+                        if let Some(request) = gradual_shutdown_request {
+                            // Acknowledge the gradual shutdown request immediately
+                            if request.return_chan.send(()).is_err() {
+                                error!("Failed to send gradual shutdown acknowledgment - receiver dropped");
+                            }
+                            listener.gradual_shutdown().await;
+                        }
                     }
                 }
             }

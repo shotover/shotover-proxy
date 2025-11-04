@@ -1,9 +1,7 @@
 use crate::codec::{CodecBuilder, CodecReadError, CodecWriteError};
 use crate::config::chain::TransformChainConfig;
 use crate::frame::MessageType;
-use crate::hot_reload::protocol::{
-    GradualShutdownRequest, HotReloadListenerRequest, HotReloadListenerResponse,
-};
+use crate::hot_reload::protocol::{HotReloadListenerRequest, HotReloadListenerResponse};
 use crate::message::{Message, MessageIdMap, Messages, Metadata};
 use crate::sources::Transport;
 use crate::tls::{AcceptError, TlsAcceptor};
@@ -96,9 +94,6 @@ pub struct TcpCodecListener<C: CodecBuilder> {
     /// Receiver for hot reload requests to extract listening socket file descriptor
     hot_reload_rx: tokio::sync::mpsc::UnboundedReceiver<HotReloadListenerRequest>,
 
-    /// Receiver for gradual shutdown requests
-    gradual_shutdown_rx: tokio::sync::mpsc::UnboundedReceiver<GradualShutdownRequest>,
-
     port: u16,
 
     /// Flag indicating whether the socket has been handed off during hot reload
@@ -119,7 +114,6 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
         timeout: Option<Duration>,
         transport: Transport,
         hot_reload_rx: tokio::sync::mpsc::UnboundedReceiver<HotReloadListenerRequest>,
-        gradual_shutdown_rx: tokio::sync::mpsc::UnboundedReceiver<GradualShutdownRequest>,
         hot_reload_listeners: &mut HashMap<u16, TcpListener>,
     ) -> Result<Self, Vec<String>> {
         let available_connections_gauge =
@@ -191,7 +185,6 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
             connection_handles: vec![],
             transport,
             hot_reload_rx,
-            gradual_shutdown_rx,
             port,
             socket_handed_off: false,
         })
@@ -311,58 +304,6 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                         }
                         Ok::<bool, anyhow::Error>(false)
                     },
-                    // Gradual shutdown request handling
-                    gradual_shutdown_request = self.gradual_shutdown_rx.recv() => {
-                        if let Some(request) = gradual_shutdown_request{
-                            info!("[{}] Gradual shutdown initiated - draining connections", self.source_name);
-                            // Acknowledge the gradual shutdown request immediately
-                            if request.return_chan.send(()).is_err() {
-                                error!("Failed to send gradual shutdown acknowledgment - receiver dropped");
-                            }
-                            // Start the drain loop - continue until all connections are drained
-                            loop {
-                                // Remove finished connections
-                                self.connection_handles.retain(|tc| !tc.is_finished());
-
-                                let total_connections = self.connection_handles.len();
-
-                                if total_connections == 0 {
-                                    info!("[{}] All connections drained, shutting down listener", self.source_name);
-                                    return Ok::<bool, anyhow::Error>(true);
-                                }
-
-                                // Calculate 10% of connections to drain (at least 1 if there are any connections)
-                                let connections_to_drain =
-                                    std::cmp::max(1, (total_connections as f64 * 0.1).ceil() as usize);
-
-                                info!(
-                                    "[{}] Draining {} out of {} connections (10%)",
-                                    self.source_name, connections_to_drain, total_connections
-                                );
-
-                                // Shutdown the first N connections
-                                for tc in self.connection_handles.iter().take(connections_to_drain) {
-                                    tc.shutdown();
-                                }
-
-                                // Remove the shutdown connections from the list
-                                self.connection_handles.drain(..connections_to_drain);
-
-                                info!(
-                                    "[{}] {} connections remaining after drain",
-                                    self.source_name,
-                                    self.connection_handles.len()
-                                );
-                                // Wait 10 seconds before the next drain cycle
-                                tokio::time::sleep(Duration::from_secs(10)).await;
-                            }
-                        } else {
-                            // Channel was closed, but this is expected during normal shutdown
-                            // Just continue the loop - shotover shutdown will be triggered via the shutdown signal
-                            debug!("[{}] Gradual shutdown channel closed", self.source_name);
-                        }
-                        Ok::<bool, anyhow::Error>(false)
-                    },
             }
         }
         .instrument(span)
@@ -381,6 +322,53 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
 
         // Then wait for all connections to complete
         join_all(self.connection_handles.iter_mut().map(|tc| &mut tc.handle)).await;
+    }
+
+    pub async fn gradual_shutdown(&mut self) {
+        info!(
+            "[{}] Gradual shutdown initiated - draining connections",
+            self.source_name
+        );
+
+        loop {
+            // Remove finished connections
+            self.connection_handles.retain(|tc| !tc.is_finished());
+
+            let total_connections = self.connection_handles.len();
+
+            if total_connections == 0 {
+                info!(
+                    "[{}] All connections drained, shutting down listener",
+                    self.source_name
+                );
+                return;
+            }
+
+            // Calculate 10% of connections to drain (at least 1 if there are any connections)
+            let connections_to_drain =
+                std::cmp::max(1, (total_connections as f64 * 0.1).ceil() as usize);
+
+            info!(
+                "[{}] Draining {} out of {} connections (10%)",
+                self.source_name, connections_to_drain, total_connections
+            );
+
+            // Shutdown the first N connections
+            for tc in self.connection_handles.iter().take(connections_to_drain) {
+                tc.shutdown();
+            }
+
+            // Remove the shutdown connections from the list
+            self.connection_handles.drain(..connections_to_drain);
+
+            info!(
+                "[{}] {} connections remaining after drain",
+                self.source_name,
+                self.connection_handles.len()
+            );
+            // Wait 10 seconds before the next drain cycle
+            tokio::time::sleep(Duration::from_secs(10)).await;
+        }
     }
 
     /// Accept an inbound connection.
