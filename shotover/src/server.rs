@@ -310,9 +310,6 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
         );
 
         loop {
-            // Remove finished connections
-            self.connection_handles.retain(|tc| !tc.is_finished());
-
             let total_connections = self.connection_handles.len();
 
             if total_connections == 0 {
