@@ -64,14 +64,12 @@ impl KafkaConfig {
                     _ = trigger_shutdown_rx.changed() => {
                         listener.shutdown().await;
                     }
-                    gradual_shutdown_request = gradual_shutdown_rx.recv() => {
-                        if let Some(request) = gradual_shutdown_request {
-                            // Acknowledge the gradual shutdown request immediately
-                            if request.return_chan.send(()).is_err() {
-                                error!("Failed to send gradual shutdown acknowledgment - receiver dropped");
-                            }
-                            listener.gradual_shutdown().await;
+                    Some(request) = gradual_shutdown_rx.recv() => {
+                        // Acknowledge the gradual shutdown request immediately
+                        if request.return_chan.send(()).is_err() {
+                            error!("Failed to send gradual shutdown acknowledgment - receiver dropped");
                         }
+                        listener.gradual_shutdown().await;
                     }
                 }
             }
