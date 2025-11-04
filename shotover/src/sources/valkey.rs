@@ -65,11 +65,7 @@ impl ValkeyConfig {
                     _ = trigger_shutdown_rx.changed() => {
                         listener.shutdown().await;
                     }
-                    Some(request) = gradual_shutdown_rx.recv() => {
-                        // Acknowledge the gradual shutdown request immediately
-                        if request.return_chan.send(()).is_err() {
-                            error!("Failed to send gradual shutdown acknowledgment - receiver dropped");
-                        }
+                    Some(GradualShutdownRequest) = gradual_shutdown_rx.recv() => {
                         listener.gradual_shutdown().await;
                     }
                 }

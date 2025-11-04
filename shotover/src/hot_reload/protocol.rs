@@ -20,9 +20,7 @@ pub struct HotReloadListenerRequest {
 }
 
 /// Request sent from hot reload server to TcpCodecListener for gradual shutdown
-pub struct GradualShutdownRequest {
-    pub return_chan: tokio::sync::oneshot::Sender<()>,
-}
+pub struct GradualShutdownRequest;
 
 /// Response sent from TcpCodecListener back to hot reload server
 /// listener_socket_fd is an OwnedFd. It will be converted to RawFd only during transfer.

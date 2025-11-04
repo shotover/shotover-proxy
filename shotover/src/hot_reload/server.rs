@@ -149,31 +149,11 @@ impl UnixSocketServer {
 
                 // Send gradual shutdown requests to all sources
                 for source in &self.sources {
-                    let (response_tx, response_rx) = tokio::sync::oneshot::channel();
-                    let shutdown_request = GradualShutdownRequest {
-                        return_chan: response_tx,
-                    };
-
-                    if let Err(e) = source.gradual_shutdown_tx.send(shutdown_request) {
+                    if let Err(e) = source.gradual_shutdown_tx.send(GradualShutdownRequest) {
                         warn!(
                             "Failed to send gradual shutdown request to source {}: {:?}",
                             source.name, e
                         );
-                        continue;
-                    }
-
-                    // Wait for acknowledgment with timeout
-                    match tokio::time::timeout(std::time::Duration::from_secs(5), response_rx).await
-                    {
-                        Ok(Ok(())) => {
-                            info!("Source {} acknowledged gradual shutdown", source.name);
-                        }
-                        Ok(Err(_)) => {
-                            warn!("Source {} dropped response channel", source.name);
-                        }
-                        Err(_) => {
-                            warn!("Timeout waiting for response from source {}", source.name);
-                        }
                     }
                 }
 
