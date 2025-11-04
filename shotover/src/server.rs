@@ -278,6 +278,11 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                     hot_reload_request = self.hot_reload_rx.recv() => {
                         if let Some(request) = hot_reload_request{
                             self.handle_hot_reload_request(request).await;
+                            // Wait forever once the FD has been sent. This prevents the loop from continuing
+                            // and attempting to recreate the listener.
+                            // This is fine, since the TcpCodecListener has no more work to do once it has handed off its listener.
+                            // Unfortunately, simply returning from `run` would not work as that would cause shotover to shutdown since there are no more sources running.
+                            futures::future::pending().await
                         }
                         Ok::<(), anyhow::Error>(())
                     },
