@@ -95,10 +95,6 @@ pub struct TcpCodecListener<C: CodecBuilder> {
     hot_reload_rx: tokio::sync::mpsc::UnboundedReceiver<HotReloadListenerRequest>,
 
     port: u16,
-
-    /// Flag indicating whether the socket has been handed off during hot reload
-    /// When true, prevents attempting to recreate the listener
-    socket_handed_off: bool,
 }
 
 impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
@@ -186,7 +182,6 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
             transport,
             hot_reload_rx,
             port,
-            socket_handed_off: false,
         })
     }
 
@@ -207,7 +202,21 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
     /// strategy, which is what we do here.
     pub async fn run(&mut self) -> Result<()> {
         loop {
-            if self.listener.is_none() && !self.socket_handed_off {
+            // Wait for a permit to become available
+            let permit = if self.hard_connection_limit {
+                match self.limit_connections.clone().try_acquire_owned() {
+                    Ok(p) => p,
+                    Err(_e) => {
+                        //close the socket too full!
+                        self.listener = None;
+                        tokio::time::sleep(Duration::from_secs(1)).await;
+                        continue;
+                    }
+                }
+            } else {
+                self.limit_connections.clone().acquire_owned().await?
+            };
+            if self.listener.is_none() {
                 self.listener = Some(create_listener(&self.listen_addr).await?);
             }
 
@@ -216,39 +225,11 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                 crate::connection_span::span(self.connection_count, self.source_name.as_str());
             let transport = self.transport;
 
-            let should_return = async {
-                // Wait for a permit to become available before accepting new connections
-                let permit = if !self.socket_handed_off {
-                    if self.hard_connection_limit {
-                        match self.limit_connections.clone().try_acquire_owned() {
-                            Ok(p) => Some(p),
-                            Err(_) => {
-                                // Close the socket
-                                self.listener = None;
-                                tokio::time::sleep(Duration::from_secs(1)).await;
-                                return Ok(false);
-                            }
-                        }
-                    } else {
-                        Some(self.limit_connections.clone().acquire_owned().await?)
-                    }
-                } else {
-                    None
-                };
-
+            async {
                 tokio::select! {
                     // Accept new connection
-                    stream_result = async {
-                        if !self.socket_handed_off {
-                            let stream = Self::accept(&mut self.listener).await?;
-                            Ok::<TcpStream, anyhow::Error>(stream)
-                        } else {
-                            // Socket handed off, do not accept new connections
-                            futures::future::pending::<Result<TcpStream>>().await
-                        }
-                    } => {
+                    stream_result = Self::accept(&mut self.listener) => {
                         let stream = stream_result?;
-                        let permit = permit.expect("permit should be Some when socket_handed_off is false");
 
                         debug!("got socket");
                         self.available_connections_gauge.set(self.limit_connections.available_permits() as f64);
@@ -291,26 +272,19 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                         if self.connection_count % 1000 == 0{
                             self.connection_handles.retain(|x| !x.is_finished());
                         }
-                        Ok::<bool, anyhow::Error>(false)
+                        Ok::<(), anyhow::Error>(())
                     },
                     // Hot reload request handling
                     hot_reload_request = self.hot_reload_rx.recv() => {
                         if let Some(request) = hot_reload_request{
                             self.handle_hot_reload_request(request).await;
-                            // After handing off the socket FD, mark it as handed off and clear the listener
-                            // This prevents attempting to recreate the listener on the same address
-                            self.socket_handed_off = true;
-                            self.listener = None;
                         }
-                        Ok::<bool, anyhow::Error>(false)
+                        Ok::<(), anyhow::Error>(())
                     },
             }
         }
         .instrument(span)
         .await?;
-            if should_return {
-                return Ok(());
-            }
         }
     }
 
@@ -449,8 +423,8 @@ pub struct Handler<C: CodecBuilder> {
     tls: Option<TlsAcceptor>,
     /// Listen for shutdown notifications.
     ///
-    /// A wrapper around the `broadcast::Receiver` paired with the sender in
-    /// `Listener`. The connection handler processes requests from the
+    /// A wrapper around the `watch::Receiver` paired with the sender in
+    /// `TcpCodecListener`. The connection handler processes requests from the
     /// connection until the peer disconnects **or** a shutdown notification is
     /// received from `shutdown`. In the latter case, any in-flight work being
     /// processed for the peer is continued until it reaches a safe state, at
@@ -936,8 +910,8 @@ enum CloseReason {
 
 /// Listens for the server shutdown signal.
 ///
-/// Shutdown is signaled using a `broadcast::Receiver`. Only a single value is
-/// ever sent. Once a value has been sent via the broadcast channel, the server
+/// Shutdown is signaled using a `watch::Receiver`. Only a single value is
+/// ever sent. Once a value has been sent via the watch channel, the connection
 /// should shutdown.
 ///
 /// The `Shutdown` struct listens for the signal and tracks that the signal has
@@ -953,7 +927,7 @@ pub struct Shutdown {
 }
 
 impl Shutdown {
-    /// Create a new `Shutdown` backed by the given `broadcast::Receiver`.
+    /// Create a new `Shutdown` backed by the given `watch::Receiver`.
     pub(crate) fn new(notify: watch::Receiver<bool>) -> Shutdown {
         Shutdown {
             shutdown: false,
