@@ -329,13 +329,15 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                 self.source_name, connections_to_drain, total_connections
             );
 
-            // Shutdown the first N connections
-            for tc in self.connection_handles.iter().take(connections_to_drain) {
-                tc.shutdown();
+            // Drain the first N connections and shut them down
+            let mut connections_to_close: Vec<_> =
+                self.connection_handles.drain(..connections_to_drain).collect();
+            for connection in &connections_to_close {
+                connection.shutdown();
             }
-
-            // Remove the shutdown connections from the list
-            self.connection_handles.drain(..connections_to_drain);
+            
+            // Wait for all shutdown connections to complete
+            join_all(connections_to_close.iter_mut().map(|tc| &mut tc.handle)).await;
 
             info!(
                 "[{}] {} connections remaining after drain",
