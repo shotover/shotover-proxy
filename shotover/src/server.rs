@@ -309,31 +309,25 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
             self.source_name
         );
 
-        loop {
-            let total_connections = self.connection_handles.len();
+        // Calculate 10% of connections to drain (at least 1 if there are any connections)
+        let connections_to_drain = std::cmp::max(
+            1,
+            (self.connection_handles.len() as f64 * 0.1).ceil() as usize,
+        );
 
-            if total_connections == 0 {
-                info!(
-                    "[{}] All connections drained, shutting down listener",
-                    self.source_name
-                );
-                return;
-            }
-
-            // Calculate 10% of connections to drain (at least 1 if there are any connections)
-            let connections_to_drain =
-                std::cmp::max(1, (total_connections as f64 * 0.1).ceil() as usize);
+        while !self.connection_handles.is_empty() {
+            let to_drain = std::cmp::min(connections_to_drain, self.connection_handles.len());
 
             info!(
-                "[{}] Draining {} out of {} connections (10%)",
-                self.source_name, connections_to_drain, total_connections
+                "[{}] Draining {} out of {} connections",
+                self.source_name,
+                to_drain,
+                self.connection_handles.len()
             );
 
             // Drain the first N connections and shut them down
-            let mut connections_to_close: Vec<_> = self
-                .connection_handles
-                .drain(..connections_to_drain)
-                .collect();
+            let mut connections_to_close: Vec<_> =
+                self.connection_handles.drain(..to_drain).collect();
             for connection in &connections_to_close {
                 connection.shutdown();
             }
@@ -346,9 +340,18 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                 self.source_name,
                 self.connection_handles.len()
             );
-            // Wait 10 seconds before the next drain cycle
-            tokio::time::sleep(Duration::from_secs(10)).await;
+
+            // Don't sleep after draining the last batch
+            if !self.connection_handles.is_empty() {
+                // Wait 10 seconds before the next drain cycle
+                tokio::time::sleep(Duration::from_secs(10)).await;
+            }
         }
+
+        info!(
+            "[{}] All connections drained, shutting down",
+            self.source_name
+        );
     }
 
     /// Accept an inbound connection.
