@@ -77,7 +77,7 @@ async fn test_hot_reload_with_old_instance_shutdown() {
     // Establish multiple connections to old instance to test gradual draining
     let client_old = Client::open("valkey://127.0.0.1:6380").unwrap();
 
-    // Create 10 connections to the old instance
+    // Create 13 connections to the old instance
     let mut connections = Vec::new();
     for i in 0..13 {
         let mut con = client_old.get_connection().unwrap();
