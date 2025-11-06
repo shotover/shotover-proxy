@@ -170,10 +170,6 @@ async fn test_hot_reload_with_zero_connections() {
         .start()
         .await;
 
-    // Don't create any connections - we want to test hot reload with truly zero connections
-    // This simulates automated hot reload triggered during a quiet period
-    tokio::time::sleep(Duration::from_millis(500)).await;
-
     // Start the new shotover instance that will request hot reload
     let shotover_new = shotover_process("tests/test-configs/hotreload/topology.yaml")
         .with_hotreload(true)
