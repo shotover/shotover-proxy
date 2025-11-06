@@ -79,7 +79,7 @@ async fn test_hot_reload_with_old_instance_shutdown() {
 
     // Create 10 connections to the old instance
     let mut connections = Vec::new();
-    for i in 0..10 {
+    for i in 0..13 {
         let mut con = client_old.get_connection().unwrap();
         // Store some data in each connection
         let _: () = con
