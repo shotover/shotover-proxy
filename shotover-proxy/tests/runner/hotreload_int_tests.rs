@@ -153,3 +153,67 @@ async fn test_hot_reload_with_old_instance_shutdown() {
     // Cleanup
     shotover_new.shutdown_and_then_consume_events(&[]).await;
 }
+
+#[tokio::test]
+#[cfg_attr(not(target_os = "linux"), ignore)]
+async fn test_hot_reload_with_zero_connections() {
+    let socket_path = "/tmp/test-hotreload-zero-connections.sock";
+
+    let _compose = docker_compose("tests/test-configs/hotreload/docker-compose.yaml");
+
+    // Start the old shotover instance
+    let shotover_old = shotover_process("tests/test-configs/hotreload/topology.yaml")
+        .with_hotreload(true)
+        .with_log_name("shot_old_zero")
+        .with_hotreload_socket_path(socket_path)
+        .with_config("tests/test-configs/shotover-config/config_metrics_disabled.yaml")
+        .start()
+        .await;
+
+    // Establish a connection to verify old instance is working, then close it
+    let client_old = Client::open("valkey://127.0.0.1:6380").unwrap();
+    {
+        let mut con = client_old.get_connection().unwrap();
+        // Store some test data
+        let _: () = con.set("test_key", "test_value").unwrap();
+        let _: () = con.set("counter", 0).unwrap();
+        // Verify it works
+        let value: String = con.get("test_key").unwrap();
+        assert_eq!(value, "test_value");
+        // Connection is dropped here, leaving zero active connections
+    }
+
+    // Start the new shotover instance that will request hot reload
+    let shotover_new = shotover_process("tests/test-configs/hotreload/topology.yaml")
+        .with_hotreload(true)
+        .with_log_name("shot_new_zero")
+        .with_hotreload_socket_path("/tmp/shotover-new-zero-connections.sock")
+        .with_hotreload_from_socket(socket_path)
+        .with_config("tests/test-configs/shotover-config/config_metrics_disabled.yaml")
+        .start()
+        .await;
+
+    // Verify that new shotover is running and can handle new connections
+    let client_new = Client::open("valkey://127.0.0.1:6380").unwrap();
+    let mut con_new = client_new.get_connection().unwrap();
+
+    // Verify data persistence
+    let value: String = con_new.get("test_key").unwrap();
+    assert_eq!(value, "test_value");
+
+    // The old shotover should shutdown almost immediately since there are no connections to drain
+    // This validates that the gradual shutdown recognizes the zero-connections case
+    // and doesn't waste time running unnecessary drain cycles
+    tokio::time::timeout(
+        Duration::from_secs(5),
+        shotover_old.consume_remaining_events(&[]),
+    )
+    .await
+    .expect("Old shotover should shutdown immediately when there are no connections to drain");
+
+    // Verify new shotover is still working after old one shut down
+    assert_valkey_connection_works(&mut con_new, Some(1), &[("test_key", "test_value")]).unwrap();
+
+    // Cleanup
+    shotover_new.shutdown_and_then_consume_events(&[]).await;
+}
