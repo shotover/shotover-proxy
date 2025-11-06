@@ -164,7 +164,7 @@ async fn test_hot_reload_with_zero_connections() {
     // Start the old shotover instance
     let shotover_old = shotover_process("tests/test-configs/hotreload/topology.yaml")
         .with_hotreload(true)
-        .with_log_name("shot_old_zero")
+        .with_log_name("shot_old_0")
         .with_hotreload_socket_path(socket_path)
         .with_config("tests/test-configs/shotover-config/config_metrics_disabled.yaml")
         .start()
@@ -186,7 +186,7 @@ async fn test_hot_reload_with_zero_connections() {
     // Start the new shotover instance that will request hot reload
     let shotover_new = shotover_process("tests/test-configs/hotreload/topology.yaml")
         .with_hotreload(true)
-        .with_log_name("shot_new_zero")
+        .with_log_name("shot_new_0")
         .with_hotreload_socket_path("/tmp/shotover-new-zero-connections.sock")
         .with_hotreload_from_socket(socket_path)
         .with_config("tests/test-configs/shotover-config/config_metrics_disabled.yaml")
