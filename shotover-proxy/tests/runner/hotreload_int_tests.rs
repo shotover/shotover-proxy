@@ -172,9 +172,12 @@ async fn test_hot_reload_with_old_instance_shutdown() {
         // We've now witnessed (cycle + 1) drains: 1 immediate + cycle more
         let expected_drained = expected_drain_per_cycle * (cycle + 1);
         assert_eq!(
-            connections_failed, expected_drained,
+            connections_failed,
+            expected_drained,
             "After drain cycle {}: expected exactly {} connections drained, but {} were drained",
-            cycle + 1, expected_drained, connections_failed
+            cycle + 1,
+            expected_drained,
+            connections_failed
         );
     }
 
