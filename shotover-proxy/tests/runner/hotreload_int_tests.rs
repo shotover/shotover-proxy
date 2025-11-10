@@ -115,29 +115,45 @@ async fn test_hot_reload_with_old_instance_shutdown() {
     let value: String = con_new.get("key_0").unwrap();
     assert_eq!(value, "value_0");
 
-    // Keep testing old connections periodically
-    // Some should start failing as they are gradually drained
-    let mut connections_failed = 0;
+    // Track connection failures over multiple drain cycles
+    // The gradual shutdown drains 10% of initial connections (rounded up to at least 1)
+    // For 13 connections: 10% = 1.3 -> rounds to 2 connections per cycle
+    // Each drain cycle waits 10 seconds between drains
+    //
+    // Note: Low connection counts give non-ideal cycle counts due to rounding.
+    // For example, 13 connections requires 7 cycles to fully drain.
+    // With realistic connection counts (100+), a 10% drain rate consistently takes ~10 cycles.
+    let total_connections = connections.len();
+    let expected_drain_per_cycle =
+        std::cmp::max(1, (total_connections as f64 * 0.1).ceil() as usize);
 
-    // Test over a period of time (e.g., 35 seconds to allow for 3-4 drain cycles)
-    // Each cycle drains 10% every 10 seconds
-    for _ in 0..7 {
-        tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+    // Calculate how many drain cycles we need to verify
+    // We'll verify enough cycles to drain at least 50% of connections
+    let num_cycles_to_verify = std::cmp::min(
+        5,
+        (total_connections as f64 / expected_drain_per_cycle as f64 / 2.0).ceil() as usize,
+    );
 
-        connections_failed = 0;
+    // Verify each drain cycle
+    for cycle in 1..=num_cycles_to_verify {
+        tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
 
+        let mut connections_failed = 0;
         for (i, con) in connections.iter_mut().enumerate() {
             if con.get::<_, String>(format!("key_{}", i)).is_err() {
                 connections_failed += 1;
             }
         }
-    }
 
-    // After sufficient time, most or all old connections should have been drained
-    assert!(
-        connections_failed > 0,
-        "Expected some connections to be drained, but none were"
-    );
+        let expected_drained = expected_drain_per_cycle * cycle;
+        assert!(
+            connections_failed >= expected_drained,
+            "After drain cycle {}: expected at least {} connections drained, but only {} were drained",
+            cycle,
+            expected_drained,
+            connections_failed
+        );
+    }
 
     // Verify new connections still work
     assert_valkey_connection_works(&mut con_new, Some(1), &[("key_0", "value_0")]).unwrap();
