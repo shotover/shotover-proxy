@@ -115,6 +115,8 @@ async fn test_hot_reload_with_old_instance_shutdown() {
     let value: String = con_new.get("key_0").unwrap();
     assert_eq!(value, "value_0");
 
+    tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+
     // Track connection failures over multiple drain cycles
     // The gradual shutdown drains 10% of initial connections (rounded up to at least 1)
     // For 13 connections: 10% = 1.3 -> rounds to 2 connections per cycle
@@ -127,11 +129,26 @@ async fn test_hot_reload_with_old_instance_shutdown() {
     let expected_drain_per_cycle =
         std::cmp::max(1, (total_connections as f64 * 0.1).ceil() as usize);
 
+    // Verify the drain rate calculation is reasonable
+    assert!(
+        expected_drain_per_cycle > 0 && expected_drain_per_cycle <= total_connections,
+        "Expected drain per cycle should be between 1 and {}, but got {}",
+        total_connections,
+        expected_drain_per_cycle
+    );
+
     // Calculate how many drain cycles we need to verify
     // We'll verify enough cycles to drain at least 50% of connections
     let num_cycles_to_verify = std::cmp::min(
         5,
         (total_connections as f64 / expected_drain_per_cycle as f64 / 2.0).ceil() as usize,
+    );
+
+    // Verify we're testing a reasonable number of cycles
+    assert!(
+        num_cycles_to_verify > 0 && num_cycles_to_verify <= 5,
+        "Expected to verify between 1 and 5 cycles, but got {}",
+        num_cycles_to_verify
     );
 
     // Verify each drain cycle
@@ -146,12 +163,10 @@ async fn test_hot_reload_with_old_instance_shutdown() {
         }
 
         let expected_drained = expected_drain_per_cycle * cycle;
-        assert!(
-            connections_failed >= expected_drained,
-            "After drain cycle {}: expected at least {} connections drained, but only {} were drained",
-            cycle,
-            expected_drained,
-            connections_failed
+        assert_eq!(
+            connections_failed, expected_drained,
+            "After drain cycle {}: expected exactly {} connections drained, but {} were drained",
+            cycle, expected_drained, connections_failed
         );
     }
 
