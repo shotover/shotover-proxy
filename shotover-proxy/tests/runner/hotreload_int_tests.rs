@@ -134,11 +134,10 @@ async fn test_hot_reload_with_old_instance_shutdown() {
     let expected_drain_per_cycle =
         std::cmp::max(1, (total_connections as f64 * 0.1).ceil() as usize);
 
-    // Verify the drain rate calculation is reasonable
-    assert!(
-        expected_drain_per_cycle > 0 && expected_drain_per_cycle <= total_connections,
-        "Expected drain per cycle should be between 1 and {}, but got {}",
-        total_connections,
+    // Verify the drain rate calculation matches expected value for 13 connections
+    assert_eq!(
+        expected_drain_per_cycle, 2,
+        "Expected 2 connections to drain per cycle (10% of 13), but got {}",
         expected_drain_per_cycle
     );
 
@@ -149,19 +148,15 @@ async fn test_hot_reload_with_old_instance_shutdown() {
         (total_connections as f64 / expected_drain_per_cycle as f64 / 2.0).ceil() as usize,
     );
 
-    // Verify we're testing a reasonable number of cycles
-    assert!(
-        num_cycles_to_verify > 0 && num_cycles_to_verify <= 5,
-        "Expected to verify between 1 and 5 cycles, but got {}",
+    // Verify we're testing the expected number of cycles for 13 connections
+    assert_eq!(
+        num_cycles_to_verify, 4,
+        "Expected to verify 4 drain cycles (50% of 13 connections / 2 per cycle), but got {}",
         num_cycles_to_verify
     );
 
     // Verify each drain cycle
-    // Note: cycle 1 in the loop corresponds to checking after the 2nd drain (at t=15s)
-    // because the 1st drain happened immediately at t=0
     for cycle in 1..=num_cycles_to_verify {
-        tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
-
         let mut connections_failed = 0;
         for (i, con) in connections.iter_mut().enumerate() {
             if con.get::<_, String>(format!("key_{}", i)).is_err() {
@@ -169,16 +164,17 @@ async fn test_hot_reload_with_old_instance_shutdown() {
             }
         }
 
-        // We've now witnessed (cycle + 1) drains: 1 immediate + cycle more
-        let expected_drained = expected_drain_per_cycle * (cycle + 1);
+        let expected_drained = expected_drain_per_cycle * cycle;
         assert_eq!(
-            connections_failed,
-            expected_drained,
+            connections_failed, expected_drained,
             "After drain cycle {}: expected exactly {} connections drained, but {} were drained",
-            cycle + 1,
-            expected_drained,
-            connections_failed
+            cycle, expected_drained, connections_failed
         );
+
+        // Sleep before next cycle check
+        if cycle < num_cycles_to_verify {
+            tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
+        }
     }
 
     // Verify new connections still work
