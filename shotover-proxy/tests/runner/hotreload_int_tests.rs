@@ -115,6 +115,11 @@ async fn test_hot_reload_with_old_instance_shutdown() {
     let value: String = con_new.get("key_0").unwrap();
     assert_eq!(value, "value_0");
 
+    // After the new shotover starts, gradual shutdown begins immediately with the first drain.
+    // Subsequent drains happen every 10 seconds.
+    // Timeline: t=0: 1st drain, t=10: 2nd drain, t=20: 3rd drain, etc.
+    // Sleep 5s to position ourselves in the middle of the time between 1st and 2nd drain.
+    // This reduces race conditions since we're furthest from drain boundaries.
     tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
 
     // Track connection failures over multiple drain cycles
@@ -152,6 +157,8 @@ async fn test_hot_reload_with_old_instance_shutdown() {
     );
 
     // Verify each drain cycle
+    // Note: cycle 1 in the loop corresponds to checking after the 2nd drain (at t=15s)
+    // because the 1st drain happened immediately at t=0
     for cycle in 1..=num_cycles_to_verify {
         tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
 
@@ -162,11 +169,12 @@ async fn test_hot_reload_with_old_instance_shutdown() {
             }
         }
 
-        let expected_drained = expected_drain_per_cycle * cycle;
+        // We've now witnessed (cycle + 1) drains: 1 immediate + cycle more
+        let expected_drained = expected_drain_per_cycle * (cycle + 1);
         assert_eq!(
             connections_failed, expected_drained,
             "After drain cycle {}: expected exactly {} connections drained, but {} were drained",
-            cycle, expected_drained, connections_failed
+            cycle + 1, expected_drained, connections_failed
         );
     }
 
