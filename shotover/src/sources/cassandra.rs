@@ -1,6 +1,7 @@
 use crate::codec::Direction;
 use crate::codec::{CodecBuilder, cassandra::CassandraCodecBuilder};
 use crate::config::chain::TransformChainConfig;
+use crate::hot_reload::protocol::GradualShutdownRequest;
 use crate::server::TcpCodecListener;
 use crate::sources::{Source, Transport};
 use crate::tls::{TlsAcceptor, TlsAcceptorConfig};
@@ -35,6 +36,8 @@ impl CassandraConfig {
         info!("Starting Cassandra source on [{}]", self.listen_addr);
 
         let (hot_reload_tx, hot_reload_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (gradual_shutdown_tx, mut gradual_shutdown_rx) =
+            tokio::sync::mpsc::unbounded_channel::<GradualShutdownRequest>();
 
         let mut listener = TcpCodecListener::new(
             &self.chain,
@@ -43,7 +46,6 @@ impl CassandraConfig {
             self.hard_connection_limit.unwrap_or(false),
             CassandraCodecBuilder::new(Direction::Source, self.name.clone()),
             Arc::new(Semaphore::new(self.connection_limit.unwrap_or(512))),
-            trigger_shutdown_rx.clone(),
             self.tls.as_ref().map(TlsAcceptor::new).transpose()?,
             self.timeout.map(Duration::from_secs),
             self.transport.unwrap_or(Transport::Tcp),
@@ -64,10 +66,18 @@ impl CassandraConfig {
                     _ = trigger_shutdown_rx.changed() => {
                         listener.shutdown().await;
                     }
+                    Some(GradualShutdownRequest) = gradual_shutdown_rx.recv() => {
+                        listener.gradual_shutdown().await;
+                    }
                 }
             }
         });
 
-        Ok(Source::new(join_handle, hot_reload_tx, self.name.clone()))
+        Ok(Source::new(
+            join_handle,
+            hot_reload_tx,
+            gradual_shutdown_tx,
+            self.name.clone(),
+        ))
     }
 }

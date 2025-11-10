@@ -1,5 +1,7 @@
 use crate::hot_reload::json_parsing::{read_json, write_json, write_json_with_fds};
-use crate::hot_reload::protocol::{HotReloadListenerRequest, Request, Response};
+use crate::hot_reload::protocol::{
+    GradualShutdownRequest, HotReloadListenerRequest, Request, Response,
+};
 use crate::sources::Source;
 use anyhow::{Context, Result};
 use std::os::fd::OwnedFd;
@@ -12,21 +14,17 @@ use uds::tokio::{UnixSeqpacketConn, UnixSeqpacketListener};
 pub struct SourceHandle {
     pub name: String,
     pub sender: mpsc::UnboundedSender<HotReloadListenerRequest>,
+    pub gradual_shutdown_tx: mpsc::UnboundedSender<GradualShutdownRequest>,
 }
 
 pub struct UnixSocketServer {
     socket_path: String,
     listener: UnixSeqpacketListener,
     sources: Vec<SourceHandle>,
-    shutdown_tx: tokio::sync::watch::Sender<bool>,
 }
 
 impl UnixSocketServer {
-    pub fn new(
-        socket_path: String,
-        sources: Vec<SourceHandle>,
-        shutdown_tx: tokio::sync::watch::Sender<bool>,
-    ) -> Result<Self> {
+    pub fn new(socket_path: String, sources: Vec<SourceHandle>) -> Result<Self> {
         if Path::new(&socket_path).exists() {
             std::fs::remove_file(&socket_path).with_context(|| {
                 format!("Failed to remove existing socket file: {}", socket_path)
@@ -39,7 +37,6 @@ impl UnixSocketServer {
             socket_path,
             listener,
             sources,
-            shutdown_tx,
         })
     }
 
@@ -59,7 +56,7 @@ impl UnixSocketServer {
         }
     }
 
-    async fn handle_connection(&self, mut stream: UnixSeqpacketConn) -> Result<()> {
+    async fn handle_connection(&mut self, mut stream: UnixSeqpacketConn) -> Result<()> {
         let request: Request = read_json(&mut stream).await?;
         debug!("Received request: {:?}", request);
 
@@ -85,7 +82,7 @@ impl UnixSocketServer {
         Ok(())
     }
 
-    async fn process_request(&self, request: Request) -> (Response, Vec<OwnedFd>) {
+    async fn process_request(&mut self, request: Request) -> (Response, Vec<OwnedFd>) {
         match request {
             Request::SendListeningSockets => {
                 info!("Processing SendListeningSockets request");
@@ -145,20 +142,23 @@ impl UnixSocketServer {
                 );
                 (Response::SendListeningSockets, collected_fds)
             }
-            Request::ShutdownOriginalNode => {
-                info!("Processing ShutdownOriginalNode request - initiating immediate shutdown");
+            Request::GradualShutdown => {
+                info!(
+                    "Processing GradualShutdown request - initiating gradual connection draining"
+                );
 
-                // Trigger shutdown by sending true through the watch channel
-                if let Err(e) = self.shutdown_tx.send(true) {
-                    error!("Failed to send shutdown signal: {:?}", e);
-                    return (
-                        Response::Error("Failed to trigger shutdown".to_string()),
-                        Vec::new(),
-                    );
+                // Send gradual shutdown requests to all sources
+                for source in &self.sources {
+                    if let Err(e) = source.gradual_shutdown_tx.send(GradualShutdownRequest) {
+                        warn!(
+                            "Failed to send gradual shutdown request to source {}: {:?}",
+                            source.name, e
+                        );
+                    }
                 }
 
-                info!("Shutdown signal sent successfully");
-                (Response::ShutdownOriginalNode, Vec::new())
+                info!("Gradual shutdown initiated for all sources");
+                (Response::GradualShutdown, Vec::new())
             }
         }
     }
@@ -173,21 +173,18 @@ impl Drop for UnixSocketServer {
         }
     }
 }
-pub fn start_hot_reload_server(
-    socket_path: String,
-    sources: &[Source],
-    shutdown_tx: tokio::sync::watch::Sender<bool>,
-) {
+pub fn start_hot_reload_server(socket_path: String, sources: &[Source]) {
     let source_handles: Vec<SourceHandle> = sources
         .iter()
         .map(|x| SourceHandle {
             name: x.name().to_string(),
             sender: x.get_hot_reload_tx(),
+            gradual_shutdown_tx: x.get_gradual_shutdown_tx(),
         })
         .collect();
 
     tokio::spawn(async move {
-        match UnixSocketServer::new(socket_path, source_handles, shutdown_tx) {
+        match UnixSocketServer::new(socket_path, source_handles) {
             Ok(mut server) => {
                 info!("Unix socket server started for hot reload communication");
                 if let Err(e) = server.run().await {
@@ -211,9 +208,7 @@ mod tests {
         let socket_path = "/tmp/test-shotover-hotreload.sock";
 
         let source_handles: Vec<SourceHandle> = vec![];
-        let (shutdown_tx, _shutdown_rx) = tokio::sync::watch::channel(false);
-        let server =
-            UnixSocketServer::new(socket_path.to_string(), source_handles, shutdown_tx).unwrap();
+        let server = UnixSocketServer::new(socket_path.to_string(), source_handles).unwrap();
 
         // Test that socket file was created
         assert!(Path::new(socket_path).exists());
@@ -229,9 +224,7 @@ mod tests {
 
         let socket_path = "/tmp/test-shotover-request-response.sock";
         let source_handles: Vec<SourceHandle> = vec![]; // Empty for test
-        let (shutdown_tx, _shutdown_rx) = tokio::sync::watch::channel(false);
-        let mut server =
-            UnixSocketServer::new(socket_path.to_string(), source_handles, shutdown_tx).unwrap();
+        let mut server = UnixSocketServer::new(socket_path.to_string(), source_handles).unwrap();
 
         // Start server in background
         let server_handle = tokio::spawn(async move {
@@ -251,8 +244,8 @@ mod tests {
                 // Test passes if we get the correct response variant
                 // File descriptors are now sent via ancillary data
             }
-            Response::ShutdownOriginalNode => {
-                panic!("Unexpected ShutdownOriginalNode response");
+            Response::GradualShutdown => {
+                panic!("Unexpected GradualShutdown response");
             }
             Response::Error(err) => panic!("Unexpected error response: {}", err),
         }

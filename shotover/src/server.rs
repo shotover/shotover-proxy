@@ -31,6 +31,30 @@ use tokio_util::codec::{Decoder, Encoder, FramedRead, FramedWrite};
 use tracing::{Instrument, info, trace};
 use tracing::{debug, error, warn};
 
+/// Represents a tracked connection with a shutdown sender
+struct TrackedConnection {
+    handle: JoinHandle<()>,
+    shutdown_tx: watch::Sender<bool>,
+}
+
+impl TrackedConnection {
+    fn new(handle: JoinHandle<()>, shutdown_tx: watch::Sender<bool>) -> Self {
+        Self {
+            handle,
+            shutdown_tx,
+        }
+    }
+
+    fn is_finished(&self) -> bool {
+        self.handle.is_finished()
+    }
+
+    fn shutdown(&self) {
+        // Send shutdown signal
+        let _ = self.shutdown_tx.send(true);
+    }
+}
+
 pub struct TcpCodecListener<C: CodecBuilder> {
     chain_builder: TransformChainBuilder,
     source_name: String,
@@ -52,16 +76,6 @@ pub struct TcpCodecListener<C: CodecBuilder> {
     /// to the semaphore.
     limit_connections: Arc<Semaphore>,
 
-    /// Broadcasts a shutdown signal to all active connections.
-    ///
-    /// The initial `shutdown` trigger is provided by the `run` caller. The
-    /// server is responsible for gracefully shutting down active connections.
-    /// When a connection task is spawned, it is passed a broadcast receiver
-    /// handle. When a graceful shutdown is initiated, a `true` value is sent via
-    /// the watch::Sender. Each active connection receives it, reaches a
-    /// safe terminal state, and completes the task.
-    trigger_shutdown_rx: watch::Receiver<bool>,
-
     tls: Option<TlsAcceptor>,
 
     /// Keep track of how many connections we have received so we can use it as a request id.
@@ -73,12 +87,13 @@ pub struct TcpCodecListener<C: CodecBuilder> {
     /// Timeout after which to kill an idle connection. No timeout means connections will never be timed out.
     timeout: Option<Duration>,
 
-    connection_handles: Vec<JoinHandle<()>>,
+    connection_handles: Vec<TrackedConnection>,
 
     transport: Transport,
 
     /// Receiver for hot reload requests to extract listening socket file descriptor
     hot_reload_rx: tokio::sync::mpsc::UnboundedReceiver<HotReloadListenerRequest>,
+
     port: u16,
 }
 
@@ -91,7 +106,6 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
         hard_connection_limit: bool,
         codec: C,
         limit_connections: Arc<Semaphore>,
-        trigger_shutdown_rx: watch::Receiver<bool>,
         tls: Option<TlsAcceptor>,
         timeout: Option<Duration>,
         transport: Transport,
@@ -159,7 +173,6 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
             hard_connection_limit,
             codec,
             limit_connections,
-            trigger_shutdown_rx,
             tls,
             connection_count: 0,
             available_connections_gauge,
@@ -214,7 +227,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
 
             async {
                 tokio::select! {
-                    // Normal Connection handling
+                    // Accept new connection
                     stream_result = Self::accept(&mut self.listener) => {
                         let stream = stream_result?;
 
@@ -233,22 +246,27 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                             client_details:client_details.clone(),
                         };
 
+                        // Create a unique shutdown channel for this connection
+                        let (connection_shutdown_tx, connection_shutdown_rx) = watch::channel(false);
+
                         let handler = Handler{
                             chain: self.chain_builder.build(context),
                             codec: self.codec.clone(),
-                            shutdown: Shutdown::new(self.trigger_shutdown_rx.clone()),
+                            shutdown: Shutdown::new(connection_shutdown_rx),
                             tls: self.tls.clone(),
                             pending_requests: PendingRequests::new(self.codec.protocol()),
                             timeout: self.timeout,
                             _permit: permit,
                         };
                         // Spawn a new task to process the connections.
-                        self.connection_handles.push(tokio::spawn(async move{
+                        let handle = tokio::spawn(async move{
                             // Process the connection. If an error is encountered, log it.
                             if let Err(err) = handler.run(stream, transport, force_run_chain, client_details).await{
                                 error!("{:?}", err.context("connection was unexpectedly terminated"));
                             }
-                        }.in_current_span()));
+                        }.in_current_span());
+                        let tracked_connection = TrackedConnection::new(handle, connection_shutdown_tx);
+                        self.connection_handles.push(tracked_connection);
                         // Only prune the list every so often
                         // theres no point in doing it every iteration because most likely none of the handles will have completed
                         if self.connection_count % 1000 == 0{
@@ -276,7 +294,64 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
     }
 
     pub async fn shutdown(&mut self) {
-        join_all(&mut self.connection_handles).await;
+        // First, signal all connections to shutdown
+        for tc in &self.connection_handles {
+            tc.shutdown();
+        }
+
+        // Then wait for all connections to complete
+        join_all(self.connection_handles.iter_mut().map(|tc| &mut tc.handle)).await;
+    }
+
+    pub async fn gradual_shutdown(&mut self) {
+        info!(
+            "[{}] Gradual shutdown initiated - draining connections",
+            self.source_name
+        );
+
+        // Calculate 10% of connections to drain (at least 1 if there are any connections)
+        let connections_to_drain = std::cmp::max(
+            1,
+            (self.connection_handles.len() as f64 * 0.1).ceil() as usize,
+        );
+
+        while !self.connection_handles.is_empty() {
+            let to_drain = std::cmp::min(connections_to_drain, self.connection_handles.len());
+
+            info!(
+                "[{}] Draining {} out of {} connections",
+                self.source_name,
+                to_drain,
+                self.connection_handles.len()
+            );
+
+            // Drain the first N connections and shut them down
+            let mut connections_to_close: Vec<_> =
+                self.connection_handles.drain(..to_drain).collect();
+            for connection in &connections_to_close {
+                connection.shutdown();
+            }
+
+            // Wait for all shutdown connections to complete
+            join_all(connections_to_close.iter_mut().map(|tc| &mut tc.handle)).await;
+
+            info!(
+                "[{}] {} connections remaining after drain",
+                self.source_name,
+                self.connection_handles.len()
+            );
+
+            // Don't sleep after draining the last batch
+            if !self.connection_handles.is_empty() {
+                // Wait 10 seconds before the next drain cycle
+                tokio::time::sleep(Duration::from_secs(10)).await;
+            }
+        }
+
+        info!(
+            "[{}] All connections drained, shutting down",
+            self.source_name
+        );
     }
 
     /// Accept an inbound connection.
@@ -357,8 +432,8 @@ pub struct Handler<C: CodecBuilder> {
     tls: Option<TlsAcceptor>,
     /// Listen for shutdown notifications.
     ///
-    /// A wrapper around the `broadcast::Receiver` paired with the sender in
-    /// `Listener`. The connection handler processes requests from the
+    /// A wrapper around the `watch::Receiver` paired with the sender in
+    /// `TcpCodecListener`. The connection handler processes requests from the
     /// connection until the peer disconnects **or** a shutdown notification is
     /// received from `shutdown`. In the latter case, any in-flight work being
     /// processed for the peer is continued until it reaches a safe state, at
@@ -844,8 +919,8 @@ enum CloseReason {
 
 /// Listens for the server shutdown signal.
 ///
-/// Shutdown is signaled using a `broadcast::Receiver`. Only a single value is
-/// ever sent. Once a value has been sent via the broadcast channel, the server
+/// Shutdown is signaled using a `watch::Receiver`. Only a single value is
+/// ever sent. Once a value has been sent via the watch channel, the connection
 /// should shutdown.
 ///
 /// The `Shutdown` struct listens for the signal and tracks that the signal has
@@ -861,7 +936,7 @@ pub struct Shutdown {
 }
 
 impl Shutdown {
-    /// Create a new `Shutdown` backed by the given `broadcast::Receiver`.
+    /// Create a new `Shutdown` backed by the given `watch::Receiver`.
     pub(crate) fn new(notify: watch::Receiver<bool>) -> Shutdown {
         Shutdown {
             shutdown: false,

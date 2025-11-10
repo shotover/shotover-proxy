@@ -1,5 +1,6 @@
 use crate::codec::{CodecBuilder, Direction, valkey::ValkeyCodecBuilder};
 use crate::config::chain::TransformChainConfig;
+use crate::hot_reload::protocol::GradualShutdownRequest;
 use crate::server::TcpCodecListener;
 use crate::sources::{Source, Transport};
 use crate::tls::{TlsAcceptor, TlsAcceptorConfig};
@@ -34,6 +35,8 @@ impl ValkeyConfig {
         info!("Starting Valkey source on [{}]", self.listen_addr);
 
         let (hot_reload_tx, hot_reload_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (gradual_shutdown_tx, mut gradual_shutdown_rx) =
+            tokio::sync::mpsc::unbounded_channel::<GradualShutdownRequest>();
 
         let mut listener = TcpCodecListener::new(
             &self.chain,
@@ -42,7 +45,6 @@ impl ValkeyConfig {
             self.hard_connection_limit.unwrap_or(false),
             ValkeyCodecBuilder::new(Direction::Source, self.name.clone()),
             Arc::new(Semaphore::new(self.connection_limit.unwrap_or(512))),
-            trigger_shutdown_rx.clone(),
             self.tls.as_ref().map(TlsAcceptor::new).transpose()?,
             self.timeout.map(Duration::from_secs),
             Transport::Tcp,
@@ -63,10 +65,18 @@ impl ValkeyConfig {
                     _ = trigger_shutdown_rx.changed() => {
                         listener.shutdown().await;
                     }
+                    Some(GradualShutdownRequest) = gradual_shutdown_rx.recv() => {
+                        listener.gradual_shutdown().await;
+                    }
                 }
             }
         });
 
-        Ok(Source::new(join_handle, hot_reload_tx, self.name.clone()))
+        Ok(Source::new(
+            join_handle,
+            hot_reload_tx,
+            gradual_shutdown_tx,
+            self.name.clone(),
+        ))
     }
 }
