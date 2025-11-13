@@ -49,7 +49,8 @@ struct ConfigOpts {
 
     /// Path for Unix socket used in hot reload communication.
     /// If the socket exists, shotover will connect to it for hot reload.
-    /// If the socket doesn't exist, shotover will create it and enable hot reload server.
+    /// If the socket doesn't exist, shotover will create and start a hot reload server at this path.
+    /// The server will retry binding to the socket if it's unavailable .
     #[clap(long)]
     pub hotreload_socket: Option<String>,
 }
@@ -79,7 +80,6 @@ pub struct Shotover {
     config: Config,
     tracing: TracingState,
     hotreload_socket: Option<String>,
-    hotreload_client: Option<HotReloadClient>,
 }
 
 impl Shotover {
@@ -123,33 +123,7 @@ impl Shotover {
         let runtime = Shotover::create_runtime(params.stack_size, params.core_threads);
 
         // Determine hot reload mode based on socket existence
-        let (hotreload_socket, hotreload_client) = match params.hotreload_socket {
-            Some(socket_path) => {
-                if std::path::Path::new(&socket_path).exists() {
-                    // Socket exists: REPLACEMENT MODE
-                    tracing::info!(
-                        "Hot reload REPLACEMENT mode - will connect to existing instance at: {}",
-                        socket_path
-                    );
-                    (
-                        Some(socket_path.clone()),
-                        Some(HotReloadClient::new(socket_path)),
-                    )
-                } else {
-                    // Socket doesn't exist: INITIAL MODE
-                    tracing::info!(
-                        "Hot reload INITIAL mode - will create server socket at: {}",
-                        socket_path
-                    );
-                    (Some(socket_path), None)
-                }
-            }
-            None => {
-                tracing::debug!("Hot reload is disabled");
-                (None, None)
-            }
-        };
-
+        let hotreload_socket = params.hotreload_socket;
         Shotover::start_observability_interface(&runtime, &config, &tracing)?;
 
         Ok(Shotover {
@@ -158,7 +132,6 @@ impl Shotover {
             config,
             tracing,
             hotreload_socket,
-            hotreload_client,
         })
     }
 
@@ -186,9 +159,9 @@ impl Shotover {
         topology: Topology,
         config: Config,
         hotreload_socket: Option<String>,
-        hotreload_client: Option<HotReloadClient>,
         trigger_shutdown_rx: watch::Receiver<bool>,
     ) -> Result<()> {
+        let hotreload_client = hotreload_socket.clone().and_then(HotReloadClient::new);
         let hot_reload_listeners = if let Some(client) = &hotreload_client {
             info!("Hot reload CLIENT mode - requesting socket handoff from existing shotover");
             client
@@ -241,7 +214,6 @@ impl Shotover {
             config,
             tracing,
             hotreload_socket,
-            hotreload_client,
         } = self;
 
         let (trigger_shutdown_tx, trigger_shutdown_rx) = tokio::sync::watch::channel(false);
@@ -271,7 +243,6 @@ impl Shotover {
             topology,
             config,
             hotreload_socket,
-            hotreload_client,
             trigger_shutdown_rx,
         )) {
             Ok(()) => {

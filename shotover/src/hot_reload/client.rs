@@ -6,10 +6,11 @@ use crate::hot_reload::protocol::{Request, Response};
 use anyhow::{Context, Result};
 use std::collections::HashMap;
 use std::os::unix::io::OwnedFd;
+use std::path::Path;
 use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio::time::timeout;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 use uds::tokio::UnixSeqpacketConn;
 
 pub struct UnixSocketClient {
@@ -55,7 +56,7 @@ impl UnixSocketClient {
         })?;
 
         // Send request
-        info!("Sending request: {:?}", request);
+        debug!("Sending request: {:?}", request);
         write_json(&mut stream, &request).await?;
 
         // Read response
@@ -84,7 +85,7 @@ impl UnixSocketClient {
             }
         }
 
-        info!("Received response: {:?}", response);
+        debug!("Received response: {:?}", response);
 
         // Handle error responses
         if let Response::Error(err) = response {
@@ -99,8 +100,12 @@ pub struct HotReloadClient {
 }
 
 impl HotReloadClient {
-    pub fn new(socket_path: String) -> Self {
-        Self { socket_path }
+    pub fn new(socket_path: String) -> Option<Self> {
+        if Path::new(&socket_path).exists() {
+            Some(Self { socket_path })
+        } else {
+            None
+        }
     }
 
     /// Request listening sockets from an existing Shotover instance during hot reload
