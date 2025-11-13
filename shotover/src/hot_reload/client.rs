@@ -9,7 +9,7 @@ use std::os::unix::io::OwnedFd;
 use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio::time::timeout;
-use tracing::{debug, info, warn};
+use tracing::{info, warn};
 use uds::tokio::UnixSeqpacketConn;
 
 pub struct UnixSocketClient {
@@ -55,7 +55,7 @@ impl UnixSocketClient {
         })?;
 
         // Send request
-        debug!("Sending request: {:?}", request);
+        info!("Sending request: {:?}", request);
         write_json(&mut stream, &request).await?;
 
         // Read response
@@ -84,7 +84,7 @@ impl UnixSocketClient {
             }
         }
 
-        debug!("Received response: {:?}", response);
+        info!("Received response: {:?}", response);
 
         // Handle error responses
         if let Response::Error(err) = response {

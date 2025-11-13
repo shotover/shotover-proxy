@@ -45,7 +45,7 @@ impl UnixSocketServer {
         loop {
             match self.listener.accept().await {
                 Ok((stream, _)) => {
-                    debug!("New connection received on Unix socket");
+                    info!("New connection received on Unix socket");
                     if let Err(e) = self.handle_connection(stream).await {
                         error!("Error handling connection: {:?}", e);
                     }
@@ -59,7 +59,7 @@ impl UnixSocketServer {
 
     async fn handle_connection(&mut self, mut stream: UnixSeqpacketConn) -> Result<()> {
         let request: Request = read_json(&mut stream).await?;
-        debug!("Received request: {:?}", request);
+        info!("Received request: {:?}", request);
 
         let (response, fds) = self.process_request(request).await;
 
@@ -201,7 +201,7 @@ pub fn start_hot_reload_server(socket_path: String, sources: &[Source]) {
                     break;
                 }
                 Err(e) => {
-                    debug!(
+                    info!(
                         "Failed to bind socket at {}: {:?}. \
                          Likely waiting for previous instance to release socket. \
                          Retrying in {:?}...",
