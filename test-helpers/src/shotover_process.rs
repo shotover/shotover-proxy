@@ -69,10 +69,13 @@ impl ShotoverProcessBuilder {
         self
     }
 
-    pub fn with_hotreload(mut self, enabled: bool) -> Self {
-        if enabled {
-            self.additional_args.push("--hotreload".to_string());
-        }
+    /// Enable hot reload at the specified socket path.
+    /// If the socket exists, shotover will connect for hot reload.
+    /// If the socket doesn't exist, shotover will create it and enable hot reload server.
+    pub fn with_hotreload_socket(mut self, socket_path: &str) -> Self {
+        self.additional_args
+            .push("--hotreload-socket".to_string());
+        self.additional_args.push(socket_path.to_string());
         self
     }
 
@@ -108,20 +111,6 @@ impl ShotoverProcessBuilder {
             .0
             .consume_remaining_events_expect_failure(expected_errors_and_warnings)
             .await
-    }
-
-    pub fn with_hotreload_from_socket(mut self, socket_path: &str) -> Self {
-        self.additional_args
-            .push("--hotreload-from-socket".to_string());
-        self.additional_args.push(socket_path.to_string());
-        self
-    }
-
-    pub fn with_hotreload_socket_path(mut self, socket_path: &str) -> Self {
-        self.additional_args
-            .push("--hotreload-socket-path".to_string());
-        self.additional_args.push(socket_path.to_string());
-        self
     }
 
     async fn start_inner(self) -> (BinProcess, Vec<EventMatcher>) {

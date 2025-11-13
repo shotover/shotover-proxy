@@ -11,6 +11,7 @@ use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
 use uds::tokio::{UnixSeqpacketConn, UnixSeqpacketListener};
 
+#[derive(Clone)]
 pub struct SourceHandle {
     pub name: String,
     pub sender: mpsc::UnboundedSender<HotReloadListenerRequest>,
@@ -184,15 +185,57 @@ pub fn start_hot_reload_server(socket_path: String, sources: &[Source]) {
         .collect();
 
     tokio::spawn(async move {
-        match UnixSocketServer::new(socket_path, source_handles) {
-            Ok(mut server) => {
-                info!("Unix socket server started for hot reload communication");
-                if let Err(e) = server.run().await {
-                    error!("Unix socket server error: {:?}", e);
+        const MAX_RETRIES: u32 = 100;
+        const RETRY_DELAY_MS: u64 = 500;
+        let mut retry_count = 0;
+
+        loop {
+            match UnixSocketServer::new(socket_path.clone(), source_handles.clone()) {
+                Ok(mut server) => {
+                    if retry_count > 0 {
+                        info!(
+                            "Successfully created hot reload server at {} after {} retries",
+                            socket_path, retry_count
+                        );
+                    } else {
+                        info!(
+                            "Hot reload server created at {} on first attempt",
+                            socket_path
+                        );
+                    }
+
+                    // Run the server - this blocks until shutdown
+                    if let Err(e) = server.run().await {
+                        error!("Hot reload server encountered error: {:?}", e);
+                    }
+
+                    info!("Hot reload server at {} has stopped", socket_path);
+                    break;
                 }
-            }
-            Err(e) => {
-                error!("Failed to start Unix socket server: {:?}", e);
+                Err(e) => {
+                    retry_count += 1;
+
+                    if retry_count >= MAX_RETRIES {
+                        error!(
+                            "Failed to create hot reload server at {} after {} attempts: {:?}. \
+                             Hot reload will not be available for this instance.",
+                            socket_path, MAX_RETRIES, e
+                        );
+                        break;
+                    }
+
+                    // Adaptive logging
+                    if retry_count <= 3 || retry_count % 10 == 0 {
+                        debug!(
+                            "Attempt {}/{}: Failed to bind socket at {}: {:?}. \
+                             Likely waiting for previous instance to release socket. \
+                             Retrying in {}ms...",
+                            retry_count, MAX_RETRIES, socket_path, e, RETRY_DELAY_MS
+                        );
+                    }
+
+                    tokio::time::sleep(tokio::time::Duration::from_millis(RETRY_DELAY_MS)).await;
+                }
             }
         }
     });
