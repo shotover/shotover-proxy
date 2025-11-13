@@ -73,8 +73,7 @@ impl ShotoverProcessBuilder {
     /// If the socket exists, shotover will connect for hot reload.
     /// If the socket doesn't exist, shotover will create it and enable hot reload server.
     pub fn with_hotreload_socket(mut self, socket_path: &str) -> Self {
-        self.additional_args
-            .push("--hotreload-socket".to_string());
+        self.additional_args.push("--hotreload-socket".to_string());
         self.additional_args.push(socket_path.to_string());
         self
     }
