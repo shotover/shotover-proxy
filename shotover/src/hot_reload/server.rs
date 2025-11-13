@@ -186,22 +186,11 @@ pub fn start_hot_reload_server(socket_path: String, sources: &[Source]) {
 
     tokio::spawn(async move {
         const RETRY_DELAY: std::time::Duration = std::time::Duration::from_secs(3);
-        let mut retry_count = 0;
 
         loop {
             match UnixSocketServer::new(socket_path.clone(), source_handles.clone()) {
                 Ok(mut server) => {
-                    if retry_count > 0 {
-                        info!(
-                            "Successfully created hot reload server at {} after {} retries",
-                            socket_path, retry_count
-                        );
-                    } else {
-                        info!(
-                            "Hot reload server created at {} on first attempt",
-                            socket_path
-                        );
-                    }
+                    info!("Hot reload server created at {}", socket_path);
 
                     // Run the server - this blocks until shutdown
                     if let Err(e) = server.run().await {
@@ -212,17 +201,12 @@ pub fn start_hot_reload_server(socket_path: String, sources: &[Source]) {
                     break;
                 }
                 Err(e) => {
-                    retry_count += 1;
-
-                    // Adaptive logging
-                    if retry_count <= 3 || retry_count % 10 == 0 {
-                        debug!(
-                            "Attempt {}: Failed to bind socket at {}: {:?}. \
-                             Likely waiting for previous instance to release socket. \
-                             Retrying in {:?}...",
-                            retry_count, socket_path, e, RETRY_DELAY
-                        );
-                    }
+                    debug!(
+                        "Failed to bind socket at {}: {:?}. \
+                         Likely waiting for previous instance to release socket. \
+                         Retrying in {:?}...",
+                        socket_path, e, RETRY_DELAY
+                    );
 
                     tokio::time::sleep(RETRY_DELAY).await;
                 }
