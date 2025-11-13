@@ -185,8 +185,7 @@ pub fn start_hot_reload_server(socket_path: String, sources: &[Source]) {
         .collect();
 
     tokio::spawn(async move {
-        const MAX_RETRIES: u32 = 100;
-        const RETRY_DELAY_MS: u64 = 500;
+        const RETRY_DELAY: std::time::Duration = std::time::Duration::from_secs(3);
         let mut retry_count = 0;
 
         loop {
@@ -215,26 +214,17 @@ pub fn start_hot_reload_server(socket_path: String, sources: &[Source]) {
                 Err(e) => {
                     retry_count += 1;
 
-                    if retry_count >= MAX_RETRIES {
-                        error!(
-                            "Failed to create hot reload server at {} after {} attempts: {:?}. \
-                             Hot reload will not be available for this instance.",
-                            socket_path, MAX_RETRIES, e
-                        );
-                        break;
-                    }
-
                     // Adaptive logging
                     if retry_count <= 3 || retry_count % 10 == 0 {
                         debug!(
-                            "Attempt {}/{}: Failed to bind socket at {}: {:?}. \
+                            "Attempt {}: Failed to bind socket at {}: {:?}. \
                              Likely waiting for previous instance to release socket. \
-                             Retrying in {}ms...",
-                            retry_count, MAX_RETRIES, socket_path, e, RETRY_DELAY_MS
+                             Retrying in {:?}...",
+                            retry_count, socket_path, e, RETRY_DELAY
                         );
                     }
 
-                    tokio::time::sleep(tokio::time::Duration::from_millis(RETRY_DELAY_MS)).await;
+                    tokio::time::sleep(RETRY_DELAY).await;
                 }
             }
         }
