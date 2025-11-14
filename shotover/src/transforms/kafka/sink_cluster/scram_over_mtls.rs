@@ -41,8 +41,7 @@ impl TokenTask {
         delegation_token_lifetime: Duration,
         chain_name: &String,
     ) -> TokenTask {
-        let token_creation_time_metric =
-            histogram!("shotover_kafka_delegation_token_creation_seconds",
+        let token_creation_time_metric = histogram!("shotover_kafka_delegation_token_creation_seconds",
                 "transform" => "KafkaSinkCluster", "chain" => chain_name.clone());
         let (tx, mut rx) = mpsc::channel::<TokenRequest>(1000);
         tokio::spawn(async move {
