@@ -13,8 +13,8 @@ use test_helpers::connection::kafka::python::run_python_bad_auth_sasl_scram;
 use test_helpers::connection::kafka::python::run_python_smoke_test_sasl_scram;
 use test_helpers::connection::kafka::{KafkaConnectionBuilder, KafkaDriver};
 use test_helpers::docker_compose::docker_compose;
-use test_helpers::shotover_process::{Count, EventMatcher};
 use test_helpers::metrics::assert_metrics_has_keys;
+use test_helpers::shotover_process::{Count, EventMatcher};
 use tokio_bin_process::event::Level;
 
 #[rstest]
