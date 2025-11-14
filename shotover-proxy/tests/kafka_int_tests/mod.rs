@@ -824,20 +824,7 @@ async fn cluster_sasl_scram_over_mtls_nodejs_and_python() {
         run_python_smoke_test_sasl_scram("127.0.0.1:9192", "super_user", "super_password").await;
 
         // verify metrics are being recorded
-        let expected = r#"
-        # TYPE shotover_kafka_delegation_token_creation_seconds summary
-        shotover_kafka_delegation_token_creation_seconds{transform="transform",chain="kafka",quantile="0"}
-        shotover_kafka_delegation_token_creation_seconds{transform="transform",chain="kafka",quantile="0.1"}
-        shotover_kafka_delegation_token_creation_seconds{transform="transform",chain="kafka",quantile="0.5"}
-        shotover_kafka_delegation_token_creation_seconds{transform="transform",chain="kafka",quantile="0.9"}
-        shotover_kafka_delegation_token_creation_seconds{transform="transform",chain="kafka",quantile="0.95"}
-        shotover_kafka_delegation_token_creation_seconds{transform="transform",chain="kafka",quantile="0.99"}
-        shotover_kafka_delegation_token_creation_seconds{transform="transform",chain="kafka",quantile="0.999"}
-        shotover_kafka_delegation_token_creation_seconds{transform="transform",chain="kafka",quantile="1"}
-        shotover_kafka_delegation_token_creation_seconds_sum{transform="transform",chain="kafka"}
-        shotover_kafka_delegation_token_creation_seconds_count{transform="transform",chain="kafka"}
-        "#;
-        assert_metrics_has_keys("", expected).await;
+        assert_delegation_token_creation_seconds_metric_emitted().await;
 
         tokio::time::timeout(
             Duration::from_secs(10),
@@ -1088,4 +1075,21 @@ fn multi_shotover_events() -> Vec<EventMatcher> {
             .with_message(r#"Shotover peer localhost:9192 is down"#)
             .with_count(Count::Any),
     ]
+}
+
+async fn assert_delegation_token_creation_seconds_metric_emitted() {
+    let expected = r#"
+        # TYPE shotover_kafka_delegation_token_creation_seconds summary
+        shotover_kafka_delegation_token_creation_seconds{transform="transform",chain="kafka",quantile="0"}
+        shotover_kafka_delegation_token_creation_seconds{transform="transform",chain="kafka",quantile="0.1"}
+        shotover_kafka_delegation_token_creation_seconds{transform="transform",chain="kafka",quantile="0.5"}
+        shotover_kafka_delegation_token_creation_seconds{transform="transform",chain="kafka",quantile="0.9"}
+        shotover_kafka_delegation_token_creation_seconds{transform="transform",chain="kafka",quantile="0.95"}
+        shotover_kafka_delegation_token_creation_seconds{transform="transform",chain="kafka",quantile="0.99"}
+        shotover_kafka_delegation_token_creation_seconds{transform="transform",chain="kafka",quantile="0.999"}
+        shotover_kafka_delegation_token_creation_seconds{transform="transform",chain="kafka",quantile="1"}
+        shotover_kafka_delegation_token_creation_seconds_sum{transform="transform",chain="kafka"}
+        shotover_kafka_delegation_token_creation_seconds_count{transform="transform",chain="kafka"}
+        "#;
+    assert_metrics_has_keys("", expected).await;
 }
