@@ -39,10 +39,10 @@ impl TokenTask {
         mtls_connection_factory: ConnectionFactory,
         mtls_port_contact_points: Vec<KafkaAddress>,
         delegation_token_lifetime: Duration,
-        chain_name: &String,
+        chain_name: &str,
     ) -> TokenTask {
         let token_creation_time_metric = histogram!("shotover_kafka_delegation_token_creation_seconds",
-                "transform" => "KafkaSinkCluster", "chain" => chain_name.clone());
+                "transform" => "KafkaSinkCluster", "chain" => chain_name.to_string());
         let (tx, mut rx) = mpsc::channel::<TokenRequest>(1000);
         tokio::spawn(async move {
             loop {
@@ -214,7 +214,7 @@ impl AuthorizeScramOverMtlsConfig {
         &self,
         connect_timeout: Duration,
         read_timeout: Option<Duration>,
-        chain_name: &String,
+        chain_name: &str,
     ) -> Result<AuthorizeScramOverMtlsBuilder> {
         let mtls_connection_factory = ConnectionFactory::new(
             Some(TlsConnector::new(&self.tls)?),
