@@ -16,6 +16,29 @@ pub async fn get_metrics_value(key: &str) -> String {
     panic!("key {key:?} was not found in metrics output:\n{actual}");
 }
 
+///Asserts that the `expected` keys are present in the actual metrics output
+pub async fn assert_metrics_contains_keys(expected: &str) {
+    let actual = http_request_metrics().await;
+
+    let mut missing_keys = Vec::new();
+
+    for expected_line in expected.lines().filter(|x| !x.is_empty()) {
+        if !actual
+            .lines()
+            .any(|actual_line| actual_line.starts_with(expected_line))
+        {
+            missing_keys.push(expected_line);
+        }
+    }
+
+    assert!(
+        missing_keys.is_empty(),
+        "The following expected keys were not found in metrics output:\n{:?}\nFull metrics output:\n{}",
+        missing_keys,
+        actual
+    );
+}
+
 /// Asserts that the `expected` lines of keys are included in the metrics.
 /// The `previous` lines are excluded from the assertion, allowing for better error messages when checking for added lines.
 /// The keys are removed to keep the output deterministic.

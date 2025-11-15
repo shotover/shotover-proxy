@@ -13,7 +13,7 @@ use test_helpers::connection::kafka::python::run_python_bad_auth_sasl_scram;
 use test_helpers::connection::kafka::python::run_python_smoke_test_sasl_scram;
 use test_helpers::connection::kafka::{KafkaConnectionBuilder, KafkaDriver};
 use test_helpers::docker_compose::docker_compose;
-use test_helpers::metrics::assert_metrics_has_keys;
+use test_helpers::metrics::assert_metrics_contains_keys;
 use test_helpers::shotover_process::{Count, EventMatcher};
 use tokio_bin_process::event::Level;
 
@@ -1091,5 +1091,5 @@ async fn assert_delegation_token_creation_seconds_metric_emitted() {
         shotover_kafka_delegation_token_creation_seconds_sum{transform="transform",chain="kafka"}
         shotover_kafka_delegation_token_creation_seconds_count{transform="transform",chain="kafka"}
         "#;
-    assert_metrics_has_keys("", expected).await;
+    assert_metrics_contains_keys(expected).await;
 }
