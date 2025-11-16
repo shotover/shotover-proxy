@@ -1080,16 +1080,16 @@ fn multi_shotover_events() -> Vec<EventMatcher> {
 async fn assert_delegation_token_creation_seconds_metric_emitted() {
     let expected = r#"
 # TYPE shotover_kafka_delegation_token_creation_seconds summary
-shotover_kafka_delegation_token_creation_seconds{transform="transform",chain="kafka",quantile="0"}
-shotover_kafka_delegation_token_creation_seconds{transform="transform",chain="kafka",quantile="0.1"}
-shotover_kafka_delegation_token_creation_seconds{transform="transform",chain="kafka",quantile="0.5"}
-shotover_kafka_delegation_token_creation_seconds{transform="transform",chain="kafka",quantile="0.9"}
-shotover_kafka_delegation_token_creation_seconds{transform="transform",chain="kafka",quantile="0.95"}
-shotover_kafka_delegation_token_creation_seconds{transform="transform",chain="kafka",quantile="0.99"}
-shotover_kafka_delegation_token_creation_seconds{transform="transform",chain="kafka",quantile="0.999"}
-shotover_kafka_delegation_token_creation_seconds{transform="transform",chain="kafka",quantile="1"}
-shotover_kafka_delegation_token_creation_seconds_sum{transform="transform",chain="kafka"}
-shotover_kafka_delegation_token_creation_seconds_count{transform="transform",chain="kafka"}
+shotover_kafka_delegation_token_creation_seconds{transform="KafkaSinkCluster",chain="kafka",quantile="0"}
+shotover_kafka_delegation_token_creation_seconds{transform="KafkaSinkCluster",chain="kafka",quantile="0.1"}
+shotover_kafka_delegation_token_creation_seconds{transform="KafkaSinkCluster",chain="kafka",quantile="0.5"}
+shotover_kafka_delegation_token_creation_seconds{transform="KafkaSinkCluster",chain="kafka",quantile="0.9"}
+shotover_kafka_delegation_token_creation_seconds{transform="KafkaSinkCluster",chain="kafka",quantile="0.95"}
+shotover_kafka_delegation_token_creation_seconds{transform="KafkaSinkCluster",chain="kafka",quantile="0.99"}
+shotover_kafka_delegation_token_creation_seconds{transform="KafkaSinkCluster",chain="kafka",quantile="0.999"}
+shotover_kafka_delegation_token_creation_seconds{transform="KafkaSinkCluster",chain="kafka",quantile="1"}
+shotover_kafka_delegation_token_creation_seconds_sum{transform="KafkaSinkCluster",chain="kafka"}
+shotover_kafka_delegation_token_creation_seconds_count{transform="KafkaSinkCluster",chain="kafka"}
 "#;
     assert_metrics_contains_keys(expected).await;
 }

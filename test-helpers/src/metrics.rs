@@ -19,15 +19,33 @@ pub async fn get_metrics_value(key: &str) -> String {
 ///Asserts that the `expected` keys are present in the actual metrics output
 pub async fn assert_metrics_contains_keys(expected: &str) {
     let actual = http_request_metrics().await;
+    let actual_sorted = get_sorted_metric_output_with_no_values(actual, Vec::new());
+    let expected_sorted: Vec<&str> = expected
+        .lines()
+        .filter(|line| !line.is_empty())
+        .sorted()
+        .collect();
 
     let mut missing_keys = Vec::new();
 
-    for expected_line in expected.lines().filter(|x| !x.is_empty()) {
-        if !actual
-            .lines()
-            .any(|actual_line| actual_line.starts_with(expected_line))
-        {
-            missing_keys.push(expected_line);
+    // Check that each expected key is present in the actual metrics output
+    // utilise the fact that both expected and actual are sorted
+    let mut actual_iter = actual_sorted.iter().peekable();
+    for &expected_key in &expected_sorted {
+        loop {
+            match actual_iter.peek() {
+                Some(&&actual_key) if actual_key < expected_key => {
+                    actual_iter.next();
+                }
+                Some(&&actual_key) if actual_key == expected_key => {
+                    actual_iter.next();
+                    break;
+                }
+                _ => {
+                    missing_keys.push(expected_key);
+                    break;
+                }
+            }
         }
     }
 
@@ -51,6 +69,19 @@ pub async fn assert_metrics_has_keys(previous: &str, expected: &str) {
         .filter(|line| !line.is_empty())
         .sorted()
         .collect();
+    let actual_sorted = get_sorted_metric_output_with_no_values(actual, previous);
+
+    let expected_string = expected_sorted.join("\n");
+    let actual_string = actual_sorted.join("\n");
+
+    // Manually recreate assert_eq because it formats the strings poorly
+    assert!(
+        expected_string == actual_string,
+        "expected:\n{expected_string}\nbut was:\n{actual_string}"
+    );
+}
+
+fn get_sorted_metric_output_with_no_values(actual: String, previous: Vec<&str>) -> Vec<&str> {
     let actual_sorted: Vec<&str> = actual
         .lines()
         .map(|x| {
@@ -64,15 +95,7 @@ pub async fn assert_metrics_has_keys(previous: &str, expected: &str) {
         })
         .sorted()
         .collect();
-
-    let expected_string = expected_sorted.join("\n");
-    let actual_string = actual_sorted.join("\n");
-
-    // Manually recreate assert_eq because it formats the strings poorly
-    assert!(
-        expected_string == actual_string,
-        "expected:\n{expected_string}\nbut was:\n{actual_string}"
-    );
+    actual_sorted
 }
 
 /// Asserts that the metrics contains a key with the corresponding value
