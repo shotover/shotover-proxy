@@ -1,3 +1,5 @@
+//! Utilities for reading and writing JSON messages over Unix SEQPACKET sockets.
+
 use anyhow::{Context, Result};
 use serde::Serialize;
 use serde::de::DeserializeOwned;

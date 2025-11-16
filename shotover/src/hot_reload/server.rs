@@ -1,3 +1,5 @@
+//! Server-side implementation for hot reload socket communication.
+
 use crate::hot_reload::json_parsing::{read_json, write_json, write_json_with_fds};
 use crate::hot_reload::protocol::{
     GradualShutdownRequest, HotReloadListenerRequest, Request, Response,

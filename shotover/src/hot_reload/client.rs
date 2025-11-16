@@ -1,5 +1,5 @@
-//This module gives client-side implementation for socket handoff as part of hot reloading
-//Client will connect to existing shotovers and requests for FDs
+//! This module gives client-side implementation for socket handoff as part of hot reloading.
+//! The client connect to existing shotover instances and requests file descriptors.
 use crate::hot_reload::fd_utils::create_tcp_listener_from_fd;
 use crate::hot_reload::json_parsing::{read_json_with_fds, write_json};
 use crate::hot_reload::protocol::{Request, Response};

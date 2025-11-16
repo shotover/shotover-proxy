@@ -1,3 +1,5 @@
+//! Hot reload functionality for zero-downtime updates of Shotover instances.
+
 pub mod client;
 pub mod fd_utils;
 pub mod json_parsing;
