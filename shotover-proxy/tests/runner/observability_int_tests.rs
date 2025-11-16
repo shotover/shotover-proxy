@@ -1,7 +1,7 @@
 use crate::shotover_process;
 use test_helpers::connection::valkey_connection::ValkeyConnectionCreator;
 use test_helpers::docker_compose::docker_compose;
-use test_helpers::metrics::{assert_metrics_has_keys, assert_metrics_key_value};
+use test_helpers::metrics::{assert_metrics_equals_keys, assert_metrics_key_value};
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_metrics() {
@@ -93,7 +93,7 @@ shotover_transform_latency_seconds{transform="QueryCounter",quantile="1"}
 shotover_transform_total_count{transform="NullSink"}
 shotover_transform_total_count{transform="QueryCounter"}
 "#;
-    assert_metrics_has_keys("", expected).await;
+    assert_metrics_equals_keys("", expected).await;
 
     let mut connection = ValkeyConnectionCreator {
         address: "127.0.0.1".into(),
@@ -139,7 +139,7 @@ shotover_query_count{name="valkey-chain",query="CLIENT",type="valkey"}
 shotover_query_count{name="valkey-chain",query="GET",type="valkey"}
 shotover_query_count{name="valkey-chain",query="SET",type="valkey"}
 "#;
-    assert_metrics_has_keys(expected, expected_new).await;
+    assert_metrics_equals_keys(expected, expected_new).await;
 
     assert_metrics_key_value(
         r#"shotover_query_count{name="valkey-chain",query="GET",type="valkey"}"#,

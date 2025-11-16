@@ -17,6 +17,7 @@ pub async fn get_metrics_value(key: &str) -> String {
 }
 
 ///Asserts that the `expected` keys are present in the actual metrics output
+///Does not ensure key ordering requirements or that no extra keys are present
 pub async fn assert_metrics_contains_keys(expected: &str) {
     let actual = http_request_metrics().await;
     let actual_sorted = get_sorted_metric_output_with_no_values(&actual, Vec::new());
@@ -57,10 +58,10 @@ pub async fn assert_metrics_contains_keys(expected: &str) {
     );
 }
 
-/// Asserts that the `expected` lines of keys are included in the metrics.
+/// Asserts that the `expected` lines of keys match the metric output. Does not ensure ordering of the keys.
 /// The `previous` lines are excluded from the assertion, allowing for better error messages when checking for added lines.
 /// The keys are removed to keep the output deterministic.
-pub async fn assert_metrics_has_keys(previous: &str, expected: &str) {
+pub async fn assert_metrics_equals_keys(previous: &str, expected: &str) {
     let actual = http_request_metrics().await;
 
     let previous: Vec<&str> = previous.lines().filter(|x| !x.is_empty()).collect();
