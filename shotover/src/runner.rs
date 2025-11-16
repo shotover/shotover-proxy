@@ -47,10 +47,11 @@ struct ConfigOpts {
     #[arg(long, value_enum, default_value = "human")]
     pub log_format: LogFormat,
 
-    /// Path for Unix socket used in hot reload communication.
-    /// If the socket exists, shotover will connect to it for hot reload.
-    /// If the socket doesn't exist, shotover will create and start a hot reload server at this path.
-    /// The server will retry binding to the socket if it's unavailable .
+    // By default hot reload functionality is disabled.
+    // However, when this flag is provided hot reload functionality is enabled and performed over the socket at the specified path.
+    // If the socket exists, shotover will connect to the socket to hot reload from the shotover instance that created the socket.
+    // Shotover will always create a new socket on startup so that it too can be hot reloaded from.
+    // If there is already a socket at the path because hot reloading with the original instance hasn't completed yet, shotover will retry socket creation until it succeeds.
     #[clap(long)]
     pub hotreload_socket: Option<String>,
 }
