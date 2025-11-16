@@ -81,7 +81,10 @@ pub async fn assert_metrics_has_keys(previous: &str, expected: &str) {
     );
 }
 
-fn get_sorted_metric_output_with_no_values<'a>(actual: &'a str, previous: Vec<&'a str>) -> Vec<&'a str> {
+fn get_sorted_metric_output_with_no_values<'a>(
+    actual: &'a str,
+    previous: Vec<&'a str>,
+) -> Vec<&'a str> {
     let actual_sorted: Vec<&str> = actual
         .lines()
         .map(|x| {
