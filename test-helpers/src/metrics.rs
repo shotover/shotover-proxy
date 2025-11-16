@@ -19,7 +19,7 @@ pub async fn get_metrics_value(key: &str) -> String {
 ///Asserts that the `expected` keys are present in the actual metrics output
 pub async fn assert_metrics_contains_keys(expected: &str) {
     let actual = http_request_metrics().await;
-    let actual_sorted = get_sorted_metric_output_with_no_values(actual, Vec::new());
+    let actual_sorted = get_sorted_metric_output_with_no_values(&actual, Vec::new());
     let expected_sorted: Vec<&str> = expected
         .lines()
         .filter(|line| !line.is_empty())
@@ -69,7 +69,7 @@ pub async fn assert_metrics_has_keys(previous: &str, expected: &str) {
         .filter(|line| !line.is_empty())
         .sorted()
         .collect();
-    let actual_sorted = get_sorted_metric_output_with_no_values(actual, previous);
+    let actual_sorted = get_sorted_metric_output_with_no_values(&actual, previous);
 
     let expected_string = expected_sorted.join("\n");
     let actual_string = actual_sorted.join("\n");
@@ -81,7 +81,7 @@ pub async fn assert_metrics_has_keys(previous: &str, expected: &str) {
     );
 }
 
-fn get_sorted_metric_output_with_no_values(actual: String, previous: Vec<&str>) -> Vec<&str> {
+fn get_sorted_metric_output_with_no_values<'a>(actual: &'a str, previous: Vec<&'a str>) -> Vec<&'a str> {
     let actual_sorted: Vec<&str> = actual
         .lines()
         .map(|x| {
