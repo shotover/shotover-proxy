@@ -21,34 +21,10 @@ pub async fn get_metrics_value(key: &str) -> String {
 pub async fn assert_metrics_contains_keys(expected: &str) {
     let actual = http_request_metrics().await;
     let actual_sorted = get_sorted_metric_output_with_no_values(&actual, Vec::new());
-    let expected_sorted: Vec<&str> = expected
+    let missing_keys: Vec<&str> = expected
         .lines()
-        .filter(|line| !line.is_empty())
-        .sorted()
+        .filter(|line| !line.is_empty() && !actual_sorted.contains(line))
         .collect();
-
-    let mut missing_keys = Vec::new();
-
-    // Check that each expected key is present in the actual metrics output
-    // utilise the fact that both expected and actual are sorted
-    let mut actual_iter = actual_sorted.iter().peekable();
-    for &expected_key in &expected_sorted {
-        loop {
-            match actual_iter.peek() {
-                Some(&&actual_key) if actual_key < expected_key => {
-                    actual_iter.next();
-                }
-                Some(&&actual_key) if actual_key == expected_key => {
-                    actual_iter.next();
-                    break;
-                }
-                _ => {
-                    missing_keys.push(expected_key);
-                    break;
-                }
-            }
-        }
-    }
 
     assert!(
         missing_keys.is_empty(),
