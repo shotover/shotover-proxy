@@ -1,3 +1,5 @@
+//! Server-side implementation for hot reload socket communication.
+
 use crate::hot_reload::json_parsing::{read_json, write_json, write_json_with_fds};
 use crate::hot_reload::protocol::{
     GradualShutdownRequest, HotReloadListenerRequest, Request, Response,
@@ -11,6 +13,7 @@ use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
 use uds::tokio::{UnixSeqpacketConn, UnixSeqpacketListener};
 
+#[derive(Clone)]
 pub struct SourceHandle {
     pub name: String,
     pub sender: mpsc::UnboundedSender<HotReloadListenerRequest>,
@@ -44,7 +47,7 @@ impl UnixSocketServer {
         loop {
             match self.listener.accept().await {
                 Ok((stream, _)) => {
-                    debug!("New connection received on Unix socket");
+                    info!("New connection received on Unix socket");
                     if let Err(e) = self.handle_connection(stream).await {
                         error!("Error handling connection: {:?}", e);
                     }
@@ -58,7 +61,7 @@ impl UnixSocketServer {
 
     async fn handle_connection(&mut self, mut stream: UnixSeqpacketConn) -> Result<()> {
         let request: Request = read_json(&mut stream).await?;
-        debug!("Received request: {:?}", request);
+        info!("Received request: {:?}", request);
 
         let (response, fds) = self.process_request(request).await;
 
@@ -184,15 +187,31 @@ pub fn start_hot_reload_server(socket_path: String, sources: &[Source]) {
         .collect();
 
     tokio::spawn(async move {
-        match UnixSocketServer::new(socket_path, source_handles) {
-            Ok(mut server) => {
-                info!("Unix socket server started for hot reload communication");
-                if let Err(e) = server.run().await {
-                    error!("Unix socket server error: {:?}", e);
+        const RETRY_DELAY: std::time::Duration = std::time::Duration::from_secs(3);
+
+        loop {
+            match UnixSocketServer::new(socket_path.clone(), source_handles.clone()) {
+                Ok(mut server) => {
+                    info!("Hot reload server created at {}", socket_path);
+
+                    // Run the server - this blocks until shutdown
+                    if let Err(e) = server.run().await {
+                        error!("Hot reload server encountered error: {:?}", e);
+                    }
+
+                    info!("Hot reload server at {} has stopped", socket_path);
+                    break;
                 }
-            }
-            Err(e) => {
-                error!("Failed to start Unix socket server: {:?}", e);
+                Err(e) => {
+                    info!(
+                        "Failed to bind socket at {}: {:?}. \
+                         Likely waiting for previous instance to release socket. \
+                         Retrying in {:?}...",
+                        socket_path, e, RETRY_DELAY
+                    );
+
+                    tokio::time::sleep(RETRY_DELAY).await;
+                }
             }
         }
     });

@@ -1,11 +1,12 @@
-//This module gives client-side implementation for socket handoff as part of hot reloading
-//Client will connect to existing shotovers and requests for FDs
+//! This module gives client-side implementation for socket handoff as part of hot reloading.
+//! The client connect to existing shotover instances and requests file descriptors.
 use crate::hot_reload::fd_utils::create_tcp_listener_from_fd;
 use crate::hot_reload::json_parsing::{read_json_with_fds, write_json};
 use crate::hot_reload::protocol::{Request, Response};
 use anyhow::{Context, Result};
 use std::collections::HashMap;
 use std::os::unix::io::OwnedFd;
+use std::path::Path;
 use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio::time::timeout;
@@ -99,8 +100,12 @@ pub struct HotReloadClient {
 }
 
 impl HotReloadClient {
-    pub fn new(socket_path: String) -> Self {
-        Self { socket_path }
+    pub fn new(socket_path: String) -> Option<Self> {
+        if Path::new(&socket_path).exists() {
+            Some(Self { socket_path })
+        } else {
+            None
+        }
     }
 
     /// Request listening sockets from an existing Shotover instance during hot reload

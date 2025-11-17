@@ -46,7 +46,7 @@ fn assert_valkey_connection_works(
 async fn test_hotreload_basic_valkey_connection() {
     let _compose = docker_compose("tests/test-configs/hotreload/docker-compose.yaml");
     let shotover_process = shotover_process("tests/test-configs/hotreload/topology.yaml")
-        .with_hotreload(true)
+        .with_hotreload_socket("/tmp/shotover-basic-test.sock")
         .with_config("tests/test-configs/shotover-config/config_metrics_disabled.yaml")
         .start()
         .await;
@@ -67,9 +67,8 @@ async fn test_hot_reload_with_old_instance_shutdown() {
 
     // Start the old shotover instance
     let shotover_old = shotover_process("tests/test-configs/hotreload/topology.yaml")
-        .with_hotreload(true)
         .with_log_name("shot_old")
-        .with_hotreload_socket_path(socket_path)
+        .with_hotreload_socket(socket_path)
         .with_config("tests/test-configs/shotover-config/config_metrics_disabled.yaml")
         .start()
         .await;
@@ -99,10 +98,8 @@ async fn test_hot_reload_with_old_instance_shutdown() {
 
     // Start the new shotover instance that will request hot reload
     let shotover_new = shotover_process("tests/test-configs/hotreload/topology.yaml")
-        .with_hotreload(true)
         .with_log_name("shot_new")
-        .with_hotreload_socket_path("/tmp/shotover-new-shutdown.sock")
-        .with_hotreload_from_socket(socket_path)
+        .with_hotreload_socket(socket_path)
         .with_config("tests/test-configs/shotover-config/config_metrics_disabled.yaml")
         .start()
         .await;
@@ -201,19 +198,16 @@ async fn test_hot_reload_with_zero_connections() {
 
     // Start the old shotover instance
     let shotover_old = shotover_process("tests/test-configs/hotreload/topology.yaml")
-        .with_hotreload(true)
         .with_log_name("shot_old_0")
-        .with_hotreload_socket_path(socket_path)
+        .with_hotreload_socket(socket_path)
         .with_config("tests/test-configs/shotover-config/config_metrics_disabled.yaml")
         .start()
         .await;
 
     // Start the new shotover instance that will request hot reload
     let shotover_new = shotover_process("tests/test-configs/hotreload/topology.yaml")
-        .with_hotreload(true)
         .with_log_name("shot_new_0")
-        .with_hotreload_socket_path("/tmp/shotover-new-zero-connections.sock")
-        .with_hotreload_from_socket(socket_path)
+        .with_hotreload_socket(socket_path)
         .with_config("tests/test-configs/shotover-config/config_metrics_disabled.yaml")
         .start()
         .await;

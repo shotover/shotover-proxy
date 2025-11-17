@@ -1,3 +1,5 @@
+//! Protocol definitions for hot reload communication between shotover instances.
+
 use serde::{Deserialize, Serialize};
 use std::os::unix::io::OwnedFd;
 
