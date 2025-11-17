@@ -226,7 +226,7 @@ impl KafkaSinkClusterBuilder {
             first_contact_points,
             authorize_scram_over_mtls: authorize_scram_over_mtls
                 .as_ref()
-                .map(|x| x.get_builder(connect_timeout, read_timeout))
+                .map(|x| x.get_builder(connect_timeout, read_timeout, &chain_name))
                 .transpose()?,
             shotover_nodes,
             broker_id: BrokerId(local_shotover_broker_id),
