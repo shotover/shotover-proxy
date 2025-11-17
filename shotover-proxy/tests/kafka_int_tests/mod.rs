@@ -13,6 +13,7 @@ use test_helpers::connection::kafka::python::run_python_bad_auth_sasl_scram;
 use test_helpers::connection::kafka::python::run_python_smoke_test_sasl_scram;
 use test_helpers::connection::kafka::{KafkaConnectionBuilder, KafkaDriver};
 use test_helpers::docker_compose::docker_compose;
+use test_helpers::metrics::assert_metrics_contains_keys;
 use test_helpers::shotover_process::{Count, EventMatcher};
 use tokio_bin_process::event::Level;
 
@@ -822,6 +823,9 @@ async fn cluster_sasl_scram_over_mtls_nodejs_and_python() {
         run_node_smoke_test_scram("127.0.0.1:9192", "super_user", "super_password").await;
         run_python_smoke_test_sasl_scram("127.0.0.1:9192", "super_user", "super_password").await;
 
+        // verify metrics are being recorded
+        assert_delegation_token_creation_seconds_metric_emitted().await;
+
         tokio::time::timeout(
             Duration::from_secs(10),
             shotover.shutdown_and_then_consume_events(&[]),
@@ -1071,4 +1075,21 @@ fn multi_shotover_events() -> Vec<EventMatcher> {
             .with_message(r#"Shotover peer localhost:9192 is down"#)
             .with_count(Count::Any),
     ]
+}
+
+async fn assert_delegation_token_creation_seconds_metric_emitted() {
+    let expected = r#"
+# TYPE shotover_kafka_delegation_token_creation_seconds summary
+shotover_kafka_delegation_token_creation_seconds{transform="KafkaSinkCluster",chain="kafka",quantile="0"}
+shotover_kafka_delegation_token_creation_seconds{transform="KafkaSinkCluster",chain="kafka",quantile="0.1"}
+shotover_kafka_delegation_token_creation_seconds{transform="KafkaSinkCluster",chain="kafka",quantile="0.5"}
+shotover_kafka_delegation_token_creation_seconds{transform="KafkaSinkCluster",chain="kafka",quantile="0.9"}
+shotover_kafka_delegation_token_creation_seconds{transform="KafkaSinkCluster",chain="kafka",quantile="0.95"}
+shotover_kafka_delegation_token_creation_seconds{transform="KafkaSinkCluster",chain="kafka",quantile="0.99"}
+shotover_kafka_delegation_token_creation_seconds{transform="KafkaSinkCluster",chain="kafka",quantile="0.999"}
+shotover_kafka_delegation_token_creation_seconds{transform="KafkaSinkCluster",chain="kafka",quantile="1"}
+shotover_kafka_delegation_token_creation_seconds_sum{transform="KafkaSinkCluster",chain="kafka"}
+shotover_kafka_delegation_token_creation_seconds_count{transform="KafkaSinkCluster",chain="kafka"}
+"#;
+    assert_metrics_contains_keys(expected).await;
 }
