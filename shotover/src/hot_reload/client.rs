@@ -210,7 +210,7 @@ mod tests {
         });
 
         let server_handle = tokio::spawn(async move {
-            server.run().await.unwrap();
+            server.run().await;
         });
 
         // Wait for server to start
@@ -266,7 +266,7 @@ mod tests {
         });
 
         let server_handle = tokio::spawn(async move {
-            server.run().await.unwrap();
+            server.run().await;
         });
 
         wait_for_unix_socket_connection(socket_path, 2000).await;

@@ -43,7 +43,7 @@ impl UnixSocketServer {
         })
     }
 
-    pub async fn run(&mut self) -> Result<()> {
+    pub async fn run(&mut self) -> ! {
         loop {
             match self.listener.accept().await {
                 Ok((stream, _)) => {
@@ -194,13 +194,8 @@ pub fn start_hot_reload_server(socket_path: String, sources: &[Source]) {
                 Ok(mut server) => {
                     info!("Hot reload server created at {}", socket_path);
 
-                    // Run the server - this blocks until shutdown
-                    if let Err(e) = server.run().await {
-                        error!("Hot reload server encountered error: {:?}", e);
-                    }
-
-                    info!("Hot reload server at {} has stopped", socket_path);
-                    break;
+                    // Run the server - this runs forever until the task is killed
+                    server.run().await;
                 }
                 Err(e) => {
                     info!(
@@ -245,9 +240,9 @@ mod tests {
         let source_handles: Vec<SourceHandle> = vec![]; // Empty for test
         let mut server = UnixSocketServer::new(socket_path.to_string(), source_handles).unwrap();
 
-        // Start server in background
+        // Start server in background - run() never returns, so we just await it indefinitely
         let server_handle = tokio::spawn(async move {
-            server.run().await.unwrap();
+            server.run().await;
         });
 
         wait_for_unix_socket_connection(socket_path, 2000).await;
