@@ -1,6 +1,8 @@
 use crate::shotover_process;
 use redis::{Client, Commands};
+use std::path::Path;
 use std::time::Duration;
+use test_helpers::connection::valkey_connection::create_tls_valkey_client_from_certs;
 use test_helpers::docker_compose::docker_compose;
 
 /// Helper function to verify comprehensive Valkey connection functionality
@@ -235,4 +237,180 @@ async fn test_hot_reload_with_zero_connections() {
 
     // Cleanup
     shotover_new.shutdown_and_then_consume_events(&[]).await;
+}
+
+#[tokio::test]
+#[cfg_attr(not(target_os = "linux"), ignore)]
+async fn test_hot_reload_certificate_change() {
+    let socket_path = "/tmp/test-hotreload-cert-change.sock";
+
+    // Generate two distinct certificate sets for testing certificate rotation
+    let cert_dir_old = Path::new("/tmp/shotover-cert-test-old");
+    let cert_dir_new = Path::new("/tmp/shotover-cert-test-new");
+
+    // Clean up any existing certificate directories from previous test runs
+    let _ = std::fs::remove_dir_all(cert_dir_old);
+    let _ = std::fs::remove_dir_all(cert_dir_new);
+
+    // Generate old certificate set using test_helpers
+    test_helpers::cert::generate_test_certs(cert_dir_old);
+
+    // Generate new certificate set (distinct from old)
+    // The certificates will have different serial numbers and timestamps
+    test_helpers::cert::generate_test_certs(cert_dir_new);
+
+    let _compose = docker_compose("tests/test-configs/hotreload/docker-compose.yaml");
+
+    // Start the old shotover instance with old certificates
+    let shotover_old = shotover_process("tests/test-configs/hotreload/topology-tls-old.yaml")
+        .with_log_name("old_tls")
+        .with_hotreload_socket(socket_path)
+        .with_config("tests/test-configs/shotover-config/config_metrics_disabled.yaml")
+        .start()
+        .await;
+
+    // Create TLS clients configured with old CA certificate
+    let client_old =
+        create_tls_valkey_client_from_certs("127.0.0.1", 6380, "/tmp/shotover-cert-test-old");
+
+    // Establish multiple TLS connections to old instance
+    let mut connections = Vec::new();
+    for i in 0..10 {
+        let mut con = client_old.get_connection().unwrap();
+        // Store some data in each connection to verify persistence
+        let _: () = con
+            .set(format!("cert_key_{}", i), format!("cert_value_{}", i))
+            .unwrap();
+        connections.push(con);
+    }
+
+    // Set a counter to track across the certificate change
+    let _: () = connections[0].set("cert_counter", 0).unwrap();
+
+    // Verify all old connections work with old certificate
+    for (i, con) in connections.iter_mut().enumerate() {
+        let value: String = con.get(format!("cert_key_{}", i)).unwrap();
+        assert_eq!(value, format!("cert_value_{}", i));
+    }
+
+    // Start the new shotover instance with NEW certificates - triggers hot reload
+    let shotover_new = shotover_process("tests/test-configs/hotreload/topology-tls-new.yaml")
+        .with_log_name("new_tls")
+        .with_hotreload_socket(socket_path)
+        .with_config("tests/test-configs/shotover-config/config_metrics_disabled.yaml")
+        .start()
+        .await;
+
+    // Create a new TLS client configured with certificate
+    let client_new =
+        create_tls_valkey_client_from_certs("127.0.0.1", 6380, "/tmp/shotover-cert-test-new");
+    let mut con_new = client_new.get_connection().unwrap();
+
+    // Verify data persistence across certificate change
+    let value: String = con_new.get("cert_key_0").unwrap();
+    assert_eq!(value, "cert_value_0");
+
+    // Verify the new connection works with the new certificate
+    let pong: String = redis::cmd("PING").query(&mut con_new).unwrap();
+    assert_eq!(pong, "PONG");
+
+    // Increment the counter with the new certificate connection
+    let counter_value: i32 = con_new.incr("cert_counter", 1).unwrap();
+    assert_eq!(
+        counter_value, 1,
+        "Counter should be 1 after first increment with new certificate"
+    );
+
+    // Verify that old connections with old certificates still work during drain
+    // The old instance should still be serving requests with the old certificate
+    let mut old_connections_working = 0;
+    for con in connections.iter_mut() {
+        if con.get::<_, String>("cert_key_0").is_ok() {
+            old_connections_working += 1;
+        }
+    }
+
+    // At least some old connections should still be working
+    assert!(
+        old_connections_working > 0,
+        "Some old certificate connections should still be working during gradual drain"
+    );
+
+    // Verify new certificate client continues to work throughout the transition
+    assert_valkey_connection_works(&mut con_new, Some(2), &[("cert_key_0", "cert_value_0")])
+        .unwrap();
+
+    // Wait for multiple drain cycles to observe gradual connection closure
+    tokio::time::sleep(tokio::time::Duration::from_secs(20)).await;
+
+    // Check that more old connections have been drained
+    let mut old_connections_still_working = 0;
+    for con in connections.iter_mut() {
+        if con.get::<_, String>("cert_key_0").is_ok() {
+            old_connections_still_working += 1;
+        }
+    }
+
+    // Should have fewer working connections after additional drain cycles
+    assert!(
+        old_connections_still_working < old_connections_working,
+        "Old connections should be gradually drained. Before: {}, After: {}",
+        old_connections_working,
+        old_connections_still_working
+    );
+
+    // Verify new certificate client is still working perfectly
+    assert_valkey_connection_works(&mut con_new, Some(3), &[("cert_key_0", "cert_value_0")])
+        .unwrap();
+
+    // Create another new client to ensure new connections use the new certificate
+    let client_new2 =
+        create_tls_valkey_client_from_certs("127.0.0.1", 6380, "/tmp/shotover-cert-test-new");
+    let mut con_new2 = client_new2.get_connection().unwrap();
+
+    // Verify this new connection also works with new certificate
+    let pong: String = redis::cmd("PING").query(&mut con_new2).unwrap();
+    assert_eq!(pong, "PONG");
+
+    // Verify data is accessible
+    let value: String = con_new2.get("cert_key_5").unwrap();
+    assert_eq!(value, "cert_value_5");
+
+    // Wait for the old shotover to complete draining
+    tokio::time::timeout(
+        Duration::from_secs(120),
+        shotover_old.consume_remaining_events(&[]),
+    )
+    .await
+    .expect("Old shotover should complete drain and shutdown within timeout");
+
+    // Verify all old connections are now closed
+    let mut old_connections_remaining = 0;
+    for con in connections.iter_mut() {
+        if con.get::<_, String>("cert_key_0").is_ok() {
+            old_connections_remaining += 1;
+        }
+    }
+
+    assert_eq!(
+        old_connections_remaining, 0,
+        "All old certificate connections should be drained and closed after full drain cycle"
+    );
+
+    // new certificate connections still work perfectly
+    assert_valkey_connection_works(
+        &mut con_new,
+        Some(4),
+        &[
+            ("cert_key_0", "cert_value_0"),
+            ("cert_key_5", "cert_value_5"),
+        ],
+    )
+    .unwrap();
+
+    shotover_new.shutdown_and_then_consume_events(&[]).await;
+
+    // Clean up certificate directories
+    let _ = std::fs::remove_dir_all(cert_dir_old);
+    let _ = std::fs::remove_dir_all(cert_dir_new);
 }
