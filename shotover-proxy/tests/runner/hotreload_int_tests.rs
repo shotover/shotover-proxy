@@ -285,7 +285,8 @@ async fn test_hot_reload_certificate_change() {
     }
 
     // Set a counter to track across the certificate change
-    let _: () = connections[0].set("cert_counter", 0).unwrap();
+    // Use "counter" key to match what assert_valkey_connection_works expects
+    let _: () = connections[0].set("counter", 0).unwrap();
 
     // Verify all old connections work with old certificate
     for (i, con) in connections.iter_mut().enumerate() {
@@ -314,12 +315,11 @@ async fn test_hot_reload_certificate_change() {
     let pong: String = redis::cmd("PING").query(&mut con_new).unwrap();
     assert_eq!(pong, "PONG");
 
-    // Increment the counter with the new certificate connection
-    let counter_value: i32 = con_new.incr("cert_counter", 1).unwrap();
-    assert_eq!(
-        counter_value, 1,
-        "Counter should be 1 after first increment with new certificate"
-    );
+    // After the new shotover starts, gradual shutdown begins immediately with the first drain.
+    // Subsequent drains happen every 10 seconds.
+    // Sleep 5s to position ourselves in the middle of the time between 1st and 2nd drain.
+    // This reduces race conditions since we're furthest from drain boundaries.
+    tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
 
     // Verify that old connections with old certificates still work during drain
     // The old instance should still be serving requests with the old certificate
@@ -337,7 +337,8 @@ async fn test_hot_reload_certificate_change() {
     );
 
     // Verify new certificate client continues to work throughout the transition
-    assert_valkey_connection_works(&mut con_new, Some(2), &[("cert_key_0", "cert_value_0")])
+    // Counter starts at 0, this will increment to 1
+    assert_valkey_connection_works(&mut con_new, Some(1), &[("cert_key_0", "cert_value_0")])
         .unwrap();
 
     // Wait for multiple drain cycles to observe gradual connection closure
@@ -360,7 +361,8 @@ async fn test_hot_reload_certificate_change() {
     );
 
     // Verify new certificate client is still working perfectly
-    assert_valkey_connection_works(&mut con_new, Some(3), &[("cert_key_0", "cert_value_0")])
+    // Counter is now at 1, this will increment to 2
+    assert_valkey_connection_works(&mut con_new, Some(2), &[("cert_key_0", "cert_value_0")])
         .unwrap();
 
     // Create another new client to ensure new connections use the new certificate
@@ -398,9 +400,10 @@ async fn test_hot_reload_certificate_change() {
     );
 
     // new certificate connections still work perfectly
+    // Counter is now at 2, this will increment to 3
     assert_valkey_connection_works(
         &mut con_new,
-        Some(4),
+        Some(3),
         &[
             ("cert_key_0", "cert_value_0"),
             ("cert_key_5", "cert_value_5"),
