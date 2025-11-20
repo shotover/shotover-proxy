@@ -1,0 +1,14 @@
+---
+sources:
+  - Valkey:
+      name: "valkey-tls"
+      listen_addr: "127.0.0.1:6380"
+      tls:
+        certificate_path: "/tmp/shotover-cert-test-old/localhost.crt"
+        private_key_path: "/tmp/shotover-cert-test-old/localhost.key"
+      chain:
+        - QueryCounter:
+            name: "valkey-query-counter"
+        - ValkeySinkSingle:
+            remote_address: "127.0.0.1:6379"
+            connect_timeout_ms: 5000
