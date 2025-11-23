@@ -245,8 +245,8 @@ async fn test_hot_reload_certificate_change() {
     let socket_path = "/tmp/test-hotreload-cert-change.sock";
 
     // Generate two distinct certificate sets for testing certificate rotation
-    let cert_dir_old = Path::new("/tmp/shotover-cert-test-old");
-    let cert_dir_new = Path::new("/tmp/shotover-cert-test-new");
+    let cert_dir_old = Path::new("shotover-proxy/tests/test-configs/valkey/tls/certs");
+    let cert_dir_new = Path::new("shotover-proxy/tests/test-configs/valkey/tls2/certs");
 
     // Clean up any existing certificate directories from previous test runs
     let _ = std::fs::remove_dir_all(cert_dir_old);
@@ -271,7 +271,7 @@ async fn test_hot_reload_certificate_change() {
 
     // Create TLS clients configured with old CA certificate
     let client_old =
-        create_tls_valkey_client_from_certs("127.0.0.1", 6380, "/tmp/shotover-cert-test-old");
+        create_tls_valkey_client_from_certs("127.0.0.1", 6380, "shotover-proxy/tests/test-configs/valkey/tls/certs");
 
     // Establish multiple TLS connections to old instance
     let mut connections = Vec::new();
@@ -285,7 +285,6 @@ async fn test_hot_reload_certificate_change() {
     }
 
     // Set a counter to track across the certificate change
-    // Use "counter" key to match what assert_valkey_connection_works expects
     let _: () = connections[0].set("counter", 0).unwrap();
 
     // Verify all old connections work with old certificate
@@ -304,7 +303,7 @@ async fn test_hot_reload_certificate_change() {
 
     // Create a new TLS client configured with certificate
     let client_new =
-        create_tls_valkey_client_from_certs("127.0.0.1", 6380, "/tmp/shotover-cert-test-new");
+        create_tls_valkey_client_from_certs("127.0.0.1", 6380, "shotover-proxy/tests/test-configs/valkey/tls2/certs");
     let mut con_new = client_new.get_connection().unwrap();
 
     // Verify data persistence across certificate change
@@ -315,10 +314,6 @@ async fn test_hot_reload_certificate_change() {
     let pong: String = redis::cmd("PING").query(&mut con_new).unwrap();
     assert_eq!(pong, "PONG");
 
-    // After the new shotover starts, gradual shutdown begins immediately with the first drain.
-    // Subsequent drains happen every 10 seconds.
-    // Sleep 5s to position ourselves in the middle of the time between 1st and 2nd drain.
-    // This reduces race conditions since we're furthest from drain boundaries.
     tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
 
     // Verify that old connections with old certificates still work during drain
@@ -367,7 +362,7 @@ async fn test_hot_reload_certificate_change() {
 
     // Create another new client to ensure new connections use the new certificate
     let client_new2 =
-        create_tls_valkey_client_from_certs("127.0.0.1", 6380, "/tmp/shotover-cert-test-new");
+        create_tls_valkey_client_from_certs("127.0.0.1", 6380, "shotover-proxy/tests/test-configs/valkey/tls2/certs");
     let mut con_new2 = client_new2.get_connection().unwrap();
 
     // Verify this new connection also works with new certificate
