@@ -356,13 +356,8 @@ async fn test_hot_reload_certificate_change() {
     assert_valkey_connection_works(&mut con_new, Some(2), &[("cert_key_0", "cert_value_0")])
         .unwrap();
 
-    // Create another new client to ensure new connections use the new certificate
-    let client_new2 = create_tls_valkey_client_from_certs(
-        "127.0.0.1",
-        6380,
-        "tests/test-configs/valkey/tls2/certs",
-    );
-    let mut con_new2 = client_new2.get_connection().unwrap();
+    // Create another new connection to ensure new connections use the new certificate
+    let mut con_new2 = client_new.get_connection().unwrap();
 
     // Verify this new connection also works with new certificate
     let pong: String = redis::cmd("PING").query(&mut con_new2).unwrap();
