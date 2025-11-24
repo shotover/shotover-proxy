@@ -303,8 +303,6 @@ async fn test_hot_reload_certificate_change() {
     // Verify data persistence across certificate change and that new connection works
     assert_valkey_connection_works(&mut con_new, None, &[("cert_key_0", "cert_value_0")]).unwrap();
 
-    tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
-
     // Verify that old connections with old certificates still work during drain
     // The old instance should still be serving requests with the old certificate
     let mut old_connections_working = 0;
