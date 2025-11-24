@@ -246,12 +246,8 @@ async fn test_hot_reload_certificate_change() {
 
     // Generate two distinct certificate sets for testing certificate rotation
     // The certificates will have different serial numbers and timestamps
-    test_helpers::cert::generate_test_certs(Path::new(
-        "shotover-proxy/tests/test-configs/valkey/tls/certs",
-    ));
-    test_helpers::cert::generate_test_certs(Path::new(
-        "shotover-proxy/tests/test-configs/valkey/tls2/certs",
-    ));
+    test_helpers::cert::generate_test_certs(Path::new("tests/test-configs/valkey/tls/certs"));
+    test_helpers::cert::generate_test_certs(Path::new("tests/test-configs/valkey/tls2/certs"));
 
     let _compose = docker_compose("tests/test-configs/hotreload/docker-compose.yaml");
 
@@ -267,7 +263,7 @@ async fn test_hot_reload_certificate_change() {
     let client_old = create_tls_valkey_client_from_certs(
         "127.0.0.1",
         6380,
-        "shotover-proxy/tests/test-configs/valkey/tls/certs",
+        "tests/test-configs/valkey/tls/certs",
     );
 
     // Establish multiple TLS connections to old instance
@@ -302,7 +298,7 @@ async fn test_hot_reload_certificate_change() {
     let client_new = create_tls_valkey_client_from_certs(
         "127.0.0.1",
         6380,
-        "shotover-proxy/tests/test-configs/valkey/tls2/certs",
+        "tests/test-configs/valkey/tls2/certs",
     );
     let mut con_new = client_new.get_connection().unwrap();
 
@@ -364,7 +360,7 @@ async fn test_hot_reload_certificate_change() {
     let client_new2 = create_tls_valkey_client_from_certs(
         "127.0.0.1",
         6380,
-        "shotover-proxy/tests/test-configs/valkey/tls2/certs",
+        "tests/test-configs/valkey/tls2/certs",
     );
     let mut con_new2 = client_new2.get_connection().unwrap();
 

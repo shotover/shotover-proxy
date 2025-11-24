@@ -4,8 +4,8 @@ sources:
       name: "valkey-tls"
       listen_addr: "127.0.0.1:6380"
       tls:
-        certificate_path: "shotover-proxy/tests/test-configs/valkey/tls/certs/localhost.crt"
-        private_key_path: "shotover-proxy/tests/test-configs/valkey/tls/certs/localhost.key"
+        certificate_path: "tests/test-configs/valkey/tls/certs/localhost.crt"
+        private_key_path: "tests/test-configs/valkey/tls/certs/localhost.key"
       chain:
         - QueryCounter:
             name: "valkey-query-counter"
