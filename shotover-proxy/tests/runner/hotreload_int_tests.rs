@@ -111,8 +111,7 @@ async fn test_hot_reload_with_old_instance_shutdown() {
     let mut con_new = client_new.get_connection().unwrap();
 
     // Verify data persistence
-    let value: String = con_new.get("key_0").unwrap();
-    assert_eq!(value, "value_0");
+    assert_valkey_connection_works(&mut con_new, None, &[("key_0", "value_0")]).unwrap();
 
     // After the new shotover starts, gradual shutdown begins immediately with the first drain.
     // Subsequent drains happen every 10 seconds.
@@ -219,8 +218,7 @@ async fn test_hot_reload_with_zero_connections() {
     let mut con_new = client_new.get_connection().unwrap();
 
     // Verify basic connectivity works
-    let pong: String = redis::cmd("PING").query(&mut con_new).unwrap();
-    assert_eq!(pong, "PONG");
+    assert_valkey_connection_works(&mut con_new, None, &[]).unwrap();
 
     // The old shotover should shutdown almost immediately since there are no connections to drain
     // This validates that the gradual shutdown recognizes the zero-connections case
@@ -302,13 +300,8 @@ async fn test_hot_reload_certificate_change() {
     );
     let mut con_new = client_new.get_connection().unwrap();
 
-    // Verify data persistence across certificate change
-    let value: String = con_new.get("cert_key_0").unwrap();
-    assert_eq!(value, "cert_value_0");
-
-    // Verify the new connection works with the new certificate
-    let pong: String = redis::cmd("PING").query(&mut con_new).unwrap();
-    assert_eq!(pong, "PONG");
+    // Verify data persistence across certificate change and that new connection works
+    assert_valkey_connection_works(&mut con_new, None, &[("cert_key_0", "cert_value_0")]).unwrap();
 
     tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
 
@@ -360,12 +353,7 @@ async fn test_hot_reload_certificate_change() {
     let mut con_new2 = client_new.get_connection().unwrap();
 
     // Verify this new connection also works with new certificate
-    let pong: String = redis::cmd("PING").query(&mut con_new2).unwrap();
-    assert_eq!(pong, "PONG");
-
-    // Verify data is accessible
-    let value: String = con_new2.get("cert_key_5").unwrap();
-    assert_eq!(value, "cert_value_5");
+    assert_valkey_connection_works(&mut con_new2, None, &[("cert_key_5", "cert_value_5")]).unwrap();
 
     // Wait for the old shotover to complete draining
     tokio::time::timeout(
