@@ -245,19 +245,13 @@ async fn test_hot_reload_certificate_change() {
     let socket_path = "/tmp/test-hotreload-cert-change.sock";
 
     // Generate two distinct certificate sets for testing certificate rotation
-    let cert_dir_old = Path::new("shotover-proxy/tests/test-configs/valkey/tls/certs");
-    let cert_dir_new = Path::new("shotover-proxy/tests/test-configs/valkey/tls2/certs");
-
-    // Clean up any existing certificate directories from previous test runs
-    let _ = std::fs::remove_dir_all(cert_dir_old);
-    let _ = std::fs::remove_dir_all(cert_dir_new);
-
-    // Generate old certificate set using test_helpers
-    test_helpers::cert::generate_test_certs(cert_dir_old);
-
-    // Generate new certificate set (distinct from old)
     // The certificates will have different serial numbers and timestamps
-    test_helpers::cert::generate_test_certs(cert_dir_new);
+    test_helpers::cert::generate_test_certs(Path::new(
+        "shotover-proxy/tests/test-configs/valkey/tls/certs",
+    ));
+    test_helpers::cert::generate_test_certs(Path::new(
+        "shotover-proxy/tests/test-configs/valkey/tls2/certs",
+    ));
 
     let _compose = docker_compose("tests/test-configs/hotreload/docker-compose.yaml");
 
@@ -407,8 +401,4 @@ async fn test_hot_reload_certificate_change() {
     .unwrap();
 
     shotover_new.shutdown_and_then_consume_events(&[]).await;
-
-    // Clean up certificate directories
-    let _ = std::fs::remove_dir_all(cert_dir_old);
-    let _ = std::fs::remove_dir_all(cert_dir_new);
 }
