@@ -264,8 +264,11 @@ async fn test_hot_reload_certificate_change() {
         .await;
 
     // Create TLS clients configured with old CA certificate
-    let client_old =
-        create_tls_valkey_client_from_certs("127.0.0.1", 6380, "shotover-proxy/tests/test-configs/valkey/tls/certs");
+    let client_old = create_tls_valkey_client_from_certs(
+        "127.0.0.1",
+        6380,
+        "shotover-proxy/tests/test-configs/valkey/tls/certs",
+    );
 
     // Establish multiple TLS connections to old instance
     let mut connections = Vec::new();
@@ -296,8 +299,11 @@ async fn test_hot_reload_certificate_change() {
         .await;
 
     // Create a new TLS client configured with certificate
-    let client_new =
-        create_tls_valkey_client_from_certs("127.0.0.1", 6380, "shotover-proxy/tests/test-configs/valkey/tls2/certs");
+    let client_new = create_tls_valkey_client_from_certs(
+        "127.0.0.1",
+        6380,
+        "shotover-proxy/tests/test-configs/valkey/tls2/certs",
+    );
     let mut con_new = client_new.get_connection().unwrap();
 
     // Verify data persistence across certificate change
@@ -355,8 +361,11 @@ async fn test_hot_reload_certificate_change() {
         .unwrap();
 
     // Create another new client to ensure new connections use the new certificate
-    let client_new2 =
-        create_tls_valkey_client_from_certs("127.0.0.1", 6380, "shotover-proxy/tests/test-configs/valkey/tls2/certs");
+    let client_new2 = create_tls_valkey_client_from_certs(
+        "127.0.0.1",
+        6380,
+        "shotover-proxy/tests/test-configs/valkey/tls2/certs",
+    );
     let mut con_new2 = client_new2.get_connection().unwrap();
 
     // Verify this new connection also works with new certificate
