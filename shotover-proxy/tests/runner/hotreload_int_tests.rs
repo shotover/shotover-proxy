@@ -125,8 +125,10 @@ async fn test_hot_reload_with_old_instance_shutdown() {
     let shutdown_duration_secs = 10;
     let chunk_duration_ms = 200;
     let num_chunks = (shutdown_duration_secs * 1000 / chunk_duration_ms) as usize;
-    let connections_per_chunk =
-        std::cmp::max(1, (total_connections as f64 / num_chunks as f64).ceil() as usize);
+    let connections_per_chunk = std::cmp::max(
+        1,
+        (total_connections as f64 / num_chunks as f64).ceil() as usize,
+    );
 
     // Verify the drain rate calculation matches expected value for 13 connections
     assert_eq!(
@@ -150,9 +152,9 @@ async fn test_hot_reload_with_old_instance_shutdown() {
     for (check_num, &interval_ms) in check_intervals.iter().enumerate() {
         // Sleep for the interval duration
         tokio::time::sleep(tokio::time::Duration::from_millis(interval_ms)).await;
-        
+
         cumulative_chunks += interval_ms / chunk_duration_ms as u64;
-        
+
         // Count how many connections have been drained
         let mut connections_failed = 0;
         for (i, con) in connections.iter_mut().enumerate() {
@@ -166,16 +168,20 @@ async fn test_hot_reload_with_old_instance_shutdown() {
         // Allow some tolerance since timing isn't perfectly precise
         let expected_drained = std::cmp::min(
             cumulative_chunks as usize * connections_per_chunk,
-            total_connections
+            total_connections,
         );
-        
+
         // Allow +/- 2 connections tolerance for timing variations
         let tolerance = 2;
         assert!(
             connections_failed >= expected_drained.saturating_sub(tolerance)
                 && connections_failed <= (expected_drained + tolerance).min(total_connections),
             "After check {}: expected approximately {} connections drained (±{} tolerance), but {} were drained (after {} chunks)",
-            check_num + 1, expected_drained, tolerance, connections_failed, cumulative_chunks
+            check_num + 1,
+            expected_drained,
+            tolerance,
+            connections_failed,
+            cumulative_chunks
         );
     }
 
