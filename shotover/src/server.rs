@@ -303,16 +303,28 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
         join_all(self.connection_handles.iter_mut().map(|tc| &mut tc.handle)).await;
     }
 
-    pub async fn gradual_shutdown(&mut self) {
+    pub async fn gradual_shutdown(&mut self, shutdown_duration: Duration) {
         info!(
-            "[{}] Gradual shutdown initiated - draining connections",
-            self.source_name
+            "[{}] Gradual shutdown initiated - draining connections over {:?}",
+            self.source_name, shutdown_duration
         );
 
-        // Calculate 10% of connections to drain (at least 1 if there are any connections)
+        // Chunk duration is fixed at 200ms for better distribution of connection shutdowns
+        const CHUNK_DURATION_MS: u64 = 200;
+        let chunk_duration = Duration::from_millis(CHUNK_DURATION_MS);
+
+        // Calculate number of chunks based on total duration
+        let num_chunks = (shutdown_duration.as_millis() as u64 / CHUNK_DURATION_MS).max(1);
+
+        // Calculate connections to drain per chunk (at least 1 if there are any connections)
         let connections_to_drain = std::cmp::max(
             1,
-            (self.connection_handles.len() as f64 * 0.1).ceil() as usize,
+            (self.connection_handles.len() as f64 / num_chunks as f64).ceil() as usize,
+        );
+
+        info!(
+            "[{}] Will drain {} connections per chunk over {} chunks ({}ms per chunk)",
+            self.source_name, connections_to_drain, num_chunks, CHUNK_DURATION_MS
         );
 
         while !self.connection_handles.is_empty() {
@@ -343,8 +355,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
 
             // Don't sleep after draining the last batch
             if !self.connection_handles.is_empty() {
-                // Wait 10 seconds before the next drain cycle
-                tokio::time::sleep(Duration::from_secs(10)).await;
+                tokio::time::sleep(chunk_duration).await;
             }
         }
 

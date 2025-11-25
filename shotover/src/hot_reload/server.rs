@@ -145,14 +145,20 @@ impl UnixSocketServer {
                 );
                 (Response::SendListeningSockets, collected_fds)
             }
-            Request::GradualShutdown => {
+            Request::GradualShutdown { duration_secs } => {
                 info!(
-                    "Processing GradualShutdown request - initiating gradual connection draining"
+                    "Processing GradualShutdown request - initiating gradual connection draining over {}s",
+                    duration_secs
                 );
+
+                let duration = std::time::Duration::from_secs(duration_secs);
 
                 // Send gradual shutdown requests to all sources
                 for source in &self.sources {
-                    if let Err(e) = source.gradual_shutdown_tx.send(GradualShutdownRequest) {
+                    if let Err(e) = source
+                        .gradual_shutdown_tx
+                        .send(GradualShutdownRequest { duration })
+                    {
                         warn!(
                             "Failed to send gradual shutdown request to source {}: {:?}",
                             source.name, e

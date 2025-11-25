@@ -55,6 +55,13 @@ struct ConfigOpts {
 
     #[clap(long)]
     pub hotreload_socket: Option<String>,
+
+    /// When performing a hot reload, this specifies how many seconds the original shotover instance
+    /// should spend in the gradual shutdown state, draining connections.
+    /// The connections will be drained in chunks distributed evenly across this duration.
+    /// If not specified, defaults to 10 seconds.
+    #[clap(long, default_value = "10")]
+    pub hot_reload_gradual_shutdown_seconds: u64,
 }
 
 #[derive(clap::ValueEnum, Clone, Copy)]
@@ -72,6 +79,7 @@ impl Default for ConfigOpts {
             stack_size: 2097152,
             log_format: LogFormat::Human,
             hotreload_socket: None,
+            hot_reload_gradual_shutdown_seconds: 10,
         }
     }
 }
@@ -82,6 +90,7 @@ pub struct Shotover {
     config: Config,
     tracing: TracingState,
     hotreload_socket: Option<String>,
+    hot_reload_gradual_shutdown_seconds: u64,
 }
 
 impl Shotover {
@@ -134,6 +143,7 @@ impl Shotover {
             config,
             tracing,
             hotreload_socket,
+            hot_reload_gradual_shutdown_seconds: params.hot_reload_gradual_shutdown_seconds,
         })
     }
 
@@ -161,6 +171,7 @@ impl Shotover {
         topology: Topology,
         config: Config,
         hotreload_socket: Option<String>,
+        hot_reload_gradual_shutdown_seconds: u64,
         trigger_shutdown_rx: watch::Receiver<bool>,
     ) -> Result<()> {
         let hotreload_client = hotreload_socket.clone().and_then(HotReloadClient::new);
@@ -186,7 +197,10 @@ impl Shotover {
                 // After the new instance is fully started and accepting connections,
                 // request the old instance to shut down
                 if let Some(client) = &hotreload_client {
-                    if let Err(e) = client.request_shutdown_old_instance().await {
+                    if let Err(e) = client
+                        .request_shutdown_old_instance(hot_reload_gradual_shutdown_seconds)
+                        .await
+                    {
                         warn!(
                             "Failed to send shutdown request to old shotover instance: {}",
                             e
@@ -216,6 +230,7 @@ impl Shotover {
             config,
             tracing,
             hotreload_socket,
+            hot_reload_gradual_shutdown_seconds,
         } = self;
 
         let (trigger_shutdown_tx, trigger_shutdown_rx) = tokio::sync::watch::channel(false);
@@ -245,6 +260,7 @@ impl Shotover {
             topology,
             config,
             hotreload_socket,
+            hot_reload_gradual_shutdown_seconds,
             trigger_shutdown_rx,
         )) {
             Ok(()) => {
