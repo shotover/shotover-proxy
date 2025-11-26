@@ -313,13 +313,11 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
         const CHUNK_DURATION: Duration = Duration::from_millis(200);
 
         // Calculate number of chunks based on total duration
-        let num_chunks = ((shutdown_duration.div_duration_f64(CHUNK_DURATION)) as u32).max(1);
+        let num_chunks = (shutdown_duration.div_duration_f64(CHUNK_DURATION) as u32).max(1);
 
         // Calculate connections to drain per chunk (at least 1 if there are any connections)
-        let connections_to_drain = std::cmp::max(
-            1,
-            (self.connection_handles.len() as f64 / num_chunks as f64).ceil() as usize,
-        );
+        let connections_to_drain =
+            ((self.connection_handles.len() as f64 / num_chunks as f64).ceil() as usize).max(1);
 
         info!(
             "[{}] Will drain {} connections per chunk over {} chunks ({:?} per chunk)",
@@ -327,7 +325,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
         );
 
         while !self.connection_handles.is_empty() {
-            let to_drain = std::cmp::min(connections_to_drain, self.connection_handles.len());
+            let to_drain = connections_to_drain.min(self.connection_handles.len());
 
             info!(
                 "[{}] Draining {} out of {} connections",
