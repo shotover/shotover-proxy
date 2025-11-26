@@ -122,13 +122,10 @@ async fn test_hot_reload_with_old_instance_shutdown() {
     // Timeline: Every 200ms, 1 connection is drained continuously
     // We'll verify the drain behavior at specific time intervals
     let total_connections = connections.len();
-    let shutdown_duration_secs = 10;
-    let chunk_duration_ms = 200;
-    let num_chunks = (shutdown_duration_secs * 1000 / chunk_duration_ms) as usize;
-    let connections_per_chunk = std::cmp::max(
-        1,
-        (total_connections as f64 / num_chunks as f64).ceil() as usize,
-    );
+    let shutdown_duration = Duration::from_secs(10);
+    let chunk_duration = Duration::from_millis(200);
+    let num_chunks = shutdown_duration.div_duration_f64(chunk_duration) as usize;
+    let connections_per_chunk = std::cmp::max(1, total_connections.div_ceil(num_chunks));
 
     // Verify the drain rate calculation matches expected value for 13 connections
     assert_eq!(
@@ -140,20 +137,22 @@ async fn test_hot_reload_with_old_instance_shutdown() {
     // We'll check the state after a few drain cycles
     // Each cycle consists of multiple chunks, so we need to wait appropriately
     // Let's verify after approximately 20%, 40%, 60%, and 80% of the shutdown period
+    let check_interval = chunk_duration * 10; // 10 chunks = ~2 seconds per check
     let check_intervals = [
-        (chunk_duration_ms * 10) as u64, // After ~10 chunks = ~2 seconds
-        (chunk_duration_ms * 10) as u64, // Another 10 chunks = ~4 seconds total
-        (chunk_duration_ms * 10) as u64, // Another 10 chunks = ~6 seconds total
-        (chunk_duration_ms * 10) as u64, // Another 10 chunks = ~8 seconds total
+        check_interval, // After ~10 chunks = ~2 seconds
+        check_interval, // Another 10 chunks = ~4 seconds total
+        check_interval, // Another 10 chunks = ~6 seconds total
+        check_interval, // Another 10 chunks = ~8 seconds total
     ];
 
     // Verify the drain behavior at each check interval
-    let mut cumulative_chunks = 0;
-    for (check_num, &interval_ms) in check_intervals.iter().enumerate() {
+    let mut cumulative_duration = Duration::ZERO;
+    for (check_num, &interval) in check_intervals.iter().enumerate() {
         // Sleep for the interval duration
-        tokio::time::sleep(tokio::time::Duration::from_millis(interval_ms)).await;
+        tokio::time::sleep(interval).await;
 
-        cumulative_chunks += interval_ms / chunk_duration_ms as u64;
+        cumulative_duration += interval;
+        let cumulative_chunks = cumulative_duration.div_duration_f64(chunk_duration) as usize;
 
         // Count how many connections have been drained
         let mut connections_failed = 0;
@@ -166,10 +165,8 @@ async fn test_hot_reload_with_old_instance_shutdown() {
         // Calculate expected drained connections
         // We expect approximately cumulative_chunks * connections_per_chunk to be drained
         // Allow some tolerance since timing isn't perfectly precise
-        let expected_drained = std::cmp::min(
-            cumulative_chunks as usize * connections_per_chunk,
-            total_connections,
-        );
+        let expected_drained =
+            std::cmp::min(cumulative_chunks * connections_per_chunk, total_connections);
 
         // Allow +/- 2 connections tolerance for timing variations
         let tolerance = 2;
