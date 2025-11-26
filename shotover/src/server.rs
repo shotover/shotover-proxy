@@ -310,11 +310,10 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
         );
 
         // Chunk duration is fixed at 200ms for better distribution of connection shutdowns
-        const CHUNK_DURATION_MS: u64 = 200;
-        let chunk_duration = Duration::from_millis(CHUNK_DURATION_MS);
+        const CHUNK_DURATION: Duration = Duration::from_millis(200);
 
         // Calculate number of chunks based on total duration
-        let num_chunks = (shutdown_duration.as_millis() as u64 / CHUNK_DURATION_MS).max(1);
+        let num_chunks = ((shutdown_duration.div_duration_f64(CHUNK_DURATION)) as u32).max(1);
 
         // Calculate connections to drain per chunk (at least 1 if there are any connections)
         let connections_to_drain = std::cmp::max(
@@ -323,8 +322,8 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
         );
 
         info!(
-            "[{}] Will drain {} connections per chunk over {} chunks ({}ms per chunk)",
-            self.source_name, connections_to_drain, num_chunks, CHUNK_DURATION_MS
+            "[{}] Will drain {} connections per chunk over {} chunks ({:?} per chunk)",
+            self.source_name, connections_to_drain, num_chunks, CHUNK_DURATION
         );
 
         while !self.connection_handles.is_empty() {
@@ -355,7 +354,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
 
             // Don't sleep after draining the last batch
             if !self.connection_handles.is_empty() {
-                tokio::time::sleep(chunk_duration).await;
+                tokio::time::sleep(CHUNK_DURATION).await;
             }
         }
 

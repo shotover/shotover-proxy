@@ -147,8 +147,8 @@ impl UnixSocketServer {
             }
             Request::GradualShutdown { duration } => {
                 info!(
-                    "Processing GradualShutdown request - initiating gradual connection draining over {}s",
-                    duration.as_secs()
+                    "Processing GradualShutdown request - initiating gradual connection draining over {:?}",
+                    duration
                 );
 
                 // Send gradual shutdown requests to all sources
