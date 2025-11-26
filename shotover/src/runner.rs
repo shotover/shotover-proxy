@@ -59,8 +59,8 @@ struct ConfigOpts {
     /// When performing a hot reload, this specifies how many seconds the original shotover instance
     /// should spend in the gradual shutdown state, draining connections.
     /// The connections will be drained in chunks distributed evenly across this duration.
-    /// If not specified, defaults to 10 seconds.
-    #[clap(long, default_value = "10")]
+    /// If not specified, defaults to 60 seconds.
+    #[clap(long, default_value = "60")]
     pub hot_reload_gradual_shutdown_seconds: u64,
 }
 
