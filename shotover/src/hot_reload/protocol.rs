@@ -8,9 +8,9 @@ use std::time::Duration;
 #[derive(Debug, Serialize, Deserialize)]
 pub enum Request {
     SendListeningSockets,
-    /// GradualShutdown request with the total duration for the shutdown process.
-    /// The duration specifies how long the original instance should spend draining connections.
+    /// Request for gradual shutdown
     GradualShutdown {
+        /// The total duration in seconds for the shutdown process, specifying how long the original instance should spend draining connections.
         duration_secs: u64,
     },
 }
@@ -27,17 +27,17 @@ pub struct HotReloadListenerRequest {
 }
 
 /// Request sent from hot reload server to TcpCodecListener for gradual shutdown
-/// Contains the total duration for the gradual shutdown process
 pub struct GradualShutdownRequest {
+    /// The total duration for the gradual shutdown process
     pub duration: Duration,
 }
 
 /// Response sent from TcpCodecListener back to hot reload server
-/// listener_socket_fd is an OwnedFd. It will be converted to RawFd only during transfer.
 #[derive(Debug)]
 pub enum HotReloadListenerResponse {
     HotReloadResponse {
         port: u16,
+        /// An OwnedFd that will be converted to RawFd only during transfer
         listener_socket_fd: OwnedFd,
     },
     NoListenerAvailable,
