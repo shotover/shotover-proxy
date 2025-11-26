@@ -8,10 +8,10 @@ use std::time::Duration;
 #[derive(Debug, Serialize, Deserialize)]
 pub enum Request {
     SendListeningSockets,
-    /// Request for gradual shutdown
+    /// GradualShutdown request with the total duration for the shutdown process.
     GradualShutdown {
-        /// The total duration in seconds for the shutdown process, specifying how long the original instance should spend draining connections.
-        duration_secs: u64,
+        /// The duration specifies how long the original instance should spend draining connections.
+        duration: Duration,
     },
 }
 

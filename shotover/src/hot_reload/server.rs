@@ -145,13 +145,11 @@ impl UnixSocketServer {
                 );
                 (Response::SendListeningSockets, collected_fds)
             }
-            Request::GradualShutdown { duration_secs } => {
+            Request::GradualShutdown { duration } => {
                 info!(
                     "Processing GradualShutdown request - initiating gradual connection draining over {}s",
-                    duration_secs
+                    duration.as_secs()
                 );
-
-                let duration = std::time::Duration::from_secs(duration_secs);
 
                 // Send gradual shutdown requests to all sources
                 for source in &self.sources {

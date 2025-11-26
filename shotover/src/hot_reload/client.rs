@@ -145,9 +145,11 @@ impl HotReloadClient {
 
         let client = UnixSocketClient::new(self.socket_path.clone());
 
+        let duration = std::time::Duration::from_secs(duration_secs);
+
         // Send the shutdown request - we don't expect any listeners back
         let _listeners = client
-            .send_request(crate::hot_reload::protocol::Request::GradualShutdown { duration_secs })
+            .send_request(crate::hot_reload::protocol::Request::GradualShutdown { duration })
             .await?;
 
         info!("Successfully sent gradual shutdown request to old shotover instance");
