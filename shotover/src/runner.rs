@@ -10,6 +10,7 @@ use metrics_exporter_prometheus::PrometheusBuilder;
 use rustls::crypto::aws_lc_rs::default_provider;
 use std::env;
 use std::net::SocketAddr;
+use std::time::Duration;
 use tokio::runtime::{self, Runtime};
 use tokio::signal::unix::{SignalKind, signal};
 use tokio::sync::watch;
@@ -90,7 +91,7 @@ pub struct Shotover {
     config: Config,
     tracing: TracingState,
     hotreload_socket: Option<String>,
-    hot_reload_gradual_shutdown_seconds: u64,
+    hot_reload_gradual_shutdown_duration: Duration,
 }
 
 impl Shotover {
@@ -143,7 +144,9 @@ impl Shotover {
             config,
             tracing,
             hotreload_socket,
-            hot_reload_gradual_shutdown_seconds: params.hot_reload_gradual_shutdown_seconds,
+            hot_reload_gradual_shutdown_duration: Duration::from_secs(
+                params.hot_reload_gradual_shutdown_seconds,
+            ),
         })
     }
 
@@ -171,7 +174,7 @@ impl Shotover {
         topology: Topology,
         config: Config,
         hotreload_socket: Option<String>,
-        hot_reload_gradual_shutdown_seconds: u64,
+        hot_reload_gradual_shutdown_duration: Duration,
         trigger_shutdown_rx: watch::Receiver<bool>,
     ) -> Result<()> {
         let hotreload_client = hotreload_socket.clone().and_then(HotReloadClient::new);
@@ -198,7 +201,7 @@ impl Shotover {
                 // request the old instance to shut down
                 if let Some(client) = &hotreload_client {
                     if let Err(e) = client
-                        .request_shutdown_old_instance(hot_reload_gradual_shutdown_seconds)
+                        .request_shutdown_old_instance(hot_reload_gradual_shutdown_duration)
                         .await
                     {
                         warn!(
@@ -230,7 +233,7 @@ impl Shotover {
             config,
             tracing,
             hotreload_socket,
-            hot_reload_gradual_shutdown_seconds,
+            hot_reload_gradual_shutdown_duration,
         } = self;
 
         let (trigger_shutdown_tx, trigger_shutdown_rx) = tokio::sync::watch::channel(false);
@@ -260,7 +263,7 @@ impl Shotover {
             topology,
             config,
             hotreload_socket,
-            hot_reload_gradual_shutdown_seconds,
+            hot_reload_gradual_shutdown_duration,
             trigger_shutdown_rx,
         )) {
             Ok(()) => {
