@@ -138,20 +138,14 @@ async fn test_hot_reload_with_old_instance_shutdown() {
     // Each cycle consists of multiple chunks, so we need to wait appropriately
     // Let's verify after approximately 20%, 40%, 60%, and 80% of the shutdown period
     let check_interval = chunk_duration * 10; // 10 chunks = ~2 seconds per check
-    let check_intervals = [
-        check_interval, // After ~10 chunks = ~2 seconds
-        check_interval, // Another 10 chunks = ~4 seconds total
-        check_interval, // Another 10 chunks = ~6 seconds total
-        check_interval, // Another 10 chunks = ~8 seconds total
-    ];
 
     // Verify the drain behavior at each check interval
     let mut cumulative_duration = Duration::ZERO;
-    for (check_num, &interval) in check_intervals.iter().enumerate() {
+    for check_num in 0..4 {
         // Sleep for the interval duration
-        tokio::time::sleep(interval).await;
+        tokio::time::sleep(check_interval).await;
 
-        cumulative_duration += interval;
+        cumulative_duration += check_interval;
         let cumulative_chunks = cumulative_duration.div_duration_f64(chunk_duration) as usize;
 
         // Count how many connections have been drained

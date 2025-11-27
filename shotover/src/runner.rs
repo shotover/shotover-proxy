@@ -71,20 +71,6 @@ enum LogFormat {
     Json,
 }
 
-impl Default for ConfigOpts {
-    fn default() -> Self {
-        Self {
-            topology_file: "config/topology.yaml".into(),
-            config_file: "config/config.yaml".into(),
-            core_threads: None,
-            stack_size: 2097152,
-            log_format: LogFormat::Human,
-            hotreload_socket: None,
-            hot_reload_gradual_shutdown_seconds: 10,
-        }
-    }
-}
-
 pub struct Shotover {
     runtime: Runtime,
     topology: Topology,
