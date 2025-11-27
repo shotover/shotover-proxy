@@ -313,14 +313,10 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
         const CHUNK_DURATION: Duration = Duration::from_millis(200);
 
         // Calculate number of chunks based on total duration
-        let num_chunks = (shutdown_duration.div_duration_f64(CHUNK_DURATION) as u32).max(1);
+        let num_chunks = (shutdown_duration.div_duration_f64(CHUNK_DURATION) as usize).max(1);
 
         // Calculate connections to drain per chunk (at least 1 if there are any connections)
-        let connections_to_drain = self
-            .connection_handles
-            .len()
-            .div_ceil(num_chunks as usize)
-            .max(1);
+        let connections_to_drain = self.connection_handles.len().div_ceil(num_chunks).max(1);
 
         info!(
             "[{}] Will drain {} connections per chunk over {} chunks ({:?} per chunk)",
