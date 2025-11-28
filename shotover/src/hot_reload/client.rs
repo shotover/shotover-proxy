@@ -136,18 +136,18 @@ impl HotReloadClient {
 
     /// Request the old Shotover instance to shutdown after hot reload handoff
     /// This should be called after the new instance is fully started and ready to accept connections
-    /// The old instance will drain connections gradually 10% every 10 seconds
-    pub async fn request_shutdown_old_instance(&self) -> Result<()> {
+    /// The old instance will drain connections gradually over the specified duration
+    pub async fn request_shutdown_old_instance(&self, duration: std::time::Duration) -> Result<()> {
         info!(
-            "Hot reload CLIENT requesting gradual shutdown of old shotover at: {}",
-            self.socket_path
+            "Hot reload CLIENT requesting gradual shutdown of old shotover at: {} with duration {:?}",
+            self.socket_path, duration
         );
 
         let client = UnixSocketClient::new(self.socket_path.clone());
 
         // Send the shutdown request - we don't expect any listeners back
         let _listeners = client
-            .send_request(crate::hot_reload::protocol::Request::GradualShutdown)
+            .send_request(crate::hot_reload::protocol::Request::GradualShutdown { duration })
             .await?;
 
         info!("Successfully sent gradual shutdown request to old shotover instance");

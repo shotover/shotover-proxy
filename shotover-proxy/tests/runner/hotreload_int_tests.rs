@@ -113,48 +113,42 @@ async fn test_hot_reload_with_old_instance_shutdown() {
     // Verify data persistence
     assert_valkey_connection_works(&mut con_new, None, &[("key_0", "value_0")]).unwrap();
 
-    // After the new shotover starts, gradual shutdown begins immediately with the first drain.
-    // Subsequent drains happen every 10 seconds.
-    // Timeline: t=0: 1st drain, t=10: 2nd drain, t=20: 3rd drain, etc.
-    // Sleep 5s to position ourselves in the middle of the time between 1st and 2nd drain.
-    // This reduces race conditions since we're furthest from drain boundaries.
-    tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
-
-    // Track connection failures over multiple drain cycles
-    // The gradual shutdown drains 10% of initial connections (rounded up to at least 1)
-    // For 13 connections: 10% = 1.3 -> rounds to 2 connections per cycle
-    // Each drain cycle waits 10 seconds between drains
+    // After the new shotover starts, gradual shutdown begins immediately.
+    // The implementation drains connections continuously in chunks:
+    // - Chunk duration: 200ms
+    // - For 10s shutdown: 50 chunks
+    // - For 13 connections: ceil(13/50) = 1 connection per chunk
     //
-    // Note: Low connection counts give non-ideal cycle counts due to rounding.
-    // For example, 13 connections requires 7 cycles to fully drain.
-    // With realistic connection counts (100+), a 10% drain rate consistently takes ~10 cycles.
+    // Timeline: Every 200ms, 1 connection is drained continuously
+    // We'll verify the drain behavior at specific time intervals
     let total_connections = connections.len();
-    let expected_drain_per_cycle =
-        std::cmp::max(1, (total_connections as f64 * 0.1).ceil() as usize);
+    let shutdown_duration = Duration::from_secs(10);
+    let chunk_duration = Duration::from_millis(200);
+    let num_chunks = shutdown_duration.div_duration_f64(chunk_duration) as usize;
+    let connections_per_chunk = std::cmp::max(1, total_connections.div_ceil(num_chunks));
 
     // Verify the drain rate calculation matches expected value for 13 connections
     assert_eq!(
-        expected_drain_per_cycle, 2,
-        "Expected 2 connections to drain per cycle (10% of 13), but got {}",
-        expected_drain_per_cycle
+        connections_per_chunk, 1,
+        "Expected 1 connection to drain per chunk (ceil(13/50)), but got {}",
+        connections_per_chunk
     );
 
-    // Calculate how many drain cycles we need to verify
-    // We'll verify enough cycles to drain at least 50% of connections
-    let num_cycles_to_verify = std::cmp::min(
-        5,
-        (total_connections as f64 / expected_drain_per_cycle as f64 / 2.0).ceil() as usize,
-    );
+    // We'll check the state after a few drain cycles
+    // Each cycle consists of multiple chunks, so we need to wait appropriately
+    // Let's verify after approximately 20%, 40%, 60%, and 80% of the shutdown period
+    let check_interval = chunk_duration * 10; // 10 chunks = ~2 seconds per check
 
-    // Verify we're testing the expected number of cycles for 13 connections
-    assert_eq!(
-        num_cycles_to_verify, 4,
-        "Expected to verify 4 drain cycles (50% of 13 connections / 2 per cycle), but got {}",
-        num_cycles_to_verify
-    );
+    // Verify the drain behavior at each check interval
+    let mut cumulative_duration = Duration::ZERO;
+    for check_num in 0..4 {
+        // Sleep for the interval duration
+        tokio::time::sleep(check_interval).await;
 
-    // Verify each drain cycle
-    for cycle in 1..=num_cycles_to_verify {
+        cumulative_duration += check_interval;
+        let cumulative_chunks = cumulative_duration.div_duration_f64(chunk_duration) as usize;
+
+        // Count how many connections have been drained
         let mut connections_failed = 0;
         for (i, con) in connections.iter_mut().enumerate() {
             if con.get::<_, String>(format!("key_{}", i)).is_err() {
@@ -162,17 +156,24 @@ async fn test_hot_reload_with_old_instance_shutdown() {
             }
         }
 
-        let expected_drained = expected_drain_per_cycle * cycle;
-        assert_eq!(
-            connections_failed, expected_drained,
-            "After drain cycle {}: expected exactly {} connections drained, but {} were drained",
-            cycle, expected_drained, connections_failed
-        );
+        // Calculate expected drained connections
+        // We expect approximately cumulative_chunks * connections_per_chunk to be drained
+        // Allow some tolerance since timing isn't perfectly precise
+        let expected_drained =
+            std::cmp::min(cumulative_chunks * connections_per_chunk, total_connections);
 
-        // Sleep before next cycle check
-        if cycle < num_cycles_to_verify {
-            tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
-        }
+        // Allow +/- 2 connections tolerance for timing variations
+        let tolerance = 2;
+        assert!(
+            connections_failed >= expected_drained.saturating_sub(tolerance)
+                && connections_failed <= (expected_drained + tolerance).min(total_connections),
+            "After check {}: expected approximately {} connections drained (±{} tolerance), but {} were drained (after {} chunks)",
+            check_num + 1,
+            expected_drained,
+            tolerance,
+            connections_failed,
+            cumulative_chunks
+        );
     }
 
     // Verify new connections still work
