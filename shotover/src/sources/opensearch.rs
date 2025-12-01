@@ -61,8 +61,8 @@ impl OpenSearchConfig {
                     _ = trigger_shutdown_rx.changed() => {
                         listener.shutdown().await;
                     }
-                    Some(GradualShutdownRequest) = gradual_shutdown_rx.recv() => {
-                        listener.gradual_shutdown().await;
+                    Some(request) = gradual_shutdown_rx.recv() => {
+                        listener.gradual_shutdown(request.duration).await;
                     }
                 }
             }

@@ -1,0 +1,14 @@
+---
+sources:
+  - Valkey:
+      name: "valkey-tls"
+      listen_addr: "127.0.0.1:6380"
+      tls:
+        certificate_path: "tests/test-configs/valkey/tls2/certs/localhost.crt"
+        private_key_path: "tests/test-configs/valkey/tls2/certs/localhost.key"
+      chain:
+        - QueryCounter:
+            name: "valkey-query-counter"
+        - ValkeySinkSingle:
+            remote_address: "127.0.0.1:6379"
+            connect_timeout_ms: 5000

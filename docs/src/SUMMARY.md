@@ -7,6 +7,7 @@
   - [Concepts](./user-guide/concepts.md)
   - [Configuration](./user-guide/configuration.md)
   - [Observability](./user-guide/observability.md)
+  - [Hot Reload](./user-guide/hot_reload.md)
   - [Custom Transforms](./user-guide/writing-custom-transforms.md)
 - [Sources](./sources.md)
 - [Transforms](./transforms.md)
