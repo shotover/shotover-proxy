@@ -1,6 +1,6 @@
 # Hot Reload
 
-Hot reload enables zero-downtime updates by transferring network listeners between Shotover instances. When you start a new Shotover instance with hot reload enabled, it requests the listening TCP sockets from the running instance. Once they are received, the new instance immediately starts accepting connections. Once the new shotover instance is fully operational, it sends a shutdown request to the old shotover instance and the original instance gradually drains its existing connections before shutting down. This allows you to deploy configuration changes or upgrade Shotover versions without dropping client connections.
+Hot reload enables zero-downtime updates by transferring network listeners between Shotover instances. When you start a new Shotover instance with hot reload enabled, it requests the listening TCP sockets from the running instance. Once they are received, the new instance immediately starts accepting connections. Once the new shotover instance is fully operational, it sends a shutdown request to the old shotover instace and the original instance gradually drains its existing connections before shutting down. This allows you to deploy configuration changes or upgrade Shotover versions without dropping client connections.
 
 
 ## How It Works
@@ -13,7 +13,7 @@ The hot reload process:
 
 2. The original instance transfers the file descriptors over the Unix socket using SCM_RIGHTS which is a Unix mechanism for sharing file descriptors between processes. After transferring, the original instance stops accepting new connections but continues to serve its existing connections.
 
-3. The new instance reconstructs the TCP listeners from the received file descriptors. These listeners are bound to the same IP addresses and ports as the original listeners.
+3. The new instance recreates the TCP listeners from the file descriptors received from the old shotover instance. These listeners uses the same IP addresses and ports as before.
 
 4. The new instance begins accepting new connections. At this point, the old instance still handles the existing connections. Once the new instance is fully functional, it sends a gradual shutdown request over the Unix socket to the old instance, specifying the shutdown duration.
 
@@ -27,7 +27,7 @@ The hot reload process:
 
 If all the connections in the old shotover instance are closed at once, all clients will try to reconnect at the same time. This will be too much for the new instance to handle and will cause issues. Instead of closing all connections at once, the original instance drains connections in chunks, distributed evenly across the shutdown duration. By default, the shutdown duration is 60 seconds, but it can be configured with `--hotreload-gradual-shutdown-seconds`.
 
-Connections are closed in chunks at fixed 200ms intervals. The chunk size is calculated to evenly distribute all connections across the total duration. When a connection is closed, the connection handler terminates and clients will detect the closure and try to reconnect.
+Connections are closed in chunks at fixed 200ms intervals. The chunk size is calculated to evenly distribute all connections across the total duration. When a connection is closed, the connection handler terminates and clients will detect the closure and tries to reconnect.
 
 For example, with 1000 active connections and a 60-second shutdown duration:
 - Total chunks: 60 seconds ÷ 0.2 seconds = 300 chunks
@@ -68,12 +68,7 @@ Hot reload only transfers listening sockets, not active connections or session s
 
 ### Shutdown Duration
 
-Tune the shutdown duration based on your connection volume and client behavior. The default is 60 seconds.
-
-- **Too short**: May cause connection churn and reconnection storms if too many clients try to reconnect simultaneously
-- **Too long**: The original instance consumes resources longer than necessary
-
-Clients must handle connection closures gracefully with retry logic.
+The configuration of gradual shutdown duration based on your connection volume and client behavior. By default, it will be 60 seconds. If it is not tuned correctly it can lead to various issues. If the duration is too short, it can lead to a situation where too many clients (more than the new instance could handle) try to reconnect to the new instance at once. If the duration is unnecessarily long, it will be a wastage of resources.
 
 
 ## Failure Modes
