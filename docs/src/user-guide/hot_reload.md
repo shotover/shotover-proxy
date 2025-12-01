@@ -1,51 +1,38 @@
 # Hot Reload
 
-Hot reload enables zero-downtime updates of Shotover instances by transferring active network listeners between processes. This allows you to deploy configuration changes, upgrade Shotover versions, or restart the proxy without dropping client connections.
+Hot reload enables zero-downtime updates by transferring network listeners between Shotover instances. When you start a new Shotover instance with hot reload enabled, it requests the listening TCP sockets from the running instance. Once they are received, the new instance immediately starts accepting connections. Once the new shotover instance is fully operational, it sends a shutdown request to the old shotover instance and the original instance gradually drains its existing connections before shutting down. This allows you to deploy configuration changes or upgrade Shotover versions without dropping client connections.
 
-## Overview
-
-When hot reload is enabled, Shotover instances communicate over a Unix socket to coordinate the handoff of listening TCP sockets. The new Shotover instance inherits the network listeners from the running instance, allowing it to immediately start accepting connections on the same ports. Once the handoff is complete, the original instance gradually drains its active connections before shutting down.
 
 ## How It Works
 
-### Socket Handoff Process
+When a new Shotover instance starts with hot reload enabled, it checks if a Unix socket exists at the configured path. If the socket exists, the new Shotover starts in hot reload mode and attempts to hot reload from the old Shotover instance.
 
-Hot reload operates through a multi-step coordination process between the original (old) and replacement (new) Shotover instances:
+The hot reload process:
 
-1. **Detection**: When a new Shotover instance starts with hot reload enabled, it checks if a Unix socket exists at the configured path. If the socket exists, another Shotover instance is already running.
+1. The new instance connects to the Unix socket and requests the listening TCP socket file descriptors.
 
-2. **Connection**: The new instance connects to the Unix socket and sends a request for the listening TCP socket file descriptors.
+2. The original instance transfers the file descriptors over the Unix socket using SCM_RIGHTS which is a Unix mechanism for sharing file descriptors between processes. After transferring, the original instance stops accepting new connections but continues to serve its existing connections.
 
-3. **File Descriptor Transfer**: The original instance extracts the file descriptors of its active TCP listeners and transfers them to the new instance over the Unix socket using ancillary data (SCM_RIGHTS). This is a special Unix mechanism that allows processes to share open file descriptors. Once the file descriptors are transferred, the original instance stops accepting new connections.
+3. The new instance reconstructs the TCP listeners from the received file descriptors. These listeners are bound to the same IP addresses and ports as the original listeners.
 
-4. **Listener Reconstruction**: The new instance receives the file descriptors and reconstructs fully functional TCP listeners from them. These listeners are bound to the same IP addresses and ports as the original listeners.
+4. The new instance begins accepting new connections. At this point, the old instance still handles the existing connections. Once the new instance is fully functional, it sends a gradual shutdown request over the Unix socket to the old instance, specifying the shutdown duration.
 
-5. **Service Start**: The new instance begins accepting new connections on the transferred listeners. The old instance is handling only its existing connections (no longer accepting new ones), while the new instance accepts all new connections.
+5. The original instance drains its existing connections gradually in chunks (see Gradual Shutdown below).
 
-6. **Gradual Shutdown Request**: Once the new instance is fully operational, it sends a shutdown request to the original instance over the Unix socket.
+6. Once all connections are drained, the original instance terminates and removes the Unix socket.
 
-7. **Connection Draining**: The original instance enters a gradual shutdown phase where it begins draining its existing connections.
-
-8. **Cleanup**: Once all connections are drained, the original instance terminates, and the Unix socket is removed.
-
-9. **Server Mode**: The new instance creates its own Unix socket at the same path, making itself ready to be hot reloaded in the future.
+7. Once the old instance terminates, the new instance will be able to create its own Unix socket. Once this is done, the new instance will be ready to be hot reloaded in the future.
 
 ### Gradual Shutdown
 
-The gradual shutdown process ensures that existing client connections are handled gracefully without abrupt termination:
+If all the connections in the old shotover instance are closed at once, all clients will try to reconnect at the same time. This will be too much for the new instance to handle and will cause issues. Instead of closing all connections at once, the original instance drains connections in chunks, distributed evenly across the shutdown duration. By default, the shutdown duration is 60 seconds, but it can be configured with `--hotreload-gradual-shutdown-seconds`.
 
-- **Chunked Draining**: Instead of closing all connections at once, the original instance drains connections in small batches distributed evenly across the shutdown duration.
+Connections are closed in chunks at fixed 200ms intervals. The chunk size is calculated to evenly distribute all connections across the total duration. When a connection is closed, the connection handler terminates and clients will detect the closure and try to reconnect.
 
-- **Configurable Duration**: You can configure how long the shutdown process takes (default: 60 seconds) using the `--hotreload-gradual-shutdown-seconds` flag.
-
-- **Fixed Intervals**: Connections are closed in chunks at fixed 200ms intervals. The number of connections closed per chunk is calculated to distribute the load evenly.
-
-- **Connection Termination**: Each connection receives a shutdown signal. The connection handler stops accepting new requests and terminates, which closes the connection from Shotover's side. Clients will detect the connection closure and need to reconnect.
-
-For example, if you have 1000 active connections and set a 60-second shutdown duration:
+For example, with 1000 active connections and a 60-second shutdown duration:
 - Total chunks: 60 seconds ÷ 0.2 seconds = 300 chunks
 - Connections per chunk: ceiling(1000 ÷ 300) = 4 connections
-- Every 200ms, 4 connections will be closed (until all are drained)
+- Every 200ms, 4 connections will be closed until all are drained
 
 ## Configuration
 
@@ -63,10 +50,7 @@ shotover-proxy \
   --hotreload-gradual-shutdown-seconds 120
 ```
 
-
-### Hot Reload to New Configuration
-
-To deploy a new configuration or version, start a second Shotover instance pointing to the same socket path but with updated configuration files:
+To perform a hot reload, start a second Shotover instance pointing to the same socket path:
 
 ```bash
 shotover-proxy \
@@ -75,54 +59,39 @@ shotover-proxy \
   --hotreload-socket /tmp/shotover.sock
 ```
 
-The new instance will:
-1. Connect to the existing instance via `/tmp/shotover.sock`
-2. Request and receive the listening socket file descriptors
-3. Begin accepting new connections immediately
-4. Request the original instance to shut down gracefully
-5. Take over as the primary instance
 
+## Considerations
 
-### State
+### Connection State
 
-**Connection State**: Each Shotover connection handler maintains its own state. When connections are drained during shutdown:
-- Connection handler state (such as pending request tracking) is lost when the connection closes
-- Clients must re-establish connections to the new instance
-- The new instance starts with fresh transform chains and their own internal state
-
-**No Session Transfer**: Hot reload transfers listening sockets only, not active connections or session state. Existing connections remain with the original instance until they are drained.
-
+Hot reload only transfers listening sockets, not active connections or session state. Existing connections remain with the original instance until drained. When connections are closed during shutdown, clients must reconnect to the new instance.
 
 ### Shutdown Duration
 
-**Connection Volume**: The gradual shutdown duration should be tuned based on your connection volume and client behavior:
-- **Too Short**: Aggressive connection draining may cause connection churn and reconnection storms
-- **Too Long**: Extended shutdown means the original instance consumes resources longer
+Tune the shutdown duration based on your connection volume and client behavior. The default is 60 seconds.
 
-**Client Reconnection**: Clients must handle connection closures gracefully:
-- Implement connection retry logic
+- **Too short**: May cause connection churn and reconnection storms if too many clients try to reconnect simultaneously
+- **Too long**: The original instance consumes resources longer than necessary
+
+Clients must handle connection closures gracefully with retry logic.
 
 
 ## Failure Modes
 
-### Hot Reload Failure
-
 If the hot reload process fails (e.g., socket connection timeout, file descriptor transfer error):
-- The new instance will exit with an error
+- The new instance exits with an error
 - The original instance remains running and unaffected
 - No connections are disrupted
-- You can retry the hot reload after investigating the failure
+- Retry the hot reload after investigating the failure
 
-### Original Instance Unavailable
-
-If the original instance has crashed or is no longer running when you attempt a hot reload:
+If the original instance has crashed or is no longer running:
 - The Unix socket will not exist or will not respond
-- The new instance will detect this and start normally by binding to the configured ports
-- No hot reload occurs - this is a standard startup
+- The new instance detects this and starts normally by binding to the configured ports
+- This is a standard startup, not a hot reload
 
 
 ## Limitations
 
-- **Linux Only**: Hot reload uses Unix domain sockets with the SEQPACKET socket type. This socket type, combined with Unix-specific file descriptor passing via SCM_RIGHTS ancillary data. It might be possible to adapt the underlying FD passing mechanism for other unixes but requires further investigation. It is not at all supported on Windows.
+- Linux Only: Hot reload uses Unix domain sockets with the SEQPACKET socket type and file descriptor passing via SCM_RIGHTS. It might be possible to adapt this for other Unix systems but requires further investigation. Windows is not supported.
 
-- **Same Host Only**: File descriptor transfer only works between processes on the same host. Hot reload cannot transfer listeners across network boundaries.
+- Same Host Only: File descriptor transfer only works between processes on the same host. You cannot hot reload across network boundaries.
