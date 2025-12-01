@@ -5,7 +5,7 @@ Hot reload enables zero-downtime updates by transferring network listeners betwe
 
 ## How It Works
 
-When a new Shotover instance starts with hot reload enabled, it checks if a Unix socket exists at the configured path. If the socket exists, the new Shotover starts in hot reload mode and attempts to hot reload from the old Shotover instance.
+When a new Shotover instance starts with hot reload enabled, it checks if a Unix socket exists at the configured path. Both the original and new Shotover instances must use the exact same socket path for hot reload to work. If the socket exists, the new Shotover starts in hot reload mode and attempts to hot reload from the old Shotover instance.
 
 The hot reload process:
 
@@ -21,7 +21,7 @@ The hot reload process:
 
 6. Once all connections are drained, the original instance terminates and removes the Unix socket.
 
-7. Once the old instance terminates, the new instance will be able to create its own Unix socket. Once this is done, the new instance will create its own Unix Socket at the configured path. The socket path is specified as a command line argument. Both the original and new Shotover instances must use the exact same socket path for hot reload to work.
+7. Once the old instance terminates, the new instance will be able to create its own Unix socket. Once this is done, the new instance will create its own Unix Socket at the configured path. The socket path is specified as a command line argument. 
 
 ### Gradual Shutdown
 
