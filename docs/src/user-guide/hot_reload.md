@@ -13,7 +13,7 @@ The hot reload process:
 
 2. The original instance transfers the file descriptors over the Unix socket using SCM_RIGHTS which is a Unix mechanism for sharing file descriptors between processes. After transferring, the original instance stops accepting new connections but continues to serve its existing connections.
 
-3. The new instance recreates the TCP listeners from the file descriptors received from the old shotover instance. These listeners uses the same IP addresses and ports as before.
+3. The new instance recreates the TCP listeners from the file descriptors received from the old shotover instance. These listeners use the same IP addresses and ports as before.
 
 4. The new instance begins accepting new connections. At this point, the old instance still handles the existing connections. Once the new instance is fully functional, it sends a gradual shutdown request over the Unix socket to the old instance, specifying the shutdown duration.
 
@@ -21,11 +21,11 @@ The hot reload process:
 
 6. Once all connections are drained, the original instance terminates and removes the Unix socket.
 
-7. Once the old instance terminates, the new instance will be able to create its own Unix socket. Once this is done, the new instance will be ready to be hot reloaded in the future.
+7. Once the old instance terminates, the new instance will be able to create its own Unix socket. Once this is done, the new instance will create its own Unix Socket at the configured path. The socket path is specified as a command line argument. Both the original and new Shotover instances must use the exact same socket path for hot reload to work.
 
 ### Gradual Shutdown
 
-If all the connections in the old shotover instance are closed at once, all clients will try to reconnect at the same time. This will be too much for the new instance to handle and will cause issues. Instead of closing all connections at once, the original instance drains connections in chunks, distributed evenly across the shutdown duration. By default, the shutdown duration is 60 seconds, but it can be configured with `--hotreload-gradual-shutdown-seconds`.
+If all the connections in the old shotover instance are closed at once, all clients will try to reconnect at the same time. This can overload the new shotover instance. Instead of closing all connections at once, the original instance drains connections in chunks, distributed evenly across the shutdown duration. By default, the shutdown duration is 60 seconds, but it can be configured with `--hotreload-gradual-shutdown-seconds`.
 
 Connections are closed in chunks at fixed 200ms intervals. The chunk size is calculated to evenly distribute all connections across the total duration. When a connection is closed, the connection handler terminates and clients will detect the closure and tries to reconnect.
 
@@ -69,20 +69,6 @@ Hot reload only transfers listening sockets, not active connections or session s
 ### Shutdown Duration
 
 The configuration of gradual shutdown duration based on your connection volume and client behavior. By default, it will be 60 seconds. If it is not tuned correctly it can lead to various issues. If the duration is too short, it can lead to a situation where too many clients (more than the new instance could handle) try to reconnect to the new instance at once. If the duration is unnecessarily long, it will be a wastage of resources.
-
-
-## Failure Modes
-
-If the hot reload process fails (e.g., socket connection timeout, file descriptor transfer error):
-- The new instance exits with an error
-- The original instance remains running and unaffected
-- No connections are disrupted
-- Retry the hot reload after investigating the failure
-
-If the original instance has crashed or is no longer running:
-- The Unix socket will not exist or will not respond
-- The new instance detects this and starts normally by binding to the configured ports
-- This is a standard startup, not a hot reload
 
 
 ## Limitations
