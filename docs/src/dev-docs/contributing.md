@@ -34,7 +34,7 @@ This can be used by:
 * macOS users to run tests that do not run on macOS
 * To enable development from any other OS
 
-TODO: document setup and usage
+Refer to the [ec2-cargo docs](https://github.com/shotover/shotover-proxy/tree/main/ec2-cargo).
 
 ## Run Shotover tests
 

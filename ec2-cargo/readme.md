@@ -17,7 +17,7 @@ To run ec2-cargo authenticated with AWS through environment variables, create a 
 
 ```bash
 cd shotover-proxy/ec2-cargo
-AWS_ACCESS_KEY_ID=TODO AWS_SECRET_ACCESS_KEY=TODO cargo run "$@"
+AWS_ACCESS_KEY_ID=TODO AWS_SECRET_ACCESS_KEY=TODO cargo run -- "$@"
 ```
 
 Replace `TODO` with your credentials.
