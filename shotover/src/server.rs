@@ -7,11 +7,11 @@ use crate::sources::Transport;
 use crate::tls::{AcceptError, TlsAcceptor};
 use crate::transforms::chain::{TransformChain, TransformChainBuilder};
 use crate::transforms::{ChainState, TransformContextBuilder, TransformContextConfig};
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 use bytes::BytesMut;
 use futures::future::join_all;
 use futures::{SinkExt, StreamExt};
-use metrics::{Counter, Gauge, counter, gauge};
+use metrics::{counter, gauge, Counter, Gauge};
 use std::collections::HashMap;
 use std::io::ErrorKind;
 use std::net::SocketAddr;
@@ -19,7 +19,7 @@ use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
-use tokio::sync::{Notify, OwnedSemaphorePermit, Semaphore, mpsc, watch};
+use tokio::sync::{mpsc, watch, Notify, OwnedSemaphorePermit, Semaphore};
 use tokio::task::JoinHandle;
 use tokio::time;
 use tokio::time::Duration;
@@ -28,8 +28,8 @@ use tokio_tungstenite::tungstenite::{
     protocol::Message as WsMessage,
 };
 use tokio_util::codec::{Decoder, Encoder, FramedRead, FramedWrite};
-use tracing::{Instrument, info, trace};
 use tracing::{debug, error, warn};
+use tracing::{info, trace, Instrument};
 
 /// Represents a tracked connection with a shutdown sender
 struct TrackedConnection {
@@ -269,7 +269,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                         self.connection_handles.push(tracked_connection);
                         // Only prune the list every so often
                         // theres no point in doing it every iteration because most likely none of the handles will have completed
-                        if self.connection_count % 1000 == 0{
+                        if self.connection_count.is_multiple_of(1000) {
                             self.connection_handles.retain(|x| !x.is_finished());
                         }
                         Ok::<(), anyhow::Error>(())
