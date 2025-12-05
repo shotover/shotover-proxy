@@ -65,15 +65,14 @@ impl Connections {
             Destination::Id(id) => Some(nodes.iter().find(|x| x.broker_id == id).unwrap()),
             Destination::ControlConnection => None,
         };
-        if let Some(node) = &node {
-            if node
+        if let Some(node) = &node
+            && node
                 .rack
                 .as_ref()
                 .map(|rack| rack != local_rack)
                 .unwrap_or(false)
-            {
-                self.out_of_rack_requests.increment(1);
-            }
+        {
+            self.out_of_rack_requests.increment(1);
         }
 
         match self.get_connection_state(recent_instant, destination) {

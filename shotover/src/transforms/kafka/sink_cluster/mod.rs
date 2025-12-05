@@ -615,10 +615,10 @@ impl KafkaSinkCluster {
                             }),
                         ..
                     })) => {
-                        if let Some(scram_over_mtls) = &mut self.authorize_scram_over_mtls {
-                            if let Some(username) = get_username_from_scram_request(auth_bytes) {
-                                scram_over_mtls.set_username(username).await?;
-                            }
+                        if let Some(scram_over_mtls) = &mut self.authorize_scram_over_mtls
+                            && let Some(username) = get_username_from_scram_request(auth_bytes)
+                        {
+                            scram_over_mtls.set_username(username).await?;
                         }
                         self.connection_factory.add_auth_request(request.clone());
                         handshake_request_count += 1;
@@ -2251,19 +2251,18 @@ The connection to the client has been closed."
                             for pending_request in &mut self.pending_requests {
                                 if let PendingRequestState::Sent { index, request } =
                                     &mut pending_request.state
+                                    && &pending_request.destination == connection_destination
                                 {
-                                    if &pending_request.destination == connection_destination {
-                                        // Store the PendingRequestState::Received at the location of the next PendingRequestState::Sent
-                                        // All other PendingRequestState::Sent need to be decremented, in order to determine the PendingRequestState::Sent
-                                        // to be used next time, and the time after that, and ...
-                                        if *index == 0 {
-                                            pending_request.state = PendingRequestState::Received {
-                                                response: response.take().unwrap(),
-                                                request: request.take(),
-                                            };
-                                        } else {
-                                            *index -= 1;
-                                        }
+                                    // Store the PendingRequestState::Received at the location of the next PendingRequestState::Sent
+                                    // All other PendingRequestState::Sent need to be decremented, in order to determine the PendingRequestState::Sent
+                                    // to be used next time, and the time after that, and ...
+                                    if *index == 0 {
+                                        pending_request.state = PendingRequestState::Received {
+                                            response: response.take().unwrap(),
+                                            request: request.take(),
+                                        };
+                                    } else {
+                                        *index -= 1;
                                     }
                                 }
                             }
@@ -3014,10 +3013,10 @@ The connection to the client has been closed."
                         .retain(|x| !SASL_SCRAM_MECHANISMS.contains(&x.as_str()));
 
                     // declare unsupported if the client requested SCRAM
-                    if let Some(sasl_mechanism) = &self.sasl_mechanism {
-                        if SASL_SCRAM_MECHANISMS.contains(&sasl_mechanism.as_str()) {
-                            handshake.error_code = ResponseError::UnsupportedSaslMechanism.code();
-                        }
+                    if let Some(sasl_mechanism) = &self.sasl_mechanism
+                        && SASL_SCRAM_MECHANISMS.contains(&sasl_mechanism.as_str())
+                    {
+                        handshake.error_code = ResponseError::UnsupportedSaslMechanism.code();
                     }
 
                     response.invalidate_cache();
@@ -3045,25 +3044,23 @@ The connection to the client has been closed."
                                 // The broker has informed us who the new leader is, we can just directly update the leader
                                 if let Some(mut stored_topic) =
                                     self.topic_by_name.get_mut(topic_name)
-                                {
-                                    if let Some(stored_partition) = stored_topic
+                                    && let Some(stored_partition) = stored_topic
                                         .partitions
                                         .get_mut(response_partition.index as usize)
+                                {
+                                    if response_partition.current_leader.leader_epoch
+                                        > stored_partition.leader_epoch
                                     {
-                                        if response_partition.current_leader.leader_epoch
-                                            > stored_partition.leader_epoch
-                                        {
-                                            stored_partition.leader_id =
-                                                response_partition.current_leader.leader_id;
-                                            stored_partition.leader_epoch =
-                                                response_partition.current_leader.leader_epoch;
-                                        }
-                                        tracing::info!(
-                                            "Produce response included error NOT_LEADER_OR_FOLLOWER and so updated leader in topic {:?} partition {}",
-                                            topic_name,
-                                            response_partition.index
-                                        );
+                                        stored_partition.leader_id =
+                                            response_partition.current_leader.leader_id;
+                                        stored_partition.leader_epoch =
+                                            response_partition.current_leader.leader_epoch;
                                     }
+                                    tracing::info!(
+                                        "Produce response included error NOT_LEADER_OR_FOLLOWER and so updated leader in topic {:?} partition {}",
+                                        topic_name,
+                                        response_partition.index
+                                    );
                                 }
                             } else {
                                 // The broker doesnt know who the new leader is, clear the entire topic.
@@ -3353,18 +3350,18 @@ The connection to the client has been closed."
         pending_request_ty: &PendingRequestTy,
         error_code: i16,
     ) {
-        if let Some(ResponseError::NotCoordinator) = ResponseError::try_from_code(error_code) {
-            if let PendingRequestTy::RoutedToGroup(group_id) = pending_request_ty {
-                let broker_id = self
-                    .group_to_coordinator_broker
-                    .remove(group_id)
-                    .map(|x| x.1);
-                tracing::info!(
-                    "Response was error NOT_COORDINATOR and so cleared group id {:?} coordinator mapping to broker {:?}",
-                    group_id,
-                    broker_id,
-                );
-            }
+        if let Some(ResponseError::NotCoordinator) = ResponseError::try_from_code(error_code)
+            && let PendingRequestTy::RoutedToGroup(group_id) = pending_request_ty
+        {
+            let broker_id = self
+                .group_to_coordinator_broker
+                .remove(group_id)
+                .map(|x| x.1);
+            tracing::info!(
+                "Response was error NOT_COORDINATOR and so cleared group id {:?} coordinator mapping to broker {:?}",
+                group_id,
+                broker_id,
+            );
         }
     }
 
@@ -3374,18 +3371,18 @@ The connection to the client has been closed."
         pending_request_ty: &PendingRequestTy,
         error_code: i16,
     ) {
-        if let Some(ResponseError::NotCoordinator) = ResponseError::try_from_code(error_code) {
-            if let PendingRequestTy::RoutedToTransaction(transaction_id) = pending_request_ty {
-                let broker_id = self
-                    .transaction_to_coordinator_broker
-                    .remove(transaction_id)
-                    .map(|x| x.1);
-                tracing::info!(
-                    "Response was error NOT_COORDINATOR and so cleared transaction id {:?} coordinator mapping to broker {:?}",
-                    transaction_id,
-                    broker_id,
-                );
-            }
+        if let Some(ResponseError::NotCoordinator) = ResponseError::try_from_code(error_code)
+            && let PendingRequestTy::RoutedToTransaction(transaction_id) = pending_request_ty
+        {
+            let broker_id = self
+                .transaction_to_coordinator_broker
+                .remove(transaction_id)
+                .map(|x| x.1);
+            tracing::info!(
+                "Response was error NOT_COORDINATOR and so cleared transaction id {:?} coordinator mapping to broker {:?}",
+                transaction_id,
+                broker_id,
+            );
         }
     }
 
@@ -3401,30 +3398,29 @@ The connection to the client has been closed."
             *close_client_connection = true;
         }
 
-        if let Some(sasl_mechanism) = &self.sasl_mechanism {
-            if SASL_SCRAM_MECHANISMS.contains(&sasl_mechanism.as_str()) {
-                if let Some(scram_over_mtls) = &mut self.authorize_scram_over_mtls {
-                    match scram_over_mtls.original_scram_state {
-                        OriginalScramState::WaitingOnServerFirst => {
-                            scram_over_mtls.original_scram_state = if authenticate.error_code == 0 {
-                                OriginalScramState::WaitingOnServerFinal
-                            } else {
-                                OriginalScramState::AuthFailed
-                            };
-                        }
-                        OriginalScramState::WaitingOnServerFinal => {
-                            scram_over_mtls.original_scram_state = if authenticate.error_code == 0 {
-                                OriginalScramState::AuthSuccess
-                            } else {
-                                OriginalScramState::AuthFailed
-                            };
-                        }
-                        OriginalScramState::AuthSuccess | OriginalScramState::AuthFailed => {
-                            return Err(anyhow!(
-                                "SCRAM protocol does not allow a third sasl response"
-                            ));
-                        }
-                    }
+        if let Some(sasl_mechanism) = &self.sasl_mechanism
+            && SASL_SCRAM_MECHANISMS.contains(&sasl_mechanism.as_str())
+            && let Some(scram_over_mtls) = &mut self.authorize_scram_over_mtls
+        {
+            match scram_over_mtls.original_scram_state {
+                OriginalScramState::WaitingOnServerFirst => {
+                    scram_over_mtls.original_scram_state = if authenticate.error_code == 0 {
+                        OriginalScramState::WaitingOnServerFinal
+                    } else {
+                        OriginalScramState::AuthFailed
+                    };
+                }
+                OriginalScramState::WaitingOnServerFinal => {
+                    scram_over_mtls.original_scram_state = if authenticate.error_code == 0 {
+                        OriginalScramState::AuthSuccess
+                    } else {
+                        OriginalScramState::AuthFailed
+                    };
+                }
+                OriginalScramState::AuthSuccess | OriginalScramState::AuthFailed => {
+                    return Err(anyhow!(
+                        "SCRAM protocol does not allow a third sasl response"
+                    ));
                 }
             }
         }
@@ -3593,26 +3589,25 @@ The connection to the client has been closed."
                 // If topic_by_name contains any partitions with a more recent leader_epoch use that instead.
                 // The out of date epoch is probably caused by requesting metadata from a broker that is slightly out of date.
                 // We use topic_by_name instead of topic_by_id since its always used regardless of protocol version.
-                if let Some(topic_name) = &topic.name {
-                    if let Some(topic) = self.topic_by_name.get(topic_name) {
-                        for old_partition in &topic.partitions {
-                            if let Some(new_partition) = new_partitions
-                                .iter_mut()
-                                .find(|p| p.index == old_partition.index)
-                            {
-                                if old_partition.leader_epoch > new_partition.leader_epoch {
-                                    new_partition.leader_id = old_partition.leader_id;
-                                    new_partition
-                                        .shotover_rack_replica_nodes
-                                        .clone_from(&old_partition.shotover_rack_replica_nodes);
-                                    new_partition
-                                        .external_rack_replica_nodes
-                                        .clone_from(&old_partition.external_rack_replica_nodes);
-                                }
-                            }
+                if let Some(topic_name) = &topic.name
+                    && let Some(topic) = self.topic_by_name.get(topic_name)
+                {
+                    for old_partition in &topic.partitions {
+                        if let Some(new_partition) = new_partitions
+                            .iter_mut()
+                            .find(|p| p.index == old_partition.index)
+                            && old_partition.leader_epoch > new_partition.leader_epoch
+                        {
+                            new_partition.leader_id = old_partition.leader_id;
+                            new_partition
+                                .shotover_rack_replica_nodes
+                                .clone_from(&old_partition.shotover_rack_replica_nodes);
+                            new_partition
+                                .external_rack_replica_nodes
+                                .clone_from(&old_partition.external_rack_replica_nodes);
                         }
-                    };
-                }
+                    }
+                };
 
                 let has_topic_name = topic.name.is_some();
                 let has_topic_id = !topic.topic_id.is_nil();
@@ -4028,10 +4023,10 @@ struct FindCoordinator {
 fn get_username_from_scram_request(auth_request: &[u8]) -> Option<String> {
     for s in std::str::from_utf8(auth_request).ok()?.split(',') {
         let mut iter = s.splitn(2, '=');
-        if let (Some(key), Some(value)) = (iter.next(), iter.next()) {
-            if key == "n" {
-                return Some(value.to_owned());
-            }
+        if let (Some(key), Some(value)) = (iter.next(), iter.next())
+            && key == "n"
+        {
+            return Some(value.to_owned());
         }
     }
     None
