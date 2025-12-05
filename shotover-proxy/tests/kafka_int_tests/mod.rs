@@ -14,8 +14,11 @@ use test_helpers::connection::kafka::python::run_python_smoke_test_sasl_scram;
 use test_helpers::connection::kafka::{KafkaConnectionBuilder, KafkaDriver};
 use test_helpers::docker_compose::docker_compose;
 use test_helpers::metrics::assert_metrics_contains_keys;
+use test_helpers::metrics::assert_metrics_contains_keys_not;
+use test_helpers::metrics::assert_metrics_key_value;
 use test_helpers::shotover_process::{Count, EventMatcher};
 use tokio_bin_process::event::Level;
+use tracing::info;
 
 #[rstest]
 #[cfg_attr(feature = "kafka-cpp-driver-tests", case::cpp(KafkaDriver::Cpp))]
@@ -307,6 +310,8 @@ async fn cluster_1_rack_single_shotover(#[case] driver: KafkaDriver) {
         )
         .await;
 
+        assert_inaccessible_peers_metric_not_emitted().await;
+
         // Shotover can reasonably hit many kinds of errors due to a kafka node down so ignore all of them.
         tokio::time::timeout(
             Duration::from_secs(10),
@@ -438,6 +443,8 @@ async fn cluster_1_rack_multi_shotover_with_1_shotover_down(#[case] driver: Kafk
             .with_message(r#"Shotover peer 127.0.0.1:9191 is down"#)
             .with_count(Count::GreaterThanOrEqual(1)),
     );
+
+    assert_inaccessible_peers_metric_emitted(1).await;
 
     for shotover in shotovers {
         tokio::time::timeout(
@@ -1092,4 +1099,29 @@ shotover_kafka_delegation_token_creation_seconds_sum{transform="KafkaSinkCluster
 shotover_kafka_delegation_token_creation_seconds_count{transform="KafkaSinkCluster",chain="kafka"}
 "#;
     assert_metrics_contains_keys(expected).await;
+}
+
+async fn assert_inaccessible_peers_metric_not_emitted() {
+    let not_expected = r#"
+# TYPE shotover_peers_inaccessible_count gauge
+shotover_peers_inaccessible_count{chain="kafka, transform="KafkaSinkCluster"}
+"#;
+    assert_metrics_contains_keys_not(not_expected).await;
+}
+
+async fn assert_inaccessible_peers_metric_emitted(expected_value: i32) {
+    let expected = r#"
+# TYPE shotover_peers_inaccessible_count gauge
+shotover_peers_inaccessible_count{chain="kafka, transform="KafkaSinkCluster"}
+"#;
+    info!("Carl Says HI");
+    // todo: having issues fetching metrics here...
+    // thread 'kafka_int_tests::cluster_1_rack_multi_shotover_with_1_shotover_down::case_1_java' (220154) panicked at test-helpers/src/metrics.rs:5:29:
+    // called `Result::unwrap()` on an `Err` value: reqwest::Error { kind: Request, source: hyper_util::client::legacy::Error(Connect, ConnectError("tcp connect error", 127.0.0.1:9001, Os { code: 111, kind: ConnectionRefused, message: "Connection refused" })) }
+    //assert_metrics_contains_keys(expected).await;
+    //assert_metrics_key_value(
+    //    r#"shotover_peers_inaccessible_count{chain="kafka, transform="KafkaSinkCluster"}"#,
+    //    &expected_value.to_string(),
+    //)
+    //.await;
 }

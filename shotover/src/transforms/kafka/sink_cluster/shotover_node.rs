@@ -3,6 +3,7 @@ use crate::transforms::kafka::sink_cluster::kafka_node::KafkaAddress;
 use atomic_enum::atomic_enum;
 use kafka_protocol::messages::BrokerId;
 use kafka_protocol::protocol::StrBytes;
+use metrics::{Gauge, gauge};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use serde::{Deserialize, Serialize};
@@ -64,6 +65,7 @@ pub(crate) fn start_shotover_peers_check(
     shotover_peers: Vec<ShotoverNode>,
     check_shotover_peers_delay_ms: u64,
     connect_timeout: Duration,
+    chain_name: String,
 ) {
     if !shotover_peers.is_empty() {
         tokio::spawn(async move {
@@ -77,7 +79,14 @@ pub(crate) fn start_shotover_peers_check(
                 )
                 .await
                 {
-                    Ok(_) => {}
+                    Ok(_) => {
+                        let down_peers_count =
+                            shotover_peers.iter().filter(|peer| !peer.is_up()).count() as f64;
+                        if down_peers_count > 0.0 {
+                            let down_peers_gauge: Gauge = gauge!("shotover_peers_inaccessible_count", "chain" => chain_name.clone(), "transform" => "KafkaSinkCluster");
+                            down_peers_gauge.set(down_peers_count);
+                        }
+                    }
                     Err(err) => {
                         tracing::error!(
                             "Restarting the shotover peers check due to error: {err:?}"
