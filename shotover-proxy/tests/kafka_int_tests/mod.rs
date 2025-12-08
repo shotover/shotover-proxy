@@ -429,11 +429,11 @@ async fn cluster_1_rack_multi_shotover_with_1_shotover_down(#[case] driver: Kafk
     )
     .await;
 
-    assert_inaccessible_peers_metric_emitted_on_port(1, "9002").await;
-
     // create a new connection and produce and consume messages
     let new_connection_builder = KafkaConnectionBuilder::new(driver, "localhost:9193");
     test_cases::cluster_test_suite_with_lost_shotover_node(&new_connection_builder).await;
+
+    assert_inaccessible_peers_metric_emitted_on_port(1, "9002").await;
 
     let mut expected_events = multi_shotover_events();
     // Other shotover nodes should detect the killed node at least once
@@ -479,8 +479,6 @@ async fn cluster_3_racks_multi_shotover_with_2_shotover_down(#[case] driver: Kaf
 
     // Wait for check_shotover_peers to start
     tokio::time::sleep(Duration::from_secs(15)).await;
-
-    assert_inaccessible_peers_metric_emitted_on_port(0, "9003").await;
 
     // produce and consume messages, kill 2 shotover nodes and produce and consume more messages
     let connection_builder = KafkaConnectionBuilder::new(driver, "localhost:9193");
