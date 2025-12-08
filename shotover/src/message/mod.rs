@@ -489,10 +489,10 @@ impl Message {
     }
 
     pub fn is_dummy(&self) -> bool {
-        if let Some(MessageInner::Modified { frame }) = &self.inner {
-            if let Frame::Dummy = frame.as_ref() {
-                return true;
-            }
+        if let Some(MessageInner::Modified { frame }) = &self.inner
+            && let Frame::Dummy = frame.as_ref()
+        {
+            return true;
         }
         false
     }
