@@ -47,22 +47,6 @@ pub async fn assert_metrics_contains_keys(expected: &str) {
     );
 }
 
-///Asserts that the given metric key are NOT present in the actual metrics output
-pub async fn assert_metrics_contains_keys_not(expected: &str) {
-    let actual = http_request_metrics().await;
-    let actual_sorted = get_sorted_metric_output_with_no_values(&actual, Vec::new());
-    let naughty_keys: Vec<&str> = expected
-        .lines()
-        .filter(|line| !line.is_empty() && actual_sorted.contains(line))
-        .collect();
-    assert!(
-        naughty_keys.is_empty(),
-        "The following key was unexpectedly found in metrics output:\n{:?}\nFull metrics output:\n{}",
-        naughty_keys,
-        actual
-    );
-}
-
 /// Asserts that the `expected` lines of keys match the metric output. Does not ensure ordering of the keys.
 /// The `previous` lines are excluded from the assertion, allowing for better error messages when checking for added lines.
 /// The keys are removed to keep the output deterministic.

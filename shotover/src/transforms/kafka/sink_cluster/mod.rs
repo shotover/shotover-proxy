@@ -219,7 +219,7 @@ impl KafkaSinkClusterBuilder {
                 shotover_peers,
                 check_shotover_peers_delay_ms,
                 connect_timeout,
-                chain_name.clone(),
+                &chain_name,
             );
         }
 

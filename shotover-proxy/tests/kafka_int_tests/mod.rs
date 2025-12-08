@@ -13,9 +13,7 @@ use test_helpers::connection::kafka::python::run_python_bad_auth_sasl_scram;
 use test_helpers::connection::kafka::python::run_python_smoke_test_sasl_scram;
 use test_helpers::connection::kafka::{KafkaConnectionBuilder, KafkaDriver};
 use test_helpers::docker_compose::docker_compose;
-use test_helpers::metrics::assert_metrics_contains_keys;
-use test_helpers::metrics::assert_metrics_contains_keys_not;
-use test_helpers::metrics::assert_metrics_key_value_on_port;
+use test_helpers::metrics::{assert_metrics_contains_keys, assert_metrics_key_value_on_port};
 use test_helpers::shotover_process::{Count, EventMatcher};
 use tokio_bin_process::event::Level;
 
@@ -287,7 +285,7 @@ async fn cluster_1_rack_single_shotover(#[case] driver: KafkaDriver) {
         let connection_builder = KafkaConnectionBuilder::new(driver, "127.0.0.1:9192");
         test_cases::cluster_test_suite(&connection_builder).await;
 
-        assert_inaccessible_peers_metric_not_emitted().await;
+        assert_inaccessible_peers_metric_emitted_on_port(0, "9001").await;
 
         tokio::time::timeout(
             Duration::from_secs(10),
@@ -384,6 +382,7 @@ async fn cluster_1_rack_multi_shotover(#[case] driver: KafkaDriver) {
 
     let connection_builder = KafkaConnectionBuilder::new(driver, "127.0.0.1:9192");
     test_cases::cluster_test_suite(&connection_builder).await;
+    assert_inaccessible_peers_metric_emitted_on_port(0, "9001").await;
 
     for shotover in shotovers {
         tokio::time::timeout(
@@ -480,6 +479,8 @@ async fn cluster_3_racks_multi_shotover_with_2_shotover_down(#[case] driver: Kaf
 
     // Wait for check_shotover_peers to start
     tokio::time::sleep(Duration::from_secs(15)).await;
+
+    assert_inaccessible_peers_metric_emitted_on_port(0, "9003").await;
 
     // produce and consume messages, kill 2 shotover nodes and produce and consume more messages
     let connection_builder = KafkaConnectionBuilder::new(driver, "localhost:9193");
@@ -595,6 +596,8 @@ async fn cluster_2_racks_multi_shotover(#[case] driver: KafkaDriver) {
 
     let connection_builder = KafkaConnectionBuilder::new(driver, "127.0.0.1:9192");
     test_cases::cluster_test_suite(&connection_builder).await;
+
+    assert_inaccessible_peers_metric_emitted_on_port(0, "9001").await;
 
     #[allow(irrefutable_let_patterns)]
     if let KafkaDriver::Java = driver {
@@ -1100,14 +1103,6 @@ shotover_kafka_delegation_token_creation_seconds_sum{transform="KafkaSinkCluster
 shotover_kafka_delegation_token_creation_seconds_count{transform="KafkaSinkCluster",chain="kafka"}
 "#;
     assert_metrics_contains_keys(expected).await;
-}
-
-async fn assert_inaccessible_peers_metric_not_emitted() {
-    let not_expected = r#"
-# TYPE shotover_peers_inaccessible_count gauge
-shotover_peers_inaccessible_count{chain="kafka",transform="KafkaSinkCluster"}
-"#;
-    assert_metrics_contains_keys_not(not_expected).await;
 }
 
 async fn assert_inaccessible_peers_metric_emitted_on_port(

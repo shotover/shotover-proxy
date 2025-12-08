@@ -65,8 +65,11 @@ pub(crate) fn start_shotover_peers_check(
     shotover_peers: Vec<ShotoverNode>,
     check_shotover_peers_delay_ms: u64,
     connect_timeout: Duration,
-    chain_name: String,
+    chain_name: &str,
 ) {
+    let down_peers_metric: Gauge = gauge!("shotover_peers_inaccessible_count", "chain" => chain_name.to_owned(), "transform" => "KafkaSinkCluster");
+    down_peers_metric.set(0);
+
     if !shotover_peers.is_empty() {
         tokio::spawn(async move {
             // Wait for all shotover nodes to start
@@ -77,7 +80,7 @@ pub(crate) fn start_shotover_peers_check(
                     &shotover_peers,
                     check_shotover_peers_delay_ms,
                     connect_timeout,
-                    &chain_name,
+                    &down_peers_metric,
                 )
                 .await
                 {
@@ -93,19 +96,11 @@ pub(crate) fn start_shotover_peers_check(
     }
 }
 
-fn update_inaccessible_peers_metric(shotover_peers: &[ShotoverNode], chain_name: &str) {
-    let down_peers_count: u8 = shotover_peers.iter().filter(|peer| !peer.is_up()).count() as u8;
-    if down_peers_count > 0 {
-        let down_peers_gauge: Gauge = gauge!("shotover_peers_inaccessible_count", "chain" => chain_name.to_owned(), "transform" => "KafkaSinkCluster");
-        down_peers_gauge.set(down_peers_count);
-    }
-}
-
 async fn check_shotover_peers(
     shotover_peers: &[ShotoverNode],
     check_shotover_peers_delay_ms: u64,
     connect_timeout: Duration,
-    chain_name: &str,
+    down_peers_metric: &Gauge,
 ) -> Result<(), anyhow::Error> {
     let mut shotover_peers_cycle = shotover_peers.iter().cycle();
     let mut rng = StdRng::from_rng(&mut rand::rng());
@@ -133,7 +128,7 @@ async fn check_shotover_peers(
                 }
             }
 
-            update_inaccessible_peers_metric(shotover_peers, chain_name);
+            down_peers_metric.set(shotover_peers.iter().filter(|peer| !peer.is_up()).count() as u8);
 
             let random_delay = (check_shotover_peers_delay_ms
                 + rng.random_range(
