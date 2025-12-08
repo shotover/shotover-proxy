@@ -4,6 +4,7 @@ use std::path::Path;
 use std::time::Duration;
 use test_helpers::connection::valkey_connection::create_tls_valkey_client_from_certs;
 use test_helpers::docker_compose::docker_compose;
+use test_helpers::shotover_process::{EventMatcher, Level};
 
 /// Helper function to verify comprehensive Valkey connection functionality
 fn assert_valkey_connection_works(
@@ -388,4 +389,172 @@ async fn test_hot_reload_certificate_change() {
     .unwrap();
 
     shotover_new.shutdown_and_then_consume_events(&[]).await;
+}
+
+#[tokio::test]
+#[cfg_attr(not(target_os = "linux"), ignore)]
+async fn test_hot_reload_recovery_after_new_instance_killed_on_fd_receipt() {
+    let socket_path = "/tmp/test-hotreload-recovery-fd.sock";
+
+    let _compose = docker_compose("tests/test-configs/hotreload/docker-compose.yaml");
+
+    // Start the first shotover instance
+    let shotover_first = shotover_process("tests/test-configs/hotreload/topology.yaml")
+        .with_log_name("first")
+        .with_hotreload_socket(socket_path)
+        .with_config("tests/test-configs/shotover-config/config_metrics_disabled.yaml")
+        .start()
+        .await;
+
+    // Establish a connection and store some data
+    let client = Client::open("valkey://127.0.0.1:6380").unwrap();
+    let mut connection = client.get_connection().unwrap();
+    let _: () = connection.set("recovery_key", "recovery_value").unwrap();
+
+    // Start the second shotover instance which will request hot reload
+    let shotover_second = shotover_process("tests/test-configs/hotreload/topology.yaml")
+        .with_log_name("second")
+        .with_hotreload_socket(socket_path)
+        .with_config("tests/test-configs/shotover-config/config_metrics_disabled.yaml")
+        .expect_startup_events(vec![
+            EventMatcher::new()
+                .with_level(Level::Info)
+                .with_target("shotover::hot_reload::client")
+                .with_message("Received")
+                .with_message("file descriptors via ancillary data"),
+        ])
+        .start()
+        .await;
+
+    // Kill the second instance immediately after it receives the file descriptors
+    shotover_second.send_sigterm();
+
+    // Wait for second instance to exit
+    tokio::time::timeout(
+        Duration::from_secs(10),
+        shotover_second.consume_remaining_events(&[]),
+    )
+    .await
+    .expect("Second shotover should shutdown after being killed");
+
+    // Allow time for socket cleanup before starting third instance
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    // Verify old connection is still working
+    assert_valkey_connection_works(&mut connection, None, &[("recovery_key", "recovery_value")])
+        .unwrap();
+
+    // Start the third shotover instance with the same hot reload configuration
+    let shotover_third = shotover_process("tests/test-configs/hotreload/topology.yaml")
+        .with_log_name("third")
+        .with_hotreload_socket(socket_path)
+        .with_config("tests/test-configs/shotover-config/config_metrics_disabled.yaml")
+        .start()
+        .await;
+
+    // Create a new connection through the third instance
+    let mut connection_new = client.get_connection().unwrap();
+
+    // Verify data persistence and that new connections work
+    assert_valkey_connection_works(
+        &mut connection_new,
+        None,
+        &[("recovery_key", "recovery_value")],
+    )
+    .unwrap();
+
+    // Cleanup: old instance should drain, then shutdown third
+    tokio::time::timeout(
+        Duration::from_secs(100),
+        shotover_first.consume_remaining_events(&[]),
+    )
+    .await
+    .expect("First shotover should complete drain and shutdown");
+
+    shotover_third.shutdown_and_then_consume_events(&[]).await;
+}
+
+#[tokio::test]
+#[cfg_attr(not(target_os = "linux"), ignore)]
+async fn test_hot_reload_recovery_after_new_instance_killed_on_gradual_shutdown() {
+    let socket_path = "/tmp/test-hotreload-recovery-shutdown.sock";
+
+    let _compose = docker_compose("tests/test-configs/hotreload/docker-compose.yaml");
+
+    // Start the first shotover instance
+    let shotover_first = shotover_process("tests/test-configs/hotreload/topology.yaml")
+        .with_log_name("first_gs")
+        .with_hotreload_socket(socket_path)
+        .with_config("tests/test-configs/shotover-config/config_metrics_disabled.yaml")
+        .start()
+        .await;
+
+    // Establish connections with some test data
+    let client = Client::open("valkey://127.0.0.1:6380").unwrap();
+    let mut connection = client.get_connection().unwrap();
+    let _: () = connection
+        .set("shutdown_key_0", "shutdown_value_0")
+        .unwrap();
+    let _: () = connection
+        .set("shutdown_key_4", "shutdown_value_4")
+        .unwrap();
+
+    // Start the second shotover instance which will request hot reload and send gradual shutdown
+    let shotover_second = shotover_process("tests/test-configs/hotreload/topology.yaml")
+        .with_log_name("second_gs")
+        .with_hotreload_socket(socket_path)
+        .with_config("tests/test-configs/shotover-config/config_metrics_disabled.yaml")
+        .expect_startup_events(vec![
+            EventMatcher::new()
+                .with_level(Level::Info)
+                .with_target("shotover::hot_reload::client")
+                .with_message(
+                    "Successfully sent gradual shutdown request to old shotover instance",
+                ),
+        ])
+        .start()
+        .await;
+
+    // Kill the second instance after it sends the gradual shutdown request
+    shotover_second.send_sigterm();
+
+    // Wait for second instance to exit
+    tokio::time::timeout(
+        Duration::from_secs(10),
+        shotover_second.consume_remaining_events(&[]),
+    )
+    .await
+    .expect("Second shotover should shutdown after being killed");
+
+    // Allow time for socket cleanup before starting third instance
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    // Verify old connections still work after second instance was killed
+    let value: String = connection.get("shutdown_key_0").unwrap();
+    assert_eq!(value, "shutdown_value_0");
+
+    // Start the third shotover instance
+    let shotover_third = shotover_process("tests/test-configs/hotreload/topology.yaml")
+        .with_log_name("third_gs")
+        .with_hotreload_socket(socket_path)
+        .with_config("tests/test-configs/shotover-config/config_metrics_disabled.yaml")
+        .start()
+        .await;
+
+    // Create new connection through the third instance and verify data persisted
+    let mut connection_new = client.get_connection().unwrap();
+    let value: String = connection_new.get("shutdown_key_0").unwrap();
+    assert_eq!(value, "shutdown_value_0");
+    let value: String = connection_new.get("shutdown_key_4").unwrap();
+    assert_eq!(value, "shutdown_value_4");
+
+    // Cleanup: old instance should drain, then shutdown third
+    tokio::time::timeout(
+        Duration::from_secs(100),
+        shotover_first.consume_remaining_events(&[]),
+    )
+    .await
+    .expect("First shotover should complete drain and shutdown");
+
+    shotover_third.shutdown_and_then_consume_events(&[]).await;
 }
