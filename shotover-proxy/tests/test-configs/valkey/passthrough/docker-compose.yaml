@@ -1,5 +1,7 @@
 services:
   redis-one:
+    # old redis image kept to ensure backwards compatibility with valkey version prior to the redis fork
+    # the valkey/tls tests use valkey and execute a similar code path.
     image: library/redis:5.0.9
     ports:
       - "1111:6379"
