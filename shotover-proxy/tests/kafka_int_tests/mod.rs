@@ -491,6 +491,8 @@ async fn cluster_3_racks_multi_shotover_with_2_shotover_down(#[case] driver: Kaf
     )
     .await;
 
+    assert_inaccessible_peers_metric_emitted_on_port(2, "9003").await;
+
     // create a new connection and produce and consume messages
     let new_connection_builder = KafkaConnectionBuilder::new(driver, "localhost:9193");
     test_cases::cluster_test_suite_with_lost_shotover_node(&new_connection_builder).await;
