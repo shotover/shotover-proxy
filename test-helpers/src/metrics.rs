@@ -1,7 +1,7 @@
 use itertools::Itertools;
 
-async fn http_request_metrics_on_port(observability_port: Option<&str>) -> String {
-    let observability_port = observability_port.unwrap_or("9001");
+async fn http_request_metrics_on_port(observability_port: Option<u16>) -> String {
+    let observability_port = observability_port.unwrap_or(9001);
     let url = format!("http://localhost:{observability_port}/metrics");
     reqwest::get(url).await.unwrap().text().await.unwrap()
 }
@@ -24,7 +24,7 @@ pub async fn get_metrics_value(key: &str) -> String {
     extract_metric_value(&actual, key)
 }
 
-pub async fn get_metrics_value_on_port(key: &str, observability_port: &str) -> String {
+pub async fn get_metrics_value_on_port(key: &str, observability_port: u16) -> String {
     let actual = http_request_metrics_on_port(Some(observability_port)).await;
     extract_metric_value(&actual, key)
 }
@@ -103,7 +103,7 @@ pub async fn assert_metrics_key_value(key: &str, value: &str) {
 
 /// Asserts that the metrics contains a key with the corresponding value
 /// Use this to make assertions on specific keys that you know are deterministic
-pub async fn assert_metrics_key_value_on_port(key: &str, value: &str, observability_port: &str) {
+pub async fn assert_metrics_key_value_on_port(key: &str, value: &str, observability_port: u16) {
     let actual_value = get_metrics_value_on_port(key, observability_port).await;
     assert!(
         value == actual_value,

@@ -240,7 +240,7 @@ impl KafkaSinkClusterBuilder {
             topic_by_name: Arc::new(DashMap::new()),
             topic_by_id: Arc::new(DashMap::new()),
             nodes_shared: Arc::new(RwLock::new(vec![])),
-            out_of_rack_requests: counter!("shotover_out_of_rack_requests_count", "chain" => chain_name.clone(), "transform" => NAME),
+            out_of_rack_requests: counter!("shotover_out_of_rack_requests_count", "chain" => chain_name, "transform" => NAME),
             tls,
         })
     }

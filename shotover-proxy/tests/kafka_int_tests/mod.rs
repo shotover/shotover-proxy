@@ -285,7 +285,7 @@ async fn cluster_1_rack_single_shotover(#[case] driver: KafkaDriver) {
         let connection_builder = KafkaConnectionBuilder::new(driver, "127.0.0.1:9192");
         test_cases::cluster_test_suite(&connection_builder).await;
 
-        assert_inaccessible_peers_metric_emitted_on_port(0, "9001").await;
+        assert_inaccessible_peers_metric_emitted_on_port(0, 9001).await;
 
         tokio::time::timeout(
             Duration::from_secs(10),
@@ -382,7 +382,7 @@ async fn cluster_1_rack_multi_shotover(#[case] driver: KafkaDriver) {
 
     let connection_builder = KafkaConnectionBuilder::new(driver, "127.0.0.1:9192");
     test_cases::cluster_test_suite(&connection_builder).await;
-    assert_inaccessible_peers_metric_emitted_on_port(0, "9001").await;
+    assert_inaccessible_peers_metric_emitted_on_port(0, 9001).await;
 
     for shotover in shotovers {
         tokio::time::timeout(
@@ -433,7 +433,7 @@ async fn cluster_1_rack_multi_shotover_with_1_shotover_down(#[case] driver: Kafk
     let new_connection_builder = KafkaConnectionBuilder::new(driver, "localhost:9193");
     test_cases::cluster_test_suite_with_lost_shotover_node(&new_connection_builder).await;
 
-    assert_inaccessible_peers_metric_emitted_on_port(1, "9002").await;
+    assert_inaccessible_peers_metric_emitted_on_port(1, 9002).await;
 
     let mut expected_events = multi_shotover_events();
     // Other shotover nodes should detect the killed node at least once
@@ -490,7 +490,7 @@ async fn cluster_3_racks_multi_shotover_with_2_shotover_down(#[case] driver: Kaf
     )
     .await;
 
-    assert_inaccessible_peers_metric_emitted_on_port(2, "9003").await;
+    assert_inaccessible_peers_metric_emitted_on_port(2, 9003).await;
 
     // create a new connection and produce and consume messages
     let new_connection_builder = KafkaConnectionBuilder::new(driver, "localhost:9193");
@@ -595,7 +595,7 @@ async fn cluster_2_racks_multi_shotover(#[case] driver: KafkaDriver) {
     let connection_builder = KafkaConnectionBuilder::new(driver, "127.0.0.1:9192");
     test_cases::cluster_test_suite(&connection_builder).await;
 
-    assert_inaccessible_peers_metric_emitted_on_port(0, "9001").await;
+    assert_inaccessible_peers_metric_emitted_on_port(0, 9001).await;
 
     #[allow(irrefutable_let_patterns)]
     if let KafkaDriver::Java = driver {
@@ -1105,7 +1105,7 @@ shotover_kafka_delegation_token_creation_seconds_count{transform="KafkaSinkClust
 
 async fn assert_inaccessible_peers_metric_emitted_on_port(
     expected_value: i32,
-    observability_port: &str,
+    observability_port: u16,
 ) {
     assert_metrics_key_value_on_port(
         r#"shotover_peers_inaccessible_count{chain="kafka",transform="KafkaSinkCluster"}"#,
