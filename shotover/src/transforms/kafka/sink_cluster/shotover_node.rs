@@ -71,22 +71,17 @@ pub(crate) fn start_shotover_peers_check(
         tokio::spawn(async move {
             // Wait for all shotover nodes to start
             sleep(Duration::from_secs(10)).await;
+
             loop {
                 match check_shotover_peers(
                     &shotover_peers,
                     check_shotover_peers_delay_ms,
                     connect_timeout,
+                    &chain_name,
                 )
                 .await
                 {
-                    Ok(_) => {
-                        let down_peers_count =
-                            shotover_peers.iter().filter(|peer| !peer.is_up()).count() as f64;
-                        if down_peers_count > 0.0 {
-                            let down_peers_gauge: Gauge = gauge!("shotover_peers_inaccessible_count", "chain" => chain_name.clone(), "transform" => "KafkaSinkCluster");
-                            down_peers_gauge.set(down_peers_count);
-                        }
-                    }
+                    Ok(_) => {}
                     Err(err) => {
                         tracing::error!(
                             "Restarting the shotover peers check due to error: {err:?}"
@@ -98,10 +93,19 @@ pub(crate) fn start_shotover_peers_check(
     }
 }
 
+fn update_inaccessible_peers_metric(shotover_peers: &[ShotoverNode], chain_name: &String) {
+    let down_peers_count: u8 = shotover_peers.iter().filter(|peer| !peer.is_up()).count() as u8;
+    if down_peers_count > 0 {
+        let down_peers_gauge: Gauge = gauge!("shotover_peers_inaccessible_count", "chain" => chain_name.clone(), "transform" => "KafkaSinkCluster");
+        down_peers_gauge.set(down_peers_count);
+    }
+}
+
 async fn check_shotover_peers(
     shotover_peers: &[ShotoverNode],
     check_shotover_peers_delay_ms: u64,
     connect_timeout: Duration,
+    chain_name: &String,
 ) -> Result<(), anyhow::Error> {
     let mut shotover_peers_cycle = shotover_peers.iter().cycle();
     let mut rng = StdRng::from_rng(&mut rand::rng());
@@ -128,6 +132,9 @@ async fn check_shotover_peers(
                     shotover_peer.set_state(ShotoverNodeState::Down);
                 }
             }
+
+            update_inaccessible_peers_metric(shotover_peers, &chain_name);
+
             let random_delay = (check_shotover_peers_delay_ms
                 + rng.random_range(
                     -check_shotover_peers_delay_ms / 10..check_shotover_peers_delay_ms / 10,
