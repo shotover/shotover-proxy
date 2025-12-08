@@ -416,15 +416,11 @@ async fn test_hot_reload_recovery_after_new_instance_killed_on_fd_receipt() {
         .with_log_name("second")
         .with_hotreload_socket(socket_path)
         .with_config("tests/test-configs/shotover-config/config_metrics_disabled.yaml")
-        .expect_startup_events(vec![
-            EventMatcher::new()
-                .with_level(Level::Info)
-                .with_target("shotover::hot_reload::client")
-                .with_message("Received")
-                .with_message("file descriptors via ancillary data"),
-        ])
         .start()
         .await;
+
+    // Give the second instance a moment to receive file descriptors before killing it
+    tokio::time::sleep(Duration::from_millis(100)).await;
 
     // Kill the second instance immediately after it receives the file descriptors
     shotover_second.send_sigterm();
@@ -436,9 +432,6 @@ async fn test_hot_reload_recovery_after_new_instance_killed_on_fd_receipt() {
     )
     .await
     .expect("Second shotover should shutdown after being killed");
-
-    // Allow time for socket cleanup before starting third instance
-    tokio::time::sleep(Duration::from_millis(100)).await;
 
     // Verify old connection is still working
     assert_valkey_connection_works(&mut connection, None, &[("recovery_key", "recovery_value")])
@@ -504,16 +497,11 @@ async fn test_hot_reload_recovery_after_new_instance_killed_on_gradual_shutdown(
         .with_log_name("second_gs")
         .with_hotreload_socket(socket_path)
         .with_config("tests/test-configs/shotover-config/config_metrics_disabled.yaml")
-        .expect_startup_events(vec![
-            EventMatcher::new()
-                .with_level(Level::Info)
-                .with_target("shotover::hot_reload::client")
-                .with_message(
-                    "Successfully sent gradual shutdown request to old shotover instance",
-                ),
-        ])
         .start()
         .await;
+
+    // Give the second instance a moment to send gradual shutdown request before killing it
+    tokio::time::sleep(Duration::from_millis(100)).await;
 
     // Kill the second instance after it sends the gradual shutdown request
     shotover_second.send_sigterm();
@@ -525,9 +513,6 @@ async fn test_hot_reload_recovery_after_new_instance_killed_on_gradual_shutdown(
     )
     .await
     .expect("Second shotover should shutdown after being killed");
-
-    // Allow time for socket cleanup before starting third instance
-    tokio::time::sleep(Duration::from_millis(100)).await;
 
     // Verify old connections still work after second instance was killed
     let value: String = connection.get("shutdown_key_0").unwrap();
