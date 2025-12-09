@@ -432,7 +432,9 @@ async fn test_hot_reload_kill_after_fd_received_then_third_instance() {
             &EventMatcher::new()
                 .with_level(Level::Info)
                 .with_target("shotover::server")
-                .with_message("Using hot reloaded listener for valkey-source source on [127.0.0.1:6380]"),
+                .with_message(
+                    "Using hot reloaded listener for valkey-source source on [127.0.0.1:6380]",
+                ),
             &[],
         ),
     )
