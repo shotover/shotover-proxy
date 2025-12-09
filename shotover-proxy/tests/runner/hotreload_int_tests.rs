@@ -424,22 +424,23 @@ async fn test_hot_reload_kill_after_fd_received_then_third_instance() {
         .start()
         .await;
 
-    // Wait for the new instance to receive file descriptors
+    // Wait for the new instance to receive file descriptors and start using them
+    // But kill it BEFORE it requests gradual shutdown of the old instance
     tokio::time::timeout(
         Duration::from_secs(30),
         shotover_new.wait_for(
             &EventMatcher::new()
                 .with_level(Level::Info)
-                .with_target("shotover::hot_reload::client")
-                .with_message("Received 1 file descriptors via ancillary data"),
+                .with_target("shotover::server")
+                .with_message("Using hot reloaded listener for valkey-source source on [127.0.0.1:6380]"),
             &[],
         ),
     )
     .await
-    .expect("NEW shotover should receive file descriptors");
+    .expect("NEW shotover should start using hot reloaded listener");
 
-    // Immediately kill the new shotover after it received FDs
-    // This simulates a crash or forced termination right after hot reload handoff
+    // Immediately kill the new shotover after it starts using the FDs but BEFORE it requests gradual shutdown
+    // This simulates a crash right after receiving FDs, leaving the old instance still running
     shotover_new.send_sigterm();
 
     // Wait for new shotover to die
@@ -452,7 +453,6 @@ async fn test_hot_reload_kill_after_fd_received_then_third_instance() {
     );
 
     // Now start the third shotover instance with the same hot reload args
-    // The first shotover is still running and in gradual shutdown mode
     // The third instance should successfully receive FDs from the first instance
     let mut shotover_third = shotover_process("tests/test-configs/hotreload/topology.yaml")
         .with_log_name("third_fd")
