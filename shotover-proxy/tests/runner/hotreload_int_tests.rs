@@ -492,7 +492,7 @@ async fn test_hot_reload_kill_after_gradual_shutdown_then_third_instance() {
     let _compose = docker_compose("tests/test-configs/hotreload/docker-compose.yaml");
 
     // Start the first shotover instance
-    let shotover_old = shotover_process("tests/test-configs/hotreload/topology.yaml")
+    let mut shotover_old = shotover_process("tests/test-configs/hotreload/topology.yaml")
         .with_log_name("old_grad")
         .with_hotreload_socket(socket_path)
         .with_config("tests/test-configs/shotover-config/config_metrics_disabled.yaml")
@@ -518,7 +518,7 @@ async fn test_hot_reload_kill_after_gradual_shutdown_then_third_instance() {
     assert_eq!(value, "drain_value_0");
 
     // Start the second shotover instance - triggers hot reload
-    let mut shotover_new = shotover_process("tests/test-configs/hotreload/topology.yaml")
+    let shotover_new = shotover_process("tests/test-configs/hotreload/topology.yaml")
         .with_log_name("new_grad")
         .with_hotreload_socket(socket_path)
         .with_config("tests/test-configs/shotover-config/config_metrics_disabled.yaml")
