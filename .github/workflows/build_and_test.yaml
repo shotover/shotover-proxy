@@ -51,93 +51,14 @@ jobs:
           # downsides:
           # * PRs that update rust version or changes deps will be slow to iterate on due to changes not being cached.
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - name: cache custom ubuntu packages
-        uses: actions/cache@v4
-        with:
-          path: shotover-proxy/build/packages
-          key: ubuntu-24.04-packages
-      - name: Install ubuntu packages
-        run: shotover-proxy/build/install_ubuntu_packages.sh
       - name: Install nextest
         uses: taiki-e/install-action@v2
         with:
           tool: nextest@0.9.70
-
-        # It is currently impossible to combine j4rs, rust-cache and nextest:
-        # * j4rs needs to store jars somewhere, by default this is in target/debug/jassets, we do have the option to move this somewhere outside of target.
-        # * rust-cache will delete all files in target/debug other than `build`, `deps` and `.fingerprint`
-        # * nextest will only archive files within the target directory
-        # There is no way of combining all of these requirements.
-        # We will need to find one of these projects that is suitable to have its requirements loosened.
-        # I suspect that rust-cache is the project that needs to change, maybe add a config field to include extra paths in the cache, similar to nextest's archive.include.
-        # This is going to be tricky and require discussion with the various upstream projects, and will take a while to land anything.
-        #
-        # So for now we need a quick workaround.
-        # This workaround is to force j4rs to be rebuilt from scratch via cargo clean.
-        # This has a cost on CI runtime and in the future we should find another solution as discussed above.
-      - name: Workaround j4rs cache issue
-        run: cargo clean -p j4rs ${{ matrix.cargo_flags }}
 
       - name: Build tests
         run: |
-          cargo test --doc ${{ matrix.cargo_flags }} --all-features -- --show-output --nocapture
-          cargo nextest archive --archive-file nextest-${{ matrix.profile }}.tar.zst ${{ matrix.cargo_flags }} --all-features --all-targets
-      - name: Upload built tests to workflow
-        uses: actions/upload-artifact@v4
-        with:
-          name: nextest-${{ matrix.profile }}
-          path: nextest-${{ matrix.profile }}.tar.zst
-      - name: Report disk usage
-        run: |
-          df -h
-          
-          echo -e "\ntarget dir usage:"
-          du -h $PWD/target
-          
-          echo -e "\n.cargo dir usage:"
-          du -h ~/.cargo
-      - name: Cleanup archive
-        run: rm nextest-${{ matrix.profile }}.tar.zst
-      - name: Ensure that tests did not create or modify any files that arent .gitignore'd
-        run: |
-          if [ -n "$(git status --porcelain)" ]; then
-            git status
-            exit 1
-          fi
-
-  run_tests_partitioned:
-    strategy:
-      fail-fast: false
-      matrix:
-        partition: [ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15 ]
-        profile: [ "release", "debug" ]
-    name: Test ${{ matrix.profile}} ${{ matrix.partition }}/15
-    runs-on: ubuntu-24.04
-    needs: build_check_and_upload
-    steps:
-      - uses: actions/checkout@v4
-      - name: cache custom ubuntu packages
-        uses: actions/cache@v4
-        with:
-          path: shotover-proxy/build/packages
-          key: ubuntu-24.04-packages
-      - name: Install ubuntu packages
-        run: shotover-proxy/build/install_ubuntu_packages.sh
-      - name: Install nextest
-        uses: taiki-e/install-action@v2
-        with:
-          tool: nextest@0.9.70
-      - run: mkdir -p ~/.cargo/bin
-      - name: Download archive
-        uses: actions/download-artifact@v4
-        with:
-          name: nextest-${{ matrix.profile }}
-      - name: Run tests
-        run: |
-          ~/.cargo/bin/cargo-nextest nextest run --archive-file nextest-${{ matrix.profile }}.tar.zst \
-            --partition count:${{ matrix.partition }}/15 --extract-to . --run-ignored all --success-output=immediate
-      - name: Cleanup archive
-        run: rm nextest-${{ matrix.profile }}.tar.zst
+          cargo nextest run ${{ matrix.cargo_flags }} --features alpha-transforms --all-targets hotreload_int_tests
       - name: Ensure that tests did not create or modify any files that arent .gitignore'd
         run: |
           if [ -n "$(git status --porcelain)" ]; then
