@@ -451,7 +451,24 @@ async fn test_hot_reload_kill_after_fd_received_then_third_instance() {
             .with_message("received SIGTERM"),
     );
 
+    // Wait for the old shotover to complete its shutdown
+    // Since the new instance died, the old instance will continue draining and then shut down
+    let old_events = tokio::time::timeout(
+        Duration::from_secs(120),
+        shotover_old.consume_remaining_events(&[]),
+    )
+    .await
+    .expect("Old shotover should eventually complete shutdown");
+
+    old_events.assert_contains(
+        &EventMatcher::new()
+            .with_level(Level::Info)
+            .with_target("shotover::runner")
+            .with_message("Shotover was shutdown cleanly."),
+    );
+
     // Now start the third shotover instance
+    // This will start fresh since no existing shotover is running
     let shotover_third = shotover_process("tests/test-configs/hotreload/topology.yaml")
         .with_log_name("third_fd")
         .with_hotreload_socket(socket_path)
@@ -459,24 +476,16 @@ async fn test_hot_reload_kill_after_fd_received_then_third_instance() {
         .start()
         .await;
 
-    // Verify the third instance successfully starts and can handle connections
+    // Verify the third instance successfully starts with new listeners and can handle connections
     let client_third = Client::open("valkey://127.0.0.1:6380").unwrap();
     let mut con_third = client_third.get_connection().unwrap();
 
-    // Data should still be available
+    // Data should still be available in the backing Valkey instance
+    // Counter starts at 1 since this is a fresh connection to the backing store
+    assert_valkey_connection_works(&mut con_third, Some(1), &[("test_key", "test_value")]).unwrap();
+
+    // Verify third instance continues working
     assert_valkey_connection_works(&mut con_third, Some(2), &[("test_key", "test_value")]).unwrap();
-
-    // Old shotover should still be running and draining since new died prematurely
-    // Eventually it should complete shutdown
-    tokio::time::timeout(
-        Duration::from_secs(120),
-        shotover_old.consume_remaining_events(&[]),
-    )
-    .await
-    .expect("Old shotover should eventually complete shutdown");
-
-    // Verify third instance is still working after old instance shut down
-    assert_valkey_connection_works(&mut con_third, Some(3), &[("test_key", "test_value")]).unwrap();
 
     // Cleanup
     shotover_third.shutdown_and_then_consume_events(&[]).await;
