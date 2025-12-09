@@ -558,7 +558,7 @@ async fn test_hot_reload_kill_after_gradual_shutdown_then_third_instance() {
 
     // Now start the THIRD shotover instance - this should successfully take over
     let shotover_third = shotover_process("tests/test-configs/hotreload/topology.yaml")
-        .with_log_name("shot_third_grad")
+        .with_log_name("third_grad")
         .with_hotreload_socket(socket_path)
         .with_config("tests/test-configs/shotover-config/config_metrics_disabled.yaml")
         .start()
