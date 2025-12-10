@@ -26,13 +26,13 @@ Future transforms won't be added to the public API while in alpha. But in these 
 
 | Transform                                                | Terminating | Implementation Status |
 |----------------------------------------------------------|-------------|-----------------------|
-| [CassandraSinkCluster](#cassandrasinkcluster)            | ✅          | Beta                  |
+| [CassandraSinkCluster](#cassandrasinkcluster)            | ✅          | Production Ready      |
 | [CassandraSinkSingle](#cassandrasinksingle)              | ✅          | Alpha                 |
 | [CassandraPeersRewrite](#cassandrapeersrewrite)          | ❌          | Alpha                 |
 | [Coalesce](#coalesce)                                    | ❌          | Alpha                 |
 | [DebugPrinter](#debugprinter)                            | ❌          | Alpha                 |
 | [DebugReturner](#debugreturner)                          | ✅          | Alpha                 |
-| [KafkaSinkCluster](#kafkasinkcluster)                    | ✅          | Beta                  |
+| [KafkaSinkCluster](#kafkasinkcluster)                    | ✅          | Production Ready      |
 | [KafkaSinkSingle](#kafkasinksingle)                      | ✅          | Beta                  |
 | [NullSink](#nullsink)                                    | ✅          | Beta                  |
 | [ParallelMap](#parallelmap)                              | ✅          | Alpha                 |
