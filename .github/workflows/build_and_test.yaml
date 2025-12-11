@@ -78,6 +78,9 @@ jobs:
       - name: Workaround j4rs cache issue
         run: cargo clean -p j4rs ${{ matrix.cargo_flags }}
 
+      - name: Test deps-table
+        run: cargo run -p deps-table
+
       - name: Build tests
         run: |
           cargo test --doc ${{ matrix.cargo_flags }} --all-features -- --show-output --nocapture
