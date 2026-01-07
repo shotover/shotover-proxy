@@ -5,8 +5,8 @@ use cdrs_tokio::frame::events::{
     SchemaChange, SchemaChangeOptions, SchemaChangeTarget, SchemaChangeType, ServerEvent,
 };
 use fred::rustls::crypto::aws_lc_rs::default_provider;
-use futures::Future;
 use futures::future::join_all;
+use futures::{Future, FutureExt};
 use pretty_assertions::assert_eq;
 use rstest::rstest;
 use rstest_reuse::{self, *};
@@ -16,6 +16,7 @@ use scylla::errors::{
     ConnectionSetupRequestErrorKind, DbError, MetadataError, NewSessionError,
 };
 use std::net::SocketAddr;
+use std::panic::AssertUnwindSafe;
 #[cfg(feature = "cassandra-cpp-driver-tests")]
 use test_helpers::connection::cassandra::CassandraDriver::Cpp;
 use test_helpers::connection::cassandra::Compression;
@@ -571,6 +572,29 @@ async fn source_tls_and_cluster_tls(#[case] driver: CassandraDriver) {
     }
 
     cluster::single_rack_v4::test_topology_task(Some(ca_cert), None).await;
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn server_tls_no_client_tls() {
+    test_helpers::cert::generate_cassandra_test_certs();
+    let _compose = docker_compose("tests/test-configs/cassandra/tls/docker-compose.yaml");
+
+    let shotover = shotover_process("tests/test-configs/cassandra/tls/topology.yaml")
+        .start()
+        .await;
+
+    let result = AssertUnwindSafe(CassandraConnectionBuilder::new("127.0.0.1", 9042, Java).build())
+        .catch_unwind()
+        .await;
+    assert!(result.is_err());
+    if let Err(panic_info) = result {
+        if let Some(msg) = panic_info.downcast_ref::<String>() {
+            assert!(msg.contains("Caused by: com.datastax.oss.driver.api.core.connection.ClosedConnectionException: Unexpected error on channel"));
+            assert!(msg.contains("Caused by: java.net.SocketException: Connection reset"));
+        }
+    }
+    shotover.shutdown_and_then_consume_events(&[]).await;
 }
 
 #[apply(all_cassandra_drivers)]
