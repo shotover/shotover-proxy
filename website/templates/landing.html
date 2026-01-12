@@ -8,14 +8,18 @@ Shotover Proxy
 <div class="w-100 f-left mb-18 landing-main-title">
     <div class="w-55 f-left mt-5 pl-130">
         <h1 class="shotover-title w-100 f-left">Shotover</h1>
-        <h2 class="shotover-subtitle w-100 f-left"><span style="color: rgb(145, 170, 229);">L7 data layer proxy</span>
+        <h2 class="shotover-subtitle w-100 f-left">
+            <span style="color: rgb(145, 170, 229);">L7 data layer proxy</span>
             <span style="color: rgb(170, 222, 246);"></span>
         </h2>
-        <h3 class="shotover-motto w-100 f-left"></h3><a class="landing-action-btn"
-            href="docs/latest/user-guide/getting-started.html"><span class="landing-action-btn-text">Get
-                started</span></a>
+        <h3 class="shotover-motto w-100 f-left"></h3>
+        <a class="landing-action-btn" href="docs/latest/user-guide/getting-started.html">
+            <span class="landing-action-btn-text">Get started</span>
+        </a>
     </div>
-    <div class="w-45 f-left"><img class="landing-title-img ml-20" src="/assets/title_image.png"></div>
+    <div class="w-45 f-left">
+        <img class="landing-title-img" style="margin-top:150px; max-width: 1000px;" src="/assets/logo.svg">
+    </div>
 </div>
 <div class="w-100 f-left p-130 mb-24">
     <div class="w-43 f-left pr-2">
@@ -24,7 +28,9 @@ Shotover Proxy
     <div class="w-57 f-left">
         <p class="landing-description mt-1">Shotover is a high performance, configurable
             and extensible L7 data-layer proxy for controlling, managing and modifying
-            the flow of database requests in transit. It can be used to solve many
+            the flow of database requests in transit.</p>
+        <p class="landing-description mt-1">
+            It can be used to solve many
             different operational and interoperability challenges by transparently
             intercepting and transforming queries. It is transparent in the sense that
             it can be plugged into your architecture without requiring application
@@ -32,25 +38,25 @@ Shotover Proxy
     </div>
 </div>
 <div class="w-100 f-left mb-22">
-    <h2 class="landing-docs-title pl-130">Get acquainted with our <span class="c-brand">documentation</span></h2>
+    <h2 class="landing-docs-title pl-130"><span class="c-brand">Documentation</span></h2>
     <div class="docs-container w-100 f-left p-105"><a href="docs/latest/user-guide/introduction.html"
             class="docs-block">
             <h3 class="w-100 f-left doc-name mb-2">Introduction</h3>
-            <p class="text-left doc-desc">More information on what Shotover Proxy
-                is, why it exists and some of the underlying philosophies behind it.</p>
+            <p class="text-left doc-desc">What Shotover Proxy
+                is and why it exists.</p>
             <div class="f-left doc-action-btn mb-2">
                 <p class="f-left">Learn more</p><img class="f-left doc-arrow" src="/assets/arrow_right.png">
             </div>
         </a><a href="docs/latest/user-guide/getting-started.html" class="docs-block">
             <h3 class="w-100 f-left doc-name mb-2">Getting started</h3>
-            <p class="text-left doc-desc">For details on how to jump straight in and get
+            <p class="text-left doc-desc">How to jump straight in and get
                 up running.</p>
             <div class="f-left doc-action-btn mb-2">
                 <p class="f-left">Learn more</p><img class="f-left doc-arrow" src="/assets/arrow_right.png">
             </div>
         </a><a href="docs/latest/user-guide/concepts.html" class="docs-block">
             <h3 class="w-100 f-left doc-name mb-2">Concepts</h3>
-            <p class="text-left doc-desc">For a deeper dive into some of the fundamental
+            <p class="text-left doc-desc">The fundamental
                 Shotover concepts.</p>
             <div class="f-left doc-action-btn mb-2">
                 <p class="f-left">Learn more</p><img class="f-left doc-arrow" src="/assets/arrow_right.png">
@@ -59,33 +65,38 @@ Shotover Proxy
 </div>
 <div class="w-100 f-left p-130 landing-problems">
     <h2 class="landing-problems-title mb-6">What <span class="c-brand-light">problems</span> does Shotover solve?</h2>
-    <p class="w-65 mb-8 problems-description">More broadly, Shotover is designed to be
-        used for a very wide ranging class of problems where it is useful to
-        transparently intercept a database call and redirect it. This allows you to
-        change the behaviour of running applications at the infrastructure level without
-        change to the application code itself. Some examples where we envisage Shotover
-        could be deployed include:</p>
+    <p class="w-65 mb-8 problems-description">
+        Shotover changes behaviour of running applications at the infrastructure level without
+        changing the application code itself, enabling:
+    </p>
     <div class="w-100 f-left p-90 mb-2">
         <div class="f-left problem-card" style="background-color: rgb(35, 85, 203);">
-            <span class="f-left w-80">Moving very large or very hot
-                tenants/customers/keys to a separate data store by intercepting and
-                redirecting queries for those particular keys</span>
+            <span class="f-left w-80">Unique topologies e.g. Cassandra on AWS Private Link.</span>
         </div>
-        <div class="f-left problem-card mt-15" style="background-color: rgb(86, 188, 237);"><span
-                class="f-left w-80">Dual
-                writing and/or query translation to allow the underlying storage
-                technology to be changed </span></div>
-        <div class="f-left problem-card" style="background-color: rgb(136, 217, 255); margin-top: -150px;"><span
-                class="f-left w-80">Adding auditing, encryption or other security
-                measures</span></div>
+        <div class="f-left problem-card mt-15" style="background-color: rgb(40, 141, 214);">
+            <span class="f-left w-80">Dual writes for disaster recovery.</span>
+        </div>
+        <div class="f-left problem-card" style="background-color: rgb(30, 156, 202); margin-top: -150px;">
+            <span class="f-left w-80">Assist with tricky migration scenarios.</span>
+        </div>
+        <!--
         <div class="f-left problem-card" style="background-color: rgb(145, 170, 229);">
-            <span class="f-left w-80">As an alternative to Change Data Capture
-                technology to send writes to a message stream such as Apache
-                Kafka</span>
+            <span class="f-left w-80">TODO: reenable this block if we want to add an additional point</span>
         </div>
+        -->
     </div>
 </div>
-<div class="name-description w-100 f-left">
+<div class="w-100 f-left p-130 mt-15">
+    <h2 class="landing-problems-title mb-6"><span class="c-brand-light">Extending</span> Shotover</h2>
+    <p class="w-65 mb-8 problems-description">
+        Shotover provides its functionality as a set of <a
+            href="/docs/latest/user-guide/concepts.html#transform">"Transforms"</a> which read, alter and route
+        messages. However, Shotover also allows users to define their own logic via
+        <a href="/docs/latest/user-guide/writing-custom-transforms.html">Custom Transforms</a>, which are compiled
+        natively to process messages just as fast as the standard Transforms.
+    </p>
+</div>
+<div class="name-description w-100 f-left mt-15">
     <div class="p-130">
         <h2 class="landing-title w-50 f-left">Name</h2>
         <p class="landing-description w-50 mt-1 mb-1 f-left">Shotover refers to the
