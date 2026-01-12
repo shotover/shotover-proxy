@@ -1756,7 +1756,7 @@ vite-error-overlay {
     font-weight: 400;
     font-size: 21px;
     line-height: 27px;
-    height: 250px
+    height: 220px
 }
 
 .doc-action-btn {
@@ -1797,8 +1797,8 @@ vite-error-overlay {
     height: 300px;
     border-radius: 40px;
     padding: 40px 50px;
-    font-size: 25px;
-    line-height: 35px;
+    font-size: 50px;
+    line-height: 45px;
     font-weight: 400;
     margin-bottom: 17px;
     margin-left: 8.5px;
@@ -2039,7 +2039,6 @@ vite-error-overlay {
 
     .problem-card {
         padding: 20px 30px;
-        font-size: 1.7em;
     }
 
     .problem-card .w-80 {
