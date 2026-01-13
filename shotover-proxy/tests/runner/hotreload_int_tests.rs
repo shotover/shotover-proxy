@@ -389,3 +389,226 @@ async fn test_hot_reload_certificate_change() {
 
     shotover_new.shutdown_and_then_consume_events(&[]).await;
 }
+
+#[tokio::test]
+#[cfg_attr(not(target_os = "linux"), ignore)]
+async fn test_hot_reload_kill_after_fd_received_then_third_instance() {
+    use test_helpers::shotover_process::{EventMatcher, Level};
+
+    let socket_path = "/tmp/test-hotreload-kill-after-fd.sock";
+
+    let _compose = docker_compose("tests/test-configs/hotreload/docker-compose.yaml");
+
+    // Start the first shotover instance
+    let shotover_old = shotover_process("tests/test-configs/hotreload/topology.yaml")
+        .with_log_name("old_fd")
+        .with_hotreload_socket(socket_path)
+        .with_config("tests/test-configs/shotover-config/config_metrics_disabled.yaml")
+        .start()
+        .await;
+
+    // Establish connections and store data in old instance
+    let client_old = Client::open("valkey://127.0.0.1:6380").unwrap();
+    let mut con_old = client_old.get_connection().unwrap();
+    let _: () = con_old.set("test_key", "test_value").unwrap();
+    let _: () = con_old.set("counter", 0).unwrap();
+
+    // Verify old instance works
+    assert_valkey_connection_works(&mut con_old, Some(1), &[("test_key", "test_value")]).unwrap();
+
+    // Start the second shotover instance - triggers hot reload
+    let mut shotover_new = shotover_process("tests/test-configs/hotreload/topology.yaml")
+        .with_log_name("new_fd")
+        .with_hotreload_socket(socket_path)
+        .with_config("tests/test-configs/shotover-config/config_metrics_disabled.yaml")
+        .start()
+        .await;
+
+    // Wait for the new instance to receive file descriptors and start using them
+    // But kill it BEFORE it requests gradual shutdown of the old instance
+    tokio::time::timeout(
+        Duration::from_secs(30),
+        shotover_new.wait_for(
+            &EventMatcher::new()
+                .with_level(Level::Info)
+                .with_target("shotover::server")
+                .with_message(
+                    "Using hot reloaded listener for valkey-source source on [127.0.0.1:6380]",
+                ),
+            &[],
+        ),
+    )
+    .await
+    .expect("NEW shotover should start using hot reloaded listener");
+
+    // Immediately kill the new shotover after it starts using the FDs but BEFORE it requests gradual shutdown
+    // This simulates a crash right after receiving FDs, leaving the old instance still running
+    shotover_new.send_sigterm();
+
+    // Wait for new shotover to die
+    let new_events = shotover_new.consume_remaining_events(&[]).await;
+    new_events.assert_contains(
+        &EventMatcher::new()
+            .with_level(Level::Info)
+            .with_target("shotover::runner")
+            .with_message("received SIGTERM"),
+    );
+
+    // Now start the third shotover instance with the same hot reload args
+    // The third instance should successfully receive FDs from the first instance
+    let mut shotover_third = shotover_process("tests/test-configs/hotreload/topology.yaml")
+        .with_log_name("third_fd")
+        .with_hotreload_socket(socket_path)
+        .with_config("tests/test-configs/shotover-config/config_metrics_disabled.yaml")
+        .start()
+        .await;
+
+    // Verify third instance receives file descriptors from the first instance
+    tokio::time::timeout(
+        Duration::from_secs(30),
+        shotover_third.wait_for(
+            &EventMatcher::new()
+                .with_level(Level::Info)
+                .with_target("shotover::hot_reload::client")
+                .with_message("Received 1 file descriptors via ancillary data"),
+            &[],
+        ),
+    )
+    .await
+    .expect("THIRD shotover should receive file descriptors from first instance");
+
+    // Verify the third instance successfully starts and can handle connections
+    let client_third = Client::open("valkey://127.0.0.1:6380").unwrap();
+    let mut con_third = client_third.get_connection().unwrap();
+
+    // Data should still be available in the backing Valkey instance
+    assert_valkey_connection_works(&mut con_third, Some(2), &[("test_key", "test_value")]).unwrap();
+
+    // Verify third instance continues working
+    assert_valkey_connection_works(&mut con_third, Some(3), &[("test_key", "test_value")]).unwrap();
+
+    // Wait for old shotover to complete shutdown
+    tokio::time::timeout(
+        Duration::from_secs(120),
+        shotover_old.consume_remaining_events(&[]),
+    )
+    .await
+    .expect("Old shotover should eventually complete shutdown");
+
+    // Cleanup
+    shotover_third.shutdown_and_then_consume_events(&[]).await;
+}
+
+#[tokio::test]
+#[cfg_attr(not(target_os = "linux"), ignore)]
+async fn test_hot_reload_kill_after_gradual_shutdown_then_third_instance() {
+    use test_helpers::shotover_process::{EventMatcher, Level};
+
+    let socket_path = "/tmp/test-hotreload-kill-after-gradual.sock";
+
+    let _compose = docker_compose("tests/test-configs/hotreload/docker-compose.yaml");
+
+    // Start the first shotover instance
+    let mut shotover_old = shotover_process("tests/test-configs/hotreload/topology.yaml")
+        .with_log_name("old_grad")
+        .with_hotreload_socket(socket_path)
+        .with_config("tests/test-configs/shotover-config/config_metrics_disabled.yaml")
+        .start()
+        .await;
+
+    // Create multiple connections to the old instance to ensure there's something to drain
+    let client_old = Client::open("valkey://127.0.0.1:6380").unwrap();
+    let mut connections = Vec::new();
+    for i in 0..10 {
+        let mut con = client_old.get_connection().unwrap();
+        let _: () = con
+            .set(format!("drain_key_{}", i), format!("drain_value_{}", i))
+            .unwrap();
+        connections.push(con);
+    }
+
+    // Set a counter
+    let _: () = connections[0].set("counter", 0).unwrap();
+
+    // Verify old instance works
+    let value: String = connections[0].get("drain_key_0").unwrap();
+    assert_eq!(value, "drain_value_0");
+
+    // Start the second shotover instance - triggers hot reload
+    let shotover_new = shotover_process("tests/test-configs/hotreload/topology.yaml")
+        .with_log_name("new_grad")
+        .with_hotreload_socket(socket_path)
+        .with_config("tests/test-configs/shotover-config/config_metrics_disabled.yaml")
+        .start()
+        .await;
+
+    // Wait for the new instance to become ready
+    tokio::time::sleep(Duration::from_secs(2)).await;
+
+    // Wait for the old instance to start gradual shutdown
+    // This log is emitted by the old shotover when it receives the gradual shutdown request
+    tokio::time::timeout(
+        Duration::from_secs(30),
+        shotover_old.wait_for(
+            &EventMatcher::new()
+                .with_level(Level::Info)
+                .with_target("shotover::hot_reload::server")
+                .with_message("Gradual shutdown initiated for all sources"),
+            &[],
+        ),
+    )
+    .await
+    .expect("OLD shotover should initiate gradual shutdown");
+
+    // Immediately kill the new shotover after old starts gradual shutdown
+    // This simulates a scenario where the new instance crashes after handoff but during old instance drain
+    shotover_new.send_sigterm();
+
+    // Wait for new shotover to die
+    let new_events = shotover_new.consume_remaining_events(&[]).await;
+    new_events.assert_contains(
+        &EventMatcher::new()
+            .with_level(Level::Info)
+            .with_target("shotover::runner")
+            .with_message("received SIGTERM"),
+    );
+
+    // Now start the THIRD shotover instance - this should successfully take over
+    let shotover_third = shotover_process("tests/test-configs/hotreload/topology.yaml")
+        .with_log_name("third_grad")
+        .with_hotreload_socket(socket_path)
+        .with_config("tests/test-configs/shotover-config/config_metrics_disabled.yaml")
+        .start()
+        .await;
+
+    // Verify the third instance successfully starts and can handle connections
+    let client_third = Client::open("valkey://127.0.0.1:6380").unwrap();
+    let mut con_third = client_third.get_connection().unwrap();
+
+    // Data should still be available
+    assert_valkey_connection_works(&mut con_third, Some(1), &[("drain_key_0", "drain_value_0")])
+        .unwrap();
+
+    // Old shotover should still be running and draining
+    // It should eventually complete shutdown
+    tokio::time::timeout(
+        Duration::from_secs(120),
+        shotover_old.consume_remaining_events(&[]),
+    )
+    .await
+    .expect("Old shotover should eventually complete shutdown");
+
+    // Verify third instance is still working after old instance fully drained
+    assert_valkey_connection_works(
+        &mut con_third,
+        Some(2),
+        &[
+            ("drain_key_0", "drain_value_0"),
+            ("drain_key_5", "drain_value_5"),
+        ],
+    )
+    .unwrap();
+
+    // Cleanup
+    shotover_third.shutdown_and_then_consume_events(&[]).await;
+}
