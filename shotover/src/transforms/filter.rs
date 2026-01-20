@@ -89,10 +89,10 @@ impl Transform for QueryTypeFilter {
 
         let mut responses = chain_state.call_next_transform().await?;
         for response in responses.iter_mut() {
-            if let Some(request_id) = response.request_id() {
-                if let Some(error_response) = self.filtered_requests.remove(&request_id) {
-                    *response = error_response;
-                }
+            if let Some(request_id) = response.request_id()
+                && let Some(error_response) = self.filtered_requests.remove(&request_id)
+            {
+                *response = error_response;
             }
         }
 

@@ -39,10 +39,10 @@ impl fmt::Display for BacktraceFormatter {
         let cwd = std::env::current_dir();
         let mut print_path = move |fmt: &mut fmt::Formatter<'_>, path: BytesOrWideString<'_>| {
             let path = path.into_path_buf();
-            if let Ok(cwd) = &cwd {
-                if let Ok(suffix) = path.strip_prefix(cwd) {
-                    return fmt::Display::fmt(&suffix.display(), fmt);
-                }
+            if let Ok(cwd) = &cwd
+                && let Ok(suffix) = path.strip_prefix(cwd)
+            {
+                return fmt::Display::fmt(&suffix.display(), fmt);
             }
             fmt::Display::fmt(&path.display(), fmt)
         };
