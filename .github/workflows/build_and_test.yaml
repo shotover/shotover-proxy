@@ -34,7 +34,7 @@ jobs:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6
       - uses: Swatinem/rust-cache@v2
         with:
           # rust-cache already handles all the sane defaults for caching rust builds.
@@ -115,7 +115,7 @@ jobs:
     runs-on: ubuntu-24.04
     needs: build_check_and_upload
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6
       - name: cache custom ubuntu packages
         uses: actions/cache@v4
         with:

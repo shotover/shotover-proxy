@@ -11,7 +11,7 @@ jobs:
     name: "Check that the project is releaseable"
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6
       - name: Install ubuntu packages
         run: shotover-proxy/build/install_ubuntu_packages.sh
       - name: Run checks
@@ -27,7 +27,7 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6
       - name: Push image
         run: |
           docker build -t shotover/shotover-proxy:latest -t shotover/shotover-proxy:${GITHUB_REF/refs\/tags\//} .
@@ -39,7 +39,7 @@ jobs:
     needs: prepublish-check
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6
       - name: Install ubuntu packages
         run: shotover-proxy/build/install_ubuntu_packages.sh
       - name: Build & test
@@ -57,7 +57,7 @@ jobs:
     needs: prepublish-check
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6
       - name: Install ubuntu packages
         run: shotover-proxy/build/install_ubuntu_packages.sh
       - name: Publish

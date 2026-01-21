@@ -20,7 +20,7 @@ jobs:
     name: Formatting and lints
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6
       - uses: Swatinem/rust-cache@v2
         with:
           # this line means that only the main branch writes to the cache
@@ -31,7 +31,7 @@ jobs:
           # * PRs that update rust version or changes deps will be slow to iterate on due to changes not being cached.
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: cache custom ubuntu packages
-        uses: actions/cache@v4
+        uses: actions/cache@8b402f58fbc84540c8b491a91e594a4576fec3d7 # v5.0.2
         with:
           path: shotover-proxy/build/packages
           key: ubuntu-24.04-packages

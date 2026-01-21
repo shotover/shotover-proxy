@@ -30,11 +30,11 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - name: cache custom ubuntu packages
-        uses: actions/cache@v4
+        uses: actions/cache@8b402f58fbc84540c8b491a91e594a4576fec3d7 # v5.0.2
         with:
           path: shotover-proxy/build/packages
           key: ubuntu-22.04-packages
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6
         # We purposefully dont cache here as build_and_test will always be the bottleneck
         # so we should leave the cache alone so build_and_test can make more use of it.
       - name: Install ubuntu packages
