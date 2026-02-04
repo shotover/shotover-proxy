@@ -1,4 +1,3 @@
-use crate::connection;
 use crate::frame::kafka::{KafkaFrame, RequestBody, ResponseBody};
 use crate::frame::{Frame, MessageType};
 use crate::message::{Message, Messages};
