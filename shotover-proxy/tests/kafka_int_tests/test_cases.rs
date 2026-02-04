@@ -2104,24 +2104,21 @@ pub async fn test_no_out_of_rack_request(connection_builder: &KafkaConnectionBui
 /// Counts CLOSE_WAIT connections for a given PID using lsof
 pub fn count_close_wait_connections_for_process(pid: i32) -> anyhow::Result<usize> {
     use test_helpers::run_command;
-    
+
     // Use lsof to get network connections for the specific PID
     // -i: network files
     // -P: don't resolve port numbers to names
     // -n: don't resolve hostnames
     // -a: AND the conditions together
-    let output = run_command(
-        "lsof",
-        &["-i", "-P", "-n", "-a", "-p", &pid.to_string()],
-    )?;
+    let output = run_command("lsof", &["-i", "-P", "-n", "-a", "-p", &pid.to_string()])?;
 
     let mut count = 0;
-    
+
     for line in output.lines() {
         // lsof output format (columns vary, but typically):
         // COMMAND  PID  USER  FD  TYPE  DEVICE  SIZE/OFF  NODE  NAME
         // The NAME column contains the connection info like "127.0.0.1:54321->172.16.1.2:9092 (CLOSE_WAIT)"
-        
+
         // Check if line contains CLOSE_WAIT state
         if line.contains("CLOSE_WAIT") {
             count += 1;
@@ -2134,7 +2131,7 @@ pub fn count_close_wait_connections_for_process(pid: i32) -> anyhow::Result<usiz
 pub fn assert_no_close_wait_connections(pid: i32) {
     let count = count_close_wait_connections_for_process(pid)
         .expect("Failed to check for CLOSE_WAIT connections");
-    
+
     assert_eq!(
         count, 0,
         "Found {} CLOSE_WAIT connection(s) for PID {}. \

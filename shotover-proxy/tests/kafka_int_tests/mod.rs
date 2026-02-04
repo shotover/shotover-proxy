@@ -352,7 +352,7 @@ async fn cluster_1_rack_single_shotover_broker_idle_timeout(#[case] driver: Kafk
 
     //we had an issue where shotover was not acknowledging the closed connecitons from Kafka
     //leaving around close-wait state connections. This step ensures no such connections are left behind
-    //for the given destination port and owned by the shotover process 
+    //for the given destination port and owned by the shotover process
     test_cases::assert_no_close_wait_connections(shotover.pid());
 
     tokio::time::timeout(

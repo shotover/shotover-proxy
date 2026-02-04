@@ -1,3 +1,4 @@
+use crate::connection;
 use crate::frame::kafka::{KafkaFrame, RequestBody, ResponseBody};
 use crate::frame::{Frame, MessageType};
 use crate::message::{Message, Messages};
@@ -2239,54 +2240,57 @@ The connection to the client has been closed."
 
         // Convert all received PendingRequestState::Sent into PendingRequestState::Received
         for (connection_destination, connection) in &mut self.connections.connections {
-            // skip recv when no pending requests to avoid timeouts on old connections
-            if connection.pending_requests_count() != 0 {
-                self.temp_responses_buffer.clear();
-                match connection
-                    .try_recv_into(&mut self.temp_responses_buffer)
-                    .with_context(|| format!("Failed to receive from {connection_destination:?}"))
-                {
-                    Ok(()) => {
-                        for response in self.temp_responses_buffer.drain(..) {
-                            let mut response = Some(response);
-                            for pending_request in &mut self.pending_requests {
-                                if let PendingRequestState::Sent { index, request } =
-                                    &mut pending_request.state
-                                {
-                                    if &pending_request.destination == connection_destination {
-                                        // Store the PendingRequestState::Received at the location of the next PendingRequestState::Sent
-                                        // All other PendingRequestState::Sent need to be decremented, in order to determine the PendingRequestState::Sent
-                                        // to be used next time, and the time after that, and ...
-                                        if *index == 0 {
-                                            pending_request.state = PendingRequestState::Received {
-                                                response: response.take().unwrap(),
-                                                request: request.take(),
-                                            };
-                                        } else {
-                                            *index -= 1;
-                                        }
+            self.temp_responses_buffer.clear();
+            match connection
+                .try_recv_into(&mut self.temp_responses_buffer)
+                .with_context(|| format!("Failed to receive from {connection_destination:?}"))
+            {
+                Ok(()) => {
+                    for response in self.temp_responses_buffer.drain(..) {
+                        let mut response = Some(response);
+                        for pending_request in &mut self.pending_requests {
+                            if let PendingRequestState::Sent { index, request } =
+                                &mut pending_request.state
+                            {
+                                if &pending_request.destination == connection_destination {
+                                    // Store the PendingRequestState::Received at the location of the next PendingRequestState::Sent
+                                    // All other PendingRequestState::Sent need to be decremented, in order to determine the PendingRequestState::Sent
+                                    // to be used next time, and the time after that, and ...
+                                    if *index == 0 {
+                                        pending_request.state = PendingRequestState::Received {
+                                            response: response.take().unwrap(),
+                                            request: request.take(),
+                                        };
+                                    } else {
+                                        *index -= 1;
                                     }
                                 }
                             }
                         }
                     }
-                    Err(err) => connection_errors.push((*connection_destination, err)),
                 }
+                Err(err) => connection_errors.push((*connection_destination, err)),
             }
         }
 
         for (destination, err) in connection_errors {
-            // Since pending_requests_count > 0 we expect this to return an Err.
-            self.connections
-                .handle_connection_error(
-                    &self.connection_factory,
-                    &self.authorize_scram_over_mtls,
-                    &self.sasl_mechanism,
-                    &self.nodes,
-                    destination,
-                    err,
-                )
-                .await?;
+            if let Some(connection) = self.connections.connections.get(&destination) {
+                if connection.pending_requests_count() == 0 {
+                    self.connections.connections.remove(&destination);
+                } else {
+                    // Has pending requests - need to handle the error properly
+                    self.connections
+                        .handle_connection_error(
+                            &self.connection_factory,
+                            &self.authorize_scram_over_mtls,
+                            &self.sasl_mechanism,
+                            &self.nodes,
+                            destination,
+                            err,
+                        )
+                        .await?;
+                }
+            }
         }
 
         // Remove and return all PendingRequestState::Received that are ready to be received.
