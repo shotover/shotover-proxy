@@ -1567,7 +1567,10 @@ async fn produce_consume_acks0(connection_builder: &KafkaConnectionBuilder) {
     }
 }
 
-pub async fn test_broker_idle_timeout(connection_builder: &KafkaConnectionBuilder) {
+pub async fn test_broker_idle_timeout(
+    connection_builder: &KafkaConnectionBuilder,
+    shotover_pid: i32,
+) {
     let admin = connection_builder.connect_admin().await;
     admin
         .create_topics_and_wait(&[NewTopic {
@@ -1595,6 +1598,9 @@ pub async fn test_broker_idle_timeout(connection_builder: &KafkaConnectionBuilde
     // write to some open shotover connections,
     // ensuring shotover reopens any connections closed by the broker due to idle timeout.
     test_produce_consume_10_times(&mut producer, &mut consumer).await;
+
+    // Verify that Shotover cleaned up the dead connections and there are no CLOSE_WAIT leaks.
+    assert_no_close_wait_connections(shotover_pid);
 }
 
 async fn test_produce_consume_10_times(producer: &mut KafkaProducer, consumer: &mut KafkaConsumer) {

@@ -313,6 +313,7 @@ fn spawn_read_write_tasks<
 
     let connection_closed_tx2 = connection_closed_tx.clone();
     let request_pending2 = request_pending.clone();
+    let force_run_chain2 = force_run_chain.clone();
     tokio::spawn(
         async move {
             match reader_task::<C, _>(
@@ -332,6 +333,10 @@ fn spawn_read_write_tasks<
                     // This ensures the handle side logic will always have an
                     // error available to consult as to why the `in_` channel was closed.
                     std::mem::drop(in_tx);
+                    // Notify the transform chain about the error so it can run recv_responses()
+                    // and detect the closed connection. This must happen after dropping in_tx
+                    // so that when the transform wakes up, the channel is already closed.
+                    force_run_chain2.notify_one();
                 }
             }
             // Signal the writer task to terminate gracefully

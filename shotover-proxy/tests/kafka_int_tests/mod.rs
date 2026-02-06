@@ -348,16 +348,7 @@ async fn cluster_1_rack_single_shotover_broker_idle_timeout(#[case] driver: Kafk
     // But for an integration test this would lead to flakey tests which is unacceptable.
     //
     // So instead we rely on a test case hits the timeout with plenty of buffer to avoid the race condition.
-    test_cases::test_broker_idle_timeout(&connection_builder).await;
-
-    // Allow time for async tasks to complete and TCP sockets to fully close.
-    // When shotover detects a closed connection, the writer task is signaled to terminate
-    // and close the socket, but this happens asynchronously.
-    tokio::time::sleep(Duration::from_mins(5)).await;
-
-    //we had an issue where shotover was not acknowledging the closed connections from Kafka
-    //leaving around close-wait state connections. This step ensures no such connections are left behind
-    test_cases::assert_no_close_wait_connections(shotover.pid());
+    test_cases::test_broker_idle_timeout(&connection_builder, shotover.pid()).await;
 
     tokio::time::timeout(
         Duration::from_secs(10),
