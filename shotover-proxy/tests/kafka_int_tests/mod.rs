@@ -858,15 +858,17 @@ async fn cluster_sasl_scram_over_mtls_nodejs_and_python() {
             shotover.shutdown_and_then_consume_events(&[EventMatcher::new()
                 .with_level(Level::Error)
                 .with_target("shotover::server")
-                .with_message(r#"encountered an error when flushing the chain kafka for shutdown
-
-Caused by:
-    0: KafkaSinkCluster transform failed
-    1: Failed to receive responses (without sending requests)
-    2: Outgoing connection had pending requests, those requests/responses are lost so connection recovery cannot be attempted.
-    3: Failed to receive from ControlConnection
-    4: The other side of this connection closed the connection"#)
-                .with_count(Count::Times(2))]),
+                .with_message_regex(concat!(
+                    r"connection was unexpectedly terminated\s+",
+                    r"Caused by:\s+",
+                    r"0: Chain failed to send and/or receive messages, the connection will now be closed\.\s+",
+                    r"1: KafkaSinkCluster transform failed\s+",
+                    r"2: Failed to receive responses \(without sending requests\)\s+",
+                    r"3: Outgoing connection had pending requests, those requests/responses are lost so connection recovery cannot be attempted\.\s+",
+                    r"4: Failed to receive from ControlConnection\s+",
+                    r"5: The other side of this connection closed the connection",
+                ))
+                .with_count(Count::Any)]),
         )
         .await
         .expect("Shotover did not shutdown within 10s");
