@@ -178,25 +178,22 @@ impl SimpleValkeyCache {
             operation: CassandraOperation::Query { query, .. },
             ..
         })) = request.frame()
+            && let CacheableState::CacheRow = is_cacheable(query)
+            && let Some(table_name) = query.get_table_name()
+            && let Some(table_cache_schema) = self.caching_schema.get(table_name)
         {
-            if let CacheableState::CacheRow = is_cacheable(query) {
-                if let Some(table_name) = query.get_table_name() {
-                    if let Some(table_cache_schema) = self.caching_schema.get(table_name) {
-                        match build_valkey_key_from_cql3(query, table_cache_schema) {
-                            Ok(address) => {
-                                return Some(Message::from_frame_diverged(
-                                    Frame::Valkey(ValkeyFrame::Array(vec![
-                                        ValkeyFrame::BulkString("HGET".into()),
-                                        ValkeyFrame::BulkString(address.key),
-                                        ValkeyFrame::BulkString(address.field),
-                                    ])),
-                                    request,
-                                ));
-                            }
-                            Err(_e) => {} // TODO match Err(()) here or just have build_valkey_key_from_cql3 return Option
-                        }
-                    }
+            match build_valkey_key_from_cql3(query, table_cache_schema) {
+                Ok(address) => {
+                    return Some(Message::from_frame_diverged(
+                        Frame::Valkey(ValkeyFrame::Array(vec![
+                            ValkeyFrame::BulkString("HGET".into()),
+                            ValkeyFrame::BulkString(address.key),
+                            ValkeyFrame::BulkString(address.field),
+                        ])),
+                        request,
+                    ));
                 }
+                Err(_e) => {} // TODO match Err(()) here or just have build_valkey_key_from_cql3 return Option
             }
         }
 
@@ -325,21 +322,19 @@ impl SimpleValkeyCache {
         statement: &CassandraStatement,
         response: &Message,
     ) -> Option<Message> {
-        if let Some(table_name) = statement.get_table_name() {
-            if let Some(table_cache_schema) = self.caching_schema.get(table_name) {
-                if let Ok(address) =
-                    // TODO: handle errors
-                    build_valkey_key_from_cql3(statement, table_cache_schema)
-                {
-                    return Some(Message::from_frame_at_instant(
-                        Frame::Valkey(ValkeyFrame::Array(vec![
-                            ValkeyFrame::BulkString("DEL".into()),
-                            ValkeyFrame::BulkString(address.key),
-                        ])),
-                        response.received_from_source_or_sink_at,
-                    ));
-                }
-            }
+        if let Some(table_name) = statement.get_table_name()
+            && let Some(table_cache_schema) = self.caching_schema.get(table_name)
+            && let Ok(address) =
+                // TODO: handle errors
+                build_valkey_key_from_cql3(statement, table_cache_schema)
+        {
+            return Some(Message::from_frame_at_instant(
+                Frame::Valkey(ValkeyFrame::Array(vec![
+                    ValkeyFrame::BulkString("DEL".into()),
+                    ValkeyFrame::BulkString(address.key),
+                ])),
+                response.received_from_source_or_sink_at,
+            ));
         }
         None
     }
@@ -349,30 +344,27 @@ impl SimpleValkeyCache {
         statement: &CassandraStatement,
         response: &mut Message,
     ) -> Result<Option<Message>> {
-        if let Some(table_name) = statement.get_table_name() {
-            if let Some(table_cache_schema) = self.caching_schema.get(table_name) {
-                if let Ok(address) =
-                    // TODO: handle errors
-                    build_valkey_key_from_cql3(statement, table_cache_schema)
-                {
-                    if let Some(Frame::Cassandra(frame)) = response.frame() {
-                        // TODO: two performance issues here:
-                        // 1. we should be able to generate the encoded bytes without cloning the entire frame
-                        // 2. we should be able to directly use the raw bytes when the message has not yet been mutated
-                        let encoded = frame.clone().encode(Compression::None);
+        if let Some(table_name) = statement.get_table_name()
+            && let Some(table_cache_schema) = self.caching_schema.get(table_name)
+            && let Ok(address) =
+                // TODO: handle errors
+                build_valkey_key_from_cql3(statement, table_cache_schema)
+            && let Some(Frame::Cassandra(frame)) = response.frame()
+        {
+            // TODO: two performance issues here:
+            // 1. we should be able to generate the encoded bytes without cloning the entire frame
+            // 2. we should be able to directly use the raw bytes when the message has not yet been mutated
+            let encoded = frame.clone().encode(Compression::None);
 
-                        return Ok(Some(Message::from_frame_at_instant(
-                            Frame::Valkey(ValkeyFrame::Array(vec![
-                                ValkeyFrame::BulkString("HSET".into()),
-                                ValkeyFrame::BulkString(address.key),
-                                ValkeyFrame::BulkString(address.field),
-                                ValkeyFrame::BulkString(encoded.into()),
-                            ])),
-                            response.received_from_source_or_sink_at,
-                        )));
-                    }
-                }
-            }
+            return Ok(Some(Message::from_frame_at_instant(
+                Frame::Valkey(ValkeyFrame::Array(vec![
+                    ValkeyFrame::BulkString("HSET".into()),
+                    ValkeyFrame::BulkString(address.key),
+                    ValkeyFrame::BulkString(address.field),
+                    ValkeyFrame::BulkString(encoded.into()),
+                ])),
+                response.received_from_source_or_sink_at,
+            )));
         }
         Ok(None)
     }

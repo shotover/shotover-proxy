@@ -113,10 +113,10 @@ impl Transform for RequestThrottling {
 
         // replace dummy responses with throttle messages
         for response in responses.iter_mut() {
-            if let Some(request_id) = response.request_id() {
-                if let Some(error_response) = self.throttled_requests.remove(&request_id) {
-                    *response = error_response;
-                }
+            if let Some(request_id) = response.request_id()
+                && let Some(error_response) = self.throttled_requests.remove(&request_id)
+            {
+                *response = error_response;
             }
         }
 

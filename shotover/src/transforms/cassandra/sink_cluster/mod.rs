@@ -262,21 +262,20 @@ impl CassandraSinkCluster {
             self.pool.update_nodes(&mut self.nodes_rx);
 
             // recreate the control connection if it is down
-            if let Some(address) = self.control_connection_address {
-                if !self
+            if let Some(address) = self.control_connection_address
+                && !self
                     .pool
                     .nodes()
                     .iter()
                     .any(|x| x.address == address && x.is_up)
-                {
-                    let (connection, address) = self.pool.get_random_owned_connection_in_dc_rack(
+            {
+                let (connection, address) = self.pool.get_random_owned_connection_in_dc_rack(
                         &self.message_rewriter.local_shotover_node.rack,
                         &mut self.rng,
                         &self.connection_factory,
                     ).await
                     .context("Failed to recreate control connection after control connection node went down")?;
-                    self.set_control_connection(connection, address)
-                }
+                self.set_control_connection(connection, address)
             }
         }
 
@@ -645,14 +644,12 @@ impl CassandraSinkCluster {
     }
 
     fn is_system_query(&self, request: &mut Message) -> bool {
-        if let Some(Frame::Cassandra(frame)) = request.frame() {
-            if let CassandraOperation::Query { query, .. } = &mut frame.operation {
-                if let CassandraStatement::Select(select) = query.as_ref() {
-                    if let Some(keyspace) = &select.table_name.keyspace {
-                        return SYSTEM_KEYSPACES.iter().any(|x| x == keyspace);
-                    }
-                }
-            }
+        if let Some(Frame::Cassandra(frame)) = request.frame()
+            && let CassandraOperation::Query { query, .. } = &mut frame.operation
+            && let CassandraStatement::Select(select) = query.as_ref()
+            && let Some(keyspace) = &select.table_name.keyspace
+        {
+            return SYSTEM_KEYSPACES.iter().any(|x| x == keyspace);
         }
         false
     }
@@ -730,39 +727,36 @@ fn is_prepare_message(message: &mut Message) -> bool {
 }
 
 fn is_use_statement(request: &mut Message) -> bool {
-    if let Some(Frame::Cassandra(frame)) = request.frame() {
-        if let CassandraOperation::Query { query, .. } = &mut frame.operation {
-            if let CassandraStatement::Use(_) = query.as_ref() {
-                return true;
-            }
-        }
+    if let Some(Frame::Cassandra(frame)) = request.frame()
+        && let CassandraOperation::Query { query, .. } = &mut frame.operation
+        && let CassandraStatement::Use(_) = query.as_ref()
+    {
+        return true;
     }
     false
 }
 
 fn is_ddl_statement(request: &mut Message) -> bool {
-    if let Some(Frame::Cassandra(frame)) = request.frame() {
-        if let CassandraOperation::Query { query, .. } = &mut frame.operation {
-            if let CassandraStatement::CreateAggregate(_)
-            | CassandraStatement::CreateFunction(_)
-            | CassandraStatement::CreateIndex(_)
-            | CassandraStatement::CreateKeyspace(_)
-            | CassandraStatement::CreateMaterializedView(_)
-            | CassandraStatement::CreateRole(_)
-            | CassandraStatement::CreateTable(_)
-            | CassandraStatement::CreateTrigger(_)
-            | CassandraStatement::CreateType(_)
-            | CassandraStatement::CreateUser(_)
-            | CassandraStatement::AlterKeyspace(_)
-            | CassandraStatement::AlterMaterializedView(_)
-            | CassandraStatement::AlterRole(_)
-            | CassandraStatement::AlterTable(_)
-            | CassandraStatement::AlterType(_)
-            | CassandraStatement::AlterUser(_) = query.as_ref()
-            {
-                return true;
-            }
-        }
+    if let Some(Frame::Cassandra(frame)) = request.frame()
+        && let CassandraOperation::Query { query, .. } = &mut frame.operation
+        && let CassandraStatement::CreateAggregate(_)
+        | CassandraStatement::CreateFunction(_)
+        | CassandraStatement::CreateIndex(_)
+        | CassandraStatement::CreateKeyspace(_)
+        | CassandraStatement::CreateMaterializedView(_)
+        | CassandraStatement::CreateRole(_)
+        | CassandraStatement::CreateTable(_)
+        | CassandraStatement::CreateTrigger(_)
+        | CassandraStatement::CreateType(_)
+        | CassandraStatement::CreateUser(_)
+        | CassandraStatement::AlterKeyspace(_)
+        | CassandraStatement::AlterMaterializedView(_)
+        | CassandraStatement::AlterRole(_)
+        | CassandraStatement::AlterTable(_)
+        | CassandraStatement::AlterType(_)
+        | CassandraStatement::AlterUser(_) = query.as_ref()
+    {
+        return true;
     }
     false
 }

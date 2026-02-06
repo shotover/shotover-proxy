@@ -93,13 +93,12 @@ impl Transform for CassandraPeersRewrite {
         let mut responses = chain_state.call_next_transform().await?;
 
         for response in &mut responses {
-            if let Some(Frame::Cassandra(frame)) = response.frame() {
-                if let Event(ServerEvent::StatusChange(StatusChange { addr, .. })) =
+            if let Some(Frame::Cassandra(frame)) = response.frame()
+                && let Event(ServerEvent::StatusChange(StatusChange { addr, .. })) =
                     &mut frame.operation
-                {
-                    addr.set_port(self.port);
-                    response.invalidate_cache();
-                }
+            {
+                addr.set_port(self.port);
+                response.invalidate_cache();
             }
 
             if let Some(id) = response.request_id() {
@@ -119,18 +118,17 @@ fn extract_native_port_column(peer_table: &FQName, message: &mut Message) -> Vec
     let native_port = Identifier::parse("native_port");
     if let Some(Frame::Cassandra(cassandra)) = message.frame() {
         // No need to handle Batch as selects can only occur on Query
-        if let CassandraOperation::Query { query, .. } = &cassandra.operation {
-            if let CassandraStatement::Select(select) = query.as_ref() {
-                if peer_table == &select.table_name {
-                    for select_element in &select.columns {
-                        match select_element {
-                            SelectElement::Column(col_name) if col_name.name == native_port => {
-                                result.push(col_name.alias_or_name().clone());
-                            }
-                            SelectElement::Star => result.push(native_port.clone()),
-                            _ => {}
-                        }
+        if let CassandraOperation::Query { query, .. } = &cassandra.operation
+            && let CassandraStatement::Select(select) = query.as_ref()
+            && peer_table == &select.table_name
+        {
+            for select_element in &select.columns {
+                match select_element {
+                    SelectElement::Column(col_name) if col_name.name == native_port => {
+                        result.push(col_name.alias_or_name().clone());
                     }
+                    SelectElement::Star => result.push(native_port.clone()),
+                    _ => {}
                 }
             }
         }

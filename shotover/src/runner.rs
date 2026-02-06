@@ -83,10 +83,6 @@ pub struct Shotover {
 impl Shotover {
     #[expect(clippy::new_without_default)]
     pub fn new() -> Self {
-        if std::env::var("RUST_LIB_BACKTRACE").is_err() {
-            std::env::set_var("RUST_LIB_BACKTRACE", "0");
-        }
-
         default_provider().install_default().unwrap();
 
         let opts = ConfigOpts::parse();
@@ -185,16 +181,15 @@ impl Shotover {
             Ok(sources) => {
                 // After the new instance is fully started and accepting connections,
                 // request the old instance to shut down
-                if let Some(client) = &hotreload_client {
-                    if let Err(e) = client
+                if let Some(client) = &hotreload_client
+                    && let Err(e) = client
                         .request_shutdown_old_instance(hotreload_gradual_shutdown_duration)
                         .await
-                    {
-                        warn!(
-                            "Failed to send shutdown request to old shotover instance: {}",
-                            e
-                        );
-                    }
+                {
+                    warn!(
+                        "Failed to send shutdown request to old shotover instance: {}",
+                        e
+                    );
                 }
 
                 // Start hot reload server if socket is configured
