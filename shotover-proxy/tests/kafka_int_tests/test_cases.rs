@@ -2133,7 +2133,7 @@ pub fn count_close_wait_connections_for_process(pid: i32) -> anyhow::Result<usiz
     Ok(count)
 }
 
-/// Asserts that there are no CLOSE_WAIT connections for the given PID and destination port
+/// Asserts that there are no CLOSE_WAIT connections for the given PID
 pub fn assert_no_close_wait_connections(pid: i32) {
     let count = count_close_wait_connections_for_process(pid)
         .expect("Failed to check for CLOSE_WAIT connections");
