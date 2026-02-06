@@ -15,7 +15,6 @@ use tokio::net::ToSocketAddrs;
 use tokio::sync::mpsc::error::TryRecvError;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio::sync::{Notify, mpsc};
-use tokio_util::sync::CancellationToken;
 use tokio_util::codec::{FramedRead, FramedWrite};
 use tracing::Instrument;
 use tracing::error;
@@ -279,37 +278,28 @@ fn spawn_read_write_tasks<
     //
     // The Connection is dropped:
     // 1. The Connection is dropped, dropping in_rx and the first out_tx
-    // 2. The reader task detects that in_rx has dropped and terminates, dropping the last out_tx instance
-    // 3. The writer task detects that all out_tx senders are dropped by out_rx returning None and terminates
+    // 2. The reader task detects that in_rx has dropped and terminates, the last out_tx instance is dropped
+    // 3. The writer task detects that the last out_tx is dropped by out_rx returning None and terminates
     //
-    // Destination closes connection (and SinkConnection is NOT yet dropped):
-    // 1.   The reader task detects that the destination has closed the connection via reader returning None and terminates,
+    // Destination closes connection and then shotover tries to receive:
+    // 1.   The reader task detects that the client has closed the connection via reader returning None and terminates,
     // 1.1. connection_closed_tx is sent `ConnectionError::OtherSideClosed`
-    // 1.2. in_tx and out_tx (reader's copy) are dropped, and writer_cancel_token is cancelled
-    // 2.   The writer task detects the cancellation via writer_cancel_token and terminates immediately,
-    //      closing the TCP write half and preventing CLOSE-WAIT leaks
-    //      (without writer_cancel_token, the writer would wait forever on out_rx.recv() since SinkConnection.out_tx still exists)
-    // 3.   The `Connection::recv/recv_try` detects that in_tx is dropped by in_rx returning None and returns the ConnectionError::OtherSideClosed received from connection_closed_rx.
-    // 3.1. `Connection::recv/recv_try` prevents any future sends or receives by storing the ConnectionError
+    // 1.2. in_tx and the first out_tx are dropped
+    // 2.   The `Connection::recv/recv_try` detects that in_tx is dropped by in_rx returning None and returns the ConnectionError::OtherSideClosed received from connection_closed_rx.
+    // 2.1. `Connection::recv/recv_try` prevents any future sends or receives by storing the ConnectionError
+    // 3.   Once the user handles the error by dropping the Connection out_tx is dropped, the writer task detects this by out_rx returning None causing the task to terminate.
+    // 3.1. The writer task could also close early by detecting that the client has closed the connection via writer returning BrokenPipe
     //
     // Destination closes connection and then shotover tries to send:
     // if a send or recv has not been attempted yet the send will appear to have succeeded.
     // if a recv was already attempted, then the logic is the same as the above example.
     // if a send was already attempted, then the following logic occurs:
     // 1.  Connection::send sends a message to the writer task via out_tx.
-    // 2.  The writer task attempts to send the message to the writer but it returns a BrokenPipe or ConnectionReset error.
-    // 3.1 The writer task sends an OtherSideClosed error to the Connection.
+    // 2.  The writer task attempts to send the mesage to the writer but it returns a BrokenPipe or ConnectionReset error.
+    // 3.1 The writer task task sends an OtherSideClosed error to the Connection.
     // 3.2 The writer task terminates.
     // 4.  Connection::send sends a message to the writer task via out_tx but detects the writer task terminated due to out_tx returning None.
     // 4.1 Connection::send checks connection_closed_rx for the error, stores it and returns it to the caller.
-    //
-    // writer_cancel_token: A CancellationToken used to signal the writer task that the reader task has terminated.
-    // This enables immediate writer shutdown when the destination closes the connection, preventing CLOSE-WAIT leaks.
-    // Without this, when the destination closes the connection but SinkConnection is still alive (e.g., in a HashMap),
-    // the writer would block forever on out_rx.recv() since SinkConnection.out_tx still exists.
-
-    let writer_cancel_token = CancellationToken::new();
-    let writer_cancel_token_clone = writer_cancel_token.clone();
 
     let connection_closed_tx2 = connection_closed_tx.clone();
     let request_pending2 = request_pending.clone();
@@ -339,17 +329,13 @@ fn spawn_read_write_tasks<
                     force_run_chain2.notify_one();
                 }
             }
-            // Signal the writer task to terminate gracefully
-            writer_cancel_token.cancel();
         }
         .in_current_span(),
     );
 
     tokio::spawn(
         async move {
-            match writer_task::<C, _>(writer, &mut out_rx, request_pending, writer_cancel_token_clone)
-                .await
-            {
+            match writer_task::<C, _>(writer, &mut out_rx, request_pending).await {
                 Ok(()) => {}
                 Err(err) => {
                     connection_closed_tx.try_send(err).ok();
@@ -443,40 +429,29 @@ async fn writer_task<C: CodecBuilder + 'static, W: AsyncWrite + Unpin + Send + '
     mut writer: FramedWrite<W, <C as CodecBuilder>::Encoder>,
     out_rx: &mut UnboundedReceiver<Messages>,
     request_pending: Arc<RequestPending>,
-    cancel_token: CancellationToken,
 ) -> Result<(), ConnectionError> {
     loop {
-        tokio::select! {
-            biased;
-            // Check if reader task has terminated - this prevents CLOSE-WAIT leaks
-            // when the broker closes the connection and SinkConnection is still alive.
-            _ = cancel_token.cancelled() => {
-                return Ok(());
-            }
-            result = out_rx.recv() => {
-                if let Some(messages) = result {
-                    request_pending.add(messages.len() as u64);
-                    match writer.send(messages).await {
-                        Err(CodecWriteError::Encoder(err)) => {
-                            return Err(ConnectionError::MessageEncode(Arc::new(err)));
-                        }
-                        Err(CodecWriteError::Io(err)) => {
-                            if matches!(
-                                err.kind(),
-                                ErrorKind::BrokenPipe | ErrorKind::ConnectionReset
-                            ) {
-                                return Err(ConnectionError::OtherSideClosed);
-                            } else {
-                                return Err(ConnectionError::Io(Arc::new(err)));
-                            }
-                        }
-                        Ok(()) => {}
-                    }
-                } else {
-                    // shotover is no longer sending responses, this task is no longer needed
-                    return Ok(());
+        if let Some(messages) = out_rx.recv().await {
+            request_pending.add(messages.len() as u64);
+            match writer.send(messages).await {
+                Err(CodecWriteError::Encoder(err)) => {
+                    return Err(ConnectionError::MessageEncode(Arc::new(err)));
                 }
+                Err(CodecWriteError::Io(err)) => {
+                    if matches!(
+                        err.kind(),
+                        ErrorKind::BrokenPipe | ErrorKind::ConnectionReset
+                    ) {
+                        return Err(ConnectionError::OtherSideClosed);
+                    } else {
+                        return Err(ConnectionError::Io(Arc::new(err)));
+                    }
+                }
+                Ok(()) => {}
             }
+        } else {
+            // shotover is no longer sending responses, this task is no longer needed
+            return Ok(());
         }
     }
 }
