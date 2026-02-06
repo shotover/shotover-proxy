@@ -281,22 +281,24 @@ fn spawn_read_write_tasks<
     // 2. The reader task detects that in_rx has dropped and terminates, the last out_tx instance is dropped
     // 3. The writer task detects that the last out_tx is dropped by out_rx returning None and terminates
     //
-    // Destination closes connection and then shotover tries to receive:
-    // 1.   The reader task detects that the client has closed the connection via reader returning None and terminates,
+    // Destination closes connection (proactive cleanup via force_run_chain):
+    // 1.   The reader task detects that the destination has closed the connection via reader returning None
     // 1.1. connection_closed_tx is sent `ConnectionError::OtherSideClosed`
-    // 1.2. in_tx and the first out_tx are dropped
-    // 2.   The `Connection::recv/recv_try` detects that in_tx is dropped by in_rx returning None and returns the ConnectionError::OtherSideClosed received from connection_closed_rx.
-    // 2.1. `Connection::recv/recv_try` prevents any future sends or receives by storing the ConnectionError
-    // 3.   Once the user handles the error by dropping the Connection out_tx is dropped, the writer task detects this by out_rx returning None causing the task to terminate.
-    // 3.1. The writer task could also close early by detecting that the client has closed the connection via writer returning BrokenPipe
+    // 1.2. in_tx is dropped, closing the channel
+    // 1.3. force_run_chain.notify_one() is called to wake up the transform chain
+    // 2.   The transform chain wakes up and runs with empty requests
+    // 2.1. The transform is responsible for detecting the closed connection and cleaning it up
+    // 3.   When the Connection is dropped, out_tx is dropped
+    // 4.   The writer task detects that out_tx is dropped by out_rx returning None and terminates
+    // 4.1. The writer task could also terminate early by detecting a BrokenPipe/ConnectionReset error when writing
     //
     // Destination closes connection and then shotover tries to send:
     // if a send or recv has not been attempted yet the send will appear to have succeeded.
     // if a recv was already attempted, then the logic is the same as the above example.
     // if a send was already attempted, then the following logic occurs:
     // 1.  Connection::send sends a message to the writer task via out_tx.
-    // 2.  The writer task attempts to send the mesage to the writer but it returns a BrokenPipe or ConnectionReset error.
-    // 3.1 The writer task task sends an OtherSideClosed error to the Connection.
+    // 2.  The writer task attempts to send the message to the writer but it returns a BrokenPipe or ConnectionReset error.
+    // 3.1 The writer task sends an OtherSideClosed error to the Connection.
     // 3.2 The writer task terminates.
     // 4.  Connection::send sends a message to the writer task via out_tx but detects the writer task terminated due to out_tx returning None.
     // 4.1 Connection::send checks connection_closed_rx for the error, stores it and returns it to the caller.
