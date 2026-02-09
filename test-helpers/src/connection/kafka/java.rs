@@ -305,6 +305,12 @@ impl KafkaProducerJava {
     }
 }
 
+impl Drop for KafkaProducerJava {
+    fn drop(&mut self) {
+        tokio::task::block_in_place(|| self.producer.call("close", vec![]));
+    }
+}
+
 pub struct KafkaConsumerJava {
     jvm: Jvm,
     consumer: Value,
@@ -1079,6 +1085,12 @@ impl KafkaAdminJava {
             .call("createAcls", vec![acls])
             .call_async("all", vec![])
             .await;
+    }
+}
+
+impl Drop for KafkaAdminJava {
+    fn drop(&mut self) {
+        tokio::task::block_in_place(|| self.admin.call("close", vec![]));
     }
 }
 
