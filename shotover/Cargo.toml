@@ -1,6 +1,6 @@
 [package]
 name = "shotover"
-version = "0.7.0"
+version = "0.7.1"
 authors = ["Ben <ben@instaclustr.com>"]
 edition = "2021"
 license = "Apache-2.0"
