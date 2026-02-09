@@ -286,6 +286,7 @@ fn spawn_read_write_tasks<
     // 1.1. connection_closed_tx is sent `ConnectionError::OtherSideClosed`
     // 1.2. in_tx is dropped, closing the channel
     // 1.3. force_run_chain.notify_one() is called to wake up the transform chain
+    // 1.4. The reader task terminates
     // 2.   The transform chain wakes up and runs with empty requests
     // 2.1. The transform is responsible for detecting the closed connection and cleaning it up
     // 3.   When the Connection is dropped, out_tx is dropped
