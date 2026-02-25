@@ -28,8 +28,6 @@ use test_helpers::connection::cassandra::{
 };
 use test_helpers::connection::valkey_connection::ValkeyConnectionCreator;
 use test_helpers::docker_compose::docker_compose;
-#[cfg(feature = "alpha-transforms")]
-use test_helpers::docker_compose::new_moto;
 use test_helpers::shotover_process::{Count, EventMatcher, Level};
 use tokio::time::{Duration, timeout};
 
@@ -42,8 +40,6 @@ mod keyspace;
 mod native_types;
 mod prepared_statements_all;
 mod prepared_statements_simple;
-#[cfg(feature = "alpha-transforms")]
-mod protect;
 mod routing;
 mod table;
 mod timestamp;
@@ -599,55 +595,6 @@ async fn cassandra_valkey_cache(#[case] driver: CassandraDriver) {
     prepared_statements_simple::test(&connection, connection_creator, 1).await;
     batch_statements::test(&connection).await;
     cache::test(&connection, &mut valkey_connection).await;
-
-    shotover.shutdown_and_then_consume_events(&[]).await;
-}
-
-#[cfg(feature = "alpha-transforms")]
-#[rstest]
-// #[case::cdrs(Cdrs)] // TODO
-#[cfg_attr(feature = "cassandra-cpp-driver-tests", case::cpp(Cpp))]
-#[case::scylla(Scylla)]
-#[tokio::test(flavor = "multi_thread")]
-async fn protect_transform_local(#[case] driver: CassandraDriver) {
-    let _compose = docker_compose("tests/test-configs/cassandra/protect-local/docker-compose.yaml");
-
-    let shotover = shotover_process("tests/test-configs/cassandra/protect-local/topology.yaml")
-        .start()
-        .await;
-
-    let shotover_connection = || CassandraConnectionBuilder::new("127.0.0.1", 9042, driver).build();
-    let direct_connection = CassandraConnectionBuilder::new("127.0.0.1", 9043, driver)
-        .build()
-        .await;
-
-    standard_test_suite(shotover_connection, driver).await;
-    protect::test(&shotover_connection().await, &direct_connection).await;
-
-    shotover.shutdown_and_then_consume_events(&[]).await;
-}
-
-#[cfg(feature = "alpha-transforms")]
-#[rstest]
-//#[case::cdrs(Cdrs)] // TODO
-#[cfg_attr(feature = "cassandra-cpp-driver-tests", case::cpp(Cpp))]
-#[case::scylla(Scylla)]
-#[tokio::test(flavor = "multi_thread")]
-async fn protect_transform_aws(#[case] driver: CassandraDriver) {
-    let _compose = docker_compose("tests/test-configs/cassandra/protect-aws/docker-compose.yaml");
-    let _compose_aws = new_moto();
-
-    let shotover = shotover_process("tests/test-configs/cassandra/protect-aws/topology.yaml")
-        .start()
-        .await;
-
-    let shotover_connection = || CassandraConnectionBuilder::new("127.0.0.1", 9042, driver).build();
-    let direct_connection = CassandraConnectionBuilder::new("127.0.0.1", 9043, driver)
-        .build()
-        .await;
-
-    standard_test_suite(shotover_connection, driver).await;
-    protect::test(&shotover_connection().await, &direct_connection).await;
 
     shotover.shutdown_and_then_consume_events(&[]).await;
 }

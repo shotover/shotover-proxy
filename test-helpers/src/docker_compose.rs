@@ -10,11 +10,6 @@ pub fn docker_compose(file_path: &str) -> DockerCompose {
     DockerCompose::new(&IMAGE_WAITERS, |_| {}, file_path)
 }
 
-/// Creates a new DockerCompose running an instance of moto the AWS mocking server
-pub fn new_moto() -> DockerCompose {
-    docker_compose("tests/transforms/docker-compose-moto.yaml")
-}
-
 pub static IMAGE_WAITERS: [Image; 9] = [
     Image {
         name: "motoserver/moto",
