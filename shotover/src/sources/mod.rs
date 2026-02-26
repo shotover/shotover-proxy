@@ -15,7 +15,7 @@ use std::collections::HashMap;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::watch;
-use tokio::task::JoinHandle;
+use tokio::task::{JoinError, JoinHandle};
 
 #[cfg(feature = "cassandra")]
 pub mod cassandra;
@@ -35,7 +35,8 @@ pub enum Transport {
 
 #[derive(Debug)]
 pub struct Source {
-    pub join_handle: JoinHandle<()>,
+    pub listener_task: JoinHandle<()>,
+    /// This value must remain alive for as long as the Source is in use.
     pub hot_reload_tx: UnboundedSender<HotReloadListenerRequest>,
     pub gradual_shutdown_tx: UnboundedSender<GradualShutdownRequest>,
     pub name: String,
@@ -49,16 +50,20 @@ impl Source {
         name: String,
     ) -> Self {
         Self {
-            join_handle,
+            listener_task: join_handle,
             hot_reload_tx,
             gradual_shutdown_tx,
             name,
         }
     }
 
-    pub fn into_join_handle(self) -> JoinHandle<()> {
-        self.join_handle
+    pub async fn join(self) -> Result<(), JoinError> {
+        self.listener_task.await?;
+        // explicitly drop hot_reload_tx here, to show that it occurs after the listener_task has shutdown.
+        std::mem::drop(self.hot_reload_tx);
+        Ok(())
     }
+
     pub fn get_hot_reload_tx(&self) -> UnboundedSender<HotReloadListenerRequest> {
         self.hot_reload_tx.clone()
     }
