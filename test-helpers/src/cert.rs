@@ -1,5 +1,7 @@
 use crate::run_command;
-use rcgen::{BasicConstraints, Certificate, CertificateParams, DnType, IsCa, KeyPair, SanType};
+use rcgen::{
+    BasicConstraints, Certificate, CertificateParams, DnType, IsCa, Issuer, KeyPair, SanType,
+};
 use std::path::Path;
 
 pub fn generate_test_certs(path: &Path) {
@@ -32,8 +34,8 @@ pub fn generate_test_certs_with_bad_san(path: &Path) {
 }
 
 pub fn generate_test_certs_with_sans(path: &Path, sans: Vec<SanType>) {
-    let (ca_cert, ca_key) = new_ca();
-    let (cert, cert_key) = new_cert(sans, &ca_cert, &ca_key);
+    let (ca_cert, issuer) = new_ca();
+    let (cert, cert_key) = new_cert(sans, &issuer);
 
     std::fs::create_dir_all(path).unwrap();
     std::fs::write(path.join("localhost_CA.crt"), ca_cert.pem()).unwrap();
@@ -41,7 +43,7 @@ pub fn generate_test_certs_with_sans(path: &Path, sans: Vec<SanType>) {
     std::fs::write(path.join("localhost.key"), cert_key.serialize_pem()).unwrap();
 }
 
-fn new_ca() -> (Certificate, KeyPair) {
+fn new_ca() -> (Certificate, Issuer<'static, KeyPair>) {
     let mut params = CertificateParams::default();
     params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
     // This must be "Certificate Authority"
@@ -55,10 +57,11 @@ fn new_ca() -> (Certificate, KeyPair) {
 
     let key_pair = KeyPair::generate().unwrap();
     let ca_cert = params.self_signed(&key_pair).unwrap();
-    (ca_cert, key_pair)
+    let issuer = Issuer::new(params, key_pair);
+    (ca_cert, issuer)
 }
 
-fn new_cert(sans: Vec<SanType>, ca_cert: &Certificate, ca_key: &KeyPair) -> (Certificate, KeyPair) {
+fn new_cert(sans: Vec<SanType>, issuer: &Issuer<'_, KeyPair>) -> (Certificate, KeyPair) {
     let mut params = CertificateParams::default();
 
     // This needs to refer to the hosts that certificate will be used by
@@ -72,7 +75,7 @@ fn new_cert(sans: Vec<SanType>, ca_cert: &Certificate, ca_key: &KeyPair) -> (Cer
         .distinguished_name
         .push(DnType::OrganizationName, "ShotoverTestCertificate");
     let cert_key = KeyPair::generate().unwrap();
-    let cert = params.signed_by(&cert_key, ca_cert, ca_key).unwrap();
+    let cert = params.signed_by(&cert_key, issuer).unwrap();
     (cert, cert_key)
 }
 

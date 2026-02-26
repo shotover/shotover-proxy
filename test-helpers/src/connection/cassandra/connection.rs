@@ -176,7 +176,7 @@ pub enum CassandraConnection {
     #[cfg(feature = "cassandra-cpp-driver-tests")]
     Cpp(CppConnection),
     Cdrs(CdrsConnection),
-    Scylla(ScyllaConnection),
+    Scylla(Box<ScyllaConnection>),
     Java(JavaConnection),
 }
 
@@ -197,9 +197,9 @@ impl CassandraConnection {
             CassandraDriver::Cdrs => CassandraConnection::Cdrs(
                 CdrsConnection::new(contact_points, port, compression, tls, protocol).await,
             ),
-            CassandraDriver::Scylla => CassandraConnection::Scylla(
+            CassandraDriver::Scylla => CassandraConnection::Scylla(Box::new(
                 ScyllaConnection::new(contact_points, port, compression, tls, protocol).await,
-            ),
+            )),
             CassandraDriver::Java => CassandraConnection::Java(
                 JavaConnection::new(contact_points, port, compression, tls, protocol).await,
             ),
@@ -242,6 +242,10 @@ impl CassandraConnection {
             SessionBuilderScylla::new()
                 .known_node(direct_node)
                 .user("cassandra", "cassandra")
+                .auto_await_schema_agreement(false)
+                // We do not need to refresh metadata as there is nothing else fiddling with the topology or schema.
+                // By default the metadata refreshes every 60s and that can cause performance issues so we disable it by using an absurdly high refresh interval
+                .cluster_metadata_refresh_interval(Duration::from_secs(10000000000))
                 .tls_context(context)
                 .build()
                 .await
