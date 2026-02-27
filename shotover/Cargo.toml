@@ -141,7 +141,7 @@ sasl = { version = "0.5.1", optional = true, default-features = false, features 
 cc = { version = "1.0", features = ["parallel"] }
 
 [dev-dependencies]
-criterion = { version = "2.6.0", features = [
+criterion = { version = "4.3.0", features = [
     "async_tokio",
 ], package = "codspeed-criterion-compat" }
 hex-literal.workspace = true
