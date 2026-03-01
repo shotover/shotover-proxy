@@ -203,7 +203,7 @@ impl Shotover {
                     crate::hot_reload::server::start_hot_reload_server(socket_path, &sources);
                 }
 
-                futures::future::join_all(sources.into_iter().map(|x| x.into_join_handle())).await;
+                futures::future::join_all(sources.into_iter().map(|x| x.join())).await;
                 Ok(())
             }
             Err(err) => Err(err),

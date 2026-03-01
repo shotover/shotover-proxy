@@ -1,5 +1,36 @@
 use crate::shotover_process;
+use serde_json::Value;
 use test_helpers::shotover_process::{EventMatcher, Level};
+use tokio::net::TcpStream;
+
+#[tokio::test]
+async fn test_request_id_increments() {
+    // Ensure it isnt reliant on timing
+    let shotover_process = shotover_process("tests/test-configs/null-valkey/topology.yaml")
+        .start()
+        .await;
+    for _ in 0..1000 {
+        TcpStream::connect("127.0.0.1:6379").await.unwrap();
+    }
+
+    let events = shotover_process.shutdown_and_then_consume_events(&[]).await;
+    let mut previous_id = 0;
+    for event in events.events {
+        for span in event.spans {
+            if let Some(name) = span.get("name") {
+                if *name == Value::String("connection".into()) {
+                    if let Some(id) = span.get("id").and_then(|x| x.as_i64()) {
+                        // ensure that the ID increases by 1 and monotonically
+                        assert!(previous_id == id || previous_id + 1 == id);
+                        previous_id = id;
+                    }
+                }
+            }
+        }
+    }
+    // ensure that this test does something
+    assert_eq!(previous_id, 1000);
+}
 
 #[tokio::test]
 async fn test_early_shutdown_cassandra_source() {
