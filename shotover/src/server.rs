@@ -238,7 +238,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                         let client_details = stream.peer_addr()
                             .map(|p| p.ip().to_string())
                             .unwrap_or_else(|_| "Unknown Peer".to_string());
-                        tracing::debug!("New connection from {}", client_details);
+                        tracing::info!("New connection from {}", client_details);
 
                         let force_run_chain = Arc::new(Notify::new());
                         let context = TransformContextBuilder{
