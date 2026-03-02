@@ -21,7 +21,7 @@ inherits = "release"
 debug = true
 
 [workspace.dependencies]
-# scylla 1.5.0 break our integration tests, requires further investigation.
+# scylla 1.5.0 breaks our integration tests, requires further investigation.
 # issues relate to:
 # * routing to ports other than 9042 is broken for the await_schema_agreement session.
 # * out of rack routing checks?
