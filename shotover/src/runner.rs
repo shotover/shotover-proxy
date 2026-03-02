@@ -396,7 +396,12 @@ mod test {
         );
         match try_parse_log_directives(&[Some("good=info,bad=blah,warn")]) {
             Ok(_) => panic!(),
-            Err(e) => assert_eq!(e.to_string(), "invalid filter directive: bad=blah"),
+            Err(e) => {
+                assert_eq!(
+                    e.to_string(),
+                    r#"error parsing level filter: expected one of "off", "error", "warn", "info", "debug", "trace", or a number 0-5: bad=blah"#
+                )
+            }
         }
     }
 }
