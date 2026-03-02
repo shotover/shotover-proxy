@@ -37,8 +37,8 @@ serde_yaml = "0.9.17"
 uuid = { version = "1.0.0", features = ["serde", "v4"] }
 reqwest = { version = "0.13.0", default-features = false, features = ["http2"] }
 redis = { version = "0.29.2", features = ["tokio-comp", "tokio-rustls-comp", "tls-rustls-insecure", "cluster"] }
-cdrs-tokio = "8.0"
-cassandra-protocol = "3.0"
+cdrs-tokio = "9.0"
+cassandra-protocol = "4.0"
 # https://docs.rs/tracing/latest/tracing/level_filters/index.html#compile-time-filters
 # `trace` level is considered development only, and may contain sensitive data, do not include it in release builds.
 tracing = { version = "0.1.15", features = ["release_max_level_debug"] }
@@ -53,7 +53,7 @@ redis-protocol = { version = "6.0.0", features = ["bytes"] }
 futures = "0.3"
 hex = "0.4.3"
 hex-literal = "1.0.0"
-rand = { version = "0.9.0", default-features = false }
+rand = { version = "0.10.0", default-features = false, features = ["thread_rng"] }
 clap = { version = "4.0.4", features = ["cargo", "derive"] }
 async-trait = "0.1.30"
 typetag = "0.2.5"

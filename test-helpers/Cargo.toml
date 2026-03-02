@@ -31,7 +31,7 @@ reqwest.workspace = true
 tracing-subscriber.workspace = true
 anyhow.workspace = true
 rcgen.workspace = true
-rdkafka = { version = "0.37", features = ["cmake-build"], optional = true }
+rdkafka = { version = "0.39", features = ["cmake-build"], optional = true }
 docker-compose-runner = "0.3.0"
 j4rs = "0.24.0"
 futures-util = "0.3.28"

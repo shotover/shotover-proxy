@@ -5,7 +5,21 @@ This assists us in knowing when to make the next release a breaking release and 
 
 ## 0.8.0
 
+### topology.yaml
+
+* Removed deprecated `shotover_chain_messages_per_batch_count` metric
+* Removed `Protect` transform
 * Removed websocket support
+
+## 0.7.0
+
+### shotover rust API
+
+* only known breaking changes are new versions of reexported dependencies
+
+### topology.yaml
+
+* No breaking changes
 
 ## 0.6.0
 
