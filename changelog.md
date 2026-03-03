@@ -3,6 +3,10 @@
 Any breaking changes to the `topology.yaml` or `shotover` rust API should be documented here.
 This assists us in knowing when to make the next release a breaking release and assists users with making upgrades to new breaking releases.
 
+## 0.8.0
+
+* Removed websocket support
+
 ## 0.6.0
 
 Redis has been renamed to Valkey.

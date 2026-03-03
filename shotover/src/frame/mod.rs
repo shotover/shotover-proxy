@@ -54,20 +54,6 @@ impl MessageType {
             MessageType::Dummy => false,
         }
     }
-
-    pub fn websocket_subprotocol(&self) -> &'static str {
-        match self {
-            #[cfg(feature = "cassandra")]
-            MessageType::Cassandra => "cql",
-            #[cfg(feature = "valkey")]
-            MessageType::Valkey => "valkey",
-            #[cfg(feature = "kafka")]
-            MessageType::Kafka => "kafka",
-            #[cfg(feature = "opensearch")]
-            MessageType::OpenSearch => "opensearch",
-            MessageType::Dummy => "dummy",
-        }
-    }
 }
 
 impl From<&CodecState> for MessageType {
