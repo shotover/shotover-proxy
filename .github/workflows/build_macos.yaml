@@ -30,9 +30,9 @@ jobs:
       - name: Install deps
         run: brew install gcc
       - name: Ensure that dev tools compiles and has no warnings with no features enabled
-        run: cargo clippy --locked ${{ matrix.cargo_flags }} --all-targets -- -D warnings
+        run: cargo clippy --locked --all-targets -- -D warnings
       - name: Ensure that shotover-proxy compiles and has no warnings under every possible combination of features
         # some things to explicitly point out:
         # * clippy also reports rustc warnings and errors
         # * clippy --all-targets is not run so we only build the shotover_proxy executable without the tests/benches
-        run: cargo hack --feature-powerset --at-least-one-of valkey,cassandra,kafka,opensearch --exclude-features kafka-cpp-driver-tests,cassandra-cpp-driver-tests clippy --locked ${{ matrix.cargo_flags }} --package shotover-proxy -- -D warnings
+        run: cargo hack --feature-powerset --at-least-one-of valkey,cassandra,kafka,opensearch --exclude-features kafka-cpp-driver-tests,cassandra-cpp-driver-tests clippy --locked --package shotover-proxy -- -D warnings
