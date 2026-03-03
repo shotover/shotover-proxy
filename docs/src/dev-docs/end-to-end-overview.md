@@ -60,8 +60,8 @@ The second and third arguments are also strings of length 3: `$3\nfoo` and `$3\n
 
 ## Shotover accepts a new connection
 
-When [ValkeySource](https://github.com/shotover/shotover-proxy/blob/de0d1a3fafb92cf1875dd9ca79b277faf3cb3e77/shotover/src/sources/valkey.rs#L54) is created during shotover startup, it creates a `TcpCodecListener` and then calls [TcpCodecListener::run](https://github.com/shotover/shotover-proxy/blob/de0d1a3fafb92cf1875dd9ca79b277faf3cb3e77/shotover/src/server.rs#L160) which listens in a background task for incoming TCP connections on the sources configured port.
-`TcpCodecListener` accepts a new connection from the Valkey client and constructs and runs a `Handler` type, which manages the connection.
+When [ValkeySource](https://github.com/shotover/shotover-proxy/blob/de0d1a3fafb92cf1875dd9ca79b277faf3cb3e77/shotover/src/sources/valkey.rs#L54) is created during shotover startup, it creates a `SourceTask` and then calls [SourceTask::run](https://github.com/shotover/shotover-proxy/blob/de0d1a3fafb92cf1875dd9ca79b277faf3cb3e77/shotover/src/server.rs#L160) which listens in a background task for incoming TCP connections on the sources configured port.
+`SourceTask` accepts a new connection from the Valkey client and constructs and runs a `Handler` type, which manages the connection.
 The Handler type creates:
 
 * read/write tasks around the TCP connection.

@@ -90,7 +90,7 @@ impl UnixSocketServer {
             Request::SendListeningSockets => {
                 info!("Processing SendListeningSockets request");
 
-                // Send requests to all TcpCodecListener instances and collect responses
+                // Send requests to all SourceTask instances and collect responses
                 let mut collected_fds = Vec::new();
 
                 let mut response_futures = Vec::new();

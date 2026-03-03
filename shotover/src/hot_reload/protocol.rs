@@ -21,18 +21,18 @@ pub enum Response {
     GradualShutdown,
     Error(String),
 }
-/// Request sent from hot reload server to TcpCodecListener
+/// Request sent from hot reload server to SourceTask
 pub struct HotReloadListenerRequest {
     pub return_chan: tokio::sync::oneshot::Sender<HotReloadListenerResponse>,
 }
 
-/// Request sent from hot reload server to TcpCodecListener for gradual shutdown
+/// Request sent from hot reload server to SourceTask for gradual shutdown
 pub struct GradualShutdownRequest {
     /// The total duration for the gradual shutdown process
     pub duration: Duration,
 }
 
-/// Response sent from TcpCodecListener back to hot reload server
+/// Response sent from SourceTask back to hot reload server
 #[derive(Debug)]
 pub enum HotReloadListenerResponse {
     HotReloadResponse {

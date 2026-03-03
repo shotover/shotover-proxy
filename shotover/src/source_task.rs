@@ -55,7 +55,7 @@ impl TrackedConnection {
     }
 }
 
-pub struct TcpCodecListener<C: CodecBuilder> {
+pub struct SourceTask<C: CodecBuilder> {
     chain_builder: TransformChainBuilder,
     source_name: String,
 
@@ -97,7 +97,7 @@ pub struct TcpCodecListener<C: CodecBuilder> {
     port: u16,
 }
 
-impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
+impl<C: CodecBuilder + 'static> SourceTask<C> {
     #![allow(clippy::too_many_arguments)]
     pub async fn new(
         chain_config: &TransformChainConfig,
@@ -165,7 +165,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
             return Err(errors);
         }
 
-        Ok(TcpCodecListener {
+        Ok(SourceTask {
             chain_builder,
             source_name,
             listener,
@@ -280,7 +280,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                             self.handle_hot_reload_request(request).await;
                             // Wait forever once the FD has been sent. This prevents the loop from continuing
                             // and attempting to recreate the listener.
-                            // This is fine, since the TcpCodecListener has no more work to do once it has handed off its listener.
+                            // This is fine, since the SourceTask has no more work to do once it has handed off its listener.
                             // Unfortunately, simply returning from `run` would not work as that would cause shotover to shutdown since there are no more sources running.
                             futures::future::pending().await
                         }
@@ -440,7 +440,7 @@ pub struct Handler<C: CodecBuilder> {
     /// Listen for shutdown notifications.
     ///
     /// A wrapper around the `watch::Receiver` paired with the sender in
-    /// `TcpCodecListener`. The connection handler processes requests from the
+    /// `SourceTask`. The connection handler processes requests from the
     /// connection until the peer disconnects **or** a shutdown notification is
     /// received from `shutdown`. In the latter case, any in-flight work being
     /// processed for the peer is continued until it reaches a safe state, at

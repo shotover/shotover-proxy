@@ -87,13 +87,13 @@ impl Topology {
 mod topology_tests {
     use crate::config::chain::TransformChainConfig;
     use crate::config::topology::Topology;
-    use crate::sources::cassandra::CassandraConfig;
+    use crate::sources::cassandra::CassandraSourceConfig;
     use crate::transforms::TransformConfig;
     use crate::transforms::coalesce::CoalesceConfig;
     use crate::transforms::debug::printer::DebugPrinterConfig;
     use crate::transforms::null::NullSinkConfig;
     use crate::{
-        sources::{Source, SourceConfig, valkey::ValkeyConfig},
+        sources::{Source, SourceConfig, valkey::ValkeySourceConfig},
         transforms::{
             parallel_map::ParallelMapConfig, valkey::cache::ValkeyConfig as ValkeyCacheConfig,
         },
@@ -103,7 +103,7 @@ mod topology_tests {
     use tokio::sync::watch;
 
     fn create_source_from_chain_valkey(chain: Vec<Box<dyn TransformConfig>>) -> Vec<SourceConfig> {
-        vec![SourceConfig::Valkey(ValkeyConfig {
+        vec![SourceConfig::Valkey(ValkeySourceConfig {
             name: "foo".to_string(),
             listen_addr: "127.0.0.1:0".to_string(),
             connection_limit: None,
@@ -117,7 +117,7 @@ mod topology_tests {
     fn create_source_from_chain_cassandra(
         chain: Vec<Box<dyn TransformConfig>>,
     ) -> Vec<SourceConfig> {
-        vec![SourceConfig::Cassandra(CassandraConfig {
+        vec![SourceConfig::Cassandra(CassandraSourceConfig {
             name: "foo".to_string(),
             listen_addr: "127.0.0.1:0".to_string(),
             connection_limit: None,

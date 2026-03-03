@@ -1,7 +1,7 @@
 use crate::codec::{CodecBuilder, Direction, opensearch::OpenSearchCodecBuilder};
 use crate::config::chain::TransformChainConfig;
 use crate::hot_reload::protocol::GradualShutdownRequest;
-use crate::server::TcpCodecListener;
+use crate::source_task::SourceTask;
 use crate::sources::{Source, Transport};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
@@ -13,7 +13,7 @@ use tokio::sync::{Semaphore, watch};
 use tracing::{error, info};
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct OpenSearchConfig {
+pub struct OpenSearchSourceConfig {
     pub name: String,
     pub listen_addr: String,
     pub connection_limit: Option<usize>,
@@ -22,7 +22,7 @@ pub struct OpenSearchConfig {
     pub chain: TransformChainConfig,
 }
 
-impl OpenSearchConfig {
+impl OpenSearchSourceConfig {
     pub async fn build(
         &self,
         mut trigger_shutdown_rx: watch::Receiver<bool>,
@@ -34,7 +34,7 @@ impl OpenSearchConfig {
         let (gradual_shutdown_tx, mut gradual_shutdown_rx) =
             tokio::sync::mpsc::unbounded_channel::<GradualShutdownRequest>();
 
-        let mut listener = TcpCodecListener::new(
+        let mut listener = SourceTask::new(
             &self.chain,
             self.name.clone(),
             self.listen_addr.clone(),

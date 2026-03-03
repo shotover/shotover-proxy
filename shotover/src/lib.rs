@@ -70,7 +70,7 @@ mod http;
 pub mod message;
 mod observability;
 pub mod runner;
-mod server;
+mod source_task;
 pub mod sources;
 pub mod tcp;
 pub mod tls;
