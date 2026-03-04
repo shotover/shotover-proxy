@@ -39,11 +39,6 @@ Cassandra:
   # The transport that cassandra communication will occur over.
   # TCP is the only Cassandra protocol conforming transport.
   transport: Tcp
-  
-  # alternatively:
-  #
-  # Use the Cassandra protocol over WebSockets using a Shotover compatible driver.
-  # transport: WebSocket
 
   chain:
     Transform1
