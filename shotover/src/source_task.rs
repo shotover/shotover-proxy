@@ -1,7 +1,9 @@
 use crate::codec::{CodecBuilder, CodecReadError, CodecWriteError};
 use crate::config::chain::TransformChainConfig;
 use crate::frame::MessageType;
-use crate::hot_reload::protocol::{HotReloadListenerRequest, HotReloadListenerResponse};
+use crate::hot_reload::protocol::{
+    GradualShutdownRequest, HotReloadListenerRequest, HotReloadListenerResponse,
+};
 use crate::message::{Message, MessageIdMap, Messages, Metadata};
 use crate::sources::Transport;
 use crate::tls::{AcceptError, TlsAcceptor};
@@ -55,7 +57,7 @@ impl TrackedConnection {
     }
 }
 
-pub struct SourceTask<C: CodecBuilder> {
+pub(crate) struct SourceTask<C: CodecBuilder> {
     chain_builder: TransformChainBuilder,
     source_name: String,
 
@@ -111,7 +113,9 @@ impl<C: CodecBuilder + 'static> SourceTask<C> {
         transport: Transport,
         hot_reload_rx: tokio::sync::mpsc::UnboundedReceiver<HotReloadListenerRequest>,
         hot_reload_listeners: &mut HashMap<u16, TcpListener>,
-    ) -> Result<Self, Vec<String>> {
+        mut trigger_shutdown_rx: watch::Receiver<bool>,
+        mut gradual_shutdown_rx: tokio::sync::mpsc::UnboundedReceiver<GradualShutdownRequest>,
+    ) -> Result<JoinHandle<()>, Vec<String>> {
         let available_connections_gauge =
             gauge!("shotover_available_connections_count", "source" => source_name.clone());
         let connections_opened = counter!("connections_opened", "source" => source_name.clone());
@@ -165,7 +169,7 @@ impl<C: CodecBuilder + 'static> SourceTask<C> {
             return Err(errors);
         }
 
-        Ok(SourceTask {
+        let mut listener = SourceTask {
             chain_builder,
             source_name,
             listener,
@@ -182,7 +186,27 @@ impl<C: CodecBuilder + 'static> SourceTask<C> {
             transport,
             hot_reload_rx,
             port,
-        })
+        };
+
+        let join_handle = tokio::spawn(async move {
+            if !*trigger_shutdown_rx.borrow() {
+                tokio::select! {
+                    res = listener.run() => {
+                        if let Err(err) = res {
+                            error!(cause = %err, "failed to accept");
+                        }
+                    }
+                    _ = trigger_shutdown_rx.changed() => {
+                        listener.shutdown().await;
+                    }
+                    Some(request) = gradual_shutdown_rx.recv() => {
+                        listener.gradual_shutdown(request.duration).await;
+                    }
+                }
+            }
+        });
+
+        Ok(join_handle)
     }
 
     /// Run the server

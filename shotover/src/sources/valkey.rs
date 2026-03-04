@@ -12,7 +12,7 @@ use std::time::Duration;
 
 use tokio::net::TcpListener;
 use tokio::sync::{Semaphore, watch};
-use tracing::{error, info};
+use tracing::info;
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
@@ -29,16 +29,16 @@ pub struct ValkeySourceConfig {
 impl ValkeySourceConfig {
     pub async fn build(
         &self,
-        mut trigger_shutdown_rx: watch::Receiver<bool>,
+        trigger_shutdown_rx: watch::Receiver<bool>,
         hot_reload_listeners: &mut HashMap<u16, TcpListener>,
     ) -> Result<Source, Vec<String>> {
         info!("Starting Valkey source on [{}]", self.listen_addr);
 
         let (hot_reload_tx, hot_reload_rx) = tokio::sync::mpsc::unbounded_channel();
-        let (gradual_shutdown_tx, mut gradual_shutdown_rx) =
+        let (gradual_shutdown_tx, gradual_shutdown_rx) =
             tokio::sync::mpsc::unbounded_channel::<GradualShutdownRequest>();
 
-        let mut listener = SourceTask::new(
+        let join_handle = SourceTask::new(
             &self.chain,
             self.name.clone(),
             self.listen_addr.clone(),
@@ -50,27 +50,10 @@ impl ValkeySourceConfig {
             Transport::Tcp,
             hot_reload_rx,
             hot_reload_listeners,
+            trigger_shutdown_rx,
+            gradual_shutdown_rx,
         )
         .await?;
-
-        let join_handle = tokio::spawn(async move {
-            // Check we didn't receive a shutdown signal before the receiver was created
-            if !*trigger_shutdown_rx.borrow() {
-                tokio::select! {
-                    res = listener.run() => {
-                        if let Err(err) = res {
-                            error!(cause = %err, "failed to accept connection");
-                        }
-                    }
-                    _ = trigger_shutdown_rx.changed() => {
-                        listener.shutdown().await;
-                    }
-                    Some(request) = gradual_shutdown_rx.recv() => {
-                        listener.gradual_shutdown(request.duration).await;
-                    }
-                }
-            }
-        });
 
         Ok(Source::new(
             join_handle,
