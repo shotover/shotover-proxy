@@ -142,11 +142,11 @@ impl KafkaProducerCpp {
             .unwrap();
 
         if let Some(offset) = expected_offset {
-            assert_eq!(delivery_status.1, offset, "Unexpected offset");
+            assert_eq!(delivery_status.offset, offset, "Unexpected offset");
         }
 
         ProduceResult {
-            partition: delivery_status.0,
+            partition: delivery_status.partition,
         }
     }
 

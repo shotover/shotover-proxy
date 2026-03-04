@@ -5,7 +5,7 @@ use kafka_protocol::messages::BrokerId;
 use kafka_protocol::protocol::StrBytes;
 use metrics::{Gauge, gauge};
 use rand::rngs::StdRng;
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
