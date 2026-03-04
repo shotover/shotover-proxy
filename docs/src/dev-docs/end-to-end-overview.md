@@ -467,7 +467,7 @@ block-beta
 
 ## Transform chain begins again
 
-`ValkeySource` is [notified of force_run_chain](https://github.com/shotover/shotover-proxy/blob/de0d1a3fafb92cf1875dd9ca79b277faf3cb3e77/shotover/src/source_task.rs#L697).
+`ValkeySource` is notified of force_run_chain.
 It calls the transform chain which calls the first transform, which calls the second transform, which calls ValkeySinkCluster.
 The transform chain was called with 0 requests, which is what happens when a `force_run_chain` occurs when there are no pending requests.
 In this case the transforms just iterate over the 0 requests in `ChainState`, resulting in nothing occurring.
