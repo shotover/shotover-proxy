@@ -37,7 +37,7 @@ impl KafkaSourceConfig {
         let (gradual_shutdown_tx, gradual_shutdown_rx) =
             tokio::sync::mpsc::unbounded_channel::<GradualShutdownRequest>();
 
-        let join_handle = SourceTask::new(
+        let join_handle = SourceTask::start(
             &self.chain,
             self.name.clone(),
             self.listen_addr.clone(),

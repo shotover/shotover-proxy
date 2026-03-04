@@ -101,7 +101,7 @@ pub(crate) struct SourceTask<C: CodecBuilder> {
 
 impl<C: CodecBuilder + 'static> SourceTask<C> {
     #![allow(clippy::too_many_arguments)]
-    pub async fn new(
+    pub async fn start(
         chain_config: &TransformChainConfig,
         source_name: String,
         listen_addr: String,
