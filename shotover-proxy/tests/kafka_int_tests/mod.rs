@@ -857,7 +857,7 @@ async fn cluster_sasl_scram_over_mtls_nodejs_and_python() {
             Duration::from_secs(10),
             shotover.shutdown_and_then_consume_events(&[EventMatcher::new()
                 .with_level(Level::Error)
-                .with_target("shotover::server")
+                .with_target("shotover::source_task")
                 .with_message_regex(concat!(
                     r"connection was unexpectedly terminated\s+",
                     r"Caused by:\s+",

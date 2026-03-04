@@ -167,7 +167,7 @@ Caused by:
     shotover
         .shutdown_and_then_consume_events(&[EventMatcher::new()
             .with_level(Level::Error)
-            .with_target("shotover::server")
+            .with_target("shotover::source_task")
             .with_message(&format!(
                 r#"connection was unexpectedly terminated
 

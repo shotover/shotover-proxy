@@ -60,18 +60,18 @@ The second and third arguments are also strings of length 3: `$3\nfoo` and `$3\n
 
 ## Shotover accepts a new connection
 
-When [ValkeySource](https://github.com/shotover/shotover-proxy/blob/de0d1a3fafb92cf1875dd9ca79b277faf3cb3e77/shotover/src/sources/valkey.rs#L54) is created during shotover startup, it creates a `SourceTask` and then calls [SourceTask::run](https://github.com/shotover/shotover-proxy/blob/de0d1a3fafb92cf1875dd9ca79b277faf3cb3e77/shotover/src/server.rs#L160) which listens in a background task for incoming TCP connections on the sources configured port.
+When `ValkeySourceConfig::build` is called during shotover startup, it creates a `SourceTask` which listens in a background task for incoming TCP connections on the sources configured port.
 `SourceTask` accepts a new connection from the Valkey client and constructs and runs a `Handler` type, which manages the connection.
 The Handler type creates:
 
 * read/write tasks around the TCP connection.
-  * A `ValkeyEncoder` and `ValkeyDecoder` pair is created from [ValkeyCodecBuilder](https://github.com/shotover/shotover-proxy/blob/de0d1a3fafb92cf1875dd9ca79b277faf3cb3e77/shotover/src/server.rs#L449).
-  * The `ValkeyEncoder` is given to the [write task](https://github.com/shotover/shotover-proxy/blob/de0d1a3fafb92cf1875dd9ca79b277faf3cb3e77/shotover/src/server.rs#L517)
-  * The `ValkeyDecoder` is given to the [read task](https://github.com/shotover/shotover-proxy/blob/de0d1a3fafb92cf1875dd9ca79b277faf3cb3e77/shotover/src/server.rs#L467)
-* a new [transform chain](https://github.com/shotover/shotover-proxy/blob/de0d1a3fafb92cf1875dd9ca79b277faf3cb3e77/shotover/src/server.rs#L208) instance to handle the requests coming in from this connection.
+  * A `ValkeyEncoder` and `ValkeyDecoder` pair is created from `ValkeyCodecBuilder`.
+  * The `ValkeyEncoder` is given to the write task
+  * The `ValkeyDecoder` is given to the read task
+* a new transform chain instance to handle the requests coming in from this connection.
   * This transform chain instance handles a single connection passing from the client to Valkey and isolates it from other connections.
 
-The handler type then [continues to run](https://github.com/shotover/shotover-proxy/blob/de0d1a3fafb92cf1875dd9ca79b277faf3cb3e77/shotover/src/server.rs#L677), routing requests and responses between the transform chain and the client connection read/write tasks.
+The handler type then continues to run, routing requests and responses between the transform chain and the client connection read/write tasks.
 
 Finally, at this point our callstack will look something like this.
 Each section of this document will include such a diagram, showing a high level representation of the call stack during the section.
@@ -160,11 +160,11 @@ block-beta
 
 The `Message` then goes through a few steps before it actually reaches a transform.
 
-1. The [read task created by the Handler](https://github.com/shotover/shotover-proxy/blob/de0d1a3fafb92cf1875dd9ca79b277faf3cb3e77/shotover/src/server.rs#L468)
+1. The read task created by the Handler
    1. The message is read from the `FramedRead`
    2. The message is sent through a [tokio channel](https://docs.rs/tokio/latest/tokio/sync/mpsc/struct.UnboundedSender.html)
    * This logic is specifically run in a separate task to enable decoding of incoming requests to run in parallel of any messages currently being process by transforms (calling tokio async code will execute on the same core unless a task is used)
-2. The [Handler::run_loop](https://github.com/shotover/shotover-proxy/blob/de0d1a3fafb92cf1875dd9ca79b277faf3cb3e77/shotover/src/server.rs#L677) method loops for the lifetime of the incoming connection and:
+2. The `Handler::run_loop` method loops for the lifetime of the incoming connection and:
    1. Listens for requests from the read task over the channel
    2. If there are any requests, all pending requests are collected into a batch (`Vec<Message>`) In our case the client is sending requests serially, waiting for responses each time. So this batch will contain only a single request.
    3. Creates a [ChainState](https://github.com/shotover/shotover-proxy/blob/4eed01edf42e7a9adca7016854dcbb6f08a25f68/shotover/src/transforms/mod.rs#L149). `ChainState` contains all the chain level state accessed by transforms. This includes things like the batch of requests, the IP address and port the client connected to, a flag to allow transforms to force close the connection.
@@ -391,8 +391,8 @@ Since the request has been sent on the TCP socket, the `ValkeySinkCluster` trans
 In turn the other 2 transforms also return as they have completed.
 Finally we get back to the `ValkeySource` which waits for either:
 
-* A [new request](https://github.com/shotover/shotover-proxy/blob/de0d1a3fafb92cf1875dd9ca79b277faf3cb3e77/shotover/src/server.rs#L707) to come in from the client.
-* A [new response](https://github.com/shotover/shotover-proxy/blob/de0d1a3fafb92cf1875dd9ca79b277faf3cb3e77/shotover/src/server.rs#L697) to come in from Valkey.
+* A new request to come in from the client.
+* A new response to come in from Valkey.
 
 Asynchronously waiting for one of multiple events is achieved via a [tokio select macro](https://tokio.rs/tokio/tutorial/select).
 
@@ -467,7 +467,7 @@ block-beta
 
 ## Transform chain begins again
 
-`ValkeySource` is [notified of force_run_chain](https://github.com/shotover/shotover-proxy/blob/de0d1a3fafb92cf1875dd9ca79b277faf3cb3e77/shotover/src/server.rs#L697).
+`ValkeySource` is [notified of force_run_chain](https://github.com/shotover/shotover-proxy/blob/de0d1a3fafb92cf1875dd9ca79b277faf3cb3e77/shotover/src/source_task.rs#L697).
 It calls the transform chain which calls the first transform, which calls the second transform, which calls ValkeySinkCluster.
 The transform chain was called with 0 requests, which is what happens when a `force_run_chain` occurs when there are no pending requests.
 In this case the transforms just iterate over the 0 requests in `ChainState`, resulting in nothing occurring.
