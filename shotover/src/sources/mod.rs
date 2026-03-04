@@ -30,7 +30,7 @@ pub mod valkey;
 #[serde(deny_unknown_fields)]
 pub enum Transport {
     Tcp,
-    WebSocket,
+    // Previously this supported websockets as well, the transport option is kept around in case we want to reintroduce websockets or some other transport
 }
 
 #[derive(Debug)]

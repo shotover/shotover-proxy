@@ -41,8 +41,5 @@ rustls = { version = "0.23.18", default-features = false, features = [
 ] }
 rustls-pki-types = "1.0.1"
 rustls-pemfile = "2.0.0"
-tokio-tungstenite = { version = "0.27.0", features = [
-    "rustls-tls-native-roots",
-] }
 pretty_assertions.workspace = true
 serde.workspace = true

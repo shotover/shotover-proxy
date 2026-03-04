@@ -1,5 +1,4 @@
 pub mod connection;
-pub mod cql_ws;
 pub mod go;
 pub mod result_value;
 
@@ -7,7 +6,6 @@ pub use connection::{
     CassandraConnection, CassandraConnectionBuilder, CassandraDriver, Compression, Consistency,
     ProtocolVersion,
 };
-pub use cql_ws::CqlWsSession;
 use pretty_assertions::assert_eq;
 pub use result_value::ResultValue;
 
