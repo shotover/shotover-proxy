@@ -5,7 +5,7 @@ use fred::clients::Client;
 use fred::interfaces::ClientLike;
 use pretty_assertions::assert_eq;
 use rand::distr::Alphanumeric;
-use rand::{Rng, rng};
+use rand::{RngExt, rng};
 use redis::aio::MultiplexedConnection;
 use redis::cluster::ClusterConnection;
 use redis::{AsyncCommands, Commands, ErrorKind, RedisError, Value};

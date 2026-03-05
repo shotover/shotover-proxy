@@ -10,7 +10,6 @@ use crate::tls::{AcceptError, TlsAcceptor};
 use crate::transforms::chain::{TransformChain, TransformChainBuilder};
 use crate::transforms::{ChainState, TransformContextBuilder, TransformContextConfig};
 use anyhow::{Result, anyhow};
-use bytes::BytesMut;
 use futures::future::join_all;
 use futures::{SinkExt, StreamExt};
 use metrics::{Counter, Gauge, counter, gauge};
@@ -25,11 +24,7 @@ use tokio::sync::{Notify, OwnedSemaphorePermit, Semaphore, mpsc, watch};
 use tokio::task::JoinHandle;
 use tokio::time;
 use tokio::time::Duration;
-use tokio_tungstenite::tungstenite::{
-    handshake::server::{Request, Response},
-    protocol::Message as WsMessage,
-};
-use tokio_util::codec::{Decoder, Encoder, FramedRead, FramedWrite};
+use tokio_util::codec::{FramedRead, FramedWrite};
 use tracing::{Instrument, info, trace};
 use tracing::{debug, error, warn};
 
@@ -475,136 +470,6 @@ pub struct Handler<C: CodecBuilder> {
     _permit: OwnedSemaphorePermit,
 }
 
-async fn spawn_websocket_read_write_tasks<
-    S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
-    C: CodecBuilder + 'static,
->(
-    codec: C,
-    stream: S,
-    in_tx: mpsc::Sender<Messages>,
-    mut out_rx: UnboundedReceiver<Messages>,
-    out_tx: UnboundedSender<Messages>,
-    websocket_subprotocol: &str,
-) {
-    let callback = |_request: &Request, mut response: Response| {
-        let response_headers = response.headers_mut();
-
-        response_headers.append(
-            "Sec-WebSocket-Protocol",
-            websocket_subprotocol.parse().unwrap(),
-        );
-
-        Ok(response)
-    };
-
-    let ws_stream = tokio_tungstenite::accept_hdr_async(stream, callback)
-        .await
-        .expect("Error during the websocket handshake occurred");
-
-    let (mut writer, mut reader) = ws_stream.split();
-    let (mut decoder, mut encoder) = codec.build();
-
-    // read task
-    tokio::spawn(async move {
-        loop {
-            tokio::select! {
-                result = reader.next() => {
-                    if let Some(ws_message) = result {
-                        match ws_message {
-                            Ok(WsMessage::Binary(ws_message_data)) => {
-                                // Entire message is reallocated and copied here due to 
-                                // incompatibility between tokio codecs and tungstenite.
-                                let message = decoder.decode(&mut BytesMut::from(ws_message_data.as_ref()));
-                                match message {
-                                    Ok(Some(message)) => {
-                                        if in_tx.send(message).await.is_err() {
-                                            // main task has shutdown, this task is no longer needed
-                                            return;
-                                        }
-                                    }
-                                    Ok(None) => {
-                                        // websocket client has closed the connection
-                                        return;
-                                    }
-                                    Err(CodecReadError::RespondAndThenCloseConnection(messages)) => {
-                                        if let Err(err) = out_tx.send(messages) {
-                                            // TODO we need to send a close message to the client
-                                            error!("Failed to send RespondAndThenCloseConnection message: {err}");
-                                        }
-                                        return;
-                                    }
-                                    Err(CodecReadError::Parser(err)) => {
-                                        // TODO we need to send a close message to the client, protocol error
-                                        warn!("failed to decode message: {err:?}");
-                                        return;
-                                    }
-                                    Err(CodecReadError::Io(_err)) => {
-                                        unreachable!("CodecReadError::Io should not occur because we are reading from a newly created BytesMut")
-                                    }
-                                }
-                            }
-                            Ok(_ws_message) => {
-                                // TODO we need to tell the client about a protocol error
-                                todo!();
-                            }
-                            Err(err) => {
-                                // TODO
-                                error!("{err}");
-                                return;
-                            }
-                        }
-                    } else {
-                        return;
-                    }
-                }
-                _ = in_tx.closed() => {
-                    // main task has shutdown, this task is no longer needed
-                    return;
-                }
-            }
-        }
-    }
-    .in_current_span(),
-    );
-
-    // write task
-    tokio::spawn(
-        async move {
-            loop {
-                if let Some(message) = out_rx.recv().await {
-                    let mut bytes = BytesMut::new();
-                    match encoder.encode(message, &mut bytes) {
-                        Err(err) => {
-                            error!("failed to encode message destined for client: {err:?}");
-                            return;
-                        }
-                        Ok(_) => {
-                            let message = WsMessage::binary(bytes);
-                            match writer.send(message).await {
-                                Ok(_) => {}
-                                Err(err) => {
-                                    // TODO
-                                    error!("{err}");
-                                    return;
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    match writer.send(WsMessage::Close(None)).await {
-                        Ok(_) => {}
-                        Err(err) => {
-                            panic!("{err}"); // TODO
-                        }
-                    }
-                    return;
-                }
-            }
-        }
-        .in_current_span(),
-    );
-}
-
 pub fn spawn_read_write_tasks<
     C: CodecBuilder + 'static,
     R: AsyncRead + Unpin + Send + 'static,
@@ -727,7 +592,8 @@ impl<C: CodecBuilder + 'static> Handler<C> {
     pub async fn run(
         mut self,
         stream: TcpStream,
-        transport: Transport,
+        // previously used for websocket support, may be used again in the future.
+        _transport: Transport,
         force_run_chain: Arc<Notify>,
         client_details: String,
     ) -> Result<()> {
@@ -742,67 +608,17 @@ impl<C: CodecBuilder + 'static> Handler<C> {
 
         let local_addr = stream.local_addr()?;
 
-        let codec_builder = self.codec.clone();
-
-        match transport {
-            Transport::WebSocket => {
-                let websocket_subprotocol = codec_builder.protocol().websocket_subprotocol();
-
-                if let Some(tls) = &self.tls {
-                    let tls_stream = match tls.accept(stream).await {
-                        Ok(x) => x,
-                        Err(AcceptError::Disconnected) => return Ok(()),
-                        Err(AcceptError::Failure(err)) => return Err(err),
-                    };
-                    spawn_websocket_read_write_tasks(
-                        codec_builder,
-                        tls_stream,
-                        in_tx,
-                        out_rx,
-                        out_tx.clone(),
-                        websocket_subprotocol,
-                    )
-                    .await;
-                } else {
-                    spawn_websocket_read_write_tasks(
-                        codec_builder,
-                        stream,
-                        in_tx,
-                        out_rx,
-                        out_tx.clone(),
-                        websocket_subprotocol,
-                    )
-                    .await;
-                };
-            }
-            Transport::Tcp => {
-                if let Some(tls) = &self.tls {
-                    let tls_stream = match tls.accept(stream).await {
-                        Ok(x) => x,
-                        Err(AcceptError::Disconnected) => return Ok(()),
-                        Err(AcceptError::Failure(err)) => return Err(err),
-                    };
-                    let (rx, tx) = tokio::io::split(tls_stream);
-                    spawn_read_write_tasks(
-                        self.codec.clone(),
-                        rx,
-                        tx,
-                        in_tx,
-                        out_rx,
-                        out_tx.clone(),
-                    );
-                } else {
-                    let (rx, tx) = stream.into_split();
-                    spawn_read_write_tasks(
-                        self.codec.clone(),
-                        rx,
-                        tx,
-                        in_tx,
-                        out_rx,
-                        out_tx.clone(),
-                    );
-                };
-            }
+        if let Some(tls) = &self.tls {
+            let tls_stream = match tls.accept(stream).await {
+                Ok(x) => x,
+                Err(AcceptError::Disconnected) => return Ok(()),
+                Err(AcceptError::Failure(err)) => return Err(err),
+            };
+            let (rx, tx) = tokio::io::split(tls_stream);
+            spawn_read_write_tasks(self.codec.clone(), rx, tx, in_tx, out_rx, out_tx.clone());
+        } else {
+            let (rx, tx) = stream.into_split();
+            spawn_read_write_tasks(self.codec.clone(), rx, tx, in_tx, out_rx, out_tx.clone());
         };
 
         let result = self

@@ -1,10 +1,8 @@
 use crate::{CONNECTION_REFUSED_OS_ERROR, shotover_process};
 use cassandra_protocol::frame::message_error::{ErrorBody, ErrorType};
-use cassandra_protocol::types::cassandra_type::CassandraType;
 use cdrs_tokio::frame::events::{
     SchemaChange, SchemaChangeOptions, SchemaChangeTarget, SchemaChangeType, ServerEvent,
 };
-use fred::rustls::crypto::aws_lc_rs::default_provider;
 use futures::Future;
 use futures::future::join_all;
 use pretty_assertions::assert_eq;
@@ -23,8 +21,7 @@ use test_helpers::connection::cassandra::Compression;
 use test_helpers::connection::cassandra::ProtocolVersion;
 use test_helpers::connection::cassandra::{
     CassandraConnection, CassandraConnectionBuilder, CassandraDriver, CassandraDriver::Cdrs,
-    CassandraDriver::Java, CassandraDriver::Scylla, CqlWsSession, ResultValue, assert_query_result,
-    run_query,
+    CassandraDriver::Java, CassandraDriver::Scylla, ResultValue, assert_query_result, run_query,
 };
 use test_helpers::connection::valkey_connection::ValkeyConnectionCreator;
 use test_helpers::docker_compose::docker_compose;
@@ -1070,63 +1067,6 @@ async fn test_protocol_v5_compression_encode(#[case] driver: CassandraDriver) {
 
         shotover.shutdown_and_then_consume_events(&[]).await;
     }
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn passthrough_websockets() {
-    let _docker_compose =
-        docker_compose("tests/test-configs/cassandra/passthrough-websocket/docker-compose.yaml");
-
-    let shotover =
-        shotover_process("tests/test-configs/cassandra/passthrough-websocket/topology.yaml")
-            .start()
-            .await;
-
-    let mut session = CqlWsSession::new("ws://0.0.0.0:9042").await;
-    let rows = session.query("SELECT bootstrapped FROM system.local").await;
-    assert_eq!(rows, vec![vec![CassandraType::Varchar("COMPLETED".into())]]);
-
-    shotover.shutdown_and_then_consume_events(&[]).await;
-}
-
-#[cfg(feature = "alpha-transforms")]
-#[tokio::test(flavor = "multi_thread")]
-async fn encode_websockets() {
-    let _docker_compose =
-        docker_compose("tests/test-configs/cassandra/passthrough-websocket/docker-compose.yaml");
-
-    let shotover =
-        shotover_process("tests/test-configs/cassandra/passthrough-websocket/topology-encode.yaml")
-            .start()
-            .await;
-
-    let mut session = CqlWsSession::new("ws://0.0.0.0:9042").await;
-    let rows = session.query("SELECT bootstrapped FROM system.local").await;
-    assert_eq!(rows, vec![vec![CassandraType::Varchar("COMPLETED".into())]]);
-
-    shotover.shutdown_and_then_consume_events(&[]).await;
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn passthrough_tls_websockets() {
-    test_helpers::cert::generate_cassandra_test_certs();
-    let _docker_compose = docker_compose(
-        "tests/test-configs/cassandra/passthrough-websocket-tls/docker-compose.yaml",
-    );
-
-    let shotover =
-        shotover_process("tests/test-configs/cassandra/passthrough-websocket-tls/topology.yaml")
-            .start()
-            .await;
-
-    let ca_cert = "tests/test-configs/cassandra/tls/certs/localhost_CA.crt";
-
-    default_provider().install_default().ok();
-    let mut session = CqlWsSession::new_tls("wss://0.0.0.0:9042", ca_cert).await;
-    let rows = session.query("SELECT bootstrapped FROM system.local").await;
-    assert_eq!(rows, vec![vec![CassandraType::Varchar("COMPLETED".into())]]);
-
-    shotover.shutdown_and_then_consume_events(&[]).await;
 }
 
 #[apply(all_cassandra_drivers)]

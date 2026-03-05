@@ -113,7 +113,7 @@ pub enum Operation {
 }
 
 impl Operation {
-    async fn prepare(&self, session: &Arc<CassandraSession>, db: &CassandraDb) {
+    async fn prepare(&self, session: &CassandraSession, db: &CassandraDb) {
         if let CassandraDb::Cassandra = db {
             session.query("CREATE KEYSPACE IF NOT EXISTS ks WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 }").await;
             session.await_schema_agreement().await;
@@ -147,7 +147,7 @@ impl Operation {
 
     async fn run(
         &self,
-        session: &Arc<CassandraSession>,
+        session: &CassandraSession,
         reporter: UnboundedSender<Report>,
         parameters: BenchParameters,
     ) {
@@ -229,13 +229,16 @@ pub enum CassandraDriver {
     CdrsTokio,
 }
 
+#[derive(Clone)]
 pub enum CassandraSession {
-    Scylla(ScyllaSession),
+    Scylla(Arc<ScyllaSession>),
     CdrsTokio(
-        CdrsTokioSession<
-            TransportTcp,
-            TcpConnectionManager,
-            RoundRobinLoadBalancingStrategy<TransportTcp, TcpConnectionManager>,
+        Arc<
+            CdrsTokioSession<
+                TransportTcp,
+                TcpConnectionManager,
+                RoundRobinLoadBalancingStrategy<TransportTcp, TcpConnectionManager>,
+            >,
         >,
     ),
 }
@@ -691,7 +694,7 @@ impl Bench for CassandraBench {
         let address = resources;
 
         let session = match (self.protocol, self.driver) {
-            (CassandraProtocol::V4, CassandraDriver::Scylla) => Arc::new(CassandraSession::Scylla(
+            (CassandraProtocol::V4, CassandraDriver::Scylla) => CassandraSession::Scylla(Arc::new(
                 ScyllaSessionBuilder::new()
                     .known_nodes([address])
                     .user("cassandra", "cassandra")
@@ -723,7 +726,7 @@ impl Bench for CassandraBench {
                     .build()
                     .await
                     .unwrap();
-                Arc::new(CassandraSession::CdrsTokio(
+                CassandraSession::CdrsTokio(Arc::new(
                     TcpSessionBuilder::new(RoundRobinLoadBalancingStrategy::new(), cluster_config)
                         .with_compression(match self.compression {
                             Compression::None => CdrsCompression::None,
@@ -823,7 +826,7 @@ struct AwsNodeInfo {
 
 #[derive(Clone)]
 struct BenchTaskCassandra {
-    session: Arc<CassandraSession>,
+    session: CassandraSession,
     query: PreparedStatement,
     operation: Operation,
 }
