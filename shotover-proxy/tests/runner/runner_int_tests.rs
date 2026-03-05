@@ -17,14 +17,13 @@ async fn test_request_id_increments() {
     let mut previous_id = 0;
     for event in events.events {
         for span in event.spans {
-            if let Some(name) = span.get("name") {
-                if *name == Value::String("connection".into()) {
-                    if let Some(id) = span.get("id").and_then(|x| x.as_i64()) {
-                        // ensure that the ID increases by 1 and monotonically
-                        assert!(previous_id == id || previous_id + 1 == id);
-                        previous_id = id;
-                    }
-                }
+            if let Some(name) = span.get("name")
+                && *name == Value::String("connection".into())
+                && let Some(id) = span.get("id").and_then(|x| x.as_i64())
+            {
+                // ensure that the ID increases by 1 and monotonically
+                assert!(previous_id == id || previous_id + 1 == id);
+                previous_id = id;
             }
         }
     }

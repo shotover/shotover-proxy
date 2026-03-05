@@ -1017,11 +1017,11 @@ async fn is_cluster_replicas_ready(
             return false;
         }
     };
-    if let Value::Array(data) = res {
-        if let Some(Value::BulkString(data)) = data.first() {
-            tracing::debug!("CLUSTER REPLICAS returned [], retrying");
-            return !data.is_empty();
-        }
+    if let Value::Array(data) = res
+        && let Some(Value::BulkString(data)) = data.first()
+    {
+        tracing::debug!("CLUSTER REPLICAS returned [], retrying");
+        return !data.is_empty();
     }
     false
 }

@@ -173,10 +173,10 @@ impl UnixSocketServer {
 
 impl Drop for UnixSocketServer {
     fn drop(&mut self) {
-        if Path::new(&self.socket_path).exists() {
-            if let Err(e) = std::fs::remove_file(&self.socket_path) {
-                warn!("Failed to remove socket file {}: {:?}", self.socket_path, e);
-            }
+        if Path::new(&self.socket_path).exists()
+            && let Err(e) = std::fs::remove_file(&self.socket_path)
+        {
+            warn!("Failed to remove socket file {}: {:?}", self.socket_path, e);
         }
     }
 }
