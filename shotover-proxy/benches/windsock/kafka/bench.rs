@@ -110,15 +110,17 @@ impl KafkaBench {
                 tls: None,
             }),
         });
-        common::generate_topology(SourceConfig::Kafka(shotover::sources::kafka::KafkaConfig {
-            name: "kafka".to_owned(),
-            listen_addr: host_address,
-            connection_limit: None,
-            hard_connection_limit: None,
-            tls: None,
-            timeout: None,
-            chain: TransformChainConfig(transforms),
-        }))
+        common::generate_topology(SourceConfig::Kafka(
+            shotover::sources::kafka::KafkaSourceConfig {
+                name: "kafka".to_owned(),
+                listen_addr: host_address,
+                connection_limit: None,
+                hard_connection_limit: None,
+                tls: None,
+                timeout: None,
+                chain: TransformChainConfig(transforms),
+            },
+        ))
     }
 
     async fn run_aws_kafka(&self, nodes: Vec<Arc<Ec2InstanceWithDocker>>) {

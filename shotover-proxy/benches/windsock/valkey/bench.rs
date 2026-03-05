@@ -131,7 +131,7 @@ impl ValkeyBench {
         }
 
         common::generate_topology(SourceConfig::Valkey(
-            shotover::sources::valkey::ValkeyConfig {
+            shotover::sources::valkey::ValkeySourceConfig {
                 name: "valkey".to_owned(),
                 listen_addr: host_address,
                 connection_limit: None,

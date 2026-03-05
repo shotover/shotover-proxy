@@ -1,7 +1,9 @@
 use crate::codec::{CodecBuilder, CodecReadError, CodecWriteError};
 use crate::config::chain::TransformChainConfig;
 use crate::frame::MessageType;
-use crate::hot_reload::protocol::{HotReloadListenerRequest, HotReloadListenerResponse};
+use crate::hot_reload::protocol::{
+    GradualShutdownRequest, HotReloadListenerRequest, HotReloadListenerResponse,
+};
 use crate::message::{Message, MessageIdMap, Messages, Metadata};
 use crate::sources::Transport;
 use crate::tls::{AcceptError, TlsAcceptor};
@@ -50,7 +52,7 @@ impl TrackedConnection {
     }
 }
 
-pub struct TcpCodecListener<C: CodecBuilder> {
+pub(crate) struct SourceTask<C: CodecBuilder> {
     chain_builder: TransformChainBuilder,
     source_name: String,
 
@@ -92,9 +94,9 @@ pub struct TcpCodecListener<C: CodecBuilder> {
     port: u16,
 }
 
-impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
+impl<C: CodecBuilder + 'static> SourceTask<C> {
     #![allow(clippy::too_many_arguments)]
-    pub async fn new(
+    pub async fn start(
         chain_config: &TransformChainConfig,
         source_name: String,
         listen_addr: String,
@@ -106,7 +108,9 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
         transport: Transport,
         hot_reload_rx: tokio::sync::mpsc::UnboundedReceiver<HotReloadListenerRequest>,
         hot_reload_listeners: &mut HashMap<u16, TcpListener>,
-    ) -> Result<Self, Vec<String>> {
+        mut trigger_shutdown_rx: watch::Receiver<bool>,
+        mut gradual_shutdown_rx: tokio::sync::mpsc::UnboundedReceiver<GradualShutdownRequest>,
+    ) -> Result<JoinHandle<()>, Vec<String>> {
         let available_connections_gauge =
             gauge!("shotover_available_connections_count", "source" => source_name.clone());
         let connections_opened = counter!("connections_opened", "source" => source_name.clone());
@@ -160,7 +164,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
             return Err(errors);
         }
 
-        Ok(TcpCodecListener {
+        let mut listener = SourceTask {
             chain_builder,
             source_name,
             listener,
@@ -177,7 +181,27 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
             transport,
             hot_reload_rx,
             port,
-        })
+        };
+
+        let join_handle = tokio::spawn(async move {
+            if !*trigger_shutdown_rx.borrow() {
+                tokio::select! {
+                    res = listener.run() => {
+                        if let Err(err) = res {
+                            error!(cause = %err, "failed to accept");
+                        }
+                    }
+                    _ = trigger_shutdown_rx.changed() => {
+                        listener.shutdown().await;
+                    }
+                    Some(request) = gradual_shutdown_rx.recv() => {
+                        listener.gradual_shutdown(request.duration).await;
+                    }
+                }
+            }
+        });
+
+        Ok(join_handle)
     }
 
     /// Run the server
@@ -275,7 +299,7 @@ impl<C: CodecBuilder + 'static> TcpCodecListener<C> {
                             self.handle_hot_reload_request(request).await;
                             // Wait forever once the FD has been sent. This prevents the loop from continuing
                             // and attempting to recreate the listener.
-                            // This is fine, since the TcpCodecListener has no more work to do once it has handed off its listener.
+                            // This is fine, since the SourceTask has no more work to do once it has handed off its listener.
                             // Unfortunately, simply returning from `run` would not work as that would cause shotover to shutdown since there are no more sources running.
                             futures::future::pending().await
                         }
@@ -435,7 +459,7 @@ pub struct Handler<C: CodecBuilder> {
     /// Listen for shutdown notifications.
     ///
     /// A wrapper around the `watch::Receiver` paired with the sender in
-    /// `TcpCodecListener`. The connection handler processes requests from the
+    /// `SourceTask`. The connection handler processes requests from the
     /// connection until the peer disconnects **or** a shutdown notification is
     /// received from `shutdown`. In the latter case, any in-flight work being
     /// processed for the peer is continued until it reaches a safe state, at
