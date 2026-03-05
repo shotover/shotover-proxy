@@ -8,11 +8,13 @@ description = "A tool for running cargo commands in an EC2 instance"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+anyhow.workspace = true
 tokio.workspace = true
 clap.workspace = true
 tracing-subscriber.workspace = true
 aws-throwaway.workspace = true
 tracing-appender.workspace = true
-shellfish = { version = "0.10.0", features = ["async"] }
+serde.workspace = true
+serde_json.workspace = true
 cargo_metadata = "0.23.0"
 shell-quote.workspace = true
