@@ -5,7 +5,7 @@ use pretty_assertions::assert_eq;
 use rstest::rstest;
 use std::time::Duration;
 use std::time::Instant;
-use test_cases::produce_consume_partitions1;
+use test_cases::produce_consume_partitions1_topic_already_exists;
 use test_cases::produce_consume_partitions3;
 use test_cases::{assert_topic_creation_is_denied_due_to_acl, setup_basic_user_acls};
 use test_helpers::connection::kafka::node::run_node_smoke_test_scram;
@@ -31,9 +31,12 @@ async fn passthrough_standard(#[case] driver: KafkaDriver) {
     let connection_builder = KafkaConnectionBuilder::new(driver, "127.0.0.1:9192");
     test_cases::standard_test_suite(&connection_builder).await;
 
+    let mut expected_events = vec![];
+    workaround_rdkafka_connection_reset_bug(driver, &mut expected_events);
+
     tokio::time::timeout(
         Duration::from_secs(10),
-        shotover.shutdown_and_then_consume_events(&[]),
+        shotover.shutdown_and_then_consume_events(&expected_events),
     )
     .await
     .expect("Shotover did not shutdown within 10s");
@@ -74,9 +77,12 @@ async fn passthrough_tls(#[case] driver: KafkaDriver) {
     let connection_builder = KafkaConnectionBuilder::new(driver, "127.0.0.1:9192");
     test_cases::standard_test_suite(&connection_builder).await;
 
+    let mut expected_events = vec![];
+    workaround_rdkafka_connection_reset_bug(driver, &mut expected_events);
+
     tokio::time::timeout(
         Duration::from_secs(10),
-        shotover.shutdown_and_then_consume_events(&[]),
+        shotover.shutdown_and_then_consume_events(&expected_events),
     )
     .await
     .expect("Shotover did not shutdown within 10s");
@@ -169,7 +175,15 @@ async fn passthrough_encode(#[case] driver: KafkaDriver) {
     let connection_builder = KafkaConnectionBuilder::new(driver, "127.0.0.1:9192");
     test_cases::standard_test_suite(&connection_builder).await;
 
-    shotover.shutdown_and_then_consume_events(&[]).await;
+    let mut expected_events = vec![];
+    workaround_rdkafka_connection_reset_bug(driver, &mut expected_events);
+
+    tokio::time::timeout(
+        Duration::from_secs(10),
+        shotover.shutdown_and_then_consume_events(&expected_events),
+    )
+    .await
+    .expect("Shotover did not shutdown within 10s");
 }
 
 #[cfg(feature = "alpha-transforms")]
@@ -189,7 +203,15 @@ async fn passthrough_sasl_plain(#[case] driver: KafkaDriver) {
         KafkaConnectionBuilder::new(driver, "127.0.0.1:9192").use_sasl_plain("user", "password");
     test_cases::standard_test_suite(&connection_builder).await;
 
-    shotover.shutdown_and_then_consume_events(&[]).await;
+    let mut expected_events = vec![];
+    workaround_rdkafka_connection_reset_bug(driver, &mut expected_events);
+
+    tokio::time::timeout(
+        Duration::from_secs(10),
+        shotover.shutdown_and_then_consume_events(&expected_events),
+    )
+    .await
+    .expect("Shotover did not shutdown within 10s");
 }
 
 #[cfg(feature = "alpha-transforms")]
@@ -210,7 +232,12 @@ async fn passthrough_sasl_plain_python() {
     )
     .await;
 
-    shotover.shutdown_and_then_consume_events(&[]).await;
+    tokio::time::timeout(
+        Duration::from_secs(10),
+        shotover.shutdown_and_then_consume_events(&[]),
+    )
+    .await
+    .expect("Shotover did not shutdown within 10s");
 }
 
 #[rstest]
@@ -287,9 +314,12 @@ async fn cluster_1_rack_single_shotover(#[case] driver: KafkaDriver) {
 
         assert_inaccessible_peers_metric_emitted_on_port(0, 9001).await;
 
+        let mut expected_events = vec![];
+        workaround_rdkafka_connection_reset_bug(driver, &mut expected_events);
+
         tokio::time::timeout(
             Duration::from_secs(10),
-            shotover.shutdown_and_then_consume_events(&[]),
+            shotover.shutdown_and_then_consume_events(&expected_events),
         )
         .await
         .expect("Shotover did not shutdown within 10s");
@@ -311,16 +341,19 @@ async fn cluster_1_rack_single_shotover(#[case] driver: KafkaDriver) {
         .await;
 
         // Shotover can reasonably hit many kinds of errors due to a kafka node down so ignore all of them.
+        let mut expected_events = vec![
+            EventMatcher::new()
+                .with_level(Level::Error)
+                .with_count(Count::Any),
+            EventMatcher::new()
+                .with_level(Level::Warn)
+                .with_count(Count::Any),
+        ];
+        workaround_rdkafka_connection_reset_bug(driver, &mut expected_events);
+
         tokio::time::timeout(
             Duration::from_secs(10),
-            shotover.shutdown_and_then_consume_events(&[
-                EventMatcher::new()
-                    .with_level(Level::Error)
-                    .with_count(Count::Any),
-                EventMatcher::new()
-                    .with_level(Level::Warn)
-                    .with_count(Count::Any),
-            ]),
+            shotover.shutdown_and_then_consume_events(&expected_events),
         )
         .await
         .expect("Shotover did not shutdown within 10s");
@@ -350,9 +383,12 @@ async fn cluster_1_rack_single_shotover_broker_idle_timeout(#[case] driver: Kafk
     // So instead we rely on a test case hits the timeout with plenty of buffer to avoid the race condition.
     test_cases::test_broker_idle_timeout(&connection_builder, shotover.pid()).await;
 
+    let mut expected_events = vec![];
+    workaround_rdkafka_connection_reset_bug(driver, &mut expected_events);
+
     tokio::time::timeout(
         Duration::from_secs(10),
-        shotover.shutdown_and_then_consume_events(&[]),
+        shotover.shutdown_and_then_consume_events(&expected_events),
     )
     .await
     .expect("Shotover did not shutdown within 10s");
@@ -384,10 +420,13 @@ async fn cluster_1_rack_multi_shotover(#[case] driver: KafkaDriver) {
     test_cases::cluster_test_suite(&connection_builder).await;
     assert_inaccessible_peers_metric_emitted_on_port(0, 9001).await;
 
+    let mut expected_events = multi_shotover_events();
+    workaround_rdkafka_connection_reset_bug(driver, &mut expected_events);
+
     for shotover in shotovers {
         tokio::time::timeout(
             Duration::from_secs(10),
-            shotover.shutdown_and_then_consume_events(&multi_shotover_events()),
+            shotover.shutdown_and_then_consume_events(&expected_events),
         )
         .await
         .expect("Shotover did not shutdown within 10s");
@@ -444,6 +483,7 @@ async fn cluster_1_rack_multi_shotover_with_1_shotover_down(#[case] driver: Kafk
             .with_message(r#"Shotover peer 127.0.0.1:9191 is down"#)
             .with_count(Count::GreaterThanOrEqual(1)),
     );
+    workaround_rdkafka_connection_reset_bug(driver, &mut expected_events);
 
     for shotover in shotovers {
         tokio::time::timeout(
@@ -508,6 +548,8 @@ async fn cluster_3_racks_multi_shotover_with_2_shotover_down(#[case] driver: Kaf
         );
     }
 
+    workaround_rdkafka_connection_reset_bug(driver, &mut expected_events);
+
     for shotover in shotovers {
         tokio::time::timeout(
             Duration::from_secs(10),
@@ -558,15 +600,7 @@ async fn cluster_3_racks_multi_shotover_with_1_shotover_missing(#[case] driver: 
             .with_count(Count::GreaterThanOrEqual(1)),
     );
 
-    if driver.is_cpp() {
-        expected_events.push(
-            EventMatcher::new()
-                .with_level(Level::Warn)
-                .with_target("shotover::server")
-                .with_message(r#"failed to receive message on tcp stream: Os { code: 104, kind: ConnectionReset, message: "Connection reset by peer" }"#)
-                .with_count(Count::Any),
-        );
-    }
+    workaround_rdkafka_connection_reset_bug(driver, &mut expected_events);
 
     for shotover in shotovers {
         tokio::time::timeout(
@@ -613,10 +647,13 @@ async fn cluster_2_racks_multi_shotover(#[case] driver: KafkaDriver) {
         test_cases::describe_log_dirs(&connection_builder).await;
     }
 
+    let mut expected_events = multi_shotover_events();
+    workaround_rdkafka_connection_reset_bug(driver, &mut expected_events);
+
     for shotover in shotovers {
         tokio::time::timeout(
             Duration::from_secs(10),
-            shotover.shutdown_and_then_consume_events(&multi_shotover_events()),
+            shotover.shutdown_and_then_consume_events(&expected_events),
         )
         .await
         .expect("Shotover did not shutdown within 10s");
@@ -661,10 +698,13 @@ async fn cluster_2_racks_multi_shotover_rebalance_protocol(#[case] driver: Kafka
         .await;
     }
 
+    let mut expected_events = multi_shotover_events();
+    workaround_rdkafka_connection_reset_bug(driver, &mut expected_events);
+
     for shotover in shotovers {
         tokio::time::timeout(
             Duration::from_secs(10),
-            shotover.shutdown_and_then_consume_events(&multi_shotover_events()),
+            shotover.shutdown_and_then_consume_events(&expected_events),
         )
         .await
         .expect("Shotover did not shutdown within 10s");
@@ -696,6 +736,9 @@ async fn cluster_sasl_scram_single_shotover(#[case] driver: KafkaDriver) {
                 "org.apache.kafka.common.errors.UnsupportedSaslMechanismException: Client SASL mechanism 'SCRAM-SHA-256' not enabled in the server, enabled mechanisms are [PLAIN]\n",
         }
     );
+
+    let mut expected_events = vec![];
+    workaround_rdkafka_connection_reset_bug(driver, &mut expected_events);
 
     tokio::time::timeout(
         Duration::from_secs(10),
@@ -766,8 +809,11 @@ async fn cluster_sasl_scram_over_mtls_single_shotover(#[case] driver: KafkaDrive
         // admin requests sent by regular user remain unsuccessful
         let connection_super = KafkaConnectionBuilder::new(driver, "127.0.0.1:9192")
             .use_sasl_scram("super_user", "super_password");
-        produce_consume_partitions1(&connection_super, "c3220ff0-9390-425d-a56d-9d880a339c8c")
-            .await;
+        produce_consume_partitions1_topic_already_exists(
+            &connection_super,
+            "c3220ff0-9390-425d-a56d-9d880a339c8c",
+        )
+        .await;
         assert_topic_creation_is_denied_due_to_acl(&connection_basic).await;
         assert_connection_fails_with_incorrect_password(driver, "basic_user").await;
         assert_connection_fails_with_incorrect_password(driver, "super_user").await;
@@ -917,7 +963,7 @@ async fn cluster_sasl_scram_over_mtls_multi_shotover(#[case] driver: KafkaDriver
 
     // Wait 20s since we started the initial run to ensure that we hit the 15s token lifetime limit
     tokio::time::sleep_until((instant + Duration::from_secs(20)).into()).await;
-    test_cases::produce_consume_partitions1(
+    test_cases::produce_consume_partitions1_topic_already_exists(
         &connection_builder,
         "d4f992d1-05c4-4252-b699-509102338519",
     )
@@ -1056,10 +1102,13 @@ async fn cluster_sasl_plain_multi_shotover(#[case] driver: KafkaDriver) {
         }
     );
 
+    let mut expected_events = vec![];
+    workaround_rdkafka_connection_reset_bug(driver, &mut expected_events);
+
     for shotover in shotovers {
         tokio::time::timeout(
             Duration::from_secs(10),
-            shotover.shutdown_and_then_consume_events(&multi_shotover_events()),
+            shotover.shutdown_and_then_consume_events(&expected_events),
         )
         .await
         .expect("Shotover did not shutdown within 10s");
@@ -1125,4 +1174,20 @@ async fn assert_inaccessible_peers_metric_emitted_on_port(
         observability_port,
     )
     .await;
+}
+
+fn workaround_rdkafka_connection_reset_bug(
+    driver: KafkaDriver,
+    expected_events: &mut Vec<EventMatcher>,
+) {
+    if driver.is_cpp() {
+        // This is buggy behaviour from the driver, it should gracefully close connections instead of just disappearing.
+        expected_events.push(
+            EventMatcher::new()
+                .with_level(Level::Warn)
+                .with_target("shotover::server")
+                .with_message(r#"failed to receive message on tcp stream: Os { code: 104, kind: ConnectionReset, message: "Connection reset by peer" }"#)
+                .with_count(Count::Any),
+        );
+    }
 }
