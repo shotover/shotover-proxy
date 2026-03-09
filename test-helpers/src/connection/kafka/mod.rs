@@ -393,7 +393,11 @@ impl KafkaAdmin {
 
     pub async fn create_topics_and_wait(&self, topics: &[NewTopic<'_>]) {
         self.create_topics(topics).await;
+        let topics_to_wait_for: Vec<&str> = topics.iter().map(|x| x.name).collect();
+        self.wait_for_topic_creation(&topics_to_wait_for).await;
+    }
 
+    pub async fn wait_for_topic_creation(&self, topics_to_wait_for: &[&str]) {
         match self {
             #[cfg(feature = "kafka-cpp-driver-tests")]
             KafkaAdmin::Cpp(_) => {
@@ -402,9 +406,8 @@ impl KafkaAdmin {
             }
             KafkaAdmin::Java(_) => {
                 let instant = Instant::now();
-                let topics_to_wait_for: Vec<&str> = topics.iter().map(|x| x.name).collect();
                 loop {
-                    if self.are_topics_ready(&topics_to_wait_for).await {
+                    if self.are_topics_ready(topics_to_wait_for).await {
                         break;
                     } else {
                         tokio::time::sleep(Duration::from_millis(1)).await;
