@@ -1185,7 +1185,7 @@ fn workaround_rdkafka_connection_reset_bug(
         expected_events.push(
             EventMatcher::new()
                 .with_level(Level::Warn)
-                .with_target("shotover::server")
+                .with_target("shotover::source_task")
                 .with_message(r#"failed to receive message on tcp stream: Os { code: 104, kind: ConnectionReset, message: "Connection reset by peer" }"#)
                 .with_count(Count::Any),
         );
