@@ -248,48 +248,53 @@ impl<C: CodecBuilder + 'static> SourceTask<C> {
                 tokio::select! {
                     // Accept new connection
                     stream_result = Self::accept(&mut self.listener) => {
-                        let stream = stream_result?;
+                        match stream_result {
+                            Ok(stream) => {
+                                debug!("got socket");
+                                self.available_connections_gauge.set(self.limit_connections.available_permits() as f64);
+                                self.connections_opened.increment(1);
 
-                        debug!("got socket");
-                        self.available_connections_gauge.set(self.limit_connections.available_permits() as f64);
-                        self.connections_opened.increment(1);
+                                let client_details = stream.peer_addr()
+                                    .map(|p| p.ip().to_string())
+                                    .unwrap_or_else(|_| "Unknown Peer".to_string());
+                                tracing::info!("New connection from {}", client_details);
 
-                        let client_details = stream.peer_addr()
-                            .map(|p| p.ip().to_string())
-                            .unwrap_or_else(|_| "Unknown Peer".to_string());
-                        tracing::info!("New connection from {}", client_details);
+                                let force_run_chain = Arc::new(Notify::new());
+                                let context = TransformContextBuilder{
+                                    force_run_chain: force_run_chain.clone(),
+                                    client_details:client_details.clone(),
+                                };
 
-                        let force_run_chain = Arc::new(Notify::new());
-                        let context = TransformContextBuilder{
-                            force_run_chain: force_run_chain.clone(),
-                            client_details:client_details.clone(),
-                        };
+                                // Create a unique shutdown channel for this connection
+                                let (connection_shutdown_tx, connection_shutdown_rx) = watch::channel(false);
 
-                        // Create a unique shutdown channel for this connection
-                        let (connection_shutdown_tx, connection_shutdown_rx) = watch::channel(false);
-
-                        let handler = Handler{
-                            chain: self.chain_builder.build(context),
-                            codec: self.codec.clone(),
-                            shutdown: Shutdown::new(connection_shutdown_rx),
-                            tls: self.tls.clone(),
-                            pending_requests: PendingRequests::new(self.codec.protocol()),
-                            timeout: self.timeout,
-                            _permit: permit,
-                        };
-                        // Spawn a new task to process the connections.
-                        let handle = tokio::spawn(async move{
-                            // Process the connection. If an error is encountered, log it.
-                            if let Err(err) = handler.run(stream, transport, force_run_chain, client_details).await{
-                                error!("{:?}", err.context("connection was unexpectedly terminated"));
+                                let handler = Handler{
+                                    chain: self.chain_builder.build(context),
+                                    codec: self.codec.clone(),
+                                    shutdown: Shutdown::new(connection_shutdown_rx),
+                                    tls: self.tls.clone(),
+                                    pending_requests: PendingRequests::new(self.codec.protocol()),
+                                    timeout: self.timeout,
+                                    _permit: permit,
+                                };
+                                // Spawn a new task to process the connections.
+                                let handle = tokio::spawn(async move{
+                                    // Process the connection. If an error is encountered, log it.
+                                    if let Err(err) = handler.run(stream, transport, force_run_chain, client_details).await{
+                                        error!("{:?}", err.context("connection was unexpectedly terminated"));
+                                    }
+                                }.in_current_span());
+                                let tracked_connection = TrackedConnection::new(handle, connection_shutdown_tx);
+                                self.connection_handles.push(tracked_connection);
+                                // Only prune the list every so often
+                                // theres no point in doing it every iteration because most likely none of the handles will have completed
+                                if self.connection_count.is_multiple_of(1000) {
+                                    self.connection_handles.retain(|x| !x.is_finished());
+                                }
                             }
-                        }.in_current_span());
-                        let tracked_connection = TrackedConnection::new(handle, connection_shutdown_tx);
-                        self.connection_handles.push(tracked_connection);
-                        // Only prune the list every so often
-                        // theres no point in doing it every iteration because most likely none of the handles will have completed
-                        if self.connection_count.is_multiple_of(1000) {
-                            self.connection_handles.retain(|x| !x.is_finished());
+                            Err(err) => {
+                                error!(cause = %err, "failed to accept connection, retrying");
+                            }
                         }
                         Ok::<(), anyhow::Error>(())
                     },
