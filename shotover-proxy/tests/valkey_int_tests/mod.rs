@@ -21,7 +21,7 @@ pub mod basic_driver_tests;
 fn invalid_frame_event() -> EventMatcher {
     EventMatcher::new()
         .with_level(Level::Warn)
-        .with_target("shotover::server")
+        .with_target("shotover::source_task")
         .with_message(
             r#"failed to decode message: Error decoding valkey frame
 
@@ -72,7 +72,7 @@ async fn passthrough_valkey_down() {
             // Error occurs when client sends a message to shotover
             EventMatcher::new()
                 .with_level(Level::Error)
-                .with_target("shotover::server")
+                .with_target("shotover::source_task")
                 .with_message(&format!(
                     r#"connection was unexpectedly terminated
 
@@ -89,7 +89,7 @@ Caused by:
             // chain flush is reached when the connection is closed by the client.
             EventMatcher::new()
                 .with_level(Level::Error)
-                .with_target("shotover::server")
+                .with_target("shotover::source_task")
                 .with_message(&format!(
                     r#"encountered an error when flushing the chain valkey for shutdown
 

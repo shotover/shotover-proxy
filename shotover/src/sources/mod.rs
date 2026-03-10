@@ -2,13 +2,13 @@
 
 use crate::hot_reload::protocol::{GradualShutdownRequest, HotReloadListenerRequest};
 #[cfg(feature = "cassandra")]
-use crate::sources::cassandra::CassandraConfig;
+use crate::sources::cassandra::CassandraSourceConfig;
 #[cfg(feature = "kafka")]
-use crate::sources::kafka::KafkaConfig;
+use crate::sources::kafka::KafkaSourceConfig;
 #[cfg(feature = "opensearch")]
-use crate::sources::opensearch::OpenSearchConfig;
+use crate::sources::opensearch::OpenSearchSourceConfig;
 #[cfg(feature = "valkey")]
-use crate::sources::valkey::ValkeyConfig;
+use crate::sources::valkey::ValkeySourceConfig;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -79,13 +79,13 @@ impl Source {
 #[serde(deny_unknown_fields)]
 pub enum SourceConfig {
     #[cfg(feature = "cassandra")]
-    Cassandra(CassandraConfig),
+    Cassandra(CassandraSourceConfig),
     #[cfg(feature = "valkey")]
-    Valkey(ValkeyConfig),
+    Valkey(ValkeySourceConfig),
     #[cfg(feature = "kafka")]
-    Kafka(KafkaConfig),
+    Kafka(KafkaSourceConfig),
     #[cfg(feature = "opensearch")]
-    OpenSearch(OpenSearchConfig),
+    OpenSearch(OpenSearchSourceConfig),
 }
 
 impl SourceConfig {

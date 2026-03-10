@@ -438,7 +438,7 @@ impl CassandraBench {
         }
 
         common::generate_topology(SourceConfig::Cassandra(
-            shotover::sources::cassandra::CassandraConfig {
+            shotover::sources::cassandra::CassandraSourceConfig {
                 name: "cassandra".to_owned(),
                 listen_addr: host_address,
                 connection_limit: None,
