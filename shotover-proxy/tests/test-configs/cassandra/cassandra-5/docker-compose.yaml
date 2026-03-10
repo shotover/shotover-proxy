@@ -1,6 +1,6 @@
 services:
   cassandra-one:
-    image: shotover/cassandra-test:5.0-rc1-r3
+    image: shotover/cassandra-test:5.0-rc1-r4
     ports:
       - "9043:9042"
     environment:

@@ -10,7 +10,7 @@ networks:
 
 services:
   cassandra-one:
-    image: &image shotover/cassandra-test:3.11.13-r1
+    image: &image shotover/cassandra-test:3.11.13-r4
     networks:
       cluster_subnet:
         ipv4_address: 172.16.1.2
