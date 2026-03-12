@@ -28,6 +28,8 @@ use tokio_util::codec::{FramedRead, FramedWrite};
 use tracing::{Instrument, info, trace};
 use tracing::{debug, error, warn};
 
+const MAX_RETRY_BACKOFF_SECONDS: u64 = 64;
+
 /// Represents a tracked connection with a shutdown sender
 struct TrackedConnection {
     handle: JoinHandle<()>,
@@ -108,6 +110,7 @@ impl<C: CodecBuilder + 'static> SourceTask<C> {
         transport: Transport,
         hot_reload_rx: tokio::sync::mpsc::UnboundedReceiver<HotReloadListenerRequest>,
         hot_reload_listeners: &mut HashMap<u16, TcpListener>,
+        trigger_shutdown_tx: watch::Sender<bool>,
         mut trigger_shutdown_rx: watch::Receiver<bool>,
         mut gradual_shutdown_rx: tokio::sync::mpsc::UnboundedReceiver<GradualShutdownRequest>,
     ) -> Result<JoinHandle<()>, Vec<String>> {
@@ -188,7 +191,20 @@ impl<C: CodecBuilder + 'static> SourceTask<C> {
                 tokio::select! {
                     res = listener.run() => {
                         if let Err(err) = res {
-                            error!(cause = %err, "failed to accept");
+                            error!(
+                                source = %listener.source_name,
+                                listen_addr = %listener.listen_addr,
+                                cause = %err,
+                                "Source task hit an unrecoverable error, Shotover is shutting down"
+                            );
+                            if let Err(send_error) = trigger_shutdown_tx.send(true) {
+                                warn!(
+                                    source = %listener.source_name,
+                                    listen_addr = %listener.listen_addr,
+                                    cause = %send_error,
+                                    "Failed to trigger global shutdown after unrecoverable source task error"
+                                );
+                            }
                         }
                     }
                     _ = trigger_shutdown_rx.changed() => {
@@ -211,14 +227,9 @@ impl<C: CodecBuilder + 'static> SourceTask<C> {
     ///
     /// # Errors
     ///
-    /// Returns `Err` if accepting returns an error. This can happen for a
-    /// number of reasons that resolve over time. For example, if the underlying
-    /// operating system has reached an internal limit for max number of
-    /// sockets, accept will fail.
-    ///
-    /// The process is not able to detect when a transient error resolves
-    /// itself. One strategy for handling this is to implement a back off
-    /// strategy, which is what we do here.
+    /// Returns `Err` only for unrecoverable source task failures.
+    /// Runtime listener creation and accept failures are treated as recoverable
+    /// and retried forever using exponential backoff.
     pub async fn run(&mut self) -> Result<()> {
         loop {
             // Wait for a permit to become available
@@ -226,8 +237,13 @@ impl<C: CodecBuilder + 'static> SourceTask<C> {
                 match self.limit_connections.clone().try_acquire_owned() {
                     Ok(p) => p,
                     Err(_e) => {
-                        //close the socket too full!
-                        self.listener = None;
+                        if self.listener.take().is_some() {
+                            warn!(
+                                source = %self.source_name,
+                                listen_addr = %self.listen_addr,
+                                "Hard connection limit reached, temporarily closing listener until capacity returns"
+                            );
+                        }
                         tokio::time::sleep(Duration::from_secs(1)).await;
                         continue;
                     }
@@ -236,7 +252,9 @@ impl<C: CodecBuilder + 'static> SourceTask<C> {
                 self.limit_connections.clone().acquire_owned().await?
             };
             if self.listener.is_none() {
-                self.listener = Some(create_listener(&self.listen_addr).await?);
+                self.listener = Some(
+                    Self::create_listener_with_backoff(&self.source_name, &self.listen_addr).await,
+                );
             }
 
             self.connection_count = self.connection_count.wrapping_add(1);
@@ -247,54 +265,51 @@ impl<C: CodecBuilder + 'static> SourceTask<C> {
             async {
                 tokio::select! {
                     // Accept new connection
-                    stream_result = Self::accept(&mut self.listener) => {
-                        match stream_result {
-                            Ok(stream) => {
-                                debug!("got socket");
-                                self.available_connections_gauge.set(self.limit_connections.available_permits() as f64);
-                                self.connections_opened.increment(1);
+                    stream = Self::accept(
+                        self.listener.as_mut().expect("listener must be initialized"),
+                        &self.source_name,
+                        &self.listen_addr
+                    ) => {
+                        debug!("got socket");
+                        self.available_connections_gauge.set(self.limit_connections.available_permits() as f64);
+                        self.connections_opened.increment(1);
 
-                                let client_details = stream.peer_addr()
-                                    .map(|p| p.ip().to_string())
-                                    .unwrap_or_else(|_| "Unknown Peer".to_string());
-                                tracing::info!("New connection from {}", client_details);
+                        let client_details = stream.peer_addr()
+                            .map(|p| p.ip().to_string())
+                            .unwrap_or_else(|_| "Unknown Peer".to_string());
+                        tracing::info!("New connection from {}", client_details);
 
-                                let force_run_chain = Arc::new(Notify::new());
-                                let context = TransformContextBuilder{
-                                    force_run_chain: force_run_chain.clone(),
-                                    client_details:client_details.clone(),
-                                };
+                        let force_run_chain = Arc::new(Notify::new());
+                        let context = TransformContextBuilder{
+                            force_run_chain: force_run_chain.clone(),
+                            client_details:client_details.clone(),
+                        };
 
-                                // Create a unique shutdown channel for this connection
-                                let (connection_shutdown_tx, connection_shutdown_rx) = watch::channel(false);
+                        // Create a unique shutdown channel for this connection
+                        let (connection_shutdown_tx, connection_shutdown_rx) = watch::channel(false);
 
-                                let handler = Handler{
-                                    chain: self.chain_builder.build(context),
-                                    codec: self.codec.clone(),
-                                    shutdown: Shutdown::new(connection_shutdown_rx),
-                                    tls: self.tls.clone(),
-                                    pending_requests: PendingRequests::new(self.codec.protocol()),
-                                    timeout: self.timeout,
-                                    _permit: permit,
-                                };
-                                // Spawn a new task to process the connections.
-                                let handle = tokio::spawn(async move{
-                                    // Process the connection. If an error is encountered, log it.
-                                    if let Err(err) = handler.run(stream, transport, force_run_chain, client_details).await{
-                                        error!("{:?}", err.context("connection was unexpectedly terminated"));
-                                    }
-                                }.in_current_span());
-                                let tracked_connection = TrackedConnection::new(handle, connection_shutdown_tx);
-                                self.connection_handles.push(tracked_connection);
-                                // Only prune the list every so often
-                                // theres no point in doing it every iteration because most likely none of the handles will have completed
-                                if self.connection_count.is_multiple_of(1000) {
-                                    self.connection_handles.retain(|x| !x.is_finished());
-                                }
+                        let handler = Handler{
+                            chain: self.chain_builder.build(context),
+                            codec: self.codec.clone(),
+                            shutdown: Shutdown::new(connection_shutdown_rx),
+                            tls: self.tls.clone(),
+                            pending_requests: PendingRequests::new(self.codec.protocol()),
+                            timeout: self.timeout,
+                            _permit: permit,
+                        };
+                        // Spawn a new task to process the connections.
+                        let handle = tokio::spawn(async move{
+                            // Process the connection. If an error is encountered, log it.
+                            if let Err(err) = handler.run(stream, transport, force_run_chain, client_details).await{
+                                error!("{:?}", err.context("connection was unexpectedly terminated"));
                             }
-                            Err(err) => {
-                                error!(cause = %err, "failed to accept connection, retrying");
-                            }
+                        }.in_current_span());
+                        let tracked_connection = TrackedConnection::new(handle, connection_shutdown_tx);
+                        self.connection_handles.push(tracked_connection);
+                        // Only prune the list every so often
+                        // theres no point in doing it every iteration because most likely none of the handles will have completed
+                        if self.connection_count.is_multiple_of(1000) {
+                            self.connection_handles.retain(|x| !x.is_finished());
                         }
                         Ok::<(), anyhow::Error>(())
                     },
@@ -385,35 +400,67 @@ impl<C: CodecBuilder + 'static> SourceTask<C> {
         );
     }
 
-    /// Accept an inbound connection.
-    ///
-    /// Errors are handled by backing off and retrying. An exponential backoff
-    /// strategy is used. After the first failure, the task waits for 1 second.
-    /// After the second failure, the task waits for 2 seconds. Each subsequent
-    /// failure doubles the wait time. If accepting fails on the 6th try after
-    /// waiting for 64 seconds, then this function returns with an error.
-    async fn accept(listener: &mut Option<TcpListener>) -> Result<TcpStream> {
+    async fn create_listener_with_backoff(source_name: &str, listen_addr: &str) -> TcpListener {
         let mut backoff = 1;
 
-        // Try to accept a few times
         loop {
-            // Perform the accept operation. If a socket is successfully
-            // accepted, return it. Otherwise, save the error.
-            match listener.as_mut().unwrap().accept().await {
-                Ok((socket, _)) => return Ok(socket),
-                Err(err) => {
-                    if backoff > 64 {
-                        // Accept has failed too many times. Return the error.
-                        return Err(err.into());
+            match create_listener(listen_addr).await {
+                Ok(listener) => {
+                    if backoff > 1 {
+                        info!(
+                            source = source_name,
+                            listen_addr,
+                            "Listener creation recovered and is now accepting connections"
+                        );
                     }
+                    return listener;
+                }
+                Err(err) => {
+                    warn!(
+                        source = source_name,
+                        listen_addr,
+                        backoff_seconds = backoff,
+                        cause = %err,
+                        "Failed to create listener, retrying with backoff"
+                    );
                 }
             }
 
-            // Pause execution until the back off period elapses.
             time::sleep(Duration::from_secs(backoff)).await;
+            backoff = (backoff * 2).min(MAX_RETRY_BACKOFF_SECONDS);
+        }
+    }
 
-            // Double the back off
-            backoff *= 2;
+    /// Accept an inbound connection.
+    /// Errors are treated as recoverable and retried forever with capped backoff.
+    async fn accept(listener: &mut TcpListener, source_name: &str, listen_addr: &str) -> TcpStream {
+        let mut backoff = 1;
+
+        loop {
+            match listener.accept().await {
+                Ok((socket, _)) => {
+                    if backoff > 1 {
+                        info!(
+                            source = source_name,
+                            listen_addr,
+                            "Accept recovered and source is now accepting new connections"
+                        );
+                    }
+                    return socket;
+                }
+                Err(err) => {
+                    warn!(
+                        source = source_name,
+                        listen_addr,
+                        backoff_seconds = backoff,
+                        cause = %err,
+                        "Failed to accept incoming connection, retrying with backoff"
+                    );
+                }
+            }
+
+            time::sleep(Duration::from_secs(backoff)).await;
+            backoff = (backoff * 2).min(MAX_RETRY_BACKOFF_SECONDS);
         }
     }
 

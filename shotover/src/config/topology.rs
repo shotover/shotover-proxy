@@ -35,6 +35,7 @@ impl Topology {
 
     pub async fn run_chains(
         &self,
+        trigger_shutdown_tx: watch::Sender<bool>,
         trigger_shutdown_rx: watch::Receiver<bool>,
         mut hot_reload_listeners: HashMap<u16, TcpListener>,
     ) -> Result<Vec<Source>> {
@@ -58,7 +59,11 @@ impl Topology {
 
         for source in &self.sources {
             match source
-                .build(trigger_shutdown_rx.clone(), &mut hot_reload_listeners)
+                .build(
+                    trigger_shutdown_tx.clone(),
+                    trigger_shutdown_rx.clone(),
+                    &mut hot_reload_listeners,
+                )
                 .await
             {
                 Ok(source) => sources.push(source),
@@ -136,10 +141,10 @@ mod topology_tests {
 
         let topology = Topology { sources };
 
-        let (_sender, trigger_shutdown_rx) = watch::channel::<bool>(false);
+        let (trigger_shutdown_tx, trigger_shutdown_rx) = watch::channel::<bool>(false);
 
         topology
-            .run_chains(trigger_shutdown_rx, HashMap::new())
+            .run_chains(trigger_shutdown_tx, trigger_shutdown_rx, HashMap::new())
             .await
     }
 
@@ -150,10 +155,10 @@ mod topology_tests {
 
         let topology = Topology { sources };
 
-        let (_sender, trigger_shutdown_rx) = watch::channel::<bool>(false);
+        let (trigger_shutdown_tx, trigger_shutdown_rx) = watch::channel::<bool>(false);
 
         topology
-            .run_chains(trigger_shutdown_rx, HashMap::new())
+            .run_chains(trigger_shutdown_tx, trigger_shutdown_rx, HashMap::new())
             .await
     }
 
@@ -480,9 +485,9 @@ Source name "foo" occurred more than once. Make sure all source names are unique
         )]));
 
         let topology = Topology { sources };
-        let (_sender, trigger_shutdown_rx) = watch::channel::<bool>(false);
+        let (trigger_shutdown_tx, trigger_shutdown_rx) = watch::channel::<bool>(false);
         let error = topology
-            .run_chains(trigger_shutdown_rx, HashMap::new())
+            .run_chains(trigger_shutdown_tx, trigger_shutdown_rx, HashMap::new())
             .await
             .unwrap_err()
             .to_string();
@@ -492,13 +497,13 @@ Source name "foo" occurred more than once. Make sure all source names are unique
 
     #[tokio::test]
     async fn test_validate_chain_multiple_subchains() {
-        let (_sender, trigger_shutdown_rx) = watch::channel::<bool>(false);
+        let (trigger_shutdown_tx, trigger_shutdown_rx) = watch::channel::<bool>(false);
 
         let topology =
             Topology::from_file("../shotover-proxy/tests/test-configs/invalid_subchains.yaml")
                 .unwrap();
         let error = topology
-            .run_chains(trigger_shutdown_rx, HashMap::new())
+            .run_chains(trigger_shutdown_tx, trigger_shutdown_rx, HashMap::new())
             .await
             .unwrap_err()
             .to_string();
