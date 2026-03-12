@@ -112,11 +112,11 @@ pub async fn run_python_bad_auth_sasl_scram(address: &str, user: &str, password:
 pub async fn ensure_uv_is_installed() {
     let uv_binary = uv_binary_path();
 
-    if let Ok(output) = Command::new(uv_binary).arg("--help").output().await {
-        if output.status.success() {
-            // already correctly installed
-            return;
-        }
+    if let Ok(output) = Command::new(uv_binary).arg("--help").output().await
+        && output.status.success()
+    {
+        // already correctly installed
+        return;
     }
 
     run_command_async(
