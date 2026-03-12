@@ -42,28 +42,55 @@ impl Topology {
 
         let mut topology_errors = String::new();
 
-        // Validate name uniqueness across sources, chains, and transforms.
-        let mut used_names: HashSet<String> = HashSet::new();
-        let mut duplicated_names: BTreeSet<String> = BTreeSet::new();
-        for source in &self.sources {
-            let name = source.get_name();
-            if !used_names.insert(name.to_string()) {
-                duplicated_names.insert(name.to_string());
-            }
-        }
+        // Validate name uniqueness within each context (sources, transforms, chains).
+        let mut source_names: HashSet<String> = HashSet::new();
+        let mut source_duplicates: BTreeSet<String> = BTreeSet::new();
+        let mut name_state = crate::config::chain::NameValidationState::default();
+
         for source in &self.sources {
             let source_name = source.get_name();
-            let chain_config = source.get_chain_config();
-            duplicated_names.extend(chain_config.validate_names(source_name, &mut used_names));
+            if !source_names.insert(source_name.to_string()) {
+                source_duplicates.insert(source_name.to_string());
+            }
+
+            name_state
+                .register_chain_name(source_name, crate::config::chain::ChainNameOrigin::Auto);
+
+            source.get_chain_config().collect_names(&mut name_state);
         }
-        if !duplicated_names.is_empty() {
-            let duplicates = duplicated_names
+
+        if !source_duplicates.is_empty() {
+            let duplicates = source_duplicates
                 .iter()
                 .map(|name| format!("{name:?}"))
                 .join(", ");
             writeln!(
                 topology_errors,
-                "Duplicate names: {duplicates}. All names (sources, chains, transforms) must be unique across the topology."
+                "Duplicate source names: {duplicates}. Source names must be unique."
+            )?;
+        }
+
+        if !name_state.transform_duplicates.is_empty() {
+            let duplicates = name_state
+                .transform_duplicates
+                .iter()
+                .map(|name| format!("{name:?}"))
+                .join(", ");
+            writeln!(
+                topology_errors,
+                "Duplicate transform names: {duplicates}. Transform names must be unique."
+            )?;
+        }
+
+        if !name_state.chain_duplicates.is_empty() {
+            let duplicates = name_state
+                .chain_duplicates
+                .iter()
+                .map(|name| format!("{name:?}"))
+                .join(", ");
+            writeln!(
+                topology_errors,
+                "Duplicate chain names: {duplicates}. Chain names must be unique."
             )?;
         }
 
@@ -106,7 +133,8 @@ mod topology_tests {
     use crate::{
         sources::{Source, SourceConfig, valkey::ValkeySourceConfig},
         transforms::{
-            parallel_map::ParallelMapConfig, valkey::cache::ValkeyConfig as ValkeyCacheConfig,
+            parallel_map::ParallelMapConfig, tee::ConsistencyBehaviorConfig, tee::TeeConfig,
+            valkey::cache::ValkeyConfig as ValkeyCacheConfig,
         },
     };
     use pretty_assertions::assert_eq;
@@ -599,7 +627,7 @@ foo source:
     #[tokio::test]
     async fn test_validate_repeated_source_names() {
         let expected = r#"Topology errors
-Duplicate names: "foo". All names (sources, chains, transforms) must be unique across the topology.
+Duplicate source names: "foo". Source names must be unique.
 "#;
 
         let mut sources = create_source_from_chain_valkey(vec![Box::new(NullSinkConfig {
@@ -618,6 +646,60 @@ Duplicate names: "foo". All names (sources, chains, transforms) must be unique a
             .await
             .unwrap_err()
             .to_string();
+
+        assert_eq!(error, expected);
+    }
+
+    #[tokio::test]
+    async fn test_validate_repeated_transform_names() {
+        let expected = r#"Topology errors
+Duplicate transform names: "dup". Transform names must be unique.
+"#;
+
+        let error = run_test_topology_valkey(vec![
+            Box::new(DebugPrinterConfig {
+                name: "dup".to_string(),
+            }),
+            Box::new(NullSinkConfig {
+                name: "dup".to_string(),
+            }),
+        ])
+        .await
+        .unwrap_err()
+        .to_string();
+
+        assert_eq!(error, expected);
+    }
+
+    #[tokio::test]
+    async fn test_validate_duplicate_chain_names_user_defined() {
+        let expected = r#"Topology errors
+Duplicate chain names: "foo". Chain names must be unique.
+"#;
+
+        let error = run_test_topology_valkey(vec![
+            Box::new(TeeConfig {
+                name: "tee-main".to_string(),
+                behavior: Some(ConsistencyBehaviorConfig::SubchainOnMismatch {
+                    name: "foo".to_string(),
+                    chain: TransformChainConfig(vec![Box::new(NullSinkConfig {
+                        name: "mismatch-sink".to_string(),
+                    })]),
+                }),
+                timeout_micros: None,
+                chain: TransformChainConfig(vec![Box::new(NullSinkConfig {
+                    name: "tee-sink".to_string(),
+                })]),
+                buffer_size: None,
+                switch_port: None,
+            }),
+            Box::new(NullSinkConfig {
+                name: "sink".to_string(),
+            }),
+        ])
+        .await
+        .unwrap_err()
+        .to_string();
 
         assert_eq!(error, expected);
     }

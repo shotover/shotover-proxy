@@ -5,7 +5,7 @@ use crate::transforms::{
 use anyhow::{Result, anyhow};
 use serde::de::{DeserializeSeed, Deserializer, MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt::{self, Debug};
 use std::iter;
 
@@ -15,6 +15,48 @@ pub struct TransformChainConfig(
     #[serde(rename = "TransformChain", deserialize_with = "vec_transform_config")]
     pub  Vec<Box<dyn TransformConfig>>,
 );
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ChainNameOrigin {
+    Auto,
+    UserDefined,
+}
+
+#[derive(Default)]
+pub struct NameValidationState {
+    pub transform_names: HashSet<String>,
+    pub transform_duplicates: BTreeSet<String>,
+    pub chain_names: HashMap<String, ChainNameOrigin>,
+    pub chain_duplicates: BTreeSet<String>,
+}
+
+impl NameValidationState {
+    pub fn register_transform_name(&mut self, name: &str) {
+        if !self.transform_names.insert(name.to_string()) {
+            self.transform_duplicates.insert(name.to_string());
+        }
+    }
+
+    pub fn register_chain_name(&mut self, name: &str, origin: ChainNameOrigin) {
+        match self.chain_names.get(name) {
+            None => {
+                self.chain_names.insert(name.to_string(), origin);
+            }
+            Some(existing_origin) => {
+                if matches!(origin, ChainNameOrigin::UserDefined)
+                    || matches!(existing_origin, ChainNameOrigin::UserDefined)
+                {
+                    self.chain_duplicates.insert(name.to_string());
+                }
+
+                if matches!(origin, ChainNameOrigin::UserDefined) {
+                    self.chain_names
+                        .insert(name.to_string(), ChainNameOrigin::UserDefined);
+                }
+            }
+        }
+    }
+}
 
 impl TransformChainConfig {
     pub async fn get_builder(
@@ -57,33 +99,27 @@ impl TransformChainConfig {
         ))
     }
 
-    /// Validates chain and transform name uniqueness in one traversal.
-    /// Returns (chain_name_errors, transform_name_errors).
-    pub fn validate_names(
-        &self,
-        _chain_name: &str,
-        used_names: &mut HashSet<String>,
-    ) -> Vec<String> {
-        let mut duplicated_names = BTreeSet::new();
-
+    pub fn collect_names(&self, state: &mut NameValidationState) {
         for config in &self.0 {
             let transform_name = config.get_name();
-            if !used_names.insert(transform_name.to_string()) {
-                duplicated_names.insert(transform_name.to_string());
-            }
+            state.register_transform_name(transform_name);
 
-            for sub_chain_name in config.get_user_named_sub_chain_names() {
-                if !used_names.insert(sub_chain_name.clone()) {
-                    duplicated_names.insert(sub_chain_name);
-                }
-            }
+            let user_named_subchains = config.get_user_named_sub_chain_names();
 
             for (sub_chain, sub_chain_name) in config.get_sub_chain_configs() {
-                duplicated_names.extend(sub_chain.validate_names(&sub_chain_name, used_names));
+                let origin = if user_named_subchains
+                    .iter()
+                    .any(|name| name == &sub_chain_name)
+                {
+                    ChainNameOrigin::UserDefined
+                } else {
+                    ChainNameOrigin::Auto
+                };
+
+                state.register_chain_name(&sub_chain_name, origin);
+                sub_chain.collect_names(state);
             }
         }
-
-        duplicated_names.into_iter().collect()
     }
 }
 
