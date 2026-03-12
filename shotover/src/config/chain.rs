@@ -5,6 +5,7 @@ use crate::transforms::{
 use anyhow::{Result, anyhow};
 use serde::de::{DeserializeSeed, Deserializer, MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Serialize};
+use std::collections::{BTreeSet, HashSet};
 use std::fmt::{self, Debug};
 use std::iter;
 
@@ -20,15 +21,15 @@ impl TransformChainConfig {
         &self,
         mut transform_context: TransformContextConfig,
     ) -> Result<TransformChainBuilder> {
-        let mut transforms: Vec<Box<dyn TransformBuilder>> = Vec::new();
+        let mut builders: Vec<(Box<dyn TransformBuilder>, String)> = Vec::new();
         let mut upchain_protocol = transform_context.up_chain_protocol;
-        for (i, tc) in self.0.iter().enumerate() {
-            let name = tc.typetag_name();
-            match tc.up_chain_protocol() {
+        for config in &self.0 {
+            let type_name = config.typetag_name();
+            match config.up_chain_protocol() {
                 UpChainProtocol::MustBeOneOf(protocols) => {
                     if !protocols.contains(&upchain_protocol) {
                         return Err(anyhow!(
-                            "Transform {name} requires upchain protocol to be one of {protocols:?} but was {upchain_protocol:?}"
+                            "Transform {type_name} requires upchain protocol to be one of {protocols:?} but was {upchain_protocol:?}"
                         ));
                     }
                 }
@@ -37,25 +38,53 @@ impl TransformChainConfig {
                 }
             }
             transform_context.up_chain_protocol = upchain_protocol;
-            transforms.push(tc.get_builder(transform_context.clone()).await?);
+            transform_context.transform_name = config.get_name().to_string();
+            let builder = config.get_builder(transform_context.clone()).await?;
+            let transform_name = config.get_name().to_string();
+            builders.push((builder, transform_name));
 
-            upchain_protocol = match tc.down_chain_protocol() {
+            upchain_protocol = match config.down_chain_protocol() {
                 DownChainProtocol::TransformedTo(new) => new,
                 DownChainProtocol::SameAsUpChain => upchain_protocol,
                 DownChainProtocol::Terminating => {
-                    if i + 1 != self.0.len() {
-                        // TODO: Move bad sink reporting to here
-                        upchain_protocol
-                    } else {
-                        upchain_protocol
-                    }
+                    // TODO: Move bad sink reporting to here
+                    upchain_protocol
                 }
             }
         }
         Ok(TransformChainBuilder::new(
-            transforms,
+            builders,
             transform_context.chain_name.leak(),
         ))
+    }
+
+    /// Validates chain and transform name uniqueness in one traversal.
+    /// Returns (chain_name_errors, transform_name_errors).
+    pub fn validate_names(
+        &self,
+        _chain_name: &str,
+        used_names: &mut HashSet<String>,
+    ) -> Vec<String> {
+        let mut duplicated_names = BTreeSet::new();
+
+        for config in &self.0 {
+            let transform_name = config.get_name();
+            if !used_names.insert(transform_name.to_string()) {
+                duplicated_names.insert(transform_name.to_string());
+            }
+
+            for sub_chain_name in config.get_user_named_sub_chain_names(transform_name) {
+                if !used_names.insert(sub_chain_name.clone()) {
+                    duplicated_names.insert(sub_chain_name);
+                }
+            }
+
+            for (sub_chain, sub_chain_name) in config.get_sub_chain_configs(transform_name) {
+                duplicated_names.extend(sub_chain.validate_names(&sub_chain_name, used_names));
+            }
+        }
+
+        duplicated_names.into_iter().collect()
     }
 }
 

@@ -18,6 +18,7 @@ use tracing::trace;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct OpenSearchSinkSingleConfig {
+    name: String,
     #[serde(rename = "remote_address")]
     address: String,
     connect_timeout_ms: u64,
@@ -27,6 +28,10 @@ const NAME: &str = "OpenSearchSinkSingle";
 #[typetag::serde(name = "OpenSearchSinkSingle")]
 #[async_trait(?Send)]
 impl TransformConfig for OpenSearchSinkSingleConfig {
+    fn get_name(&self) -> &str {
+        &self.name
+    }
+
     async fn get_builder(
         &self,
         transform_context: TransformContextConfig,
@@ -44,6 +49,17 @@ impl TransformConfig for OpenSearchSinkSingleConfig {
 
     fn down_chain_protocol(&self) -> DownChainProtocol {
         DownChainProtocol::Terminating
+    }
+
+    fn get_sub_chain_configs(
+        &self,
+        _transform_name: &str,
+    ) -> Vec<(&crate::config::chain::TransformChainConfig, String)> {
+        vec![]
+    }
+
+    fn get_user_named_sub_chain_names(&self, _transform_name: &str) -> Vec<String> {
+        vec![]
     }
 }
 

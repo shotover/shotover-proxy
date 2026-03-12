@@ -918,7 +918,7 @@ async fn cluster_sasl_scram_over_mtls_nodejs_and_python() {
                     r"connection was unexpectedly terminated\s+",
                     r"Caused by:\s+",
                     r"0: Chain failed to send and/or receive messages, the connection will now be closed\.\s+",
-                    r"1: KafkaSinkCluster transform failed\s+",
+                    r"1: kafka-sink-cluster transform failed \(chain: kafka\)\s+",
                     r"2: Failed to receive responses \(without sending requests\)\s+",
                     r"3: Outgoing connection had pending requests, those requests/responses are lost so connection recovery cannot be attempted\.\s+",
                     r"4: Failed to receive from ControlConnection\s+",

@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct DebugReturnerConfig {
+    pub name: String,
     #[serde(flatten)]
     response: Response,
 }
@@ -18,6 +19,10 @@ const NAME: &str = "DebugReturner";
 #[typetag::serde(name = "DebugReturner")]
 #[async_trait(?Send)]
 impl TransformConfig for DebugReturnerConfig {
+    fn get_name(&self) -> &str {
+        &self.name
+    }
+
     async fn get_builder(
         &self,
         _transform_context: TransformContextConfig,
@@ -31,6 +36,17 @@ impl TransformConfig for DebugReturnerConfig {
 
     fn down_chain_protocol(&self) -> DownChainProtocol {
         DownChainProtocol::SameAsUpChain
+    }
+
+    fn get_sub_chain_configs(
+        &self,
+        _transform_name: &str,
+    ) -> Vec<(&crate::config::chain::TransformChainConfig, String)> {
+        vec![]
+    }
+
+    fn get_user_named_sub_chain_names(&self, _transform_name: &str) -> Vec<String> {
+        vec![]
     }
 }
 

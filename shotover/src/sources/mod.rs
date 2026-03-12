@@ -118,4 +118,17 @@ impl SourceConfig {
             SourceConfig::OpenSearch(r) => &r.name,
         }
     }
+
+    pub(crate) fn get_chain_config(&self) -> &crate::config::chain::TransformChainConfig {
+        match self {
+            #[cfg(feature = "cassandra")]
+            SourceConfig::Cassandra(c) => &c.chain,
+            #[cfg(feature = "valkey")]
+            SourceConfig::Valkey(r) => &r.chain,
+            #[cfg(feature = "kafka")]
+            SourceConfig::Kafka(r) => &r.chain,
+            #[cfg(feature = "opensearch")]
+            SourceConfig::OpenSearch(r) => &r.chain,
+        }
+    }
 }

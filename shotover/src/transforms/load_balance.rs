@@ -21,11 +21,20 @@ const NAME: &str = "ConnectionBalanceAndPool";
 #[typetag::serde(name = "ConnectionBalanceAndPool")]
 #[async_trait(?Send)]
 impl TransformConfig for ConnectionBalanceAndPoolConfig {
+    fn get_name(&self) -> &str {
+        &self.name
+    }
+
     async fn get_builder(
         &self,
         transform_context: TransformContextConfig,
     ) -> Result<Box<dyn TransformBuilder>> {
-        let chain = Arc::new(self.chain.get_builder(transform_context).await?);
+        let chain_context = TransformContextConfig {
+            chain_name: transform_context.transform_name.clone(),
+            transform_name: String::new(),
+            up_chain_protocol: transform_context.up_chain_protocol,
+        };
+        let chain = Arc::new(self.chain.get_builder(chain_context).await?);
 
         Ok(Box::new(ConnectionBalanceAndPoolBuilder {
             max_connections: self.max_connections,
@@ -40,6 +49,14 @@ impl TransformConfig for ConnectionBalanceAndPoolConfig {
 
     fn down_chain_protocol(&self) -> DownChainProtocol {
         DownChainProtocol::SameAsUpChain
+    }
+
+    fn get_sub_chain_configs(&self, transform_name: &str) -> Vec<(&TransformChainConfig, String)> {
+        vec![(&self.chain, transform_name.to_string())]
+    }
+
+    fn get_user_named_sub_chain_names(&self, _transform_name: &str) -> Vec<String> {
+        vec![]
     }
 }
 

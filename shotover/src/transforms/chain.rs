@@ -164,7 +164,7 @@ impl TransformChain {
         chain_state: &'shorter mut ChainState<'longer>,
     ) -> Result<Messages> {
         let start = Instant::now();
-        chain_state.reset(&mut self.chain);
+        chain_state.reset(&mut self.chain, self.name);
 
         if !chain_state.requests.is_empty() {
             self.chain_requests_batch_size
@@ -190,6 +190,7 @@ impl TransformChain {
 
 pub struct TransformAndMetrics {
     pub transform: Box<dyn Transform>,
+    pub name: String,
     pub transform_total: Counter,
     pub transform_failures: Counter,
     pub transform_latency: Histogram,
@@ -197,9 +198,10 @@ pub struct TransformAndMetrics {
 
 impl TransformAndMetrics {
     #[cfg(test)]
-    pub fn new(transform: Box<dyn Transform>) -> Self {
+    pub fn new(transform: Box<dyn Transform>, name: &str) -> Self {
         TransformAndMetrics {
             transform,
+            name: name.to_string(),
             transform_total: Counter::noop(),
             transform_failures: Counter::noop(),
             transform_latency: Histogram::noop(),
@@ -209,6 +211,7 @@ impl TransformAndMetrics {
 
 pub struct TransformBuilderAndMetrics {
     pub builder: Box<dyn TransformBuilder>,
+    pub name: String,
     transform_total: Counter,
     transform_failures: Counter,
     transform_latency: Histogram,
@@ -218,6 +221,7 @@ impl TransformBuilderAndMetrics {
     fn build(&self, context: TransformContextBuilder) -> TransformAndMetrics {
         TransformAndMetrics {
             transform: self.builder.build(context),
+            name: self.name.clone(),
             transform_total: self.transform_total.clone(),
             transform_failures: self.transform_failures.clone(),
             transform_latency: self.transform_latency.clone(),
@@ -236,12 +240,13 @@ pub struct TransformChainBuilder {
 }
 
 impl TransformChainBuilder {
-    pub fn new(chain: Vec<Box<dyn TransformBuilder>>, name: &'static str) -> Self {
-        let chain = chain.into_iter().map(|builder|
+    pub fn new(chain: Vec<(Box<dyn TransformBuilder>, String)>, name: &'static str) -> Self {
+        let chain = chain.into_iter().map(|(builder, user_name)|
             TransformBuilderAndMetrics {
                 transform_total: counter!("shotover_transform_total_count", "transform" => builder.get_name()),
                 transform_failures: counter!("shotover_transform_failures_count", "transform" => builder.get_name()),
                 transform_latency: histogram!("shotover_transform_latency_seconds", "transform" => builder.get_name()),
+                name: user_name,
                 builder,
             }
         ).collect();
@@ -283,12 +288,12 @@ impl TransformChainBuilder {
                 if i == last_index && !transform.builder.is_terminating() {
                     errors.push(format!(
                         "  Non-terminating transform {:?} is last in chain. Last transform must be terminating.",
-                        transform.builder.get_name()
+                        transform.name
                     ));
                 } else if i != last_index && transform.builder.is_terminating() {
                     errors.push(format!(
                         "  Terminating transform {:?} is not last in chain. Terminating transform must be last in chain.",
-                        transform.builder.get_name()
+                        transform.name
                     ));
                 }
 
@@ -340,7 +345,7 @@ impl TransformChainBuilder {
                     let chain_response = chain.process_request(&mut chain_state).await;
 
                     if let Err(e) = &chain_response {
-                        error!("Internal error in buffered chain: {e:?}");
+                        error!("Internal error in buffered chain {:?}: {e:?}", chain.name);
                     };
 
                     match return_chan {
@@ -353,7 +358,7 @@ impl TransformChainBuilder {
                     };
                 }
 
-                debug!("buffered chain processing thread exiting, stopping chain loop and dropping");
+                debug!("Buffered chain {:?} processing thread exiting, stopping chain loop and dropping", chain.name);
 
                 match chain
                     .process_request(&mut ChainState::flush())
@@ -402,6 +407,7 @@ impl TransformChainBuilder {
 
 #[cfg(test)]
 mod chain_tests {
+    use crate::transforms::TransformBuilder;
     use crate::transforms::chain::TransformChainBuilder;
     use crate::transforms::debug::printer::DebugPrinter;
     use crate::transforms::null::NullSink;
@@ -420,9 +426,12 @@ mod chain_tests {
     async fn test_validate_valid_chain() {
         let chain = TransformChainBuilder::new(
             vec![
-                Box::<DebugPrinter>::default(),
-                Box::<DebugPrinter>::default(),
-                Box::<NullSink>::default(),
+                (
+                    Box::<DebugPrinter>::default() as Box<dyn TransformBuilder>,
+                    "debug-1".to_string(),
+                ),
+                (Box::<DebugPrinter>::default(), "debug-2".to_string()),
+                (Box::<NullSink>::default(), "sink".to_string()),
             ],
             "test-chain",
         );

@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct DebugForceParseConfig {
+    pub name: String,
     pub parse_requests: bool,
     pub parse_responses: bool,
 }
@@ -26,6 +27,10 @@ pub struct DebugForceParseConfig {
 #[typetag::serde(name = "DebugForceParse")]
 #[async_trait(?Send)]
 impl TransformConfig for DebugForceParseConfig {
+    fn get_name(&self) -> &str {
+        &self.name
+    }
+
     async fn get_builder(
         &self,
         _transform_context: TransformContextConfig,
@@ -45,6 +50,17 @@ impl TransformConfig for DebugForceParseConfig {
     fn down_chain_protocol(&self) -> DownChainProtocol {
         DownChainProtocol::SameAsUpChain
     }
+
+    fn get_sub_chain_configs(
+        &self,
+        _transform_name: &str,
+    ) -> Vec<(&crate::config::chain::TransformChainConfig, String)> {
+        vec![]
+    }
+
+    fn get_user_named_sub_chain_names(&self, _transform_name: &str) -> Vec<String> {
+        vec![]
+    }
 }
 
 /// Messages that pass through this transform will be parsed and then reencoded.
@@ -52,6 +68,7 @@ impl TransformConfig for DebugForceParseConfig {
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct DebugForceEncodeConfig {
+    pub name: String,
     pub encode_requests: bool,
     pub encode_responses: bool,
 }
@@ -60,6 +77,10 @@ const NAME: &str = "DebugForceEncode";
 #[typetag::serde(name = "DebugForceEncode")]
 #[async_trait(?Send)]
 impl TransformConfig for DebugForceEncodeConfig {
+    fn get_name(&self) -> &str {
+        &self.name
+    }
+
     async fn get_builder(
         &self,
         _transform_context: TransformContextConfig,
@@ -78,6 +99,17 @@ impl TransformConfig for DebugForceEncodeConfig {
 
     fn down_chain_protocol(&self) -> DownChainProtocol {
         DownChainProtocol::SameAsUpChain
+    }
+
+    fn get_sub_chain_configs(
+        &self,
+        _transform_name: &str,
+    ) -> Vec<(&crate::config::chain::TransformChainConfig, String)> {
+        vec![]
+    }
+
+    fn get_user_named_sub_chain_names(&self, _transform_name: &str) -> Vec<String> {
+        vec![]
     }
 }
 

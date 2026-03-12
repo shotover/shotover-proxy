@@ -21,6 +21,7 @@ pub struct QueryTypeFilter {
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct QueryTypeFilterConfig {
+    pub name: String,
     #[serde(flatten)]
     pub filter: Filter,
 }
@@ -29,6 +30,10 @@ const NAME: &str = "QueryTypeFilter";
 #[typetag::serde(name = "QueryTypeFilter")]
 #[async_trait(?Send)]
 impl TransformConfig for QueryTypeFilterConfig {
+    fn get_name(&self) -> &str {
+        &self.name
+    }
+
     async fn get_builder(
         &self,
         _transform_context: TransformContextConfig,
@@ -45,6 +50,17 @@ impl TransformConfig for QueryTypeFilterConfig {
 
     fn down_chain_protocol(&self) -> DownChainProtocol {
         DownChainProtocol::SameAsUpChain
+    }
+
+    fn get_sub_chain_configs(
+        &self,
+        _transform_name: &str,
+    ) -> Vec<(&crate::config::chain::TransformChainConfig, String)> {
+        vec![]
+    }
+
+    fn get_user_named_sub_chain_names(&self, _transform_name: &str) -> Vec<String> {
+        vec![]
     }
 }
 
@@ -120,7 +136,10 @@ mod test {
             filtered_requests: MessageIdMap::default(),
         };
 
-        let mut chain = vec![TransformAndMetrics::new(Box::new(Loopback::default()))];
+        let mut chain = vec![TransformAndMetrics::new(
+            Box::new(Loopback::default()),
+            "loopback",
+        )];
 
         let messages: Vec<_> = (0..26)
             .map(|i| {
@@ -140,7 +159,7 @@ mod test {
             .collect();
 
         let mut chain_state = ChainState::new_test(messages);
-        chain_state.reset(&mut chain);
+        chain_state.reset(&mut chain, "test");
         let result = filter_transform.transform(&mut chain_state).await.unwrap();
 
         assert_eq!(result.len(), 26);
@@ -175,7 +194,10 @@ mod test {
             filtered_requests: MessageIdMap::default(),
         };
 
-        let mut chain = vec![TransformAndMetrics::new(Box::new(Loopback::default()))];
+        let mut chain = vec![TransformAndMetrics::new(
+            Box::new(Loopback::default()),
+            "loopback",
+        )];
 
         let messages: Vec<_> = (0..26)
             .map(|i| {
@@ -195,7 +217,7 @@ mod test {
             .collect();
 
         let mut chain_state = ChainState::new_test(messages);
-        chain_state.reset(&mut chain);
+        chain_state.reset(&mut chain, "test");
         let result = filter_transform.transform(&mut chain_state).await.unwrap();
 
         assert_eq!(result.len(), 26);

@@ -10,12 +10,18 @@ use tracing::info;
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
-pub struct DebugPrinterConfig;
+pub struct DebugPrinterConfig {
+    pub name: String,
+}
 
 const NAME: &str = "DebugPrinter";
 #[typetag::serde(name = "DebugPrinter")]
 #[async_trait(?Send)]
 impl TransformConfig for DebugPrinterConfig {
+    fn get_name(&self) -> &str {
+        &self.name
+    }
+
     async fn get_builder(
         &self,
         _transform_context: TransformContextConfig,
@@ -29,6 +35,17 @@ impl TransformConfig for DebugPrinterConfig {
 
     fn down_chain_protocol(&self) -> DownChainProtocol {
         DownChainProtocol::SameAsUpChain
+    }
+
+    fn get_sub_chain_configs(
+        &self,
+        _transform_name: &str,
+    ) -> Vec<(&crate::config::chain::TransformChainConfig, String)> {
+        vec![]
+    }
+
+    fn get_user_named_sub_chain_names(&self, _transform_name: &str) -> Vec<String> {
+        vec![]
     }
 }
 

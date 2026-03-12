@@ -17,6 +17,7 @@ struct Coalesce {
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct CoalesceConfig {
+    pub name: String,
     pub flush_when_buffered_message_count: Option<usize>,
     pub flush_when_millis_since_last_flush: Option<u128>,
 }
@@ -25,6 +26,10 @@ const NAME: &str = "Coalesce";
 #[typetag::serde(name = "Coalesce")]
 #[async_trait(?Send)]
 impl TransformConfig for CoalesceConfig {
+    fn get_name(&self) -> &str {
+        &self.name
+    }
+
     async fn get_builder(
         &self,
         _transform_context: TransformContextConfig,
@@ -43,6 +48,17 @@ impl TransformConfig for CoalesceConfig {
 
     fn down_chain_protocol(&self) -> DownChainProtocol {
         DownChainProtocol::SameAsUpChain
+    }
+
+    fn get_sub_chain_configs(
+        &self,
+        _transform_name: &str,
+    ) -> Vec<(&crate::config::chain::TransformChainConfig, String)> {
+        vec![]
+    }
+
+    fn get_user_named_sub_chain_names(&self, _transform_name: &str) -> Vec<String> {
+        vec![]
     }
 }
 
@@ -129,7 +145,10 @@ mod test {
             last_write: Instant::now(),
         };
 
-        let mut chain = vec![TransformAndMetrics::new(Box::new(Loopback::default()))];
+        let mut chain = vec![TransformAndMetrics::new(
+            Box::new(Loopback::default()),
+            "loopback",
+        )];
 
         let requests: Vec<_> = (0..25)
             .map(|_| Message::from_frame(Frame::Valkey(ValkeyFrame::Null)))
@@ -151,7 +170,10 @@ mod test {
             last_write: Instant::now(),
         };
 
-        let mut chain = vec![TransformAndMetrics::new(Box::new(Loopback::default()))];
+        let mut chain = vec![TransformAndMetrics::new(
+            Box::new(Loopback::default()),
+            "loopback",
+        )];
 
         let requests: Vec<_> = (0..25)
             .map(|_| Message::from_frame(Frame::Valkey(ValkeyFrame::Null)))
@@ -174,7 +196,10 @@ mod test {
             last_write: Instant::now(),
         };
 
-        let mut chain = vec![TransformAndMetrics::new(Box::new(Loopback::default()))];
+        let mut chain = vec![TransformAndMetrics::new(
+            Box::new(Loopback::default()),
+            "loopback",
+        )];
 
         let requests: Vec<_> = (0..25)
             .map(|_| Message::from_frame(Frame::Valkey(ValkeyFrame::Null)))
@@ -199,7 +224,7 @@ mod test {
         expected_len: usize,
     ) {
         let mut wrapper = ChainState::new_test(requests.to_vec());
-        wrapper.reset(chain);
+        wrapper.reset(chain, "test");
         assert_eq!(
             coalesce.transform(&mut wrapper).await.unwrap().len(),
             expected_len

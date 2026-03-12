@@ -81,6 +81,7 @@ impl From<&TableCacheSchemaConfig> for TableCacheSchema {
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct ValkeyConfig {
+    pub name: String,
     pub caching_schema: HashMap<String, TableCacheSchemaConfig>,
     pub chain: TransformChainConfig,
 }
@@ -89,9 +90,13 @@ const NAME: &str = "ValkeyCache";
 #[typetag::serde(name = "ValkeyCache")]
 #[async_trait(?Send)]
 impl TransformConfig for ValkeyConfig {
+    fn get_name(&self) -> &str {
+        &self.name
+    }
+
     async fn get_builder(
         &self,
-        _transform_context: TransformContextConfig,
+        transform_context: TransformContextConfig,
     ) -> Result<Box<dyn TransformBuilder>> {
         let missed_requests = counter!("shotover_cache_miss_count");
 
@@ -102,7 +107,8 @@ impl TransformConfig for ValkeyConfig {
             .collect();
 
         let transform_context_config = TransformContextConfig {
-            chain_name: "cache_chain".into(),
+            chain_name: transform_context.transform_name.clone(),
+            transform_name: String::new(),
             up_chain_protocol: MessageType::Valkey,
         };
 
@@ -119,6 +125,14 @@ impl TransformConfig for ValkeyConfig {
 
     fn down_chain_protocol(&self) -> DownChainProtocol {
         DownChainProtocol::SameAsUpChain
+    }
+
+    fn get_sub_chain_configs(&self, transform_name: &str) -> Vec<(&TransformChainConfig, String)> {
+        vec![(&self.chain, transform_name.to_string())]
+    }
+
+    fn get_user_named_sub_chain_names(&self, _transform_name: &str) -> Vec<String> {
+        vec![]
     }
 }
 
@@ -878,9 +892,12 @@ mod test {
     async fn test_validate_valid_chain() {
         let cache_chain = TransformChainBuilder::new(
             vec![
-                Box::new(DebugPrinter::new()),
-                Box::new(DebugPrinter::new()),
-                Box::<NullSink>::default(),
+                (
+                    Box::new(DebugPrinter::new()) as Box<dyn TransformBuilder>,
+                    "debug-1".to_string(),
+                ),
+                (Box::new(DebugPrinter::new()), "debug-2".to_string()),
+                (Box::<NullSink>::default(), "sink".to_string()),
             ],
             "test-chain",
         );

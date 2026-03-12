@@ -5,7 +5,9 @@ sources:
       listen_addr: "127.0.0.1:6380"
       chain:
         - ValkeyClusterPortsRewrite:
+           name: "valkey-cluster-ports-rewrite"
            new_port: 6380
         - ValkeySinkCluster:
+            name: "valkey-sink-cluster"
             first_contact_points: ["127.0.0.1:2220", "127.0.0.1:2221", "127.0.0.1:2222", "127.0.0.1:2223", "127.0.0.1:2224", "127.0.0.1:2225"]
             connect_timeout_ms: 3000

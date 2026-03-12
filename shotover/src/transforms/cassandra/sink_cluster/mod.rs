@@ -53,6 +53,7 @@ const SYSTEM_KEYSPACES: [IdentifierRef<'static>; 3] = [
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct CassandraSinkClusterConfig {
+    pub name: String,
     /// contact points must be within the specified data_center and rack.
     /// If this is not followed, shotover's invariants will still be upheld but shotover will communicate with a
     /// node outside of the specified data_center and rack.
@@ -68,6 +69,10 @@ const NAME: &str = "CassandraSinkCluster";
 #[typetag::serde(name = "CassandraSinkCluster")]
 #[async_trait(?Send)]
 impl TransformConfig for CassandraSinkClusterConfig {
+    fn get_name(&self) -> &str {
+        &self.name
+    }
+
     async fn get_builder(
         &self,
         transform_context: TransformContextConfig,
@@ -103,6 +108,17 @@ impl TransformConfig for CassandraSinkClusterConfig {
 
     fn down_chain_protocol(&self) -> DownChainProtocol {
         DownChainProtocol::Terminating
+    }
+
+    fn get_sub_chain_configs(
+        &self,
+        _transform_name: &str,
+    ) -> Vec<(&crate::config::chain::TransformChainConfig, String)> {
+        vec![]
+    }
+
+    fn get_user_named_sub_chain_names(&self, _transform_name: &str) -> Vec<String> {
+        vec![]
     }
 }
 
