@@ -30,8 +30,7 @@ impl TransformConfig for ConnectionBalanceAndPoolConfig {
         transform_context: TransformContextConfig,
     ) -> Result<Box<dyn TransformBuilder>> {
         let chain_context = TransformContextConfig {
-            chain_name: transform_context.transform_name.clone(),
-            transform_name: String::new(),
+            chain_name: self.name.clone(),
             up_chain_protocol: transform_context.up_chain_protocol,
         };
         let chain = Arc::new(self.chain.get_builder(chain_context).await?);
@@ -51,11 +50,11 @@ impl TransformConfig for ConnectionBalanceAndPoolConfig {
         DownChainProtocol::SameAsUpChain
     }
 
-    fn get_sub_chain_configs(&self, transform_name: &str) -> Vec<(&TransformChainConfig, String)> {
-        vec![(&self.chain, transform_name.to_string())]
+    fn get_sub_chain_configs(&self) -> Vec<(&TransformChainConfig, String)> {
+        vec![(&self.chain, self.name.clone())]
     }
 
-    fn get_user_named_sub_chain_names(&self, _transform_name: &str) -> Vec<String> {
+    fn get_user_named_sub_chain_names(&self) -> Vec<String> {
         vec![]
     }
 }

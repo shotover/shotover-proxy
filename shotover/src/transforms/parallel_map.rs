@@ -86,8 +86,7 @@ impl TransformConfig for ParallelMapConfig {
         let mut chains = vec![];
         for i in 0..self.parallelism {
             let transform_context_config = TransformContextConfig {
-                chain_name: format!("{}[{}]", transform_context.transform_name, i),
-                transform_name: String::new(),
+                chain_name: format!("{}[{}]", self.name, i),
                 up_chain_protocol: transform_context.up_chain_protocol,
             };
             chains.push(self.chain.get_builder(transform_context_config).await?);
@@ -107,13 +106,13 @@ impl TransformConfig for ParallelMapConfig {
         DownChainProtocol::Terminating
     }
 
-    fn get_sub_chain_configs(&self, transform_name: &str) -> Vec<(&TransformChainConfig, String)> {
+    fn get_sub_chain_configs(&self) -> Vec<(&TransformChainConfig, String)> {
         (0..self.parallelism)
-            .map(|i| (&self.chain, format!("{transform_name}[{i}]")))
+            .map(|i| (&self.chain, format!("{}[{i}]", self.name)))
             .collect()
     }
 
-    fn get_user_named_sub_chain_names(&self, _transform_name: &str) -> Vec<String> {
+    fn get_user_named_sub_chain_names(&self) -> Vec<String> {
         vec![]
     }
 }

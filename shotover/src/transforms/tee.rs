@@ -213,7 +213,6 @@ impl TransformConfig for TeeConfig {
                 mismatch_chain
                     .get_builder(TransformContextConfig {
                         chain_name: mismatch_name.clone(),
-                        transform_name: String::new(),
                         up_chain_protocol: transform_context.up_chain_protocol,
                     })
                     .await?,
@@ -223,8 +222,7 @@ impl TransformConfig for TeeConfig {
         let tee_chain = self
             .chain
             .get_builder(TransformContextConfig {
-                chain_name: transform_context.transform_name.clone(),
-                transform_name: String::new(),
+                chain_name: self.name.clone(),
                 up_chain_protocol: transform_context.up_chain_protocol,
             })
             .await?;
@@ -247,8 +245,8 @@ impl TransformConfig for TeeConfig {
         DownChainProtocol::SameAsUpChain
     }
 
-    fn get_sub_chain_configs(&self, transform_name: &str) -> Vec<(&TransformChainConfig, String)> {
-        let mut configs = vec![(&self.chain, transform_name.to_string())];
+    fn get_sub_chain_configs(&self) -> Vec<(&TransformChainConfig, String)> {
+        let mut configs = vec![(&self.chain, self.name.clone())];
         if let Some(ConsistencyBehaviorConfig::SubchainOnMismatch {
             ref name,
             ref chain,
@@ -259,7 +257,7 @@ impl TransformConfig for TeeConfig {
         configs
     }
 
-    fn get_user_named_sub_chain_names(&self, _transform_name: &str) -> Vec<String> {
+    fn get_user_named_sub_chain_names(&self) -> Vec<String> {
         match &self.behavior {
             Some(ConsistencyBehaviorConfig::SubchainOnMismatch { name, .. }) => {
                 vec![name.clone()]
@@ -643,7 +641,6 @@ mod tests {
 
         let transform_context_config = TransformContextConfig {
             chain_name: "".into(),
-            transform_name: "tee".into(),
             up_chain_protocol: MessageType::Valkey,
         };
         let transform = config.get_builder(transform_context_config).await.unwrap();
@@ -671,7 +668,6 @@ mod tests {
 
         let transform_context_config = TransformContextConfig {
             chain_name: "".into(),
-            transform_name: "tee".into(),
             up_chain_protocol: MessageType::Valkey,
         };
         let transform = config.get_builder(transform_context_config).await.unwrap();
@@ -696,7 +692,6 @@ mod tests {
         };
         let transform_context_config = TransformContextConfig {
             chain_name: "".into(),
-            transform_name: "tee".into(),
             up_chain_protocol: MessageType::Valkey,
         };
         let transform = config.get_builder(transform_context_config).await.unwrap();
@@ -718,7 +713,6 @@ mod tests {
         };
         let transform_context_config = TransformContextConfig {
             chain_name: "".into(),
-            transform_name: "tee".into(),
             up_chain_protocol: MessageType::Valkey,
         };
         let transform = config.get_builder(transform_context_config).await.unwrap();
@@ -751,7 +745,6 @@ mod tests {
 
         let transform_context_config = TransformContextConfig {
             chain_name: "".into(),
-            transform_name: "tee".into(),
             up_chain_protocol: MessageType::Valkey,
         };
         let transform = config.get_builder(transform_context_config).await.unwrap();
@@ -782,7 +775,6 @@ mod tests {
 
         let transform_context_config = TransformContextConfig {
             chain_name: "".into(),
-            transform_name: "tee".into(),
             up_chain_protocol: MessageType::Valkey,
         };
         let transform = config.get_builder(transform_context_config).await.unwrap();

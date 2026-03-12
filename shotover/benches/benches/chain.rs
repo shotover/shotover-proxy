@@ -157,7 +157,6 @@ fn criterion_benchmark(c: &mut Criterion) {
                         }
                         .get_builder(TransformContextConfig {
                             chain_name: "".into(),
-                            transform_name: "".into(),
                             up_chain_protocol: MessageType::Valkey,
                         }),
                     )

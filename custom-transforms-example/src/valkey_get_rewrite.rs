@@ -42,12 +42,11 @@ impl TransformConfig for ValkeyGetRewriteConfig {
 
     fn get_sub_chain_configs(
         &self,
-        _transform_name: &str,
     ) -> Vec<(&shotover::config::chain::TransformChainConfig, String)> {
         vec![]
     }
 
-    fn get_user_named_sub_chain_names(&self, _transform_name: &str) -> Vec<String> {
+    fn get_user_named_sub_chain_names(&self) -> Vec<String> {
         vec![]
     }
 }

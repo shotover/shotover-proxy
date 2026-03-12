@@ -114,14 +114,11 @@ pub trait TransformConfig: Debug {
 
     /// Returns sub-chain configs paired with their derived chain names.
     /// Used for recursive traversal of sub-chains during validation.
-    fn get_sub_chain_configs(
-        &self,
-        _transform_name: &str,
-    ) -> Vec<(&crate::config::chain::TransformChainConfig, String)>;
+    fn get_sub_chain_configs(&self) -> Vec<(&crate::config::chain::TransformChainConfig, String)>;
 
     /// Returns sub-chain names that are explicitly user-defined.
     /// These are used for global name uniqueness validation.
-    fn get_user_named_sub_chain_names(&self, _transform_name: &str) -> Vec<String>;
+    fn get_user_named_sub_chain_names(&self) -> Vec<String>;
 }
 
 /// Defines which protocols a transform will:
@@ -151,8 +148,6 @@ pub enum DownChainProtocol {
 pub struct TransformContextConfig {
     /// The name of the chain that this transform is configured in.
     pub chain_name: String,
-    /// The user-provided name for this transform instance.
-    pub transform_name: String,
     /// The protocol that the transform will receive requests in.
     pub up_chain_protocol: MessageType,
 }

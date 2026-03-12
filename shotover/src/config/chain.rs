@@ -38,7 +38,6 @@ impl TransformChainConfig {
                 }
             }
             transform_context.up_chain_protocol = upchain_protocol;
-            transform_context.transform_name = config.get_name().to_string();
             let builder = config.get_builder(transform_context.clone()).await?;
             let transform_name = config.get_name().to_string();
             builders.push((builder, transform_name));
@@ -73,13 +72,13 @@ impl TransformChainConfig {
                 duplicated_names.insert(transform_name.to_string());
             }
 
-            for sub_chain_name in config.get_user_named_sub_chain_names(transform_name) {
+            for sub_chain_name in config.get_user_named_sub_chain_names() {
                 if !used_names.insert(sub_chain_name.clone()) {
                     duplicated_names.insert(sub_chain_name);
                 }
             }
 
-            for (sub_chain, sub_chain_name) in config.get_sub_chain_configs(transform_name) {
+            for (sub_chain, sub_chain_name) in config.get_sub_chain_configs() {
                 duplicated_names.extend(sub_chain.validate_names(&sub_chain_name, used_names));
             }
         }

@@ -118,7 +118,6 @@ impl<C: CodecBuilder + 'static> SourceTask<C> {
 
         let chain_usage_config = TransformContextConfig {
             chain_name: source_name.clone(),
-            transform_name: String::new(),
             up_chain_protocol: codec.protocol(),
         };
         let chain_builder = chain_config

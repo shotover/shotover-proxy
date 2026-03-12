@@ -43,14 +43,11 @@ impl TransformConfig for ValkeyClusterPortsRewriteConfig {
         DownChainProtocol::SameAsUpChain
     }
 
-    fn get_sub_chain_configs(
-        &self,
-        _transform_name: &str,
-    ) -> Vec<(&crate::config::chain::TransformChainConfig, String)> {
+    fn get_sub_chain_configs(&self) -> Vec<(&crate::config::chain::TransformChainConfig, String)> {
         vec![]
     }
 
-    fn get_user_named_sub_chain_names(&self, _transform_name: &str) -> Vec<String> {
+    fn get_user_named_sub_chain_names(&self) -> Vec<String> {
         vec![]
     }
 }
