@@ -29,17 +29,23 @@ Every transform in the topology configuration must have a user-provided `name` f
 ```yaml
 chain:
   - DebugPrinter:
-      name: "my-debug-printer"
-  - NullSink:
-      name: "my-null-sink"
+      name: "print-inbound"
 ```
 
-Sub-chains inside transforms are configured as a bare list. The chain name is derived from the transform's `name` (ParallelMap appends an index). Tee's `SubchainOnMismatch.name` defines the mismatch chain name (and is validated for uniqueness), rather than overriding a derived name.
+Sub-chains inside transforms are configured as a bare list. The chain name is derived from the transform's `name` (ParallelMap appends an index). 
+
+Tee's `SubchainOnMismatch.name` defines the mismatch chain name (and is validated for uniqueness) instead of deriving it from the parent transform name.
 
 ```yaml
 chain:
-  - NullSink:
-      name: "sub-sink"
+  - Tee:
+      name: "tee-primary"
+      behavior:
+        SubchainOnMismatch:
+          name: "mismatch-chain"
+          chain:
+            - NullSink:
+                name: "mismatch-sink"
 ```
 
 ## Transforms
