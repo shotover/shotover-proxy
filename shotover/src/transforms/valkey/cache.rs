@@ -96,7 +96,7 @@ impl TransformConfig for ValkeyConfig {
 
     async fn get_builder(
         &self,
-        transform_context: TransformContextConfig,
+        _transform_context: TransformContextConfig,
     ) -> Result<Box<dyn TransformBuilder>> {
         let missed_requests = counter!("shotover_cache_miss_count");
 
