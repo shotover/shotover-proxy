@@ -23,6 +23,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct CassandraPeersRewriteConfig {
+    pub name: String,
     pub port: u16,
 }
 
@@ -30,6 +31,10 @@ const NAME: &str = "CassandraPeersRewrite";
 #[typetag::serde(name = "CassandraPeersRewrite")]
 #[async_trait(?Send)]
 impl TransformConfig for CassandraPeersRewriteConfig {
+    fn get_name(&self) -> &str {
+        &self.name
+    }
+
     async fn get_builder(
         &self,
         _transform_context: TransformContextConfig,
@@ -43,6 +48,10 @@ impl TransformConfig for CassandraPeersRewriteConfig {
 
     fn down_chain_protocol(&self) -> DownChainProtocol {
         DownChainProtocol::SameAsUpChain
+    }
+
+    fn get_sub_chain_configs(&self) -> Vec<(&crate::config::chain::TransformChainConfig, String)> {
+        vec![]
     }
 }
 

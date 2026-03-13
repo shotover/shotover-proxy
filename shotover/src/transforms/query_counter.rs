@@ -25,6 +25,7 @@ pub struct QueryCounter {
 #[serde(deny_unknown_fields)]
 pub struct QueryCounterConfig {
     pub name: String,
+    pub counter_name: String,
 }
 
 impl QueryCounter {
@@ -109,11 +110,15 @@ const NAME: &str = "QueryCounter";
 #[typetag::serde(name = "QueryCounter")]
 #[async_trait(?Send)]
 impl TransformConfig for QueryCounterConfig {
+    fn get_name(&self) -> &str {
+        &self.name
+    }
+
     async fn get_builder(
         &self,
         _transform_context: TransformContextConfig,
     ) -> Result<Box<dyn TransformBuilder>> {
-        Ok(Box::new(QueryCounter::new(self.name.clone())))
+        Ok(Box::new(QueryCounter::new(self.counter_name.clone())))
     }
 
     fn up_chain_protocol(&self) -> UpChainProtocol {
@@ -122,5 +127,9 @@ impl TransformConfig for QueryCounterConfig {
 
     fn down_chain_protocol(&self) -> DownChainProtocol {
         DownChainProtocol::SameAsUpChain
+    }
+
+    fn get_sub_chain_configs(&self) -> Vec<(&crate::config::chain::TransformChainConfig, String)> {
+        vec![]
     }
 }

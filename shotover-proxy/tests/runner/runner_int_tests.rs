@@ -91,7 +91,7 @@ Caused by:
     Topology errors
     valkey source:
       valkey chain:
-        Non-terminating transform \"DebugPrinter\" is last in chain. Last transform must be terminating.
+        Non-terminating transform \"debug-printer\" is last in chain. Last transform must be terminating.
     ")])
     .await;
 }
@@ -110,7 +110,7 @@ Caused by:
     Topology errors
     valkey source:
       valkey chain:
-        Terminating transform \"NullSink\" is not last in chain. Terminating transform must be last in chain.
+        Terminating transform \"null-sink-1\" is not last in chain. Terminating transform must be last in chain.
     ")])
     .await;
 }
@@ -129,15 +129,15 @@ Caused by:
     Topology errors
     valkey1 source:
       valkey1 chain:
-        Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
-        Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
-        Non-terminating transform "DebugPrinter" is last in chain. Last transform must be terminating.
+        Terminating transform "sink-1" is not last in chain. Terminating transform must be last in chain.
+        Terminating transform "sink-2" is not last in chain. Terminating transform must be last in chain.
+        Non-terminating transform "debug" is last in chain. Last transform must be terminating.
     valkey2 source:
       valkey2 chain:
         ParallelMap:
-          parallel_map_chain chain:
-            Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
-            Non-terminating transform "DebugPrinter" is last in chain. Last transform must be terminating.
+          pmap[0] chain:
+            Terminating transform "p-sink" is not last in chain. Terminating transform must be last in chain.
+            Non-terminating transform "p-debug" is last in chain. Last transform must be terminating.
     "#),
         ],
     )

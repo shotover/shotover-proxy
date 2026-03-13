@@ -16,6 +16,7 @@ use serde::Serialize;
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct ValkeyClusterPortsRewriteConfig {
+    pub name: String,
     pub new_port: u16,
 }
 
@@ -23,6 +24,10 @@ const NAME: &str = "ValkeyClusterPortsRewrite";
 #[typetag::serde(name = "ValkeyClusterPortsRewrite")]
 #[async_trait(?Send)]
 impl TransformConfig for ValkeyClusterPortsRewriteConfig {
+    fn get_name(&self) -> &str {
+        &self.name
+    }
+
     async fn get_builder(
         &self,
         _transform_context: TransformContextConfig,
@@ -36,6 +41,10 @@ impl TransformConfig for ValkeyClusterPortsRewriteConfig {
 
     fn down_chain_protocol(&self) -> DownChainProtocol {
         DownChainProtocol::SameAsUpChain
+    }
+
+    fn get_sub_chain_configs(&self) -> Vec<(&crate::config::chain::TransformChainConfig, String)> {
+        vec![]
     }
 }
 

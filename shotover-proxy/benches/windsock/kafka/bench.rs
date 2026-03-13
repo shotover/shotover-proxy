@@ -79,22 +79,25 @@ impl KafkaBench {
     }
 
     fn generate_topology_yaml(&self, host_address: String, kafka_address: String) -> String {
-        let mut transforms = vec![];
+        let mut transforms: Vec<Box<dyn TransformConfig>> = vec![];
         if let Shotover::ForcedMessageParsed = self.shotover {
             transforms.push(Box::new(DebugForceEncodeConfig {
+                name: "debug-force-encode".to_string(),
                 encode_requests: true,
                 encode_responses: true,
-            }) as Box<dyn TransformConfig>);
+            }));
         }
 
         transforms.push(match self.topology {
             KafkaTopology::Single => Box::new(KafkaSinkSingleConfig {
+                name: "kafka-sink-single".to_string(),
                 destination_port: 9192,
                 connect_timeout_ms: 3000,
                 read_timeout: None,
                 tls: None,
             }),
             KafkaTopology::Cluster1 | KafkaTopology::Cluster3 => Box::new(KafkaSinkClusterConfig {
+                name: "kafka-sink-cluster".to_string(),
                 connect_timeout_ms: 3000,
                 read_timeout: None,
                 check_shotover_peers_delay_ms: Some(3000),

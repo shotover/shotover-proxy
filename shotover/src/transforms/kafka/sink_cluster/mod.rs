@@ -93,6 +93,7 @@ enum FindCoordinatorError {
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct KafkaSinkClusterConfig {
+    pub name: String,
     pub first_contact_points: Vec<String>,
     pub shotover_nodes: Vec<ShotoverNodeConfig>,
     pub local_shotover_broker_id: i32,
@@ -107,6 +108,10 @@ const NAME: &str = "KafkaSinkCluster";
 #[typetag::serde(name = "KafkaSinkCluster")]
 #[async_trait(?Send)]
 impl TransformConfig for KafkaSinkClusterConfig {
+    fn get_name(&self) -> &str {
+        &self.name
+    }
+
     async fn get_builder(
         &self,
         transform_context: TransformContextConfig,
@@ -170,6 +175,10 @@ impl TransformConfig for KafkaSinkClusterConfig {
 
     fn down_chain_protocol(&self) -> DownChainProtocol {
         DownChainProtocol::Terminating
+    }
+
+    fn get_sub_chain_configs(&self) -> Vec<(&crate::config::chain::TransformChainConfig, String)> {
+        vec![]
     }
 }
 

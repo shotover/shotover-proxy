@@ -4,6 +4,9 @@ sources:
       name: "valkey"
       listen_addr: "127.0.0.1:6379"
       chain:
-        - NullSink
-        - DebugPrinter
-        - NullSink
+        - NullSink:
+            name: "null-sink-1"
+        - DebugPrinter:
+            name: "debug-printer"
+        - NullSink:
+            name: "null-sink-2"

@@ -8,6 +8,7 @@ sources:
         private_key_path: "tests/test-configs/valkey/tls/certs/localhost.key"
       chain:
         - ValkeySinkCluster:
+            name: "valkey-sink-cluster"
             first_contact_points:
               - "172.16.1.2:6379"
               - "172.16.1.3:6379"

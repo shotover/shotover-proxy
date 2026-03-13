@@ -6,18 +6,26 @@ sources:
       connection_limit: 3000000
       chain:
         - Tee:
+            name: "tee"
             buffer_size: 10000
             behavior:
               SubchainOnMismatch:
-                - QueryTypeFilter:
-                    DenyList: [Read]
-                - ValkeySinkSingle:
-                    remote_address: "127.0.0.1:1111"
-                    connect_timeout_ms: 3000
+                name: "mismatch-chain"
+                chain:
+                  - QueryTypeFilter:
+                      name: "mismatch-filter"
+                      DenyList: [Read]
+                  - ValkeySinkSingle:
+                      name: "mismatch-sink"
+                      remote_address: "127.0.0.1:1111"
+                      connect_timeout_ms: 3000
             chain:
               - QueryTypeFilter:
+                  name: "tee-filter"
                   DenyList: [Read]
               - DebugReturner:
+                  name: "tee-returner"
                   Valkey: "41"
         - DebugReturner:
+            name: "returner"
             Valkey: "42"

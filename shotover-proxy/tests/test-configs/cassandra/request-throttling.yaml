@@ -5,7 +5,9 @@ sources:
       listen_addr: "127.0.0.1:9042"
       chain:
         - RequestThrottling:
+            name: "request-throttling"
             max_requests_per_second: 50
         - CassandraSinkSingle:
+            name: "cassandra-sink-single"
             remote_address: "127.0.0.1:9043"
             connect_timeout_ms: 3000

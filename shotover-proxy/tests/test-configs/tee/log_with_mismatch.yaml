@@ -6,12 +6,16 @@ sources:
       connection_limit: 3000000
       chain:
         - Tee:
+            name: "tee"
             behavior: LogWarningOnMismatch
             buffer_size: 10000
             chain:
-            - QueryTypeFilter:
-                DenyList: [Read]
-            - DebugReturner:
-                Valkey: "41"
-        - DebugReturner: 
+              - QueryTypeFilter:
+                  name: "tee-filter"
+                  DenyList: [Read]
+              - DebugReturner:
+                  name: "tee-returner"
+                  Valkey: "41"
+        - DebugReturner:
+            name: "returner"
             Valkey: "42"

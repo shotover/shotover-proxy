@@ -40,6 +40,7 @@ type ChannelMap = HashMap<String, Vec<UnboundedSender<Request>>>;
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct ValkeySinkClusterConfig {
+    pub name: String,
     pub first_contact_points: Vec<String>,
     pub direct_destination: Option<String>,
     pub tls: Option<TlsConnectorConfig>,
@@ -51,6 +52,10 @@ const NAME: &str = "ValkeySinkCluster";
 #[typetag::serde(name = "ValkeySinkCluster")]
 #[async_trait(?Send)]
 impl TransformConfig for ValkeySinkClusterConfig {
+    fn get_name(&self) -> &str {
+        &self.name
+    }
+
     async fn get_builder(
         &self,
         transform_context: TransformContextConfig,
@@ -77,6 +82,10 @@ impl TransformConfig for ValkeySinkClusterConfig {
 
     fn down_chain_protocol(&self) -> DownChainProtocol {
         DownChainProtocol::Terminating
+    }
+
+    fn get_sub_chain_configs(&self) -> Vec<(&crate::config::chain::TransformChainConfig, String)> {
+        vec![]
     }
 }
 

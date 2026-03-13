@@ -20,15 +20,15 @@ impl TransformChainConfig {
         &self,
         mut transform_context: TransformContextConfig,
     ) -> Result<TransformChainBuilder> {
-        let mut transforms: Vec<Box<dyn TransformBuilder>> = Vec::new();
+        let mut builders: Vec<(Box<dyn TransformBuilder>, String)> = Vec::new();
         let mut upchain_protocol = transform_context.up_chain_protocol;
-        for (i, tc) in self.0.iter().enumerate() {
-            let name = tc.typetag_name();
-            match tc.up_chain_protocol() {
+        for config in &self.0 {
+            let type_name = config.typetag_name();
+            match config.up_chain_protocol() {
                 UpChainProtocol::MustBeOneOf(protocols) => {
                     if !protocols.contains(&upchain_protocol) {
                         return Err(anyhow!(
-                            "Transform {name} requires upchain protocol to be one of {protocols:?} but was {upchain_protocol:?}"
+                            "Transform {type_name} requires upchain protocol to be one of {protocols:?} but was {upchain_protocol:?}"
                         ));
                     }
                 }
@@ -37,23 +37,21 @@ impl TransformChainConfig {
                 }
             }
             transform_context.up_chain_protocol = upchain_protocol;
-            transforms.push(tc.get_builder(transform_context.clone()).await?);
+            let builder = config.get_builder(transform_context.clone()).await?;
+            let transform_name = config.get_name().to_string();
+            builders.push((builder, transform_name));
 
-            upchain_protocol = match tc.down_chain_protocol() {
+            upchain_protocol = match config.down_chain_protocol() {
                 DownChainProtocol::TransformedTo(new) => new,
                 DownChainProtocol::SameAsUpChain => upchain_protocol,
                 DownChainProtocol::Terminating => {
-                    if i + 1 != self.0.len() {
-                        // TODO: Move bad sink reporting to here
-                        upchain_protocol
-                    } else {
-                        upchain_protocol
-                    }
+                    // TODO: Move bad sink reporting to here
+                    upchain_protocol
                 }
             }
         }
         Ok(TransformChainBuilder::new(
-            transforms,
+            builders,
             transform_context.chain_name.leak(),
         ))
     }

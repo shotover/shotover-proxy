@@ -11,6 +11,7 @@ use shotover::transforms::{DownChainProtocol, TransformContextBuilder, UpChainPr
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct ValkeyGetRewriteConfig {
+    pub name: String,
     pub result: String,
 }
 
@@ -18,6 +19,10 @@ const NAME: &str = "ValkeyGetRewrite";
 #[typetag::serde(name = "ValkeyGetRewrite")]
 #[async_trait(?Send)]
 impl TransformConfig for ValkeyGetRewriteConfig {
+    fn get_name(&self) -> &str {
+        &self.name
+    }
+
     async fn get_builder(
         &self,
         _transform_context: TransformContextConfig,
@@ -33,6 +38,12 @@ impl TransformConfig for ValkeyGetRewriteConfig {
 
     fn down_chain_protocol(&self) -> DownChainProtocol {
         DownChainProtocol::SameAsUpChain
+    }
+
+    fn get_sub_chain_configs(
+        &self,
+    ) -> Vec<(&shotover::config::chain::TransformChainConfig, String)> {
+        vec![]
     }
 }
 

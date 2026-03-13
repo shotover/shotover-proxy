@@ -78,7 +78,7 @@ async fn passthrough_valkey_down() {
 
 Caused by:
     0: Chain failed to send and/or receive messages, the connection will now be closed.
-    1: ValkeySinkSingle transform failed
+    1: valkey-sink transform failed (chain: valkey)
     2: Failed to connect to destination 127.0.0.1:1111
     3: Connection refused (os error {CONNECTION_REFUSED_OS_ERROR})"#
                 ))
@@ -94,7 +94,7 @@ Caused by:
                     r#"encountered an error when flushing the chain valkey for shutdown
 
 Caused by:
-    0: ValkeySinkSingle transform failed
+    0: valkey-sink transform failed (chain: valkey)
     1: Failed to connect to destination 127.0.0.1:1111
     2: Connection refused (os error {CONNECTION_REFUSED_OS_ERROR})"#
                 ))
