@@ -81,6 +81,7 @@ pub(crate) struct SourceTask<C: CodecBuilder> {
     connection_count: u64,
 
     connections_opened: Counter,
+    connections_accept_failures: Counter,
     available_connections_gauge: Gauge,
 
     /// Timeout after which to kill an idle connection. No timeout means connections will never be timed out.
@@ -117,6 +118,10 @@ impl<C: CodecBuilder + 'static> SourceTask<C> {
         let available_connections_gauge =
             gauge!("shotover_available_connections_count", "source" => source_name.clone());
         let connections_opened = counter!("connections_opened", "source" => source_name.clone());
+        let connections_accept_failures = counter!(
+            "shotover_source_connections_accept_failures_count",
+            "source" => source_name.clone()
+        );
         available_connections_gauge.set(limit_connections.available_permits() as f64);
 
         let chain_usage_config = TransformContextConfig {
@@ -179,6 +184,7 @@ impl<C: CodecBuilder + 'static> SourceTask<C> {
             connection_count: 0,
             available_connections_gauge,
             connections_opened,
+            connections_accept_failures,
             timeout,
             connection_handles: vec![],
             transport,
@@ -229,7 +235,7 @@ impl<C: CodecBuilder + 'static> SourceTask<C> {
     ///
     /// Returns `Err` only for unrecoverable source task failures.
     /// Runtime listener creation and accept failures are treated as recoverable
-    /// and retried forever using exponential backoff.
+    /// and retried forever with capped backoff.
     pub async fn run(&mut self) -> Result<()> {
         loop {
             // Wait for a permit to become available
@@ -268,7 +274,8 @@ impl<C: CodecBuilder + 'static> SourceTask<C> {
                     stream = Self::accept(
                         self.listener.as_mut().expect("listener must be initialized"),
                         &self.source_name,
-                        &self.listen_addr
+                        &self.listen_addr,
+                        &self.connections_accept_failures,
                     ) => {
                         debug!("got socket");
                         self.available_connections_gauge.set(self.limit_connections.available_permits() as f64);
@@ -432,8 +439,16 @@ impl<C: CodecBuilder + 'static> SourceTask<C> {
     }
 
     /// Accept an inbound connection.
-    /// Errors are treated as recoverable and retried forever with capped backoff.
-    async fn accept(listener: &mut TcpListener, source_name: &str, listen_addr: &str) -> TcpStream {
+    /// Errors are treated as recoverable and retried forever with a capped exponential backoff.
+    /// After the first failure, the task waits for 1 second.
+    /// After the second failure, the task waits for 2 seconds. Each subsequent
+    /// failure doubles the wait time up to a maximum of 64 seconds.
+    async fn accept(
+        listener: &mut TcpListener,
+        source_name: &str,
+        listen_addr: &str,
+        connections_accept_failures: &Counter,
+    ) -> TcpStream {
         let mut backoff = 1;
 
         loop {
@@ -449,6 +464,7 @@ impl<C: CodecBuilder + 'static> SourceTask<C> {
                     return socket;
                 }
                 Err(err) => {
+                    connections_accept_failures.increment(1);
                     warn!(
                         source = source_name,
                         listen_addr,

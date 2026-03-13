@@ -1,5 +1,13 @@
 # Sources
 
+## Listener retry behavior
+
+At startup, if a source fails to bind its `listen_addr`, Shotover startup fails.
+At runtime, once a source is already running, transient listener and accept failures are retried 
+forever with capped exponential backoff (1s, 2s, 4s, ... up to 64s) instead of shutting down Shotover.
+
+Use the `shotover_source_connections_accept_failures_count` metric to detect failures while accepting incoming listener connections.
+
 | Source                              | Implementation Status |
 |-------------------------------------|-----------------------|
 |[Cassandra](#cassandra)              |Beta                   |

@@ -256,7 +256,7 @@ impl Shotover {
             config,
             hotreload_socket,
             hotreload_gradual_shutdown_duration,
-            trigger_shutdown_tx.clone(),
+            trigger_shutdown_tx,
             trigger_shutdown_rx,
         )) {
             Ok(()) => {
