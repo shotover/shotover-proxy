@@ -161,6 +161,7 @@ impl Shotover {
         config: Config,
         hotreload_socket: Option<String>,
         hotreload_gradual_shutdown_duration: Duration,
+        trigger_shutdown_tx: watch::Sender<bool>,
         trigger_shutdown_rx: watch::Receiver<bool>,
     ) -> Result<()> {
         let hotreload_client = hotreload_socket.clone().and_then(HotReloadClient::new);
@@ -179,7 +180,11 @@ impl Shotover {
         info!(topology = ?topology);
 
         match topology
-            .run_chains(trigger_shutdown_rx, hotreload_listeners)
+            .run_chains(
+                trigger_shutdown_tx.clone(),
+                trigger_shutdown_rx,
+                hotreload_listeners,
+            )
             .await
         {
             Ok(sources) => {
@@ -223,6 +228,7 @@ impl Shotover {
         } = self;
 
         let (trigger_shutdown_tx, trigger_shutdown_rx) = tokio::sync::watch::channel(false);
+        let trigger_shutdown_tx_for_signal = trigger_shutdown_tx.clone();
 
         // We need to block on this part to ensure that we immediately register these signals.
         // Otherwise if we included signal creation in the below spawned task we would be at the mercy of whenever tokio decides to start running the task.
@@ -242,7 +248,7 @@ impl Shotover {
                 },
             };
 
-            trigger_shutdown_tx.send(true).unwrap();
+            trigger_shutdown_tx_for_signal.send(true).unwrap();
         });
 
         let code = match runtime.block_on(Shotover::run_inner(
@@ -250,6 +256,7 @@ impl Shotover {
             config,
             hotreload_socket,
             hotreload_gradual_shutdown_duration,
+            trigger_shutdown_tx,
             trigger_shutdown_rx,
         )) {
             Ok(()) => {

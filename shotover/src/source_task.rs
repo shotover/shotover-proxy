@@ -28,6 +28,8 @@ use tokio_util::codec::{FramedRead, FramedWrite};
 use tracing::{Instrument, info, trace};
 use tracing::{debug, error, warn};
 
+const MAX_RETRY_BACKOFF_SECONDS: u64 = 64;
+
 /// Represents a tracked connection with a shutdown sender
 struct TrackedConnection {
     handle: JoinHandle<()>,
@@ -79,6 +81,7 @@ pub(crate) struct SourceTask<C: CodecBuilder> {
     connection_count: u64,
 
     connections_opened: Counter,
+    connections_accept_failures: Counter,
     available_connections_gauge: Gauge,
 
     /// Timeout after which to kill an idle connection. No timeout means connections will never be timed out.
@@ -108,12 +111,17 @@ impl<C: CodecBuilder + 'static> SourceTask<C> {
         transport: Transport,
         hot_reload_rx: tokio::sync::mpsc::UnboundedReceiver<HotReloadListenerRequest>,
         hot_reload_listeners: &mut HashMap<u16, TcpListener>,
+        trigger_shutdown_tx: watch::Sender<bool>,
         mut trigger_shutdown_rx: watch::Receiver<bool>,
         mut gradual_shutdown_rx: tokio::sync::mpsc::UnboundedReceiver<GradualShutdownRequest>,
     ) -> Result<JoinHandle<()>, Vec<String>> {
         let available_connections_gauge =
             gauge!("shotover_available_connections_count", "source" => source_name.clone());
         let connections_opened = counter!("connections_opened", "source" => source_name.clone());
+        let connections_accept_failures = counter!(
+            "shotover_source_connections_accept_failures_count",
+            "source" => source_name.clone()
+        );
         available_connections_gauge.set(limit_connections.available_permits() as f64);
 
         let chain_usage_config = TransformContextConfig {
@@ -176,6 +184,7 @@ impl<C: CodecBuilder + 'static> SourceTask<C> {
             connection_count: 0,
             available_connections_gauge,
             connections_opened,
+            connections_accept_failures,
             timeout,
             connection_handles: vec![],
             transport,
@@ -188,7 +197,20 @@ impl<C: CodecBuilder + 'static> SourceTask<C> {
                 tokio::select! {
                     res = listener.run() => {
                         if let Err(err) = res {
-                            error!(cause = %err, "failed to accept");
+                            error!(
+                                "{:?}",
+                                err.context(format!(
+                                    "[{}] Source task on [{}] hit an unrecoverable error and Shotover is shutting down",
+                                    listener.source_name, listener.listen_addr
+                                ))
+                            );
+                            if let Err(send_error) = trigger_shutdown_tx.send(true) {
+                                warn!(
+                                    "[{}] Source task on [{}] failed to trigger global shutdown with error: {send_error:?}",
+                                    listener.source_name,
+                                    listener.listen_addr
+                                );
+                            }
                         }
                     }
                     _ = trigger_shutdown_rx.changed() => {
@@ -211,14 +233,9 @@ impl<C: CodecBuilder + 'static> SourceTask<C> {
     ///
     /// # Errors
     ///
-    /// Returns `Err` if accepting returns an error. This can happen for a
-    /// number of reasons that resolve over time. For example, if the underlying
-    /// operating system has reached an internal limit for max number of
-    /// sockets, accept will fail.
-    ///
-    /// The process is not able to detect when a transient error resolves
-    /// itself. One strategy for handling this is to implement a back off
-    /// strategy, which is what we do here.
+    /// Returns `Err` only for unrecoverable source task failures.
+    /// Runtime listener creation and accept failures are treated as recoverable
+    /// and retried forever with capped backoff.
     pub async fn run(&mut self) -> Result<()> {
         loop {
             // Wait for a permit to become available
@@ -236,7 +253,9 @@ impl<C: CodecBuilder + 'static> SourceTask<C> {
                 self.limit_connections.clone().acquire_owned().await?
             };
             if self.listener.is_none() {
-                self.listener = Some(create_listener(&self.listen_addr).await?);
+                self.listener = Some(
+                    Self::create_listener_with_backoff(&self.source_name, &self.listen_addr).await,
+                );
             }
 
             self.connection_count = self.connection_count.wrapping_add(1);
@@ -247,9 +266,12 @@ impl<C: CodecBuilder + 'static> SourceTask<C> {
             async {
                 tokio::select! {
                     // Accept new connection
-                    stream_result = Self::accept(&mut self.listener) => {
-                        let stream = stream_result?;
-
+                    stream = Self::accept(
+                        self.listener.as_mut().expect("listener must be initialized"),
+                        &self.source_name,
+                        &self.listen_addr,
+                        &self.connections_accept_failures,
+                    ) => {
                         debug!("got socket");
                         self.available_connections_gauge.set(self.limit_connections.available_permits() as f64);
                         self.connections_opened.increment(1);
@@ -380,35 +402,68 @@ impl<C: CodecBuilder + 'static> SourceTask<C> {
         );
     }
 
-    /// Accept an inbound connection.
-    ///
-    /// Errors are handled by backing off and retrying. An exponential backoff
-    /// strategy is used. After the first failure, the task waits for 1 second.
-    /// After the second failure, the task waits for 2 seconds. Each subsequent
-    /// failure doubles the wait time. If accepting fails on the 6th try after
-    /// waiting for 64 seconds, then this function returns with an error.
-    async fn accept(listener: &mut Option<TcpListener>) -> Result<TcpStream> {
+    async fn create_listener_with_backoff(source_name: &str, listen_addr: &str) -> TcpListener {
         let mut backoff = 1;
 
-        // Try to accept a few times
         loop {
-            // Perform the accept operation. If a socket is successfully
-            // accepted, return it. Otherwise, save the error.
-            match listener.as_mut().unwrap().accept().await {
-                Ok((socket, _)) => return Ok(socket),
-                Err(err) => {
-                    if backoff > 64 {
-                        // Accept has failed too many times. Return the error.
-                        return Err(err.into());
+            match create_listener(listen_addr).await {
+                Ok(listener) => {
+                    if backoff > 1 {
+                        info!(
+                            "[{}] Listener on [{}] recovered and is now accepting connections",
+                            source_name, listen_addr
+                        );
                     }
+                    return listener;
+                }
+                Err(err) => {
+                    warn!(
+                        "[{}] Failed to create listener on [{}] with error: {}, retrying with backoff of {}s",
+                        source_name, listen_addr, err, backoff
+                    );
                 }
             }
 
-            // Pause execution until the back off period elapses.
             time::sleep(Duration::from_secs(backoff)).await;
+            backoff = (backoff * 2).min(MAX_RETRY_BACKOFF_SECONDS);
+        }
+    }
 
-            // Double the back off
-            backoff *= 2;
+    /// Accept an inbound connection.
+    /// Errors are treated as recoverable and retried forever with a capped exponential backoff.
+    /// After the first failure, the task waits for 1 second.
+    /// After the second failure, the task waits for 2 seconds. Each subsequent
+    /// failure doubles the wait time up to a maximum of 64 seconds.
+    async fn accept(
+        listener: &mut TcpListener,
+        source_name: &str,
+        listen_addr: &str,
+        connections_accept_failures: &Counter,
+    ) -> TcpStream {
+        let mut backoff = 1;
+
+        loop {
+            match listener.accept().await {
+                Ok((socket, _)) => {
+                    if backoff > 1 {
+                        info!(
+                            "[{}] Accept on listener [{}] recovered and is now accepting new connections",
+                            source_name, listen_addr
+                        );
+                    }
+                    return socket;
+                }
+                Err(err) => {
+                    connections_accept_failures.increment(1);
+                    warn!(
+                        "[{}] Failed to accept incoming connection on listener [{}] with error: {}, retrying with backoff of {}s",
+                        source_name, listen_addr, err, backoff
+                    );
+                }
+            }
+
+            time::sleep(Duration::from_secs(backoff)).await;
+            backoff = (backoff * 2).min(MAX_RETRY_BACKOFF_SECONDS);
         }
     }
 
