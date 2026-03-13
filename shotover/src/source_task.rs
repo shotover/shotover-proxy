@@ -198,17 +198,17 @@ impl<C: CodecBuilder + 'static> SourceTask<C> {
                     res = listener.run() => {
                         if let Err(err) = res {
                             error!(
-                                source = %listener.source_name,
-                                listen_addr = %listener.listen_addr,
-                                cause = %err,
-                                "Source task hit an unrecoverable error, Shotover is shutting down"
+                                "{:?}",
+                                err.context(format!(
+                                    "[{}] Source task on [{}] hit an unrecoverable error and Shotover is shutting down",
+                                    listener.source_name, listener.listen_addr
+                                ))
                             );
                             if let Err(send_error) = trigger_shutdown_tx.send(true) {
                                 warn!(
-                                    source = %listener.source_name,
-                                    listen_addr = %listener.listen_addr,
-                                    cause = %send_error,
-                                    "Failed to trigger global shutdown after unrecoverable source task error"
+                                    "[{}] Source task on [{}] failed to trigger global shutdown with error: {send_error:?}",
+                                    listener.source_name,
+                                    listener.listen_addr
                                 );
                             }
                         }
@@ -243,13 +243,8 @@ impl<C: CodecBuilder + 'static> SourceTask<C> {
                 match self.limit_connections.clone().try_acquire_owned() {
                     Ok(p) => p,
                     Err(_e) => {
-                        if self.listener.take().is_some() {
-                            warn!(
-                                source = %self.source_name,
-                                listen_addr = %self.listen_addr,
-                                "Hard connection limit reached, temporarily closing listener until capacity returns"
-                            );
-                        }
+                        //close the socket too full!
+                        self.listener = None;
                         tokio::time::sleep(Duration::from_secs(1)).await;
                         continue;
                     }
@@ -415,20 +410,16 @@ impl<C: CodecBuilder + 'static> SourceTask<C> {
                 Ok(listener) => {
                     if backoff > 1 {
                         info!(
-                            source = source_name,
-                            listen_addr,
-                            "Listener creation recovered and is now accepting connections"
+                            "[{}] Listener on [{}] recovered and is now accepting connections",
+                            source_name, listen_addr
                         );
                     }
                     return listener;
                 }
                 Err(err) => {
                     warn!(
-                        source = source_name,
-                        listen_addr,
-                        backoff_seconds = backoff,
-                        cause = %err,
-                        "Failed to create listener, retrying with backoff"
+                        "[{}] Failed to create listener on [{}] with error: {}, retrying with backoff of {}s",
+                        source_name, listen_addr, err, backoff
                     );
                 }
             }
@@ -456,9 +447,8 @@ impl<C: CodecBuilder + 'static> SourceTask<C> {
                 Ok((socket, _)) => {
                     if backoff > 1 {
                         info!(
-                            source = source_name,
-                            listen_addr,
-                            "Accept recovered and source is now accepting new connections"
+                            "[{}] Accept on listener [{}] recovered and is now accepting new connections",
+                            source_name, listen_addr
                         );
                     }
                     return socket;
@@ -466,11 +456,8 @@ impl<C: CodecBuilder + 'static> SourceTask<C> {
                 Err(err) => {
                     connections_accept_failures.increment(1);
                     warn!(
-                        source = source_name,
-                        listen_addr,
-                        backoff_seconds = backoff,
-                        cause = %err,
-                        "Failed to accept incoming connection, retrying with backoff"
+                        "[{}] Failed to accept incoming connection on listener [{}] with error: {}, retrying with backoff of {}s",
+                        source_name, listen_addr, err, backoff
                     );
                 }
             }
