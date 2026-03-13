@@ -1,7 +1,7 @@
 use crate::shotover_process;
 use serde_json::Value;
 use test_helpers::shotover_process::{EventMatcher, Level};
-use tokio::net::TcpStream;
+use tokio::net::{TcpListener, TcpStream};
 
 #[tokio::test]
 async fn test_request_id_increments() {
@@ -113,6 +113,29 @@ Caused by:
         Terminating transform \"NullSink\" is not last in chain. Terminating transform must be last in chain.
     ")])
     .await;
+}
+
+#[tokio::test]
+async fn test_shotover_startup_fails_when_source_port_is_already_bound() {
+    let blocked_port_listener = TcpListener::bind("127.0.0.1:6379").await.unwrap();
+
+    shotover_process("tests/test-configs/null-valkey/topology.yaml")
+        .assert_fails_to_start(&[EventMatcher::new()
+            .with_level(Level::Error)
+            .with_target("shotover::runner")
+            // match on the bound address and avoid OS-specific error codes.
+            .with_message_regex(r"(?s)Failed to start shotover.*address=127\.0\.0\.1:6379")])
+        .await;
+
+    drop(blocked_port_listener);
+
+    let shotover = shotover_process("tests/test-configs/null-valkey/topology.yaml")
+        .start()
+        .await;
+
+    TcpStream::connect("127.0.0.1:6379").await.unwrap();
+
+    shotover.shutdown_and_then_consume_events(&[]).await;
 }
 
 #[tokio::test]
