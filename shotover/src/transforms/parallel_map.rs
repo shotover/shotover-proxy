@@ -111,10 +111,6 @@ impl TransformConfig for ParallelMapConfig {
             .map(|i| (&self.chain, format!("{}[{i}]", self.name)))
             .collect()
     }
-
-    fn get_user_named_sub_chain_names(&self) -> Vec<String> {
-        vec![]
-    }
 }
 
 #[async_trait]

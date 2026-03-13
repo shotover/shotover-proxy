@@ -256,15 +256,6 @@ impl TransformConfig for TeeConfig {
         }
         configs
     }
-
-    fn get_user_named_sub_chain_names(&self) -> Vec<String> {
-        match &self.behavior {
-            Some(ConsistencyBehaviorConfig::SubchainOnMismatch { name, .. }) => {
-                vec![name.clone()]
-            }
-            _ => vec![],
-        }
-    }
 }
 
 #[async_trait]

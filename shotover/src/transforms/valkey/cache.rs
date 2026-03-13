@@ -129,10 +129,6 @@ impl TransformConfig for ValkeyConfig {
     fn get_sub_chain_configs(&self) -> Vec<(&TransformChainConfig, String)> {
         vec![(&self.chain, self.name.clone())]
     }
-
-    fn get_user_named_sub_chain_names(&self) -> Vec<String> {
-        vec![]
-    }
 }
 
 pub struct SimpleValkeyCacheBuilder {

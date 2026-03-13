@@ -115,10 +115,6 @@ pub trait TransformConfig: Debug {
     /// Returns sub-chain configs paired with their derived chain names.
     /// Used for recursive traversal of sub-chains during validation.
     fn get_sub_chain_configs(&self) -> Vec<(&crate::config::chain::TransformChainConfig, String)>;
-
-    /// Returns sub-chain names that are explicitly user-defined.
-    /// These are used for global name uniqueness validation.
-    fn get_user_named_sub_chain_names(&self) -> Vec<String>;
 }
 
 /// Defines which protocols a transform will:

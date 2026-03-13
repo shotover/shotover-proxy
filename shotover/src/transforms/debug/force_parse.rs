@@ -54,10 +54,6 @@ impl TransformConfig for DebugForceParseConfig {
     fn get_sub_chain_configs(&self) -> Vec<(&crate::config::chain::TransformChainConfig, String)> {
         vec![]
     }
-
-    fn get_user_named_sub_chain_names(&self) -> Vec<String> {
-        vec![]
-    }
 }
 
 /// Messages that pass through this transform will be parsed and then reencoded.
@@ -99,10 +95,6 @@ impl TransformConfig for DebugForceEncodeConfig {
     }
 
     fn get_sub_chain_configs(&self) -> Vec<(&crate::config::chain::TransformChainConfig, String)> {
-        vec![]
-    }
-
-    fn get_user_named_sub_chain_names(&self) -> Vec<String> {
         vec![]
     }
 }

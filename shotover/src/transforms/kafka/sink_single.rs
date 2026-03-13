@@ -61,10 +61,6 @@ impl TransformConfig for KafkaSinkSingleConfig {
     fn get_sub_chain_configs(&self) -> Vec<(&crate::config::chain::TransformChainConfig, String)> {
         vec![]
     }
-
-    fn get_user_named_sub_chain_names(&self) -> Vec<String> {
-        vec![]
-    }
 }
 
 struct KafkaSinkSingleBuilder {
