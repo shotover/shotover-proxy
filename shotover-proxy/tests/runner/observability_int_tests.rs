@@ -19,6 +19,8 @@ async fn test_metrics() {
 # TYPE shotover_chain_total_count counter
 # TYPE shotover_query_count counter
 # TYPE shotover_sink_to_source_latency_seconds summary
+# TYPE shotover_connections_accept_failures_count counter
+# TYPE shotover_listener_create_failures_count counter
 # TYPE shotover_transform_failures_count counter
 # TYPE shotover_transform_latency_seconds summary
 # TYPE shotover_transform_total_count counter
@@ -57,6 +59,8 @@ shotover_sink_to_source_latency_seconds{source="valkey",quantile="0.95"}
 shotover_sink_to_source_latency_seconds{source="valkey",quantile="0.99"}
 shotover_sink_to_source_latency_seconds{source="valkey",quantile="0.999"}
 shotover_sink_to_source_latency_seconds{source="valkey",quantile="1"}
+shotover_connections_accept_failures_count{source="valkey"}
+shotover_listener_create_failures_count{source="valkey"}
 shotover_transform_failures_count{transform="NullSink"}
 shotover_transform_failures_count{transform="QueryCounter"}
 shotover_transform_latency_seconds_count{transform="NullSink"}
