@@ -83,10 +83,6 @@ pub struct Shotover {
 impl Shotover {
     #[expect(clippy::new_without_default)]
     pub fn new() -> Self {
-        if std::env::var("RUST_LIB_BACKTRACE").is_err() {
-            std::env::set_var("RUST_LIB_BACKTRACE", "0");
-        }
-
         default_provider().install_default().unwrap();
 
         let opts = ConfigOpts::parse();
@@ -161,6 +157,7 @@ impl Shotover {
         config: Config,
         hotreload_socket: Option<String>,
         hotreload_gradual_shutdown_duration: Duration,
+        trigger_shutdown_tx: watch::Sender<bool>,
         trigger_shutdown_rx: watch::Receiver<bool>,
     ) -> Result<()> {
         let hotreload_client = hotreload_socket.clone().and_then(HotReloadClient::new);
@@ -185,16 +182,15 @@ impl Shotover {
             Ok(sources) => {
                 // After the new instance is fully started and accepting connections,
                 // request the old instance to shut down
-                if let Some(client) = &hotreload_client {
-                    if let Err(e) = client
+                if let Some(client) = &hotreload_client
+                    && let Err(e) = client
                         .request_shutdown_old_instance(hotreload_gradual_shutdown_duration)
                         .await
-                    {
-                        warn!(
-                            "Failed to send shutdown request to old shotover instance: {}",
-                            e
-                        );
-                    }
+                {
+                    warn!(
+                        "Failed to send shutdown request to old shotover instance: {}",
+                        e
+                    );
                 }
 
                 // Start hot reload server if socket is configured
@@ -203,7 +199,14 @@ impl Shotover {
                     crate::hot_reload::server::start_hot_reload_server(socket_path, &sources);
                 }
 
-                futures::future::join_all(sources.into_iter().map(|x| x.join())).await;
+                // Each `Source::join` call triggers global shutdown when that source exits.
+                // This prevents partial-topology liveness (one source down, others still running).
+                futures::future::join_all(
+                    sources
+                        .into_iter()
+                        .map(|x| x.join(trigger_shutdown_tx.clone())),
+                )
+                .await;
                 Ok(())
             }
             Err(err) => Err(err),
@@ -223,6 +226,7 @@ impl Shotover {
         } = self;
 
         let (trigger_shutdown_tx, trigger_shutdown_rx) = tokio::sync::watch::channel(false);
+        let trigger_shutdown_tx_for_signal = trigger_shutdown_tx.clone();
 
         // We need to block on this part to ensure that we immediately register these signals.
         // Otherwise if we included signal creation in the below spawned task we would be at the mercy of whenever tokio decides to start running the task.
@@ -242,7 +246,7 @@ impl Shotover {
                 },
             };
 
-            trigger_shutdown_tx.send(true).unwrap();
+            trigger_shutdown_tx_for_signal.send(true).unwrap();
         });
 
         let code = match runtime.block_on(Shotover::run_inner(
@@ -250,6 +254,7 @@ impl Shotover {
             config,
             hotreload_socket,
             hotreload_gradual_shutdown_duration,
+            trigger_shutdown_tx,
             trigger_shutdown_rx,
         )) {
             Ok(()) => {

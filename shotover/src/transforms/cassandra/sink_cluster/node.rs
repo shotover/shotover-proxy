@@ -72,18 +72,18 @@ impl CassandraNode {
     }
 
     pub fn try_recv(&mut self, responses: &mut Vec<Message>, version: Version) {
-        if let Some(connection) = self.outbound.as_mut() {
-            if let Err(()) = connection.try_recv(responses, version) {
-                self.report_issue()
-            }
+        if let Some(connection) = self.outbound.as_mut()
+            && let Err(()) = connection.try_recv(responses, version)
+        {
+            self.report_issue()
         }
     }
 
     pub async fn recv_all_pending(&mut self, responses: &mut Vec<Message>, version: Version) {
-        if let Some(connection) = self.outbound.as_mut() {
-            if let Err(()) = connection.recv_all_pending(responses, version).await {
-                self.report_issue()
-            }
+        if let Some(connection) = self.outbound.as_mut()
+            && let Err(()) = connection.recv_all_pending(responses, version).await
+        {
+            self.report_issue()
         }
     }
 
@@ -188,10 +188,10 @@ impl ConnectionFactory {
     }
 
     pub fn push_handshake_message(&mut self, mut request: Message) {
-        if self.version.is_none() {
-            if let Some(Frame::Cassandra(frame)) = request.frame() {
-                self.version = Some(frame.version);
-            }
+        if self.version.is_none()
+            && let Some(Frame::Cassandra(frame)) = request.frame()
+        {
+            self.version = Some(frame.version);
         }
         self.init_handshake.push(request);
     }

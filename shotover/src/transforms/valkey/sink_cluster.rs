@@ -221,7 +221,7 @@ impl ValkeySinkCluster {
     #[inline]
     async fn dispatch_message(&mut self, mut message: Message) -> Result<ResponseFuture> {
         let command = match message.frame() {
-            Some(Frame::Valkey(ValkeyFrame::Array(ref command))) => command,
+            Some(&mut Frame::Valkey(ValkeyFrame::Array(ref command))) => command,
             None => bail!("Failed to parse valkey frame"),
             _ => bail!("Invalid redis command, must be an array but was not"),
         };
@@ -599,7 +599,7 @@ impl ValkeySinkCluster {
 
     async fn on_auth(&mut self, mut message: Message) -> Result<ResponseFuture> {
         let command = match message.frame() {
-            Some(Frame::Valkey(ValkeyFrame::Array(ref command))) => command,
+            Some(&mut Frame::Valkey(ValkeyFrame::Array(ref command))) => command,
             None => bail!("Failed to parse valkey frame"),
             _ => bail!("syntax error: bad command"),
         };
@@ -962,12 +962,12 @@ async fn get_topology_from_node(
 
 #[inline(always)]
 fn get_hashtag(key: &[u8]) -> Option<&[u8]> {
-    if let Some(open) = key.iter().position(|v| *v == b'{') {
-        if let Some(close) = key[open..].iter().position(|v| *v == b'}') {
-            let rv = &key[open + 1..open + close];
-            if !rv.is_empty() {
-                return Some(rv);
-            }
+    if let Some(open) = key.iter().position(|v| *v == b'{')
+        && let Some(close) = key[open..].iter().position(|v| *v == b'}')
+    {
+        let rv = &key[open + 1..open + close];
+        if !rv.is_empty() {
+            return Some(rv);
         }
     }
     None
@@ -1049,10 +1049,10 @@ impl Transform for ValkeySinkCluster {
             self.has_run_init = true;
         }
 
-        if self.rebuild_connections {
-            if let Err(err) = self.build_connections(self.token.clone()).await {
-                tracing::warn!("Error when rebuilding connections: {err:?}");
-            }
+        if self.rebuild_connections
+            && let Err(err) = self.build_connections(self.token.clone()).await
+        {
+            tracing::warn!("Error when rebuilding connections: {err:?}");
         }
 
         let mut responses = FuturesOrdered::new();

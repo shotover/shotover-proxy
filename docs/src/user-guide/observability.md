@@ -14,6 +14,8 @@ This optional interface will serve Prometheus metrics from `/metrics`. It will b
 | `shotover_chain_responses_batch_size`      | `chain`     | [histogram](#histogram) | The number of responses in each response batch passing through `chain`.   |
 | `shotover_available_connections_count`     | `source`    | [gauge](#gauge)         | How many more connections can be opened to `source` before new connections will be rejected. |
 | `connections_opened`                       | `source`    | [counter](#counter)     | Counts the total number of connections that clients have opened against this source.         |
+| `shotover_connections_accept_failures_count` | `source` | [counter](#counter) | Counts failures while accepting incoming listener connections for this source. If this increases continuously, Shotover is retrying accepts with backoff. |
+| `shotover_listener_create_failures_count` | `source` | [counter](#counter) | Counts runtime failures while creating a listener for this source. If this increases continuously, Shotover is retrying listener creation with backoff. |
 | `shotover_source_to_sink_latency_seconds`  | `sink`      | [histogram](#histogram) | The milliseconds between reading a request from a source TCP connection and writing it to a sink TCP connection  |
 | `shotover_sink_to_source_latency_seconds`  | `source`    | [histogram](#histogram) | The milliseconds between reading a response from a sink TCP connection and writing it to a source TCP connection |
 
