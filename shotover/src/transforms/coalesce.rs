@@ -8,6 +8,7 @@ use std::time::Instant;
 
 #[derive(Clone)]
 struct Coalesce {
+    name: String,
     flush_when_buffered_message_count: Option<usize>,
     flush_when_millis_since_last_flush: Option<u128>,
     buffer: Messages,
@@ -35,6 +36,7 @@ impl TransformConfig for CoalesceConfig {
         _transform_context: TransformContextConfig,
     ) -> Result<Box<dyn TransformBuilder>> {
         Ok(Box::new(Coalesce {
+            name: self.name.clone(),
             buffer: Vec::with_capacity(self.flush_when_buffered_message_count.unwrap_or(0)),
             flush_when_buffered_message_count: self.flush_when_buffered_message_count,
             flush_when_millis_since_last_flush: self.flush_when_millis_since_last_flush,
@@ -60,7 +62,11 @@ impl TransformBuilder for Coalesce {
         Box::new(self.clone())
     }
 
-    fn get_name(&self) -> &'static str {
+    fn get_name(&self) -> &str {
+        &self.name
+    }
+
+    fn get_type_name(&self) -> &'static str {
         NAME
     }
 
@@ -132,6 +138,7 @@ mod test {
     #[tokio::test(flavor = "multi_thread")]
     async fn test_count() {
         let mut coalesce = Coalesce {
+            name: "coalesce".to_string(),
             flush_when_buffered_message_count: Some(100),
             flush_when_millis_since_last_flush: None,
             buffer: Vec::with_capacity(100),
@@ -139,7 +146,7 @@ mod test {
         };
 
         let mut chain = vec![TransformAndMetrics::new(
-            Box::new(Loopback::default()),
+            Box::new(Loopback::new("loopback".to_string())),
             "loopback",
         )];
 
@@ -157,6 +164,7 @@ mod test {
     #[tokio::test(flavor = "multi_thread")]
     async fn test_wait() {
         let mut coalesce = Coalesce {
+            name: "coalesce".to_string(),
             flush_when_buffered_message_count: None,
             flush_when_millis_since_last_flush: Some(100),
             buffer: Vec::with_capacity(100),
@@ -164,7 +172,7 @@ mod test {
         };
 
         let mut chain = vec![TransformAndMetrics::new(
-            Box::new(Loopback::default()),
+            Box::new(Loopback::new("loopback".to_string())),
             "loopback",
         )];
 
@@ -183,6 +191,7 @@ mod test {
     #[tokio::test(flavor = "multi_thread")]
     async fn test_wait_or_count() {
         let mut coalesce = Coalesce {
+            name: "coalesce".to_string(),
             flush_when_buffered_message_count: Some(100),
             flush_when_millis_since_last_flush: Some(100),
             buffer: Vec::with_capacity(100),
@@ -190,7 +199,7 @@ mod test {
         };
 
         let mut chain = vec![TransformAndMetrics::new(
-            Box::new(Loopback::default()),
+            Box::new(Loopback::new("loopback".to_string())),
             "loopback",
         )];
 

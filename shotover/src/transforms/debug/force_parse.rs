@@ -36,6 +36,8 @@ impl TransformConfig for DebugForceParseConfig {
         _transform_context: TransformContextConfig,
     ) -> Result<Box<dyn TransformBuilder>> {
         Ok(Box::new(DebugForceParse {
+            name: self.name.clone(),
+            type_name: NAME_FORCE_PARSE,
             parse_requests: self.parse_requests,
             parse_responses: self.parse_responses,
             encode_requests: false,
@@ -66,7 +68,8 @@ pub struct DebugForceEncodeConfig {
     pub encode_responses: bool,
 }
 
-const NAME: &str = "DebugForceEncode";
+const NAME_FORCE_PARSE: &str = "DebugForceParse";
+const NAME_FORCE_ENCODE: &str = "DebugForceEncode";
 #[typetag::serde(name = "DebugForceEncode")]
 #[async_trait(?Send)]
 impl TransformConfig for DebugForceEncodeConfig {
@@ -79,6 +82,8 @@ impl TransformConfig for DebugForceEncodeConfig {
         _transform_context: TransformContextConfig,
     ) -> Result<Box<dyn TransformBuilder>> {
         Ok(Box::new(DebugForceParse {
+            name: self.name.clone(),
+            type_name: NAME_FORCE_ENCODE,
             parse_requests: self.encode_requests,
             parse_responses: self.encode_responses,
             encode_requests: self.encode_requests,
@@ -101,6 +106,8 @@ impl TransformConfig for DebugForceEncodeConfig {
 
 #[derive(Clone)]
 struct DebugForceParse {
+    name: String,
+    type_name: &'static str,
     parse_requests: bool,
     parse_responses: bool,
     encode_requests: bool,
@@ -112,15 +119,19 @@ impl TransformBuilder for DebugForceParse {
         Box::new(self.clone())
     }
 
-    fn get_name(&self) -> &'static str {
-        NAME
+    fn get_name(&self) -> &str {
+        &self.name
+    }
+
+    fn get_type_name(&self) -> &'static str {
+        self.type_name
     }
 }
 
 #[async_trait]
 impl Transform for DebugForceParse {
     fn get_name(&self) -> &'static str {
-        NAME
+        self.type_name
     }
 
     async fn transform<'shorter, 'longer: 'shorter>(

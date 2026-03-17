@@ -32,9 +32,7 @@ chain:
       name: "print-inbound"
 ```
 
-Sub-chains inside transforms are configured as a bare list. The chain name is derived from the transform's `name` (ParallelMap appends an index). 
-
-Tee's `SubchainOnMismatch.name` defines the mismatch chain name (and is validated for uniqueness) instead of deriving it from the parent transform name.
+Sub-chain names are derived from the parent transform's `name` (ParallelMap appends an index, e.g. `my-pmap[0]`). Tee's `SubchainOnMismatch` mismatch chain name is derived as `<tee-transform-name>.mismatch`.
 
 ```yaml
 chain:
@@ -42,7 +40,6 @@ chain:
       name: "tee-primary"
       behavior:
         SubchainOnMismatch:
-          name: "mismatch-chain"
           chain:
             - NullSink:
                 name: "mismatch-sink"
@@ -607,9 +604,9 @@ Tee also exposes an optional HTTP API to switch which chain to use as the "resul
     # If the responses returned by the sub chain do not equal the responses returned by down-chain,
     # then the original message is also sent down the SubchainOnMismatch sub chain.
     # This is useful for logging failed messages.
+    # The mismatch chain name is derived as <tee-transform-name>.mismatch.
     # behavior:
     #   SubchainOnMismatch:
-    #     name: "mismatch-chain"
     #     chain:
     #       - QueryTypeFilter:
     #           name: "mismatch-filter"

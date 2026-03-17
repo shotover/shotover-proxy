@@ -28,6 +28,7 @@ impl TransformConfig for ValkeyGetRewriteConfig {
         _transform_context: TransformContextConfig,
     ) -> Result<Box<dyn TransformBuilder>> {
         Ok(Box::new(ValkeyGetRewriteBuilder {
+            name: self.name.clone(),
             result: self.result.clone(),
         }))
     }
@@ -48,6 +49,7 @@ impl TransformConfig for ValkeyGetRewriteConfig {
 }
 
 pub struct ValkeyGetRewriteBuilder {
+    name: String,
     result: String,
 }
 
@@ -59,7 +61,11 @@ impl TransformBuilder for ValkeyGetRewriteBuilder {
         })
     }
 
-    fn get_name(&self) -> &'static str {
+    fn get_name(&self) -> &str {
+        &self.name
+    }
+
+    fn get_type_name(&self) -> &'static str {
         NAME
     }
 }

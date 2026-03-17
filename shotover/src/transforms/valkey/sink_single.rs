@@ -41,6 +41,7 @@ impl TransformConfig for ValkeySinkSingleConfig {
     ) -> Result<Box<dyn TransformBuilder>> {
         let tls = self.tls.as_ref().map(TlsConnector::new).transpose()?;
         Ok(Box::new(ValkeySinkSingleBuilder::new(
+            self.name.clone(),
             self.address.clone(),
             tls,
             transform_context.chain_name,
@@ -62,6 +63,7 @@ impl TransformConfig for ValkeySinkSingleConfig {
 }
 
 pub struct ValkeySinkSingleBuilder {
+    name: String,
     address: String,
     tls: Option<TlsConnector>,
     failed_requests: Counter,
@@ -70,6 +72,7 @@ pub struct ValkeySinkSingleBuilder {
 
 impl ValkeySinkSingleBuilder {
     pub fn new(
+        name: String,
         address: String,
         tls: Option<TlsConnector>,
         chain_name: String,
@@ -79,6 +82,7 @@ impl ValkeySinkSingleBuilder {
         let connect_timeout = Duration::from_millis(connect_timeout_ms);
 
         ValkeySinkSingleBuilder {
+            name,
             address,
             tls,
             failed_requests,
@@ -99,7 +103,11 @@ impl TransformBuilder for ValkeySinkSingleBuilder {
         })
     }
 
-    fn get_name(&self) -> &'static str {
+    fn get_name(&self) -> &str {
+        &self.name
+    }
+
+    fn get_type_name(&self) -> &'static str {
         NAME
     }
 

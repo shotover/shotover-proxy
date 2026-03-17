@@ -42,6 +42,7 @@ impl TransformConfig for KafkaSinkSingleConfig {
     ) -> Result<Box<dyn TransformBuilder>> {
         let tls = self.tls.as_ref().map(TlsConnector::new).transpose()?;
         Ok(Box::new(KafkaSinkSingleBuilder::new(
+            self.name.clone(),
             self.destination_port,
             transform_context.chain_name,
             self.connect_timeout_ms,
@@ -64,7 +65,7 @@ impl TransformConfig for KafkaSinkSingleConfig {
 }
 
 struct KafkaSinkSingleBuilder {
-    // contains address and port
+    name: String,
     address_port: u16,
     connect_timeout: Duration,
     read_timeout: Option<Duration>,
@@ -73,6 +74,7 @@ struct KafkaSinkSingleBuilder {
 
 impl KafkaSinkSingleBuilder {
     fn new(
+        name: String,
         address_port: u16,
         _chain_name: String,
         connect_timeout_ms: u64,
@@ -82,6 +84,7 @@ impl KafkaSinkSingleBuilder {
         let receive_timeout = timeout.map(Duration::from_secs);
 
         KafkaSinkSingleBuilder {
+            name,
             address_port,
             connect_timeout: Duration::from_millis(connect_timeout_ms),
             read_timeout: receive_timeout,
@@ -102,7 +105,11 @@ impl TransformBuilder for KafkaSinkSingleBuilder {
         })
     }
 
-    fn get_name(&self) -> &'static str {
+    fn get_name(&self) -> &str {
+        &self.name
+    }
+
+    fn get_type_name(&self) -> &'static str {
         NAME
     }
 

@@ -742,22 +742,18 @@ Duplicate transform names detected:
 
     #[tokio::test]
     async fn test_validate_duplicate_chain_names_user_defined() {
+        // Tee's main chain is named after the transform, so a Tee named "foo" creates chain "foo" which duplicates the root chain "foo".
         let expected = r#"Topology errors
 Duplicate chain names detected:
   "foo" used by:
     root chain for source[0] "foo"
-    chain "foo" at source[0] "foo" chain "foo" -> subchain "foo" (from Tee "tee-main")
+    chain "foo" at source[0] "foo" chain "foo" -> subchain "foo" (from Tee "foo")
 "#;
 
         let error = run_test_topology_valkey(vec![
             Box::new(TeeConfig {
-                name: "tee-main".to_string(),
-                behavior: Some(ConsistencyBehaviorConfig::SubchainOnMismatch {
-                    name: "foo".to_string(),
-                    chain: TransformChainConfig(vec![Box::new(NullSinkConfig {
-                        name: "mismatch-sink".to_string(),
-                    })]),
-                }),
+                name: "foo".to_string(),
+                behavior: None,
                 timeout_micros: None,
                 chain: TransformChainConfig(vec![Box::new(NullSinkConfig {
                     name: "tee-sink".to_string(),
@@ -805,19 +801,12 @@ Duplicate chain names detected:
     }
 
     #[tokio::test]
-    async fn test_validate_duplicate_chain_names_user_defined_across_transforms() {
-        let expected = r#"Topology errors
-Duplicate chain names detected:
-  "mismatch" used by:
-    chain "mismatch" at source[0] "foo" chain "foo" -> subchain "mismatch" (from Tee "tee-a")
-    chain "mismatch" at source[0] "foo" chain "foo" -> subchain "mismatch" (from Tee "tee-b")
-"#;
-
-        let error = run_test_topology_valkey(vec![
+    async fn test_validate_subchain_on_mismatch_derived_chain_name() {
+        // SubchainOnMismatch chain name is derived as <tee-name>.mismatch; two Tees get distinct chain names.
+        run_test_topology_valkey(vec![
             Box::new(TeeConfig {
                 name: "tee-a".to_string(),
                 behavior: Some(ConsistencyBehaviorConfig::SubchainOnMismatch {
-                    name: "mismatch".to_string(),
                     chain: TransformChainConfig(vec![Box::new(NullSinkConfig {
                         name: "mismatch-sink-a".to_string(),
                     })]),
@@ -832,7 +821,6 @@ Duplicate chain names detected:
             Box::new(TeeConfig {
                 name: "tee-b".to_string(),
                 behavior: Some(ConsistencyBehaviorConfig::SubchainOnMismatch {
-                    name: "mismatch".to_string(),
                     chain: TransformChainConfig(vec![Box::new(NullSinkConfig {
                         name: "mismatch-sink-b".to_string(),
                     })]),
@@ -849,10 +837,7 @@ Duplicate chain names detected:
             }),
         ])
         .await
-        .unwrap_err()
-        .to_string();
-
-        assert_eq!(error, expected);
+        .unwrap();
     }
 
     #[tokio::test]

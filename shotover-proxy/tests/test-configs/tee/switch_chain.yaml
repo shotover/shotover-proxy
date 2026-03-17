@@ -26,7 +26,6 @@ sources:
             name: "tee2"
             behavior:
               SubchainOnMismatch:
-                name: "mismatch-chain"
                 chain:
                   - NullSink:
                       name: "mismatch-null-sink"

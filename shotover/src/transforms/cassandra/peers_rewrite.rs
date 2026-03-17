@@ -39,7 +39,10 @@ impl TransformConfig for CassandraPeersRewriteConfig {
         &self,
         _transform_context: TransformContextConfig,
     ) -> Result<Box<dyn TransformBuilder>> {
-        Ok(Box::new(CassandraPeersRewrite::new(self.port)))
+        Ok(Box::new(CassandraPeersRewrite::new(
+            self.name.clone(),
+            self.port,
+        )))
     }
 
     fn up_chain_protocol(&self) -> UpChainProtocol {
@@ -57,14 +60,16 @@ impl TransformConfig for CassandraPeersRewriteConfig {
 
 #[derive(Clone)]
 pub struct CassandraPeersRewrite {
+    name: String,
     port: u16,
     peer_table: FQName,
     column_names_to_rewrite: MessageIdMap<Vec<Identifier>>,
 }
 
 impl CassandraPeersRewrite {
-    pub fn new(port: u16) -> Self {
+    pub fn new(name: String, port: u16) -> Self {
         CassandraPeersRewrite {
+            name,
             port,
             peer_table: FQName::new("system", "peers_v2"),
             column_names_to_rewrite: Default::default(),
@@ -77,7 +82,11 @@ impl TransformBuilder for CassandraPeersRewrite {
         Box::new(self.clone())
     }
 
-    fn get_name(&self) -> &'static str {
+    fn get_name(&self) -> &str {
+        &self.name
+    }
+
+    fn get_type_name(&self) -> &'static str {
         NAME
     }
 }

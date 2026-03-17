@@ -36,6 +36,7 @@ impl TransformConfig for ConnectionBalanceAndPoolConfig {
         let chain = Arc::new(self.chain.get_builder(chain_context).await?);
 
         Ok(Box::new(ConnectionBalanceAndPoolBuilder {
+            name: self.name.clone(),
             max_connections: self.max_connections,
             all_connections: Arc::new(Mutex::new(Vec::with_capacity(self.max_connections))),
             chain_to_clone: chain,
@@ -56,6 +57,7 @@ impl TransformConfig for ConnectionBalanceAndPoolConfig {
 }
 
 struct ConnectionBalanceAndPoolBuilder {
+    name: String,
     max_connections: usize,
     all_connections: Arc<Mutex<Vec<BufferedChain>>>,
     chain_to_clone: Arc<TransformChainBuilder>,
@@ -72,12 +74,16 @@ impl TransformBuilder for ConnectionBalanceAndPoolBuilder {
         })
     }
 
-    fn is_terminating(&self) -> bool {
-        true
+    fn get_name(&self) -> &str {
+        &self.name
     }
 
-    fn get_name(&self) -> &'static str {
+    fn get_type_name(&self) -> &'static str {
         NAME
+    }
+
+    fn is_terminating(&self) -> bool {
+        true
     }
 }
 

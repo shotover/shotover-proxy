@@ -10,7 +10,6 @@ sources:
             buffer_size: 10000
             behavior:
               SubchainOnMismatch:
-                name: "mismatch-chain"
                 chain:
                   - QueryTypeFilter:
                       name: "mismatch-filter"

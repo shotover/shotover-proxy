@@ -37,6 +37,7 @@ impl TransformConfig for OpenSearchSinkSingleConfig {
         transform_context: TransformContextConfig,
     ) -> Result<Box<dyn TransformBuilder>> {
         Ok(Box::new(OpenSearchSinkSingleBuilder::new(
+            self.name.clone(),
             self.address.clone(),
             transform_context.chain_name,
             self.connect_timeout_ms,
@@ -57,15 +58,22 @@ impl TransformConfig for OpenSearchSinkSingleConfig {
 }
 
 pub struct OpenSearchSinkSingleBuilder {
+    name: String,
     address: String,
     connect_timeout: Duration,
 }
 
 impl OpenSearchSinkSingleBuilder {
-    pub fn new(address: String, _chain_name: String, connect_timeout_ms: u64) -> Self {
+    pub fn new(
+        name: String,
+        address: String,
+        _chain_name: String,
+        connect_timeout_ms: u64,
+    ) -> Self {
         let connect_timeout = Duration::from_millis(connect_timeout_ms);
 
         Self {
+            name,
             address,
             connect_timeout,
         }
@@ -77,12 +85,19 @@ impl TransformBuilder for OpenSearchSinkSingleBuilder {
         Box::new(OpenSearchSinkSingle {
             address: self.address.clone(),
             connect_timeout: self.connect_timeout,
-            codec_builder: OpenSearchCodecBuilder::new(Direction::Sink, self.get_name().to_owned()),
+            codec_builder: OpenSearchCodecBuilder::new(
+                Direction::Sink,
+                self.get_type_name().to_owned(),
+            ),
             connection: None,
         })
     }
 
-    fn get_name(&self) -> &'static str {
+    fn get_name(&self) -> &str {
+        &self.name
+    }
+
+    fn get_type_name(&self) -> &'static str {
         NAME
     }
 

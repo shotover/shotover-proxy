@@ -32,7 +32,10 @@ impl TransformConfig for ValkeyClusterPortsRewriteConfig {
         &self,
         _transform_context: TransformContextConfig,
     ) -> Result<Box<dyn TransformBuilder>> {
-        Ok(Box::new(ValkeyClusterPortsRewrite::new(self.new_port)))
+        Ok(Box::new(ValkeyClusterPortsRewrite::new(
+            self.name.clone(),
+            self.new_port,
+        )))
     }
 
     fn up_chain_protocol(&self) -> UpChainProtocol {
@@ -53,13 +56,18 @@ impl TransformBuilder for ValkeyClusterPortsRewrite {
         Box::new(self.clone())
     }
 
-    fn get_name(&self) -> &'static str {
+    fn get_name(&self) -> &str {
+        &self.name
+    }
+
+    fn get_type_name(&self) -> &'static str {
         NAME
     }
 }
 
 #[derive(Clone)]
 pub struct ValkeyClusterPortsRewrite {
+    name: String,
     new_port: u16,
     request_type: MessageIdMap<RequestType>,
 }
@@ -71,8 +79,9 @@ enum RequestType {
 }
 
 impl ValkeyClusterPortsRewrite {
-    pub fn new(new_port: u16) -> Self {
+    pub fn new(name: String, new_port: u16) -> Self {
         ValkeyClusterPortsRewrite {
+            name,
             new_port,
             request_type: MessageIdMap::default(),
         }

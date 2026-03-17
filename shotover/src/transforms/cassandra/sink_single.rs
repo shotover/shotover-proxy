@@ -44,6 +44,7 @@ impl TransformConfig for CassandraSinkSingleConfig {
     ) -> Result<Box<dyn TransformBuilder>> {
         let tls = self.tls.as_ref().map(TlsConnector::new).transpose()?;
         Ok(Box::new(CassandraSinkSingleBuilder::new(
+            self.name.clone(),
             self.address.clone(),
             transform_context.chain_name,
             tls,
@@ -66,6 +67,7 @@ impl TransformConfig for CassandraSinkSingleConfig {
 }
 
 struct CassandraSinkSingleBuilder {
+    name: String,
     version: Option<Version>,
     address: String,
     failed_requests: Counter,
@@ -77,6 +79,7 @@ struct CassandraSinkSingleBuilder {
 
 impl CassandraSinkSingleBuilder {
     fn new(
+        name: String,
         address: String,
         chain_name: String,
         tls: Option<TlsConnector>,
@@ -89,6 +92,7 @@ impl CassandraSinkSingleBuilder {
             CassandraCodecBuilder::new(Direction::Sink, "CassandraSinkSingle".to_owned());
 
         CassandraSinkSingleBuilder {
+            name,
             version: None,
             address,
             failed_requests,
@@ -115,7 +119,11 @@ impl TransformBuilder for CassandraSinkSingleBuilder {
         })
     }
 
-    fn get_name(&self) -> &'static str {
+    fn get_name(&self) -> &str {
+        &self.name
+    }
+
+    fn get_type_name(&self) -> &'static str {
         NAME
     }
 

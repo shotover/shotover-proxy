@@ -30,10 +30,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     // loopback is the fastest possible transform as it does not even have to drop the received requests
     {
         let chain = TransformChainBuilder::new(
-            vec![(
-                Box::<Loopback>::default() as Box<dyn TransformBuilder>,
-                "loopback".to_string(),
-            )],
+            vec![Box::new(Loopback::new("loopback".to_string())) as Box<dyn TransformBuilder>],
             "bench",
         );
         let chain_state = ChainState::new_with_addr(
@@ -52,10 +49,7 @@ fn criterion_benchmark(c: &mut Criterion) {
 
     {
         let chain = TransformChainBuilder::new(
-            vec![(
-                Box::<NullSink>::default() as Box<dyn TransformBuilder>,
-                "nullsink".to_string(),
-            )],
+            vec![Box::new(NullSink::new("nullsink".to_string())) as Box<dyn TransformBuilder>],
             "bench",
         );
         let chain_state = ChainState::new_with_addr(
@@ -75,17 +69,15 @@ fn criterion_benchmark(c: &mut Criterion) {
     {
         let chain = TransformChainBuilder::new(
             vec![
-                (
-                    Box::new(QueryTypeFilter {
-                        filter: Filter::DenyList(vec![QueryType::Read]),
-                        filtered_requests: MessageIdMap::default(),
-                    }) as Box<dyn TransformBuilder>,
-                    "filter".to_string(),
-                ),
-                (
-                    Box::new(DebugReturner::new(Response::Valkey("a".into()))),
+                Box::new(QueryTypeFilter {
+                    name: "filter".to_string(),
+                    filter: Filter::DenyList(vec![QueryType::Read]),
+                    filtered_requests: MessageIdMap::default(),
+                }) as Box<dyn TransformBuilder>,
+                Box::new(DebugReturner::new(
                     "returner".to_string(),
-                ),
+                    Response::Valkey("a".into()),
+                )),
             ],
             "bench",
         );
@@ -116,11 +108,9 @@ fn criterion_benchmark(c: &mut Criterion) {
     {
         let chain = TransformChainBuilder::new(
             vec![
-                (
-                    Box::new(ValkeyClusterPortsRewrite::new(2004)) as Box<dyn TransformBuilder>,
-                    "rewrite".to_string(),
-                ),
-                (Box::<NullSink>::default(), "nullsink".to_string()),
+                Box::new(ValkeyClusterPortsRewrite::new("rewrite".to_string(), 2004))
+                    as Box<dyn TransformBuilder>,
+                Box::new(NullSink::new("nullsink".to_string())),
             ],
             "bench",
         );
@@ -147,23 +137,19 @@ fn criterion_benchmark(c: &mut Criterion) {
     {
         let chain = TransformChainBuilder::new(
             vec![
-                (
-                    rt.block_on(
-                        RequestThrottlingConfig {
-                            name: "throttle".to_string(),
-                            // an absurdly large value is given so that all messages will pass through
-                            max_requests_per_second: std::num::NonZeroU32::new(100_000_000)
-                                .unwrap(),
-                        }
-                        .get_builder(TransformContextConfig {
-                            chain_name: "".into(),
-                            up_chain_protocol: MessageType::Valkey,
-                        }),
-                    )
-                    .unwrap(),
-                    "throttle".to_string(),
-                ),
-                (Box::<NullSink>::default(), "nullsink".to_string()),
+                rt.block_on(
+                    RequestThrottlingConfig {
+                        name: "throttle".to_string(),
+                        // an absurdly large value is given so that all messages will pass through
+                        max_requests_per_second: std::num::NonZeroU32::new(100_000_000).unwrap(),
+                    }
+                    .get_builder(TransformContextConfig {
+                        chain_name: "".into(),
+                        up_chain_protocol: MessageType::Valkey,
+                    }),
+                )
+                .unwrap(),
+                Box::new(NullSink::new("nullsink".to_string())),
             ],
             "bench",
         );
@@ -196,11 +182,11 @@ fn criterion_benchmark(c: &mut Criterion) {
     {
         let chain = TransformChainBuilder::new(
             vec![
-                (
-                    Box::new(CassandraPeersRewrite::new(9042)) as Box<dyn TransformBuilder>,
-                    "rewrite".to_string(),
-                ),
-                (Box::<NullSink>::default(), "nullsink".to_string()),
+                Box::new(CassandraPeersRewrite::new(
+                    "peers-rewrite".to_string(),
+                    9042,
+                )) as Box<dyn TransformBuilder>,
+                Box::new(NullSink::new("nullsink".to_string())),
             ],
             "bench",
         );
@@ -250,11 +236,9 @@ fn criterion_benchmark(c: &mut Criterion) {
     {
         let chain = TransformChainBuilder::new(
             vec![
-                (
-                    Box::new(QueryCounter::new("chain".to_owned())) as Box<dyn TransformBuilder>,
-                    "counter".to_string(),
-                ),
-                (Box::<Loopback>::default(), "loopback".to_string()),
+                Box::new(QueryCounter::new("counter".to_string(), "chain".to_owned()))
+                    as Box<dyn TransformBuilder>,
+                Box::new(Loopback::new("loopback".to_string())),
             ],
             "bench",
         );

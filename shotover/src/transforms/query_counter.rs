@@ -17,6 +17,7 @@ use super::UpChainProtocol;
 
 #[derive(Clone)]
 pub struct QueryCounter {
+    name: String,
     counter_name: &'static str,
     query_to_counter: HashMap<String, Counter>,
 }
@@ -29,7 +30,7 @@ pub struct QueryCounterConfig {
 }
 
 impl QueryCounter {
-    pub fn new(counter_name: String) -> Self {
+    pub fn new(name: String, counter_name: String) -> Self {
         // Leaking here is fine since the builder is created only once during shotover startup.
         let counter_name_ref: &'static str = counter_name.leak();
 
@@ -37,6 +38,7 @@ impl QueryCounter {
         let _ = counter!("shotover_query_count", "name" => counter_name_ref);
 
         QueryCounter {
+            name,
             counter_name: counter_name_ref,
             query_to_counter: HashMap::new(),
         }
@@ -54,7 +56,11 @@ impl TransformBuilder for QueryCounter {
         Box::new(self.clone())
     }
 
-    fn get_name(&self) -> &'static str {
+    fn get_name(&self) -> &str {
+        &self.name
+    }
+
+    fn get_type_name(&self) -> &'static str {
         NAME
     }
 }
@@ -118,7 +124,10 @@ impl TransformConfig for QueryCounterConfig {
         &self,
         _transform_context: TransformContextConfig,
     ) -> Result<Box<dyn TransformBuilder>> {
-        Ok(Box::new(QueryCounter::new(self.counter_name.clone())))
+        Ok(Box::new(QueryCounter::new(
+            self.name.clone(),
+            self.counter_name.clone(),
+        )))
     }
 
     fn up_chain_protocol(&self) -> UpChainProtocol {

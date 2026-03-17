@@ -67,6 +67,7 @@ impl TransformConfig for ValkeySinkClusterConfig {
             self.tls.clone(),
         )?;
         Ok(Box::new(ValkeySinkClusterBuilder::new(
+            self.name.clone(),
             self.first_contact_points.clone(),
             self.direct_destination.clone(),
             self.connection_count.unwrap_or(1),
@@ -90,6 +91,7 @@ impl TransformConfig for ValkeySinkClusterConfig {
 }
 
 pub struct ValkeySinkClusterBuilder {
+    name: String,
     first_contact_points: Vec<String>,
     direct_destination: Option<String>,
     connection_count: usize,
@@ -100,6 +102,7 @@ pub struct ValkeySinkClusterBuilder {
 
 impl ValkeySinkClusterBuilder {
     fn new(
+        name: String,
         first_contact_points: Vec<String>,
         direct_destination: Option<String>,
         connection_count: usize,
@@ -112,6 +115,7 @@ impl ValkeySinkClusterBuilder {
         shared_topology: Arc<RwLock<Topology>>,
     ) -> Self {
         ValkeySinkClusterBuilder {
+            name,
             first_contact_points,
             direct_destination,
             connection_count,
@@ -134,7 +138,11 @@ impl TransformBuilder for ValkeySinkClusterBuilder {
         ))
     }
 
-    fn get_name(&self) -> &'static str {
+    fn get_name(&self) -> &str {
+        &self.name
+    }
+
+    fn get_type_name(&self) -> &'static str {
         NAME
     }
 

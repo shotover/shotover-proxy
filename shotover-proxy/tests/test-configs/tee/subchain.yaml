@@ -9,7 +9,6 @@ sources:
             name: "tee"
             behavior:
               SubchainOnMismatch:
-                name: "mismatch-chain"
                 chain:
                   - QueryTypeFilter:
                       name: "mismatch-filter"

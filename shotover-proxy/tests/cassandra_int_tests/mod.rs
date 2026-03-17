@@ -150,10 +150,10 @@ async fn passthrough_cassandra_down() {
         )) => {
             assert_eq!(
                 format!("{err}"),
-                format!("Internal shotover (or custom transform) bug: Chain failed to send and/or receive messages, the connection will now be closed.
+                format!("Internal shotover (or custom transform) bug (chain: cassandra): Chain cassandra failed to send and/or receive messages, the connection will now be closed.
 
 Caused by:
-    0: cassandra-sink-single transform failed (chain: cassandra)
+    0: cassandra-sink-single transform failed in chain cassandra
     1: Failed to connect to destination 127.0.0.1:9043
     2: Connection refused (os error {CONNECTION_REFUSED_OS_ERROR})"
             ));
@@ -169,8 +169,8 @@ Caused by:
                 r#"connection was unexpectedly terminated
 
 Caused by:
-    0: Chain failed to send and/or receive messages, the connection will now be closed.
-    1: cassandra-sink-single transform failed (chain: cassandra)
+    0: Chain cassandra failed to send and/or receive messages, the connection will now be closed.
+    1: cassandra-sink-single transform failed in chain cassandra
     2: Failed to connect to destination 127.0.0.1:9043
     3: Connection refused (os error {CONNECTION_REFUSED_OS_ERROR})"#,
             ))

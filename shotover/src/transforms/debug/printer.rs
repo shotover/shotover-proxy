@@ -26,7 +26,7 @@ impl TransformConfig for DebugPrinterConfig {
         &self,
         _transform_context: TransformContextConfig,
     ) -> Result<Box<dyn TransformBuilder>> {
-        Ok(Box::new(DebugPrinter::new()))
+        Ok(Box::new(DebugPrinter::new(self.name.clone())))
     }
 
     fn up_chain_protocol(&self) -> UpChainProtocol {
@@ -45,17 +45,18 @@ impl TransformConfig for DebugPrinterConfig {
 #[derive(Clone)]
 pub(crate) struct DebugPrinter {
     counter: i32,
+    name: String,
 }
 
 impl Default for DebugPrinter {
     fn default() -> Self {
-        Self::new()
+        Self::new(NAME.to_string())
     }
 }
 
 impl DebugPrinter {
-    pub(crate) fn new() -> DebugPrinter {
-        DebugPrinter { counter: 0 }
+    pub(crate) fn new(name: String) -> DebugPrinter {
+        DebugPrinter { counter: 0, name }
     }
 }
 
@@ -64,7 +65,11 @@ impl TransformBuilder for DebugPrinter {
         Box::new(self.clone())
     }
 
-    fn get_name(&self) -> &'static str {
+    fn get_name(&self) -> &str {
+        &self.name
+    }
+
+    fn get_type_name(&self) -> &'static str {
         NAME
     }
 }

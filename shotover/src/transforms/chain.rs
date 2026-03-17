@@ -240,16 +240,26 @@ pub struct TransformChainBuilder {
 }
 
 impl TransformChainBuilder {
-    pub fn new(chain: Vec<(Box<dyn TransformBuilder>, String)>, name: &'static str) -> Self {
-        let chain = chain.into_iter().map(|(builder, user_name)|
-            TransformBuilderAndMetrics {
-                transform_total: counter!("shotover_transform_total_count", "transform" => builder.get_name()),
-                transform_failures: counter!("shotover_transform_failures_count", "transform" => builder.get_name()),
-                transform_latency: histogram!("shotover_transform_latency_seconds", "transform" => builder.get_name()),
-                name: user_name,
+    pub fn new(chain: Vec<Box<dyn TransformBuilder>>, name: &'static str) -> Self {
+        let chain = chain
+            .into_iter()
+            .map(|builder| TransformBuilderAndMetrics {
+                transform_total: counter!(
+                    "shotover_transform_total_count",
+                    "transform" => builder.get_type_name()
+                ),
+                transform_failures: counter!(
+                    "shotover_transform_failures_count",
+                    "transform" => builder.get_type_name()
+                ),
+                transform_latency: histogram!(
+                    "shotover_transform_latency_seconds",
+                    "transform" => builder.get_type_name()
+                ),
+                name: builder.get_name().to_string(),
                 builder,
-            }
-        ).collect();
+            })
+            .collect();
 
         let chain_requests_batch_size =
             histogram!("shotover_chain_requests_batch_size", "chain" => name);
@@ -426,12 +436,9 @@ mod chain_tests {
     async fn test_validate_valid_chain() {
         let chain = TransformChainBuilder::new(
             vec![
-                (
-                    Box::<DebugPrinter>::default() as Box<dyn TransformBuilder>,
-                    "debug-1".to_string(),
-                ),
-                (Box::<DebugPrinter>::default(), "debug-2".to_string()),
-                (Box::<NullSink>::default(), "sink".to_string()),
+                Box::new(DebugPrinter::new("debug-1".to_string())) as Box<dyn TransformBuilder>,
+                Box::new(DebugPrinter::new("debug-2".to_string())),
+                Box::new(NullSink::new("sink".to_string())),
             ],
             "test-chain",
         );

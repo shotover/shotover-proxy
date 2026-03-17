@@ -92,6 +92,7 @@ impl TransformConfig for CassandraSinkClusterConfig {
         let local_node = shotover_nodes.remove(index);
 
         Ok(Box::new(CassandraSinkClusterBuilder::new(
+            self.name.clone(),
             self.first_contact_points.clone(),
             shotover_nodes,
             transform_context.chain_name,
@@ -116,6 +117,7 @@ impl TransformConfig for CassandraSinkClusterConfig {
 }
 
 struct CassandraSinkClusterBuilder {
+    name: String,
     contact_points: Vec<String>,
     connection_factory: ConnectionFactory,
     failed_requests: Counter,
@@ -127,7 +129,9 @@ struct CassandraSinkClusterBuilder {
 }
 
 impl CassandraSinkClusterBuilder {
+    #[allow(clippy::too_many_arguments)]
     fn new(
+        name: String,
         contact_points: Vec<String>,
         shotover_peers: Vec<ShotoverNode>,
         chain_name: String,
@@ -161,6 +165,7 @@ impl CassandraSinkClusterBuilder {
         };
 
         Self {
+            name,
             contact_points,
             connection_factory: ConnectionFactory::new(connect_timeout, read_timeout, tls),
             message_rewriter,
@@ -196,7 +201,11 @@ impl TransformBuilder for CassandraSinkClusterBuilder {
         })
     }
 
-    fn get_name(&self) -> &'static str {
+    fn get_name(&self) -> &str {
+        &self.name
+    }
+
+    fn get_type_name(&self) -> &'static str {
         NAME
     }
 

@@ -32,6 +32,7 @@ impl crate::transforms::TransformConfig for DebugLogToFileConfig {
         std::fs::remove_dir_all("message-log").ok();
 
         Ok(Box::new(DebugLogToFileBuilder {
+            name: self.name.clone(),
             connection_counter: Arc::new(AtomicU64::new(0)),
         }))
     }
@@ -50,6 +51,7 @@ impl crate::transforms::TransformConfig for DebugLogToFileConfig {
 }
 
 struct DebugLogToFileBuilder {
+    name: String,
     connection_counter: Arc<AtomicU64>,
 }
 
@@ -81,7 +83,11 @@ impl TransformBuilder for DebugLogToFileBuilder {
         })
     }
 
-    fn get_name(&self) -> &'static str {
+    fn get_name(&self) -> &str {
+        &self.name
+    }
+
+    fn get_type_name(&self) -> &'static str {
         NAME
     }
 }

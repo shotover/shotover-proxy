@@ -14,6 +14,7 @@ pub enum Filter {
 
 #[derive(Clone)]
 pub struct QueryTypeFilter {
+    pub name: String,
     pub filter: Filter,
     pub filtered_requests: MessageIdMap<Message>,
 }
@@ -39,6 +40,7 @@ impl TransformConfig for QueryTypeFilterConfig {
         _transform_context: TransformContextConfig,
     ) -> Result<Box<dyn TransformBuilder>> {
         Ok(Box::new(QueryTypeFilter {
+            name: self.name.clone(),
             filter: self.filter.clone(),
             filtered_requests: MessageIdMap::default(),
         }))
@@ -62,7 +64,11 @@ impl TransformBuilder for QueryTypeFilter {
         Box::new(self.clone())
     }
 
-    fn get_name(&self) -> &'static str {
+    fn get_name(&self) -> &str {
+        &self.name
+    }
+
+    fn get_type_name(&self) -> &'static str {
         NAME
     }
 }
@@ -125,12 +131,13 @@ mod test {
     #[tokio::test(flavor = "multi_thread")]
     async fn test_filter_denylist() {
         let mut filter_transform = QueryTypeFilter {
+            name: "filter".to_string(),
             filter: Filter::DenyList(vec![QueryType::Read]),
             filtered_requests: MessageIdMap::default(),
         };
 
         let mut chain = vec![TransformAndMetrics::new(
-            Box::new(Loopback::default()),
+            Box::new(Loopback::new("loopback".to_string())),
             "loopback",
         )];
 
@@ -183,12 +190,13 @@ mod test {
     #[tokio::test(flavor = "multi_thread")]
     async fn test_filter_allowlist() {
         let mut filter_transform = QueryTypeFilter {
+            name: "filter".to_string(),
             filter: Filter::AllowList(vec![QueryType::Write]),
             filtered_requests: MessageIdMap::default(),
         };
 
         let mut chain = vec![TransformAndMetrics::new(
-            Box::new(Loopback::default()),
+            Box::new(Loopback::new("loopback".to_string())),
             "loopback",
         )];
 

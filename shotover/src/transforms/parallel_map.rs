@@ -14,6 +14,7 @@ use std::future::Future;
 use std::pin::Pin;
 
 struct ParallelMapBuilder {
+    name: String,
     chains: Vec<TransformChainBuilder>,
     ordered: bool,
 }
@@ -93,6 +94,7 @@ impl TransformConfig for ParallelMapConfig {
         }
 
         Ok(Box::new(ParallelMapBuilder {
+            name: self.name.clone(),
             chains,
             ordered: self.ordered_results,
         }))
@@ -167,7 +169,11 @@ impl TransformBuilder for ParallelMapBuilder {
         })
     }
 
-    fn get_name(&self) -> &'static str {
+    fn get_name(&self) -> &str {
+        &self.name
+    }
+
+    fn get_type_name(&self) -> &'static str {
         NAME
     }
 
@@ -185,7 +191,7 @@ impl TransformBuilder for ParallelMapBuilder {
             .collect::<Vec<String>>();
 
         if !errors.is_empty() {
-            errors.insert(0, format!("{}:", self.get_name()));
+            errors.insert(0, format!("{}:", self.get_type_name()));
         }
 
         errors
@@ -209,18 +215,16 @@ mod parallel_map_tests {
     async fn test_validate_invalid_chain() {
         let chain_1 = TransformChainBuilder::new(
             vec![
-                (
-                    Box::<DebugPrinter>::default() as Box<dyn TransformBuilder>,
-                    "debug-1".to_string(),
-                ),
-                (Box::<DebugPrinter>::default(), "debug-2".to_string()),
-                (Box::<NullSink>::default(), "sink".to_string()),
+                Box::new(DebugPrinter::new("debug-1".to_string())) as Box<dyn TransformBuilder>,
+                Box::new(DebugPrinter::new("debug-2".to_string())),
+                Box::new(NullSink::new("sink".to_string())),
             ],
             "test-chain-1",
         );
         let chain_2 = TransformChainBuilder::new(vec![], "test-chain-2");
 
         let transform = ParallelMapBuilder {
+            name: "pmap".to_string(),
             chains: vec![chain_1, chain_2],
             ordered: true,
         };
@@ -239,28 +243,23 @@ mod parallel_map_tests {
     async fn test_validate_valid_chain() {
         let chain_1 = TransformChainBuilder::new(
             vec![
-                (
-                    Box::<DebugPrinter>::default() as Box<dyn TransformBuilder>,
-                    "debug-1".to_string(),
-                ),
-                (Box::<DebugPrinter>::default(), "debug-2".to_string()),
-                (Box::<NullSink>::default(), "sink".to_string()),
+                Box::new(DebugPrinter::new("debug-1".to_string())) as Box<dyn TransformBuilder>,
+                Box::new(DebugPrinter::new("debug-2".to_string())),
+                Box::new(NullSink::new("sink".to_string())),
             ],
             "test-chain-1",
         );
         let chain_2 = TransformChainBuilder::new(
             vec![
-                (
-                    Box::<DebugPrinter>::default() as Box<dyn TransformBuilder>,
-                    "debug-1".to_string(),
-                ),
-                (Box::<DebugPrinter>::default(), "debug-2".to_string()),
-                (Box::<NullSink>::default(), "sink".to_string()),
+                Box::new(DebugPrinter::new("debug-1".to_string())) as Box<dyn TransformBuilder>,
+                Box::new(DebugPrinter::new("debug-2".to_string())),
+                Box::new(NullSink::new("sink".to_string())),
             ],
             "test-chain-2",
         );
 
         let transform = ParallelMapBuilder {
+            name: "pmap".to_string(),
             chains: vec![chain_1, chain_2],
             ordered: true,
         };

@@ -27,7 +27,10 @@ impl TransformConfig for DebugReturnerConfig {
         &self,
         _transform_context: TransformContextConfig,
     ) -> Result<Box<dyn TransformBuilder>> {
-        Ok(Box::new(DebugReturner::new(self.response.clone())))
+        Ok(Box::new(DebugReturner::new(
+            self.name.clone(),
+            self.response.clone(),
+        )))
     }
 
     fn up_chain_protocol(&self) -> UpChainProtocol {
@@ -55,12 +58,13 @@ pub enum Response {
 
 #[derive(Clone)]
 pub struct DebugReturner {
+    name: String,
     response: Response,
 }
 
 impl DebugReturner {
-    pub fn new(response: Response) -> Self {
-        DebugReturner { response }
+    pub fn new(name: String, response: Response) -> Self {
+        DebugReturner { name, response }
     }
 }
 
@@ -69,7 +73,11 @@ impl TransformBuilder for DebugReturner {
         Box::new(self.clone())
     }
 
-    fn get_name(&self) -> &'static str {
+    fn get_name(&self) -> &str {
+        &self.name
+    }
+
+    fn get_type_name(&self) -> &'static str {
         NAME
     }
 

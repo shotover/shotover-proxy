@@ -35,6 +35,7 @@ impl TransformConfig for RequestThrottlingConfig {
         _transform_context: TransformContextConfig,
     ) -> Result<Box<dyn TransformBuilder>> {
         Ok(Box::new(RequestThrottling {
+            name: self.name.clone(),
             limiter: Arc::new(RateLimiter::direct(Quota::per_second(
                 self.max_requests_per_second,
             ))),
@@ -58,6 +59,7 @@ impl TransformConfig for RequestThrottlingConfig {
 
 #[derive(Clone)]
 struct RequestThrottling {
+    name: String,
     limiter: Arc<RateLimiter<NotKeyed, InMemoryState, DefaultClock, NoOpMiddleware>>,
     max_requests_per_second: NonZeroU32,
     throttled_requests: MessageIdMap<Message>,
@@ -68,7 +70,11 @@ impl TransformBuilder for RequestThrottling {
         Box::new(self.clone())
     }
 
-    fn get_name(&self) -> &'static str {
+    fn get_name(&self) -> &str {
+        &self.name
+    }
+
+    fn get_type_name(&self) -> &'static str {
         NAME
     }
 
@@ -145,20 +151,13 @@ mod test {
         {
             let chain = TransformChainBuilder::new(
                 vec![
-                    (
-                        Box::new(RequestThrottling {
-                            limiter: Arc::new(RateLimiter::direct(Quota::per_second(nonzero!(
-                                20u32
-                            )))),
-                            max_requests_per_second: nonzero!(20u32),
-                            throttled_requests: MessageIdMap::default(),
-                        }) as Box<dyn TransformBuilder>,
-                        "RequestThrottling".to_string(),
-                    ),
-                    (
-                        Box::<NullSink>::default() as Box<dyn TransformBuilder>,
-                        "NullSink".to_string(),
-                    ),
+                    Box::new(RequestThrottling {
+                        name: "RequestThrottling".to_string(),
+                        limiter: Arc::new(RateLimiter::direct(Quota::per_second(nonzero!(20u32)))),
+                        max_requests_per_second: nonzero!(20u32),
+                        throttled_requests: MessageIdMap::default(),
+                    }) as Box<dyn TransformBuilder>,
+                    Box::new(NullSink::new("NullSink".to_string())),
                 ],
                 "test-chain",
             );
@@ -176,20 +175,13 @@ mod test {
         {
             let chain = TransformChainBuilder::new(
                 vec![
-                    (
-                        Box::new(RequestThrottling {
-                            limiter: Arc::new(RateLimiter::direct(Quota::per_second(nonzero!(
-                                100u32
-                            )))),
-                            max_requests_per_second: nonzero!(100u32),
-                            throttled_requests: MessageIdMap::default(),
-                        }) as Box<dyn TransformBuilder>,
-                        "RequestThrottling".to_string(),
-                    ),
-                    (
-                        Box::<NullSink>::default() as Box<dyn TransformBuilder>,
-                        "NullSink".to_string(),
-                    ),
+                    Box::new(RequestThrottling {
+                        name: "RequestThrottling".to_string(),
+                        limiter: Arc::new(RateLimiter::direct(Quota::per_second(nonzero!(100u32)))),
+                        max_requests_per_second: nonzero!(100u32),
+                        throttled_requests: MessageIdMap::default(),
+                    }) as Box<dyn TransformBuilder>,
+                    Box::new(NullSink::new("NullSink".to_string())),
                 ],
                 "test-chain",
             );

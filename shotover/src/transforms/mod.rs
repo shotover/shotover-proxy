@@ -66,8 +66,11 @@ pub trait TransformBuilder: Send + Sync {
     /// Shotover will create a new transform instance by calling this method for every time this transform is configured in the `topology.yaml`.
     fn build(&self, transform_context: TransformContextBuilder) -> Box<dyn Transform>;
 
-    /// Name of the transform used in logs and displayed to the user
-    fn get_name(&self) -> &'static str;
+    /// User-provided name for this transform instance (from topology config).
+    fn get_name(&self) -> &str;
+
+    /// Type name of the transform (e.g. "Tee", "NullSink") used in metrics and diagnostics.
+    fn get_type_name(&self) -> &'static str;
 
     /// Transform specific validation can be implemented here.
     /// Any strings returned are considered a validation error that will be logged and cause shotover to fail to startup.
@@ -225,7 +228,7 @@ impl<'shorter, 'longer: 'shorter> ChainState<'longer> {
         let start = Instant::now();
         let result = transform.transform(self).await.map_err(|e| {
             e.context(anyhow!(
-                "{transform_name} transform failed (chain: {chain_name})"
+                "{transform_name} transform failed in chain {chain_name}"
             ))
         });
         transform_total.increment(1);

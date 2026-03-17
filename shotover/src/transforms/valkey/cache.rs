@@ -112,6 +112,7 @@ impl TransformConfig for ValkeyConfig {
         };
 
         Ok(Box::new(SimpleValkeyCacheBuilder {
+            name: self.name.clone(),
             cache_chain: self.chain.get_builder(transform_context_config).await?,
             caching_schema,
             missed_requests,
@@ -132,6 +133,7 @@ impl TransformConfig for ValkeyConfig {
 }
 
 pub struct SimpleValkeyCacheBuilder {
+    name: String,
     cache_chain: TransformChainBuilder,
     caching_schema: HashMap<FQName, TableCacheSchema>,
     missed_requests: Counter,
@@ -149,7 +151,11 @@ impl TransformBuilder for SimpleValkeyCacheBuilder {
         })
     }
 
-    fn get_name(&self) -> &'static str {
+    fn get_name(&self) -> &str {
+        &self.name
+    }
+
+    fn get_type_name(&self) -> &'static str {
         NAME
     }
 
@@ -162,7 +168,7 @@ impl TransformBuilder for SimpleValkeyCacheBuilder {
             .collect::<Vec<String>>();
 
         if !errors.is_empty() {
-            errors.insert(0, format!("{}:", self.get_name()));
+            errors.insert(0, format!("{}:", self.get_type_name()));
         }
 
         errors
@@ -868,6 +874,7 @@ mod test {
     #[test]
     fn test_validate_invalid_chain() {
         let transform = SimpleValkeyCacheBuilder {
+            name: "cache".to_string(),
             cache_chain: TransformChainBuilder::new(vec![], "test-chain"),
             caching_schema: HashMap::new(),
             missed_requests: counter!("cache_miss"),
@@ -887,17 +894,15 @@ mod test {
     async fn test_validate_valid_chain() {
         let cache_chain = TransformChainBuilder::new(
             vec![
-                (
-                    Box::new(DebugPrinter::new()) as Box<dyn TransformBuilder>,
-                    "debug-1".to_string(),
-                ),
-                (Box::new(DebugPrinter::new()), "debug-2".to_string()),
-                (Box::<NullSink>::default(), "sink".to_string()),
+                Box::new(DebugPrinter::new("debug-1".to_string())) as Box<dyn TransformBuilder>,
+                Box::new(DebugPrinter::new("debug-2".to_string())),
+                Box::new(NullSink::new("sink".to_string())),
             ],
             "test-chain",
         );
 
         let transform = SimpleValkeyCacheBuilder {
+            name: "cache".to_string(),
             cache_chain,
             caching_schema: HashMap::new(),
             missed_requests: counter!("cache_miss"),

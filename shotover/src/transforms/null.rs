@@ -23,7 +23,7 @@ impl TransformConfig for NullSinkConfig {
         &self,
         _transform_context: TransformContextConfig,
     ) -> Result<Box<dyn TransformBuilder>> {
-        Ok(Box::new(NullSink {}))
+        Ok(Box::new(NullSink::new(self.name.clone())))
     }
 
     fn up_chain_protocol(&self) -> UpChainProtocol {
@@ -39,15 +39,32 @@ impl TransformConfig for NullSinkConfig {
     }
 }
 
-#[derive(Default)]
-pub struct NullSink {}
+pub struct NullSink {
+    name: String,
+}
+
+impl Default for NullSink {
+    fn default() -> Self {
+        Self::new(NAME.to_string())
+    }
+}
+
+impl NullSink {
+    pub fn new(name: String) -> Self {
+        NullSink { name }
+    }
+}
 
 impl TransformBuilder for NullSink {
     fn build(&self, _transform_context: TransformContextBuilder) -> Box<dyn Transform> {
-        Box::new(NullSink {})
+        Box::new(NullSink::new(self.name.clone()))
     }
 
-    fn get_name(&self) -> &'static str {
+    fn get_name(&self) -> &str {
+        &self.name
+    }
+
+    fn get_type_name(&self) -> &'static str {
         NAME
     }
 

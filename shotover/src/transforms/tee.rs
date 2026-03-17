@@ -19,6 +19,7 @@ use std::{net::SocketAddr, str, sync::Arc};
 use tracing::{debug, error, trace, warn};
 
 struct TeeBuilder {
+    name: String,
     tx: TransformChainBuilder,
     buffer_size: usize,
     behavior: ConsistencyBehaviorBuilder,
@@ -37,6 +38,7 @@ enum ConsistencyBehaviorBuilder {
 
 impl TeeBuilder {
     fn new(
+        name: String,
         tx: TransformChainBuilder,
         buffer_size: usize,
         behavior: ConsistencyBehaviorBuilder,
@@ -55,6 +57,7 @@ impl TeeBuilder {
         let dropped_messages = counter!("shotover_tee_dropped_messages_count", "chain" => "Tee");
 
         TeeBuilder {
+            name,
             tx,
             buffer_size,
             behavior,
@@ -102,7 +105,11 @@ impl TransformBuilder for TeeBuilder {
         })
     }
 
-    fn get_name(&self) -> &'static str {
+    fn get_name(&self) -> &str {
+        &self.name
+    }
+
+    fn get_type_name(&self) -> &'static str {
         NAME
     }
 
@@ -124,7 +131,7 @@ impl TransformBuilder for TeeBuilder {
         }
 
         if !errors.is_empty() {
-            errors.insert(0, format!("{}:", self.get_name()));
+            errors.insert(0, format!("{}:", self.get_type_name()));
         }
 
         errors
@@ -179,8 +186,8 @@ pub enum ConsistencyBehaviorConfig {
     Ignore,
     LogWarningOnMismatch,
     FailOnMismatch,
+    /// The mismatch chain name is derived as `<tee-transform-name>.mismatch`.
     SubchainOnMismatch {
-        name: String,
         chain: TransformChainConfig,
     },
 }
@@ -207,16 +214,18 @@ impl TransformConfig for TeeConfig {
                 ConsistencyBehaviorBuilder::LogWarningOnMismatch
             }
             Some(ConsistencyBehaviorConfig::SubchainOnMismatch {
-                name: ref mismatch_name,
                 chain: ref mismatch_chain,
-            }) => ConsistencyBehaviorBuilder::SubchainOnMismatch(
-                mismatch_chain
-                    .get_builder(TransformContextConfig {
-                        chain_name: mismatch_name.clone(),
-                        up_chain_protocol: transform_context.up_chain_protocol,
-                    })
-                    .await?,
-            ),
+            }) => {
+                let mismatch_chain_name = format!("{}.mismatch", self.name);
+                ConsistencyBehaviorBuilder::SubchainOnMismatch(
+                    mismatch_chain
+                        .get_builder(TransformContextConfig {
+                            chain_name: mismatch_chain_name,
+                            up_chain_protocol: transform_context.up_chain_protocol,
+                        })
+                        .await?,
+                )
+            }
             None => ConsistencyBehaviorBuilder::Ignore,
         };
         let tee_chain = self
@@ -228,6 +237,7 @@ impl TransformConfig for TeeConfig {
             .await?;
 
         Ok(Box::new(TeeBuilder::new(
+            self.name.clone(),
             tee_chain,
             buffer_size,
             behavior,
@@ -247,12 +257,8 @@ impl TransformConfig for TeeConfig {
 
     fn get_sub_chain_configs(&self) -> Vec<(&TransformChainConfig, String)> {
         let mut configs = vec![(&self.chain, self.name.clone())];
-        if let Some(ConsistencyBehaviorConfig::SubchainOnMismatch {
-            ref name,
-            ref chain,
-        }) = self.behavior
-        {
-            configs.push((chain, name.clone()));
+        if let Some(ConsistencyBehaviorConfig::SubchainOnMismatch { ref chain }) = self.behavior {
+            configs.push((chain, format!("{}.mismatch", self.name)));
         }
         configs
     }
@@ -716,7 +722,6 @@ mod tests {
         let config = TeeConfig {
             name: "tee".to_string(),
             behavior: Some(ConsistencyBehaviorConfig::SubchainOnMismatch {
-                name: "mismatch_chain".to_string(),
                 chain: TransformChainConfig(vec![
                     Box::new(NullSinkConfig {
                         name: "sink-1".to_string(),
@@ -741,7 +746,7 @@ mod tests {
         let transform = config.get_builder(transform_context_config).await.unwrap();
         let result = transform.validate().join("\n");
         let expected = r#"Tee:
-  mismatch_chain chain:
+  tee.mismatch chain:
     Terminating transform "sink-1" is not last in chain. Terminating transform must be last in chain."#;
         assert_eq!(result, expected);
     }
@@ -751,7 +756,6 @@ mod tests {
         let config = TeeConfig {
             name: "tee".to_string(),
             behavior: Some(ConsistencyBehaviorConfig::SubchainOnMismatch {
-                name: "mismatch_chain".to_string(),
                 chain: TransformChainConfig(vec![Box::new(NullSinkConfig {
                     name: "sink".to_string(),
                 })]),

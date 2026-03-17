@@ -156,6 +156,7 @@ impl TransformConfig for KafkaSinkClusterConfig {
             .collect();
 
         Ok(Box::new(KafkaSinkClusterBuilder::new(
+            self.name.clone(),
             transform_context.chain_name,
             first_contact_points?,
             &self.authorize_scram_over_mtls,
@@ -183,6 +184,7 @@ impl TransformConfig for KafkaSinkClusterConfig {
 }
 
 struct KafkaSinkClusterBuilder {
+    name: String,
     // contains address and port
     first_contact_points: Vec<KafkaAddress>,
     shotover_nodes: Vec<ShotoverNode>,
@@ -204,6 +206,7 @@ struct KafkaSinkClusterBuilder {
 impl KafkaSinkClusterBuilder {
     #[expect(clippy::too_many_arguments)]
     pub fn new(
+        name: String,
         chain_name: String,
         first_contact_points: Vec<KafkaAddress>,
         authorize_scram_over_mtls: &Option<AuthorizeScramOverMtlsConfig>,
@@ -233,6 +236,7 @@ impl KafkaSinkClusterBuilder {
         }
 
         Ok(KafkaSinkClusterBuilder {
+            name,
             first_contact_points,
             authorize_scram_over_mtls: authorize_scram_over_mtls
                 .as_ref()
@@ -286,7 +290,11 @@ impl TransformBuilder for KafkaSinkClusterBuilder {
         })
     }
 
-    fn get_name(&self) -> &'static str {
+    fn get_name(&self) -> &str {
+        &self.name
+    }
+
+    fn get_type_name(&self) -> &'static str {
         NAME
     }
 
