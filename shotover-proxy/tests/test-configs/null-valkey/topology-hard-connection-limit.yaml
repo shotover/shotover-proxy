@@ -9,5 +9,5 @@ sources:
         - QueryCounter:
             name: "valkey-chain-counter"
             counter_name : "valkey-chain"
-        - NullSink
+        - NullSink:
             name: "null-sink"
