@@ -214,7 +214,7 @@ impl TransformConfig for TeeConfig {
                 ConsistencyBehaviorBuilder::LogWarningOnMismatch
             }
             Some(ConsistencyBehaviorConfig::SubchainOnMismatch {
-                chain: ref mismatch_chain,
+                chain: mismatch_chain,
             }) => {
                 let mismatch_chain_name = format!("{}.mismatch", self.name);
                 ConsistencyBehaviorBuilder::SubchainOnMismatch(
