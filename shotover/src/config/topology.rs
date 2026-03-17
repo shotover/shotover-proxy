@@ -70,11 +70,8 @@ impl Topology {
                     .push(usage);
             }
 
-            fn duplicate_names(map: &BTreeMap<String, Vec<String>>) -> Vec<(String, Vec<String>)> {
-                map.iter()
-                    .filter(|(_, uses)| uses.len() > 1)
-                    .map(|(name, uses)| (name.clone(), uses.clone()))
-                    .collect()
+            fn duplicate_names(map: BTreeMap<String, Vec<String>>) -> Vec<(String, Vec<String>)> {
+                map.into_iter().filter(|(_, uses)| uses.len() > 1).collect()
             }
         }
 
@@ -120,7 +117,8 @@ impl Topology {
             collect_chain_names(&mut name_state, source.get_chain_config(), &root_chain_path);
         }
 
-        let duplicate_sources = NameValidationState::duplicate_names(&name_state.source_uses);
+        let duplicate_sources =
+            NameValidationState::duplicate_names(std::mem::take(&mut name_state.source_uses));
         if !duplicate_sources.is_empty() {
             writeln!(topology_errors, "Duplicate source names detected:")?;
             for (name, usages) in duplicate_sources {
@@ -131,7 +129,8 @@ impl Topology {
             }
         }
 
-        let duplicate_transforms = NameValidationState::duplicate_names(&name_state.transform_uses);
+        let duplicate_transforms =
+            NameValidationState::duplicate_names(std::mem::take(&mut name_state.transform_uses));
         if !duplicate_transforms.is_empty() {
             writeln!(topology_errors, "Duplicate transform names detected:")?;
             for (name, usages) in duplicate_transforms {
@@ -142,7 +141,8 @@ impl Topology {
             }
         }
 
-        let duplicate_chains = NameValidationState::duplicate_names(&name_state.chain_uses);
+        let duplicate_chains =
+            NameValidationState::duplicate_names(std::mem::take(&mut name_state.chain_uses));
         if !duplicate_chains.is_empty() {
             writeln!(topology_errors, "Duplicate chain names detected:")?;
             for (name, usages) in duplicate_chains {
