@@ -228,20 +228,19 @@ impl CassandraDecoder {
         let compressed = Flags::from_bits_truncate(bytes[1]).contains(Flags::COMPRESSION);
 
         // check if startup message and set the codec's selected compression and version
-        if Opcode::Startup == opcode {
-            if let CassandraFrame {
+        if Opcode::Startup == opcode
+            && let CassandraFrame {
                 operation: CassandraOperation::Startup(startup),
                 version,
                 ..
             } = CassandraFrame::from_bytes(bytes.clone().freeze(), Compression::None)?
-            {
-                set_startup_state(&mut self.compression, &mut self.version, version, &startup);
+        {
+            set_startup_state(&mut self.compression, &mut self.version, version, &startup);
 
-                if self.direction == Direction::Source {
-                    self.version_counter.increment(version);
-                }
-            };
-        }
+            if self.direction == Direction::Source {
+                self.version_counter.increment(version);
+            }
+        };
 
         if Opcode::Ready == opcode || Opcode::Authenticate == opcode {
             self.handshake_complete
@@ -624,12 +623,11 @@ impl Decoder for CassandraDecoder {
                         }
                     }
 
-                    if !matches!(meta.opcode, Opcode::Event) {
-                        if let Some(request_id) =
+                    if !matches!(meta.opcode, Opcode::Event)
+                        && let Some(request_id) =
                             self.stream_id_to_request_id.remove(&meta.stream_id)
-                        {
-                            message.set_request_id(request_id);
-                        }
+                    {
+                        message.set_request_id(request_id);
                     }
                 }
                 Ok(Some(messages))
@@ -654,12 +652,11 @@ struct StreamIdToRequestId {
 }
 
 fn get_use_keyspace(message: &mut Message) -> Option<Identifier> {
-    if let Some(Frame::Cassandra(frame)) = message.frame() {
-        if let CassandraOperation::Query { query, .. } = &mut frame.operation {
-            if let CassandraStatement::Use(keyspace) = query.as_ref() {
-                return Some(keyspace.clone());
-            }
-        }
+    if let Some(Frame::Cassandra(frame)) = message.frame()
+        && let CassandraOperation::Query { query, .. } = &mut frame.operation
+        && let CassandraStatement::Use(keyspace) = query.as_ref()
+    {
+        return Some(keyspace.clone());
     }
     None
 }
@@ -994,21 +991,20 @@ impl CassandraEncoder {
                 // check if the message is a startup message and set the codec's compression
                 {
                     let opcode = Opcode::try_from(bytes[4])?;
-                    if Opcode::Startup == opcode {
-                        if let CassandraFrame {
+                    if Opcode::Startup == opcode
+                        && let CassandraFrame {
                             operation: CassandraOperation::Startup(startup),
                             version,
                             ..
                         } = CassandraFrame::from_bytes(bytes.clone(), Compression::None)?
-                        {
-                            set_startup_state(
-                                &mut self.compression,
-                                &mut self.version,
-                                version,
-                                &startup,
-                            );
-                        };
-                    }
+                    {
+                        set_startup_state(
+                            &mut self.compression,
+                            &mut self.version,
+                            version,
+                            &startup,
+                        );
+                    };
 
                     if Opcode::Ready == opcode || Opcode::Authenticate == opcode {
                         self.handshake_complete.store(true, Ordering::Relaxed);
