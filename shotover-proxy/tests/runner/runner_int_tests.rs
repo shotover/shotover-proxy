@@ -16,6 +16,8 @@ async fn test_request_id_increments() {
         TcpStream::connect("127.0.0.1:6379").await.unwrap();
     }
 
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+
     let events = shotover_process.shutdown_and_then_consume_events(&[]).await;
     let mut previous_id = 0;
     for event in events.events {
