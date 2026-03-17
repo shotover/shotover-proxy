@@ -782,7 +782,7 @@ async fn run_aws_cassandra(
 
 async fn run_aws_cassandra_single(instance: Arc<Ec2InstanceWithDocker>) {
     instance
-        .run_container("shotover/cassandra-test:4.0.6-r1", &[])
+        .run_container("shotover/cassandra-test:4.0.6-r4", &[])
         .await;
 }
 
@@ -798,7 +798,7 @@ async fn run_aws_cassandra_cluster(nodes: Vec<AwsNodeInfo>) {
         tasks.push(tokio::spawn(async move {
             node.instance
                 .run_container(
-                    "shotover/cassandra-test:4.0.6-r1",
+                    "shotover/cassandra-test:4.0.6-r4",
                     &[
                         (
                             "CASSANDRA_ENDPOINT_SNITCH".to_owned(),

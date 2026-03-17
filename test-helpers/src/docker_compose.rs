@@ -34,17 +34,17 @@ pub static IMAGE_WAITERS: [Image; 9] = [
         timeout: Duration::from_secs(120),
     },
     Image {
-        name: "shotover/cassandra-test:4.0.6-r1",
+        name: "shotover/cassandra-test:4.0.6-r4",
         log_regex_to_wait_for: r"Startup complete",
         timeout: Duration::from_secs(120),
     },
     Image {
-        name: "shotover/cassandra-test:3.11.13-r1",
+        name: "shotover/cassandra-test:3.11.13-r4",
         log_regex_to_wait_for: r"Startup complete",
         timeout: Duration::from_secs(120),
     },
     Image {
-        name: "shotover/cassandra-test:5.0-rc1-r3",
+        name: "shotover/cassandra-test:5.0-rc1-r4",
         log_regex_to_wait_for: r"Starting listening for CQL clients",
         timeout: Duration::from_secs(120),
     },
