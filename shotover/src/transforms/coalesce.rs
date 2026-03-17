@@ -8,6 +8,7 @@ use std::time::Instant;
 
 #[derive(Clone)]
 struct Coalesce {
+    name: String,
     flush_when_buffered_message_count: Option<usize>,
     flush_when_millis_since_last_flush: Option<u128>,
     buffer: Messages,
@@ -17,6 +18,7 @@ struct Coalesce {
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct CoalesceConfig {
+    pub name: String,
     pub flush_when_buffered_message_count: Option<usize>,
     pub flush_when_millis_since_last_flush: Option<u128>,
 }
@@ -25,11 +27,16 @@ const NAME: &str = "Coalesce";
 #[typetag::serde(name = "Coalesce")]
 #[async_trait(?Send)]
 impl TransformConfig for CoalesceConfig {
+    fn get_name(&self) -> &str {
+        &self.name
+    }
+
     async fn get_builder(
         &self,
         _transform_context: TransformContextConfig,
     ) -> Result<Box<dyn TransformBuilder>> {
         Ok(Box::new(Coalesce {
+            name: self.name.clone(),
             buffer: Vec::with_capacity(self.flush_when_buffered_message_count.unwrap_or(0)),
             flush_when_buffered_message_count: self.flush_when_buffered_message_count,
             flush_when_millis_since_last_flush: self.flush_when_millis_since_last_flush,
@@ -44,6 +51,10 @@ impl TransformConfig for CoalesceConfig {
     fn down_chain_protocol(&self) -> DownChainProtocol {
         DownChainProtocol::SameAsUpChain
     }
+
+    fn get_sub_chain_configs(&self) -> Vec<(&crate::config::chain::TransformChainConfig, String)> {
+        vec![]
+    }
 }
 
 impl TransformBuilder for Coalesce {
@@ -51,7 +62,11 @@ impl TransformBuilder for Coalesce {
         Box::new(self.clone())
     }
 
-    fn get_name(&self) -> &'static str {
+    fn get_name(&self) -> &str {
+        &self.name
+    }
+
+    fn get_type_name(&self) -> &'static str {
         NAME
     }
 
@@ -123,13 +138,18 @@ mod test {
     #[tokio::test(flavor = "multi_thread")]
     async fn test_count() {
         let mut coalesce = Coalesce {
+            name: "coalesce".to_string(),
             flush_when_buffered_message_count: Some(100),
             flush_when_millis_since_last_flush: None,
             buffer: Vec::with_capacity(100),
             last_write: Instant::now(),
         };
 
-        let mut chain = vec![TransformAndMetrics::new(Box::new(Loopback::default()))];
+        let mut chain = vec![TransformAndMetrics::new(
+            Box::new(Loopback::new("loopback".to_string())),
+            "loopback",
+            "Loopback",
+        )];
 
         let requests: Vec<_> = (0..25)
             .map(|_| Message::from_frame(Frame::Valkey(ValkeyFrame::Null)))
@@ -145,13 +165,18 @@ mod test {
     #[tokio::test(flavor = "multi_thread")]
     async fn test_wait() {
         let mut coalesce = Coalesce {
+            name: "coalesce".to_string(),
             flush_when_buffered_message_count: None,
             flush_when_millis_since_last_flush: Some(100),
             buffer: Vec::with_capacity(100),
             last_write: Instant::now(),
         };
 
-        let mut chain = vec![TransformAndMetrics::new(Box::new(Loopback::default()))];
+        let mut chain = vec![TransformAndMetrics::new(
+            Box::new(Loopback::new("loopback".to_string())),
+            "loopback",
+            "Loopback",
+        )];
 
         let requests: Vec<_> = (0..25)
             .map(|_| Message::from_frame(Frame::Valkey(ValkeyFrame::Null)))
@@ -168,13 +193,18 @@ mod test {
     #[tokio::test(flavor = "multi_thread")]
     async fn test_wait_or_count() {
         let mut coalesce = Coalesce {
+            name: "coalesce".to_string(),
             flush_when_buffered_message_count: Some(100),
             flush_when_millis_since_last_flush: Some(100),
             buffer: Vec::with_capacity(100),
             last_write: Instant::now(),
         };
 
-        let mut chain = vec![TransformAndMetrics::new(Box::new(Loopback::default()))];
+        let mut chain = vec![TransformAndMetrics::new(
+            Box::new(Loopback::new("loopback".to_string())),
+            "loopback",
+            "Loopback",
+        )];
 
         let requests: Vec<_> = (0..25)
             .map(|_| Message::from_frame(Frame::Valkey(ValkeyFrame::Null)))
@@ -199,7 +229,7 @@ mod test {
         expected_len: usize,
     ) {
         let mut wrapper = ChainState::new_test(requests.to_vec());
-        wrapper.reset(chain);
+        wrapper.reset(chain, "test");
         assert_eq!(
             coalesce.transform(&mut wrapper).await.unwrap().len(),
             expected_len

@@ -5,6 +5,7 @@ sources:
       listen_addr: "127.0.0.1:9193"
       chain:
         - KafkaSinkCluster:
+            name: "kafka-sink-cluster"
             shotover_nodes:
               - address_for_peers: "localhost:9191"
                 address_for_clients: "localhost:9191"

@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct DebugReturnerConfig {
+    pub name: String,
     #[serde(flatten)]
     response: Response,
 }
@@ -18,11 +19,18 @@ const NAME: &str = "DebugReturner";
 #[typetag::serde(name = "DebugReturner")]
 #[async_trait(?Send)]
 impl TransformConfig for DebugReturnerConfig {
+    fn get_name(&self) -> &str {
+        &self.name
+    }
+
     async fn get_builder(
         &self,
         _transform_context: TransformContextConfig,
     ) -> Result<Box<dyn TransformBuilder>> {
-        Ok(Box::new(DebugReturner::new(self.response.clone())))
+        Ok(Box::new(DebugReturner::new(
+            self.name.clone(),
+            self.response.clone(),
+        )))
     }
 
     fn up_chain_protocol(&self) -> UpChainProtocol {
@@ -31,6 +39,10 @@ impl TransformConfig for DebugReturnerConfig {
 
     fn down_chain_protocol(&self) -> DownChainProtocol {
         DownChainProtocol::SameAsUpChain
+    }
+
+    fn get_sub_chain_configs(&self) -> Vec<(&crate::config::chain::TransformChainConfig, String)> {
+        vec![]
     }
 }
 
@@ -46,12 +58,13 @@ pub enum Response {
 
 #[derive(Clone)]
 pub struct DebugReturner {
+    name: String,
     response: Response,
 }
 
 impl DebugReturner {
-    pub fn new(response: Response) -> Self {
-        DebugReturner { response }
+    pub fn new(name: String, response: Response) -> Self {
+        DebugReturner { name, response }
     }
 }
 
@@ -60,7 +73,11 @@ impl TransformBuilder for DebugReturner {
         Box::new(self.clone())
     }
 
-    fn get_name(&self) -> &'static str {
+    fn get_name(&self) -> &str {
+        &self.name
+    }
+
+    fn get_type_name(&self) -> &'static str {
         NAME
     }
 

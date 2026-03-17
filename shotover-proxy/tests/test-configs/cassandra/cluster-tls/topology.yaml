@@ -8,6 +8,7 @@ sources:
         private_key_path: "tests/test-configs/cassandra/tls/certs/localhost.key"
       chain:
         - CassandraSinkCluster:
+            name: "cassandra-sink-cluster"
             first_contact_points: ["172.16.1.2:9042", "172.16.1.3:9042"]
             local_shotover_host_id: "2dd022d6-2937-4754-89d6-02d2933a8f7a"
             shotover_nodes:

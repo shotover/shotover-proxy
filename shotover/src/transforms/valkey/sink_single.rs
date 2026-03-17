@@ -20,6 +20,7 @@ use tokio::sync::Notify;
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct ValkeySinkSingleConfig {
+    pub name: String,
     #[serde(rename = "remote_address")]
     pub address: String,
     pub tls: Option<TlsConnectorConfig>,
@@ -30,12 +31,17 @@ const NAME: &str = "ValkeySinkSingle";
 #[typetag::serde(name = "ValkeySinkSingle")]
 #[async_trait(?Send)]
 impl TransformConfig for ValkeySinkSingleConfig {
+    fn get_name(&self) -> &str {
+        &self.name
+    }
+
     async fn get_builder(
         &self,
         transform_context: TransformContextConfig,
     ) -> Result<Box<dyn TransformBuilder>> {
         let tls = self.tls.as_ref().map(TlsConnector::new).transpose()?;
         Ok(Box::new(ValkeySinkSingleBuilder::new(
+            self.name.clone(),
             self.address.clone(),
             tls,
             transform_context.chain_name,
@@ -50,9 +56,14 @@ impl TransformConfig for ValkeySinkSingleConfig {
     fn down_chain_protocol(&self) -> DownChainProtocol {
         DownChainProtocol::Terminating
     }
+
+    fn get_sub_chain_configs(&self) -> Vec<(&crate::config::chain::TransformChainConfig, String)> {
+        vec![]
+    }
 }
 
 pub struct ValkeySinkSingleBuilder {
+    name: String,
     address: String,
     tls: Option<TlsConnector>,
     failed_requests: Counter,
@@ -61,6 +72,7 @@ pub struct ValkeySinkSingleBuilder {
 
 impl ValkeySinkSingleBuilder {
     pub fn new(
+        name: String,
         address: String,
         tls: Option<TlsConnector>,
         chain_name: String,
@@ -70,6 +82,7 @@ impl ValkeySinkSingleBuilder {
         let connect_timeout = Duration::from_millis(connect_timeout_ms);
 
         ValkeySinkSingleBuilder {
+            name,
             address,
             tls,
             failed_requests,
@@ -90,7 +103,11 @@ impl TransformBuilder for ValkeySinkSingleBuilder {
         })
     }
 
-    fn get_name(&self) -> &'static str {
+    fn get_name(&self) -> &str {
+        &self.name
+    }
+
+    fn get_type_name(&self) -> &'static str {
         NAME
     }
 

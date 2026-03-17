@@ -14,6 +14,7 @@ use std::future::Future;
 use std::pin::Pin;
 
 struct ParallelMapBuilder {
+    name: String,
     chains: Vec<TransformChainBuilder>,
     ordered: bool,
 }
@@ -65,6 +66,7 @@ where
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct ParallelMapConfig {
+    pub name: String,
     pub parallelism: u32,
     pub chain: TransformChainConfig,
     pub ordered_results: bool,
@@ -74,20 +76,25 @@ const NAME: &str = "ParallelMap";
 #[typetag::serde(name = "ParallelMap")]
 #[async_trait(?Send)]
 impl TransformConfig for ParallelMapConfig {
+    fn get_name(&self) -> &str {
+        &self.name
+    }
+
     async fn get_builder(
         &self,
         transform_context: TransformContextConfig,
     ) -> Result<Box<dyn TransformBuilder>> {
         let mut chains = vec![];
-        for _ in 0..self.parallelism {
+        for i in 0..self.parallelism {
             let transform_context_config = TransformContextConfig {
-                chain_name: "parallel_map_chain".into(),
+                chain_name: format!("{}[{}]", self.name, i),
                 up_chain_protocol: transform_context.up_chain_protocol,
             };
             chains.push(self.chain.get_builder(transform_context_config).await?);
         }
 
         Ok(Box::new(ParallelMapBuilder {
+            name: self.name.clone(),
             chains,
             ordered: self.ordered_results,
         }))
@@ -99,6 +106,12 @@ impl TransformConfig for ParallelMapConfig {
 
     fn down_chain_protocol(&self) -> DownChainProtocol {
         DownChainProtocol::Terminating
+    }
+
+    fn get_sub_chain_configs(&self) -> Vec<(&TransformChainConfig, String)> {
+        (0..self.parallelism)
+            .map(|i| (&self.chain, format!("{}[{i}]", self.name)))
+            .collect()
     }
 }
 
@@ -156,7 +169,11 @@ impl TransformBuilder for ParallelMapBuilder {
         })
     }
 
-    fn get_name(&self) -> &'static str {
+    fn get_name(&self) -> &str {
+        &self.name
+    }
+
+    fn get_type_name(&self) -> &'static str {
         NAME
     }
 
@@ -174,7 +191,7 @@ impl TransformBuilder for ParallelMapBuilder {
             .collect::<Vec<String>>();
 
         if !errors.is_empty() {
-            errors.insert(0, format!("{}:", self.get_name()));
+            errors.insert(0, format!("{}:", self.get_type_name()));
         }
 
         errors
@@ -198,15 +215,16 @@ mod parallel_map_tests {
     async fn test_validate_invalid_chain() {
         let chain_1 = TransformChainBuilder::new(
             vec![
-                Box::<DebugPrinter>::default(),
-                Box::<DebugPrinter>::default(),
-                Box::<NullSink>::default(),
+                Box::new(DebugPrinter::new("debug-1".to_string())) as Box<dyn TransformBuilder>,
+                Box::new(DebugPrinter::new("debug-2".to_string())),
+                Box::new(NullSink::new("sink".to_string())),
             ],
             "test-chain-1",
         );
         let chain_2 = TransformChainBuilder::new(vec![], "test-chain-2");
 
         let transform = ParallelMapBuilder {
+            name: "pmap".to_string(),
             chains: vec![chain_1, chain_2],
             ordered: true,
         };
@@ -225,22 +243,23 @@ mod parallel_map_tests {
     async fn test_validate_valid_chain() {
         let chain_1 = TransformChainBuilder::new(
             vec![
-                Box::<DebugPrinter>::default(),
-                Box::<DebugPrinter>::default(),
-                Box::<NullSink>::default(),
+                Box::new(DebugPrinter::new("debug-1".to_string())) as Box<dyn TransformBuilder>,
+                Box::new(DebugPrinter::new("debug-2".to_string())),
+                Box::new(NullSink::new("sink".to_string())),
             ],
             "test-chain-1",
         );
         let chain_2 = TransformChainBuilder::new(
             vec![
-                Box::<DebugPrinter>::default(),
-                Box::<DebugPrinter>::default(),
-                Box::<NullSink>::default(),
+                Box::new(DebugPrinter::new("debug-1".to_string())) as Box<dyn TransformBuilder>,
+                Box::new(DebugPrinter::new("debug-2".to_string())),
+                Box::new(NullSink::new("sink".to_string())),
             ],
             "test-chain-2",
         );
 
         let transform = ParallelMapBuilder {
+            name: "pmap".to_string(),
             chains: vec![chain_1, chain_2],
             ordered: true,
         };

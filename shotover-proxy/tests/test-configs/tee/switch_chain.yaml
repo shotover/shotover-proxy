@@ -3,44 +3,55 @@ sources:
   - Valkey:
       name: "valkey-1"
       listen_addr: "127.0.0.1:6371"
-      connection_limit: 
+      connection_limit:
       chain:
         - Tee:
+            name: "tee"
             behavior: Ignore
             buffer_size: 10000
             switch_port: 1231
             chain:
               - DebugReturner:
+                  name: "tee-returner"
                   Valkey: "b"
         - DebugReturner:
+            name: "returner"
             Valkey: "a"
   - Valkey:
       name: "valkey-2"
       listen_addr: "127.0.0.1:6372"
-      connection_limit: 
+      connection_limit:
       chain:
         - Tee:
-            behavior: 
+            name: "tee2"
+            behavior:
               SubchainOnMismatch:
-                - NullSink
+                chain:
+                  - NullSink:
+                      name: "mismatch-null-sink"
             buffer_size: 10000
             switch_port: 1232
             chain:
               - DebugReturner:
+                  name: "tee-returner2"
                   Valkey: "b"
         - DebugReturner:
+            name: "returner2"
             Valkey: "a"
   - Valkey:
       name: "valkey-3"
       listen_addr: "127.0.0.1:6373"
-      connection_limit: 
+      connection_limit:
       chain:
         - Tee:
+            name: "tee3"
             behavior: LogWarningOnMismatch
             buffer_size: 10000
             switch_port: 1233
             chain:
               - DebugReturner:
+                  name: "tee-returner3"
                   Valkey: "b"
         - DebugReturner:
+            name: "returner3"
             Valkey: "a"
