@@ -30,7 +30,6 @@ pub struct CassandraSourceConfig {
 impl CassandraSourceConfig {
     pub async fn build(
         &self,
-        trigger_shutdown_tx: watch::Sender<bool>,
         trigger_shutdown_rx: watch::Receiver<bool>,
         hot_reload_listeners: &mut HashMap<u16, TcpListener>,
     ) -> Result<Source, Vec<String>> {
@@ -52,7 +51,6 @@ impl CassandraSourceConfig {
             self.transport.unwrap_or(Transport::Tcp),
             hot_reload_rx,
             hot_reload_listeners,
-            trigger_shutdown_tx,
             trigger_shutdown_rx,
             gradual_shutdown_rx,
         )

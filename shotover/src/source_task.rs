@@ -82,6 +82,7 @@ pub(crate) struct SourceTask<C: CodecBuilder> {
 
     connections_opened: Counter,
     connections_accept_failures: Counter,
+    listener_create_failures: Counter,
     available_connections_gauge: Gauge,
 
     /// Timeout after which to kill an idle connection. No timeout means connections will never be timed out.
@@ -111,7 +112,6 @@ impl<C: CodecBuilder + 'static> SourceTask<C> {
         transport: Transport,
         hot_reload_rx: tokio::sync::mpsc::UnboundedReceiver<HotReloadListenerRequest>,
         hot_reload_listeners: &mut HashMap<u16, TcpListener>,
-        trigger_shutdown_tx: watch::Sender<bool>,
         mut trigger_shutdown_rx: watch::Receiver<bool>,
         mut gradual_shutdown_rx: tokio::sync::mpsc::UnboundedReceiver<GradualShutdownRequest>,
     ) -> Result<JoinHandle<()>, Vec<String>> {
@@ -119,7 +119,11 @@ impl<C: CodecBuilder + 'static> SourceTask<C> {
             gauge!("shotover_available_connections_count", "source" => source_name.clone());
         let connections_opened = counter!("connections_opened", "source" => source_name.clone());
         let connections_accept_failures = counter!(
-            "shotover_source_connections_accept_failures_count",
+            "shotover_connections_accept_failures_count",
+            "source" => source_name.clone()
+        );
+        let listener_create_failures = counter!(
+            "shotover_listener_create_failures_count",
             "source" => source_name.clone()
         );
         available_connections_gauge.set(limit_connections.available_permits() as f64);
@@ -185,6 +189,7 @@ impl<C: CodecBuilder + 'static> SourceTask<C> {
             available_connections_gauge,
             connections_opened,
             connections_accept_failures,
+            listener_create_failures,
             timeout,
             connection_handles: vec![],
             transport,
@@ -192,25 +197,17 @@ impl<C: CodecBuilder + 'static> SourceTask<C> {
             port,
         };
 
+        // Shutdown escalation is managed in `Source::join`.
         let join_handle = tokio::spawn(async move {
             if !*trigger_shutdown_rx.borrow() {
                 tokio::select! {
                     res = listener.run() => {
                         if let Err(err) = res {
                             error!(
-                                "{:?}",
-                                err.context(format!(
-                                    "[{}] Source task on [{}] hit an unrecoverable error and Shotover is shutting down",
-                                    listener.source_name, listener.listen_addr
-                                ))
+                                "[{}] Source task on [{}] hit an unrecoverable error and Shotover is shutting down: {err:?}",
+                                listener.source_name,
+                                listener.listen_addr
                             );
-                            if let Err(send_error) = trigger_shutdown_tx.send(true) {
-                                warn!(
-                                    "[{}] Source task on [{}] failed to trigger global shutdown with error: {send_error:?}",
-                                    listener.source_name,
-                                    listener.listen_addr
-                                );
-                            }
                         }
                     }
                     _ = trigger_shutdown_rx.changed() => {
@@ -233,7 +230,7 @@ impl<C: CodecBuilder + 'static> SourceTask<C> {
     ///
     /// # Errors
     ///
-    /// Returns `Err` only for unrecoverable source task failures.
+    /// Returns `Err` only for unrecoverable source task failures which will trigger global shutdown.
     /// Runtime listener creation and accept failures are treated as recoverable
     /// and retried forever with capped backoff.
     pub async fn run(&mut self) -> Result<()> {
@@ -254,7 +251,12 @@ impl<C: CodecBuilder + 'static> SourceTask<C> {
             };
             if self.listener.is_none() {
                 self.listener = Some(
-                    Self::create_listener_with_backoff(&self.source_name, &self.listen_addr).await,
+                    Self::create_listener_with_backoff(
+                        &self.source_name,
+                        &self.listen_addr,
+                        &self.listener_create_failures,
+                    )
+                    .await,
                 );
             }
 
@@ -402,7 +404,11 @@ impl<C: CodecBuilder + 'static> SourceTask<C> {
         );
     }
 
-    async fn create_listener_with_backoff(source_name: &str, listen_addr: &str) -> TcpListener {
+    async fn create_listener_with_backoff(
+        source_name: &str,
+        listen_addr: &str,
+        listener_create_failures: &Counter,
+    ) -> TcpListener {
         let mut backoff = 1;
 
         loop {
@@ -417,6 +423,7 @@ impl<C: CodecBuilder + 'static> SourceTask<C> {
                     return listener;
                 }
                 Err(err) => {
+                    listener_create_failures.increment(1);
                     warn!(
                         "[{}] Failed to create listener on [{}] with error: {}, retrying with backoff of {}s",
                         source_name, listen_addr, err, backoff

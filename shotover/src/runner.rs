@@ -180,11 +180,7 @@ impl Shotover {
         info!(topology = ?topology);
 
         match topology
-            .run_chains(
-                trigger_shutdown_tx.clone(),
-                trigger_shutdown_rx,
-                hotreload_listeners,
-            )
+            .run_chains(trigger_shutdown_rx, hotreload_listeners)
             .await
         {
             Ok(sources) => {
@@ -208,7 +204,14 @@ impl Shotover {
                     crate::hot_reload::server::start_hot_reload_server(socket_path, &sources);
                 }
 
-                futures::future::join_all(sources.into_iter().map(|x| x.join())).await;
+                // Each `Source::join` call triggers global shutdown when that source exits.
+                // This prevents partial-topology liveness (one source down, others still running).
+                futures::future::join_all(
+                    sources
+                        .into_iter()
+                        .map(|x| x.join(trigger_shutdown_tx.clone())),
+                )
+                .await;
                 Ok(())
             }
             Err(err) => Err(err),

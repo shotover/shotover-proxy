@@ -57,11 +57,16 @@ impl Source {
         }
     }
 
-    pub async fn join(self) -> Result<(), JoinError> {
-        self.listener_task.await?;
+    pub async fn join(self, trigger_shutdown_tx: watch::Sender<bool>) -> Result<(), JoinError> {
+        let result = self.listener_task.await;
+        // This source has closed, ensure the rest of shotover shutsdown as well, to avoid a scenario where shotover is partially shutdown.
+        // Ignore errors, as there may be no receivers if we are in an actual shutdown.
+        if !*trigger_shutdown_tx.borrow() {
+            let _ = trigger_shutdown_tx.send(true);
+        }
         // explicitly drop hot_reload_tx here, to show that it occurs after the listener_task has shutdown.
         std::mem::drop(self.hot_reload_tx);
-        Ok(())
+        result
     }
 
     pub fn get_hot_reload_tx(&self) -> UnboundedSender<HotReloadListenerRequest> {
@@ -91,47 +96,18 @@ pub enum SourceConfig {
 impl SourceConfig {
     pub(crate) async fn build(
         &self,
-        trigger_shutdown_tx: watch::Sender<bool>,
         trigger_shutdown_rx: watch::Receiver<bool>,
         hot_reload_listeners: &mut HashMap<u16, TcpListener>,
     ) -> Result<Source, Vec<String>> {
         match self {
             #[cfg(feature = "cassandra")]
-            SourceConfig::Cassandra(c) => {
-                c.build(
-                    trigger_shutdown_tx,
-                    trigger_shutdown_rx,
-                    hot_reload_listeners,
-                )
-                .await
-            }
+            SourceConfig::Cassandra(c) => c.build(trigger_shutdown_rx, hot_reload_listeners).await,
             #[cfg(feature = "valkey")]
-            SourceConfig::Valkey(r) => {
-                r.build(
-                    trigger_shutdown_tx,
-                    trigger_shutdown_rx,
-                    hot_reload_listeners,
-                )
-                .await
-            }
+            SourceConfig::Valkey(r) => r.build(trigger_shutdown_rx, hot_reload_listeners).await,
             #[cfg(feature = "kafka")]
-            SourceConfig::Kafka(r) => {
-                r.build(
-                    trigger_shutdown_tx,
-                    trigger_shutdown_rx,
-                    hot_reload_listeners,
-                )
-                .await
-            }
+            SourceConfig::Kafka(r) => r.build(trigger_shutdown_rx, hot_reload_listeners).await,
             #[cfg(feature = "opensearch")]
-            SourceConfig::OpenSearch(r) => {
-                r.build(
-                    trigger_shutdown_tx,
-                    trigger_shutdown_rx,
-                    hot_reload_listeners,
-                )
-                .await
-            }
+            SourceConfig::OpenSearch(r) => r.build(trigger_shutdown_rx, hot_reload_listeners).await,
         }
     }
 
