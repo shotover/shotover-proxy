@@ -1305,7 +1305,7 @@ pub async fn test_trigger_transform_failure_driver(client: &Client) {
         // fred sends a `CLIENT` command on startup to which shotover will reply with an error
         client.wait_for_connect().await.unwrap_err().details(),
         format!(
-            "ERR Internal shotover (or custom transform) bug (chain: valkey): Chain valkey failed to send and/or receive messages, the connection will now be closed.  Caused by:     0: valkey-sink transform failed in chain valkey     1: Failed to connect to destination 127.0.0.1:1111     2: Connection refused (os error {CONNECTION_REFUSED_OS_ERROR})"
+            "ERR Internal shotover (or custom transform) bug (chain: valkey): Failed to send and/or receive messages, the connection will now be closed.  Caused by:     0: Transform ValkeySinkSingle named valkey-sink failed in chain valkey     1: Failed to connect to destination 127.0.0.1:1111     2: Connection refused (os error {CONNECTION_REFUSED_OS_ERROR})"
         )
     );
 }
@@ -1322,7 +1322,7 @@ pub async fn test_trigger_transform_failure_raw() {
 
     assert_eq!(
         read_valkey_message(&mut connection).await,
-        ValkeyFrame::Error(format!("ERR Internal shotover (or custom transform) bug (chain: valkey): Chain valkey failed to send and/or receive messages, the connection will now be closed.  Caused by:     0: valkey-sink transform failed in chain valkey     1: Failed to connect to destination 127.0.0.1:1111     2: Connection refused (os error {CONNECTION_REFUSED_OS_ERROR})").into())
+        ValkeyFrame::Error(format!("ERR Internal shotover (or custom transform) bug (chain: valkey): Failed to send and/or receive messages, the connection will now be closed.  Caused by:     0: Transform ValkeySinkSingle named valkey-sink failed in chain valkey     1: Failed to connect to destination 127.0.0.1:1111     2: Connection refused (os error {CONNECTION_REFUSED_OS_ERROR})").into())
     );
 
     // If the connection was closed by shotover then we will succesfully read 0 bytes.

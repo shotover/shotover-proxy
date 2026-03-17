@@ -89,13 +89,13 @@ impl Topology {
                 state.register_transform(
                     transform_name,
                     format!(
-                        "transform[{transform_index}] {transform_name:?} ({transform_type}) in {chain_path}"
+                        "Transform[{transform_index}] {transform_type} named {transform_name:?} in {chain_path}"
                     ),
                 );
 
                 for (sub_chain, sub_chain_name) in config.get_sub_chain_configs() {
                     let sub_chain_path = format!(
-                        "{chain_path} -> subchain {sub_chain_name:?} (from {transform_type} {transform_name:?})"
+                        "{chain_path} -> subchain {sub_chain_name:?} (from Transform {transform_type} named {transform_name:?})"
                     );
                     state.register_chain(
                         &sub_chain_name,
@@ -117,8 +117,7 @@ impl Topology {
             collect_chain_names(&mut name_state, source.get_chain_config(), &root_chain_path);
         }
 
-        let duplicate_sources =
-            NameValidationState::duplicate_names(std::mem::take(&mut name_state.source_uses));
+        let duplicate_sources = NameValidationState::duplicate_names(name_state.source_uses);
         if !duplicate_sources.is_empty() {
             writeln!(topology_errors, "Duplicate source names detected:")?;
             for (name, usages) in duplicate_sources {
@@ -129,8 +128,7 @@ impl Topology {
             }
         }
 
-        let duplicate_transforms =
-            NameValidationState::duplicate_names(std::mem::take(&mut name_state.transform_uses));
+        let duplicate_transforms = NameValidationState::duplicate_names(name_state.transform_uses);
         if !duplicate_transforms.is_empty() {
             writeln!(topology_errors, "Duplicate transform names detected:")?;
             for (name, usages) in duplicate_transforms {
@@ -141,8 +139,7 @@ impl Topology {
             }
         }
 
-        let duplicate_chains =
-            NameValidationState::duplicate_names(std::mem::take(&mut name_state.chain_uses));
+        let duplicate_chains = NameValidationState::duplicate_names(name_state.chain_uses);
         if !duplicate_chains.is_empty() {
             writeln!(topology_errors, "Duplicate chain names detected:")?;
             for (name, usages) in duplicate_chains {
@@ -322,7 +319,7 @@ foo source:
         let expected = r#"Topology errors
 foo source:
   foo chain:
-    Terminating transform "sink-1" is not last in chain. Terminating transform must be last in chain.
+    Terminating Transform NullSink named "sink-1" is not last in chain. Terminating Transform must be last in chain.
 "#;
 
         let error = run_test_topology_valkey(vec![
@@ -348,7 +345,7 @@ foo source:
         let expected = r#"Topology errors
 foo source:
   foo chain:
-    Non-terminating transform "debug-3" is last in chain. Last transform must be terminating.
+    Non-terminating Transform DebugPrinter named "debug-3" is last in chain. Last Transform must be terminating.
 "#;
 
         let error = run_test_topology_valkey(vec![
@@ -374,8 +371,8 @@ foo source:
         let expected = r#"Topology errors
 foo source:
   foo chain:
-    Terminating transform "sink" is not last in chain. Terminating transform must be last in chain.
-    Non-terminating transform "debug-3" is last in chain. Last transform must be terminating.
+    Terminating Transform NullSink named "sink" is not last in chain. Terminating Transform must be last in chain.
+    Non-terminating Transform DebugPrinter named "debug-3" is last in chain. Last Transform must be terminating.
 "#;
 
         let error = run_test_topology_valkey(vec![
@@ -440,7 +437,7 @@ foo source:
   foo chain:
     ValkeyCache:
       cache chain:
-        Terminating transform "c-sink-1" is not last in chain. Terminating transform must be last in chain.
+        Terminating Transform NullSink named "c-sink-1" is not last in chain. Terminating Transform must be last in chain.
 "#;
 
         let error = run_test_topology_cassandra(vec![
@@ -516,7 +513,7 @@ foo source:
   foo chain:
     ParallelMap:
       pmap[0] chain:
-        Terminating transform "p-sink-1" is not last in chain. Terminating transform must be last in chain.
+        Terminating Transform NullSink named "p-sink-1" is not last in chain. Terminating Transform must be last in chain.
 "#;
 
         let error = run_test_topology_valkey(vec![
@@ -560,7 +557,7 @@ foo source:
   foo chain:
     ParallelMap:
       pmap[0] chain:
-        Terminating transform "p-sink-1" is not last in chain. Terminating transform must be last in chain.
+        Terminating Transform NullSink named "p-sink-1" is not last in chain. Terminating Transform must be last in chain.
 "#;
 
         let subchain = TransformChainConfig(vec![
@@ -606,7 +603,7 @@ foo source:
   foo chain:
     ParallelMap:
       pmap[0] chain:
-        Non-terminating transform "p-debug-2" is last in chain. Last transform must be terminating.
+        Non-terminating Transform DebugPrinter named "p-debug-2" is last in chain. Last Transform must be terminating.
 "#;
 
         let subchain = TransformChainConfig(vec![
@@ -646,8 +643,8 @@ foo source:
   foo chain:
     ParallelMap:
       pmap[0] chain:
-        Terminating transform "p-sink" is not last in chain. Terminating transform must be last in chain.
-        Non-terminating transform "p-debug-2" is last in chain. Last transform must be terminating.
+        Terminating Transform NullSink named "p-sink" is not last in chain. Terminating Transform must be last in chain.
+        Non-terminating Transform DebugPrinter named "p-debug-2" is last in chain. Last Transform must be terminating.
 "#;
 
         let subchain = TransformChainConfig(vec![
@@ -721,8 +718,8 @@ Duplicate chain names detected:
         let expected = r#"Topology errors
 Duplicate transform names detected:
   "dup" used by:
-    transform[0] "dup" (DebugPrinter) in source[0] "foo" chain "foo"
-    transform[1] "dup" (NullSink) in source[0] "foo" chain "foo"
+    Transform[0] DebugPrinter named "dup" in source[0] "foo" chain "foo"
+    Transform[1] NullSink named "dup" in source[0] "foo" chain "foo"
 "#;
 
         let error = run_test_topology_valkey(vec![
@@ -747,7 +744,7 @@ Duplicate transform names detected:
 Duplicate chain names detected:
   "foo" used by:
     root chain for source[0] "foo"
-    chain "foo" at source[0] "foo" chain "foo" -> subchain "foo" (from Tee "foo")
+    chain "foo" at source[0] "foo" chain "foo" -> subchain "foo" (from Transform Tee named "foo")
 "#;
 
         let error = run_test_topology_valkey(vec![
@@ -778,7 +775,7 @@ Duplicate chain names detected:
 Duplicate chain names detected:
   "foo" used by:
     root chain for source[0] "foo"
-    chain "foo" at source[0] "foo" chain "foo" -> subchain "foo" (from ValkeyCache "foo")
+    chain "foo" at source[0] "foo" chain "foo" -> subchain "foo" (from Transform ValkeyCache named "foo")
 "#;
 
         let error = run_test_topology_cassandra(vec![
@@ -856,15 +853,15 @@ Duplicate chain names detected:
         let expected = r#"Topology errors
 valkey1 source:
   valkey1 chain:
-    Terminating transform "sink-1" is not last in chain. Terminating transform must be last in chain.
-    Terminating transform "sink-2" is not last in chain. Terminating transform must be last in chain.
-    Non-terminating transform "debug" is last in chain. Last transform must be terminating.
+    Terminating Transform NullSink named "sink-1" is not last in chain. Terminating Transform must be last in chain.
+    Terminating Transform NullSink named "sink-2" is not last in chain. Terminating Transform must be last in chain.
+    Non-terminating Transform DebugPrinter named "debug" is last in chain. Last Transform must be terminating.
 valkey2 source:
   valkey2 chain:
     ParallelMap:
       pmap[0] chain:
-        Terminating transform "p-sink" is not last in chain. Terminating transform must be last in chain.
-        Non-terminating transform "p-debug" is last in chain. Last transform must be terminating.
+        Terminating Transform NullSink named "p-sink" is not last in chain. Terminating Transform must be last in chain.
+        Non-terminating Transform DebugPrinter named "p-debug" is last in chain. Last Transform must be terminating.
 "#;
 
         assert_eq!(error, expected);

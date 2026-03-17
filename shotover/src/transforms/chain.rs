@@ -191,6 +191,7 @@ impl TransformChain {
 pub struct TransformAndMetrics {
     pub transform: Box<dyn Transform>,
     pub name: String,
+    pub type_name: String,
     pub transform_total: Counter,
     pub transform_failures: Counter,
     pub transform_latency: Histogram,
@@ -198,10 +199,11 @@ pub struct TransformAndMetrics {
 
 impl TransformAndMetrics {
     #[cfg(test)]
-    pub fn new(transform: Box<dyn Transform>, name: &str) -> Self {
+    pub fn new(transform: Box<dyn Transform>, name: &str, type_name: &str) -> Self {
         TransformAndMetrics {
             transform,
             name: name.to_string(),
+            type_name: type_name.to_string(),
             transform_total: Counter::noop(),
             transform_failures: Counter::noop(),
             transform_latency: Histogram::noop(),
@@ -212,6 +214,7 @@ impl TransformAndMetrics {
 pub struct TransformBuilderAndMetrics {
     pub builder: Box<dyn TransformBuilder>,
     pub name: String,
+    pub type_name: String,
     transform_total: Counter,
     transform_failures: Counter,
     transform_latency: Histogram,
@@ -222,6 +225,7 @@ impl TransformBuilderAndMetrics {
         TransformAndMetrics {
             transform: self.builder.build(context),
             name: self.name.clone(),
+            type_name: self.type_name.clone(),
             transform_total: self.transform_total.clone(),
             transform_failures: self.transform_failures.clone(),
             transform_latency: self.transform_latency.clone(),
@@ -257,6 +261,7 @@ impl TransformChainBuilder {
                     "transform" => builder.get_type_name()
                 ),
                 name: builder.get_name().to_string(),
+                type_name: builder.get_type_name().to_string(),
                 builder,
             })
             .collect();
@@ -297,13 +302,13 @@ impl TransformChainBuilder {
 
                 if i == last_index && !transform.builder.is_terminating() {
                     errors.push(format!(
-                        "  Non-terminating transform {:?} is last in chain. Last transform must be terminating.",
-                        transform.name
+                        "  Non-terminating Transform {} named {:?} is last in chain. Last Transform must be terminating.",
+                        transform.type_name, transform.name
                     ));
                 } else if i != last_index && transform.builder.is_terminating() {
                     errors.push(format!(
-                        "  Terminating transform {:?} is not last in chain. Terminating transform must be last in chain.",
-                        transform.name
+                        "  Terminating Transform {} named {:?} is not last in chain. Terminating Transform must be last in chain.",
+                        transform.type_name, transform.name
                     ));
                 }
 

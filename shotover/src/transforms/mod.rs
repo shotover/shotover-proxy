@@ -212,6 +212,7 @@ impl<'shorter, 'longer: 'shorter> ChainState<'longer> {
         let TransformAndMetrics {
             transform,
             name: transform_name,
+            type_name: transform_type,
             transform_total,
             transform_failures,
             transform_latency,
@@ -228,7 +229,7 @@ impl<'shorter, 'longer: 'shorter> ChainState<'longer> {
         let start = Instant::now();
         let result = transform.transform(self).await.map_err(|e| {
             e.context(anyhow!(
-                "{transform_name} transform failed in chain {chain_name}"
+                "Transform {transform_type} named {transform_name} failed in chain {chain_name}"
             ))
         });
         transform_total.increment(1);

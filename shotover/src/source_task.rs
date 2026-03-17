@@ -729,9 +729,9 @@ impl<C: CodecBuilder + 'static> Handler<C> {
             Ok(x) => x,
             Err(err) => {
                 let chain_name = self.chain.name;
-                let err = err.context(format!(
-                    "Chain {chain_name} failed to send and/or receive messages, the connection will now be closed.",
-                ));
+                let err = err.context(
+                    "Failed to send and/or receive messages, the connection will now be closed.",
+                );
                 // The connection is going to be closed once we return Err.
                 // So first make a best effort attempt of responding to any pending requests with an error response.
                 out_tx.send(self.pending_requests.to_errors(chain_name, &err))?;

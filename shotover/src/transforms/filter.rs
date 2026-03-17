@@ -139,6 +139,7 @@ mod test {
         let mut chain = vec![TransformAndMetrics::new(
             Box::new(Loopback::new("loopback".to_string())),
             "loopback",
+            "Loopback",
         )];
 
         let messages: Vec<_> = (0..26)
@@ -198,6 +199,7 @@ mod test {
         let mut chain = vec![TransformAndMetrics::new(
             Box::new(Loopback::new("loopback".to_string())),
             "loopback",
+            "Loopback",
         )];
 
         let messages: Vec<_> = (0..26)

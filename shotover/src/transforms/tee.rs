@@ -671,7 +671,7 @@ mod tests {
         let result = transform.validate().join("\n");
         let expected = r#"Tee:
   tee chain:
-    Terminating transform "sink-1" is not last in chain. Terminating transform must be last in chain."#;
+    Terminating Transform NullSink named "sink-1" is not last in chain. Terminating Transform must be last in chain."#;
         assert_eq!(result, expected);
     }
 
@@ -747,7 +747,7 @@ mod tests {
         let result = transform.validate().join("\n");
         let expected = r#"Tee:
   tee.mismatch chain:
-    Terminating transform "sink-1" is not last in chain. Terminating transform must be last in chain."#;
+    Terminating Transform NullSink named "sink-1" is not last in chain. Terminating Transform must be last in chain."#;
         assert_eq!(result, expected);
     }
 

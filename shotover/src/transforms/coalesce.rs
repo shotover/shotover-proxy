@@ -148,6 +148,7 @@ mod test {
         let mut chain = vec![TransformAndMetrics::new(
             Box::new(Loopback::new("loopback".to_string())),
             "loopback",
+            "Loopback",
         )];
 
         let requests: Vec<_> = (0..25)
@@ -174,6 +175,7 @@ mod test {
         let mut chain = vec![TransformAndMetrics::new(
             Box::new(Loopback::new("loopback".to_string())),
             "loopback",
+            "Loopback",
         )];
 
         let requests: Vec<_> = (0..25)
@@ -201,6 +203,7 @@ mod test {
         let mut chain = vec![TransformAndMetrics::new(
             Box::new(Loopback::new("loopback".to_string())),
             "loopback",
+            "Loopback",
         )];
 
         let requests: Vec<_> = (0..25)
