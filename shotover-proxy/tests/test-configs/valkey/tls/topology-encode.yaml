@@ -8,9 +8,11 @@ sources:
         private_key_path: "tests/test-configs/valkey/tls/certs/localhost.key"
       chain:
         - DebugForceEncode:
+            name: "debug-force-encode"
             encode_requests: true
             encode_responses: true
         - ValkeySinkSingle:
+            name: "valkey-sink"
             remote_address: "localhost:1111"
             connect_timeout_ms: 3000
             tls:

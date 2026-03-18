@@ -22,6 +22,29 @@ Debug transforms can be temporarily used to test how your Shotover configuration
 
 Future transforms won't be added to the public API while in alpha. But in these early days we have chosen to publish these alpha transforms to demonstrate the direction we want to take the project.
 
+## Transform Naming
+
+Every transform in the topology configuration must have a user-provided `name` field. This name is used in logging, metrics, and error messages to identify specific transforms.
+
+```yaml
+chain:
+  - DebugPrinter:
+      name: "print-inbound"
+```
+
+Sub-chain names are derived from the parent transform's `name` (ParallelMap appends an index, e.g. `my-pmap[0]`). Tee's `SubchainOnMismatch` mismatch chain name is derived as `<tee-transform-name>.mismatch`.
+
+```yaml
+chain:
+  - Tee:
+      name: "tee-primary"
+      behavior:
+        SubchainOnMismatch:
+          chain:
+            - NullSink:
+                name: "mismatch-sink"
+```
+
 ## Transforms
 
 | Transform                                                | Terminating | Implementation Status |
@@ -374,14 +397,16 @@ This transform emits a metrics [counter](user-guide/observability.md#counter) na
 This transform will drop any messages it receives and return an empty response.
 
 ```yaml
-- NullSink
+- NullSink:
+    name: "null-sink"
 ```
 
 ### ParallelMap
 
 This transform will send messages in a single batch in parallel across multiple instances of the chain.
 
-If we have a parallelism of 3 then we would have 3 instances of the chain: C1, C2, C3. If the batch then contains messages M1, M2, M3, M4. Then the messages would be sent as follows:
+The `parallelism` field determines how many instances of the chain are created. The parallel chain instances are named using the transform's `name` — at runtime they are named `{name}[0]`, `{name}[1]`, etc.
+If we have parallelism of 3 then we would have 3 instances of the chain: C1, C2, C3. If the batch then contains messages M1, M2, M3, M4. Then the messages would be sent as follows:
 
 * M1 would be sent to C1
 * M2 would be sent to C2
@@ -390,16 +415,19 @@ If we have a parallelism of 3 then we would have 3 instances of the chain: C1, C
 
 ```yaml
 - ParallelMap:
-    # Number of duplicate chains to send messages through.
-    parallelism: 1
+    name: "my-parallel-map"
+    # Number of parallel chain instances (named "my-parallel-map[0]", "my-parallel-map[1]").
+    parallelism: 2
     # if true then responses will be returned in the same as order as the queries went out.
     # if it is false then response may return in any order.
     ordered_results: true
     # The chain that messages are sent through
     chain:
       - QueryCounter:
-          name: "DR chain"
+          name: "query-counter"
+          counter_name: "DR chain"
       - ValkeySinkSingle:
+          name: "valkey-sink"
           remote_address: "127.0.0.1:6379"
           connect_timeout_ms: 3000
 ```
@@ -411,11 +439,12 @@ The log can be accessed via the [Shotover metrics](user-guide/configuration.md#o
 
 ```yaml
 - QueryCounter:
-    # this name will be logged with the query count
-    name: "DR chain"
+    name: "query-counter"
+    # this counter_name will be logged with the query count
+    counter_name: "DR chain"
 ```
 
-This transform emits a metrics [counter](user-guide/observability.md#counter) named `query_count` with the label `name` defined as the name from the config, in the example it will be `DR chain`.
+This transform emits a metrics [counter](user-guide/observability.md#counter) named `query_count` with the label `name` defined as the `counter_name` from the config, in the example it will be `DR chain`.
 
 ### QueryTypeFilter
 
@@ -560,6 +589,7 @@ Tee also exposes an optional HTTP API to switch which chain to use as the "resul
 
 ```yaml
 - Tee:
+    name: "my-tee"
     # Ignore responses returned by the sub chain
     behavior: Ignore
 
@@ -574,11 +604,15 @@ Tee also exposes an optional HTTP API to switch which chain to use as the "resul
     # If the responses returned by the sub chain do not equal the responses returned by down-chain,
     # then the original message is also sent down the SubchainOnMismatch sub chain.
     # This is useful for logging failed messages.
-    # behavior: 
+    # The mismatch chain name is derived as <tee-transform-name>.mismatch.
+    # behavior:
     #   SubchainOnMismatch:
-    #     - QueryTypeFilter:
-    #         DenyList: [Read]
-    #     - NullSink
+    #     chain:
+    #       - QueryTypeFilter:
+    #           name: "mismatch-filter"
+    #           DenyList: [Read]
+    #       - NullSink:
+    #           name: "mismatch-sink"
 
     # The port that the HTTP API will listen on.
     # When this field is not provided the HTTP API will not be run.
@@ -592,8 +626,10 @@ Tee also exposes an optional HTTP API to switch which chain to use as the "resul
     # The sub chain to send duplicate messages through
     chain:
       - QueryTypeFilter:
+          name: "tee-filter"
           DenyList: [Read]
-      - NullSink
+      - NullSink:
+          name: "tee-sink"
 ```
 
 This transform emits a metrics [counter](user-guide/observability.md#counter) named `tee_dropped_messages` and the label `chain` as `Tee`.

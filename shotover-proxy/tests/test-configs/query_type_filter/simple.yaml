@@ -6,8 +6,10 @@ sources:
       connection_limit: 3000000
       chain:
         - QueryTypeFilter:
+            name: "query-type-filter"
             DenyList: [Write]
         - DebugReturner:
+            name: "debug-returner"
             Valkey: "42"
   - Valkey:
       name: "valkey2"
@@ -15,6 +17,8 @@ sources:
       connection_limit: 3000000
       chain:
         - QueryTypeFilter:
+            name: "query-type-filter1"
             AllowList: [Read]
         - DebugReturner:
+            name: "debug-returner1"
             Valkey: "42"

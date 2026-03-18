@@ -81,6 +81,7 @@ impl From<&TableCacheSchemaConfig> for TableCacheSchema {
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct ValkeyConfig {
+    pub name: String,
     pub caching_schema: HashMap<String, TableCacheSchemaConfig>,
     pub chain: TransformChainConfig,
 }
@@ -89,6 +90,10 @@ const NAME: &str = "ValkeyCache";
 #[typetag::serde(name = "ValkeyCache")]
 #[async_trait(?Send)]
 impl TransformConfig for ValkeyConfig {
+    fn get_name(&self) -> &str {
+        &self.name
+    }
+
     async fn get_builder(
         &self,
         _transform_context: TransformContextConfig,
@@ -102,11 +107,12 @@ impl TransformConfig for ValkeyConfig {
             .collect();
 
         let transform_context_config = TransformContextConfig {
-            chain_name: "cache_chain".into(),
+            chain_name: self.name.clone(),
             up_chain_protocol: MessageType::Valkey,
         };
 
         Ok(Box::new(SimpleValkeyCacheBuilder {
+            name: self.name.clone(),
             cache_chain: self.chain.get_builder(transform_context_config).await?,
             caching_schema,
             missed_requests,
@@ -120,9 +126,14 @@ impl TransformConfig for ValkeyConfig {
     fn down_chain_protocol(&self) -> DownChainProtocol {
         DownChainProtocol::SameAsUpChain
     }
+
+    fn get_sub_chain_configs(&self) -> Vec<(&TransformChainConfig, String)> {
+        vec![(&self.chain, self.name.clone())]
+    }
 }
 
 pub struct SimpleValkeyCacheBuilder {
+    name: String,
     cache_chain: TransformChainBuilder,
     caching_schema: HashMap<FQName, TableCacheSchema>,
     missed_requests: Counter,
@@ -140,7 +151,11 @@ impl TransformBuilder for SimpleValkeyCacheBuilder {
         })
     }
 
-    fn get_name(&self) -> &'static str {
+    fn get_name(&self) -> &str {
+        &self.name
+    }
+
+    fn get_type_name(&self) -> &'static str {
         NAME
     }
 
@@ -153,7 +168,7 @@ impl TransformBuilder for SimpleValkeyCacheBuilder {
             .collect::<Vec<String>>();
 
         if !errors.is_empty() {
-            errors.insert(0, format!("{}:", self.get_name()));
+            errors.insert(0, format!("{}:", self.get_type_name()));
         }
 
         errors
@@ -851,6 +866,7 @@ mod test {
     #[test]
     fn test_validate_invalid_chain() {
         let transform = SimpleValkeyCacheBuilder {
+            name: "cache".to_string(),
             cache_chain: TransformChainBuilder::new(vec![], "test-chain"),
             caching_schema: HashMap::new(),
             missed_requests: counter!("cache_miss"),
@@ -870,14 +886,15 @@ mod test {
     async fn test_validate_valid_chain() {
         let cache_chain = TransformChainBuilder::new(
             vec![
-                Box::new(DebugPrinter::new()),
-                Box::new(DebugPrinter::new()),
-                Box::<NullSink>::default(),
+                Box::new(DebugPrinter::new("debug-1".to_string())) as Box<dyn TransformBuilder>,
+                Box::new(DebugPrinter::new("debug-2".to_string())),
+                Box::new(NullSink::new("sink".to_string())),
             ],
             "test-chain",
         );
 
         let transform = SimpleValkeyCacheBuilder {
+            name: "cache".to_string(),
             cache_chain,
             caching_schema: HashMap::new(),
             missed_requests: counter!("cache_miss"),

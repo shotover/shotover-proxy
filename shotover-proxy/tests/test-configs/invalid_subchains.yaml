@@ -4,17 +4,24 @@ sources:
       name: "valkey1"
       listen_addr: "127.0.0.1:6379"
       chain:
-        - NullSink
-        - NullSink
-        - DebugPrinter
+        - NullSink:
+            name: "sink-1"
+        - NullSink:
+            name: "sink-2"
+        - DebugPrinter:
+            name: "debug"
   - Valkey:
       name: "valkey2"
       listen_addr: "127.0.0.1:6379"
       chain:
-        - DebugPrinter
+        - DebugPrinter:
+            name: "debug1"
         - ParallelMap:
+            name: "pmap"
             chain:
-              - NullSink
-              - DebugPrinter
+              - NullSink:
+                  name: "p-sink"
+              - DebugPrinter:
+                  name: "p-debug"
             parallelism: 1
             ordered_results: false

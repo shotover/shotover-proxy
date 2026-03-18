@@ -21,13 +21,22 @@ const NAME: &str = "ConnectionBalanceAndPool";
 #[typetag::serde(name = "ConnectionBalanceAndPool")]
 #[async_trait(?Send)]
 impl TransformConfig for ConnectionBalanceAndPoolConfig {
+    fn get_name(&self) -> &str {
+        &self.name
+    }
+
     async fn get_builder(
         &self,
         transform_context: TransformContextConfig,
     ) -> Result<Box<dyn TransformBuilder>> {
-        let chain = Arc::new(self.chain.get_builder(transform_context).await?);
+        let chain_context = TransformContextConfig {
+            chain_name: self.name.clone(),
+            up_chain_protocol: transform_context.up_chain_protocol,
+        };
+        let chain = Arc::new(self.chain.get_builder(chain_context).await?);
 
         Ok(Box::new(ConnectionBalanceAndPoolBuilder {
+            name: self.name.clone(),
             max_connections: self.max_connections,
             all_connections: Arc::new(Mutex::new(Vec::with_capacity(self.max_connections))),
             chain_to_clone: chain,
@@ -41,9 +50,14 @@ impl TransformConfig for ConnectionBalanceAndPoolConfig {
     fn down_chain_protocol(&self) -> DownChainProtocol {
         DownChainProtocol::SameAsUpChain
     }
+
+    fn get_sub_chain_configs(&self) -> Vec<(&TransformChainConfig, String)> {
+        vec![(&self.chain, self.name.clone())]
+    }
 }
 
 struct ConnectionBalanceAndPoolBuilder {
+    name: String,
     max_connections: usize,
     all_connections: Arc<Mutex<Vec<BufferedChain>>>,
     chain_to_clone: Arc<TransformChainBuilder>,
@@ -60,12 +74,16 @@ impl TransformBuilder for ConnectionBalanceAndPoolBuilder {
         })
     }
 
-    fn is_terminating(&self) -> bool {
-        true
+    fn get_name(&self) -> &str {
+        &self.name
     }
 
-    fn get_name(&self) -> &'static str {
+    fn get_type_name(&self) -> &'static str {
         NAME
+    }
+
+    fn is_terminating(&self) -> bool {
+        true
     }
 }
 

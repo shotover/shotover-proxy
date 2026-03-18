@@ -5,8 +5,10 @@ sources:
       listen_addr: "127.0.0.1:9042"
       chain:
         - DebugForceParse:
+            name: "debug-force-parse"
             parse_requests: false
             parse_responses: true
         - CassandraSinkSingle:
+            name: "cassandra-sink-single"
             remote_address: "127.0.0.1:9043"
             connect_timeout_ms: 3000

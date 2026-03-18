@@ -53,6 +53,7 @@ const SYSTEM_KEYSPACES: [IdentifierRef<'static>; 3] = [
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct CassandraSinkClusterConfig {
+    pub name: String,
     /// contact points must be within the specified data_center and rack.
     /// If this is not followed, shotover's invariants will still be upheld but shotover will communicate with a
     /// node outside of the specified data_center and rack.
@@ -68,6 +69,10 @@ const NAME: &str = "CassandraSinkCluster";
 #[typetag::serde(name = "CassandraSinkCluster")]
 #[async_trait(?Send)]
 impl TransformConfig for CassandraSinkClusterConfig {
+    fn get_name(&self) -> &str {
+        &self.name
+    }
+
     async fn get_builder(
         &self,
         transform_context: TransformContextConfig,
@@ -87,6 +92,7 @@ impl TransformConfig for CassandraSinkClusterConfig {
         let local_node = shotover_nodes.remove(index);
 
         Ok(Box::new(CassandraSinkClusterBuilder::new(
+            self.name.clone(),
             self.first_contact_points.clone(),
             shotover_nodes,
             transform_context.chain_name,
@@ -104,9 +110,14 @@ impl TransformConfig for CassandraSinkClusterConfig {
     fn down_chain_protocol(&self) -> DownChainProtocol {
         DownChainProtocol::Terminating
     }
+
+    fn get_sub_chain_configs(&self) -> Vec<(&crate::config::chain::TransformChainConfig, String)> {
+        vec![]
+    }
 }
 
 struct CassandraSinkClusterBuilder {
+    name: String,
     contact_points: Vec<String>,
     connection_factory: ConnectionFactory,
     failed_requests: Counter,
@@ -118,7 +129,9 @@ struct CassandraSinkClusterBuilder {
 }
 
 impl CassandraSinkClusterBuilder {
+    #[allow(clippy::too_many_arguments)]
     fn new(
+        name: String,
         contact_points: Vec<String>,
         shotover_peers: Vec<ShotoverNode>,
         chain_name: String,
@@ -152,6 +165,7 @@ impl CassandraSinkClusterBuilder {
         };
 
         Self {
+            name,
             contact_points,
             connection_factory: ConnectionFactory::new(connect_timeout, read_timeout, tls),
             message_rewriter,
@@ -187,7 +201,11 @@ impl TransformBuilder for CassandraSinkClusterBuilder {
         })
     }
 
-    fn get_name(&self) -> &'static str {
+    fn get_name(&self) -> &str {
+        &self.name
+    }
+
+    fn get_type_name(&self) -> &'static str {
         NAME
     }
 

@@ -8,6 +8,7 @@ sources:
         private_key_path: "tests/test-configs/kafka/tls/certs/localhost.key"
       chain:
         - KafkaSinkCluster:
+            name: "kafka-sink-cluster"
             shotover_nodes:
               - address_for_peers: "127.0.0.1:9192"
                 address_for_clients: "127.0.0.1:9192"

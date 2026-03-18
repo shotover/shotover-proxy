@@ -7,22 +7,29 @@ sources:
       connection_limit: 3000000
       chain:
         - Tee:
+            name: "tee"
             behavior: Ignore
             buffer_size: 10000
             chain:
-            - QueryTypeFilter:
-                DenyList: [Read]
-            - Coalesce:
-                flush_when_buffered_message_count: 2000
-                # Use an unreasonably large timeout here so that integration tests dont break on slow hardware or a performance regression
-                flush_when_millis_since_last_flush: 1000000000
-            - QueryCounter:
-                name: "DR chain"
-            - ValkeySinkCluster:
-                first_contact_points: [ "127.0.0.1:2120", "127.0.0.1:2121", "127.0.0.1:2122", "127.0.0.1:2123", "127.0.0.1:2124", "127.0.0.1:2125" ]
-                connect_timeout_ms: 3000
+              - QueryTypeFilter:
+                  name: "query-type-filter"
+                  DenyList: [Read]
+              - Coalesce:
+                  name: "coalesce"
+                  flush_when_buffered_message_count: 2000
+                  # Use an unreasonably large timeout here so that integration tests dont break on slow hardware or a performance regression
+                  flush_when_millis_since_last_flush: 1000000000
+              - QueryCounter:
+                  name: "dr-query-counter"
+                  counter_name: "DR chain"
+              - ValkeySinkCluster:
+                  name: "valkey-sink-cluster-dr"
+                  first_contact_points: [ "127.0.0.1:2120", "127.0.0.1:2121", "127.0.0.1:2122", "127.0.0.1:2123", "127.0.0.1:2124", "127.0.0.1:2125" ]
+                  connect_timeout_ms: 3000
         - QueryCounter:
-            name: "Main chain"
+            name: "main-query-counter"
+            counter_name: "Main chain"
         - ValkeySinkCluster:
+            name: "valkey-sink-cluster"
             first_contact_points: [ "127.0.0.1:2220", "127.0.0.1:2221", "127.0.0.1:2222", "127.0.0.1:2223", "127.0.0.1:2224", "127.0.0.1:2225" ]
             connect_timeout_ms: 3000

@@ -5,6 +5,7 @@ sources:
       listen_addr: "127.0.0.1:9043"
       chain:
       - CassandraSinkSingle:
+          name: "cassandra-sink-single1"
           remote_address: "172.16.1.2:9042"
           connect_timeout_ms: 3000
 
@@ -13,7 +14,9 @@ sources:
       listen_addr: "127.0.0.1:9044"
       chain:
         - CassandraPeersRewrite:
+            name: "cassandra-peers-rewrite"
             port: 9044
         - CassandraSinkSingle:
+            name: "cassandra-sink-single2"
             remote_address: "172.16.1.2:9042"
             connect_timeout_ms: 3000

@@ -19,6 +19,7 @@ use std::{net::SocketAddr, str, sync::Arc};
 use tracing::{debug, error, trace, warn};
 
 struct TeeBuilder {
+    name: String,
     tx: TransformChainBuilder,
     buffer_size: usize,
     behavior: ConsistencyBehaviorBuilder,
@@ -37,6 +38,7 @@ enum ConsistencyBehaviorBuilder {
 
 impl TeeBuilder {
     fn new(
+        name: String,
         tx: TransformChainBuilder,
         buffer_size: usize,
         behavior: ConsistencyBehaviorBuilder,
@@ -55,6 +57,7 @@ impl TeeBuilder {
         let dropped_messages = counter!("shotover_tee_dropped_messages_count", "chain" => "Tee");
 
         TeeBuilder {
+            name,
             tx,
             buffer_size,
             behavior,
@@ -102,7 +105,11 @@ impl TransformBuilder for TeeBuilder {
         })
     }
 
-    fn get_name(&self) -> &'static str {
+    fn get_name(&self) -> &str {
+        &self.name
+    }
+
+    fn get_type_name(&self) -> &'static str {
         NAME
     }
 
@@ -124,7 +131,7 @@ impl TransformBuilder for TeeBuilder {
         }
 
         if !errors.is_empty() {
-            errors.insert(0, format!("{}:", self.get_name()));
+            errors.insert(0, format!("{}:", self.get_type_name()));
         }
 
         errors
@@ -165,6 +172,7 @@ enum ConsistencyBehavior {
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct TeeConfig {
+    pub name: String,
     pub behavior: Option<ConsistencyBehaviorConfig>,
     pub timeout_micros: Option<u64>,
     pub chain: TransformChainConfig,
@@ -178,13 +186,20 @@ pub enum ConsistencyBehaviorConfig {
     Ignore,
     LogWarningOnMismatch,
     FailOnMismatch,
-    SubchainOnMismatch(TransformChainConfig),
+    /// The mismatch chain name is derived as `<tee-transform-name>.mismatch`.
+    SubchainOnMismatch {
+        chain: TransformChainConfig,
+    },
 }
 
 const NAME: &str = "Tee";
 #[typetag::serde(name = "Tee")]
 #[async_trait(?Send)]
 impl TransformConfig for TeeConfig {
+    fn get_name(&self) -> &str {
+        &self.name
+    }
+
     async fn get_builder(
         &self,
         transform_context: TransformContextConfig,
@@ -198,11 +213,14 @@ impl TransformConfig for TeeConfig {
             Some(ConsistencyBehaviorConfig::LogWarningOnMismatch) => {
                 ConsistencyBehaviorBuilder::LogWarningOnMismatch
             }
-            Some(ConsistencyBehaviorConfig::SubchainOnMismatch(mismatch_chain)) => {
+            Some(ConsistencyBehaviorConfig::SubchainOnMismatch {
+                chain: mismatch_chain,
+            }) => {
+                let mismatch_chain_name = format!("{}.mismatch", self.name);
                 ConsistencyBehaviorBuilder::SubchainOnMismatch(
                     mismatch_chain
                         .get_builder(TransformContextConfig {
-                            chain_name: "mismatch_chain".to_string(),
+                            chain_name: mismatch_chain_name,
                             up_chain_protocol: transform_context.up_chain_protocol,
                         })
                         .await?,
@@ -213,12 +231,13 @@ impl TransformConfig for TeeConfig {
         let tee_chain = self
             .chain
             .get_builder(TransformContextConfig {
-                chain_name: "tee_chain".to_string(),
+                chain_name: self.name.clone(),
                 up_chain_protocol: transform_context.up_chain_protocol,
             })
             .await?;
 
         Ok(Box::new(TeeBuilder::new(
+            self.name.clone(),
             tee_chain,
             buffer_size,
             behavior,
@@ -234,6 +253,14 @@ impl TransformConfig for TeeConfig {
 
     fn down_chain_protocol(&self) -> DownChainProtocol {
         DownChainProtocol::SameAsUpChain
+    }
+
+    fn get_sub_chain_configs(&self) -> Vec<(&TransformChainConfig, String)> {
+        let mut configs = vec![(&self.chain, self.name.clone())];
+        if let Some(ConsistencyBehaviorConfig::SubchainOnMismatch { ref chain }) = self.behavior {
+            configs.push((chain, format!("{}.mismatch", self.name)));
+        }
+        configs
     }
 }
 
@@ -599,9 +626,12 @@ mod tests {
     #[tokio::test]
     async fn test_validate_subchain_valid() {
         let config = TeeConfig {
+            name: "tee".to_string(),
             behavior: None,
             timeout_micros: None,
-            chain: TransformChainConfig(vec![Box::new(NullSinkConfig)]),
+            chain: TransformChainConfig(vec![Box::new(NullSinkConfig {
+                name: "sink".to_string(),
+            })]),
             buffer_size: None,
             switch_port: None,
         };
@@ -618,9 +648,17 @@ mod tests {
     #[tokio::test]
     async fn test_validate_subchain_invalid() {
         let config = TeeConfig {
+            name: "tee".to_string(),
             behavior: None,
             timeout_micros: None,
-            chain: TransformChainConfig(vec![Box::new(NullSinkConfig), Box::new(NullSinkConfig)]),
+            chain: TransformChainConfig(vec![
+                Box::new(NullSinkConfig {
+                    name: "sink-1".to_string(),
+                }),
+                Box::new(NullSinkConfig {
+                    name: "sink-2".to_string(),
+                }),
+            ]),
             buffer_size: None,
             switch_port: None,
         };
@@ -632,17 +670,20 @@ mod tests {
         let transform = config.get_builder(transform_context_config).await.unwrap();
         let result = transform.validate().join("\n");
         let expected = r#"Tee:
-  tee_chain chain:
-    Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain."#;
+  tee chain:
+    Terminating Transform NullSink named "sink-1" is not last in chain. Terminating Transform must be last in chain."#;
         assert_eq!(result, expected);
     }
 
     #[tokio::test]
     async fn test_validate_behaviour_ignore() {
         let config = TeeConfig {
+            name: "tee".to_string(),
             behavior: Some(ConsistencyBehaviorConfig::Ignore),
             timeout_micros: None,
-            chain: TransformChainConfig(vec![Box::new(NullSinkConfig)]),
+            chain: TransformChainConfig(vec![Box::new(NullSinkConfig {
+                name: "sink".to_string(),
+            })]),
             buffer_size: None,
             switch_port: None,
         };
@@ -658,9 +699,12 @@ mod tests {
     #[tokio::test]
     async fn test_validate_behaviour_fail_on_mismatch() {
         let config = TeeConfig {
+            name: "tee".to_string(),
             behavior: Some(ConsistencyBehaviorConfig::FailOnMismatch),
             timeout_micros: None,
-            chain: TransformChainConfig(vec![Box::new(NullSinkConfig)]),
+            chain: TransformChainConfig(vec![Box::new(NullSinkConfig {
+                name: "sink".to_string(),
+            })]),
             buffer_size: None,
             switch_port: None,
         };
@@ -676,11 +720,21 @@ mod tests {
     #[tokio::test]
     async fn test_validate_behaviour_subchain_on_mismatch_invalid() {
         let config = TeeConfig {
-            behavior: Some(ConsistencyBehaviorConfig::SubchainOnMismatch(
-                TransformChainConfig(vec![Box::new(NullSinkConfig), Box::new(NullSinkConfig)]),
-            )),
+            name: "tee".to_string(),
+            behavior: Some(ConsistencyBehaviorConfig::SubchainOnMismatch {
+                chain: TransformChainConfig(vec![
+                    Box::new(NullSinkConfig {
+                        name: "sink-1".to_string(),
+                    }),
+                    Box::new(NullSinkConfig {
+                        name: "sink-2".to_string(),
+                    }),
+                ]),
+            }),
             timeout_micros: None,
-            chain: TransformChainConfig(vec![Box::new(NullSinkConfig)]),
+            chain: TransformChainConfig(vec![Box::new(NullSinkConfig {
+                name: "sink".to_string(),
+            })]),
             buffer_size: None,
             switch_port: None,
         };
@@ -692,19 +746,24 @@ mod tests {
         let transform = config.get_builder(transform_context_config).await.unwrap();
         let result = transform.validate().join("\n");
         let expected = r#"Tee:
-  mismatch_chain chain:
-    Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain."#;
+  tee.mismatch chain:
+    Terminating Transform NullSink named "sink-1" is not last in chain. Terminating Transform must be last in chain."#;
         assert_eq!(result, expected);
     }
 
     #[tokio::test]
     async fn test_validate_behaviour_subchain_on_mismatch_valid() {
         let config = TeeConfig {
-            behavior: Some(ConsistencyBehaviorConfig::SubchainOnMismatch(
-                TransformChainConfig(vec![Box::new(NullSinkConfig)]),
-            )),
+            name: "tee".to_string(),
+            behavior: Some(ConsistencyBehaviorConfig::SubchainOnMismatch {
+                chain: TransformChainConfig(vec![Box::new(NullSinkConfig {
+                    name: "sink".to_string(),
+                })]),
+            }),
             timeout_micros: None,
-            chain: TransformChainConfig(vec![Box::new(NullSinkConfig)]),
+            chain: TransformChainConfig(vec![Box::new(NullSinkConfig {
+                name: "sink".to_string(),
+            })]),
             buffer_size: None,
             switch_port: None,
         };

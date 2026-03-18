@@ -103,17 +103,19 @@ impl ValkeyBench {
             Encryption::None => None,
         };
 
-        let mut transforms = vec![];
+        let mut transforms: Vec<Box<dyn TransformConfig>> = vec![];
         if let Shotover::ForcedMessageParsed = self.shotover {
             transforms.push(Box::new(DebugForceEncodeConfig {
+                name: "debug-force-encode".to_string(),
                 encode_requests: true,
                 encode_responses: true,
-            }) as Box<dyn TransformConfig>);
+            }));
         }
 
         match self.topology {
             ValkeyTopology::Cluster3 => {
                 transforms.push(Box::new(ValkeySinkClusterConfig {
+                    name: "valkey-sink-cluster".to_string(),
                     first_contact_points: vec![valkey_address],
                     direct_destination: None,
                     tls: tls_connector,
@@ -123,6 +125,7 @@ impl ValkeyBench {
             }
             ValkeyTopology::Single => {
                 transforms.push(Box::new(ValkeySinkSingleConfig {
+                    name: "valkey-sink-single".to_string(),
                     address: valkey_address,
                     tls: tls_connector,
                     connect_timeout_ms: 3000,

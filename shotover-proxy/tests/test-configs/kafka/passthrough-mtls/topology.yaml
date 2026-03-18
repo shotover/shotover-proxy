@@ -8,6 +8,7 @@ sources:
         private_key_path: "tests/test-configs/kafka/tls/certs/localhost.key"
       chain:
         - KafkaSinkSingle:
+            name: "kafka-sink-single"
             destination_port: 9092
             connect_timeout_ms: 3000
             tls:

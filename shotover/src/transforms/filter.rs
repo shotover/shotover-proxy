@@ -14,6 +14,7 @@ pub enum Filter {
 
 #[derive(Clone)]
 pub struct QueryTypeFilter {
+    pub name: String,
     pub filter: Filter,
     pub filtered_requests: MessageIdMap<Message>,
 }
@@ -21,6 +22,7 @@ pub struct QueryTypeFilter {
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct QueryTypeFilterConfig {
+    pub name: String,
     #[serde(flatten)]
     pub filter: Filter,
 }
@@ -29,11 +31,16 @@ const NAME: &str = "QueryTypeFilter";
 #[typetag::serde(name = "QueryTypeFilter")]
 #[async_trait(?Send)]
 impl TransformConfig for QueryTypeFilterConfig {
+    fn get_name(&self) -> &str {
+        &self.name
+    }
+
     async fn get_builder(
         &self,
         _transform_context: TransformContextConfig,
     ) -> Result<Box<dyn TransformBuilder>> {
         Ok(Box::new(QueryTypeFilter {
+            name: self.name.clone(),
             filter: self.filter.clone(),
             filtered_requests: MessageIdMap::default(),
         }))
@@ -46,6 +53,10 @@ impl TransformConfig for QueryTypeFilterConfig {
     fn down_chain_protocol(&self) -> DownChainProtocol {
         DownChainProtocol::SameAsUpChain
     }
+
+    fn get_sub_chain_configs(&self) -> Vec<(&crate::config::chain::TransformChainConfig, String)> {
+        vec![]
+    }
 }
 
 impl TransformBuilder for QueryTypeFilter {
@@ -53,7 +64,11 @@ impl TransformBuilder for QueryTypeFilter {
         Box::new(self.clone())
     }
 
-    fn get_name(&self) -> &'static str {
+    fn get_name(&self) -> &str {
+        &self.name
+    }
+
+    fn get_type_name(&self) -> &'static str {
         NAME
     }
 }
@@ -116,11 +131,16 @@ mod test {
     #[tokio::test(flavor = "multi_thread")]
     async fn test_filter_denylist() {
         let mut filter_transform = QueryTypeFilter {
+            name: "filter".to_string(),
             filter: Filter::DenyList(vec![QueryType::Read]),
             filtered_requests: MessageIdMap::default(),
         };
 
-        let mut chain = vec![TransformAndMetrics::new(Box::new(Loopback::default()))];
+        let mut chain = vec![TransformAndMetrics::new(
+            Box::new(Loopback::new("loopback".to_string())),
+            "loopback",
+            "Loopback",
+        )];
 
         let messages: Vec<_> = (0..26)
             .map(|i| {
@@ -140,7 +160,7 @@ mod test {
             .collect();
 
         let mut chain_state = ChainState::new_test(messages);
-        chain_state.reset(&mut chain);
+        chain_state.reset(&mut chain, "test");
         let result = filter_transform.transform(&mut chain_state).await.unwrap();
 
         assert_eq!(result.len(), 26);
@@ -171,11 +191,16 @@ mod test {
     #[tokio::test(flavor = "multi_thread")]
     async fn test_filter_allowlist() {
         let mut filter_transform = QueryTypeFilter {
+            name: "filter".to_string(),
             filter: Filter::AllowList(vec![QueryType::Write]),
             filtered_requests: MessageIdMap::default(),
         };
 
-        let mut chain = vec![TransformAndMetrics::new(Box::new(Loopback::default()))];
+        let mut chain = vec![TransformAndMetrics::new(
+            Box::new(Loopback::new("loopback".to_string())),
+            "loopback",
+            "Loopback",
+        )];
 
         let messages: Vec<_> = (0..26)
             .map(|i| {
@@ -195,7 +220,7 @@ mod test {
             .collect();
 
         let mut chain_state = ChainState::new_test(messages);
-        chain_state.reset(&mut chain);
+        chain_state.reset(&mut chain, "test");
         let result = filter_transform.transform(&mut chain_state).await.unwrap();
 
         assert_eq!(result.len(), 26);

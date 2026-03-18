@@ -5,6 +5,7 @@ sources:
       listen_addr: "127.0.0.1:9042"
       chain:
         - ValkeyCache:
+            name: "valkey-cache"
             caching_schema:
               test_cache_keyspace_batch_insert.test_table:
                 partition_key: [id]
@@ -14,8 +15,10 @@ sources:
                 range_key: []
             chain:
               - ValkeySinkSingle:
+                  name: "valkey-sink-single"
                   remote_address: "127.0.0.1:6379"
                   connect_timeout_ms: 3000
         - CassandraSinkSingle:
+            name: "cassandra-sink-single"
             remote_address: "127.0.0.1:9043"
             connect_timeout_ms: 3000
