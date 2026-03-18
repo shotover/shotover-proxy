@@ -330,6 +330,65 @@ async fn cluster_single_rack_v4(#[case] driver: CassandraDriver) {
 }
 
 #[rstest]
+#[cfg_attr(feature = "cassandra-cpp-driver-tests", case::cpp(Cpp))]
+#[case::scylla(Scylla)]
+#[case::cdrs(Cdrs)]
+#[tokio::test(flavor = "multi_thread")]
+async fn cluster_single_rack_v4_query_type_filter(#[case] driver: CassandraDriver) {
+    let _compose = docker_compose("tests/test-configs/cassandra/cluster-v4/docker-compose.yaml");
+
+    let connection = || async {
+        let mut connection = CassandraConnectionBuilder::new("127.0.0.1", 9042, driver)
+            .build()
+            .await;
+        connection
+            .enable_schema_awaiter("172.16.1.2:9044", None)
+            .await;
+        connection
+    };
+    {
+        let shotover = shotover_process(
+            "tests/test-configs/cassandra/cluster-v4/topology-query-type-filter.yaml",
+        )
+        .start()
+        .await;
+
+        let connection = connection().await;
+
+        connection
+            .execute(
+                "CREATE KEYSPACE IF NOT EXISTS test_filter_ks WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 }",
+            )
+            .await;
+        connection
+            .execute(
+                "CREATE TABLE IF NOT EXISTS test_filter_ks.test_table (id int PRIMARY KEY, value text)",
+            )
+            .await;
+
+        assert_query_result(&connection, "SELECT * FROM test_filter_ks.test_table", &[]).await;
+
+        let err = connection
+            .execute_fallible(
+                "INSERT INTO test_filter_ks.test_table (id, value) VALUES (1, 'hello')",
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(
+            err,
+            ErrorBody {
+                ty: ErrorType::Server,
+                message: "Message was filtered out by shotover".into()
+            }
+        );
+
+        assert_query_result(&connection, "SELECT * FROM test_filter_ks.test_table", &[]).await;
+
+        shotover.shutdown_and_then_consume_events(&[]).await;
+    }
+}
+
+#[rstest]
 //#[case::cdrs(Cdrs)] // TODO
 #[cfg_attr(feature = "cassandra-cpp-driver-tests", case::cpp(Cpp))]
 #[case::scylla(Scylla)]
