@@ -4,7 +4,7 @@ use crate::frame::MessageType;
 use crate::hot_reload::protocol::{
     GradualShutdownRequest, HotReloadListenerRequest, HotReloadListenerResponse,
 };
-use crate::message::{Message, MessageIdMap, Messages, Metadata};
+use crate::message::{Message, MessageErrorType, MessageIdMap, Messages, Metadata};
 use crate::sources::Transport;
 use crate::tls::{AcceptError, TlsAcceptor};
 use crate::transforms::chain::{TransformChain, TransformChainBuilder};
@@ -969,7 +969,7 @@ impl PendingRequests {
 
                     match meta.to_error_response(format!(
                         "Internal shotover (or custom transform) bug (chain: {chain_name}): {err:?}"
-                    )) {
+                    ), MessageErrorType::Internal) {
                         Ok(response) => Some(response),
                         Err(err) => {
                             tracing::error!("Failed to create an error from the request even though the protocol supports it {err:?}");
@@ -990,7 +990,7 @@ impl PendingRequests {
 
                     match meta.to_error_response(format!(
                         "Internal shotover (or custom transform) bug (chain: {chain_name}): {err:?}"
-                    )) {
+                    ), MessageErrorType::Internal) {
                         Ok(mut response) => {
                             response.set_request_id(*id);
                             Some(response)

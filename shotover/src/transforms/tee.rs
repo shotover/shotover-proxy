@@ -1,7 +1,7 @@
 use super::{DownChainProtocol, TransformContextBuilder, TransformContextConfig, UpChainProtocol};
 use crate::config::chain::TransformChainConfig;
 use crate::http::HttpServerError;
-use crate::message::{Message, MessageIdMap, Messages};
+use crate::message::{Message, MessageErrorType, MessageIdMap, Messages};
 use crate::transforms::chain::{BufferedChain, TransformChainBuilder};
 use crate::transforms::{ChainState, Transform, TransformBuilder, TransformConfig};
 use anyhow::{Context, Result, anyhow};
@@ -295,7 +295,8 @@ impl Transform for Tee {
                             other_message.to_high_level_string()
                         );
                         *keep_message = keep_message.from_response_to_error_response(
-                            "ERR The responses from the Tee subchain and down-chain did not match and behavior is set to fail on mismatch".into()
+                            "ERR The responses from the Tee subchain and down-chain did not match and behavior is set to fail on mismatch".into(),
+                            MessageErrorType::Internal,
                         ).unwrap();
                     },
                 );

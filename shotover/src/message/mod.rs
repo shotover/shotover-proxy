@@ -30,11 +30,33 @@ pub enum Metadata {
     OpenSearch,
 }
 
+/// Protocol-agnostic classification of error responses produced by transforms.
+///
+/// For protocols that distinguish error severity (e.g. Cassandra), each variant maps to the
+/// appropriate protocol-specific error type. For protocols that have a single error format
+/// (e.g. Valkey/Redis), or that do not support generic error responses (e.g. Kafka),
+/// this classification is currently ignored.
+///
+/// Protocol mappings:
+/// - Cassandra: `Internal` -> `ErrorType::Server`, `Rejected` -> `ErrorType::Invalid`
+/// - Valkey: both produce a standard `ERR` response
+/// - Kafka: not applicable (generic error responses are unsupported)
+pub enum MessageErrorType {
+    /// An internal or server-side error, indicating a bug or unexpected failure.
+    Internal,
+    /// The request was intentionally rejected by a transform's policy (e.g. filtered out).
+    Rejected,
+}
+
 impl Metadata {
-    /// Returns an error response with the provided error message.
+    /// Returns an error response with the provided error message and error type.
     /// If the metadata is from a request: the returned `Message` is a valid response to self
     /// If the metadata is from a response: the returned `Message` is a valid replacement of self
-    pub fn to_error_response(&self, error: String) -> Result<Message> {
+    pub fn to_error_response(
+        &self,
+        error: String,
+        error_type: MessageErrorType,
+    ) -> Result<Message> {
         #[allow(unreachable_code)]
         Ok(Message::from_frame(match self {
             #[cfg(feature = "valkey")]
@@ -46,7 +68,14 @@ impl Metadata {
                 Frame::Valkey(ValkeyFrame::Error(message.into()))
             }
             #[cfg(feature = "cassandra")]
-            Metadata::Cassandra(meta) => Frame::Cassandra(meta.to_error_response(error)),
+            Metadata::Cassandra(meta) => {
+                use cassandra_protocol::frame::message_error::ErrorType;
+                let cassandra_error_type = match error_type {
+                    MessageErrorType::Internal => ErrorType::Server,
+                    MessageErrorType::Rejected => ErrorType::Invalid,
+                };
+                Frame::Cassandra(meta.to_error_response(error, cassandra_error_type))
+            }
             // In theory we could actually support kafka errors in some form here but:
             // * kafka errors are defined per response type and many response types only provide an error code without a field for a custom error message.
             //     + Implementing this per response type would add a lot of (localized) complexity but might be worth it.
@@ -396,11 +425,15 @@ impl Message {
     }
 
     /// Returns an error response with the provided error message.
-    pub fn from_response_to_error_response(&self, error: String) -> Result<Message> {
+    pub fn from_response_to_error_response(
+        &self,
+        error: String,
+        error_type: MessageErrorType,
+    ) -> Result<Message> {
         let mut response = self
             .metadata()
             .context("Failed to parse metadata of request or response when producing an error")?
-            .to_error_response(error)?;
+            .to_error_response(error, error_type)?;
 
         if let Some(request_id) = self.request_id() {
             response.set_request_id(request_id)
@@ -410,11 +443,15 @@ impl Message {
     }
 
     /// Returns an error response with the provided error message.
-    pub fn from_request_to_error_response(&self, error: String) -> Result<Message> {
+    pub fn from_request_to_error_response(
+        &self,
+        error: String,
+        error_type: MessageErrorType,
+    ) -> Result<Message> {
         let mut request = self
             .metadata()
             .context("Failed to parse metadata of request or response when producing an error")?
-            .to_error_response(error)?;
+            .to_error_response(error, error_type)?;
 
         request.set_request_id(self.id());
         Ok(request)

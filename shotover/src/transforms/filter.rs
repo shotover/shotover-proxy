@@ -1,5 +1,5 @@
 use super::{DownChainProtocol, TransformContextBuilder, TransformContextConfig, UpChainProtocol};
-use crate::message::{Message, MessageIdMap, Messages, QueryType};
+use crate::message::{Message, MessageErrorType, MessageIdMap, Messages, QueryType};
 use crate::transforms::{ChainState, Transform, TransformBuilder, TransformConfig};
 use anyhow::Result;
 use async_trait::async_trait;
@@ -95,6 +95,7 @@ impl Transform for QueryTypeFilter {
                     request
                         .from_request_to_error_response(
                             "Message was filtered out by shotover".to_owned(),
+                            MessageErrorType::Rejected,
                         )
                         .map_err(|e| e.context("Failed to filter message"))?,
                 );

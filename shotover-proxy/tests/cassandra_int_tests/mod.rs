@@ -377,7 +377,7 @@ async fn cluster_single_rack_v4_query_type_filter(#[case] driver: CassandraDrive
         assert_eq!(
             err,
             ErrorBody {
-                ty: ErrorType::Server,
+                ty: ErrorType::Invalid,
                 message: "Message was filtered out by shotover".into()
             }
         );

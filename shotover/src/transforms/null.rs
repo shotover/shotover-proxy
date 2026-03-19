@@ -1,5 +1,5 @@
 use super::{DownChainProtocol, TransformContextBuilder, TransformContextConfig, UpChainProtocol};
-use crate::message::Messages;
+use crate::message::{MessageErrorType, Messages};
 use crate::transforms::{ChainState, Transform, TransformBuilder, TransformConfig};
 use anyhow::Result;
 use async_trait::async_trait;
@@ -85,8 +85,10 @@ impl Transform for NullSink {
     ) -> Result<Messages> {
         for request in &mut chain_state.requests {
             // reuse the requests to hold the responses to avoid an allocation
-            *request = request
-                .from_request_to_error_response("Handled by shotover null transform".to_string())?;
+            *request = request.from_request_to_error_response(
+                "Handled by shotover null transform".to_string(),
+                MessageErrorType::Internal,
+            )?;
         }
         Ok(std::mem::take(&mut chain_state.requests))
     }
