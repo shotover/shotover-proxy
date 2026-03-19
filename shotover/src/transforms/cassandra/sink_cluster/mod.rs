@@ -252,7 +252,7 @@ struct CassandraSinkCluster {
 impl CassandraSinkCluster {
     async fn send_message(&mut self, mut requests: Messages) -> Result<Messages> {
         if self.version.is_none() {
-            if let Some(message) = requests.first() {
+            if let Some(message) = requests.iter().find(|m| !m.is_dummy()) {
                 if let Ok(Metadata::Cassandra(CassandraMetadata { version, .. })) =
                     message.metadata()
                 {
@@ -468,6 +468,13 @@ impl CassandraSinkCluster {
         responses: &mut Vec<Message>,
     ) -> Result<()> {
         for mut message in requests.into_iter() {
+            if message.is_dummy() {
+                let mut dummy_response = Message::from_frame(Frame::Dummy);
+                dummy_response.set_request_id(message.id());
+                responses.push(dummy_response);
+                continue;
+            }
+
             if self.pool.nodes().is_empty()
                 || !self.init_handshake_complete
                 // system.local and system.peers must be routed to the same node otherwise the system.local node will be amongst the system.peers nodes and a node will be missing

@@ -27,7 +27,7 @@ impl CassandraConnection {
 
     pub fn send(&mut self, requests: Vec<Message>) -> Result<(), ConnectionError> {
         self.pending_request_stream_ids
-            .extend(requests.iter().map(|x| x.stream_id().unwrap()));
+            .extend(requests.iter().filter_map(|x| x.stream_id()));
         self.connection.send(requests)
     }
 
