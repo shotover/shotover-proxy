@@ -284,14 +284,14 @@ foo source:
     }
 
     #[tokio::test]
-    async fn test_validate_coalesce() {
+    async fn test_validate_coalesce_neither_flush_field() {
         let expected = r#"Topology errors
 foo source:
   foo chain:
     Coalesce:
-      Need to provide at least one of these fields:
+      Provide at least one of:
       * flush_when_buffered_message_count
-      * flush_when_millis_since_last_flush
+      * flush_when_millis_since_last_flush (must be greater than 0)
     
       But none of them were provided.
       Check https://shotover.io/docs/latest/transforms.html#coalesce for more information.
