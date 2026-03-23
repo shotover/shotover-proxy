@@ -234,8 +234,8 @@ mod test {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use tokio::sync::Notify;
-    use tokio::time::Duration;
     use tokio::task::JoinHandle;
+    use tokio::time::Duration;
 
     /// Counts every `force_run_chain.notify_one()` the millis timer (or anything else) performs.
     /// Tokio `Notify` delivers each `notify_one` to one waiter; this task is the only waiter in tests.
