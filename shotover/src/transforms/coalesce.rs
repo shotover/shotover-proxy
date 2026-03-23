@@ -5,15 +5,15 @@ use anyhow::Result;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
 use tokio::sync::{Notify, RwLock};
+use tokio::time::{Duration, Instant};
 
 struct Coalesce {
     flush_when_buffered_message_count: Option<usize>,
     buffer: Messages,
     /// When set, a time-based flush is due once `last_flush` is at least this old (see docs).
     millis_interval: Option<Duration>,
-    /// Shared with the timer task so it sleeps only the **remaining** time until the interval elapses.
+    /// Shared with the timer task (`tokio::time::Instant` matches `tokio::time::sleep`).
     /// Timer uses `read()`; transform uses `write()` when a run restarts the millis clock (`tokio::sync::RwLock` is write-preferring).
     last_flush: Option<Arc<RwLock<Instant>>>,
     /// Wake the timer when `last_flush` changes so it recomputes remaining sleep (see docs).
@@ -233,8 +233,8 @@ mod test {
     use pretty_assertions::assert_eq;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::time::Duration;
     use tokio::sync::Notify;
+    use tokio::time::Duration;
     use tokio::task::JoinHandle;
 
     /// Counts every `force_run_chain.notify_one()` the millis timer (or anything else) performs.
