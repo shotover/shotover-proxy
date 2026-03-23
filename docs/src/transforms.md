@@ -216,7 +216,7 @@ This transform holds onto messages until a flush condition is met, then sends th
 You must set **at least one** of the flush fields below. You may set both.
 
 * **`flush_when_buffered_message_count`** — flush when the buffer holds at least this many messages.
-* **`flush_when_millis_since_last_flush`** — when **> 0**, Coalesce may flush a non-empty buffer once at least this many milliseconds have passed since the interval was last restarted. The interval restarts only when Coalesce flushes messages to the next transform (including count-based and shutdown flushes) or when it runs with an **empty** buffer and no shutdown flush. **Appending incoming messages does not restart the interval.** Optional if `flush_when_buffered_message_count` is set; omit for count-only flushing.
+* **`flush_when_millis_since_last_flush`** — when **> 0**, Coalesce may flush a non-empty buffer once at least this many milliseconds have passed since the interval was last restarted. The interval restarts only when Coalesce flushes messages to the next transform or when it runs with an **empty** buffer. **Appending incoming messages does not restart the interval.** Optional if `flush_when_buffered_message_count` is set; omit for count-only flushing.
 
 **Count-only** (no millis, or millis omitted): messages that never reach the count stay buffered until the connection is torn down (chain flush on close). Clients may see no response for those requests until then. Add `flush_when_millis_since_last_flush` if you need a time bound on partial batches.
 
