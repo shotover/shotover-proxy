@@ -5,21 +5,27 @@ use anyhow::Result;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
-use tokio::sync::Notify;
+use std::time::{Duration, Instant};
+use tokio::sync::{Notify, RwLock};
 
 struct Coalesce {
-    name: String,
     flush_when_buffered_message_count: Option<usize>,
-    flush_when_millis_since_last_flush: Option<u64>,
     buffer: Messages,
-    /// Background timer sets this before `force_run_chain`; transform clears it to detect a timer-driven run.
-    timer_flush_pending: Option<Arc<AtomicBool>>,
-    /// Notify to restart the sleep so the next wake is `duration` after the last flush.
+    /// When set, a time-based flush is due once `last_flush` is at least this old (see docs).
+    millis_interval: Option<Duration>,
+    /// Shared with the timer task so it sleeps only the **remaining** time until the interval elapses.
+    /// Timer uses `read()`; transform uses `write()` when a run restarts the millis clock (`tokio::sync::RwLock` is write-preferring).
+    last_flush: Option<Arc<RwLock<Instant>>>,
+    /// Wake the timer when `last_flush` changes so it recomputes remaining sleep (see docs).
     restart_sleep_after_flush: Option<Arc<Notify>>,
     /// Aborted in [`Drop`] when the connection chain is torn down.
     timer_task: Option<tokio::task::JoinHandle<()>>,
+}
+
+struct CoalesceBuilder {
+    name: String,
+    flush_when_buffered_message_count: Option<usize>,
+    flush_when_millis_since_last_flush: Option<u64>,
 }
 
 impl Drop for Coalesce {
@@ -50,14 +56,10 @@ impl TransformConfig for CoalesceConfig {
         &self,
         _transform_context: TransformContextConfig,
     ) -> Result<Box<dyn TransformBuilder>> {
-        Ok(Box::new(Coalesce {
+        Ok(Box::new(CoalesceBuilder {
             name: self.name.clone(),
-            buffer: Vec::with_capacity(self.flush_when_buffered_message_count.unwrap_or(0)),
             flush_when_buffered_message_count: self.flush_when_buffered_message_count,
             flush_when_millis_since_last_flush: self.flush_when_millis_since_last_flush,
-            timer_flush_pending: None,
-            restart_sleep_after_flush: None,
-            timer_task: None,
         }))
     }
 
@@ -74,37 +76,49 @@ impl TransformConfig for CoalesceConfig {
     }
 }
 
-impl TransformBuilder for Coalesce {
+impl TransformBuilder for CoalesceBuilder {
     fn build(&self, transform_context: TransformContextBuilder) -> Box<dyn Transform> {
         let mut coalesce = Coalesce {
-            name: self.name.clone(),
             flush_when_buffered_message_count: self.flush_when_buffered_message_count,
-            flush_when_millis_since_last_flush: self.flush_when_millis_since_last_flush,
             buffer: Vec::with_capacity(self.flush_when_buffered_message_count.unwrap_or(0)),
-            timer_flush_pending: None,
+            millis_interval: None,
+            last_flush: None,
             restart_sleep_after_flush: None,
             timer_task: None,
         };
 
         if let Some(ms) = self.flush_when_millis_since_last_flush.filter(|&m| m > 0) {
-            let duration = Duration::from_millis(ms);
-            let pending = Arc::new(AtomicBool::new(false));
+            let interval = Duration::from_millis(ms);
             let restart = Arc::new(Notify::new());
+            let last_flush = Arc::new(RwLock::new(Instant::now()));
 
-            coalesce.timer_flush_pending = Some(pending.clone());
+            coalesce.millis_interval = Some(interval);
+            coalesce.last_flush = Some(last_flush.clone());
             coalesce.restart_sleep_after_flush = Some(restart.clone());
 
+            let force_run_chain = transform_context.force_run_chain.clone();
+            let restart_task = restart.clone();
+            let last_flush_task = last_flush;
             let handle = tokio::spawn(async move {
                 loop {
-                    tokio::select! {
-                        _ = restart.notified() => {}
-                        _ = tokio::time::sleep(duration) => {
-                            pending.store(true, Ordering::Relaxed);
-                            transform_context.force_run_chain.notify_one();
+                    // Wait until the transform has set `last_flush` for this cycle (startup or post-flush).
+                    restart_task.notified().await;
+
+                    loop {
+                        let remaining = {
+                            let last = *last_flush_task.read().await;
+                            interval.saturating_sub(last.elapsed())
+                        };
+                        tokio::select! {
+                            _ = restart_task.notified() => {}
+                            _ = tokio::time::sleep(remaining) => break,
                         }
                     }
+
+                    force_run_chain.notify_one();
                 }
             });
+            restart.notify_one();
             coalesce.timer_task = Some(handle);
         }
 
@@ -120,6 +134,18 @@ impl TransformBuilder for Coalesce {
     }
 
     fn validate(&self) -> Vec<String> {
+        if self
+            .flush_when_millis_since_last_flush
+            .is_some_and(|m| m == 0)
+        {
+            return vec![
+                "Coalesce:".into(),
+                "  flush_when_millis_since_last_flush must be greater than 0 when set.".into(),
+                "  Check https://shotover.io/docs/latest/transforms.html#coalesce for more information."
+                    .into(),
+            ];
+        }
+
         let has_count = self.flush_when_buffered_message_count.is_some();
         let has_timer_millis = self
             .flush_when_millis_since_last_flush
@@ -151,19 +177,25 @@ impl Transform for Coalesce {
         &mut self,
         chain_state: &'shorter mut ChainState<'longer>,
     ) -> Result<Messages> {
-        // No millis timer → no pending flag; timer task is not running.
-        let timer_wake = match &self.timer_flush_pending {
-            Some(pending) => pending.swap(false, Ordering::Relaxed),
-            None => false,
-        };
-
         self.buffer.append(&mut chain_state.requests);
 
+        let millis_due = match (self.millis_interval, &self.last_flush) {
+            (Some(interval), Some(last_arc)) => {
+                let last = *last_arc.read().await;
+                last.elapsed() >= interval
+            }
+            _ => false,
+        };
+
         if self.buffer.is_empty() && !chain_state.flush {
+            if let (Some(last_arc), Some(n)) = (&self.last_flush, &self.restart_sleep_after_flush) {
+                *last_arc.write().await = Instant::now();
+                n.notify_one();
+            }
             return Ok(vec![]);
         }
 
-        let millis_wants_flush = timer_wake && !self.buffer.is_empty();
+        let millis_wants_flush = millis_due && !self.buffer.is_empty();
 
         let flush_buffer = chain_state.flush
             || self
@@ -175,6 +207,9 @@ impl Transform for Coalesce {
         if flush_buffer {
             std::mem::swap(&mut self.buffer, &mut chain_state.requests);
             let out = chain_state.call_next_transform().await?;
+            if let Some(last_arc) = &self.last_flush {
+                *last_arc.write().await = Instant::now();
+            }
             if let Some(n) = &self.restart_sleep_after_flush {
                 n.notify_one();
             }

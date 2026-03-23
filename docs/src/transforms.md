@@ -216,7 +216,7 @@ This transform holds onto messages until a flush condition is met, then sends th
 You must set **at least one** of the flush fields below. You may set both.
 
 * **`flush_when_buffered_message_count`** — flush when the buffer holds at least this many messages.
-* **`flush_when_millis_since_last_flush`** — a per-connection task sleeps for this many milliseconds, then wakes the chain. That wake is a time-based flush when the buffer is non-empty. **Every flush** (time-based, count-based, or shutdown) restarts the sleep, so the next wake is one full interval after the last flush—no separate wall-clock field is used. Must be **> 0**. If you only use count-based flush, **no timer runs**.
+* **`flush_when_millis_since_last_flush`** — when **> 0**, Coalesce may flush a non-empty buffer once at least this many milliseconds have passed since the interval was last restarted. The interval restarts only when Coalesce flushes messages to the next transform (including count-based and shutdown flushes) or when it runs with an **empty** buffer and no shutdown flush. **Appending incoming messages does not restart the interval.** Optional if `flush_when_buffered_message_count` is set; omit for count-only flushing.
 
 **Count-only** (no millis, or millis omitted): messages that never reach the count stay buffered until the connection is torn down (chain flush on close). Clients may see no response for those requests until then. Add `flush_when_millis_since_last_flush` if you need a time bound on partial batches.
 
@@ -225,7 +225,7 @@ You must set **at least one** of the flush fields below. You may set both.
     # Flush when the buffer holds at least this many messages (optional if millis is set).
     flush_when_buffered_message_count: 2000
 
-    # Milliseconds since last flush; optional if count is set. Must be > 0 to enable the timer.
+    # Max time partial batches may wait (ms); optional if count is set. Must be > 0 when set.
     flush_when_millis_since_last_flush: 10000
 ```
 
