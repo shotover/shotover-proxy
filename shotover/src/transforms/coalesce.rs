@@ -99,6 +99,19 @@ impl TransformBuilder for CoalesceBuilder {
             let force_run_chain = transform_context.force_run_chain.clone();
             let restart_task = restart.clone();
             let last_flush_task = last_flush;
+            // Background millis timer flow:
+            // 1) Sleep does not start until someone calls `restart.notify_one()` (startup and each
+            //    transform-side "clock restart" path do this).
+            // 2) After wakeup, read `last_flush` and compute `remaining = interval - elapsed`.
+            // 3) Wait for whichever happens first:
+            //    - another restart notification -> recompute remaining from the new `last_flush`
+            //    - sleep(remaining) completes   -> interval is due
+            // 4) When due, call `force_run_chain.notify_one()` so the source runs the chain; if
+            //    there are buffered messages, Coalesce will flush them in `transform`.
+            // 5) Loop back and wait for the next restart notification before arming the next cycle.
+            //
+            // This design makes the interval relative to the latest restart point and avoids races
+            // where a stale sleep fires after `last_flush` has already moved forward.
             let handle = tokio::spawn(async move {
                 loop {
                     // Wait until the transform has set `last_flush` for this cycle (startup or post-flush).
