@@ -263,10 +263,19 @@ impl CassandraSinkCluster {
                     ));
                 }
             } else {
-                // It's an invariant that self.version is Some.
-                // Since we were unable to set it, we need to return immediately.
-                // We can continue once the client sends its first message.
-                return Ok(vec![]);
+                // self.version must be Some before we can proceed, but if all requests are dummy
+                // (e.g. an upstream QueryTypeFilter replaced every request in this batch),
+                // we must still return a dummy response per request so that upstream transforms
+                // can match by request_id and swap in their error responses.
+                // Version detection will complete once a real message arrives.
+                return Ok(requests
+                    .into_iter()
+                    .map(|request| {
+                        let mut dummy_response = Message::from_frame(Frame::Dummy);
+                        dummy_response.set_request_id(request.id());
+                        dummy_response
+                    })
+                    .collect());
             }
         }
 

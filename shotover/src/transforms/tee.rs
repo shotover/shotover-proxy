@@ -295,7 +295,7 @@ impl Transform for Tee {
                             other_message.to_high_level_string()
                         );
                         *keep_message = keep_message.from_response_to_error_response(
-                            "ERR The responses from the Tee subchain and down-chain did not match and behavior is set to fail on mismatch".into(),
+                            "The responses from the Tee subchain and down-chain did not match and behavior is set to fail on mismatch".into(),
                             MessageErrorType::Internal,
                         ).unwrap();
                     },
