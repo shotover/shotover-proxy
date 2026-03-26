@@ -284,14 +284,14 @@ foo source:
     }
 
     #[tokio::test]
-    async fn test_validate_coalesce() {
+    async fn test_validate_coalesce_neither_flush_field() {
         let expected = r#"Topology errors
 foo source:
   foo chain:
     Coalesce:
-      Need to provide at least one of these fields:
+      Provide at least one of:
       * flush_when_buffered_message_count
-      * flush_when_millis_since_last_flush
+      * flush_when_millis_since_last_flush (must be greater than 0)
     
       But none of them were provided.
       Check https://shotover.io/docs/latest/transforms.html#coalesce for more information.
@@ -302,6 +302,33 @@ foo source:
                 name: "coalesce".to_string(),
                 flush_when_buffered_message_count: None,
                 flush_when_millis_since_last_flush: None,
+            }),
+            Box::new(NullSinkConfig {
+                name: "sink".to_string(),
+            }),
+        ])
+        .await
+        .unwrap_err()
+        .to_string();
+
+        assert_eq!(error, expected);
+    }
+
+    #[tokio::test]
+    async fn test_validate_coalesce_millis_zero() {
+        let expected = r#"Topology errors
+foo source:
+  foo chain:
+    Coalesce:
+      flush_when_millis_since_last_flush must be greater than 0 when set.
+      Check https://shotover.io/docs/latest/transforms.html#coalesce for more information.
+"#;
+
+        let error = run_test_topology_valkey(vec![
+            Box::new(CoalesceConfig {
+                name: "coalesce".to_string(),
+                flush_when_buffered_message_count: Some(100),
+                flush_when_millis_since_last_flush: Some(0),
             }),
             Box::new(NullSinkConfig {
                 name: "sink".to_string(),
