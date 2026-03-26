@@ -252,7 +252,7 @@ struct CassandraSinkCluster {
 impl CassandraSinkCluster {
     async fn send_message(&mut self, mut requests: Messages) -> Result<Messages> {
         if self.version.is_none() {
-            if let Some(message) = requests.first() {
+            if let Some(message) = requests.iter().find(|m| !m.is_dummy()) {
                 if let Ok(Metadata::Cassandra(CassandraMetadata { version, .. })) =
                     message.metadata()
                 {
@@ -263,10 +263,19 @@ impl CassandraSinkCluster {
                     ));
                 }
             } else {
-                // It's an invariant that self.version is Some.
-                // Since we were unable to set it, we need to return immediately.
-                // We can continue once the client sends its first message.
-                return Ok(vec![]);
+                // self.version must be Some before we can proceed, but if all requests are dummy
+                // (e.g. an upstream QueryTypeFilter replaced every request in this batch),
+                // we must still return a dummy response per request so that upstream transforms
+                // can match by request_id and swap in their error responses.
+                // Version detection will complete once a real message arrives.
+                return Ok(requests
+                    .into_iter()
+                    .map(|request| {
+                        let mut dummy_response = Message::from_frame(Frame::Dummy);
+                        dummy_response.set_request_id(request.id());
+                        dummy_response
+                    })
+                    .collect());
             }
         }
 
@@ -468,6 +477,13 @@ impl CassandraSinkCluster {
         responses: &mut Vec<Message>,
     ) -> Result<()> {
         for mut message in requests.into_iter() {
+            if message.is_dummy() {
+                let mut dummy_response = Message::from_frame(Frame::Dummy);
+                dummy_response.set_request_id(message.id());
+                responses.push(dummy_response);
+                continue;
+            }
+
             if self.pool.nodes().is_empty()
                 || !self.init_handshake_complete
                 // system.local and system.peers must be routed to the same node otherwise the system.local node will be amongst the system.peers nodes and a node will be missing
