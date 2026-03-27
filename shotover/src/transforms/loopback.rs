@@ -6,15 +6,35 @@ use async_trait::async_trait;
 
 const NAME: &str = "Loopback";
 
-#[derive(Clone, Default)]
-pub struct Loopback {}
+#[derive(Clone)]
+pub struct Loopback {
+    name: String,
+}
+
+impl Default for Loopback {
+    fn default() -> Self {
+        Self {
+            name: NAME.to_string(),
+        }
+    }
+}
+
+impl Loopback {
+    pub fn new(name: String) -> Self {
+        Loopback { name }
+    }
+}
 
 impl TransformBuilder for Loopback {
     fn build(&self, _transform_context: TransformContextBuilder) -> Box<dyn Transform> {
         Box::new(self.clone())
     }
 
-    fn get_name(&self) -> &'static str {
+    fn get_name(&self) -> &str {
+        &self.name
+    }
+
+    fn get_type_name(&self) -> &'static str {
         NAME
     }
 

@@ -115,13 +115,13 @@ impl CassandraMetadata {
         }
     }
 
-    pub fn to_error_response(&self, error: String) -> CassandraFrame {
+    pub fn to_error_response(&self, error: String, error_type: ErrorType) -> CassandraFrame {
         CassandraFrame {
             version: self.version,
             stream_id: self.stream_id,
             operation: CassandraOperation::Error(ErrorBody {
                 message: error,
-                ty: ErrorType::Server,
+                ty: error_type,
             }),
             tracing: Tracing::Response(None),
             warnings: vec![],

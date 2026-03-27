@@ -7,5 +7,7 @@ sources:
       hard_connection_limit: true
       chain:
         - QueryCounter:
-            name: valkey-chain
-        - NullSink
+            name: "valkey-chain-counter"
+            counter_name : "valkey-chain"
+        - NullSink:
+            name: "null-sink"

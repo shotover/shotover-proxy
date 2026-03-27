@@ -66,8 +66,11 @@ pub trait TransformBuilder: Send + Sync {
     /// Shotover will create a new transform instance by calling this method for every time this transform is configured in the `topology.yaml`.
     fn build(&self, transform_context: TransformContextBuilder) -> Box<dyn Transform>;
 
-    /// Name of the transform used in logs and displayed to the user
-    fn get_name(&self) -> &'static str;
+    /// User-provided name for this transform instance (from topology config).
+    fn get_name(&self) -> &str;
+
+    /// Type name of the transform (e.g. "Tee", "NullSink") used in metrics and diagnostics.
+    fn get_type_name(&self) -> &'static str;
 
     /// Transform specific validation can be implemented here.
     /// Any strings returned are considered a validation error that will be logged and cause shotover to fail to startup.
@@ -86,6 +89,9 @@ pub trait TransformBuilder: Send + Sync {
 #[typetag::serde]
 #[async_trait(?Send)]
 pub trait TransformConfig: Debug {
+    /// Returns the user-provided name for this transform instance.
+    fn get_name(&self) -> &str;
+
     /// Returns the builder used to create instances of this transform.
     /// Shotover will only call this method once.
     async fn get_builder(
@@ -108,6 +114,10 @@ pub trait TransformConfig: Debug {
     /// is compatible with the other transforms and sources it is connected to.
     /// If the configuration is invalid shotover will log the issue and fail to start.
     fn down_chain_protocol(&self) -> DownChainProtocol;
+
+    /// Returns sub-chain configs paired with their derived chain names.
+    /// Used for recursive traversal of sub-chains during validation.
+    fn get_sub_chain_configs(&self) -> Vec<(&crate::config::chain::TransformChainConfig, String)>;
 }
 
 /// Defines which protocols a transform will:
@@ -159,6 +169,7 @@ pub struct ChainState<'a> {
     /// Transforms can set this to true to force the connection to the client to be closed after the stack of `Transform::transform` calls returns.
     /// When closed in this way, the chain will not be flushed and no further calls to the chain will be made before it is dropped.
     pub close_client_connection: bool,
+    pub chain_name: &'a str,
 }
 
 /// [`Wrapper`] will not (cannot) bring the current list of transforms that it needs to traverse with it
@@ -172,6 +183,7 @@ impl Clone for ChainState<'_> {
             local_addr: self.local_addr,
             flush: self.flush,
             close_client_connection: self.close_client_connection,
+            chain_name: "",
         }
     }
 }
@@ -184,6 +196,7 @@ impl<'shorter, 'longer: 'shorter> ChainState<'longer> {
             local_addr: self.local_addr,
             flush: self.flush,
             close_client_connection: self.close_client_connection,
+            chain_name: self.chain_name,
         }
     }
 
@@ -198,6 +211,8 @@ impl<'shorter, 'longer: 'shorter> ChainState<'longer> {
     pub async fn call_next_transform(&'shorter mut self) -> Result<Messages> {
         let TransformAndMetrics {
             transform,
+            name: transform_name,
+            type_name: transform_type,
             transform_total,
             transform_failures,
             transform_latency,
@@ -209,13 +224,14 @@ impl<'shorter, 'longer: 'shorter> ChainState<'longer> {
             ),
         };
 
-        let transform_name = transform.get_name();
+        let chain_name = self.chain_name;
 
         let start = Instant::now();
-        let result = transform
-            .transform(self)
-            .await
-            .map_err(|e| e.context(anyhow!("{transform_name} transform failed")));
+        let result = transform.transform(self).await.map_err(|e| {
+            e.context(anyhow!(
+                "Transform {transform_type} named {transform_name} failed in chain {chain_name}"
+            ))
+        });
         transform_total.increment(1);
         if result.is_err() {
             transform_failures.increment(1);
@@ -238,6 +254,7 @@ impl<'shorter, 'longer: 'shorter> ChainState<'longer> {
             local_addr: DUMMY_ADDRESS,
             flush: false,
             close_client_connection: false,
+            chain_name: "",
         }
     }
 
@@ -248,6 +265,7 @@ impl<'shorter, 'longer: 'shorter> ChainState<'longer> {
             local_addr,
             flush: false,
             close_client_connection: false,
+            chain_name: "",
         }
     }
 
@@ -259,6 +277,7 @@ impl<'shorter, 'longer: 'shorter> ChainState<'longer> {
             local_addr: DUMMY_ADDRESS,
             flush: true,
             close_client_connection: false,
+            chain_name: "",
         }
     }
 
@@ -274,8 +293,13 @@ impl<'shorter, 'longer: 'shorter> ChainState<'longer> {
         format!("{:?}", messages)
     }
 
-    pub fn reset(&mut self, transforms: &'longer mut [TransformAndMetrics]) {
+    pub fn reset(
+        &mut self,
+        transforms: &'longer mut [TransformAndMetrics],
+        chain_name: &'longer str,
+    ) {
         self.transforms = transforms.iter_mut();
+        self.chain_name = chain_name;
     }
 }
 

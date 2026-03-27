@@ -12,12 +12,18 @@ use tracing::{error, info};
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
-pub struct DebugLogToFileConfig;
+pub struct DebugLogToFileConfig {
+    pub name: String,
+}
 
 const NAME: &str = "DebugLogToFile";
 #[typetag::serde(name = "DebugLogToFile")]
 #[async_trait(?Send)]
 impl crate::transforms::TransformConfig for DebugLogToFileConfig {
+    fn get_name(&self) -> &str {
+        &self.name
+    }
+
     async fn get_builder(
         &self,
         _transform_context: crate::transforms::TransformContextConfig,
@@ -26,6 +32,7 @@ impl crate::transforms::TransformConfig for DebugLogToFileConfig {
         std::fs::remove_dir_all("message-log").ok();
 
         Ok(Box::new(DebugLogToFileBuilder {
+            name: self.name.clone(),
             connection_counter: Arc::new(AtomicU64::new(0)),
         }))
     }
@@ -37,9 +44,14 @@ impl crate::transforms::TransformConfig for DebugLogToFileConfig {
     fn down_chain_protocol(&self) -> DownChainProtocol {
         DownChainProtocol::SameAsUpChain
     }
+
+    fn get_sub_chain_configs(&self) -> Vec<(&crate::config::chain::TransformChainConfig, String)> {
+        vec![]
+    }
 }
 
 struct DebugLogToFileBuilder {
+    name: String,
     connection_counter: Arc<AtomicU64>,
 }
 
@@ -71,7 +83,11 @@ impl TransformBuilder for DebugLogToFileBuilder {
         })
     }
 
-    fn get_name(&self) -> &'static str {
+    fn get_name(&self) -> &str {
+        &self.name
+    }
+
+    fn get_type_name(&self) -> &'static str {
         NAME
     }
 }

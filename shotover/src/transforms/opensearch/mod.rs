@@ -18,6 +18,7 @@ use tracing::trace;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct OpenSearchSinkSingleConfig {
+    name: String,
     #[serde(rename = "remote_address")]
     address: String,
     connect_timeout_ms: u64,
@@ -27,11 +28,16 @@ const NAME: &str = "OpenSearchSinkSingle";
 #[typetag::serde(name = "OpenSearchSinkSingle")]
 #[async_trait(?Send)]
 impl TransformConfig for OpenSearchSinkSingleConfig {
+    fn get_name(&self) -> &str {
+        &self.name
+    }
+
     async fn get_builder(
         &self,
         transform_context: TransformContextConfig,
     ) -> Result<Box<dyn TransformBuilder>> {
         Ok(Box::new(OpenSearchSinkSingleBuilder::new(
+            self.name.clone(),
             self.address.clone(),
             transform_context.chain_name,
             self.connect_timeout_ms,
@@ -45,18 +51,29 @@ impl TransformConfig for OpenSearchSinkSingleConfig {
     fn down_chain_protocol(&self) -> DownChainProtocol {
         DownChainProtocol::Terminating
     }
+
+    fn get_sub_chain_configs(&self) -> Vec<(&crate::config::chain::TransformChainConfig, String)> {
+        vec![]
+    }
 }
 
 pub struct OpenSearchSinkSingleBuilder {
+    name: String,
     address: String,
     connect_timeout: Duration,
 }
 
 impl OpenSearchSinkSingleBuilder {
-    pub fn new(address: String, _chain_name: String, connect_timeout_ms: u64) -> Self {
+    pub fn new(
+        name: String,
+        address: String,
+        _chain_name: String,
+        connect_timeout_ms: u64,
+    ) -> Self {
         let connect_timeout = Duration::from_millis(connect_timeout_ms);
 
         Self {
+            name,
             address,
             connect_timeout,
         }
@@ -68,12 +85,19 @@ impl TransformBuilder for OpenSearchSinkSingleBuilder {
         Box::new(OpenSearchSinkSingle {
             address: self.address.clone(),
             connect_timeout: self.connect_timeout,
-            codec_builder: OpenSearchCodecBuilder::new(Direction::Sink, self.get_name().to_owned()),
+            codec_builder: OpenSearchCodecBuilder::new(
+                Direction::Sink,
+                self.get_type_name().to_owned(),
+            ),
             connection: None,
         })
     }
 
-    fn get_name(&self) -> &'static str {
+    fn get_name(&self) -> &str {
+        &self.name
+    }
+
+    fn get_type_name(&self) -> &'static str {
         NAME
     }
 

@@ -7,8 +7,10 @@ sources:
         # This transform is only here to ensure that the transform correctly handles the case where
         # valkey returns an error due to being unauthenticated
         - ValkeyClusterPortsRewrite:
+            name: "valkey-cluster-ports-rewrite"
             new_port: 6379
         - ValkeySinkCluster:
+            name: "valkey-sink-cluster"
             first_contact_points:
               [
                 "127.0.0.1:2230",

@@ -150,10 +150,10 @@ async fn passthrough_cassandra_down() {
         )) => {
             assert_eq!(
                 format!("{err}"),
-                format!("Internal shotover (or custom transform) bug: Chain failed to send and/or receive messages, the connection will now be closed.
+                format!("Internal shotover (or custom transform) bug (chain: cassandra): Failed to send and/or receive messages, the connection will now be closed.
 
 Caused by:
-    0: CassandraSinkSingle transform failed
+    0: Transform CassandraSinkSingle named cassandra-sink-single failed in chain cassandra
     1: Failed to connect to destination 127.0.0.1:9043
     2: Connection refused (os error {CONNECTION_REFUSED_OS_ERROR})"
             ));
@@ -169,8 +169,8 @@ Caused by:
                 r#"connection was unexpectedly terminated
 
 Caused by:
-    0: Chain failed to send and/or receive messages, the connection will now be closed.
-    1: CassandraSinkSingle transform failed
+    0: Failed to send and/or receive messages, the connection will now be closed.
+    1: Transform CassandraSinkSingle named cassandra-sink-single failed in chain cassandra
     2: Failed to connect to destination 127.0.0.1:9043
     3: Connection refused (os error {CONNECTION_REFUSED_OS_ERROR})"#,
             ))
@@ -327,6 +327,65 @@ async fn cluster_single_rack_v4(#[case] driver: CassandraDriver) {
     }
 
     cluster::single_rack_v4::test_topology_task(None, Some(9044)).await;
+}
+
+#[rstest]
+#[cfg_attr(feature = "cassandra-cpp-driver-tests", case::cpp(Cpp))]
+#[case::scylla(Scylla)]
+#[case::cdrs(Cdrs)]
+#[tokio::test(flavor = "multi_thread")]
+async fn cluster_single_rack_v4_query_type_filter(#[case] driver: CassandraDriver) {
+    let _compose = docker_compose("tests/test-configs/cassandra/cluster-v4/docker-compose.yaml");
+
+    let connection = || async {
+        let mut connection = CassandraConnectionBuilder::new("127.0.0.1", 9042, driver)
+            .build()
+            .await;
+        connection
+            .enable_schema_awaiter("172.16.1.2:9044", None)
+            .await;
+        connection
+    };
+    {
+        let shotover = shotover_process(
+            "tests/test-configs/cassandra/cluster-v4/topology-query-type-filter.yaml",
+        )
+        .start()
+        .await;
+
+        let connection = connection().await;
+
+        connection
+            .execute(
+                "CREATE KEYSPACE IF NOT EXISTS test_filter_ks WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 }",
+            )
+            .await;
+        connection
+            .execute(
+                "CREATE TABLE IF NOT EXISTS test_filter_ks.test_table (id int PRIMARY KEY, value text)",
+            )
+            .await;
+
+        assert_query_result(&connection, "SELECT * FROM test_filter_ks.test_table", &[]).await;
+
+        let err = connection
+            .execute_fallible(
+                "INSERT INTO test_filter_ks.test_table (id, value) VALUES (1, 'hello')",
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(
+            err,
+            ErrorBody {
+                ty: ErrorType::Invalid,
+                message: "Message was filtered out by shotover".into()
+            }
+        );
+
+        assert_query_result(&connection, "SELECT * FROM test_filter_ks.test_table", &[]).await;
+
+        shotover.shutdown_and_then_consume_events(&[]).await;
+    }
 }
 
 #[rstest]

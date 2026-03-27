@@ -4,9 +4,12 @@ sources:
       name: "cassandra"
       listen_addr: "127.0.0.1:9042"
       chain:
+        - QueryTypeFilter:
+            name: "query-type-filter"
+            DenyList: [Write]
         - CassandraSinkCluster:
             name: "cassandra-sink-cluster"
-            first_contact_points: ["172.16.1.2:9042", "172.16.1.3:9042"]
+            first_contact_points: ["172.16.1.2:9044", "172.16.1.3:9044"]
             local_shotover_host_id: "2dd022d6-2937-4754-89d6-02d2933a8f7a"
             shotover_nodes:
               - address: "127.0.0.1:9042"
@@ -14,4 +17,3 @@ sources:
                 rack: "rack1"
                 host_id: "2dd022d6-2937-4754-89d6-02d2933a8f7a"
             connect_timeout_ms: 3000
-

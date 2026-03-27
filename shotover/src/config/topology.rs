@@ -1,8 +1,7 @@
 use crate::sources::{Source, SourceConfig};
 use anyhow::{Context, Result, anyhow};
-use itertools::Itertools;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fmt::Write;
 use tokio::net::TcpListener;
 use tokio::sync::watch;
@@ -42,18 +41,113 @@ impl Topology {
 
         let mut topology_errors = String::new();
 
-        let mut duplicated_names = vec![];
-        for source in &self.sources {
-            let name = source.get_name();
-            if self.sources.iter().filter(|x| x.get_name() == name).count() > 1 {
-                duplicated_names.push(name);
+        #[derive(Default)]
+        struct NameValidationState {
+            source_uses: BTreeMap<String, Vec<String>>,
+            transform_uses: BTreeMap<String, Vec<String>>,
+            chain_uses: BTreeMap<String, Vec<String>>,
+        }
+
+        impl NameValidationState {
+            fn register_source(&mut self, name: &str, usage: String) {
+                self.source_uses
+                    .entry(name.to_string())
+                    .or_default()
+                    .push(usage);
+            }
+
+            fn register_transform(&mut self, name: &str, usage: String) {
+                self.transform_uses
+                    .entry(name.to_string())
+                    .or_default()
+                    .push(usage);
+            }
+
+            fn register_chain(&mut self, name: &str, usage: String) {
+                self.chain_uses
+                    .entry(name.to_string())
+                    .or_default()
+                    .push(usage);
+            }
+
+            fn duplicate_names(map: BTreeMap<String, Vec<String>>) -> Vec<(String, Vec<String>)> {
+                map.into_iter().filter(|(_, uses)| uses.len() > 1).collect()
             }
         }
-        for name in duplicated_names.iter().unique() {
-            writeln!(
-                topology_errors,
-                "Source name {name:?} occurred more than once. Make sure all source names are unique. The names will be used in logging and metrics."
-            )?;
+
+        // Validate name uniqueness across sources, transforms, and chains in a single traversal.
+        let mut name_state = NameValidationState::default();
+
+        fn collect_chain_names(
+            state: &mut NameValidationState,
+            chain: &crate::config::chain::TransformChainConfig,
+            chain_path: &str,
+        ) {
+            for (transform_index, config) in chain.0.iter().enumerate() {
+                let transform_name = config.get_name();
+                let transform_type = config.typetag_name();
+                state.register_transform(
+                    transform_name,
+                    format!(
+                        "Transform[{transform_index}] {transform_type} named {transform_name:?} in {chain_path}"
+                    ),
+                );
+
+                for (sub_chain, sub_chain_name) in config.get_sub_chain_configs() {
+                    let sub_chain_path = format!(
+                        "{chain_path} -> subchain {sub_chain_name:?} (from Transform {transform_type} named {transform_name:?})"
+                    );
+                    state.register_chain(
+                        &sub_chain_name,
+                        format!("chain {sub_chain_name:?} at {sub_chain_path}"),
+                    );
+                    collect_chain_names(state, sub_chain, &sub_chain_path);
+                }
+            }
+        }
+
+        for (index, source) in self.sources.iter().enumerate() {
+            let source_name = source.get_name();
+            name_state.register_source(source_name, format!("source[{index}] {source_name:?}"));
+            name_state.register_chain(
+                source_name,
+                format!("root chain for source[{index}] {source_name:?}"),
+            );
+            let root_chain_path = format!("source[{index}] {source_name:?} chain {source_name:?}");
+            collect_chain_names(&mut name_state, source.get_chain_config(), &root_chain_path);
+        }
+
+        let duplicate_sources = NameValidationState::duplicate_names(name_state.source_uses);
+        if !duplicate_sources.is_empty() {
+            writeln!(topology_errors, "Duplicate source names detected:")?;
+            for (name, usages) in duplicate_sources {
+                writeln!(topology_errors, "  {name:?} used by:")?;
+                for usage in usages {
+                    writeln!(topology_errors, "    {usage}")?;
+                }
+            }
+        }
+
+        let duplicate_transforms = NameValidationState::duplicate_names(name_state.transform_uses);
+        if !duplicate_transforms.is_empty() {
+            writeln!(topology_errors, "Duplicate transform names detected:")?;
+            for (name, usages) in duplicate_transforms {
+                writeln!(topology_errors, "  {name:?} used by:")?;
+                for usage in usages {
+                    writeln!(topology_errors, "    {usage}")?;
+                }
+            }
+        }
+
+        let duplicate_chains = NameValidationState::duplicate_names(name_state.chain_uses);
+        if !duplicate_chains.is_empty() {
+            writeln!(topology_errors, "Duplicate chain names detected:")?;
+            for (name, usages) in duplicate_chains {
+                writeln!(topology_errors, "  {name:?} used by:")?;
+                for usage in usages {
+                    writeln!(topology_errors, "    {usage}")?;
+                }
+            }
         }
 
         for source in &self.sources {
@@ -95,14 +189,17 @@ mod topology_tests {
     use crate::{
         sources::{Source, SourceConfig, valkey::ValkeySourceConfig},
         transforms::{
-            parallel_map::ParallelMapConfig, valkey::cache::ValkeyConfig as ValkeyCacheConfig,
+            parallel_map::ParallelMapConfig, tee::ConsistencyBehaviorConfig, tee::TeeConfig,
+            valkey::cache::ValkeyConfig as ValkeyCacheConfig,
         },
     };
     use pretty_assertions::assert_eq;
     use std::collections::HashMap;
     use tokio::sync::watch;
 
-    fn create_source_from_chain_valkey(chain: Vec<Box<dyn TransformConfig>>) -> Vec<SourceConfig> {
+    fn create_source_from_chain_valkey(
+        transforms: Vec<Box<dyn TransformConfig>>,
+    ) -> Vec<SourceConfig> {
         vec![SourceConfig::Valkey(ValkeySourceConfig {
             name: "foo".to_string(),
             listen_addr: "127.0.0.1:0".to_string(),
@@ -110,12 +207,12 @@ mod topology_tests {
             hard_connection_limit: None,
             tls: None,
             timeout: None,
-            chain: TransformChainConfig(chain),
+            chain: TransformChainConfig(transforms),
         })]
     }
 
     fn create_source_from_chain_cassandra(
-        chain: Vec<Box<dyn TransformConfig>>,
+        transforms: Vec<Box<dyn TransformConfig>>,
     ) -> Vec<SourceConfig> {
         vec![SourceConfig::Cassandra(CassandraSourceConfig {
             name: "foo".to_string(),
@@ -124,15 +221,15 @@ mod topology_tests {
             hard_connection_limit: None,
             tls: None,
             timeout: None,
-            chain: TransformChainConfig(chain),
+            chain: TransformChainConfig(transforms),
             transport: None,
         })]
     }
 
     async fn run_test_topology_valkey(
-        chain: Vec<Box<dyn TransformConfig>>,
+        transforms: Vec<Box<dyn TransformConfig>>,
     ) -> anyhow::Result<Vec<Source>> {
-        let sources = create_source_from_chain_valkey(chain);
+        let sources = create_source_from_chain_valkey(transforms);
 
         let topology = Topology { sources };
 
@@ -144,9 +241,9 @@ mod topology_tests {
     }
 
     async fn run_test_topology_cassandra(
-        chain: Vec<Box<dyn TransformConfig>>,
+        transforms: Vec<Box<dyn TransformConfig>>,
     ) -> anyhow::Result<Vec<Source>> {
-        let sources = create_source_from_chain_cassandra(chain);
+        let sources = create_source_from_chain_cassandra(transforms);
 
         let topology = Topology { sources };
 
@@ -174,20 +271,27 @@ foo source:
 
     #[tokio::test]
     async fn test_validate_chain_valid_chain() {
-        run_test_topology_valkey(vec![Box::new(DebugPrinterConfig), Box::new(NullSinkConfig)])
-            .await
-            .unwrap();
+        run_test_topology_valkey(vec![
+            Box::new(DebugPrinterConfig {
+                name: "debug".to_string(),
+            }),
+            Box::new(NullSinkConfig {
+                name: "sink".to_string(),
+            }),
+        ])
+        .await
+        .unwrap();
     }
 
     #[tokio::test]
-    async fn test_validate_coalesce() {
+    async fn test_validate_coalesce_neither_flush_field() {
         let expected = r#"Topology errors
 foo source:
   foo chain:
     Coalesce:
-      Need to provide at least one of these fields:
+      Provide at least one of:
       * flush_when_buffered_message_count
-      * flush_when_millis_since_last_flush
+      * flush_when_millis_since_last_flush (must be greater than 0)
     
       But none of them were provided.
       Check https://shotover.io/docs/latest/transforms.html#coalesce for more information.
@@ -195,10 +299,40 @@ foo source:
 
         let error = run_test_topology_valkey(vec![
             Box::new(CoalesceConfig {
+                name: "coalesce".to_string(),
                 flush_when_buffered_message_count: None,
                 flush_when_millis_since_last_flush: None,
             }),
-            Box::new(NullSinkConfig),
+            Box::new(NullSinkConfig {
+                name: "sink".to_string(),
+            }),
+        ])
+        .await
+        .unwrap_err()
+        .to_string();
+
+        assert_eq!(error, expected);
+    }
+
+    #[tokio::test]
+    async fn test_validate_coalesce_millis_zero() {
+        let expected = r#"Topology errors
+foo source:
+  foo chain:
+    Coalesce:
+      flush_when_millis_since_last_flush must be greater than 0 when set.
+      Check https://shotover.io/docs/latest/transforms.html#coalesce for more information.
+"#;
+
+        let error = run_test_topology_valkey(vec![
+            Box::new(CoalesceConfig {
+                name: "coalesce".to_string(),
+                flush_when_buffered_message_count: Some(100),
+                flush_when_millis_since_last_flush: Some(0),
+            }),
+            Box::new(NullSinkConfig {
+                name: "sink".to_string(),
+            }),
         ])
         .await
         .unwrap_err()
@@ -212,13 +346,19 @@ foo source:
         let expected = r#"Topology errors
 foo source:
   foo chain:
-    Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
+    Terminating Transform NullSink named "sink-1" is not last in chain. Terminating Transform must be last in chain.
 "#;
 
         let error = run_test_topology_valkey(vec![
-            Box::new(DebugPrinterConfig),
-            Box::new(NullSinkConfig),
-            Box::new(NullSinkConfig),
+            Box::new(DebugPrinterConfig {
+                name: "debug".to_string(),
+            }),
+            Box::new(NullSinkConfig {
+                name: "sink-1".to_string(),
+            }),
+            Box::new(NullSinkConfig {
+                name: "sink-2".to_string(),
+            }),
         ])
         .await
         .unwrap_err()
@@ -232,13 +372,19 @@ foo source:
         let expected = r#"Topology errors
 foo source:
   foo chain:
-    Non-terminating transform "DebugPrinter" is last in chain. Last transform must be terminating.
+    Non-terminating Transform DebugPrinter named "debug-3" is last in chain. Last Transform must be terminating.
 "#;
 
         let error = run_test_topology_valkey(vec![
-            Box::new(DebugPrinterConfig),
-            Box::new(DebugPrinterConfig),
-            Box::new(DebugPrinterConfig),
+            Box::new(DebugPrinterConfig {
+                name: "debug-1".to_string(),
+            }),
+            Box::new(DebugPrinterConfig {
+                name: "debug-2".to_string(),
+            }),
+            Box::new(DebugPrinterConfig {
+                name: "debug-3".to_string(),
+            }),
         ])
         .await
         .unwrap_err()
@@ -252,15 +398,23 @@ foo source:
         let expected = r#"Topology errors
 foo source:
   foo chain:
-    Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
-    Non-terminating transform "DebugPrinter" is last in chain. Last transform must be terminating.
+    Terminating Transform NullSink named "sink" is not last in chain. Terminating Transform must be last in chain.
+    Non-terminating Transform DebugPrinter named "debug-3" is last in chain. Last Transform must be terminating.
 "#;
 
         let error = run_test_topology_valkey(vec![
-            Box::new(DebugPrinterConfig),
-            Box::new(DebugPrinterConfig),
-            Box::new(NullSinkConfig),
-            Box::new(DebugPrinterConfig),
+            Box::new(DebugPrinterConfig {
+                name: "debug-1".to_string(),
+            }),
+            Box::new(DebugPrinterConfig {
+                name: "debug-2".to_string(),
+            }),
+            Box::new(NullSinkConfig {
+                name: "sink".to_string(),
+            }),
+            Box::new(DebugPrinterConfig {
+                name: "debug-3".to_string(),
+            }),
         ])
         .await
         .unwrap_err()
@@ -274,17 +428,30 @@ foo source:
         let caching_schema = HashMap::new();
 
         run_test_topology_cassandra(vec![
-            Box::new(DebugPrinterConfig),
-            Box::new(DebugPrinterConfig),
+            Box::new(DebugPrinterConfig {
+                name: "debug-1".to_string(),
+            }),
+            Box::new(DebugPrinterConfig {
+                name: "debug-2".to_string(),
+            }),
             Box::new(ValkeyCacheConfig {
+                name: "cache".to_string(),
                 chain: TransformChainConfig(vec![
-                    Box::new(DebugPrinterConfig),
-                    Box::new(DebugPrinterConfig),
-                    Box::new(NullSinkConfig),
+                    Box::new(DebugPrinterConfig {
+                        name: "c-debug-1".to_string(),
+                    }),
+                    Box::new(DebugPrinterConfig {
+                        name: "c-debug-2".to_string(),
+                    }),
+                    Box::new(NullSinkConfig {
+                        name: "c-sink".to_string(),
+                    }),
                 ]),
                 caching_schema,
             }),
-            Box::new(NullSinkConfig),
+            Box::new(NullSinkConfig {
+                name: "sink".to_string(),
+            }),
         ])
         .await
         .unwrap();
@@ -296,23 +463,38 @@ foo source:
 foo source:
   foo chain:
     ValkeyCache:
-      cache_chain chain:
-        Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
+      cache chain:
+        Terminating Transform NullSink named "c-sink-1" is not last in chain. Terminating Transform must be last in chain.
 "#;
 
         let error = run_test_topology_cassandra(vec![
-            Box::new(DebugPrinterConfig),
-            Box::new(DebugPrinterConfig),
+            Box::new(DebugPrinterConfig {
+                name: "debug-1".to_string(),
+            }),
+            Box::new(DebugPrinterConfig {
+                name: "debug-2".to_string(),
+            }),
             Box::new(ValkeyCacheConfig {
+                name: "cache".to_string(),
                 chain: TransformChainConfig(vec![
-                    Box::new(DebugPrinterConfig),
-                    Box::new(NullSinkConfig),
-                    Box::new(DebugPrinterConfig),
-                    Box::new(NullSinkConfig),
+                    Box::new(DebugPrinterConfig {
+                        name: "c-debug".to_string(),
+                    }),
+                    Box::new(NullSinkConfig {
+                        name: "c-sink-1".to_string(),
+                    }),
+                    Box::new(DebugPrinterConfig {
+                        name: "c-debug-2".to_string(),
+                    }),
+                    Box::new(NullSinkConfig {
+                        name: "c-sink-2".to_string(),
+                    }),
                 ]),
                 caching_schema: HashMap::new(),
             }),
-            Box::new(NullSinkConfig),
+            Box::new(NullSinkConfig {
+                name: "sink".to_string(),
+            }),
         ])
         .await
         .unwrap_err()
@@ -324,14 +506,25 @@ foo source:
     #[tokio::test]
     async fn test_validate_chain_valid_subchain_parallel_map() {
         run_test_topology_valkey(vec![
-            Box::new(DebugPrinterConfig),
-            Box::new(DebugPrinterConfig),
+            Box::new(DebugPrinterConfig {
+                name: "debug-1".to_string(),
+            }),
+            Box::new(DebugPrinterConfig {
+                name: "debug-2".to_string(),
+            }),
             Box::new(ParallelMapConfig {
+                name: "pmap".to_string(),
                 parallelism: 1,
                 chain: TransformChainConfig(vec![
-                    Box::new(DebugPrinterConfig),
-                    Box::new(DebugPrinterConfig),
-                    Box::new(NullSinkConfig),
+                    Box::new(DebugPrinterConfig {
+                        name: "p-debug-1".to_string(),
+                    }),
+                    Box::new(DebugPrinterConfig {
+                        name: "p-debug-2".to_string(),
+                    }),
+                    Box::new(NullSinkConfig {
+                        name: "p-sink".to_string(),
+                    }),
                 ]),
                 ordered_results: false,
             }),
@@ -346,20 +539,33 @@ foo source:
 foo source:
   foo chain:
     ParallelMap:
-      parallel_map_chain chain:
-        Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
+      pmap[0] chain:
+        Terminating Transform NullSink named "p-sink-1" is not last in chain. Terminating Transform must be last in chain.
 "#;
 
         let error = run_test_topology_valkey(vec![
-            Box::new(DebugPrinterConfig),
-            Box::new(DebugPrinterConfig),
+            Box::new(DebugPrinterConfig {
+                name: "debug-1".to_string(),
+            }),
+            Box::new(DebugPrinterConfig {
+                name: "debug-2".to_string(),
+            }),
             Box::new(ParallelMapConfig {
+                name: "pmap".to_string(),
                 parallelism: 1,
                 chain: TransformChainConfig(vec![
-                    Box::new(DebugPrinterConfig),
-                    Box::new(NullSinkConfig),
-                    Box::new(DebugPrinterConfig),
-                    Box::new(NullSinkConfig),
+                    Box::new(DebugPrinterConfig {
+                        name: "p-debug".to_string(),
+                    }),
+                    Box::new(NullSinkConfig {
+                        name: "p-sink-1".to_string(),
+                    }),
+                    Box::new(DebugPrinterConfig {
+                        name: "p-debug-2".to_string(),
+                    }),
+                    Box::new(NullSinkConfig {
+                        name: "p-sink-2".to_string(),
+                    }),
                 ]),
                 ordered_results: false,
             }),
@@ -377,21 +583,34 @@ foo source:
 foo source:
   foo chain:
     ParallelMap:
-      parallel_map_chain chain:
-        Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
+      pmap[0] chain:
+        Terminating Transform NullSink named "p-sink-1" is not last in chain. Terminating Transform must be last in chain.
 "#;
 
         let subchain = TransformChainConfig(vec![
-            Box::new(DebugPrinterConfig),
-            Box::new(NullSinkConfig),
-            Box::new(DebugPrinterConfig),
-            Box::new(NullSinkConfig),
+            Box::new(DebugPrinterConfig {
+                name: "p-debug".to_string(),
+            }),
+            Box::new(NullSinkConfig {
+                name: "p-sink-1".to_string(),
+            }),
+            Box::new(DebugPrinterConfig {
+                name: "p-debug-2".to_string(),
+            }),
+            Box::new(NullSinkConfig {
+                name: "p-sink-2".to_string(),
+            }),
         ]);
 
         let error = run_test_topology_valkey(vec![
-            Box::new(DebugPrinterConfig),
-            Box::new(DebugPrinterConfig),
+            Box::new(DebugPrinterConfig {
+                name: "debug-1".to_string(),
+            }),
+            Box::new(DebugPrinterConfig {
+                name: "debug-2".to_string(),
+            }),
             Box::new(ParallelMapConfig {
+                name: "pmap".to_string(),
                 parallelism: 1,
                 chain: subchain,
                 ordered_results: true,
@@ -410,19 +629,28 @@ foo source:
 foo source:
   foo chain:
     ParallelMap:
-      parallel_map_chain chain:
-        Non-terminating transform "DebugPrinter" is last in chain. Last transform must be terminating.
+      pmap[0] chain:
+        Non-terminating Transform DebugPrinter named "p-debug-2" is last in chain. Last Transform must be terminating.
 "#;
 
         let subchain = TransformChainConfig(vec![
-            Box::new(DebugPrinterConfig),
-            Box::new(DebugPrinterConfig),
+            Box::new(DebugPrinterConfig {
+                name: "p-debug-1".to_string(),
+            }),
+            Box::new(DebugPrinterConfig {
+                name: "p-debug-2".to_string(),
+            }),
         ]);
 
         let error = run_test_topology_valkey(vec![
-            Box::new(DebugPrinterConfig),
-            Box::new(DebugPrinterConfig),
+            Box::new(DebugPrinterConfig {
+                name: "debug-1".to_string(),
+            }),
+            Box::new(DebugPrinterConfig {
+                name: "debug-2".to_string(),
+            }),
             Box::new(ParallelMapConfig {
+                name: "pmap".to_string(),
                 parallelism: 1,
                 chain: subchain,
                 ordered_results: true,
@@ -441,21 +669,32 @@ foo source:
 foo source:
   foo chain:
     ParallelMap:
-      parallel_map_chain chain:
-        Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
-        Non-terminating transform "DebugPrinter" is last in chain. Last transform must be terminating.
+      pmap[0] chain:
+        Terminating Transform NullSink named "p-sink" is not last in chain. Terminating Transform must be last in chain.
+        Non-terminating Transform DebugPrinter named "p-debug-2" is last in chain. Last Transform must be terminating.
 "#;
 
         let subchain = TransformChainConfig(vec![
-            Box::new(DebugPrinterConfig),
-            Box::new(NullSinkConfig),
-            Box::new(DebugPrinterConfig),
+            Box::new(DebugPrinterConfig {
+                name: "p-debug-1".to_string(),
+            }),
+            Box::new(NullSinkConfig {
+                name: "p-sink".to_string(),
+            }),
+            Box::new(DebugPrinterConfig {
+                name: "p-debug-2".to_string(),
+            }),
         ]);
 
         let error = run_test_topology_valkey(vec![
-            Box::new(DebugPrinterConfig),
-            Box::new(DebugPrinterConfig),
+            Box::new(DebugPrinterConfig {
+                name: "debug-1".to_string(),
+            }),
+            Box::new(DebugPrinterConfig {
+                name: "debug-2".to_string(),
+            }),
             Box::new(ParallelMapConfig {
+                name: "pmap".to_string(),
                 parallelism: 1,
                 chain: subchain,
                 ordered_results: true,
@@ -471,12 +710,23 @@ foo source:
     #[tokio::test]
     async fn test_validate_repeated_source_names() {
         let expected = r#"Topology errors
-Source name "foo" occurred more than once. Make sure all source names are unique. The names will be used in logging and metrics.
+Duplicate source names detected:
+  "foo" used by:
+    source[0] "foo"
+    source[1] "foo"
+Duplicate chain names detected:
+  "foo" used by:
+    root chain for source[0] "foo"
+    root chain for source[1] "foo"
 "#;
 
-        let mut sources = create_source_from_chain_valkey(vec![Box::new(NullSinkConfig)]);
+        let mut sources = create_source_from_chain_valkey(vec![Box::new(NullSinkConfig {
+            name: "sink".to_string(),
+        })]);
         sources.extend(create_source_from_chain_valkey(vec![Box::new(
-            NullSinkConfig,
+            NullSinkConfig {
+                name: "sink1".to_string(),
+            },
         )]));
 
         let topology = Topology { sources };
@@ -488,6 +738,130 @@ Source name "foo" occurred more than once. Make sure all source names are unique
             .to_string();
 
         assert_eq!(error, expected);
+    }
+
+    #[tokio::test]
+    async fn test_validate_repeated_transform_names() {
+        let expected = r#"Topology errors
+Duplicate transform names detected:
+  "dup" used by:
+    Transform[0] DebugPrinter named "dup" in source[0] "foo" chain "foo"
+    Transform[1] NullSink named "dup" in source[0] "foo" chain "foo"
+"#;
+
+        let error = run_test_topology_valkey(vec![
+            Box::new(DebugPrinterConfig {
+                name: "dup".to_string(),
+            }),
+            Box::new(NullSinkConfig {
+                name: "dup".to_string(),
+            }),
+        ])
+        .await
+        .unwrap_err()
+        .to_string();
+
+        assert_eq!(error, expected);
+    }
+
+    #[tokio::test]
+    async fn test_validate_duplicate_chain_names_user_defined() {
+        // Tee's main chain is named after the transform, so a Tee named "foo" creates chain "foo" which duplicates the root chain "foo".
+        let expected = r#"Topology errors
+Duplicate chain names detected:
+  "foo" used by:
+    root chain for source[0] "foo"
+    chain "foo" at source[0] "foo" chain "foo" -> subchain "foo" (from Transform Tee named "foo")
+"#;
+
+        let error = run_test_topology_valkey(vec![
+            Box::new(TeeConfig {
+                name: "foo".to_string(),
+                behavior: None,
+                timeout_micros: None,
+                chain: TransformChainConfig(vec![Box::new(NullSinkConfig {
+                    name: "tee-sink".to_string(),
+                })]),
+                buffer_size: None,
+                switch_port: None,
+            }),
+            Box::new(NullSinkConfig {
+                name: "sink".to_string(),
+            }),
+        ])
+        .await
+        .unwrap_err()
+        .to_string();
+
+        assert_eq!(error, expected);
+    }
+
+    #[tokio::test]
+    async fn test_validate_duplicate_chain_names_auto_derived() {
+        let expected = r#"Topology errors
+Duplicate chain names detected:
+  "foo" used by:
+    root chain for source[0] "foo"
+    chain "foo" at source[0] "foo" chain "foo" -> subchain "foo" (from Transform ValkeyCache named "foo")
+"#;
+
+        let error = run_test_topology_cassandra(vec![
+            Box::new(ValkeyCacheConfig {
+                name: "foo".to_string(),
+                chain: TransformChainConfig(vec![Box::new(NullSinkConfig {
+                    name: "cache-sink".to_string(),
+                })]),
+                caching_schema: HashMap::new(),
+            }),
+            Box::new(NullSinkConfig {
+                name: "sink".to_string(),
+            }),
+        ])
+        .await
+        .unwrap_err()
+        .to_string();
+
+        assert_eq!(error, expected);
+    }
+
+    #[tokio::test]
+    async fn test_validate_subchain_on_mismatch_derived_chain_name() {
+        // SubchainOnMismatch chain name is derived as <tee-name>.mismatch; two Tees get distinct chain names.
+        run_test_topology_valkey(vec![
+            Box::new(TeeConfig {
+                name: "tee-a".to_string(),
+                behavior: Some(ConsistencyBehaviorConfig::SubchainOnMismatch {
+                    chain: TransformChainConfig(vec![Box::new(NullSinkConfig {
+                        name: "mismatch-sink-a".to_string(),
+                    })]),
+                }),
+                timeout_micros: None,
+                chain: TransformChainConfig(vec![Box::new(NullSinkConfig {
+                    name: "tee-a-sink".to_string(),
+                })]),
+                buffer_size: None,
+                switch_port: None,
+            }),
+            Box::new(TeeConfig {
+                name: "tee-b".to_string(),
+                behavior: Some(ConsistencyBehaviorConfig::SubchainOnMismatch {
+                    chain: TransformChainConfig(vec![Box::new(NullSinkConfig {
+                        name: "mismatch-sink-b".to_string(),
+                    })]),
+                }),
+                timeout_micros: None,
+                chain: TransformChainConfig(vec![Box::new(NullSinkConfig {
+                    name: "tee-b-sink".to_string(),
+                })]),
+                buffer_size: None,
+                switch_port: None,
+            }),
+            Box::new(NullSinkConfig {
+                name: "sink".to_string(),
+            }),
+        ])
+        .await
+        .unwrap();
     }
 
     #[tokio::test]
@@ -506,15 +880,15 @@ Source name "foo" occurred more than once. Make sure all source names are unique
         let expected = r#"Topology errors
 valkey1 source:
   valkey1 chain:
-    Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
-    Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
-    Non-terminating transform "DebugPrinter" is last in chain. Last transform must be terminating.
+    Terminating Transform NullSink named "sink-1" is not last in chain. Terminating Transform must be last in chain.
+    Terminating Transform NullSink named "sink-2" is not last in chain. Terminating Transform must be last in chain.
+    Non-terminating Transform DebugPrinter named "debug" is last in chain. Last Transform must be terminating.
 valkey2 source:
   valkey2 chain:
     ParallelMap:
-      parallel_map_chain chain:
-        Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
-        Non-terminating transform "DebugPrinter" is last in chain. Last transform must be terminating.
+      pmap[0] chain:
+        Terminating Transform NullSink named "p-sink" is not last in chain. Terminating Transform must be last in chain.
+        Non-terminating Transform DebugPrinter named "p-debug" is last in chain. Last Transform must be terminating.
 "#;
 
         assert_eq!(error, expected);

@@ -21,6 +21,7 @@ use tokio::time::timeout;
 /// KafkaSinkSingle is designed solely for the use case of running a shotover instance on the same machine as each kafka instance.
 /// The kafka instance and shotover instance must run on seperate ports.
 pub struct KafkaSinkSingleConfig {
+    pub name: String,
     pub destination_port: u16,
     pub connect_timeout_ms: u64,
     pub read_timeout: Option<u64>,
@@ -31,12 +32,17 @@ const NAME: &str = "KafkaSinkSingle";
 #[typetag::serde(name = "KafkaSinkSingle")]
 #[async_trait(?Send)]
 impl TransformConfig for KafkaSinkSingleConfig {
+    fn get_name(&self) -> &str {
+        &self.name
+    }
+
     async fn get_builder(
         &self,
         transform_context: TransformContextConfig,
     ) -> Result<Box<dyn TransformBuilder>> {
         let tls = self.tls.as_ref().map(TlsConnector::new).transpose()?;
         Ok(Box::new(KafkaSinkSingleBuilder::new(
+            self.name.clone(),
             self.destination_port,
             transform_context.chain_name,
             self.connect_timeout_ms,
@@ -52,10 +58,14 @@ impl TransformConfig for KafkaSinkSingleConfig {
     fn down_chain_protocol(&self) -> DownChainProtocol {
         DownChainProtocol::Terminating
     }
+
+    fn get_sub_chain_configs(&self) -> Vec<(&crate::config::chain::TransformChainConfig, String)> {
+        vec![]
+    }
 }
 
 struct KafkaSinkSingleBuilder {
-    // contains address and port
+    name: String,
     address_port: u16,
     connect_timeout: Duration,
     read_timeout: Option<Duration>,
@@ -64,6 +74,7 @@ struct KafkaSinkSingleBuilder {
 
 impl KafkaSinkSingleBuilder {
     fn new(
+        name: String,
         address_port: u16,
         _chain_name: String,
         connect_timeout_ms: u64,
@@ -73,6 +84,7 @@ impl KafkaSinkSingleBuilder {
         let receive_timeout = timeout.map(Duration::from_secs);
 
         KafkaSinkSingleBuilder {
+            name,
             address_port,
             connect_timeout: Duration::from_millis(connect_timeout_ms),
             read_timeout: receive_timeout,
@@ -93,7 +105,11 @@ impl TransformBuilder for KafkaSinkSingleBuilder {
         })
     }
 
-    fn get_name(&self) -> &'static str {
+    fn get_name(&self) -> &str {
+        &self.name
+    }
+
+    fn get_type_name(&self) -> &'static str {
         NAME
     }
 

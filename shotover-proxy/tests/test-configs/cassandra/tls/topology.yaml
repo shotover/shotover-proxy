@@ -8,6 +8,7 @@ sources:
         private_key_path: "tests/test-configs/cassandra/tls/certs/localhost.key"
       chain:
         - CassandraSinkSingle:
+            name: "cassandra-sink-single"
             remote_address: "localhost:9042"
             connect_timeout_ms: 3000
             tls:

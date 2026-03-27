@@ -403,17 +403,19 @@ impl CassandraBench {
     }
 
     fn generate_topology_yaml(&self, host_address: String, cassandra_address: String) -> String {
-        let mut transforms = vec![];
+        let mut transforms: Vec<Box<dyn TransformConfig>> = vec![];
         if let Shotover::ForcedMessageParsed = self.shotover {
             transforms.push(Box::new(DebugForceEncodeConfig {
+                name: "debug-force-encode".to_string(),
                 encode_requests: true,
                 encode_responses: true,
-            }) as Box<dyn TransformConfig>);
+            }));
         }
 
         match self.topology {
             CassandraTopology::Cluster3 => {
                 transforms.push(Box::new(CassandraSinkClusterConfig {
+                    name: "cassandra-sink-cluster".to_string(),
                     first_contact_points: vec![cassandra_address],
                     tls: None,
                     connect_timeout_ms: 3000,
@@ -429,6 +431,7 @@ impl CassandraBench {
             }
             CassandraTopology::Single => {
                 transforms.push(Box::new(CassandraSinkSingleConfig {
+                    name: "cassandra-sink-single".to_string(),
                     address: cassandra_address,
                     tls: None,
                     connect_timeout_ms: 3000,

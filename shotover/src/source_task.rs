@@ -4,7 +4,7 @@ use crate::frame::MessageType;
 use crate::hot_reload::protocol::{
     GradualShutdownRequest, HotReloadListenerRequest, HotReloadListenerResponse,
 };
-use crate::message::{Message, MessageIdMap, Messages, Metadata};
+use crate::message::{Message, MessageErrorType, MessageIdMap, Messages, Metadata};
 use crate::sources::Transport;
 use crate::tls::{AcceptError, TlsAcceptor};
 use crate::transforms::chain::{TransformChain, TransformChainBuilder};
@@ -783,22 +783,25 @@ impl<C: CodecBuilder + 'static> Handler<C> {
         requests: Messages,
     ) -> Result<Option<CloseReason>> {
         trace!("running transform chain with requests: {requests:?}");
+        let chain_name = self.chain.name;
         let mut wrapper = ChainState::new_with_addr(requests, local_addr);
 
         self.pending_requests.process_requests(&wrapper.requests);
         let responses = match self.chain.process_request(&mut wrapper).await {
             Ok(x) => x,
             Err(err) => {
+                let chain_name = self.chain.name;
                 let err = err.context(
-                    "Chain failed to send and/or receive messages, the connection will now be closed.",
+                    "Failed to send and/or receive messages, the connection will now be closed.",
                 );
                 // The connection is going to be closed once we return Err.
                 // So first make a best effort attempt of responding to any pending requests with an error response.
-                out_tx.send(self.pending_requests.to_errors(&err))?;
+                out_tx.send(self.pending_requests.to_errors(chain_name, &err))?;
                 return Err(err);
             }
         };
-        self.pending_requests.process_responses(&responses);
+        self.pending_requests
+            .process_responses(chain_name, &responses);
 
         // send the result of the process up stream
         if !responses.is_empty() {
@@ -917,7 +920,7 @@ impl PendingRequests {
         }
     }
 
-    fn process_responses(&mut self, responses: &[Message]) {
+    fn process_responses(&mut self, chain_name: &str, responses: &[Message]) {
         match self {
             PendingRequests::Ordered(pending_requests) => {
                 let responses_received = responses
@@ -926,6 +929,7 @@ impl PendingRequests {
                     .count();
                 if responses_received > pending_requests.len() {
                     tracing::error!(
+                        chain = %chain_name,
                         "received more responses than requests, this violates the transform invariants"
                     );
                     std::mem::drop(pending_requests.drain(..))
@@ -944,7 +948,7 @@ impl PendingRequests {
         }
     }
 
-    fn to_errors(&self, err: &anyhow::Error) -> Vec<Message> {
+    fn to_errors(&self, chain_name: &str, err: &anyhow::Error) -> Vec<Message> {
         // An internal error occured and we need to terminate the connection because we can no
         // longer make any guarantees about the state its in.
         // However before we do that we need to return error responses for all the pending requests for two reasons:
@@ -964,8 +968,8 @@ impl PendingRequests {
                     };
 
                     match meta.to_error_response(format!(
-                        "Internal shotover (or custom transform) bug: {err:?}"
-                    )) {
+                        "Internal shotover (or custom transform) bug (chain: {chain_name}): {err:?}"
+                    ), MessageErrorType::Internal) {
                         Ok(response) => Some(response),
                         Err(err) => {
                             tracing::error!("Failed to create an error from the request even though the protocol supports it {err:?}");
@@ -985,8 +989,8 @@ impl PendingRequests {
                     };
 
                     match meta.to_error_response(format!(
-                        "Internal shotover (or custom transform) bug: {err:?}"
-                    )) {
+                        "Internal shotover (or custom transform) bug (chain: {chain_name}): {err:?}"
+                    ), MessageErrorType::Internal) {
                         Ok(mut response) => {
                             response.set_request_id(*id);
                             Some(response)
