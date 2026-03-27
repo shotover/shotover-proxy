@@ -1115,6 +1115,31 @@ async fn cluster_sasl_plain_multi_shotover(#[case] driver: KafkaDriver) {
     }
 }
 
+/// Verifies that abrupt client disconnects (TCP RST) are handled gracefully without producing WARN logs.
+#[tokio::test]
+async fn cluster_1_rack_single_shotover_connection_reset_handling() {
+    let _docker_compose =
+        docker_compose("tests/test-configs/kafka/cluster-1-rack/docker-compose.yaml");
+    let shotover = shotover_process("tests/test-configs/kafka/cluster-1-rack/topology-single.yaml")
+        .start()
+        .await;
+
+    // Warm up cluster so Shotover's transform chain is initialized.
+    test_helpers::connection::kafka::python::run_python_smoke_test("127.0.0.1:9192").await;
+
+    // Force TCP RST on multiple connections. This should not produce any WARN logs.
+    for _ in 0..10 {
+        force_tcp_rst("127.0.0.1:9192").await;
+    }
+
+    tokio::time::timeout(
+        Duration::from_secs(10),
+        shotover.shutdown_and_then_consume_events(&[]),
+    )
+    .await
+    .expect("Shotover did not shutdown within 10s");
+}
+
 fn multi_shotover_events() -> Vec<EventMatcher> {
     // Shotover nodes can be detected as down during shutdown.
     // We should ignore "Shotover peer ... is down" for multi-shotover tests where shotover nodes are not killed.
@@ -1190,4 +1215,19 @@ fn workaround_rdkafka_connection_reset_bug(
                 .with_count(Count::Any),
         );
     }
+}
+
+/// Connect to `address` and immediately send a TCP RST (not FIN)
+async fn force_tcp_rst(address: &str) {
+    if let Ok(stream) = tokio::net::TcpStream::connect(address).await {
+        // Give Shotover's reader task time to start reading from this connection.
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        // SO_LINGER with zero timeout causes the kernel to send RST instead of FIN.
+        // set_linger is deprecated on tokio TcpStream for the general case, but
+        // the zero-linger case (forcing RST) doesn't cause blocking.
+        #[allow(deprecated)]
+        let _ = stream.set_linger(Some(Duration::ZERO));
+        drop(stream);
+    }
+    tokio::time::sleep(Duration::from_millis(50)).await;
 }
