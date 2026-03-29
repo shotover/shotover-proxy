@@ -1223,11 +1223,10 @@ async fn force_tcp_rst(address: &str) {
         // Give Shotover's reader task time to start reading from this connection.
         tokio::time::sleep(Duration::from_millis(10)).await;
         // SO_LINGER with zero timeout causes the kernel to send RST instead of FIN.
-        // set_linger is deprecated on tokio TcpStream for the general case, but
-        // the zero-linger case (forcing RST) doesn't cause blocking.
-        #[allow(deprecated)]
-        let _ = stream.set_linger(Some(Duration::ZERO));
-        drop(stream);
+        if let Ok(std_stream) = stream.into_std() {
+            let _ = std_stream.set_linger(Some(Duration::ZERO));
+            drop(std_stream);
+        }
     }
     tokio::time::sleep(Duration::from_millis(50)).await;
 }
