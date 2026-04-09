@@ -587,11 +587,13 @@ pub fn spawn_read_write_tasks<
                                     return;
                                 }
                                 Err(CodecReadError::Io(err)) => {
-                                    // I suspect (but have not confirmed) that UnexpectedEof occurs here when the ssl client
-                                    // does not send "close notify" before terminating the connection.
-                                    // We shouldnt report that as a warning because its common for clients to do
-                                    // that for performance reasons.
-                                    if !matches!(err.kind(), ErrorKind::UnexpectedEof) {
+                                    // These IO errors indicate unexpected client disconnects:
+                                    // - UnexpectedEof: SSL client closes without "close notify"
+                                    // - ConnectionReset: client process crashed or was killed (TCP RST)
+                                    if !matches!(
+                                        err.kind(),
+                                        ErrorKind::UnexpectedEof | ErrorKind::ConnectionReset
+                                    ) {
                                         warn!("failed to receive message on tcp stream: {err:?}");
                                     }
                                     return;
