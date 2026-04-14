@@ -53,7 +53,7 @@ redis-protocol = { version = "6.0.0", features = ["bytes"] }
 futures = "0.3"
 hex = "0.4.3"
 hex-literal = "1.0.0"
-rand = { version = "0.10.0", default-features = false, features = ["thread_rng"] }
+rand = { version = "0.10.1", default-features = false, features = ["thread_rng"] }
 clap = { version = "4.0.4", features = ["cargo", "derive"] }
 async-trait = "0.1.30"
 typetag = "0.2.5"
