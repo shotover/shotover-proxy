@@ -1,4 +1,5 @@
 use anyhow::Result;
+use j4rs::errors::J4RsError;
 use j4rs::{Instance, InvocationArg, Jvm as J4rsJvm, JvmBuilder, MavenArtifact};
 use serde::de::DeserializeOwned;
 use std::{any::Any, rc::Rc};
@@ -235,12 +236,10 @@ impl Jvm {
 
     /// Construct a java list containing the provided elements
     pub(crate) fn new_list(&self, element_type: &str, elements: Vec<Value>) -> Value {
-        let args: Vec<InvocationArg> = elements.into_iter().map(|x| x.instance.into()).collect();
+        let args: Vec<Result<Instance, J4RsError>> =
+            elements.into_iter().map(|x| Ok(x.instance)).collect();
         Value {
-            // TODO: Discuss with upstream why this was deprecated,
-            // `Jvm::java_list` is very difficult to use due to Result in input.
-            #[expect(deprecated)]
-            instance: self.0.create_java_list(element_type, &args).unwrap(),
+            instance: self.0.java_list(element_type, args).unwrap(),
             jvm: self.0.clone(),
         }
     }

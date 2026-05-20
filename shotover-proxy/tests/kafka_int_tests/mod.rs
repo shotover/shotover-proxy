@@ -558,6 +558,16 @@ async fn cluster_3_racks_multi_shotover_with_1_shotover_missing(#[case] driver: 
             .with_count(Count::GreaterThanOrEqual(1)),
     );
 
+    if driver.is_cpp() {
+        expected_events.push(
+            EventMatcher::new()
+                .with_level(Level::Warn)
+                .with_target("shotover::server")
+                .with_message(r#"failed to receive message on tcp stream: Os { code: 104, kind: ConnectionReset, message: "Connection reset by peer" }"#)
+                .with_count(Count::Any),
+        );
+    }
+
     for shotover in shotovers {
         tokio::time::timeout(
             Duration::from_secs(10),

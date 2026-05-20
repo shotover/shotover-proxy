@@ -33,6 +33,7 @@ async fn test_request_id_increments() {
 }
 
 #[tokio::test]
+#[cfg(feature = "cassandra")]
 async fn test_early_shutdown_cassandra_source() {
     shotover_process("tests/test-configs/null-cassandra/topology.yaml")
         .start()
@@ -144,6 +145,7 @@ Caused by:
 }
 
 #[tokio::test]
+#[cfg(all(feature = "valkey", feature = "cassandra"))]
 async fn test_shotover_shutdown_when_protocol_mismatch() {
     shotover_process("tests/test-configs/invalid_protocol_mismatch.yaml")
         .assert_fails_to_start(&[EventMatcher::new()

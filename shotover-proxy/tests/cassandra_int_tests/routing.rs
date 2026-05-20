@@ -175,7 +175,7 @@ mod compound_key {
 mod composite_key {
 
     use super::assert_eq;
-    use rand::{Rng, distr::Alphanumeric};
+    use rand::{RngExt, distr::Alphanumeric};
     use test_helpers::connection::cassandra::{
         CassandraConnection, Consistency, ResultValue, run_query,
     };
