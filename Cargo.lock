@@ -2470,7 +2470,6 @@ version = "0.14.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "85649ca51fd72272d7821adaf274ad91c288277713d9c18820d8499a7ff69e9a"
 dependencies = [
- "serde",
  "typenum",
  "version_check",
  "zeroize",
@@ -2484,6 +2483,7 @@ checksum = "dab9e9188e97a93276e1fe7b56401b851e2b45a46d045ca658100c1303ada649"
 dependencies = [
  "generic-array 0.14.7",
  "rustversion",
+ "serde_core",
  "typenum",
 ]
 
@@ -5579,7 +5579,7 @@ dependencies = [
  "derivative",
  "fnv",
  "futures",
- "generic-array 0.14.7",
+ "generic-array 1.4.1",
  "governor",
  "hex",
  "hex-literal 1.1.0",
