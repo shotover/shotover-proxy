@@ -34,7 +34,7 @@ uuid = { version = "1.0.0", features = ["serde", "v4"] }
 reqwest = { version = "0.13.3", default-features = false, features = ["http2"] }
 redis = { version = "0.29.2", features = ["tokio-comp", "tokio-rustls-comp", "tls-rustls-insecure", "cluster"] }
 cdrs-tokio = "8.0"
-cassandra-protocol = "3.0"
+cassandra-protocol = "3.3.0"
 # https://docs.rs/tracing/latest/tracing/level_filters/index.html#compile-time-filters
 # `trace` level is considered development only, and may contain sensitive data, do not include it in release builds.
 tracing = { version = "0.1.15", features = ["release_max_level_debug"] }
