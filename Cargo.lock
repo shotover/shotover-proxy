@@ -695,7 +695,7 @@ dependencies = [
  "base64",
  "futures",
  "rand 0.10.1",
- "reqwest 0.13.3",
+ "reqwest",
  "russh",
  "russh-sftp",
  "serde",
@@ -3883,7 +3883,7 @@ dependencies = [
  "dyn-clone",
  "lazy_static",
  "percent-encoding",
- "reqwest 0.13.3",
+ "reqwest",
  "rustc_version",
  "serde",
  "serde_json",
@@ -4724,40 +4724,6 @@ name = "relative-path"
 version = "1.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ba39f3699c378cd8970968dcbff9c43159ea4cfbd88d43c00b22f2ef10a435d2"
-
-[[package]]
-name = "reqwest"
-version = "0.12.28"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eddd3ca559203180a307f12d114c268abf583f59b03cb906fd0b3ff8646c1147"
-dependencies = [
- "base64",
- "bytes",
- "futures-core",
- "h2 0.4.14",
- "http 1.4.0",
- "http-body 1.0.1",
- "http-body-util",
- "hyper 1.9.0",
- "hyper-rustls 0.27.9",
- "hyper-util",
- "js-sys",
- "log",
- "percent-encoding",
- "pin-project-lite",
- "serde",
- "serde_json",
- "serde_urlencoded",
- "sync_wrapper",
- "tokio",
- "tower",
- "tower-http",
- "tower-service",
- "url",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "web-sys",
-]
 
 [[package]]
 name = "reqwest"
@@ -5685,7 +5651,7 @@ dependencies = [
  "redis",
  "redis-protocol",
  "regex",
- "reqwest 0.12.28",
+ "reqwest",
  "rstest",
  "rstest_reuse",
  "rustls-pemfile",
@@ -6018,7 +5984,7 @@ dependencies = [
  "rcgen",
  "rdkafka",
  "redis",
- "reqwest 0.12.28",
+ "reqwest",
  "rustls 0.23.40",
  "rustls-pemfile",
  "rustls-pki-types",
