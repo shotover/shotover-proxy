@@ -50,7 +50,7 @@ bincode = { version = "2.0.1", features = ["serde", "std"], default-features = f
 futures = "0.3"
 hex = "0.4.3"
 hex-literal = "1.0.0"
-rand = { version = "0.9.0", default-features = false }
+rand = { version = "0.10.1", default-features = false, features = ["thread_rng"] }
 clap = { version = "4.0.4", features = ["cargo", "derive"] }
 async-trait = "0.1.30"
 typetag = "0.2.5"
