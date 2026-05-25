@@ -825,7 +825,7 @@ impl RoutingInfo {
         if let ValkeyFrame::BulkString(key) = key {
             let key = get_hashtag(key).unwrap_or(key);
             Some(RoutingInfo::Slot(
-                crc16::State::<crc16::XMODEM>::calculate(key) % SLOT_SIZE as u16,
+                crc::Crc::<u16>::new(&crc::CRC_16_XMODEM).checksum(key) % SLOT_SIZE as u16,
             ))
         } else {
             None
