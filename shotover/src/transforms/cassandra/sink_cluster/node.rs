@@ -8,7 +8,7 @@ use crate::tls::{TlsConnector, ToHostname};
 use anyhow::{Result, anyhow};
 use cassandra_protocol::frame::Version;
 use cassandra_protocol::token::Murmur3Token;
-use derivative::Derivative;
+use derive_where::derive_where;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -16,17 +16,15 @@ use tokio::net::ToSocketAddrs;
 use tokio::sync::Notify;
 use uuid::Uuid;
 
-#[derive(Derivative)]
-#[derivative(Debug)]
+#[derive_where(Debug)]
 pub struct CassandraNode {
     pub address: SocketAddr,
     pub rack: String,
     pub host_id: Uuid,
     pub is_up: bool,
-
-    #[derivative(Debug = "ignore")]
+    #[derive_where(skip(Debug))]
     pub outbound: Option<CassandraConnection>,
-    #[derivative(Debug = "ignore")]
+    #[derive_where(skip(Debug))]
     pub tokens: Vec<Murmur3Token>,
 }
 
@@ -93,16 +91,15 @@ impl CassandraNode {
     }
 }
 
-#[derive(Derivative)]
-#[derivative(Debug)]
+#[derive_where(Debug)]
 pub struct ConnectionFactory {
     connect_timeout: Duration,
     read_timeout: Option<Duration>,
     init_handshake: Vec<Message>,
     use_message: Option<Message>,
-    #[derivative(Debug = "ignore")]
+    #[derive_where(skip(Debug))]
     tls: Option<TlsConnector>,
-    #[derivative(Debug = "ignore")]
+    #[derive_where(skip(Debug))]
     codec_builder: CassandraCodecBuilder,
     version: Option<Version>,
     force_run_chain: Option<Arc<Notify>>,

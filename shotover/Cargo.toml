@@ -48,7 +48,7 @@ axum = { version = "0.8", default-features = false, features = [
 ] }
 pretty-hex = "0.4.0"
 tokio-stream = "0.1.2"
-derivative = "2.1.1"
+derive-where = "1.6.1"
 cached = { version = "1.0.0", features = ["async"], optional = true }
 governor = { version = "0.10", default-features = false, features = [
     "std",

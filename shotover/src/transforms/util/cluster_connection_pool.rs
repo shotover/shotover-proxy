@@ -7,7 +7,7 @@ use crate::tls::{TlsConnector, TlsConnectorConfig};
 use crate::transforms::util::{ConnectionError, Request};
 use anyhow::{Result, anyhow};
 use async_trait::async_trait;
-use derivative::Derivative;
+use derive_where::derive_where;
 use futures::StreamExt;
 use std::collections::HashMap;
 use std::fmt;
@@ -49,19 +49,16 @@ impl Authenticator<()> for NoopAuthenticator {
 pub trait Token: Send + Sync + std::hash::Hash + Eq + Clone + fmt::Debug {}
 impl<T: Send + Sync + std::hash::Hash + Eq + Clone + fmt::Debug> Token for T {}
 
-#[derive(Clone, Derivative)]
-#[derivative(Debug)]
+#[derive(Clone)]
+#[derive_where(Debug)]
 pub struct ConnectionPool<C: CodecBuilder, A: Authenticator<T>, T: Token> {
     connect_timeout: Duration,
     lanes: Arc<Mutex<HashMap<Option<T>, Lane>>>,
-
-    #[derivative(Debug = "ignore")]
+    #[derive_where(skip(Debug))]
     codec: C,
-
-    #[derivative(Debug = "ignore")]
+    #[derive_where(skip(Debug))]
     authenticator: A,
-
-    #[derivative(Debug = "ignore")]
+    #[derive_where(skip(Debug))]
     tls: Option<TlsConnector>,
 }
 
