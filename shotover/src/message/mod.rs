@@ -9,15 +9,15 @@ use crate::frame::{cassandra, cassandra::CassandraMetadata};
 use anyhow::{Context, Result, anyhow};
 use bytes::Bytes;
 use derivative::Derivative;
-use fnv::FnvBuildHasher;
 use nonzero_ext::nonzero;
+use rustc_hash::FxBuildHasher;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::num::NonZeroU32;
 use std::time::Instant;
 
-pub type MessageIdMap<T> = HashMap<MessageId, T, FnvBuildHasher>;
-pub type MessageIdSet = HashSet<MessageId, FnvBuildHasher>;
+pub type MessageIdMap<T> = HashMap<MessageId, T, FxBuildHasher>;
+pub type MessageIdSet = HashSet<MessageId, FxBuildHasher>;
 
 pub enum Metadata {
     #[cfg(feature = "cassandra")]
