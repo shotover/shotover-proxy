@@ -32,7 +32,6 @@ tracing-subscriber.workspace = true
 anyhow.workspace = true
 rcgen.workspace = true
 rdkafka = { version = "0.37", features = ["cmake-build"], optional = true }
-rdkafka-sys.workspace = true
 docker-compose-runner = "0.3.0"
 j4rs = "0.22.0"
 futures-util = "0.3.28"
