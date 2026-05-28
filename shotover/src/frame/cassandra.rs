@@ -34,7 +34,6 @@ use cql3_parser::begin_batch::{BatchType as ParserBatchType, BeginBatch};
 use cql3_parser::cassandra_ast::CassandraAST;
 use cql3_parser::cassandra_statement::CassandraStatement;
 use cql3_parser::common::Operand;
-use nonzero_ext::nonzero;
 use std::fmt::{Display, Formatter, Result as FmtResult};
 use std::io::{Cursor, Write};
 use std::net::IpAddr;
@@ -48,7 +47,6 @@ pub mod raw_frame {
     use anyhow::{Result, anyhow, bail};
     use cassandra_protocol::frame::Version;
     use cassandra_protocol::{compression::Compression, frame::Opcode};
-    use nonzero_ext::nonzero;
     use std::convert::TryInto;
     use std::num::NonZeroU32;
 
@@ -63,7 +61,7 @@ pub mod raw_frame {
 
         // it is valid for a batch statement to have 0 statements,
         // but for the purposes of shotover throttling we can count it as one query
-        Ok(NonZeroU32::new(short.into()).unwrap_or(nonzero!(1u32)))
+        Ok(NonZeroU32::new(short.into()).unwrap_or(NonZeroU32::MIN))
     }
 
     /// Parse metadata only from an unparsed Cassandra frame
@@ -86,7 +84,7 @@ pub mod raw_frame {
 
         Ok(match frame.opcode {
             Opcode::Batch => get_batch_len(&frame.body)?,
-            _ => nonzero!(1u32),
+            _ => NonZeroU32::MIN,
         })
     }
 }
@@ -187,9 +185,9 @@ impl CassandraFrame {
         Ok(match &self.operation {
             CassandraOperation::Batch(batch) => {
                 // it doesnt make sense to say a message is 0 messages, so when the batch has no queries we round up to 1
-                NonZeroU32::new(batch.queries.len() as u32).unwrap_or(nonzero!(1u32))
+                NonZeroU32::new(batch.queries.len() as u32).unwrap_or(NonZeroU32::MIN)
             }
-            _ => nonzero!(1u32),
+            _ => NonZeroU32::MIN,
         })
     }
 

@@ -5053,7 +5053,6 @@ dependencies = [
  "lz4_flex",
  "metrics",
  "metrics-exporter-prometheus",
- "nonzero_ext",
  "num-bigint",
  "ordered-float 5.0.0",
  "pretty-hex",
