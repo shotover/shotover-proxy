@@ -20,16 +20,16 @@ impl Topology {
         let file = std::fs::File::open(filepath)
             .with_context(|| format!("Couldn't open the topology file {}", filepath))?;
 
-        let deserializer = serde_yaml::Deserializer::from_reader(file);
-        serde_yaml::with::singleton_map_recursive::deserialize(deserializer)
+        let deserializer = yaml_serde::Deserializer::from_reader(file);
+        yaml_serde::with::singleton_map_recursive::deserialize(deserializer)
             .with_context(|| format!("Failed to parse topology file {}", filepath))
     }
 
     /// Generate the yaml representation of this instance
     pub fn serialize(&self) -> Result<String> {
         let mut output = vec![];
-        let mut serializer = serde_yaml::Serializer::new(&mut output);
-        serde_yaml::with::singleton_map_recursive::serialize(self, &mut serializer)?;
+        let mut serializer = yaml_serde::Serializer::new(&mut output);
+        yaml_serde::with::singleton_map_recursive::serialize(self, &mut serializer)?;
         Ok(String::from_utf8(output).unwrap())
     }
 
