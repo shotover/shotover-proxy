@@ -3004,26 +3004,28 @@ The connection to the client has been closed."
                     return Err(anyhow!("Received find_coordinator but not requested"));
                 }
             }
-            // If authorize_scram_over_mtls is disabled there is no way that scram can work through KafkaSinkCluster
-            // since it is specifically designed such that replay attacks wont work.
-            // So when authorize_scram_over_mtls is disabled report to the user that SCRAM is not enabled.
             Some(Frame::Kafka(KafkaFrame::Response {
                 body: ResponseBody::SaslHandshake(handshake),
                 ..
-            })) if self.authorize_scram_over_mtls.is_none() => {
-                // remove scram from supported mechanisms
-                handshake
-                    .mechanisms
-                    .retain(|x| !SASL_SCRAM_MECHANISMS.contains(&x.as_str()));
+            })) => {
+                // If authorize_scram_over_mtls is disabled there is no way that scram can work through KafkaSinkCluster
+                // since it is specifically designed such that replay attacks wont work.
+                // So when authorize_scram_over_mtls is disabled report to the user that SCRAM is not enabled.
+                if self.authorize_scram_over_mtls.is_none() {
+                    // remove scram from supported mechanisms
+                    handshake
+                        .mechanisms
+                        .retain(|x| !SASL_SCRAM_MECHANISMS.contains(&x.as_str()));
 
-                // declare unsupported if the client requested SCRAM
-                if let Some(sasl_mechanism) = &self.sasl_mechanism {
-                    if SASL_SCRAM_MECHANISMS.contains(&sasl_mechanism.as_str()) {
-                        handshake.error_code = ResponseError::UnsupportedSaslMechanism.code();
+                    // declare unsupported if the client requested SCRAM
+                    if let Some(sasl_mechanism) = &self.sasl_mechanism {
+                        if SASL_SCRAM_MECHANISMS.contains(&sasl_mechanism.as_str()) {
+                            handshake.error_code = ResponseError::UnsupportedSaslMechanism.code();
+                        }
                     }
-                }
 
-                response.invalidate_cache();
+                    response.invalidate_cache();
+                }
             }
             Some(Frame::Kafka(KafkaFrame::Response {
                 body: ResponseBody::SaslAuthenticate(authenticate),
