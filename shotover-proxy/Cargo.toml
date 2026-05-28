@@ -44,7 +44,7 @@ rustls-pki-types = "1.1.0"
 aws-throwaway.workspace = true
 windsock = "0.2.0"
 regex = "1.7.0"
-opensearch = { version = "2.3.0", default-features = false, features = [
+opensearch = { version = "2.1.0", default-features = false, features = [
     "native-tls",
 ] }
 serde_json = "1.0.103"

@@ -54,7 +54,7 @@ rand = { version = "0.9.0", default-features = false }
 clap = { version = "4.0.4", features = ["cargo", "derive"] }
 async-trait = "0.1.30"
 typetag = "0.2.5"
-aws-throwaway = { version = "0.6.6", default-features = false }
+aws-throwaway = { version = "0.6.0", default-features = false }
 tokio-bin-process = "0.7.0"
 ordered-float = { version = "5.0.0", features = ["serde"], default-features = false }
 shell-quote = { default-features = false, features = ["bash"], version = "0.7.0" }
