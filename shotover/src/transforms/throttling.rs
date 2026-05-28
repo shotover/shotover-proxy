@@ -136,7 +136,9 @@ mod test {
             let chain = TransformChainBuilder::new(
                 vec![
                     Box::new(RequestThrottling {
-                        limiter: Arc::new(RateLimiter::direct(Quota::per_second(const { NonZeroU32::new(20).unwrap() }))),
+                        limiter: Arc::new(RateLimiter::direct(Quota::per_second(
+                            const { NonZeroU32::new(20).unwrap() },
+                        ))),
                         max_requests_per_second: const { NonZeroU32::new(20).unwrap() },
                         throttled_requests: MessageIdMap::default(),
                     }),
@@ -159,7 +161,9 @@ mod test {
             let chain = TransformChainBuilder::new(
                 vec![
                     Box::new(RequestThrottling {
-                        limiter: Arc::new(RateLimiter::direct(Quota::per_second(const { NonZeroU32::new(100).unwrap() }))),
+                        limiter: Arc::new(RateLimiter::direct(Quota::per_second(
+                            const { NonZeroU32::new(100).unwrap() },
+                        ))),
                         max_requests_per_second: const { NonZeroU32::new(100).unwrap() },
                         throttled_requests: MessageIdMap::default(),
                     }),
