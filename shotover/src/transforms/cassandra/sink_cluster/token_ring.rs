@@ -16,7 +16,7 @@ impl TokenRing {
             .iter()
             .flat_map(|node| node.tokens.iter().map(|token| (*token, node.host_id)))
             .collect();
-        ring.sort_by(|a, b| a.0.cmp(&b.0));
+        ring.sort_by_key(|a| a.0);
 
         // Split ring into ring_in and ring_out as its faster to search and retrive seperately
         let ring_in: Vec<_> = ring.iter().map(|node| node.0).collect();

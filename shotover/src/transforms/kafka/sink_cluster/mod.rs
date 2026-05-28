@@ -3007,11 +3007,11 @@ The connection to the client has been closed."
             Some(Frame::Kafka(KafkaFrame::Response {
                 body: ResponseBody::SaslHandshake(handshake),
                 ..
-            })) => {
+            }))
                 // If authorize_scram_over_mtls is disabled there is no way that scram can work through KafkaSinkCluster
                 // since it is specifically designed such that replay attacks wont work.
                 // So when authorize_scram_over_mtls is disabled report to the user that SCRAM is not enabled.
-                if self.authorize_scram_over_mtls.is_none() {
+                if self.authorize_scram_over_mtls.is_none() => {
                     // remove scram from supported mechanisms
                     handshake
                         .mechanisms
@@ -3026,7 +3026,6 @@ The connection to the client has been closed."
 
                     response.invalidate_cache();
                 }
-            }
             Some(Frame::Kafka(KafkaFrame::Response {
                 body: ResponseBody::SaslAuthenticate(authenticate),
                 ..

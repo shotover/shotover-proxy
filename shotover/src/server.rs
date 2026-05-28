@@ -451,6 +451,7 @@ pub struct Handler<C: CodecBuilder> {
     _permit: OwnedSemaphorePermit,
 }
 
+#[allow(clippy::result_large_err)] // Err variant type is fixed by the tokio_tungstenite API
 async fn spawn_websocket_read_write_tasks<
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
     C: CodecBuilder + 'static,
