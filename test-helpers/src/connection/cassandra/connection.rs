@@ -176,7 +176,7 @@ pub enum CassandraConnection {
     #[cfg(feature = "cassandra-cpp-driver-tests")]
     Cpp(CppConnection),
     Cdrs(CdrsConnection),
-    Scylla(ScyllaConnection),
+    Scylla(Box<ScyllaConnection>),
     Java(JavaConnection),
 }
 
@@ -197,9 +197,9 @@ impl CassandraConnection {
             CassandraDriver::Cdrs => CassandraConnection::Cdrs(
                 CdrsConnection::new(contact_points, port, compression, tls, protocol).await,
             ),
-            CassandraDriver::Scylla => CassandraConnection::Scylla(
+            CassandraDriver::Scylla => CassandraConnection::Scylla(Box::new(
                 ScyllaConnection::new(contact_points, port, compression, tls, protocol).await,
-            ),
+            )),
             CassandraDriver::Java => CassandraConnection::Java(
                 JavaConnection::new(contact_points, port, compression, tls, protocol).await,
             ),
