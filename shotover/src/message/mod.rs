@@ -8,7 +8,7 @@ use crate::frame::{ValkeyFrame, valkey::valkey_query_type};
 use crate::frame::{cassandra, cassandra::CassandraMetadata};
 use anyhow::{Context, Result, anyhow};
 use bytes::Bytes;
-use derivative::Derivative;
+use educe::Educe;
 use rustc_hash::FxBuildHasher;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -76,8 +76,8 @@ pub type MessageId = u128;
 ///
 /// The transform may also go one step further and modify the message's Frame + call [`Message::invalidate_cache`].
 /// This results in an expensive cost to reassemble the message bytes when the message is sent to the destination.
-#[derive(Derivative, Debug, Clone)]
-#[derivative(PartialEq)]
+#[derive(Educe, Debug, Clone)]
+#[educe(PartialEq)]
 pub struct Message {
     /// It is an invariant that this field must remain Some at all times.
     /// The only reason it is an Option is to allow temporarily taking ownership of the value from an &mut T
@@ -91,14 +91,14 @@ pub struct Message {
     /// * When a transform splits a message into multiple messages the last message in the resulting sequence should retain this field and the rest should be set to `None`.
     /// * When generating a message that does not correspond to an internal message, for example to query database topology, set this field to `None`.
     /// * When a response is generated from a request, for example to return an error message to the client, set this field to `None`.
-    #[derivative(PartialEq = "ignore")]
+    #[educe(PartialEq(ignore))]
     pub(crate) received_from_source_or_sink_at: Option<Instant>,
     pub(crate) codec_state: CodecState,
 
     // TODO: Consider removing the "ignore" down the line, we we need it for now for compatibility with logic using the old style "in order protocol" assumption.
-    #[derivative(PartialEq = "ignore")]
+    #[educe(PartialEq(ignore))]
     pub(crate) id: MessageId,
-    #[derivative(PartialEq = "ignore")]
+    #[educe(PartialEq(ignore))]
     pub(crate) request_id: Option<MessageId>,
 }
 

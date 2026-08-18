@@ -6,13 +6,13 @@ use aws_sdk_kms::operation::generate_data_key::builders::GenerateDataKeyFluentBu
 use aws_sdk_kms::primitives::Blob;
 use bytes::Bytes;
 use chacha20poly1305::Key;
-use derivative::Derivative;
+use educe::Educe;
 use std::collections::HashMap;
 
-#[derive(Clone, Derivative)]
-#[derivative(Debug)]
+#[derive(Clone, Educe)]
+#[educe(Debug)]
 pub struct AWSKeyManagement {
-    #[derivative(Debug = "ignore")]
+    #[educe(Debug(ignore))]
     pub client: KmsClient,
 
     pub cmk_id: String,
