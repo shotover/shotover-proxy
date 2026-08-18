@@ -41,7 +41,7 @@ axum = { version = "0.8", default-features = false, features = [
 ] }
 pretty-hex = "0.4.0"
 tokio-stream = "0.1.2"
-derivative = "2.1.1"
+educe = "0.7.6"
 governor = { version = "0.10", default-features = false, features = [
     "std",
     "quanta",

@@ -14,7 +14,7 @@ use crate::transforms::{
 use anyhow::{Context, Result, anyhow, bail, ensure};
 use async_trait::async_trait;
 use bytes::Bytes;
-use derivative::Derivative;
+use educe::Educe;
 use futures::stream::FuturesOrdered;
 use futures::stream::FuturesUnordered;
 use futures::{StreamExt, TryFutureExt};
@@ -668,14 +668,14 @@ impl ValkeySinkCluster {
     }
 }
 
-#[derive(Clone, Derivative)]
-#[derivative(Debug)]
+#[derive(Clone, Educe)]
+#[educe(Debug)]
 pub struct SlotMap {
     pub masters: BTreeMap<u16, String>,
     pub replicas: BTreeMap<u16, String>,
 
     // Hide redundant information.
-    #[derivative(Debug = "ignore")]
+    #[educe(Debug(ignore))]
     pub nodes: HashSet<String>,
 }
 
@@ -1161,13 +1161,13 @@ impl Redirection {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Hash, Derivative)]
-#[derivative(Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Educe)]
+#[educe(Debug)]
 pub struct UsernamePasswordToken {
     pub username: Option<Bytes>,
 
     // Reduce risk of logging passwords.
-    #[derivative(Debug = "ignore")]
+    #[educe(Debug(ignore))]
     pub password: Bytes,
 }
 
