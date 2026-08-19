@@ -20,8 +20,13 @@ jobs:
     name: Formatting and lints
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: Swatinem/rust-cache@v2
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: step-security/rust-cache@9be15b830520fab0ec3939586e917e4855cf76bd # v2.8.3
         with:
           # this line means that only the main branch writes to the cache
           # benefits:
@@ -31,14 +36,14 @@ jobs:
           # * PRs that update rust version or changes deps will be slow to iterate on due to changes not being cached.
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: cache custom ubuntu packages
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: shotover-proxy/build/packages
           key: ubuntu-24.04-packages
       - name: Install ubuntu packages
         run: shotover-proxy/build/install_ubuntu_packages.sh
       - name: Install cargo-hack
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@bfadeaba214680fb4ab63e710bcb2a6a17019fdc # v2.70.4
         with:
           tool: cargo-hack@0.6.16
       - name: Ensure `cargo fmt --all` was run

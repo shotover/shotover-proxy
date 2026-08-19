@@ -20,8 +20,13 @@ jobs:
     name: "Windsock benches"
     runs-on: ubuntu-22.04
     steps:
-    - uses: actions/checkout@v4
-    - uses: Swatinem/rust-cache@v2
+    - name: Harden the runner (Audit all outbound calls)
+      uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+      with:
+        egress-policy: audit
+
+    - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+    - uses: step-security/rust-cache@9be15b830520fab0ec3939586e917e4855cf76bd # v2.8.3
       with:
         # this line means that only the main branch writes to the cache
         # benefits:
