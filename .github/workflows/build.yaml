@@ -35,8 +35,10 @@ jobs:
           path: shotover-proxy/build/packages
           key: ubuntu-22.04-packages
       - uses: actions/checkout@v4
-        # We purposefully dont cache here as build_and_test will always be the bottleneck
-        # so we should leave the cache alone so build_and_test can make more use of it.
+      - name: Install toolchain
+        run: rustup toolchain install
+      # We purposefully dont cache here as build_and_test will always be the bottleneck
+      # so we should leave the cache alone so build_and_test can make more use of it.
       - name: Install ubuntu packages
         run: shotover-proxy/build/install_ubuntu_packages.sh
       # This can be removed when we swap to aarch64 runners instead of cross compiling

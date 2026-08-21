@@ -21,6 +21,8 @@ jobs:
     name: License Check
     steps:
       - uses: actions/checkout@v4
+      - name: Install toolchain
+        run: rustup toolchain install
       - name: Install cargo deny
         uses: taiki-e/install-action@v2
         with:

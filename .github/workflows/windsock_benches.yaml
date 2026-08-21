@@ -21,6 +21,8 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
     - uses: actions/checkout@v4
+    - name: Install toolchain
+      run: rustup toolchain install
     - uses: Swatinem/rust-cache@v2
       with:
         # this line means that only the main branch writes to the cache
