@@ -2,9 +2,9 @@ name: Build and Test
 
 on:
   push:
-    branches: [ main, shotover-proxy-0.7.3 ]
+    branches: [ main, shotover-proxy-0.7.3, release-0.7.x ]
   pull_request:
-    branches: [ main, shotover-proxy-0.7.3 ]
+    branches: [ main, shotover-proxy-0.7.3, release-0.7.x ]
 
 # Cancel already running jobs
 concurrency:

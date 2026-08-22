@@ -2,9 +2,9 @@ name: MicroBenchmarks
 
 on:
   push:
-    branches: [ main, shotover-proxy-0.7.3 ]
+    branches: [ main, shotover-proxy-0.7.3, release-0.7.x ]
   pull_request:
-    branches: [ main, shotover-proxy-0.7.3 ]
+    branches: [ main, shotover-proxy-0.7.3, release-0.7.x ]
   # `workflow_dispatch` allows CodSpeed to trigger backtest
   # performance analysis in order to generate initial data.
   workflow_dispatch:
