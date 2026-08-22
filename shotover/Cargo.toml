@@ -56,7 +56,7 @@ governor = { version = "0.10", default-features = false, features = [
 ] }
 version-compare = { version = "0.2", optional = true }
 rand = { features = ["small_rng"], workspace = true }
-lz4_flex = { version = "0.11.0", optional = true }
+lz4_flex = { version = "0.14.0", optional = true }
 clap.workspace = true
 itertools.workspace = true
 bytes.workspace = true
@@ -76,7 +76,7 @@ csv = { workspace = true, optional = true }
 hex = { workspace = true, optional = true }
 async-trait.workspace = true
 typetag.workspace = true
-tokio-tungstenite = "0.27.0"
+tokio-tungstenite = "0.30.0"
 
 # Error handling
 thiserror = "2.0"
@@ -93,13 +93,15 @@ bincode = { workspace = true, optional = true }
 num-bigint = { version = "0.4.0", features = ["serde"] }
 uuid = { workspace = true }
 bigdecimal = { version = "0.4.0", features = ["serde"] }
-base64 = { version = "0.22.0", optional = true }
+base64 = { version = "0.23.0", default-features = false, features = [
+    "std",
+], optional = true }
 httparse = { version = "1.8.0", optional = true }
 http = { version = "1.0.0", optional = true }
 
 #Observability
 metrics = "0.24.0"
-metrics-exporter-prometheus = { version = "0.17.0", default-features = false }
+metrics-exporter-prometheus = { version = "0.18.0", default-features = false }
 tracing.workspace = true
 tracing-subscriber.workspace = true
 tracing-appender.workspace = true
@@ -128,7 +130,7 @@ rustls-pemfile = "2.0.0"
 rustls-pki-types = "1.0.1"
 xxhash-rust = { version = "0.8.6", features = ["xxh3"], optional = true }
 dashmap = { version = "6.0.0", optional = true }
-atoi = { version = "2.0.0", optional = true }
+atoi = { version = "3.0.0", optional = true }
 rustc-hash = "2.1.2"
 sasl = { version = "0.5.1", optional = true, default-features = false, features = [
     "scram",
