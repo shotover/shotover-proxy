@@ -3,6 +3,16 @@
 Any breaking changes to the `topology.yaml` or `shotover` rust API should be documented here.
 This assists us in knowing when to make the next release a breaking release and assists users with making upgrades to new breaking releases.
 
+## 0.7.0
+
+### shotover rust API
+
+* only known breaking changes are new versions of reexported dependencies
+
+### topology.yaml
+
+* No breaking changes
+
 ## 0.6.0
 
 Redis has been renamed to Valkey.
