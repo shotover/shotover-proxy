@@ -73,9 +73,10 @@ pub enum CassandraDb {
 }
 
 enum CassandraDbInstance {
-    #[expect(dead_code, reason = "must be held to delay drop")]
+    // `allow` instead of `expect` because rustc reports these fields as dead, so an unfulfilled expectation would fail the rest.
+    #[allow(dead_code, reason = "must be held to delay drop")]
     Compose(DockerCompose),
-    #[expect(dead_code)]
+    #[allow(dead_code, reason = "must be held to delay drop")]
     Mocked(MockHandle),
 }
 
