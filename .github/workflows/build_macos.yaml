@@ -20,7 +20,7 @@ jobs:
     name: macos - build
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         # We purposefully dont cache here as build_and_test will always be the bottleneck
         # so we should leave the cache alone so build_and_test can make more use of it.
       - name: Install cargo-hack
