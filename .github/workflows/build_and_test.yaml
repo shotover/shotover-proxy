@@ -34,7 +34,7 @@ jobs:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: Swatinem/rust-cache@v2
         with:
           # rust-cache already handles all the sane defaults for caching rust builds.
@@ -52,7 +52,7 @@ jobs:
           # * PRs that update rust version or changes deps will be slow to iterate on due to changes not being cached.
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: cache custom ubuntu packages
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: shotover-proxy/build/packages
           key: ubuntu-24.04-packages
@@ -83,7 +83,7 @@ jobs:
           cargo test --doc ${{ matrix.cargo_flags }} --all-features -- --show-output --nocapture
           cargo nextest archive --archive-file nextest-${{ matrix.profile }}.tar.zst ${{ matrix.cargo_flags }} --all-features --all-targets
       - name: Upload built tests to workflow
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: nextest-${{ matrix.profile }}
           path: nextest-${{ matrix.profile }}.tar.zst
@@ -115,9 +115,9 @@ jobs:
     runs-on: ubuntu-24.04
     needs: build_check_and_upload
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: cache custom ubuntu packages
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: shotover-proxy/build/packages
           key: ubuntu-24.04-packages
@@ -129,7 +129,7 @@ jobs:
           tool: nextest@0.9.70
       - run: mkdir -p ~/.cargo/bin
       - name: Download archive
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: nextest-${{ matrix.profile }}
       - name: Run tests
