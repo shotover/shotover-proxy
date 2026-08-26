@@ -16,8 +16,8 @@ pub struct Config {
 impl Config {
     pub fn from_file(filepath: String) -> Result<Config> {
         let file = std::fs::File::open(&filepath)
-            .with_context(|| format!("Couldn't open the config file {}", &filepath))?;
+            .with_context(|| format!("Couldn't open the config file {filepath}"))?;
         yaml_serde::from_reader(file)
-            .with_context(|| format!("Failed to parse config file {}", &filepath))
+            .with_context(|| format!("Failed to parse config file {filepath}"))
     }
 }

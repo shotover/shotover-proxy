@@ -86,6 +86,7 @@ pub mod transforms;
 macro_rules! import_transform {
     ($ty:ty) => {
         // import the type, this is required for typetag to pick up the type
+        #[allow(unused_imports)]
         use $ty;
 
         // assert that the type actually implements TransformConfig, this prevents the easy mistake of accidentally importing the Transform instead of the TransformConfig

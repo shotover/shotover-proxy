@@ -401,19 +401,11 @@ impl IncomingResponses {
 
                 // once again, handle responses with no request
                 // we need to recheck to ensure we havent left any requestless responses lingering
-                if tee
-                    .front()
-                    .map(|x| x.request_id().is_none())
-                    .unwrap_or(false)
-                {
-                    result.push(tee.pop_front().unwrap());
+                if let Some(response) = tee.pop_front_if(|x| x.request_id().is_none()) {
+                    result.push(response);
                 }
-                if chain
-                    .front()
-                    .map(|x| x.request_id().is_none())
-                    .unwrap_or(false)
-                {
-                    result.push(chain.pop_front().unwrap());
+                if let Some(response) = chain.pop_front_if(|x| x.request_id().is_none()) {
+                    result.push(response);
                 }
             }
             IncomingResponses::OutOfOrder {

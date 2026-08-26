@@ -467,14 +467,8 @@ impl ValkeySinkCluster {
             }
             _ => None,
         }
-        .and_then(|channel| {
-            // Treat closed connection as non-existent.
-            if channel.is_closed() {
-                None
-            } else {
-                Some(channel)
-            }
-        });
+        // Treat closed connection as non-existent.
+        .filter(|channel| !channel.is_closed());
 
         let channel = if let Some(channel) = channel {
             channel

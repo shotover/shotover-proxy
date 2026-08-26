@@ -72,10 +72,9 @@ pub enum CassandraDb {
     Mocked,
 }
 
+// These values are never read, they are held only to delay drop until the bench finishes.
 enum CassandraDbInstance {
-    #[expect(dead_code, reason = "must be held to delay drop")]
     Compose(DockerCompose),
-    #[expect(dead_code)]
     Mocked(MockHandle),
 }
 
