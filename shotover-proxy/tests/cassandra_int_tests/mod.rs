@@ -149,7 +149,7 @@ async fn passthrough_cassandra_down() {
             },
         )) => {
             assert_eq!(
-                format!("{err}"),
+                err.to_string(),
                 format!("Internal shotover (or custom transform) bug (chain: cassandra): Failed to send and/or receive messages, the connection will now be closed.
 
 Caused by:
