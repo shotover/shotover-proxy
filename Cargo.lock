@@ -1087,7 +1087,7 @@ dependencies = [
  "float_eq",
  "integer-encoding",
  "itertools 0.13.0",
- "lz4_flex 0.11.6",
+ "lz4_flex",
  "num-bigint",
  "snap",
  "thiserror 1.0.69",
@@ -3268,15 +3268,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "lz4_flex"
-version = "0.14.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ecbdfe44b1bd960b68170b417450a628c43f7cf56bb3c5317e61cb230ee7f226"
-dependencies = [
- "twox-hash",
-]
-
-[[package]]
 name = "matchers"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4902,7 +4893,7 @@ dependencies = [
  "bytes",
  "chrono",
  "itertools 0.14.0",
- "lz4_flex 0.11.6",
+ "lz4_flex",
  "scylla-macros",
  "snap",
  "stable_deref_trait",
@@ -5192,7 +5183,7 @@ dependencies = [
  "httparse",
  "itertools 0.15.0",
  "kafka-protocol",
- "lz4_flex 0.14.0",
+ "lz4_flex",
  "metrics",
  "metrics-exporter-prometheus",
  "num-bigint",
