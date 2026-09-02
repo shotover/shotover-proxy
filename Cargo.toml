@@ -29,7 +29,7 @@ scylla = { version = "=1.4.0", features = ["openssl-010"] }
 bytes = { version = "1.11.1", features = ["serde"] }
 tokio = { version = "1.44.2", features = ["full"] }
 tokio-util = { version = "0.7.7", features = ["codec"] }
-itertools = "0.14.0"
+itertools = "0.15.0"
 openssl = { version = "0.10.72", features = ["vendored"] }
 anyhow = "1.0.76"
 serde = { version = "1.0.111", features = ["derive"] }
@@ -60,5 +60,5 @@ typetag = "0.2.5"
 aws-throwaway = { version = "0.6.0", default-features = false }
 tokio-bin-process = "0.7.0"
 ordered-float = { version = "5.0.0", features = ["serde"], default-features = false }
-shell-quote = { default-features = false, features = ["bash"], version = "0.7.0" }
+shell-quote = { default-features = false, features = ["bash"], version = "0.8.0" }
 pretty_assertions = "1.4.0"
