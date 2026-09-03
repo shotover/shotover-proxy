@@ -4862,7 +4862,7 @@ dependencies = [
  "clap",
  "codspeed-criterion-compat",
  "cql3-parser",
- "crc16",
+ "crc",
  "csv",
  "dashmap",
  "educe",

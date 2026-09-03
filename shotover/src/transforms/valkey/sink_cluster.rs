@@ -836,7 +836,10 @@ impl RoutingInfo {
         if let ValkeyFrame::BulkString(key) = key {
             let key = get_hashtag(key).unwrap_or(key);
             Some(RoutingInfo::Slot(
-                crc16::State::<crc16::XMODEM>::calculate(key) % SLOT_SIZE as u16,
+                {
+                    static CRC: crc::Crc<u16> = crc::Crc::<u16>::new(&crc::CRC_16_XMODEM);
+                    CRC.checksum(key)
+                } % SLOT_SIZE as u16,
             ))
         } else {
             None
@@ -1262,5 +1265,48 @@ mod test {
         assert_eq!(slots.nodes, nodes);
         assert_eq!(slots.masters.into_iter().collect::<Vec<_>>(), masters);
         assert_eq!(slots.replicas.into_iter().collect::<Vec<_>>(), replicas);
+    }
+
+    #[test]
+    fn test_slot_for_key() {
+        fn slot_of(key: &'static [u8]) -> u16 {
+            let frame = ValkeyFrame::BulkString(Bytes::from_static(key));
+            match RoutingInfo::for_key(&frame) {
+                Some(RoutingInfo::Slot(slot)) => slot,
+                other => panic!("expected a slot for key {key:?} but got {other:?}"),
+            }
+        }
+
+        // Expected values are what `CLUSTER KEYSLOT <key>` returns on a real
+        // valkey cluster, i.e. CRC-16/XMODEM of the key (or of its hashtag)
+        // modulo 16384.
+        for (key, expected_slot) in [
+            (&b""[..], 0),
+            (b"foo", 12182),
+            (b"bar", 5061),
+            (b"hello", 866),
+            (b"123456789", 12739),
+            // A non-empty hashtag replaces the key for slot selection, so these
+            // two hash to the same slot.
+            (b"user1000", 3443),
+            (b"{user1000}.following", 3443),
+            (b"foo{bar}{zap}", 5061),
+            // An empty hashtag is ignored and the whole key is hashed instead.
+            (b"foo{}{bar}", 8363),
+            (b"somekey{}", 14936),
+            (b"{}foo", 9500),
+            // An unterminated hashtag is likewise ignored.
+            (b"foo{bar", 15278),
+        ] {
+            assert_eq!(
+                slot_of(key),
+                expected_slot,
+                "wrong slot for key {:?}",
+                String::from_utf8_lossy(key),
+            );
+        }
+
+        // Anything that is not a bulk string has no slot.
+        assert!(RoutingInfo::for_key(&ValkeyFrame::Null).is_none());
     }
 }
