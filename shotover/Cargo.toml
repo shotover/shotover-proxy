@@ -46,7 +46,6 @@ governor = { version = "0.10", default-features = false, features = [
     "std",
     "quanta",
 ] }
-nonzero_ext = "0.3.0"
 version-compare = { version = "0.2", optional = true }
 rand = { workspace = true }
 lz4_flex = { version = "0.13.0", optional = true }
