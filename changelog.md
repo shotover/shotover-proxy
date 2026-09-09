@@ -3,6 +3,12 @@
 Any breaking changes to the `topology.yaml` or `shotover` rust API should be documented here.
 This assists us in knowing when to make the next release a breaking release and assists users with making upgrades to new breaking releases.
 
+## 0.7.3
+
+### shotover rust API
+
+* `MessageIdMap` and `MessageIdSet` are now built on `rustc_hash::FxBuildHasher` instead of `fnv::FnvBuildHasher`.
+
 ## 0.7.0
 
 ### shotover rust API
