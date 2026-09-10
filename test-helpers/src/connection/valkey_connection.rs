@@ -1,7 +1,7 @@
 use anyhow::Context;
 use redis::aio::MultiplexedConnection;
 use redis::{Client, ClientTlsConfig, TlsCertificates};
-use rustls::crypto::ring::default_provider;
+use rustls::crypto::aws_lc_rs::default_provider;
 use std::time::Duration;
 
 fn new_sync_connection(address: &str, port: u16) -> redis::Connection {
