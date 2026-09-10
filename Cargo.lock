@@ -2890,6 +2890,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b6d2cec3eae94f9f509c767b45932f1ada8350c4bdb85af2fcab4a3c14807981"
 
 [[package]]
+name = "libyaml-rs"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2e126dda6f34391ab7b444f9922055facc83c07a910da3eb16f1e4d9c45dc777"
+
+[[package]]
 name = "libz-sys"
 version = "1.1.25"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4347,9 +4353,9 @@ checksum = "b50b8869d9fc858ce7266cce0194bd74df58b9d0e3f6df3a9fc8eb470d95c09d"
 
 [[package]]
 name = "rustc-hash"
-version = "2.1.1"
+version = "2.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "357703d41365b4b27c590e3ed91eabb1b663f07c4c084095e60cbed4362dff0d"
+checksum = "6b1e7f9a428571be2dc5bc0505c13fb6bf936822b894ec87abf8a08a4e51742d"
 
 [[package]]
 name = "rustc_version"
@@ -4856,11 +4862,10 @@ dependencies = [
  "clap",
  "codspeed-criterion-compat",
  "cql3-parser",
- "crc16",
+ "crc",
  "csv",
  "dashmap",
  "educe",
- "fnv",
  "futures",
  "governor",
  "hex",
@@ -4872,20 +4877,19 @@ dependencies = [
  "lz4_flex 0.13.1",
  "metrics",
  "metrics-exporter-prometheus",
- "nonzero_ext",
  "num-bigint",
  "ordered-float",
  "pretty-hex",
  "pretty_assertions",
  "rand 0.10.0",
  "redis-protocol",
+ "rustc-hash",
  "rustls",
  "rustls-pemfile",
  "rustls-pki-types",
  "sasl",
  "serde",
  "serde_json",
- "serde_yaml",
  "thiserror 2.0.18",
  "tokio",
  "tokio-rustls",
@@ -4899,6 +4903,7 @@ dependencies = [
  "uuid",
  "version-compare",
  "xxhash-rust",
+ "yaml_serde",
 ]
 
 [[package]]
@@ -6623,6 +6628,19 @@ name = "xxhash-rust"
 version = "0.8.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fdd20c5420375476fbd4394763288da7eb0cc0b8c11deed431a91562af7335d3"
+
+[[package]]
+name = "yaml_serde"
+version = "0.10.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "33b729a08a9a6be689bbad3e2bf8015926db54b6622cc89c3a5f7dc174b9e918"
+dependencies = [
+ "indexmap 2.13.0",
+ "itoa",
+ "libyaml-rs",
+ "ryu",
+ "serde",
+]
 
 [[package]]
 name = "yansi"

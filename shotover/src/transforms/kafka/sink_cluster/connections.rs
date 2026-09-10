@@ -3,10 +3,10 @@ use crate::{
     message::Message,
 };
 use anyhow::{Context, Result, anyhow};
-use fnv::FnvBuildHasher;
 use kafka_protocol::{messages::BrokerId, protocol::StrBytes};
 use metrics::Counter;
 use rand::{rngs::SmallRng, seq::IteratorRandom};
+use rustc_hash::FxBuildHasher;
 use std::{collections::HashMap, time::Instant};
 
 use super::{
@@ -32,7 +32,7 @@ pub enum Destination {
 }
 
 pub struct Connections {
-    pub connections: HashMap<Destination, KafkaConnection, FnvBuildHasher>,
+    pub connections: HashMap<Destination, KafkaConnection, FxBuildHasher>,
     pub control_connection_address: Option<KafkaAddress>,
     out_of_rack_requests: Counter,
 }
