@@ -10,7 +10,6 @@ use governor::{
     middleware::NoOpMiddleware,
     state::{InMemoryState, NotKeyed},
 };
-use nonzero_ext::nonzero;
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroU32;
 use std::sync::Arc;
@@ -79,7 +78,7 @@ impl TransformBuilder for RequestThrottling {
     }
 
     fn validate(&self) -> Vec<String> {
-        if self.max_requests_per_second < nonzero!(50u32) {
+        if self.max_requests_per_second < const { NonZeroU32::new(50).unwrap() } {
             vec![
                 "RequestThrottling:".into(),
                 "  max_requests_per_second has a minimum allowed value of 50".into(),
@@ -153,8 +152,10 @@ mod test {
                 vec![
                     Box::new(RequestThrottling {
                         name: "RequestThrottling".to_string(),
-                        limiter: Arc::new(RateLimiter::direct(Quota::per_second(nonzero!(20u32)))),
-                        max_requests_per_second: nonzero!(20u32),
+                        limiter: Arc::new(RateLimiter::direct(Quota::per_second(
+                            const { NonZeroU32::new(20).unwrap() },
+                        ))),
+                        max_requests_per_second: const { NonZeroU32::new(20).unwrap() },
                         throttled_requests: MessageIdMap::default(),
                     }) as Box<dyn TransformBuilder>,
                     Box::new(NullSink::new("NullSink".to_string())),
@@ -177,8 +178,10 @@ mod test {
                 vec![
                     Box::new(RequestThrottling {
                         name: "RequestThrottling".to_string(),
-                        limiter: Arc::new(RateLimiter::direct(Quota::per_second(nonzero!(100u32)))),
-                        max_requests_per_second: nonzero!(100u32),
+                        limiter: Arc::new(RateLimiter::direct(Quota::per_second(
+                            const { NonZeroU32::new(100).unwrap() },
+                        ))),
+                        max_requests_per_second: const { NonZeroU32::new(100).unwrap() },
                         throttled_requests: MessageIdMap::default(),
                     }) as Box<dyn TransformBuilder>,
                     Box::new(NullSink::new("NullSink".to_string())),

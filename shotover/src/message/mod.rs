@@ -9,15 +9,14 @@ use crate::frame::{cassandra, cassandra::CassandraMetadata};
 use anyhow::{Context, Result, anyhow};
 use bytes::Bytes;
 use educe::Educe;
-use fnv::FnvBuildHasher;
-use nonzero_ext::nonzero;
+use rustc_hash::FxBuildHasher;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::num::NonZeroU32;
 use std::time::Instant;
 
-pub type MessageIdMap<T> = HashMap<MessageId, T, FnvBuildHasher>;
-pub type MessageIdSet = HashSet<MessageId, FnvBuildHasher>;
+pub type MessageIdMap<T> = HashMap<MessageId, T, FxBuildHasher>;
+pub type MessageIdSet = HashSet<MessageId, FxBuildHasher>;
 
 pub enum Metadata {
     #[cfg(feature = "cassandra")]
@@ -368,12 +367,12 @@ impl Message {
                 ..
             } => match message_type {
                 #[cfg(feature = "valkey")]
-                MessageType::Valkey => nonzero!(1u32),
+                MessageType::Valkey => NonZeroU32::MIN,
                 #[cfg(feature = "cassandra")]
                 MessageType::Cassandra => cassandra::raw_frame::cell_count(bytes)?,
                 #[cfg(feature = "kafka")]
                 MessageType::Kafka => todo!(),
-                MessageType::Dummy => nonzero!(1u32),
+                MessageType::Dummy => NonZeroU32::MIN,
                 #[cfg(feature = "opensearch")]
                 MessageType::OpenSearch => todo!(),
             },
@@ -382,10 +381,10 @@ impl Message {
                     #[cfg(feature = "cassandra")]
                     Frame::Cassandra(frame) => frame.cell_count()?,
                     #[cfg(feature = "valkey")]
-                    Frame::Valkey(_) => nonzero!(1u32),
+                    Frame::Valkey(_) => NonZeroU32::MIN,
                     #[cfg(feature = "kafka")]
                     Frame::Kafka(_) => todo!(),
-                    Frame::Dummy => nonzero!(1u32),
+                    Frame::Dummy => NonZeroU32::MIN,
                     #[cfg(feature = "opensearch")]
                     Frame::OpenSearch(_) => todo!(),
                 }

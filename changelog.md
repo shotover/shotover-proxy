@@ -11,6 +11,12 @@ This assists us in knowing when to make the next release a breaking release and 
 * Removed `Protect` transform
 * Removed websocket support
 
+## 0.7.3
+
+### shotover rust API
+
+* `MessageIdMap` and `MessageIdSet` are now built on `rustc_hash::FxBuildHasher` instead of `fnv::FnvBuildHasher`.
+
 ## 0.7.0
 
 ### shotover rust API

@@ -7,14 +7,14 @@ use crate::{
 };
 use anyhow::Result;
 use cassandra_protocol::frame::Version;
-use fnv::FnvBuildHasher;
+use rustc_hash::FxBuildHasher;
 
 /// Wraps SinkConnection to:
 /// * convert connection errors into cassandra error messages
 /// * provide recv_all_pending method to await all pending responses
 pub struct CassandraConnection {
     connection: SinkConnection,
-    pending_request_stream_ids: HashSet<i16, FnvBuildHasher>,
+    pending_request_stream_ids: HashSet<i16, FxBuildHasher>,
 }
 
 impl CassandraConnection {
