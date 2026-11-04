@@ -100,11 +100,7 @@ impl KeyManager {
 
 // We don't cache fetch key directly to make testing key fetching easier with caching getting in the way
 
-#[cached(
-    result = true,
-    key = "String",
-    convert = r#"{ format!("{}", _key_id) }"#
-)]
+#[cached(key = "String", convert = r#"{ format!("{}", _key_id) }"#)]
 async fn private_cached_fetch(
     _key_id: &str,
     km: &KeyManager,
