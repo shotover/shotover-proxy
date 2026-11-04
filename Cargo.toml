@@ -21,7 +21,10 @@ inherits = "release"
 debug = true
 
 [workspace.dependencies]
-scylla = { version = "1.0.0", features = ["openssl-010"] }
+# Held below 1.5 until shotover handles the driver's topology queries:
+# 1.5 sends its system.local and system.peers queries as prepared statements, which shotover does not rewrite,
+# and 1.6 connects to the rpc_address in system.local instead of the contact point.
+scylla = { version = ">=1.0.0, <1.5", features = ["openssl-010"] }
 bytes = { version = "1.11.1", features = ["serde"] }
 tokio = { version = "1.44.2", features = ["full"] }
 tokio-util = { version = "0.7.7", features = ["codec"] }
