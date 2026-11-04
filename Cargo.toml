@@ -52,7 +52,7 @@ hex = "0.4.3"
 hex-literal = "1.0.0"
 rand = { version = "0.9.0", default-features = false }
 clap = { version = "4.0.4", features = ["cargo", "derive"] }
-async-trait = "0.1.30"
+async-trait = "0.1.92"
 typetag = "0.2.5"
 aws-throwaway = { version = "0.6.0", default-features = false }
 tokio-bin-process = "0.7.0"
