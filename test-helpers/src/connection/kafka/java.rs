@@ -914,7 +914,7 @@ impl KafkaAdminJava {
                     DescribeReplicaLogDirInfo {
                         path: log_dir_info
                             .cast("org.apache.kafka.clients.admin.DescribeReplicaLogDirsResult$ReplicaLogDirInfo")
-                            .call("getCurrentReplicaLogDir", vec!())
+                            .call("getCurrentReplicaLogDir", vec![])
                             .into_rust()
                     },
                 )

@@ -88,7 +88,7 @@ pub async fn test_bulk(client: &OpenSearch) {
     let hits = results["hits"]["hits"].as_array().unwrap();
     assert_eq!(
         hits.iter().map(|x| &x["_source"]).collect::<Vec<_>>(),
-        vec!(
+        vec![
             &json!({ "title": "OpenSearch", "i": 0 }),
             &json!({ "title": "OpenSearch", "i": 1 }),
             &json!({ "title": "OpenSearch", "i": 2 }),
@@ -99,7 +99,7 @@ pub async fn test_bulk(client: &OpenSearch) {
             &json!({ "title": "OpenSearch", "i": 7 }),
             &json!({ "title": "OpenSearch", "i": 8 }),
             &json!({ "title": "OpenSearch", "i": 9 }),
-        )
+        ]
     );
 }
 
@@ -158,10 +158,10 @@ async fn test_index_and_search_document(client: &OpenSearch) -> String {
     let hits = response["hits"]["hits"].as_array().unwrap();
     assert_eq!(
         hits.iter().map(|x| &x["_source"]).collect::<Vec<_>>(),
-        vec!(&json!({
+        vec![&json!({
             "name": "John",
             "age": 30,
-        }))
+        })]
     );
     hits[0]["_id"].as_str().unwrap().to_owned()
 }

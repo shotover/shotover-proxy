@@ -65,7 +65,7 @@ async fn test_pipeline(connection: &mut redis::aio::MultiplexedConnection) {
             .await
             .unwrap();
 
-        assert_eq!(result, vec!("42".to_string()));
+        assert_eq!(result, vec!["42".to_string()]);
     }
 }
 
