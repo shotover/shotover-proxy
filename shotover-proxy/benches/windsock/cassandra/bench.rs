@@ -230,6 +230,7 @@ pub enum CassandraDriver {
     CdrsTokio,
 }
 
+#[allow(clippy::large_enum_variant)]
 pub enum CassandraSession {
     Scylla(ScyllaSession),
     CdrsTokio(
