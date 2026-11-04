@@ -3,12 +3,6 @@
 Any breaking changes to the `topology.yaml` or `shotover` rust API should be documented here.
 This assists us in knowing when to make the next release a breaking release and assists users with making upgrades to new breaking releases.
 
-## 0.7.5
-
-### metrics
-
-* The count series of the `shotover_chain_messages_per_batch_count` summary is now exported as `shotover_chain_messages_per_batch_count` instead of `shotover_chain_messages_per_batch_count_count`, because metrics-exporter-prometheus 0.18 no longer appends `_count` to a name that already ends in `_count`.
-
 ## 0.7.3
 
 ### shotover rust API

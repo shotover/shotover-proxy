@@ -36,8 +36,10 @@ yaml_serde = "0.10.4"
 uuid = { version = "1.0.0", features = ["serde", "v4"] }
 reqwest = { version = "0.13.0", default-features = false, features = ["http2"] }
 redis = { version = "0.29.2", features = ["tokio-comp", "tokio-rustls-comp", "tls-rustls-insecure", "cluster"] }
-cdrs-tokio = "9.0.2"
-cassandra-protocol = "4.0.1"
+# Held below cassandra-protocol 4 until the next breaking release, as its types are exposed in shotover's public API.
+# cdrs-tokio 9 requires cassandra-protocol 4, so it is held at 8.
+cdrs-tokio = "8.0"
+cassandra-protocol = "3.0"
 # https://docs.rs/tracing/latest/tracing/level_filters/index.html#compile-time-filters
 # `trace` level is considered development only, and may contain sensitive data, do not include it in release builds.
 tracing = { version = "0.1.15", features = ["release_max_level_debug"] }

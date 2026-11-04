@@ -26,6 +26,7 @@ async fn test_metrics() {
 connections_opened{source="valkey"}
 shotover_available_connections_count{source="valkey"}
 shotover_chain_failures_count{chain="valkey"}
+shotover_chain_messages_per_batch_count_count{chain="valkey"}
 shotover_chain_messages_per_batch_count_sum{chain="valkey"}
 shotover_chain_messages_per_batch_count{chain="valkey",quantile="0"}
 shotover_chain_messages_per_batch_count{chain="valkey",quantile="0.1"}
@@ -35,7 +36,6 @@ shotover_chain_messages_per_batch_count{chain="valkey",quantile="0.95"}
 shotover_chain_messages_per_batch_count{chain="valkey",quantile="0.99"}
 shotover_chain_messages_per_batch_count{chain="valkey",quantile="0.999"}
 shotover_chain_messages_per_batch_count{chain="valkey",quantile="1"}
-shotover_chain_messages_per_batch_count{chain="valkey"}
 shotover_chain_requests_batch_size_count{chain="valkey"}
 shotover_chain_requests_batch_size_sum{chain="valkey"}
 shotover_chain_requests_batch_size{chain="valkey",quantile="0"}
