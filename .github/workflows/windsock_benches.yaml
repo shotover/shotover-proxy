@@ -30,8 +30,6 @@ jobs:
         # downsides:
         # * PRs that update rust version or changes deps will be slow to iterate on due to changes not being cached.
         save-if: ${{ github.ref == 'refs/heads/main' }}
-    # librdkafka 2.11-2.14 requires curl headers even when built without curl: https://github.com/confluentinc/librdkafka/issues/5135
-    # Remove this step once rdkafka-sys bundles librdkafka 2.15 or newer.
     - name: Install kafka-cpp-driver-tests build dependencies
       run: |
         sudo apt-get update

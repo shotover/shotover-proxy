@@ -58,8 +58,6 @@ jobs:
           key: ubuntu-24.04-packages
       - name: Install ubuntu packages
         run: shotover-proxy/build/install_ubuntu_packages.sh
-      # librdkafka 2.11-2.14 requires curl headers even when built without curl: https://github.com/confluentinc/librdkafka/issues/5135
-      # Remove this step once rdkafka-sys bundles librdkafka 2.15 or newer.
       - name: Install kafka-cpp-driver-tests build dependencies
         run: sudo apt-get install -y libcurl4-openssl-dev
       - name: Install nextest
