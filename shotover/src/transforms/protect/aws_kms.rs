@@ -79,11 +79,12 @@ impl AWSKeyManagement {
                             .into_inner(),
                     ),
                     key_id: resp.key_id.ok_or_else(|| anyhow!("no CMK id found"))?,
-                    plaintext: *Key::from_slice(
+                    plaintext: Key::try_from(
                         resp.plaintext
                             .ok_or_else(|| anyhow!("no plaintext DEK provided"))?
                             .as_ref(),
-                    ),
+                    )
+                    .expect("slice length mismatch"),
                 })
             }
             DecOrGen::Dec(decrypt) => {
@@ -99,11 +100,12 @@ impl AWSKeyManagement {
                     key_id: resp
                         .key_id
                         .ok_or_else(|| anyhow!("seemed to have lost cmk id on the way???"))?,
-                    plaintext: *Key::from_slice(
+                    plaintext: Key::try_from(
                         resp.plaintext
                             .ok_or_else(|| anyhow!("no plaintext DEK provided"))?
                             .as_ref(),
-                    ),
+                    )
+                    .expect("slice length mismatch"),
                 })
             }
         }

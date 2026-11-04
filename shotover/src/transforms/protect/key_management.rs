@@ -71,8 +71,8 @@ impl KeyManagerConfig {
                     return Err(anyhow!("Invalid key length"));
                 }
 
-                let kek = Key::from_slice(&decoded_base64);
-                Ok(KeyManager::Local(LocalKeyManagement { kek: *kek, kek_id }))
+                let kek = Key::try_from(decoded_base64.as_slice())?;
+                Ok(KeyManager::Local(LocalKeyManagement { kek, kek_id }))
             }
         }
     }

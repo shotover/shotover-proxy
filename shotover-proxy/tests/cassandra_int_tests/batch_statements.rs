@@ -1,4 +1,4 @@
-use rand::Rng;
+use rand::RngExt;
 use test_helpers::connection::cassandra::{
     CassandraConnection, ResultValue, assert_query_result, run_query,
 };

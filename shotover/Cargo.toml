@@ -21,7 +21,7 @@ cassandra = [
     "dep:aws-config",
     "dep:base64",
     "dep:chacha20poly1305",
-    "dep:generic-array",
+    "dep:hybrid-array",
     "dep:hex",
     "dep:bincode",
     "dep:cached",
@@ -55,7 +55,7 @@ governor = { version = "0.10", default-features = false, features = [
     "quanta",
 ] }
 version-compare = { version = "0.2", optional = true }
-rand = { features = ["small_rng"], workspace = true }
+rand = { features = ["thread_rng"], workspace = true }
 lz4_flex = { version = "0.14.0", optional = true }
 clap.workspace = true
 itertools.workspace = true
@@ -115,8 +115,8 @@ ordered-float.workspace = true
 #Crypto
 aws-config = { version = "1.0.0", optional = true }
 aws-sdk-kms = { version = "1.1.0", optional = true }
-chacha20poly1305 = { version = "0.10.0", features = ["std"], optional = true }
-generic-array = { version = "0.14", features = ["serde"], optional = true }
+chacha20poly1305 = { version = "0.11.0", features = ["zeroize"], optional = true }
+hybrid-array = { version = "0.4.15", features = ["serde"], optional = true }
 kafka-protocol = { version = "0.15.1", optional = true, default-features = false, features = [
     "messages_enums",
     "broker",
