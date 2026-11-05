@@ -172,6 +172,7 @@ pub enum CassandraDriver {
     Java,
 }
 
+#[allow(clippy::large_enum_variant)]
 pub enum CassandraConnection {
     #[cfg(feature = "cassandra-cpp-driver-tests")]
     Cpp(CppConnection),

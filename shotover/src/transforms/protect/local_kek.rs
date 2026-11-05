@@ -26,7 +26,7 @@ impl LocalKeyManagement {
                 let plaintext_dek = gen_key();
                 let nonce = gen_nonce();
 
-                let cipher = ChaCha20Poly1305::new(Key::from_slice(&plaintext_dek));
+                let cipher = ChaCha20Poly1305::new(&plaintext_dek);
 
                 let encrypted_dek = cipher
                     .encrypt(&nonce, &*plaintext_dek)
@@ -46,16 +46,17 @@ impl LocalKeyManagement {
             Some(dek) => {
                 let dek_struct: DEKStructure = serde_json::from_slice(dek.as_slice())?;
 
-                let cipher = ChaCha20Poly1305::new(Key::from_slice(&self.kek));
+                let cipher = ChaCha20Poly1305::new(&self.kek);
 
                 let plaintext_dek = cipher
-                    .decrypt(Nonce::from_slice(&dek_struct.nonce), &*dek_struct.key)
+                    .decrypt(&dek_struct.nonce, &*dek_struct.key)
                     .map_err(|_| anyhow!("couldn't decrypt DEK"))?;
 
                 Ok(KeyMaterial {
                     ciphertext_blob: Bytes::from(dek),
                     key_id: self.kek_id.clone(),
-                    plaintext: *Key::from_slice(plaintext_dek.as_slice()),
+                    plaintext: Key::try_from(plaintext_dek.as_slice())
+                        .expect("slice length mismatch"),
                 })
             }
         }

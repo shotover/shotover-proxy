@@ -845,7 +845,7 @@ impl<C: CodecBuilder + 'static> Handler<C> {
                     return Ok(CloseReason::ShotoverShutdown);
                 }
                 () = force_run_chain.notified() => {
-                    let mut requests = vec!();
+                    let mut requests = vec![];
                     while let Ok(x) = in_rx.try_recv() {
                         requests.extend(x);
                     }

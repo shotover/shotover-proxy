@@ -30,7 +30,7 @@ sudo apt-get install -y npm`
 # So feel free to skip them.
 
 # Install dependencies needed for `--features kafka-cpp-driver-tests`
-sudo apt-get install -y cmake g++
+sudo apt-get install -y cmake g++ libcurl4-openssl-dev
 
 ## Install dependencies for `--features cassandra-cpp-driver-tests`
 ./install_ubuntu_packages.sh

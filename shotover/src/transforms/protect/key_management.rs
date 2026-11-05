@@ -71,8 +71,8 @@ impl KeyManagerConfig {
                     return Err(anyhow!("Invalid key length"));
                 }
 
-                let kek = Key::from_slice(&decoded_base64);
-                Ok(KeyManager::Local(LocalKeyManagement { kek: *kek, kek_id }))
+                let kek = Key::try_from(decoded_base64.as_slice())?;
+                Ok(KeyManager::Local(LocalKeyManagement { kek, kek_id }))
             }
         }
     }
@@ -100,11 +100,7 @@ impl KeyManager {
 
 // We don't cache fetch key directly to make testing key fetching easier with caching getting in the way
 
-#[cached(
-    result = true,
-    key = "String",
-    convert = r#"{ format!("{}", _key_id) }"#
-)]
+#[cached(key = "String", convert = r#"{ format!("{}", _key_id) }"#)]
 async fn private_cached_fetch(
     _key_id: &str,
     km: &KeyManager,

@@ -4,7 +4,7 @@ use anyhow::{Result, anyhow, bail};
 use chacha20poly1305::aead::Aead;
 use chacha20poly1305::{ChaCha20Poly1305, Key, KeyInit, Nonce};
 use cql3_parser::common::Operand;
-use rand::RngCore;
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
@@ -61,11 +61,10 @@ pub async fn decrypt(
         .cached_get_key(key_id, Some(protected.enc_dek), Some(protected.kek_id))
         .await?;
 
-    let nonce = Nonce::from_slice(&protected.nonce);
     let cipher = ChaCha20Poly1305::new(&sym_key.plaintext);
 
     let decrypted_bytes = cipher
-        .decrypt(nonce, &*protected.cipher)
+        .decrypt(&protected.nonce, &*protected.cipher)
         .map_err(|_| anyhow!("couldn't decrypt value"))?;
 
     //TODO make error handing better here - failure here indicates an authenticity failure
@@ -78,12 +77,12 @@ pub fn gen_key() -> Key {
     let mut key_bytes = [0; 32];
     let mut rng = rand::rng();
     rng.fill_bytes(&mut key_bytes);
-    *Key::from_slice(&key_bytes)
+    Key::from(key_bytes)
 }
 
 pub fn gen_nonce() -> Nonce {
     let mut rng = rand::rng();
     let mut nonce_bytes = [0; 12];
     rng.fill_bytes(&mut nonce_bytes);
-    *Nonce::from_slice(&nonce_bytes)
+    Nonce::from(nonce_bytes)
 }
